@@ -13,10 +13,11 @@ PowerShell automation for syncing SAP SuccessFactors worker data into on-premise
 
 ## Project Layout
 - `src/Invoke-SfAdSync.ps1`: main sync entrypoint.
-- `src/Modules/SfAdSync`: config, state, mapping, reporting, SuccessFactors, and AD modules.
+- `src/Modules/SfAdSync`: config, state, mapping, reporting, rollback, SuccessFactors, and AD modules.
 - `config`: sample tenant config and mapping config.
 - `scripts/Register-SfAdSyncScheduledTask.ps1`: scheduled task bootstrap.
 - `scripts/Get-SfAdSyncStatus.ps1`: summary view of the latest sync report and runtime state.
+- `scripts/Undo-SfAdSyncRun.ps1`: rollback one sync run using the recorded operation journal.
 - `tests`: Pester tests for config and mapping behavior.
 
 ## Setup
@@ -45,10 +46,23 @@ pwsh ./scripts/Get-SfAdSyncStatus.ps1 `
 
 Use `-AsJson` if you want the status in machine-readable form.
 
+To roll back a specific run from its report file:
+
+```powershell
+pwsh ./scripts/Undo-SfAdSyncRun.ps1 `
+  -ReportPath ./reports/output/sf-ad-sync-Delta-20260306-090018.json `
+  -ConfigPath ./config/sample.sync-config.json `
+  -DryRun
+```
+
+Remove `-DryRun` to apply the rollback.
+
 ## Notes
 - The sample SuccessFactors entity and field names are placeholders and must be aligned to your tenant metadata before production use.
 - Mapping source paths support indexed navigation syntax such as `employmentNav[0].jobInfoNav[0].jobTitle` for effective-dated or collection-backed OData expansions.
 - The sample mapping config includes disabled Core HR examples for `title`, `division`, `employeeType`, and extension attributes. Enable them only after confirming your tenant payload and target AD attributes.
+- Each sync report now includes an ordered operation journal with before/after rollback data for AD mutations and sync state updates.
+- Delete rollback is best effort: the project captures broad AD user state and group memberships, but it cannot restore the original password or every AD-native system property.
 - OData v2 is the primary API path. Add `CompoundEmployee` only if tenant field coverage requires it.
 - Current SAP references used for this implementation:
   - OData reference guide: `SF_HCM_OData_API_DEV.pdf`

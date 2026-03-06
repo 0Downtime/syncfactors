@@ -89,9 +89,11 @@ $status = [pscustomobject]@{
     suppressedWorkers = $suppressedWorkers.Count
     pendingDeletionWorkers = $pendingDeletionWorkers.Count
     latestReport = [pscustomobject]@{
+        runId = if ($latestReport) { $latestReport.runId } else { $null }
         path = if ($latestReportFile) { $latestReportFile.FullName } else { $null }
         startedAt = if ($latestReport) { $latestReport.startedAt } else { $null }
         completedAt = if ($latestReport) { $latestReport.completedAt } else { $null }
+        reversibleOperations = if ($latestReport) { Get-CollectionCount -Value $latestReport.operations } else { 0 }
         creates = if ($latestReport) { Get-CollectionCount -Value $latestReport.creates } else { 0 }
         updates = if ($latestReport) { Get-CollectionCount -Value $latestReport.updates } else { 0 }
         enables = if ($latestReport) { Get-CollectionCount -Value $latestReport.enables } else { 0 }
@@ -123,8 +125,10 @@ if (-not $latestReportFile) {
 }
 
 Write-Host "Latest report: $($status.latestReport.path)"
+Write-Host "Run ID: $($status.latestReport.runId)"
 Write-Host "Started: $($status.latestReport.startedAt)"
 Write-Host "Completed: $($status.latestReport.completedAt)"
+Write-Host "Reversible operations: $($status.latestReport.reversibleOperations)"
 Write-Host "Creates: $($status.latestReport.creates)"
 Write-Host "Updates: $($status.latestReport.updates)"
 Write-Host "Enables: $($status.latestReport.enables)"

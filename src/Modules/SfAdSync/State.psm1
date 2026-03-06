@@ -22,6 +22,36 @@ function Get-SfAdSyncState {
     return $state
 }
 
+function Get-SfAdWorkerEntries {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        $Workers
+    )
+
+    if ($null -eq $Workers) {
+        return @()
+    }
+
+    if ($Workers -is [System.Collections.IDictionary]) {
+        return @(
+            foreach ($key in $Workers.Keys) {
+                [pscustomobject]@{
+                    Name = $key
+                    Value = $Workers[$key]
+                }
+            }
+        )
+    }
+
+    return @($Workers.PSObject.Properties | ForEach-Object {
+        [pscustomobject]@{
+            Name = $_.Name
+            Value = $_.Value
+        }
+    })
+}
+
 function Save-SfAdSyncState {
     [CmdletBinding()]
     param(
@@ -48,8 +78,16 @@ function Get-SfAdWorkerState {
         [string]$WorkerId
     )
 
-    if ($State.workers.PSObject.Properties.Name -contains $WorkerId) {
-        return $State.workers.$WorkerId
+    if ($State.workers -is [System.Collections.IDictionary]) {
+        if ($State.workers.Contains($WorkerId)) {
+            return $State.workers[$WorkerId]
+        }
+        return $null
+    }
+
+    $property = $State.workers.PSObject.Properties[$WorkerId]
+    if ($property) {
+        return $property.Value
     }
 
     return $null
@@ -69,5 +107,24 @@ function Set-SfAdWorkerState {
     $State.workers | Add-Member -MemberType NoteProperty -Name $WorkerId -Value $WorkerState -Force
 }
 
-Export-ModuleMember -Function Get-SfAdSyncState, Save-SfAdSyncState, Get-SfAdWorkerState, Set-SfAdWorkerState
+function Remove-SfAdWorkerState {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [pscustomobject]$State,
+        [Parameter(Mandatory)]
+        [string]$WorkerId
+    )
 
+    if ($State.workers -is [System.Collections.IDictionary]) {
+        [void]$State.workers.Remove($WorkerId)
+        return
+    }
+
+    $property = $State.workers.PSObject.Properties[$WorkerId]
+    if ($property) {
+        [void]$State.workers.PSObject.Properties.Remove($WorkerId)
+    }
+}
+
+Export-ModuleMember -Function Get-SfAdSyncState, Get-SfAdWorkerEntries, Save-SfAdSyncState, Get-SfAdWorkerState, Set-SfAdWorkerState, Remove-SfAdWorkerState
