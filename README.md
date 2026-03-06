@@ -13,10 +13,11 @@ PowerShell automation for syncing SAP SuccessFactors worker data into on-premise
 
 ## Project Layout
 - `src/Invoke-SfAdSync.ps1`: main sync entrypoint.
-- `src/Modules/SfAdSync`: config, state, mapping, reporting, rollback, SuccessFactors, and AD modules.
+- `src/Modules/SfAdSync`: config, state, mapping, reporting, sync orchestration, rollback, SuccessFactors, and AD modules.
 - `config`: sample tenant config and mapping config.
 - `scripts/Register-SfAdSyncScheduledTask.ps1`: scheduled task bootstrap.
 - `scripts/Get-SfAdSyncStatus.ps1`: summary view of the latest sync report and runtime state.
+- `scripts/Invoke-TestSuite.ps1`: run the Pester test suite.
 - `scripts/Undo-SfAdSyncRun.ps1`: rollback one sync run using the recorded operation journal.
 - `tests`: Pester tests for config and mapping behavior.
 
@@ -45,6 +46,12 @@ pwsh ./scripts/Get-SfAdSyncStatus.ps1 `
 ```
 
 Use `-AsJson` if you want the status in machine-readable form.
+
+To run the full Pester suite:
+
+```powershell
+pwsh ./scripts/Invoke-TestSuite.ps1 -Detailed
+```
 
 To roll back a specific run from its report file:
 

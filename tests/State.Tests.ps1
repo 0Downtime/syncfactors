@@ -1,6 +1,8 @@
-Import-Module "$PSScriptRoot/../src/Modules/SfAdSync/State.psm1" -Force
-
 Describe 'State helpers' {
+    BeforeAll {
+        Import-Module "$PSScriptRoot/../src/Modules/SfAdSync/State.psm1" -Force
+    }
+
     It 'enumerates hashtable worker entries' {
         $entries = Get-SfAdWorkerEntries -Workers @{
             '1001' = [pscustomobject]@{ suppressed = $true }

@@ -1,6 +1,8 @@
-Import-Module "$PSScriptRoot/../src/Modules/SfAdSync/Mapping.psm1" -Force
-
 Describe 'Get-NestedValue' {
+    BeforeAll {
+        Import-Module "$PSScriptRoot/../src/Modules/SfAdSync/Mapping.psm1" -Force
+    }
+
     It 'resolves indexed nested paths for navigation collections' {
         $worker = [pscustomobject]@{
             employmentNav = @(
@@ -29,6 +31,10 @@ Describe 'Get-NestedValue' {
 }
 
 Describe 'Get-SfAdAttributeChanges' {
+    BeforeAll {
+        Import-Module "$PSScriptRoot/../src/Modules/SfAdSync/Mapping.psm1" -Force
+    }
+
     It 'ignores disabled mappings and preserves required validation' {
         $worker = [pscustomobject]@{
             firstName = 'Chris'

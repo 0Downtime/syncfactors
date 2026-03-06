@@ -130,7 +130,7 @@ function Get-SfAdUserGroupMembershipDns {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
-        [Microsoft.ActiveDirectory.Management.ADUser]$User
+        [pscustomobject]$User
     )
 
     Ensure-ActiveDirectoryModule
@@ -146,7 +146,7 @@ function Get-SfAdUserSnapshot {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
-        [Microsoft.ActiveDirectory.Management.ADUser]$User
+        [pscustomobject]$User
     )
 
     $allProperties = @{}
@@ -259,7 +259,7 @@ function Set-SfAdUserAttributes {
     [CmdletBinding(SupportsShouldProcess)]
     param(
         [Parameter(Mandatory)]
-        [Microsoft.ActiveDirectory.Management.ADUser]$User,
+        [pscustomobject]$User,
         [Parameter(Mandatory)]
         [hashtable]$Changes,
         [switch]$DryRun
@@ -284,7 +284,7 @@ function Enable-SfAdUser {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
-        [Microsoft.ActiveDirectory.Management.ADUser]$User,
+        [pscustomobject]$User,
         [switch]$DryRun
     )
 
@@ -299,7 +299,7 @@ function Disable-SfAdUser {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
-        [Microsoft.ActiveDirectory.Management.ADUser]$User,
+        [pscustomobject]$User,
         [switch]$DryRun
     )
 
@@ -314,7 +314,7 @@ function Move-SfAdUser {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
-        [Microsoft.ActiveDirectory.Management.ADUser]$User,
+        [pscustomobject]$User,
         [Parameter(Mandatory)]
         [string]$TargetOu,
         [switch]$DryRun
@@ -331,7 +331,7 @@ function Remove-SfAdUser {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
-        [Microsoft.ActiveDirectory.Management.ADUser]$User,
+        [pscustomobject]$User,
         [switch]$DryRun
     )
 
@@ -348,7 +348,7 @@ function Add-SfAdUserToConfiguredGroups {
         [Parameter(Mandatory)]
         [pscustomobject]$Config,
         [Parameter(Mandatory)]
-        [Microsoft.ActiveDirectory.Management.ADUser]$User,
+        [pscustomobject]$User,
         [switch]$DryRun
     )
 
@@ -380,7 +380,7 @@ function Remove-SfAdUserFromGroups {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
-        [Microsoft.ActiveDirectory.Management.ADUser]$User,
+        [pscustomobject]$User,
         [Parameter(Mandatory)]
         [string[]]$Groups,
         [switch]$DryRun

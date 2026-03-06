@@ -1,6 +1,8 @@
-Import-Module "$PSScriptRoot/../src/Modules/SfAdSync/Config.psm1" -Force
-
 Describe 'Get-SfAdSyncConfig' {
+    BeforeAll {
+        Import-Module "$PSScriptRoot/../src/Modules/SfAdSync/Config.psm1" -Force
+    }
+
     It 'loads the sample config successfully' {
         $configPath = Join-Path $PSScriptRoot '../config/sample.sync-config.json'
         $config = Get-SfAdSyncConfig -Path $configPath
@@ -8,4 +10,3 @@ Describe 'Get-SfAdSyncConfig' {
         $config.ad.graveyardOu | Should -Not -BeNullOrEmpty
     }
 }
-

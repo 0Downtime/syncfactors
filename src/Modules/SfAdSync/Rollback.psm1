@@ -1,5 +1,10 @@
 Set-StrictMode -Version Latest
 
+$moduleRoot = $PSScriptRoot
+Import-Module (Join-Path $moduleRoot 'Config.psm1') -Force
+Import-Module (Join-Path $moduleRoot 'State.psm1') -Force
+Import-Module (Join-Path $moduleRoot 'ActiveDirectorySync.psm1') -Force
+
 function Write-SfAdRollbackLog {
     [CmdletBinding()]
     param(

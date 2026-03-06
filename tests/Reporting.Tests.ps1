@@ -1,6 +1,8 @@
-Import-Module "$PSScriptRoot/../src/Modules/SfAdSync/Reporting.psm1" -Force
-
 Describe 'Reporting journal' {
+    BeforeAll {
+        Import-Module "$PSScriptRoot/../src/Modules/SfAdSync/Reporting.psm1" -Force
+    }
+
     It 'creates a report with run metadata and operation journal' {
         $report = New-SfAdSyncReport -Mode 'Delta' -DryRun -ConfigPath 'config.json' -MappingConfigPath 'mapping.json' -StatePath 'state.json'
 
