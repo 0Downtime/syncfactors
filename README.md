@@ -16,6 +16,7 @@ PowerShell automation for syncing SAP SuccessFactors worker data into on-premise
 - `src/Modules/SfAdSync`: config, state, mapping, reporting, SuccessFactors, and AD modules.
 - `config`: sample tenant config and mapping config.
 - `scripts/Register-SfAdSyncScheduledTask.ps1`: scheduled task bootstrap.
+- `scripts/Get-SfAdSyncStatus.ps1`: summary view of the latest sync report and runtime state.
 - `tests`: Pester tests for config and mapping behavior.
 
 ## Setup
@@ -34,6 +35,15 @@ pwsh ./src/Invoke-SfAdSync.ps1 `
   -Mode Delta `
   -DryRun
 ```
+
+To view the current sync status from the configured state/report files:
+
+```powershell
+pwsh ./scripts/Get-SfAdSyncStatus.ps1 `
+  -ConfigPath ./config/sample.sync-config.json
+```
+
+Use `-AsJson` if you want the status in machine-readable form.
 
 ## Notes
 - The sample SuccessFactors entity and field names are placeholders and must be aligned to your tenant metadata before production use.
