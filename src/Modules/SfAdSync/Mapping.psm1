@@ -92,7 +92,7 @@ function Get-SfAdAttributeChanges {
     param(
         [Parameter(Mandatory)]
         [pscustomobject]$Worker,
-        [Parameter(Mandatory)]
+        [AllowNull()]
         [pscustomobject]$ExistingUser,
         [Parameter(Mandatory)]
         [pscustomobject]$MappingConfig

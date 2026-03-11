@@ -162,12 +162,18 @@ function Get-SfAdUserSnapshot {
         }
     }
 
+    $userPrincipalName = $null
+    $upnProperty = $User.PSObject.Properties['UserPrincipalName']
+    if ($upnProperty) {
+        $userPrincipalName = $upnProperty.Value
+    }
+
     return [pscustomobject]@{
         objectGuid = if ($User.ObjectGuid) { $User.ObjectGuid.Guid } else { $null }
         distinguishedName = $User.DistinguishedName
         parentOu = Get-SfAdParentOuFromDistinguishedName -DistinguishedName $User.DistinguishedName
         samAccountName = $User.SamAccountName
-        userPrincipalName = $User.UserPrincipalName
+        userPrincipalName = $userPrincipalName
         enabled = [bool]$User.Enabled
         restoreAttributes = [pscustomobject]$restoreAttributes
         groupMemberships = @(Get-SfAdUserGroupMembershipDns -User $User)

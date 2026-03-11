@@ -105,8 +105,18 @@ Describe 'Invoke-SfAdRollback' {
             $global:RollbackCalls[3] | Should -Be 'save-state:2026-03-05T09:00:00'
 
             $savedState = Get-Content -Path $global:RollbackTestStatePath -Raw | ConvertFrom-Json -Depth 20
-            $savedState.checkpoint | Should -Be '2026-03-05T09:00:00'
-            ($savedState.workers.PSObject.Properties.Name -contains '1001') | Should -BeFalse
+            $savedCheckpoint = if ($savedState.checkpoint -is [datetime]) {
+                $savedState.checkpoint.ToString('yyyy-MM-ddTHH:mm:ss')
+            } else {
+                "$($savedState.checkpoint)"
+            }
+            $savedCheckpoint | Should -Be '2026-03-05T09:00:00'
+            $savedWorkerIds = if ($savedState.workers -is [System.Collections.IDictionary]) {
+                @($savedState.workers.Keys)
+            } else {
+                @($savedState.workers.PSObject.Properties | ForEach-Object { $_.Name })
+            }
+            ($savedWorkerIds -contains '1001') | Should -BeFalse
         }
     }
 }

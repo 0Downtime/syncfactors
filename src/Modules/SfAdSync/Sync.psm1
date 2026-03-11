@@ -42,9 +42,10 @@ function Convert-ToSfAdSerializable {
         return $Value.ToString('o')
     }
 
-    if ($Value.PSObject -and $Value.PSObject.Properties.Count -gt 0 -and -not ($Value -is [string])) {
+    $properties = @($Value.PSObject.Properties)
+    if ($properties.Count -gt 0 -and -not ($Value -is [string])) {
         $result = [ordered]@{}
-        foreach ($property in $Value.PSObject.Properties) {
+        foreach ($property in $properties) {
             $result[$property.Name] = Convert-ToSfAdSerializable -Value $property.Value
         }
         return [pscustomobject]$result
@@ -359,7 +360,15 @@ function Invoke-SfAdSyncRun {
                 samAccountName = if ($createdUser.SamAccountName) { $createdUser.SamAccountName } else { $workerId }
             }
 
-            $createAfter = if (-not $DryRun -and $createdUser) { Get-SfAdUserSnapshot -User $createdUser } else { Convert-ToSfAdSerializable -Value $createdUser }
+            if (-not $DryRun -and $createdUser) {
+                try {
+                    $createAfter = Get-SfAdUserSnapshot -User $createdUser
+                } catch {
+                    $createAfter = Convert-ToSfAdSerializable -Value $createdUser
+                }
+            } else {
+                $createAfter = Convert-ToSfAdSerializable -Value $createdUser
+            }
             Add-SfAdReportOperation -Report $report -OperationType 'CreateUser' -WorkerId $workerId -Bucket 'creates' -Target (Get-SfAdUserTargetDescriptor -WorkerId $workerId -User $createdUser) -Before $null -After $createAfter | Out-Null
 
             if (-not $DryRun -and $createdUser) {
@@ -372,7 +381,7 @@ function Invoke-SfAdSyncRun {
                     }
                     Add-SfAdReportOperation -Report $report -OperationType 'EnableUser' -WorkerId $workerId -Bucket 'enables' -Target (Get-SfAdUserTargetDescriptor -WorkerId $workerId -User $createdUser) -Before ([pscustomobject]@{ enabled = $false }) -After ([pscustomobject]@{ enabled = $true }) | Out-Null
 
-                    $licensedGroups = Add-SfAdUserToConfiguredGroups -Config $config -User $createdUser -DryRun:$DryRun
+                    $licensedGroups = @(Add-SfAdUserToConfiguredGroups -Config $config -User $createdUser -DryRun:$DryRun)
                     if ($licensedGroups.Count -gt 0) {
                         $report.enables[-1].licensingGroups = $licensedGroups
                         Add-SfAdReportOperation -Report $report -OperationType 'AddGroupMembership' -WorkerId $workerId -Bucket 'enables' -Target (Get-SfAdUserTargetDescriptor -WorkerId $workerId -User $createdUser) -Before ([pscustomobject]@{ groupsAdded = @() }) -After ([pscustomobject]@{ groupsAdded = $licensedGroups }) | Out-Null
@@ -428,7 +437,7 @@ function Invoke-SfAdSyncRun {
 
         if (-not $currentUser.Enabled -and (Test-SfAdWorkerIsPrehireEligible -Worker $worker -EnableBeforeDays $config.sync.enableBeforeStartDays)) {
             Enable-SfAdUser -User $currentUser -DryRun:$DryRun
-            $licensedGroups = Add-SfAdUserToConfiguredGroups -Config $config -User $currentUser -DryRun:$DryRun
+            $licensedGroups = @(Add-SfAdUserToConfiguredGroups -Config $config -User $currentUser -DryRun:$DryRun)
             Add-SfAdReportEntry -Report $report -Bucket 'enables' -Entry @{
                 workerId = $workerId
                 samAccountName = $currentUser.SamAccountName

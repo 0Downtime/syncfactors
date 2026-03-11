@@ -55,6 +55,21 @@ function Convert-SfAdRollbackValueToHashtable {
     return $result
 }
 
+function Convert-SfAdRollbackCheckpointValue {
+    [CmdletBinding()]
+    param($Value)
+
+    if ($null -eq $Value) {
+        return $null
+    }
+
+    if ($Value -is [datetime]) {
+        return $Value.ToString('yyyy-MM-ddTHH:mm:ss')
+    }
+
+    return "$Value"
+}
+
 function Invoke-SfAdRollback {
     [CmdletBinding(SupportsShouldProcess)]
     param(
@@ -151,7 +166,7 @@ function Invoke-SfAdRollback {
             }
             'SetCheckpoint' {
                 if (-not $DryRun) {
-                    $state.checkpoint = $operation.before
+                    $state.checkpoint = Convert-SfAdRollbackCheckpointValue -Value $operation.before
                 }
             }
         }
