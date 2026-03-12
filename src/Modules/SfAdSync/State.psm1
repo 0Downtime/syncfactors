@@ -14,7 +14,7 @@ function Get-SfAdSyncState {
         }
     }
 
-    $state = Get-Content -Path $Path -Raw | ConvertFrom-Json -Depth 20
+    $state = Get-Content -Path $Path -Raw | ConvertFrom-Json -Depth 20 -DateKind String
     if (-not $state.workers) {
         $state | Add-Member -MemberType NoteProperty -Name workers -Value @{} -Force
     }

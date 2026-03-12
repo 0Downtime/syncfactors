@@ -179,4 +179,4 @@ function Invoke-SfAdRollback {
     Write-SfAdRollbackLog -Message 'Rollback completed.'
 }
 
-Export-ModuleMember -Function Write-SfAdRollbackLog, Resolve-SfAdRollbackUser, Convert-SfAdRollbackValueToHashtable, Invoke-SfAdRollback
+Export-ModuleMember -Function Write-SfAdRollbackLog, Resolve-SfAdRollbackUser, Convert-SfAdRollbackValueToHashtable, Convert-SfAdRollbackCheckpointValue, Invoke-SfAdRollback
