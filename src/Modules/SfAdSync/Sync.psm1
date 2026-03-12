@@ -109,11 +109,15 @@ function Get-SfAdUserTargetDescriptor {
         [pscustomobject]$User
     )
 
+    $objectGuidProperty = if ($User) { $User.PSObject.Properties['ObjectGuid'] } else { $null }
+    $distinguishedNameProperty = if ($User) { $User.PSObject.Properties['DistinguishedName'] } else { $null }
+    $samAccountNameProperty = if ($User) { $User.PSObject.Properties['SamAccountName'] } else { $null }
+
     return @{
         workerId = $WorkerId
-        objectGuid = if ($User -and $User.ObjectGuid) { $User.ObjectGuid.Guid } else { $null }
-        samAccountName = if ($User) { $User.SamAccountName } else { $null }
-        distinguishedName = if ($User) { $User.DistinguishedName } else { $null }
+        objectGuid = if ($objectGuidProperty -and $objectGuidProperty.Value) { $objectGuidProperty.Value.Guid } else { $null }
+        samAccountName = if ($samAccountNameProperty) { $samAccountNameProperty.Value } else { $null }
+        distinguishedName = if ($distinguishedNameProperty) { $distinguishedNameProperty.Value } else { $null }
     }
 }
 

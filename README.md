@@ -61,6 +61,53 @@ To run the full Pester suite:
 pwsh ./scripts/Invoke-TestSuite.ps1 -Detailed
 ```
 
+To simulate a large local dry-run without calling SuccessFactors or Active Directory:
+
+```powershell
+pwsh ./scripts/Invoke-SyntheticSfAdDryRun.ps1 `
+  -UserCount 1000 `
+  -OutputDirectory ./reports/synthetic
+```
+
+Use `-MaxCreatesPerRun` to intentionally test guardrail failures, `-DuplicateWorkerIdCount` to inject duplicate source identities, and `-ExistingUpnCollisionCount` to simulate create-time UPN collisions.
+The harness also assigns each synthetic user a manager from a generated manager directory so the `manager` attribute is populated in the dry-run create payloads.
+
+To run the real sync against a local mock SuccessFactors API instead of a tenant:
+
+1. Start the mock API in one terminal:
+
+```powershell
+pwsh ./scripts/Start-MockSuccessFactorsApi.ps1 `
+  -UserCount 1000 `
+  -ManagerCount 50 `
+  -Port 18080
+```
+
+2. Point the sync at [sample.mock-successfactors.sync-config.json](/Users/chrisbrien/dev/github.com/sf-ad-sync/config/sample.mock-successfactors.sync-config.json) or a copy of it.
+
+3. Run preflight:
+
+```powershell
+pwsh ./scripts/Invoke-SfAdPreflight.ps1 `
+  -ConfigPath ./config/sample.mock-successfactors.sync-config.json `
+  -MappingConfigPath ./config/sample.mapping-config.json
+```
+
+4. Run the actual sync command against the mock API. Use `-DryRun` first, then remove it when you are ready to create lab users:
+
+```powershell
+pwsh ./src/Invoke-SfAdSync.ps1 `
+  -ConfigPath ./config/sample.mock-successfactors.sync-config.json `
+  -MappingConfigPath ./config/sample.mapping-config.json `
+  -Mode Full `
+  -DryRun
+```
+
+The mock server exposes:
+- OAuth token URL: `http://127.0.0.1:18080/oauth/token`
+- OData base URL: `http://127.0.0.1:18080/odata/v2`
+- Metadata endpoint: `http://127.0.0.1:18080/odata/v2/$metadata`
+
 To roll back a specific run from its report file:
 
 ```powershell
