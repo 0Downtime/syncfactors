@@ -23,8 +23,19 @@ $ErrorActionPreference = 'Stop'
 
 $projectRoot = Split-Path -Path $PSScriptRoot -Parent
 $moduleRoot = Join-Path -Path $projectRoot -ChildPath 'src/Modules/SfAdSync'
+$bundledPesterManifest = Join-Path $projectRoot '.tools/Pester/5.7.1/Pester.psd1'
 
-Import-Module Pester -ErrorAction Stop
+if (Test-Path -Path $bundledPesterManifest -PathType Leaf) {
+    Import-Module $bundledPesterManifest -Force
+} else {
+    $installedPester = Get-Module -ListAvailable Pester | Sort-Object Version -Descending | Select-Object -First 1
+    if (-not $installedPester) {
+        throw 'Pester is not installed and no bundled copy was found.'
+    }
+
+    Import-Module $installedPester.Path -Force
+}
+
 Import-Module (Join-Path $moduleRoot 'SyntheticHarness.psm1') -Force
 
 function Get-ResolvedPathOrJoin {
