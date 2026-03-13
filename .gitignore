@@ -11,6 +11,7 @@ TestResults/
 coverage.xml
 *.coverage
 *.trx
+artifacts/
 
 state/runtime/
 reports/output/
