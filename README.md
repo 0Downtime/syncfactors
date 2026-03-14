@@ -6,6 +6,11 @@
 
 PowerShell automation for syncing SAP SuccessFactors worker data into on-premises Active Directory.
 
+## Releases
+- `main` publishes a prerelease on every push using the current `VERSION` value plus CI metadata, for example `0.1.0-dev.42+sha.a1b2c3d`.
+- Stable releases are cut manually from GitHub Actions and must match the root `VERSION` file exactly.
+- Release bundles include the runtime deployment content: `src`, `scripts`, `config`, `README.md`, `LICENSE`, `SECURITY.md`, and `CONTRIBUTING.md`.
+
 ## What It Does
 - Pulls workers from SAP SuccessFactors OData v2 using OAuth2 client credentials.
 - Maps a stable SuccessFactors employee identifier to AD as the authoritative join key.

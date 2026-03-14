@@ -1,0 +1,152 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Stable SemVer version to publish. Must match the VERSION file at the target ref.
+        required: true
+        type: string
+      target_ref:
+        description: Branch, tag, or commit SHA to release.
+        required: false
+        default: main
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  prerelease:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Resolve prerelease metadata
+        id: release_info
+        shell: pwsh
+        run: |
+          $info = & ./scripts/Get-SfAdReleaseInfo.ps1 -Channel Prerelease -RunNumber $env:GITHUB_RUN_NUMBER -CommitSha $env:GITHUB_SHA
+          "version=$($info.version)" >> $env:GITHUB_OUTPUT
+          "tag=$($info.tag)" >> $env:GITHUB_OUTPUT
+          "commit_sha=$($info.commitSha)" >> $env:GITHUB_OUTPUT
+
+      - name: Build deployment bundle
+        id: bundle
+        shell: pwsh
+        run: |
+          New-Item -Path ./artifacts/releases -ItemType Directory -Force | Out-Null
+          $bundlePath = Join-Path (Resolve-Path ./artifacts/releases) "sf-ad-sync-${{ steps.release_info.outputs.version }}.zip"
+          $bundle = & ./scripts/New-SfAdReleaseBundle.ps1 -OutputPath $bundlePath
+          "bundle_path=$($bundle.bundlePath)" >> $env:GITHUB_OUTPUT
+
+      - name: Publish prerelease
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          gh release create "${{ steps.release_info.outputs.tag }}" "${{ steps.bundle.outputs.bundle_path }}" \
+            --repo "${{ github.repository }}" \
+            --target "${{ steps.release_info.outputs.commit_sha }}" \
+            --title "${{ steps.release_info.outputs.version }}" \
+            --prerelease \
+            --latest=false \
+            --generate-notes
+
+  stable-release:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Check out target ref
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ inputs.target_ref }}
+
+      - name: Resolve stable release metadata
+        id: release_info
+        shell: pwsh
+        run: |
+          $commitSha = (git rev-parse HEAD).Trim()
+          $info = & ./scripts/Get-SfAdReleaseInfo.ps1 -Channel Stable -Version '${{ inputs.version }}' -CommitSha $commitSha
+          "version=$($info.version)" >> $env:GITHUB_OUTPUT
+          "tag=$($info.tag)" >> $env:GITHUB_OUTPUT
+          "commit_sha=$($info.commitSha)" >> $env:GITHUB_OUTPUT
+
+      - name: Verify required CI checks succeeded
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: pwsh
+        run: |
+          $requiredContexts = @(
+              'pester',
+              'PowerShell Static Analysis',
+              'Gitleaks Secret Scan',
+              'Trivy Repository Scan'
+          )
+
+          $status = gh api "repos/${{ github.repository }}/commits/${{ steps.release_info.outputs.commit_sha }}/status" | ConvertFrom-Json -Depth 20
+          $latestByContext = @{}
+          foreach ($entry in $status.statuses) {
+              if (-not $latestByContext.ContainsKey($entry.context)) {
+                  $latestByContext[$entry.context] = $entry.state
+              }
+          }
+
+          $missingContexts = @()
+          $failedContexts = @()
+          foreach ($context in $requiredContexts) {
+              if (-not $latestByContext.ContainsKey($context)) {
+                  $missingContexts += $context
+                  continue
+              }
+
+              if ($latestByContext[$context] -ne 'success') {
+                  $failedContexts += "$context=$($latestByContext[$context])"
+              }
+          }
+
+          if ($missingContexts.Count -gt 0) {
+              throw "Stable release is blocked because required CI contexts are missing: $($missingContexts -join ', ')"
+          }
+
+          if ($failedContexts.Count -gt 0) {
+              throw "Stable release is blocked because required CI contexts are not green: $($failedContexts -join ', ')"
+          }
+
+      - name: Build deployment bundle
+        id: bundle
+        shell: pwsh
+        run: |
+          New-Item -Path ./artifacts/releases -ItemType Directory -Force | Out-Null
+          $bundlePath = Join-Path (Resolve-Path ./artifacts/releases) "sf-ad-sync-${{ steps.release_info.outputs.version }}.zip"
+          $bundle = & ./scripts/New-SfAdReleaseBundle.ps1 -OutputPath $bundlePath
+          "bundle_path=$($bundle.bundlePath)" >> $env:GITHUB_OUTPUT
+
+      - name: Publish stable release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          gh release create "${{ steps.release_info.outputs.tag }}" "${{ steps.bundle.outputs.bundle_path }}" \
+            --repo "${{ github.repository }}" \
+            --target "${{ steps.release_info.outputs.commit_sha }}" \
+            --title "${{ steps.release_info.outputs.version }}" \
+            --generate-notes
