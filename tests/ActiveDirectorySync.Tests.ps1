@@ -112,6 +112,13 @@ Describe 'ActiveDirectorySync module' {
 
     It 'captures rollback snapshots with serializable values' {
         InModuleScope ActiveDirectorySync {
+            $objectSid = if ($IsWindows) {
+                New-Object System.Security.Principal.SecurityIdentifier 'S-1-5-21-1000-1000-1000-1000'
+            }
+            else {
+                'S-1-5-21-1000-1000-1000-1000'
+            }
+
             $user = [pscustomobject]@{
                 ObjectGuid = [guid]'11111111-1111-1111-1111-111111111111'
                 DistinguishedName = 'CN=Jamie Doe,OU=Employees,DC=example,DC=com'
@@ -119,7 +126,7 @@ Describe 'ActiveDirectorySync module' {
                 UserPrincipalName = 'jdoe@example.com'
                 Enabled = $true
                 title = 'Engineer'
-                objectSid = New-Object System.Security.Principal.SecurityIdentifier 'S-1-5-21-1000-1000-1000-1000'
+                objectSid = $objectSid
                 whenCreated = [datetime]'2026-03-01T10:15:00'
             }
 
