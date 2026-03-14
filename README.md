@@ -153,6 +153,7 @@ pwsh ./scripts/Undo-SfAdSyncRun.ps1 `
 Remove `-DryRun` to apply the rollback.
 
 ## Notes
+- This software is provided as-is and is used at your own risk. You are responsible for validating configuration, testing changes safely, and assessing operational impact before using it in any environment. The maintainers are not responsible for data loss, directory damage, outages, or other issues caused by use or misuse of this project.
 - Secret values can be supplied through environment variables referenced by `config.secrets`; those values override plaintext config settings.
 - On a domain-joined host, leave `ad.server`, `ad.username`, and `ad.bindPassword` empty and the script will use the machine and user domain context.
 - For non-domain-joined hosts, set `ad.server`, `ad.username`, and `ad.bindPassword` or their env-backed secret equivalents so AD cmdlets run against a specific DC with explicit credentials.
