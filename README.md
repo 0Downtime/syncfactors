@@ -1,5 +1,9 @@
 # SuccessFactors to Active Directory Sync
 
+[![Test](https://github.com/0Downtime/sf-ad-sync/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/0Downtime/sf-ad-sync/actions/workflows/test.yml)
+[![Security](https://github.com/0Downtime/sf-ad-sync/actions/workflows/security.yml/badge.svg?branch=main)](https://github.com/0Downtime/sf-ad-sync/actions/workflows/security.yml)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://github.com/0Downtime/sf-ad-sync/blob/main/LICENSE)
+
 PowerShell automation for syncing SAP SuccessFactors worker data into on-premises Active Directory.
 
 ## What It Does
