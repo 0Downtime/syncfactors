@@ -6,6 +6,9 @@
 
 PowerShell automation for syncing SAP SuccessFactors worker data into on-premises Active Directory.
 
+> [!WARNING]
+> This project is still in active development and is not ready for production use.
+
 ## What It Does
 - Pulls workers from SAP SuccessFactors OData v2 using OAuth2 client credentials.
 - Maps a stable SuccessFactors employee identifier to AD as the authoritative join key.
