@@ -7,42 +7,39 @@ Describe 'Script entrypoints' {
                 [Parameter(Mandatory)]
                 [string]$ReportDirectory
             )
-
-            return @"
-{
-  "successFactors": {
-    "baseUrl": "https://example.successfactors.com/odata/v2",
-    "oauth": {
-      "tokenUrl": "https://example.successfactors.com/oauth/token",
-      "clientId": "client-id",
-      "clientSecret": "client-secret"
-    },
-    "query": {
-      "entitySet": "PerPerson",
-      "identityField": "personIdExternal",
-      "deltaField": "lastModifiedDateTime",
-      "select": [ "personIdExternal" ],
-      "expand": [ "employmentNav" ]
-    }
-  },
-  "ad": {
-    "identityAttribute": "employeeID",
-    "defaultActiveOu": "OU=Employees,DC=example,DC=com",
-    "graveyardOu": "OU=Graveyard,DC=example,DC=com",
-    "defaultPassword": "password"
-  },
-  "sync": {
-    "enableBeforeStartDays": 7,
-    "deletionRetentionDays": 90
-  },
-  "state": {
-    "path": "__STATE_PATH__"
-  },
-  "reporting": {
-    "outputDirectory": "__REPORT_DIR__"
-  }
-}
-"@.Replace('__STATE_PATH__', ($StatePath -replace '\\', '\\')).Replace('__REPORT_DIR__', ($ReportDirectory -replace '\\', '\\'))
+            return @{
+                successFactors = @{
+                    baseUrl = 'https://example.successfactors.com/odata/v2'
+                    oauth = @{
+                        tokenUrl = 'https://example.successfactors.com/oauth/token'
+                        clientId = 'client-id'
+                        clientSecret = 'client-secret'
+                    }
+                    query = @{
+                        entitySet = 'PerPerson'
+                        identityField = 'personIdExternal'
+                        deltaField = 'lastModifiedDateTime'
+                        select = @('personIdExternal')
+                        expand = @('employmentNav')
+                    }
+                }
+                ad = @{
+                    identityAttribute = 'employeeID'
+                    defaultActiveOu = 'OU=Employees,DC=example,DC=com'
+                    graveyardOu = 'OU=Graveyard,DC=example,DC=com'
+                    defaultPassword = 'password'
+                }
+                sync = @{
+                    enableBeforeStartDays = 7
+                    deletionRetentionDays = 90
+                }
+                state = @{
+                    path = $StatePath
+                }
+                reporting = @{
+                    outputDirectory = $ReportDirectory
+                }
+            } | ConvertTo-Json -Depth 10
         }
     }
 

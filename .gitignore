@@ -12,6 +12,8 @@ coverage.xml
 *.coverage
 *.trx
 artifacts/
+.tools/gitleaks/
+.tools/gitleaks-scan/
 
 state/runtime/
 reports/output/

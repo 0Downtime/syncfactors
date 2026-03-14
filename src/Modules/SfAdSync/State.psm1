@@ -1,5 +1,20 @@
 Set-StrictMode -Version Latest
 
+function ConvertFrom-SfAdJsonDocument {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string]$Json
+    )
+
+    $convertFromJson = Get-Command -Name ConvertFrom-Json -CommandType Cmdlet
+    if ($convertFromJson.Parameters.ContainsKey('DateKind')) {
+        return $Json | ConvertFrom-Json -Depth 20 -DateKind String
+    }
+
+    return $Json | ConvertFrom-Json -Depth 20
+}
+
 function Get-SfAdSyncState {
     [CmdletBinding()]
     param(
@@ -14,7 +29,7 @@ function Get-SfAdSyncState {
         }
     }
 
-    $state = Get-Content -Path $Path -Raw | ConvertFrom-Json -Depth 20 -DateKind String
+    $state = ConvertFrom-SfAdJsonDocument -Json (Get-Content -Path $Path -Raw)
     if (-not $state.workers) {
         $state | Add-Member -MemberType NoteProperty -Name workers -Value @{} -Force
     }
@@ -127,4 +142,4 @@ function Remove-SfAdWorkerState {
     }
 }
 
-Export-ModuleMember -Function Get-SfAdSyncState, Get-SfAdWorkerEntries, Save-SfAdSyncState, Get-SfAdWorkerState, Set-SfAdWorkerState, Remove-SfAdWorkerState
+Export-ModuleMember -Function ConvertFrom-SfAdJsonDocument, Get-SfAdSyncState, Get-SfAdWorkerEntries, Save-SfAdSyncState, Get-SfAdWorkerState, Set-SfAdWorkerState, Remove-SfAdWorkerState

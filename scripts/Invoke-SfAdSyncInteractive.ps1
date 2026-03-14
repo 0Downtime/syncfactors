@@ -98,7 +98,6 @@ $resolvedConfigPath = (Resolve-Path -Path $ConfigPath).Path
 $config = Get-Content -Path $resolvedConfigPath -Raw | ConvertFrom-Json -Depth 20
 $secrets = Get-OptionalPropertyValue -InputObject $config -PropertyPath 'secrets'
 $adConfig = Get-OptionalPropertyValue -InputObject $config -PropertyPath 'ad'
-$successFactorsOAuth = Get-OptionalPropertyValue -InputObject $config -PropertyPath 'successFactors.oauth'
 
 $runtimePrompts = @(
     @{

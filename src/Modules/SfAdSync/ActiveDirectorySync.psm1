@@ -121,11 +121,27 @@ function Get-SfAdDirectoryContextParameters {
     }
 
     if (-not [string]::IsNullOrWhiteSpace($username)) {
-        $securePassword = ConvertTo-SecureString -String $bindPassword -AsPlainText -Force
+        $securePassword = ConvertTo-SfAdSecureString -Value $bindPassword
         $parameters['Credential'] = [pscredential]::new($username, $securePassword)
     }
 
     return $parameters
+}
+
+function ConvertTo-SfAdSecureString {
+    [System.Diagnostics.CodeAnalysis.SuppressMessageAttribute(
+        'PSAvoidUsingConvertToSecureStringWithPlainText',
+        '',
+        Justification = 'This module accepts secrets from environment-backed runtime configuration and must convert them before building credentials.'
+    )]
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [AllowEmptyString()]
+        [string]$Value
+    )
+
+    return ConvertTo-SecureString -String $Value -AsPlainText -Force
 }
 
 function Get-SfAdUserByObjectGuid {
@@ -292,7 +308,7 @@ function New-SfAdUser {
     $targetOu = Resolve-SfAdTargetOu -Config $Config -Worker $Worker
     $samAccountName = if ($Attributes.ContainsKey('SamAccountName')) { $Attributes['SamAccountName'] } else { $WorkerId }
 
-    $securePassword = ConvertTo-SecureString -String $Config.ad.defaultPassword -AsPlainText -Force
+    $securePassword = ConvertTo-SfAdSecureString -Value $Config.ad.defaultPassword
     $newUserParams = @{
         Name                  = "$($Worker.firstName) $($Worker.lastName)"
         SamAccountName        = $samAccountName
@@ -511,7 +527,7 @@ function Restore-SfAdUserFromSnapshot {
     $surname = $restoreAttributes['sn']
     $displayName = if ($restoreAttributes.ContainsKey('displayName')) { $restoreAttributes['displayName'] } else { "$givenName $surname".Trim() }
     $path = if ($Snapshot.parentOu) { $Snapshot.parentOu } else { $Config.ad.defaultActiveOu }
-    $securePassword = ConvertTo-SecureString -String $Config.ad.defaultPassword -AsPlainText -Force
+    $securePassword = ConvertTo-SfAdSecureString -Value $Config.ad.defaultPassword
 
     $newUserParams = @{
         Name = $displayName

@@ -1,0 +1,179 @@
+name: Security
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+  schedule:
+    - cron: '23 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  powershell-static-analysis:
+    name: PowerShell Static Analysis
+    runs-on: windows-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Install PSScriptAnalyzer
+        shell: pwsh
+        run: |
+          Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+          Install-Module PSScriptAnalyzer -Scope CurrentUser -Force -SkipPublisherCheck
+
+      - name: Run PSScriptAnalyzer
+        shell: pwsh
+        run: |
+          $paths = @('./src', './scripts')
+          $results = foreach ($path in $paths) {
+            Invoke-ScriptAnalyzer `
+              -Path $path `
+              -Recurse `
+              -Settings ./PSScriptAnalyzerSettings.psd1 `
+              -Severity Error,Warning
+          }
+
+          if ($results) {
+            $results |
+              Sort-Object Severity, ScriptPath, Line |
+              Format-Table Severity, RuleName, ScriptPath, Line, Message -AutoSize
+
+            throw "PSScriptAnalyzer reported $($results.Count) issue(s)."
+          }
+
+  gitleaks:
+    name: Gitleaks Secret Scan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Run Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  trivy-repository-scan:
+    name: Trivy Repository Scan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Install Trivy
+        uses: aquasecurity/setup-trivy@v0.2.3
+        with:
+          version: v0.69.3
+          cache: true
+
+      - name: Run Trivy SARIF report
+        id: trivy_sarif
+        shell: bash
+        env:
+          TRIVY_DEBUG: true
+        run: |
+          trivy fs \
+            --quiet \
+            --format sarif \
+            --output trivy-results.sarif \
+            --severity HIGH,CRITICAL \
+            --ignore-unfixed \
+            --scanners vuln,secret,misconfig \
+            .
+
+      - name: Generate Trivy JSON report
+        if: always()
+        shell: bash
+        env:
+          TRIVY_DEBUG: true
+        run: |
+          trivy fs \
+            --quiet \
+            --format json \
+            --output trivy-results.json \
+            --severity HIGH,CRITICAL \
+            --ignore-unfixed \
+            --scanners vuln,secret,misconfig \
+            .
+
+      - name: Upload Trivy results
+        if: always() && hashFiles('trivy-results.sarif') != ''
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: trivy-results.sarif
+
+      - name: Fail on Trivy findings
+        id: trivy_enforce
+        if: always()
+        continue-on-error: true
+        shell: bash
+        env:
+          TRIVY_DEBUG: true
+        run: |
+          trivy fs \
+            --quiet \
+            --format table \
+            --output trivy-results.txt \
+            --exit-code 1 \
+            --severity HIGH,CRITICAL \
+            --ignore-unfixed \
+            --scanners vuln,secret,misconfig \
+            .
+
+      - name: Upload Trivy diagnostic artifacts
+        if: always() && (hashFiles('trivy-results.json') != '' || hashFiles('trivy-results.txt') != '' || hashFiles('trivy-results.sarif') != '')
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-diagnostics
+          path: |
+            trivy-results.json
+            trivy-results.txt
+            trivy-results.sarif
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Publish Trivy summary
+        if: always() && hashFiles('trivy-results.txt') != ''
+        shell: bash
+        run: |
+          {
+            echo "### Trivy Output"
+            echo "<details><summary>Click to expand</summary>"
+            echo
+            echo '```text'
+            cat trivy-results.txt
+            echo '```'
+            echo "</details>"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Enforce Trivy result
+        if: always() && steps.trivy_enforce.outcome == 'failure'
+        shell: bash
+        run: |
+          echo "Trivy enforcement scan reported HIGH/CRITICAL findings or an execution error."
+          exit 1
