@@ -3,7 +3,13 @@ param(
     [string]$Path = './tests',
     [switch]$Detailed,
     [switch]$Coverage,
-    [string]$CoverageSummaryPath
+    [string]$CoverageSummaryPath,
+    [string]$CoverageReportPath,
+    [ValidateSet('JaCoCo', 'CoverageGutters', 'Cobertura')]
+    [string]$CoverageReportFormat = 'JaCoCo',
+    [string]$TestResultPath,
+    [ValidateSet('NUnitXml', 'NUnit2.5', 'NUnit3', 'JUnitXml')]
+    [string]$TestResultFormat = 'JUnitXml'
 )
 
 Set-StrictMode -Version Latest
@@ -41,6 +47,17 @@ if ($moduleVersion.Major -ge 5 -and (Get-Command New-PesterConfiguration -ErrorA
             (Join-Path $repoRoot 'src'),
             (Join-Path $repoRoot 'scripts')
         )
+
+        if ($CoverageReportPath) {
+            $configuration.CodeCoverage.OutputPath = $CoverageReportPath
+            $configuration.CodeCoverage.OutputFormat = $CoverageReportFormat
+        }
+    }
+
+    if ($TestResultPath) {
+        $configuration.TestResult.Enabled = $true
+        $configuration.TestResult.OutputPath = $TestResultPath
+        $configuration.TestResult.OutputFormat = $TestResultFormat
     }
 
     $result = Invoke-Pester -Configuration $configuration
@@ -67,6 +84,14 @@ if ($moduleVersion.Major -ge 5 -and (Get-Command New-PesterConfiguration -ErrorA
             Join-Path $repoRoot 'src/*.ps1',
             Join-Path $repoRoot 'scripts/*.ps1'
         )
+    }
+
+    if ($TestResultPath -and $invokePester.Parameters.ContainsKey('OutputFile')) {
+        $parameters['OutputFile'] = $TestResultPath
+    }
+
+    if ($TestResultPath -and $invokePester.Parameters.ContainsKey('OutputFormat')) {
+        $parameters['OutputFormat'] = $TestResultFormat
     }
 
     $result = Invoke-Pester @parameters

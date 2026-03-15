@@ -210,6 +210,11 @@ Remove `-DryRun` to apply the rollback.
 - Stable releases are cut manually from GitHub Actions and must match the root `VERSION` file exactly.
 - Release bundles include the runtime deployment content: `src`, `scripts`, `config`, `README.md`, `LICENSE`, `SECURITY.md`, and `CONTRIBUTING.md`.
 
+## SonarCloud
+- Import the repository into SonarCloud before running the workflow.
+- In GitHub, set `Settings -> Secrets and variables -> Actions` with secret `SONAR_TOKEN` and variables `SONAR_ORGANIZATION` plus `SONAR_PROJECT_KEY`.
+- The repository scan workflow is [`.github/workflows/sonarcloud.yml`](/Users/chrisbrien/dev/github.com/sf-ad-sync/.github/workflows/sonarcloud.yml) and reads stable project settings from [`sonar-project.properties`](/Users/chrisbrien/dev/github.com/sf-ad-sync/sonar-project.properties).
+
 ## Notes
 - This software is provided as-is and is used at your own risk. You are responsible for validating configuration, testing changes safely, and assessing operational impact before using it in any environment. The maintainers are not responsible for data loss, directory damage, outages, or other issues caused by use or misuse of this project.
 - Secret values can be supplied through environment variables referenced by `config.secrets`; those values override plaintext config settings.
