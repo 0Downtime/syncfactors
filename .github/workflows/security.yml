@@ -30,26 +30,44 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Run PSScriptAnalyzer
-        id: pssa
+      - name: Run PSScriptAnalyzer on src
+        id: pssa_src
         continue-on-error: true
         uses: microsoft/psscriptanalyzer-action@v1.0
         with:
-          path: '".\src", ".\scripts"'
+          path: .\src
           recurse: true
           settings: .\PSScriptAnalyzerSettings.psd1
           severity: '"Error", "Warning"'
           enableExit: true
-          output: results.sarif
+          output: results-src.sarif
 
-      - name: Upload PSScriptAnalyzer SARIF
-        if: always() && hashFiles('results.sarif') != ''
+      - name: Run PSScriptAnalyzer on scripts
+        id: pssa_scripts
+        continue-on-error: true
+        uses: microsoft/psscriptanalyzer-action@v1.0
+        with:
+          path: .\scripts
+          recurse: true
+          settings: .\PSScriptAnalyzerSettings.psd1
+          severity: '"Error", "Warning"'
+          enableExit: true
+          output: results-scripts.sarif
+
+      - name: Upload PSScriptAnalyzer SARIF for src
+        if: always() && hashFiles('results-src.sarif') != ''
         uses: github/codeql-action/upload-sarif@v4
         with:
-          sarif_file: results.sarif
+          sarif_file: results-src.sarif
+
+      - name: Upload PSScriptAnalyzer SARIF for scripts
+        if: always() && hashFiles('results-scripts.sarif') != ''
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: results-scripts.sarif
 
       - name: Enforce PSScriptAnalyzer result
-        if: always() && steps.pssa.outcome == 'failure'
+        if: always() && (steps.pssa_src.outcome == 'failure' || steps.pssa_scripts.outcome == 'failure')
         shell: pwsh
         run: |
           throw 'PSScriptAnalyzer reported one or more Error/Warning findings.'
