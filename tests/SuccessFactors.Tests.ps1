@@ -146,6 +146,20 @@ Describe 'SuccessFactors module' {
         }
     }
 
+    It 'does not leak client secrets when the OAuth request fails' {
+        InModuleScope SuccessFactors {
+            Mock Invoke-RestMethod { throw "OAuth request failed for client_secret=$($global:SuccessFactorsTestConfig.successFactors.oauth.clientSecret)" }
+
+            try {
+                Get-SfOAuthToken -Config $global:SuccessFactorsTestConfig | Out-Null
+                throw 'Expected Get-SfOAuthToken to throw.'
+            } catch {
+                $_.Exception.Message | Should -Match 'OAuth request failed'
+                $_.Exception.Message | Should -Not -Match [regex]::Escape($global:SuccessFactorsTestConfig.successFactors.oauth.clientSecret)
+            }
+        }
+    }
+
     It 'propagates OData request failures' {
         InModuleScope SuccessFactors {
             Mock Get-SfAuthHeaders { @{ Authorization = 'Bearer token-1' } }

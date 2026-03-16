@@ -41,6 +41,65 @@ Describe 'Script entrypoints' {
                 }
             } | ConvertTo-Json -Depth 10
         }
+
+        function New-InteractiveConfigContent {
+            param(
+                [Parameter(Mandatory)]
+                [string]$ClientId,
+                [Parameter(Mandatory)]
+                [string]$ClientSecret,
+                [Parameter(Mandatory)]
+                [string]$DefaultPassword,
+                [string]$AdServer = '',
+                [string]$AdUsername = '',
+                [string]$AdBindPassword = ''
+            )
+
+            return @{
+                secrets = @{
+                    successFactorsClientIdEnv = 'TEST_SF_CLIENT_ID'
+                    successFactorsClientSecretEnv = 'TEST_SF_CLIENT_SECRET'
+                    defaultAdPasswordEnv = 'TEST_AD_PASSWORD'
+                    adServerEnv = 'TEST_AD_SERVER'
+                    adUsernameEnv = 'TEST_AD_USERNAME'
+                    adBindPasswordEnv = 'TEST_AD_BIND_PASSWORD'
+                }
+                successFactors = @{
+                    baseUrl = 'https://example.successfactors.com/odata/v2'
+                    oauth = @{
+                        tokenUrl = 'https://example.successfactors.com/oauth/token'
+                        clientId = $ClientId
+                        clientSecret = $ClientSecret
+                    }
+                    query = @{
+                        entitySet = 'PerPerson'
+                        identityField = 'personIdExternal'
+                        deltaField = 'lastModifiedDateTime'
+                        select = @('personIdExternal')
+                        expand = @('employmentNav')
+                    }
+                }
+                ad = @{
+                    server = $AdServer
+                    username = $AdUsername
+                    bindPassword = $AdBindPassword
+                    identityAttribute = 'employeeID'
+                    defaultActiveOu = 'OU=Employees,DC=example,DC=com'
+                    graveyardOu = 'OU=Graveyard,DC=example,DC=com'
+                    defaultPassword = $DefaultPassword
+                }
+                sync = @{
+                    enableBeforeStartDays = 7
+                    deletionRetentionDays = 90
+                }
+                state = @{
+                    path = '.\state\sync-state.json'
+                }
+                reporting = @{
+                    outputDirectory = '.\reports\output'
+                }
+            } | ConvertTo-Json -Depth 10
+        }
     }
 
     It 'delegates the main sync entry script to Invoke-SfAdSyncRun' {
@@ -91,6 +150,226 @@ Describe 'Script entrypoints' {
 
         $result.success | Should -BeTrue
         $result.mappingCount | Should -Be 3
+    }
+
+    It 'prompts for placeholder secret values and stores them in process environment variables' {
+        $configPath = Join-Path $TestDrive 'interactive-config.json'
+        $mappingPath = Join-Path $TestDrive 'interactive-mapping.json'
+        $invokeStubPath = Join-Path $TestDrive 'invoke-sync-stub.ps1'
+
+        (New-InteractiveConfigContent -ClientId 'companyid' -ClientSecret 'replace-me' -DefaultPassword 'replace-this-password' -AdServer 'replace-me' -AdUsername 'replace-this-username' -AdBindPassword 'replace-this-password') | Set-Content -Path $configPath
+        '{}' | Set-Content -Path $mappingPath
+        @'
+param(
+    [string]$ConfigPath,
+    [string]$MappingConfigPath,
+    [string]$Mode,
+    [switch]$DryRun
+)
+
+[pscustomobject]@{
+    configPath = $ConfigPath
+    mappingConfigPath = $MappingConfigPath
+    mode = $Mode
+    dryRun = [bool]$DryRun
+    env = @{
+        clientId = [System.Environment]::GetEnvironmentVariable('TEST_SF_CLIENT_ID', 'Process')
+        clientSecret = [System.Environment]::GetEnvironmentVariable('TEST_SF_CLIENT_SECRET', 'Process')
+        defaultPassword = [System.Environment]::GetEnvironmentVariable('TEST_AD_PASSWORD', 'Process')
+        adServer = [System.Environment]::GetEnvironmentVariable('TEST_AD_SERVER', 'Process')
+        adUsername = [System.Environment]::GetEnvironmentVariable('TEST_AD_USERNAME', 'Process')
+        adBindPassword = [System.Environment]::GetEnvironmentVariable('TEST_AD_BIND_PASSWORD', 'Process')
+    }
+} | ConvertTo-Json -Depth 10 -Compress
+'@ | Set-Content -Path $invokeStubPath
+
+        foreach ($name in @('TEST_SF_CLIENT_ID', 'TEST_SF_CLIENT_SECRET', 'TEST_AD_PASSWORD', 'TEST_AD_SERVER', 'TEST_AD_USERNAME', 'TEST_AD_BIND_PASSWORD')) {
+            [System.Environment]::SetEnvironmentVariable($name, $null, 'Process')
+        }
+
+        Mock Join-Path {
+            $invokeStubPath
+        } -ParameterFilter { $ChildPath -eq 'src/Invoke-SfAdSync.ps1' }
+
+        $promptValues = @{
+            'Enter the SuccessFactors OAuth client id' = 'interactive-client-id'
+            'Enter the SuccessFactors OAuth client secret' = 'interactive-client-secret'
+            'Enter the default AD password for newly created users' = 'interactive-default-password'
+            'Enter the AD server or domain controller hostname' = 'dc01.example.com'
+            'Enter the AD bind username' = 'EXAMPLE\svc_sfadsync'
+            'Enter the AD bind password' = 'interactive-bind-password'
+        }
+
+        Mock Read-Host {
+            if ($AsSecureString) {
+                return ConvertTo-SecureString -String $promptValues[$Prompt] -AsPlainText -Force
+            }
+
+            return $promptValues[$Prompt]
+        }
+
+        try {
+            function global:Get-CimInstance {
+                [pscustomobject]@{ PartOfDomain = $false }
+            }
+
+            $result = & "$PSScriptRoot/../scripts/Invoke-SfAdSyncInteractive.ps1" -ConfigPath $configPath -MappingConfigPath $mappingPath -Mode Full -DryRun | ConvertFrom-Json -Depth 10
+
+            $result.mode | Should -Be 'Full'
+            $result.dryRun | Should -BeTrue
+            $result.env.clientId | Should -Be 'interactive-client-id'
+            $result.env.clientSecret | Should -Be 'interactive-client-secret'
+            $result.env.defaultPassword | Should -Be 'interactive-default-password'
+            $result.env.adServer | Should -Be 'dc01.example.com'
+            $result.env.adUsername | Should -Be 'EXAMPLE\svc_sfadsync'
+            $result.env.adBindPassword | Should -Be 'interactive-bind-password'
+            Assert-MockCalled Read-Host -Times 6 -Exactly
+        } finally {
+            Remove-Item Function:\Get-CimInstance -ErrorAction SilentlyContinue
+            foreach ($name in @('TEST_SF_CLIENT_ID', 'TEST_SF_CLIENT_SECRET', 'TEST_AD_PASSWORD', 'TEST_AD_SERVER', 'TEST_AD_USERNAME', 'TEST_AD_BIND_PASSWORD')) {
+                [System.Environment]::SetEnvironmentVariable($name, $null, 'Process')
+            }
+        }
+    }
+
+    It 'skips prompting when environment-backed secrets are already populated' {
+        $configPath = Join-Path $TestDrive 'interactive-config-existing-env.json'
+        $mappingPath = Join-Path $TestDrive 'interactive-mapping-existing-env.json'
+        $invokeStubPath = Join-Path $TestDrive 'invoke-sync-stub-existing-env.ps1'
+
+        (New-InteractiveConfigContent -ClientId 'replace-me' -ClientSecret 'replace-this-secret' -DefaultPassword 'replace-this-password') | Set-Content -Path $configPath
+        '{}' | Set-Content -Path $mappingPath
+        @'
+param(
+    [string]$ConfigPath,
+    [string]$MappingConfigPath,
+    [string]$Mode,
+    [switch]$DryRun
+)
+
+[pscustomobject]@{
+    configPath = $ConfigPath
+    mappingConfigPath = $MappingConfigPath
+    mode = $Mode
+    dryRun = [bool]$DryRun
+    env = @{
+        clientId = [System.Environment]::GetEnvironmentVariable('TEST_SF_CLIENT_ID', 'Process')
+        clientSecret = [System.Environment]::GetEnvironmentVariable('TEST_SF_CLIENT_SECRET', 'Process')
+        defaultPassword = [System.Environment]::GetEnvironmentVariable('TEST_AD_PASSWORD', 'Process')
+        adServer = [System.Environment]::GetEnvironmentVariable('TEST_AD_SERVER', 'Process')
+        adUsername = [System.Environment]::GetEnvironmentVariable('TEST_AD_USERNAME', 'Process')
+        adBindPassword = [System.Environment]::GetEnvironmentVariable('TEST_AD_BIND_PASSWORD', 'Process')
+    }
+} | ConvertTo-Json -Depth 10 -Compress
+'@ | Set-Content -Path $invokeStubPath
+
+        [System.Environment]::SetEnvironmentVariable('TEST_SF_CLIENT_ID', 'env-client-id', 'Process')
+        [System.Environment]::SetEnvironmentVariable('TEST_SF_CLIENT_SECRET', 'env-client-secret', 'Process')
+        [System.Environment]::SetEnvironmentVariable('TEST_AD_PASSWORD', 'env-default-password', 'Process')
+        [System.Environment]::SetEnvironmentVariable('TEST_AD_SERVER', $null, 'Process')
+        [System.Environment]::SetEnvironmentVariable('TEST_AD_USERNAME', $null, 'Process')
+        [System.Environment]::SetEnvironmentVariable('TEST_AD_BIND_PASSWORD', $null, 'Process')
+
+        Mock Join-Path {
+            $invokeStubPath
+        } -ParameterFilter { $ChildPath -eq 'src/Invoke-SfAdSync.ps1' }
+        Mock Read-Host { throw 'Read-Host should not be called when required process environment variables are already set.' }
+
+        try {
+            function global:Get-CimInstance {
+                [pscustomobject]@{ PartOfDomain = $true }
+            }
+
+            $result = & "$PSScriptRoot/../scripts/Invoke-SfAdSyncInteractive.ps1" -ConfigPath $configPath -MappingConfigPath $mappingPath | ConvertFrom-Json -Depth 10
+
+            $result.mode | Should -Be 'Delta'
+            $result.dryRun | Should -BeFalse
+            $result.env.clientId | Should -Be 'env-client-id'
+            $result.env.clientSecret | Should -Be 'env-client-secret'
+            $result.env.defaultPassword | Should -Be 'env-default-password'
+            $result.env.adServer | Should -Be ''
+            $result.env.adUsername | Should -Be ''
+            $result.env.adBindPassword | Should -Be ''
+            Assert-MockCalled Read-Host -Times 0 -Exactly
+        } finally {
+            Remove-Item Function:\Get-CimInstance -ErrorAction SilentlyContinue
+            foreach ($name in @('TEST_SF_CLIENT_ID', 'TEST_SF_CLIENT_SECRET', 'TEST_AD_PASSWORD', 'TEST_AD_SERVER', 'TEST_AD_USERNAME', 'TEST_AD_BIND_PASSWORD')) {
+                [System.Environment]::SetEnvironmentVariable($name, $null, 'Process')
+            }
+        }
+    }
+
+    It 're-prompts until blank interactive values are replaced with non-empty values' {
+        $configPath = Join-Path $TestDrive 'interactive-config-retry.json'
+        $mappingPath = Join-Path $TestDrive 'interactive-mapping-retry.json'
+        $invokeStubPath = Join-Path $TestDrive 'invoke-sync-stub-retry.ps1'
+
+        (New-InteractiveConfigContent -ClientId 'replace-me' -ClientSecret 'replace-this-secret' -DefaultPassword 'replace-this-password') | Set-Content -Path $configPath
+        '{}' | Set-Content -Path $mappingPath
+        @'
+param(
+    [string]$ConfigPath,
+    [string]$MappingConfigPath,
+    [string]$Mode,
+    [switch]$DryRun
+)
+
+[pscustomobject]@{
+    env = @{
+        clientId = [System.Environment]::GetEnvironmentVariable('TEST_SF_CLIENT_ID', 'Process')
+        clientSecret = [System.Environment]::GetEnvironmentVariable('TEST_SF_CLIENT_SECRET', 'Process')
+        defaultPassword = [System.Environment]::GetEnvironmentVariable('TEST_AD_PASSWORD', 'Process')
+    }
+} | ConvertTo-Json -Depth 10 -Compress
+'@ | Set-Content -Path $invokeStubPath
+
+        foreach ($name in @('TEST_SF_CLIENT_ID', 'TEST_SF_CLIENT_SECRET', 'TEST_AD_PASSWORD')) {
+            [System.Environment]::SetEnvironmentVariable($name, $null, 'Process')
+        }
+
+        Mock Join-Path {
+            $invokeStubPath
+        } -ParameterFilter { $ChildPath -eq 'src/Invoke-SfAdSync.ps1' }
+
+        $promptResponses = @{
+            'Enter the SuccessFactors OAuth client id' = @('', 'interactive-client-id')
+            'Enter the SuccessFactors OAuth client secret' = @(' ', 'interactive-client-secret')
+            'Enter the default AD password for newly created users' = @(' ', 'interactive-default-password')
+        }
+        $promptIndexes = @{}
+
+        Mock Read-Host {
+            if (-not $promptIndexes.ContainsKey($Prompt)) {
+                $promptIndexes[$Prompt] = 0
+            }
+
+            $response = $promptResponses[$Prompt][$promptIndexes[$Prompt]]
+            $promptIndexes[$Prompt] += 1
+
+            if ($AsSecureString) {
+                return ConvertTo-SecureString -String $response -AsPlainText -Force
+            }
+
+            return $response
+        }
+
+        try {
+            function global:Get-CimInstance {
+                [pscustomobject]@{ PartOfDomain = $true }
+            }
+
+            $result = & "$PSScriptRoot/../scripts/Invoke-SfAdSyncInteractive.ps1" -ConfigPath $configPath -MappingConfigPath $mappingPath | ConvertFrom-Json -Depth 10
+
+            $result.env.clientId | Should -Be 'interactive-client-id'
+            $result.env.clientSecret | Should -Be 'interactive-client-secret'
+            $result.env.defaultPassword | Should -Be 'interactive-default-password'
+            Assert-MockCalled Read-Host -Times 6 -Exactly
+        } finally {
+            Remove-Item Function:\Get-CimInstance -ErrorAction SilentlyContinue
+            foreach ($name in @('TEST_SF_CLIENT_ID', 'TEST_SF_CLIENT_SECRET', 'TEST_AD_PASSWORD')) {
+                [System.Environment]::SetEnvironmentVariable($name, $null, 'Process')
+            }
+        }
     }
 
     It 'returns sync status from local state and report files in json mode' {
