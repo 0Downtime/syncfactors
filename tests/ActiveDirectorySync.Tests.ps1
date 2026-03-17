@@ -72,6 +72,29 @@ Describe 'ActiveDirectorySync module' {
         $result.UserParameters.UserPrincipalName | Should -Be 'jamie.doe@example.com'
     }
 
+    It 'passes non-native AD attributes through OtherAttributes on user creation' {
+        $worker = [pscustomobject]@{
+            firstName = 'Jamie'
+            lastName = 'Doe'
+            department = 'IT'
+        }
+
+        $result = New-SfAdUser -Config $global:AdTestConfig -Worker $worker -WorkerId '1001' -Attributes @{
+            UserPrincipalName = 'jamie.doe@example.com'
+            mail = 'jamie.doe@example.com'
+            physicalDeliveryOfficeName = 'New York'
+            department = 'IT'
+            company = 'CORP'
+        } -DryRun
+
+        $result.UserParameters.ContainsKey('mail') | Should -BeFalse
+        $result.UserParameters.ContainsKey('physicalDeliveryOfficeName') | Should -BeFalse
+        $result.UserParameters.OtherAttributes['mail'] | Should -Be 'jamie.doe@example.com'
+        $result.UserParameters.OtherAttributes['physicalDeliveryOfficeName'] | Should -Be 'New York'
+        $result.UserParameters.OtherAttributes['department'] | Should -Be 'IT'
+        $result.UserParameters.OtherAttributes['company'] | Should -Be 'CORP'
+    }
+
     It 'returns dry-run metadata for attribute updates and restores' {
         $user = [pscustomobject]@{ SamAccountName = 'jdoe' }
         $update = Set-SfAdUserAttributes -Config $global:AdTestConfig -User $user -Changes @{ title = 'Lead' } -DryRun

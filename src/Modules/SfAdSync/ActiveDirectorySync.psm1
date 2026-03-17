@@ -321,11 +321,22 @@ function New-SfAdUser {
         ChangePasswordAtLogon = $true
     }
 
+    $otherAttributes = @{}
+
     foreach ($key in $Attributes.Keys) {
         if ($newUserParams.ContainsKey($key)) {
             continue
         }
-        $newUserParams[$key] = $Attributes[$key]
+
+        if ([string]::IsNullOrWhiteSpace("$($Attributes[$key])")) {
+            continue
+        }
+
+        $otherAttributes[$key] = $Attributes[$key]
+    }
+
+    if ($otherAttributes.Count -gt 0) {
+        $newUserParams['OtherAttributes'] = $otherAttributes
     }
 
     if ($DryRun) {
