@@ -1,0 +1,51 @@
+rules:
+  - id: powershell-no-invoke-expression
+    message: Avoid Invoke-Expression and iex. They execute dynamically constructed PowerShell and are a common code-execution vector.
+    severity: ERROR
+    languages:
+      - powershell
+    metadata:
+      category: security
+      technology:
+        - powershell
+      confidence: high
+    patterns:
+      - pattern-either:
+          - pattern: Invoke-Expression $EXPR
+          - pattern: iex $EXPR
+
+  - id: powershell-no-encoded-command
+    message: Avoid -EncodedCommand. Encoded PowerShell command execution obscures behavior and is frequently abused.
+    severity: ERROR
+    languages:
+      - powershell
+    metadata:
+      category: security
+      technology:
+        - powershell
+      confidence: medium
+    pattern-regex: (?i)-EncodedCommand\b
+
+  - id: powershell-no-webclient-downloadstring
+    message: Avoid WebClient DownloadString and DownloadData patterns. Prefer explicit, validated HTTP calls without dynamic execution.
+    severity: ERROR
+    languages:
+      - powershell
+    metadata:
+      category: security
+      technology:
+        - powershell
+      confidence: medium
+    pattern-regex: (?is)(System\.Net\.WebClient|New-Object\s+(?:System\.)?Net\.WebClient).*Download(?:String|Data)\s*\(
+
+  - id: powershell-no-download-pipe-to-exec
+    message: Avoid piping downloaded content into Invoke-Expression or iex.
+    severity: ERROR
+    languages:
+      - powershell
+    metadata:
+      category: security
+      technology:
+        - powershell
+      confidence: high
+    pattern-regex: (?is)(Invoke-WebRequest|Invoke-RestMethod|iwr|irm).*?\|\s*(Invoke-Expression|iex)\b
