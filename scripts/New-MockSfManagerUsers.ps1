@@ -34,6 +34,11 @@ function Get-ResolvedPathOrJoin {
 }
 
 function ConvertTo-ManagerSeedSecureString {
+    [System.Diagnostics.CodeAnalysis.SuppressMessageAttribute(
+        'PSAvoidUsingConvertToSecureStringWithPlainText',
+        '',
+        Justification = 'This helper consumes runtime config secrets and must convert them before building AD credentials and new-user passwords.'
+    )]
     param(
         [Parameter(Mandatory)]
         [AllowEmptyString()]
