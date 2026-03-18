@@ -7,6 +7,8 @@ param(
     [string]$CommandName = 'synctui',
     [string]$ProjectRoot,
     [string]$ShellProfilePath,
+    [switch]$Uninstall,
+    [switch]$RemovePathUpdate,
     [switch]$SkipPathUpdate,
     [switch]$Force
 )
@@ -127,6 +129,82 @@ function Test-SfAdPathContainsDirectory {
     }
 
     return $false
+}
+
+function Remove-SfAdPathDirectory {
+    param(
+        [AllowNull()]
+        [string]$PathValue,
+        [Parameter(Mandatory)]
+        [string]$Directory
+    )
+
+    if ([string]::IsNullOrWhiteSpace($PathValue)) {
+        return ''
+    }
+
+    $normalizedDirectory = [System.IO.Path]::GetFullPath($Directory).TrimEnd([System.IO.Path]::DirectorySeparatorChar, [System.IO.Path]::AltDirectorySeparatorChar)
+    $entries = @()
+    foreach ($entry in ($PathValue -split [System.IO.Path]::PathSeparator)) {
+        if ([string]::IsNullOrWhiteSpace($entry)) {
+            continue
+        }
+
+        $normalizedEntry = $null
+        try {
+            $normalizedEntry = [System.IO.Path]::GetFullPath($entry).TrimEnd([System.IO.Path]::DirectorySeparatorChar, [System.IO.Path]::AltDirectorySeparatorChar)
+        } catch {
+            $normalizedEntry = $null
+        }
+
+        if ($null -ne $normalizedEntry -and $normalizedEntry -ieq $normalizedDirectory) {
+            continue
+        }
+
+        $entries += $entry
+    }
+
+    return [string]::Join([System.IO.Path]::PathSeparator, $entries)
+}
+
+function Get-SfAdInstallMetadataPath {
+    param(
+        [Parameter(Mandatory)]
+        [string]$ResolvedInstallDirectory,
+        [Parameter(Mandatory)]
+        [string]$CommandName
+    )
+
+    return Join-Path -Path $ResolvedInstallDirectory -ChildPath ".$CommandName.install.json"
+}
+
+function Read-SfAdInstallMetadata {
+    param(
+        [Parameter(Mandatory)]
+        [string]$MetadataPath
+    )
+
+    if (-not (Test-Path -Path $MetadataPath -PathType Leaf)) {
+        return $null
+    }
+
+    return Get-Content -Path $MetadataPath -Raw | ConvertFrom-Json -Depth 20
+}
+
+function Save-SfAdInstallMetadata {
+    param(
+        [Parameter(Mandatory)]
+        [string]$MetadataPath,
+        [Parameter(Mandatory)]
+        [pscustomobject]$Metadata
+    )
+
+    $metadataDirectory = Split-Path -Path $MetadataPath -Parent
+    if ($metadataDirectory -and -not (Test-Path -Path $metadataDirectory -PathType Container)) {
+        New-Item -Path $metadataDirectory -ItemType Directory -Force | Out-Null
+    }
+
+    $Metadata | ConvertTo-Json -Depth 10 | Set-Content -Path $MetadataPath
 }
 
 function ConvertTo-SfAdPowerShellLiteral {
@@ -312,6 +390,7 @@ function Add-SfAdInstallDirectoryToPath {
             updated = $false
             currentSessionUpdated = $false
             shellProfilePath = $null
+            mode = 'None'
             message = 'Install directory is already available on PATH.'
         }
     }
@@ -335,6 +414,7 @@ function Add-SfAdInstallDirectoryToPath {
             updated = $true
             currentSessionUpdated = $true
             shellProfilePath = $null
+            mode = 'UserPath'
             message = 'Added install directory to the Windows user PATH.'
         }
     }
@@ -365,7 +445,140 @@ function Add-SfAdInstallDirectoryToPath {
         updated = $true
         currentSessionUpdated = $true
         shellProfilePath = $profilePath
+        mode = 'ShellProfile'
         message = "Added install directory to PATH and persisted it in '$profilePath'."
+    }
+}
+
+function Remove-SfAdInstallDirectoryFromPath {
+    param(
+        [Parameter(Mandatory)]
+        [string]$ResolvedInstallDirectory,
+        [AllowNull()]
+        [pscustomobject]$Metadata,
+        [string]$ShellProfilePathOverride
+    )
+
+    if ($null -eq $Metadata -or -not $Metadata.pathUpdated) {
+        return [pscustomobject]@{
+            updated = $false
+            currentSessionUpdated = $false
+            shellProfilePath = $null
+            mode = 'None'
+            message = 'PATH cleanup skipped because the installer metadata did not record a PATH update.'
+        }
+    }
+
+    $currentSessionUpdated = $false
+    if (Test-SfAdPathContainsDirectory -PathValue $env:PATH -Directory $ResolvedInstallDirectory) {
+        $env:PATH = Remove-SfAdPathDirectory -PathValue $env:PATH -Directory $ResolvedInstallDirectory
+        $currentSessionUpdated = $true
+    }
+
+    $mode = "$($Metadata.pathUpdateMode)"
+    switch ($mode) {
+        'UserPath' {
+            $userPath = [System.Environment]::GetEnvironmentVariable('Path', 'User')
+            $newUserPath = Remove-SfAdPathDirectory -PathValue $userPath -Directory $ResolvedInstallDirectory
+            if ($newUserPath -ne $userPath) {
+                [System.Environment]::SetEnvironmentVariable('Path', $newUserPath, 'User')
+            }
+
+            return [pscustomobject]@{
+                updated = $true
+                currentSessionUpdated = $currentSessionUpdated
+                shellProfilePath = $null
+                mode = 'UserPath'
+                message = 'Removed install directory from the Windows user PATH.'
+            }
+        }
+        'ShellProfile' {
+            $profilePath = if (-not [string]::IsNullOrWhiteSpace($ShellProfilePathOverride)) {
+                [System.IO.Path]::GetFullPath($ShellProfilePathOverride)
+            } elseif (-not [string]::IsNullOrWhiteSpace("$($Metadata.shellProfilePath)")) {
+                [System.IO.Path]::GetFullPath("$($Metadata.shellProfilePath)")
+            } else {
+                Get-SfAdShellProfilePath
+            }
+
+            $escapedDirectory = ConvertTo-SfAdDoubleQuotedShellValue -Value $ResolvedInstallDirectory
+            $exportLine = "export PATH=""${escapedDirectory}:`$PATH"""
+            if (Test-Path -Path $profilePath -PathType Leaf) {
+                $remainingLines = @(
+                    Get-Content -Path $profilePath |
+                        Where-Object { $_ -ne $exportLine }
+                )
+                Set-Content -Path $profilePath -Value $remainingLines
+            }
+
+            return [pscustomobject]@{
+                updated = $true
+                currentSessionUpdated = $currentSessionUpdated
+                shellProfilePath = $profilePath
+                mode = 'ShellProfile'
+                message = "Removed the installer PATH line from '$profilePath'."
+            }
+        }
+        default {
+            return [pscustomobject]@{
+                updated = $false
+                currentSessionUpdated = $currentSessionUpdated
+                shellProfilePath = $null
+                mode = 'None'
+                message = 'PATH cleanup skipped because the installer metadata did not record a removable PATH update mode.'
+            }
+        }
+    }
+}
+
+$resolvedInstallDirectory = if ([string]::IsNullOrWhiteSpace($InstallDirectory)) {
+    [System.IO.Path]::GetFullPath((Get-SfAdDefaultInstallDirectory))
+} else {
+    [System.IO.Path]::GetFullPath($InstallDirectory)
+}
+$shellCommandPath = Join-Path -Path $resolvedInstallDirectory -ChildPath $CommandName
+$cmdCommandPath = Join-Path -Path $resolvedInstallDirectory -ChildPath "$CommandName.cmd"
+$ps1CommandPath = Join-Path -Path $resolvedInstallDirectory -ChildPath "$CommandName.ps1"
+$metadataPath = Get-SfAdInstallMetadataPath -ResolvedInstallDirectory $resolvedInstallDirectory -CommandName $CommandName
+$existingMetadata = Read-SfAdInstallMetadata -MetadataPath $metadataPath
+
+if ($Uninstall) {
+    $removedPaths = @()
+
+    if ($PSCmdlet.ShouldProcess($resolvedInstallDirectory, "Uninstall terminal command '$CommandName'")) {
+        foreach ($path in @($shellCommandPath, $cmdCommandPath, $ps1CommandPath, $metadataPath)) {
+            if (Test-Path -Path $path) {
+                Remove-Item -Path $path -Force
+                $removedPaths += $path
+            }
+        }
+    }
+
+    $pathRemoval = [pscustomobject]@{
+        updated = $false
+        currentSessionUpdated = $false
+        shellProfilePath = $null
+        mode = 'None'
+        message = 'PATH cleanup skipped.'
+    }
+
+    if ($RemovePathUpdate -and $PSCmdlet.ShouldProcess($resolvedInstallDirectory, "Remove PATH registration for '$CommandName'")) {
+        $pathRemoval = Remove-SfAdInstallDirectoryFromPath -ResolvedInstallDirectory $resolvedInstallDirectory -Metadata $existingMetadata -ShellProfilePathOverride $ShellProfilePath
+    }
+
+    return [pscustomobject]@{
+        commandName = $CommandName
+        installDirectory = $resolvedInstallDirectory
+        shellCommandPath = $shellCommandPath
+        cmdCommandPath = $cmdCommandPath
+        ps1CommandPath = $ps1CommandPath
+        metadataPath = $metadataPath
+        removedPaths = $removedPaths
+        removed = ($removedPaths.Count -gt 0)
+        pathUpdated = [bool]$pathRemoval.updated
+        currentSessionPathUpdated = [bool]$pathRemoval.currentSessionUpdated
+        shellProfilePath = $pathRemoval.shellProfilePath
+        pathUpdateMessage = $pathRemoval.message
     }
 }
 
@@ -380,16 +593,7 @@ if (-not (Test-Path -Path $dashboardPath -PathType Leaf)) {
 $resolvedConfigPath = Resolve-SfAdRequiredConfigPath -Path $ConfigPath -ConfigDirectory $configDirectory
 $resolvedMappingConfigPath = Resolve-SfAdOptionalMappingConfigPath -Path $MappingConfigPath -ConfigDirectory $configDirectory
 
-if ([string]::IsNullOrWhiteSpace($InstallDirectory)) {
-    $InstallDirectory = Get-SfAdDefaultInstallDirectory
-}
-
-$resolvedInstallDirectory = [System.IO.Path]::GetFullPath($InstallDirectory)
-$shellCommandPath = Join-Path -Path $resolvedInstallDirectory -ChildPath $CommandName
-$cmdCommandPath = Join-Path -Path $resolvedInstallDirectory -ChildPath "$CommandName.cmd"
-$ps1CommandPath = Join-Path -Path $resolvedInstallDirectory -ChildPath "$CommandName.ps1"
-
-foreach ($path in @($shellCommandPath, $cmdCommandPath, $ps1CommandPath)) {
+foreach ($path in @($shellCommandPath, $cmdCommandPath, $ps1CommandPath, $metadataPath)) {
     if ((Test-Path -Path $path) -and -not $Force) {
         throw "The terminal command path '$path' already exists. Re-run with -Force to overwrite it."
     }
@@ -424,12 +628,31 @@ $pathUpdate = [pscustomobject]@{
     updated = $false
     currentSessionUpdated = $false
     shellProfilePath = $null
+    mode = 'None'
     message = 'PATH update skipped.'
 }
 
 if (-not $SkipPathUpdate -and $PSCmdlet.ShouldProcess($resolvedInstallDirectory, "Register '$resolvedInstallDirectory' on PATH")) {
     $pathUpdate = Add-SfAdInstallDirectoryToPath -ResolvedInstallDirectory $resolvedInstallDirectory -ShellProfilePathOverride $ShellProfilePath
 }
+
+$metadata = [pscustomobject]@{
+    commandName = $CommandName
+    projectRoot = $resolvedProjectRoot
+    installDirectory = $resolvedInstallDirectory
+    configPath = $resolvedConfigPath
+    mappingConfigPath = $resolvedMappingConfigPath
+    dashboardPath = $dashboardPath
+    shellCommandPath = $shellCommandPath
+    cmdCommandPath = $cmdCommandPath
+    ps1CommandPath = $ps1CommandPath
+    shellProfilePath = $pathUpdate.shellProfilePath
+    pathUpdated = [bool]$pathUpdate.updated
+    pathUpdateMode = $pathUpdate.mode
+    installedAt = (Get-Date).ToString('o')
+}
+
+Save-SfAdInstallMetadata -MetadataPath $metadataPath -Metadata $metadata
 
 [pscustomobject]@{
     commandName = $CommandName
@@ -441,6 +664,7 @@ if (-not $SkipPathUpdate -and $PSCmdlet.ShouldProcess($resolvedInstallDirectory,
     shellCommandPath = $shellCommandPath
     cmdCommandPath = $cmdCommandPath
     ps1CommandPath = $ps1CommandPath
+    metadataPath = $metadataPath
     pathUpdated = [bool]$pathUpdate.updated
     currentSessionPathUpdated = [bool]$pathUpdate.currentSessionUpdated
     shellProfilePath = $pathUpdate.shellProfilePath

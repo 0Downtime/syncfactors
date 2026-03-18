@@ -100,6 +100,18 @@ synctui
 
 The command supports the dashboard's normal monitor flags from [`scripts/Watch-SfAdSyncMonitor.ps1`](/Users/chrisbrien/dev/github.com/sf-ad-sync/scripts/Watch-SfAdSyncMonitor.ps1), for example `synctui -RunOnce -AsText`.
 
+To uninstall the command shims later:
+
+```powershell
+pwsh ./scripts/Install-SfAdSyncTerminalCommand.ps1 -Uninstall
+```
+
+If you also want the installer to remove the PATH entry it added, use:
+
+```powershell
+pwsh ./scripts/Install-SfAdSyncTerminalCommand.ps1 -Uninstall -RemovePathUpdate
+```
+
 ```powershell
 pwsh ./src/Invoke-SfAdSync.ps1 `
   -ConfigPath ./config/local.real-successfactors.real-ad.sync-config.json `

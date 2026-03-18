@@ -685,12 +685,14 @@ param(
         Test-Path -Path $result.shellCommandPath | Should -BeTrue
         Test-Path -Path $result.cmdCommandPath | Should -BeTrue
         Test-Path -Path $result.ps1CommandPath | Should -BeTrue
+        Test-Path -Path $result.metadataPath | Should -BeTrue
 
         (Get-Content -Path $result.shellCommandPath -Raw) | Should -Match ([regex]::Escape([System.IO.Path]::GetFullPath((Join-Path $scriptsDirectory 'Watch-SfAdSyncMonitor.ps1'))))
         (Get-Content -Path $result.shellCommandPath -Raw) | Should -Match ([regex]::Escape([System.IO.Path]::GetFullPath($configPath)))
         (Get-Content -Path $result.shellCommandPath -Raw) | Should -Match ([regex]::Escape([System.IO.Path]::GetFullPath($mappingPath)))
         (Get-Content -Path $result.cmdCommandPath -Raw) | Should -Match 'pwsh'
         (Get-Content -Path $result.ps1CommandPath -Raw) | Should -Match 'MappingConfigPath'
+        ((Get-Content -Path $result.metadataPath -Raw) | ConvertFrom-Json).commandName | Should -Be 'synctui'
     }
 
     It 'runs the generated synctui powershell shim with named config forwarding and extra monitor args' {
@@ -772,6 +774,79 @@ param(
 
             ($env:PATH -split [System.IO.Path]::PathSeparator) | Should -Contain ([System.IO.Path]::GetFullPath($installDirectory))
             (Get-Content -Path $profilePath -Raw) | Should -Match ([regex]::Escape([System.IO.Path]::GetFullPath($installDirectory)))
+        } finally {
+            $env:PATH = $originalPath
+            $env:SHELL = $originalShell
+        }
+    }
+
+    It 'uninstalls synctui shims and the install metadata file' {
+        $projectRoot = Join-Path $TestDrive 'uninstall-project'
+        $configDirectory = Join-Path $projectRoot 'config'
+        $scriptsDirectory = Join-Path $projectRoot 'scripts'
+        $installDirectory = Join-Path $TestDrive 'uninstall-bin'
+        $configPath = Join-Path $configDirectory 'tenant.sync-config.json'
+        $mappingPath = Join-Path $configDirectory 'tenant.mapping-config.json'
+
+        New-Item -Path $configDirectory -ItemType Directory -Force | Out-Null
+        New-Item -Path $scriptsDirectory -ItemType Directory -Force | Out-Null
+        '{}' | Set-Content -Path $configPath
+        '{}' | Set-Content -Path $mappingPath
+        '# dashboard stub' | Set-Content -Path (Join-Path $scriptsDirectory 'Watch-SfAdSyncMonitor.ps1')
+
+        $installResult = & "$PSScriptRoot/../scripts/Install-SfAdSyncTerminalCommand.ps1" `
+            -ProjectRoot $projectRoot `
+            -InstallDirectory $installDirectory `
+            -ConfigPath $configPath `
+            -MappingConfigPath $mappingPath `
+            -SkipPathUpdate
+
+        $uninstallResult = & "$PSScriptRoot/../scripts/Install-SfAdSyncTerminalCommand.ps1" `
+            -InstallDirectory $installDirectory `
+            -Uninstall
+
+        $uninstallResult.removed | Should -BeTrue
+        $uninstallResult.removedPaths.Count | Should -Be 4
+        Test-Path -Path $installResult.shellCommandPath | Should -BeFalse
+        Test-Path -Path $installResult.cmdCommandPath | Should -BeFalse
+        Test-Path -Path $installResult.ps1CommandPath | Should -BeFalse
+        Test-Path -Path $installResult.metadataPath | Should -BeFalse
+    }
+
+    It 'can uninstall synctui and remove the installer PATH update' {
+        $projectRoot = Join-Path $TestDrive 'uninstall-path-project'
+        $configDirectory = Join-Path $projectRoot 'config'
+        $scriptsDirectory = Join-Path $projectRoot 'scripts'
+        $installDirectory = Join-Path $TestDrive 'uninstall-path-bin'
+        $profilePath = Join-Path $TestDrive 'profiles/.zprofile'
+        $originalPath = $env:PATH
+        $originalShell = $env:SHELL
+
+        New-Item -Path $configDirectory -ItemType Directory -Force | Out-Null
+        New-Item -Path $scriptsDirectory -ItemType Directory -Force | Out-Null
+        '{}' | Set-Content -Path (Join-Path $configDirectory 'local.real.sync-config.json')
+        '{}' | Set-Content -Path (Join-Path $configDirectory 'local.real.mapping-config.json')
+        '# dashboard stub' | Set-Content -Path (Join-Path $scriptsDirectory 'Watch-SfAdSyncMonitor.ps1')
+
+        try {
+            $env:PATH = '/usr/bin'
+            $env:SHELL = '/bin/zsh'
+
+            & "$PSScriptRoot/../scripts/Install-SfAdSyncTerminalCommand.ps1" `
+                -ProjectRoot $projectRoot `
+                -InstallDirectory $installDirectory `
+                -ShellProfilePath $profilePath | Out-Null
+
+            $result = & "$PSScriptRoot/../scripts/Install-SfAdSyncTerminalCommand.ps1" `
+                -InstallDirectory $installDirectory `
+                -ShellProfilePath $profilePath `
+                -Uninstall `
+                -RemovePathUpdate
+
+            $result.pathUpdated | Should -BeTrue
+            $result.currentSessionPathUpdated | Should -BeTrue
+            ($env:PATH -split [System.IO.Path]::PathSeparator) | Should -Not -Contain ([System.IO.Path]::GetFullPath($installDirectory))
+            (Get-Content -Path $profilePath -Raw) | Should -Not -Match ([regex]::Escape([System.IO.Path]::GetFullPath($installDirectory)))
         } finally {
             $env:PATH = $originalPath
             $env:SHELL = $originalShell
