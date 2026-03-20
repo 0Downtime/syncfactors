@@ -31,7 +31,7 @@ function Test-SfAdHasProperty {
         return $false
     }
 
-    return $InputObject.PSObject.Properties.Name -contains $PropertyName
+    return $null -ne $InputObject.PSObject.Properties[$PropertyName]
 }
 
 function Assert-SfAdRequiredString {
@@ -67,6 +67,58 @@ function Set-SfAdPropertyValue {
     $InputObject | Add-Member -MemberType NoteProperty -Name $PropertyName -Value $Value -Force
 }
 
+function Get-SfAdAuthMode {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [pscustomobject]$Config
+    )
+
+    $successFactors = $Config.successFactors
+    $hasAuth = Test-SfAdHasProperty -InputObject $successFactors -PropertyName 'auth'
+    $hasLegacyOAuth = Test-SfAdHasProperty -InputObject $successFactors -PropertyName 'oauth'
+
+    if ($hasAuth -and (Test-SfAdHasProperty -InputObject $successFactors.auth -PropertyName 'mode') -and -not [string]::IsNullOrWhiteSpace("$($successFactors.auth.mode)")) {
+        return "$($successFactors.auth.mode)".ToLowerInvariant()
+    }
+
+    if ($hasLegacyOAuth) {
+        return 'oauth'
+    }
+
+    if ($hasAuth -and (Test-SfAdHasProperty -InputObject $successFactors.auth -PropertyName 'basic')) {
+        return 'basic'
+    }
+
+    return 'basic'
+}
+
+function Initialize-SfAdSuccessFactorsAuthConfig {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [pscustomobject]$Config
+    )
+
+    $successFactors = $Config.successFactors
+    if (-not (Test-SfAdHasProperty -InputObject $successFactors -PropertyName 'auth') -or $null -eq $successFactors.auth) {
+        $successFactors | Add-Member -MemberType NoteProperty -Name 'auth' -Value ([pscustomobject]@{}) -Force
+    }
+
+    $auth = $successFactors.auth
+    if (-not (Test-SfAdHasProperty -InputObject $auth -PropertyName 'basic') -or $null -eq $auth.basic) {
+        $auth | Add-Member -MemberType NoteProperty -Name 'basic' -Value ([pscustomobject]@{}) -Force
+    }
+
+    if (-not (Test-SfAdHasProperty -InputObject $auth -PropertyName 'oauth') -or $null -eq $auth.oauth) {
+        $oauthValue = if (Test-SfAdHasProperty -InputObject $successFactors -PropertyName 'oauth') { $successFactors.oauth } else { [pscustomobject]@{} }
+        $auth | Add-Member -MemberType NoteProperty -Name 'oauth' -Value $oauthValue -Force
+    }
+
+    Set-SfAdPropertyValue -InputObject $auth -PropertyName 'mode' -Value (Get-SfAdAuthMode -Config $Config)
+    return $auth
+}
+
 function Resolve-SfAdSyncSecrets {
     [CmdletBinding()]
     param(
@@ -76,7 +128,11 @@ function Resolve-SfAdSyncSecrets {
 
     $secrets = if (Test-SfAdHasProperty -InputObject $Config -PropertyName 'secrets') { $Config.secrets } else { $null }
 
-    $oauth = $Config.successFactors.oauth
+    $auth = Initialize-SfAdSuccessFactorsAuthConfig -Config $Config
+    $basic = $auth.basic
+    $oauth = $auth.oauth
+    Set-SfAdPropertyValue -InputObject $basic -PropertyName 'username' -Value (Get-SfAdResolvedSetting -Value $(if (Test-SfAdHasProperty -InputObject $basic -PropertyName 'username') { $basic.username } else { $null }) -EnvironmentVariableName $(if ($secrets -and (Test-SfAdHasProperty -InputObject $secrets -PropertyName 'successFactorsUsernameEnv')) { $secrets.successFactorsUsernameEnv } else { 'SF_AD_SYNC_SF_USERNAME' }))
+    Set-SfAdPropertyValue -InputObject $basic -PropertyName 'password' -Value (Get-SfAdResolvedSetting -Value $(if (Test-SfAdHasProperty -InputObject $basic -PropertyName 'password') { $basic.password } else { $null }) -EnvironmentVariableName $(if ($secrets -and (Test-SfAdHasProperty -InputObject $secrets -PropertyName 'successFactorsPasswordEnv')) { $secrets.successFactorsPasswordEnv } else { 'SF_AD_SYNC_SF_PASSWORD' }))
     Set-SfAdPropertyValue -InputObject $oauth -PropertyName 'clientId' -Value (Get-SfAdResolvedSetting -Value $(if (Test-SfAdHasProperty -InputObject $oauth -PropertyName 'clientId') { $oauth.clientId } else { $null }) -EnvironmentVariableName $(if ($secrets -and (Test-SfAdHasProperty -InputObject $secrets -PropertyName 'successFactorsClientIdEnv')) { $secrets.successFactorsClientIdEnv } else { 'SF_AD_SYNC_SF_CLIENT_ID' }))
     Set-SfAdPropertyValue -InputObject $oauth -PropertyName 'clientSecret' -Value (Get-SfAdResolvedSetting -Value $(if (Test-SfAdHasProperty -InputObject $oauth -PropertyName 'clientSecret') { $oauth.clientSecret } else { $null }) -EnvironmentVariableName $(if ($secrets -and (Test-SfAdHasProperty -InputObject $secrets -PropertyName 'successFactorsClientSecretEnv')) { $secrets.successFactorsClientSecretEnv } else { 'SF_AD_SYNC_SF_CLIENT_SECRET' }))
     Set-SfAdPropertyValue -InputObject $Config.ad -PropertyName 'server' -Value (Get-SfAdResolvedSetting -Value $(if (Test-SfAdHasProperty -InputObject $Config.ad -PropertyName 'server') { $Config.ad.server } else { $null }) -EnvironmentVariableName $(if ($secrets -and (Test-SfAdHasProperty -InputObject $secrets -PropertyName 'adServerEnv')) { $secrets.adServerEnv } else { 'SF_AD_SYNC_AD_SERVER' }))
@@ -180,9 +236,24 @@ function Test-SfAdSyncConfig {
     }
 
     Assert-SfAdRequiredString -Value $Config.successFactors.baseUrl -PropertyPath 'successFactors.baseUrl'
-    Assert-SfAdRequiredString -Value $Config.successFactors.oauth.tokenUrl -PropertyPath 'successFactors.oauth.tokenUrl'
-    Assert-SfAdRequiredString -Value $Config.successFactors.oauth.clientId -PropertyPath 'successFactors.oauth.clientId'
-    Assert-SfAdRequiredString -Value $Config.successFactors.oauth.clientSecret -PropertyPath 'successFactors.oauth.clientSecret'
+    $auth = Initialize-SfAdSuccessFactorsAuthConfig -Config $Config
+    $authMode = Get-SfAdAuthMode -Config $Config
+
+    if (@('basic', 'oauth') -notcontains $authMode) {
+        throw "Sync config must define successFactors.auth.mode as 'basic' or 'oauth'."
+    }
+
+    if ($authMode -eq 'basic') {
+        Assert-SfAdRequiredString -Value $auth.basic.username -PropertyPath 'successFactors.auth.basic.username'
+        Assert-SfAdRequiredString -Value $auth.basic.password -PropertyPath 'successFactors.auth.basic.password'
+    }
+
+    if ($authMode -eq 'oauth') {
+        Assert-SfAdRequiredString -Value $auth.oauth.tokenUrl -PropertyPath 'successFactors.auth.oauth.tokenUrl'
+        Assert-SfAdRequiredString -Value $auth.oauth.clientId -PropertyPath 'successFactors.auth.oauth.clientId'
+        Assert-SfAdRequiredString -Value $auth.oauth.clientSecret -PropertyPath 'successFactors.auth.oauth.clientSecret'
+    }
+
     Assert-SfAdRequiredString -Value $Config.successFactors.query.entitySet -PropertyPath 'successFactors.query.entitySet'
     Assert-SfAdRequiredString -Value $Config.successFactors.query.identityField -PropertyPath 'successFactors.query.identityField'
     Assert-SfAdRequiredString -Value $Config.successFactors.query.deltaField -PropertyPath 'successFactors.query.deltaField'

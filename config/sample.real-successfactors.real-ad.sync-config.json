@@ -1,7 +1,7 @@
 {
   "secrets": {
-    "successFactorsClientIdEnv": "SF_AD_SYNC_SF_CLIENT_ID",
-    "successFactorsClientSecretEnv": "SF_AD_SYNC_SF_CLIENT_SECRET",
+    "successFactorsUsernameEnv": "SF_AD_SYNC_SF_USERNAME",
+    "successFactorsPasswordEnv": "SF_AD_SYNC_SF_PASSWORD",
     "adServerEnv": "SF_AD_SYNC_AD_SERVER",
     "adUsernameEnv": "SF_AD_SYNC_AD_USERNAME",
     "adBindPasswordEnv": "SF_AD_SYNC_AD_BIND_PASSWORD",
@@ -9,11 +9,18 @@
   },
   "successFactors": {
     "baseUrl": "https://api12.successfactors.com/odata/v2",
-    "oauth": {
-      "tokenUrl": "https://example.authentication.successfactors.com/oauth/token",
-      "clientId": "replace-me",
-      "clientSecret": "replace-me",
-      "companyId": "COMPANYID"
+    "auth": {
+      "mode": "basic",
+      "basic": {
+        "username": "replace-me",
+        "password": "replace-me"
+      },
+      "oauth": {
+        "tokenUrl": "https://example.authentication.successfactors.com/oauth/token",
+        "clientId": "",
+        "clientSecret": "",
+        "companyId": ""
+      }
     },
     "query": {
       "entitySet": "PerPerson",

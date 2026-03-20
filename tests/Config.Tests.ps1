@@ -84,6 +84,67 @@ Describe 'Get-SfAdSyncConfig' {
         }
     }
 
+    It 'prefers environment variables for basic auth secret values' {
+        $configPath = Join-Path $TestDrive 'sync-config-basic-auth.json'
+        @'
+{
+  "secrets": {
+    "successFactorsUsernameEnv": "TEST_SF_USERNAME",
+    "successFactorsPasswordEnv": "TEST_SF_PASSWORD",
+    "defaultAdPasswordEnv": "TEST_AD_PASSWORD"
+  },
+  "successFactors": {
+    "baseUrl": "https://example.successfactors.com/odata/v2",
+    "auth": {
+      "basic": {
+        "username": "config-username",
+        "password": "config-password"
+      }
+    },
+    "query": {
+      "entitySet": "PerPerson",
+      "identityField": "personIdExternal",
+      "deltaField": "lastModifiedDateTime",
+      "select": [ "personIdExternal" ],
+      "expand": [ "employmentNav" ]
+    }
+  },
+  "ad": {
+    "identityAttribute": "employeeID",
+    "defaultActiveOu": "OU=Employees,DC=example,DC=com",
+    "graveyardOu": "OU=Graveyard,DC=example,DC=com",
+    "defaultPassword": "config-ad-password"
+  },
+  "sync": {
+    "enableBeforeStartDays": 7,
+    "deletionRetentionDays": 90
+  },
+  "state": {
+    "path": ".\\state\\sync-state.json"
+  },
+  "reporting": {
+    "outputDirectory": ".\\reports\\output"
+  }
+}
+'@ | Set-Content -Path $configPath
+
+        [System.Environment]::SetEnvironmentVariable('TEST_SF_USERNAME', 'env-username')
+        [System.Environment]::SetEnvironmentVariable('TEST_SF_PASSWORD', 'env-password')
+        [System.Environment]::SetEnvironmentVariable('TEST_AD_PASSWORD', 'env-ad-password')
+
+        try {
+            $config = Get-SfAdSyncConfig -Path $configPath
+            $config.successFactors.auth.mode | Should -Be 'basic'
+            $config.successFactors.auth.basic.username | Should -Be 'env-username'
+            $config.successFactors.auth.basic.password | Should -Be 'env-password'
+            $config.ad.defaultPassword | Should -Be 'env-ad-password'
+        } finally {
+            [System.Environment]::SetEnvironmentVariable('TEST_SF_USERNAME', $null)
+            [System.Environment]::SetEnvironmentVariable('TEST_SF_PASSWORD', $null)
+            [System.Environment]::SetEnvironmentVariable('TEST_AD_PASSWORD', $null)
+        }
+    }
+
     It 'ignores blank environment variable secrets and keeps configured values' {
         $configPath = Join-Path $TestDrive 'sync-config-blank-env.json'
         @'
@@ -351,7 +412,7 @@ Describe 'Get-SfAdSyncConfig' {
 }
 '@ | Set-Content -Path $configPath
 
-        { Get-SfAdSyncConfig -Path $configPath } | Should -Throw '*successFactors.oauth.tokenUrl*'
+        { Get-SfAdSyncConfig -Path $configPath } | Should -Throw '*successFactors.auth.oauth.tokenUrl*'
     }
 }
 

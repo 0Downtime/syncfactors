@@ -1,5 +1,43 @@
 Set-StrictMode -Version Latest
 
+function Get-SfAuthMode {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [pscustomobject]$Config
+    )
+
+    $successFactors = $Config.successFactors
+    if ($successFactors.PSObject.Properties.Name -contains 'auth') {
+        $auth = $successFactors.auth
+        if ($auth -and $auth.PSObject.Properties.Name -contains 'mode' -and -not [string]::IsNullOrWhiteSpace("$($auth.mode)")) {
+            return "$($auth.mode)".ToLowerInvariant()
+        }
+    }
+
+    if ($successFactors.PSObject.Properties.Name -contains 'oauth') {
+        return 'oauth'
+    }
+
+    if ($successFactors.PSObject.Properties.Name -contains 'auth' -and $successFactors.auth -and $successFactors.auth.PSObject.Properties.Name -contains 'basic') {
+        return 'basic'
+    }
+
+    return 'basic'
+}
+
+function Get-SfBasicAuthHeaderValue {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [pscustomobject]$Config
+    )
+
+    $basic = $Config.successFactors.auth.basic
+    $credentialBytes = [System.Text.Encoding]::UTF8.GetBytes("$($basic.username):$($basic.password)")
+    return 'Basic ' + [Convert]::ToBase64String($credentialBytes)
+}
+
 function Get-SfSanitizedText {
     [CmdletBinding()]
     param(
@@ -130,26 +168,27 @@ function Get-SfOAuthToken {
         [pscustomobject]$Config
     )
 
-    $tokenUri = $Config.successFactors.oauth.tokenUrl
+    $oauth = if ($Config.successFactors.PSObject.Properties.Name -contains 'auth') { $Config.successFactors.auth.oauth } else { $Config.successFactors.oauth }
+    $tokenUri = $oauth.tokenUrl
     if (-not $tokenUri) {
-        throw "successFactors.oauth.tokenUrl is required."
+        throw "successFactors.auth.oauth.tokenUrl is required."
     }
 
     $body = @{
         grant_type    = 'client_credentials'
-        client_id     = $Config.successFactors.oauth.clientId
-        client_secret = $Config.successFactors.oauth.clientSecret
+        client_id     = $oauth.clientId
+        client_secret = $oauth.clientSecret
     }
 
-    if ($Config.successFactors.oauth.companyId) {
-        $body['company_id'] = $Config.successFactors.oauth.companyId
+    if ($oauth.companyId) {
+        $body['company_id'] = $oauth.companyId
     }
 
     try {
         $response = Invoke-RestMethod -Uri $tokenUri -Method Post -Body $body -ContentType 'application/x-www-form-urlencoded'
     } catch {
         $secrets = @(
-            "$($Config.successFactors.oauth.clientSecret)"
+            "$($oauth.clientSecret)"
         )
         throw (New-SfRequestFailure -Operation 'SuccessFactors OAuth token request' -Uri $tokenUri -Exception $_.Exception -Secrets $secrets)
     }
@@ -167,6 +206,15 @@ function Get-SfAuthHeaders {
         [Parameter(Mandatory)]
         [pscustomobject]$Config
     )
+
+    $authMode = Get-SfAuthMode -Config $Config
+
+    if ($authMode -eq 'basic') {
+        return @{
+            Authorization = Get-SfBasicAuthHeaderValue -Config $Config
+            Accept        = 'application/json'
+        }
+    }
 
     $token = Get-SfOAuthToken -Config $Config
     return @{
@@ -204,8 +252,10 @@ function Invoke-SfODataGet {
     try {
         return Invoke-RestMethod -Uri $requestUri -Headers $headers -Method Get
     } catch {
+        $authMode = Get-SfAuthMode -Config $Config
+        $oauth = if ($Config.successFactors.PSObject.Properties.Name -contains 'auth') { $Config.successFactors.auth.oauth } else { $Config.successFactors.oauth }
         $secrets = @(
-            "$($Config.successFactors.oauth.clientSecret)",
+            $(if ($authMode -eq 'basic') { "$($Config.successFactors.auth.basic.password)" } else { "$($oauth.clientSecret)" }),
             "$($headers.Authorization)"
         )
         throw (New-SfRequestFailure -Operation 'SuccessFactors OData request' -Uri $requestUri -Exception $_.Exception -Secrets $secrets)

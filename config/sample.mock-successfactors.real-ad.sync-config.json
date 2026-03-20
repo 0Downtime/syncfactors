@@ -1,5 +1,7 @@
 {
   "secrets": {
+    "successFactorsUsernameEnv": "SF_AD_SYNC_SF_USERNAME",
+    "successFactorsPasswordEnv": "SF_AD_SYNC_SF_PASSWORD",
     "successFactorsClientIdEnv": "SF_AD_SYNC_SF_CLIENT_ID",
     "successFactorsClientSecretEnv": "SF_AD_SYNC_SF_CLIENT_SECRET",
     "adServerEnv": "SF_AD_SYNC_AD_SERVER",
@@ -9,11 +11,18 @@
   },
   "successFactors": {
     "baseUrl": "http://127.0.0.1:18080/odata/v2",
-    "oauth": {
-      "tokenUrl": "http://127.0.0.1:18080/oauth/token",
-      "clientId": "mock-client-id",
-      "clientSecret": "mock-client-secret",
-      "companyId": "MOCK"
+    "auth": {
+      "mode": "oauth",
+      "basic": {
+        "username": "",
+        "password": ""
+      },
+      "oauth": {
+        "tokenUrl": "http://127.0.0.1:18080/oauth/token",
+        "clientId": "mock-client-id",
+        "clientSecret": "mock-client-secret",
+        "companyId": "MOCK"
+      }
     },
     "query": {
       "entitySet": "PerPerson",

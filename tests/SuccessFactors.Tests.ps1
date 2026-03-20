@@ -58,6 +58,28 @@ Describe 'SuccessFactors module' {
         }
     }
 
+    It 'builds basic auth headers when basic auth mode is configured' {
+        InModuleScope SuccessFactors {
+            $basicConfig = [pscustomobject]@{
+                successFactors = [pscustomobject]@{
+                    baseUrl = 'https://tenant.example.com/odata/v2'
+                    auth = [pscustomobject]@{
+                        mode = 'basic'
+                        basic = [pscustomobject]@{
+                            username = 'sf-user'
+                            password = 'sf-password'
+                        }
+                    }
+                }
+            }
+
+            $headers = Get-SfAuthHeaders -Config $basicConfig
+
+            $headers.Authorization | Should -Be ('Basic ' + [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes('sf-user:sf-password')))
+            $headers.Accept | Should -Be 'application/json'
+        }
+    }
+
     It 'builds encoded OData GET URLs with query parameters' {
         InModuleScope SuccessFactors {
             Mock Get-SfAuthHeaders { @{ Authorization = 'Bearer token-1' } }

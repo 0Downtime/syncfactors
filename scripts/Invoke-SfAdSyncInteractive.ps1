@@ -95,26 +95,75 @@ function Read-RequiredPromptValue {
     }
 }
 
+function Get-SuccessFactorsAuthMode {
+    param(
+        [AllowNull()]
+        [object]$Config
+    )
+
+    $configuredMode = "$(Get-OptionalPropertyValue -InputObject $Config -PropertyPath 'successFactors.auth.mode')"
+    if (-not [string]::IsNullOrWhiteSpace($configuredMode)) {
+        return $configuredMode.ToLowerInvariant()
+    }
+
+    if ($null -ne (Get-OptionalPropertyValue -InputObject $Config -PropertyPath 'successFactors.auth.basic')) {
+        return 'basic'
+    }
+
+    if ($null -ne (Get-OptionalPropertyValue -InputObject $Config -PropertyPath 'successFactors.oauth')) {
+        return 'oauth'
+    }
+
+    return 'basic'
+}
+
 $resolvedConfigPath = (Resolve-Path -Path $ConfigPath).Path
 $config = Get-Content -Path $resolvedConfigPath -Raw | ConvertFrom-Json -Depth 20
 $secrets = Get-OptionalPropertyValue -InputObject $config -PropertyPath 'secrets'
 $adConfig = Get-OptionalPropertyValue -InputObject $config -PropertyPath 'ad'
+$successFactorsAuthMode = Get-SuccessFactorsAuthMode -Config $config
+$hasAuthBlock = $null -ne (Get-OptionalPropertyValue -InputObject $config -PropertyPath 'successFactors.auth')
 
-$runtimePrompts = @(
-    @{
-        Name = 'SuccessFactors client id'
-        PropertyPath = 'successFactors.oauth.clientId'
-        EnvironmentVariableName = Get-EffectiveEnvironmentVariableName -Secrets $secrets -SecretPropertyName 'successFactorsClientIdEnv' -DefaultEnvironmentVariableName 'SF_AD_SYNC_SF_CLIENT_ID'
-        Prompt = 'Enter the SuccessFactors OAuth client id'
-        Secure = $false
-    },
-    @{
-        Name = 'SuccessFactors client secret'
-        PropertyPath = 'successFactors.oauth.clientSecret'
-        EnvironmentVariableName = Get-EffectiveEnvironmentVariableName -Secrets $secrets -SecretPropertyName 'successFactorsClientSecretEnv' -DefaultEnvironmentVariableName 'SF_AD_SYNC_SF_CLIENT_SECRET'
-        Prompt = 'Enter the SuccessFactors OAuth client secret'
-        Secure = $true
-    },
+$runtimePrompts = @()
+if ($successFactorsAuthMode -eq 'oauth') {
+    $oauthClientIdPath = if ($hasAuthBlock) { 'successFactors.auth.oauth.clientId' } else { 'successFactors.oauth.clientId' }
+    $oauthClientSecretPath = if ($hasAuthBlock) { 'successFactors.auth.oauth.clientSecret' } else { 'successFactors.oauth.clientSecret' }
+    $runtimePrompts += @(
+        @{
+            Name = 'SuccessFactors client id'
+            PropertyPath = $oauthClientIdPath
+            EnvironmentVariableName = Get-EffectiveEnvironmentVariableName -Secrets $secrets -SecretPropertyName 'successFactorsClientIdEnv' -DefaultEnvironmentVariableName 'SF_AD_SYNC_SF_CLIENT_ID'
+            Prompt = 'Enter the SuccessFactors OAuth client id'
+            Secure = $false
+        },
+        @{
+            Name = 'SuccessFactors client secret'
+            PropertyPath = $oauthClientSecretPath
+            EnvironmentVariableName = Get-EffectiveEnvironmentVariableName -Secrets $secrets -SecretPropertyName 'successFactorsClientSecretEnv' -DefaultEnvironmentVariableName 'SF_AD_SYNC_SF_CLIENT_SECRET'
+            Prompt = 'Enter the SuccessFactors OAuth client secret'
+            Secure = $true
+        }
+    )
+} else {
+    $runtimePrompts += @(
+        @{
+            Name = 'SuccessFactors username'
+            PropertyPath = 'successFactors.auth.basic.username'
+            EnvironmentVariableName = Get-EffectiveEnvironmentVariableName -Secrets $secrets -SecretPropertyName 'successFactorsUsernameEnv' -DefaultEnvironmentVariableName 'SF_AD_SYNC_SF_USERNAME'
+            Prompt = 'Enter the SuccessFactors username'
+            Secure = $false
+        },
+        @{
+            Name = 'SuccessFactors password'
+            PropertyPath = 'successFactors.auth.basic.password'
+            EnvironmentVariableName = Get-EffectiveEnvironmentVariableName -Secrets $secrets -SecretPropertyName 'successFactorsPasswordEnv' -DefaultEnvironmentVariableName 'SF_AD_SYNC_SF_PASSWORD'
+            Prompt = 'Enter the SuccessFactors password'
+            Secure = $true
+        }
+    )
+}
+
+$runtimePrompts += @(
     @{
         Name = 'AD default password'
         PropertyPath = 'ad.defaultPassword'

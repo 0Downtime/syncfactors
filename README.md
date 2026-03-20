@@ -10,7 +10,7 @@ PowerShell automation for syncing SAP SuccessFactors worker data into on-premise
 > This project is still in active development and is not ready for production use.
 
 ## What It Does
-- Pulls workers from SAP SuccessFactors OData v2 using OAuth2 client credentials.
+- Pulls workers from SAP SuccessFactors OData v2 using configurable basic auth or OAuth2 client credentials.
 - Maps a stable SuccessFactors employee identifier to AD as the authoritative join key.
 - Creates and updates AD users for employees and prehires.
 - Enables prehires 7 days before start date.
@@ -78,7 +78,7 @@ Planned work is ordered by delivery priority so the roadmap is easy to scan from
 
 ## Setup
 1. Start from `config/local.real-successfactors.real-ad.sync-config.json` and `config/local.successfactors-to-ad.mapping-config.json` for your real environment. Those `local.*` files are ignored by git so you can store tenant-specific AD and SuccessFactors settings safely outside version control.
-2. Fill in SuccessFactors OAuth details, tenant query fields, OU routing, and licensing groups. Only fill in the AD server and bind credentials if you are running from a non-domain-joined host or need to target a specific DC.
+2. Fill in the SuccessFactors auth block, tenant query fields, OU routing, and licensing groups. The real sample config defaults to basic auth, while the mock sample uses OAuth. Only fill in the AD server and bind credentials if you are running from a non-domain-joined host or need to target a specific DC.
 3. Confirm the immutable SuccessFactors identity field and the AD attribute that stores it.
 4. Install RSAT Active Directory tools and ensure the host can reach SuccessFactors.
 5. Validate any nested SuccessFactors fields you want to sync and align them to your tenant metadata.
@@ -121,7 +121,7 @@ pwsh ./src/Invoke-SfAdSync.ps1 `
   -DryRun
 ```
 
-If you want the script to prompt for missing runtime values such as OAuth secrets, AD bind credentials, or the default AD password, use:
+If you want the script to prompt for missing runtime values such as SuccessFactors credentials, AD bind credentials, or the default AD password, use:
 
 ```powershell
 pwsh ./scripts/Invoke-SfAdSyncInteractive.ps1 `
