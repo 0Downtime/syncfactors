@@ -120,6 +120,54 @@ Describe 'SuccessFactors module' {
         }
     }
 
+    It 'appends the SuccessFactors company id to basic auth usernames when available' {
+        InModuleScope SuccessFactors {
+            $basicConfig = [pscustomobject]@{
+                successFactors = [pscustomobject]@{
+                    baseUrl = 'https://tenant.example.com/odata/v2'
+                    auth = [pscustomobject]@{
+                        mode = 'basic'
+                        basic = [pscustomobject]@{
+                            username = 'sf-user'
+                            password = 'sf-password'
+                        }
+                        oauth = [pscustomobject]@{
+                            companyId = 'ACME'
+                        }
+                    }
+                }
+            }
+
+            $headers = Get-SfAuthHeaders -Config $basicConfig
+
+            $headers.Authorization | Should -Be ('Basic ' + [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes('sf-user@ACME:sf-password')))
+        }
+    }
+
+    It 'preserves explicit company-qualified basic auth usernames' {
+        InModuleScope SuccessFactors {
+            $basicConfig = [pscustomobject]@{
+                successFactors = [pscustomobject]@{
+                    baseUrl = 'https://tenant.example.com/odata/v2'
+                    auth = [pscustomobject]@{
+                        mode = 'basic'
+                        basic = [pscustomobject]@{
+                            username = 'sf-user@ACME'
+                            password = 'sf-password'
+                        }
+                        oauth = [pscustomobject]@{
+                            companyId = 'OTHER'
+                        }
+                    }
+                }
+            }
+
+            $headers = Get-SfAuthHeaders -Config $basicConfig
+
+            $headers.Authorization | Should -Be ('Basic ' + [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes('sf-user@ACME:sf-password')))
+        }
+    }
+
     It 'builds encoded OData GET URLs with query parameters' {
         InModuleScope SuccessFactors {
             Mock Get-SfAuthHeaders { @{ Authorization = 'Bearer token-1' } }

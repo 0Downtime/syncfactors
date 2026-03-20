@@ -34,7 +34,40 @@ function Get-SfBasicAuthHeaderValue {
     )
 
     $basic = $Config.successFactors.auth.basic
-    $credentialBytes = [System.Text.Encoding]::UTF8.GetBytes("$($basic.username):$($basic.password)")
+    $username = "$($basic.username)"
+    $companyId = $null
+    if (
+        $Config.successFactors.PSObject.Properties.Name -contains 'auth' -and
+        $Config.successFactors.auth -and
+        $Config.successFactors.auth.PSObject.Properties.Name -contains 'basic' -and
+        $Config.successFactors.auth.basic -and
+        $Config.successFactors.auth.basic.PSObject.Properties.Name -contains 'companyId' -and
+        -not [string]::IsNullOrWhiteSpace("$($Config.successFactors.auth.basic.companyId)")
+    ) {
+        $companyId = "$($Config.successFactors.auth.basic.companyId)"
+    } elseif (
+        $Config.successFactors.PSObject.Properties.Name -contains 'auth' -and
+        $Config.successFactors.auth -and
+        $Config.successFactors.auth.PSObject.Properties.Name -contains 'oauth' -and
+        $Config.successFactors.auth.oauth -and
+        $Config.successFactors.auth.oauth.PSObject.Properties.Name -contains 'companyId' -and
+        -not [string]::IsNullOrWhiteSpace("$($Config.successFactors.auth.oauth.companyId)")
+    ) {
+        $companyId = "$($Config.successFactors.auth.oauth.companyId)"
+    } elseif (
+        $Config.successFactors.PSObject.Properties.Name -contains 'oauth' -and
+        $Config.successFactors.oauth -and
+        $Config.successFactors.oauth.PSObject.Properties.Name -contains 'companyId' -and
+        -not [string]::IsNullOrWhiteSpace("$($Config.successFactors.oauth.companyId)")
+    ) {
+        $companyId = "$($Config.successFactors.oauth.companyId)"
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($companyId) -and $username -notmatch '@') {
+        $username = "$username@$companyId"
+    }
+
+    $credentialBytes = [System.Text.Encoding]::UTF8.GetBytes("${username}:$($basic.password)")
     return 'Basic ' + [Convert]::ToBase64String($credentialBytes)
 }
 
