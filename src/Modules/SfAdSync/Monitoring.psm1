@@ -505,7 +505,7 @@ function New-SfAdMonitorUiState {
         focus = 'History'
         filterText = ''
         preferredMode = $null
-        statusMessage = 'Ready. Keys: q quit, r refresh, tab focus, arrows or j/k select run, [ ] bucket, left/right or h/l select item, / filter, c clear filter, p preflight, d dry-run, o open path, y copy path, x export bucket.'
+        statusMessage = 'Ready. Keys: q quit, r refresh, tab focus, arrows or j/k select run, [ ] bucket, left/right or h/l select item, / filter, c clear filter, p preflight, d delta dry-run, s delta sync, f full dry-run, a full sync, w worker preview, v review, o open path, y copy path, x export bucket.'
         commandOutput = @()
     }
 }
@@ -806,7 +806,7 @@ function Test-SfAdMonitorSelectedRunIsReview {
     $selectedRun = Get-SfAdMonitorSelectedRun -Status $Status -UiState $UiState
     $mode = if ($selectedRun -and $selectedRun.PSObject.Properties.Name -contains 'mode') { "$($selectedRun.mode)" } else { '' }
     $artifactType = if ($selectedRun -and $selectedRun.PSObject.Properties.Name -contains 'artifactType') { "$($selectedRun.artifactType)" } else { '' }
-    return $mode -eq 'Review' -or $artifactType -eq 'FirstSyncReview'
+    return $mode -eq 'Review' -or $artifactType -in @('FirstSyncReview', 'WorkerPreview')
 }
 
 function Get-SfAdMonitorFailureGroups {
@@ -1128,7 +1128,14 @@ function Format-SfAdMonitorDashboardView {
     $selectedRunGuardrailFailures = if ($selectedRun.PSObject.Properties.Name -contains 'guardrailFailures') { $selectedRun.guardrailFailures } else { 0 }
     $selectedRunManualReview = if ($selectedRun.PSObject.Properties.Name -contains 'manualReview') { $selectedRun.manualReview } else { 0 }
     $selectedRunUnchanged = if ($selectedRun.PSObject.Properties.Name -contains 'unchanged') { $selectedRun.unchanged } else { 0 }
-    $lines.Add($(if ($isReviewRun) { '▓ First Sync Review Summary' } else { '▓ Latest Run Summary' }))
+    $summaryTitle = if ($selectedRun.PSObject.Properties.Name -contains 'artifactType' -and "$($selectedRun.artifactType)" -eq 'WorkerPreview') {
+        '▓ Worker Preview Summary'
+    } elseif ($isReviewRun) {
+        '▓ First Sync Review Summary'
+    } else {
+        '▓ Latest Run Summary'
+    }
+    $lines.Add($summaryTitle)
     $lines.Add("Status: $($selectedRun.status)    Mode: $($selectedRun.mode)    DryRun: $($selectedRun.dryRun)    Started: $($selectedRun.startedAt)")
     $lines.Add("Duration(s): $selectedRunDuration    Reversible ops: $selectedRunReversibleOperations")
     $lines.Add("Totals: C=$selectedRunCreates U=$selectedRunUpdates E=$selectedRunEnables D=$selectedRunDisables G=$selectedRunGraveyardMoves X=$selectedRunDeletions Q=$selectedRunQuarantined F=$selectedRunConflicts GF=$selectedRunGuardrailFailures MR=$selectedRunManualReview NC=$selectedRunUnchanged")
@@ -1228,7 +1235,7 @@ function Format-SfAdMonitorDashboardView {
 
     $lines.Add($midBorder)
     $lines.Add("║ Status: $($UiState.statusMessage)")
-    $lines.Add('║ Keys: q quit, r refresh, tab focus, up/down or j/k select run, [ or ] bucket, left/right or h/l select item, / filter, c clear filter, enter inspect, p preflight, d dry-run, v review, o open report, y copy report path, x export bucket')
+    $lines.Add('║ Keys: q quit, r refresh, tab focus, up/down or j/k select run, [ or ] bucket, left/right or h/l select item, / filter, c clear filter, enter inspect, p preflight, d delta dry-run, s delta sync, f full dry-run, a full sync, w worker preview, v review, o open report, y copy report path, x export bucket')
     $lines.Add($bottomBorder)
     return $lines
 }

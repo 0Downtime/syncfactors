@@ -145,6 +145,30 @@ function Read-SfAdMonitorFilterText {
     return Read-Host -Prompt $prompt
 }
 
+function Read-SfAdMonitorWorkerId {
+    [CmdletBinding()]
+    param()
+
+    Write-Host ''
+    Write-Host 'Start a single-worker preview by SuccessFactors identity field value.' -ForegroundColor Cyan
+    return Read-Host -Prompt 'WorkerId'
+}
+
+function Confirm-SfAdMonitorWriteAction {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string]$Label,
+        [Parameter(Mandatory)]
+        [string]$WriteTarget
+    )
+
+    Write-Host ''
+    Write-Host "$Label may write $WriteTarget." -ForegroundColor Yellow
+    $response = Read-Host -Prompt 'Type YES to continue'
+    return "$response".Trim() -ceq 'YES'
+}
+
 function Export-SfAdMonitorBucketSelection {
     [CmdletBinding()]
     param(
@@ -162,6 +186,12 @@ function Export-SfAdMonitorBucketSelection {
         return
     }
 
+    if (-not (Confirm-SfAdMonitorWriteAction -Label 'Bucket export' -WriteTarget 'a JSON file in the temp directory')) {
+        $UiState.statusMessage = 'Bucket export cancelled.'
+        $UiState.commandOutput = @()
+        return
+    }
+
     $timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
     $path = Join-Path -Path ([System.IO.Path]::GetTempPath()) -ChildPath "sf-ad-sync-monitor-$($bucketSelection.Bucket.Name)-$timestamp.json"
     $items | ConvertTo-Json -Depth 20 | Set-Content -Path $path
@@ -173,7 +203,7 @@ function Invoke-SfAdMonitorShortcut {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
-        [ValidateSet('Preflight','DryRun','ReviewRun','OpenReport','CopyReportPath')]
+        [ValidateSet('Preflight','DeltaDryRun','DeltaRun','FullDryRun','FullRun','ReviewRun','WorkerPreview','OpenReport','CopyReportPath')]
         [string]$Action,
         [Parameter(Mandatory)]
         [pscustomobject]$Status,
@@ -202,9 +232,15 @@ function Invoke-SfAdMonitorShortcut {
                 $UiState.commandOutput = @($_.Exception.Message)
             }
         }
-        'DryRun' {
+        'DeltaDryRun' {
             if (-not $context.mappingConfigPath) {
-                $UiState.statusMessage = 'Dry-run unavailable: no mapping config path was provided and none could be inferred from recent runs.'
+                $UiState.statusMessage = 'Delta dry-run unavailable: no mapping config path was provided and none could be inferred from recent runs.'
+                $UiState.commandOutput = @()
+                return
+            }
+
+            if (-not (Confirm-SfAdMonitorWriteAction -Label 'Delta dry-run' -WriteTarget 'runtime status and report files')) {
+                $UiState.statusMessage = 'Delta dry-run cancelled.'
                 $UiState.commandOutput = @()
                 return
             }
@@ -225,16 +261,128 @@ function Invoke-SfAdMonitorShortcut {
 
             try {
                 Start-Process -FilePath 'pwsh' -ArgumentList $argumentList | Out-Null
-                $UiState.statusMessage = 'Started dry-run sync in a new PowerShell process.'
-                $UiState.commandOutput = @("Config=$($context.configPath)", "Mapping=$($context.mappingConfigPath)")
+                $UiState.statusMessage = 'Started delta dry-run in a new PowerShell process.'
+                $UiState.commandOutput = @("Mode=Delta", "DryRun=True", "Config=$($context.configPath)", "Mapping=$($context.mappingConfigPath)")
             } catch {
-                $UiState.statusMessage = 'Failed to start dry-run sync.'
+                $UiState.statusMessage = 'Failed to start delta dry-run.'
+                $UiState.commandOutput = @($_.Exception.Message)
+            }
+        }
+        'DeltaRun' {
+            if (-not $context.mappingConfigPath) {
+                $UiState.statusMessage = 'Delta run unavailable: no mapping config path was provided and none could be inferred from recent runs.'
+                $UiState.commandOutput = @()
+                return
+            }
+
+            if (-not (Confirm-SfAdMonitorWriteAction -Label 'Delta sync' -WriteTarget 'AD objects, sync state, runtime status, and report files')) {
+                $UiState.statusMessage = 'Delta sync cancelled.'
+                $UiState.commandOutput = @()
+                return
+            }
+
+            $argumentList = @(
+                '-NoLogo'
+                '-NoProfile'
+                '-File'
+                (Join-Path $projectRoot 'src/Invoke-SfAdSync.ps1')
+                '-ConfigPath'
+                $context.configPath
+                '-MappingConfigPath'
+                $context.mappingConfigPath
+                '-Mode'
+                'Delta'
+            )
+
+            try {
+                Start-Process -FilePath 'pwsh' -ArgumentList $argumentList | Out-Null
+                $UiState.statusMessage = 'Started delta sync in a new PowerShell process.'
+                $UiState.commandOutput = @("Mode=Delta", "DryRun=False", "Config=$($context.configPath)", "Mapping=$($context.mappingConfigPath)")
+            } catch {
+                $UiState.statusMessage = 'Failed to start delta sync.'
+                $UiState.commandOutput = @($_.Exception.Message)
+            }
+        }
+        'FullDryRun' {
+            if (-not $context.mappingConfigPath) {
+                $UiState.statusMessage = 'Full dry-run unavailable: no mapping config path was provided and none could be inferred from recent runs.'
+                $UiState.commandOutput = @()
+                return
+            }
+
+            if (-not (Confirm-SfAdMonitorWriteAction -Label 'Full dry-run' -WriteTarget 'runtime status and report files')) {
+                $UiState.statusMessage = 'Full dry-run cancelled.'
+                $UiState.commandOutput = @()
+                return
+            }
+
+            $argumentList = @(
+                '-NoLogo'
+                '-NoProfile'
+                '-File'
+                (Join-Path $projectRoot 'src/Invoke-SfAdSync.ps1')
+                '-ConfigPath'
+                $context.configPath
+                '-MappingConfigPath'
+                $context.mappingConfigPath
+                '-Mode'
+                'Full'
+                '-DryRun'
+            )
+
+            try {
+                Start-Process -FilePath 'pwsh' -ArgumentList $argumentList | Out-Null
+                $UiState.statusMessage = 'Started full dry-run in a new PowerShell process.'
+                $UiState.commandOutput = @("Mode=Full", "DryRun=True", "Config=$($context.configPath)", "Mapping=$($context.mappingConfigPath)")
+            } catch {
+                $UiState.statusMessage = 'Failed to start full dry-run.'
+                $UiState.commandOutput = @($_.Exception.Message)
+            }
+        }
+        'FullRun' {
+            if (-not $context.mappingConfigPath) {
+                $UiState.statusMessage = 'Full run unavailable: no mapping config path was provided and none could be inferred from recent runs.'
+                $UiState.commandOutput = @()
+                return
+            }
+
+            if (-not (Confirm-SfAdMonitorWriteAction -Label 'Full sync' -WriteTarget 'AD objects, sync state, runtime status, and report files')) {
+                $UiState.statusMessage = 'Full sync cancelled.'
+                $UiState.commandOutput = @()
+                return
+            }
+
+            $argumentList = @(
+                '-NoLogo'
+                '-NoProfile'
+                '-File'
+                (Join-Path $projectRoot 'src/Invoke-SfAdSync.ps1')
+                '-ConfigPath'
+                $context.configPath
+                '-MappingConfigPath'
+                $context.mappingConfigPath
+                '-Mode'
+                'Full'
+            )
+
+            try {
+                Start-Process -FilePath 'pwsh' -ArgumentList $argumentList | Out-Null
+                $UiState.statusMessage = 'Started full sync in a new PowerShell process.'
+                $UiState.commandOutput = @("Mode=Full", "DryRun=False", "Config=$($context.configPath)", "Mapping=$($context.mappingConfigPath)")
+            } catch {
+                $UiState.statusMessage = 'Failed to start full sync.'
                 $UiState.commandOutput = @($_.Exception.Message)
             }
         }
         'ReviewRun' {
             if (-not $context.mappingConfigPath) {
                 $UiState.statusMessage = 'Review unavailable: no mapping config path was provided and none could be inferred from recent runs.'
+                $UiState.commandOutput = @()
+                return
+            }
+
+            if (-not (Confirm-SfAdMonitorWriteAction -Label 'First-sync review' -WriteTarget 'runtime status and review report files')) {
+                $UiState.statusMessage = 'First-sync review cancelled.'
                 $UiState.commandOutput = @()
                 return
             }
@@ -259,6 +407,48 @@ function Invoke-SfAdMonitorShortcut {
                 $UiState.commandOutput = @($_.Exception.Message)
             }
         }
+        'WorkerPreview' {
+            if (-not $context.mappingConfigPath) {
+                $UiState.statusMessage = 'Worker preview unavailable: no mapping config path was provided and none could be inferred from recent runs.'
+                $UiState.commandOutput = @()
+                return
+            }
+
+            $workerId = Read-SfAdMonitorWorkerId
+            if ([string]::IsNullOrWhiteSpace($workerId)) {
+                $UiState.statusMessage = 'Worker preview cancelled: no worker ID was provided.'
+                $UiState.commandOutput = @()
+                return
+            }
+
+            if (-not (Confirm-SfAdMonitorWriteAction -Label "Worker preview for $($workerId.Trim())" -WriteTarget 'runtime status and review report files')) {
+                $UiState.statusMessage = 'Worker preview cancelled.'
+                $UiState.commandOutput = @()
+                return
+            }
+
+            $argumentList = @(
+                '-NoLogo'
+                '-NoProfile'
+                '-File'
+                (Join-Path $projectRoot 'scripts/Invoke-SfAdWorkerPreview.ps1')
+                '-ConfigPath'
+                $context.configPath
+                '-MappingConfigPath'
+                $context.mappingConfigPath
+                '-WorkerId'
+                $workerId.Trim()
+            )
+
+            try {
+                Start-Process -FilePath 'pwsh' -ArgumentList $argumentList | Out-Null
+                $UiState.statusMessage = "Started worker preview for $($workerId.Trim()) in a new PowerShell process."
+                $UiState.commandOutput = @("Config=$($context.configPath)", "Mapping=$($context.mappingConfigPath)", "WorkerId=$($workerId.Trim())")
+            } catch {
+                $UiState.statusMessage = 'Failed to start worker preview.'
+                $UiState.commandOutput = @($_.Exception.Message)
+            }
+        }
         'OpenReport' {
             if (-not $context.reportPath) {
                 $UiState.statusMessage = 'Open report unavailable: no selected report path.'
@@ -278,6 +468,12 @@ function Invoke-SfAdMonitorShortcut {
         'CopyReportPath' {
             if (-not $context.reportPath) {
                 $UiState.statusMessage = 'Copy report path unavailable: no selected report path.'
+                $UiState.commandOutput = @()
+                return
+            }
+
+            if (-not (Confirm-SfAdMonitorWriteAction -Label 'Copy report path' -WriteTarget 'the clipboard')) {
+                $UiState.statusMessage = 'Copy report path cancelled.'
                 $UiState.commandOutput = @()
                 return
             }
@@ -443,7 +639,35 @@ do {
                         }
                         'd' {
                             if ($lastStatus) {
-                                Invoke-SfAdMonitorShortcut -Action DryRun -Status $lastStatus -UiState $uiState -ResolvedMappingConfigPath $resolvedMappingConfigPath
+                                Invoke-SfAdMonitorShortcut -Action DeltaDryRun -Status $lastStatus -UiState $uiState -ResolvedMappingConfigPath $resolvedMappingConfigPath
+                            }
+                            $refreshRequested = $true
+                            break
+                        }
+                        's' {
+                            if ($lastStatus) {
+                                Invoke-SfAdMonitorShortcut -Action DeltaRun -Status $lastStatus -UiState $uiState -ResolvedMappingConfigPath $resolvedMappingConfigPath
+                            }
+                            $refreshRequested = $true
+                            break
+                        }
+                        'f' {
+                            if ($lastStatus) {
+                                Invoke-SfAdMonitorShortcut -Action FullDryRun -Status $lastStatus -UiState $uiState -ResolvedMappingConfigPath $resolvedMappingConfigPath
+                            }
+                            $refreshRequested = $true
+                            break
+                        }
+                        'a' {
+                            if ($lastStatus) {
+                                Invoke-SfAdMonitorShortcut -Action FullRun -Status $lastStatus -UiState $uiState -ResolvedMappingConfigPath $resolvedMappingConfigPath
+                            }
+                            $refreshRequested = $true
+                            break
+                        }
+                        'w' {
+                            if ($lastStatus) {
+                                Invoke-SfAdMonitorShortcut -Action WorkerPreview -Status $lastStatus -UiState $uiState -ResolvedMappingConfigPath $resolvedMappingConfigPath
                             }
                             $refreshRequested = $true
                             break

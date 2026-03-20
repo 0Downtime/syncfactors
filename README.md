@@ -70,6 +70,7 @@ Planned work is ordered by delivery priority so the roadmap is easy to scan from
 - `scripts/Register-SfAdSyncScheduledTask.ps1`: scheduled task bootstrap.
 - `scripts/Get-SfAdSyncStatus.ps1`: summary view of the latest sync report and runtime state.
 - `scripts/Watch-SfAdSyncMonitor.ps1`: terminal dashboard for current sync stage and recent run history.
+- `scripts/Invoke-SfAdWorkerPreview.ps1`: preview one worker and print the mapped diff against the current AD user.
 - `scripts/Install-SfAdSyncTerminalCommand.ps1`: installs the `synctui` terminal command for launching the dashboard from any shell.
 - `scripts/Invoke-TestSuite.ps1`: run the Pester test suite.
 - `scripts/Undo-SfAdSyncRun.ps1`: rollback one sync run using the recorded operation journal.
@@ -148,6 +149,18 @@ pwsh ./scripts/Get-SfAdSyncStatus.ps1 `
 Use `-AsJson` if you want the status in machine-readable form.
 Use `-IncludeCurrentRun` to print the live runtime snapshot and `-IncludeHistory -HistoryLimit 10` to print recent runs in plain text.
 
+To preview a single worker by the configured SuccessFactors identity field and see the proposed AD diff without mutating AD or sync state:
+
+```powershell
+pwsh ./scripts/Invoke-SfAdWorkerPreview.ps1 `
+  -ConfigPath ./config/local.real-successfactors.real-ad.sync-config.json `
+  -MappingConfigPath ./config/local.successfactors-to-ad.mapping-config.json `
+  -WorkerId 1000123
+```
+
+The `-WorkerId` value must match `successFactors.query.identityField`. In the sample configs that field is `personIdExternal`.
+Use `-AsJson` for machine-readable output or `-OutputDirectory` to write the preview report to a separate folder.
+
 To watch the current stage/progress and the last few syncs in a terminal dashboard:
 
 ```powershell
@@ -155,7 +168,7 @@ pwsh ./scripts/Watch-SfAdSyncMonitor.ps1 `
   -ConfigPath ./config/local.real-successfactors.real-ad.sync-config.json
 ```
 
-Press `q` to quit or `r` to refresh immediately.
+Press `q` to quit or `r` to refresh immediately. The dashboard shortcuts now cover the full run set: `d` delta dry-run, `s` delta sync, `f` full dry-run, `a` full sync, `v` review, and `w` single-worker preview. Any shortcut that can write anything, including reports, temp exports, or the clipboard, now requires typing `YES` before it proceeds.
 
 To run the full Pester suite:
 
