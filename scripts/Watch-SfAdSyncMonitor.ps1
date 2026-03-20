@@ -112,6 +112,14 @@ function Write-SfAdStyledMonitorFrame {
             $color = $palette.Border
         } elseif ($line -match '^║ SuccessFactors AD Sync Dashboard') {
             $color = $palette.Header
+        } elseif ($line -match '^║ Health:') {
+            if ($line -match 'SF=OK' -and $line -match 'AD=OK') {
+                $color = $palette.Active
+            } elseif ($line -match 'SF=ERROR' -and $line -match 'AD=ERROR') {
+                $color = $palette.Error
+            } else {
+                $color = $palette.Warning
+            }
         } elseif ($line -match '^▓ ') {
             $color = $palette.Section
         } elseif ($line -match '^\s+>\s' -or $line -match '^\s+>') {
