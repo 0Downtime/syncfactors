@@ -49,10 +49,22 @@ function Show-SfAdMonitorFrame {
 
     try {
         $status = Get-SfAdMonitorStatus -ConfigPath $ResolvedConfigPath -HistoryLimit $HistoryDepth
-        $lines = if ($AsTextOutput) {
+        $rawLines = if ($AsTextOutput) {
             @(Format-SfAdMonitorView -Status $status)
         } else {
             @(Format-SfAdMonitorDashboardView -Status $status -UiState $UiState)
+        }
+        $lines = @($rawLines | Where-Object { $null -ne $_ } | ForEach-Object { "$_" })
+        if ($lines.Count -eq 0) {
+            $lines = @(
+                'SuccessFactors AD Sync Dashboard'
+                "Config: $ResolvedConfigPath"
+                "Refreshed: $((Get-Date).ToString('yyyy-MM-dd HH:mm:ss'))"
+                ''
+                'Monitor returned no output.'
+                ''
+                'Keys: q quit, r refresh'
+            )
         }
     } catch {
         $lines = @(
@@ -88,6 +100,7 @@ function Write-SfAdStyledMonitorFrame {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
+        [AllowEmptyCollection()]
         [string[]]$Lines
     )
 
