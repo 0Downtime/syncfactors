@@ -178,6 +178,15 @@ function Get-SfAdInstallMetadataPath {
     return Join-Path -Path $ResolvedInstallDirectory -ChildPath ".$CommandName.install.json"
 }
 
+function Get-SfAdConfigHelperCommandName {
+    param(
+        [Parameter(Mandatory)]
+        [string]$CommandName
+    )
+
+    return "$CommandName-config"
+}
+
 function Read-SfAdInstallMetadata {
     param(
         [Parameter(Mandatory)]
@@ -363,6 +372,102 @@ set -eu
 
 if command -v pwsh >/dev/null 2>&1; then
     exec pwsh -NoLogo -NoProfile -File "$dashboardValue" -ConfigPath "$configValue"$mappingArgument "`$@"
+fi
+
+printf '%s\n' 'pwsh was not found in PATH.' >&2
+exit 1
+"@
+}
+
+function Get-SfAdConfigHelperPowerShellShimContent {
+    param(
+        [Parameter(Mandatory)]
+        [string]$HelperScriptPath,
+        [Parameter(Mandatory)]
+        [string]$ResolvedInstallDirectory,
+        [Parameter(Mandatory)]
+        [string]$CommandName
+    )
+
+    return @"
+[CmdletBinding(PositionalBinding = `$false)]
+param(
+    [string]`$ConfigPath,
+    [string]`$MappingConfigPath,
+    [switch]`$ShowCurrent
+)
+
+Set-StrictMode -Version Latest
+`$ErrorActionPreference = 'Stop'
+
+`$namedArguments = @{
+    InstallDirectory = $(ConvertTo-SfAdPowerShellLiteral -Value $ResolvedInstallDirectory)
+    CommandName = $(ConvertTo-SfAdPowerShellLiteral -Value $CommandName)
+}
+
+if (`$PSBoundParameters.ContainsKey('ConfigPath')) {
+    `$namedArguments['ConfigPath'] = `$ConfigPath
+}
+
+if (`$PSBoundParameters.ContainsKey('MappingConfigPath')) {
+    `$namedArguments['MappingConfigPath'] = `$MappingConfigPath
+}
+
+if (`$ShowCurrent) {
+    `$namedArguments['ShowCurrent'] = `$true
+}
+
+& $(ConvertTo-SfAdPowerShellLiteral -Value $HelperScriptPath) @namedArguments
+if (Get-Variable -Name LASTEXITCODE -ErrorAction SilentlyContinue) {
+    exit `$LASTEXITCODE
+}
+"@
+}
+
+function Get-SfAdConfigHelperCmdShimContent {
+    param(
+        [Parameter(Mandatory)]
+        [string]$HelperScriptPath,
+        [Parameter(Mandatory)]
+        [string]$ResolvedInstallDirectory,
+        [Parameter(Mandatory)]
+        [string]$CommandName
+    )
+
+    return @"
+@echo off
+setlocal
+where pwsh >nul 2>nul
+if not errorlevel 1 (
+    set "_SFAD_SYNC_PWSH=pwsh"
+) else (
+    set "_SFAD_SYNC_PWSH=powershell"
+)
+"%_SFAD_SYNC_PWSH%" -NoLogo -NoProfile -File "$HelperScriptPath" -InstallDirectory "$ResolvedInstallDirectory" -CommandName "$CommandName" %*
+exit /b %errorlevel%
+"@
+}
+
+function Get-SfAdConfigHelperShellShimContent {
+    param(
+        [Parameter(Mandatory)]
+        [string]$HelperScriptPath,
+        [Parameter(Mandatory)]
+        [string]$ResolvedInstallDirectory,
+        [Parameter(Mandatory)]
+        [string]$CommandName
+    )
+
+    $helperValue = ConvertTo-SfAdDoubleQuotedShellValue -Value $HelperScriptPath
+    $installDirectoryValue = ConvertTo-SfAdDoubleQuotedShellValue -Value $ResolvedInstallDirectory
+    $commandNameValue = ConvertTo-SfAdDoubleQuotedShellValue -Value $CommandName
+
+    return @"
+#!/usr/bin/env sh
+set -eu
+
+if command -v pwsh >/dev/null 2>&1; then
+    exec pwsh -NoLogo -NoProfile -File "$helperValue" -InstallDirectory "$installDirectoryValue" -CommandName "$commandNameValue" "`$@"
 fi
 
 printf '%s\n' 'pwsh was not found in PATH.' >&2
@@ -575,9 +680,13 @@ $resolvedInstallDirectory = if ([string]::IsNullOrWhiteSpace($InstallDirectory))
 } else {
     [System.IO.Path]::GetFullPath($InstallDirectory)
 }
+$configHelperCommandName = Get-SfAdConfigHelperCommandName -CommandName $CommandName
 $shellCommandPath = Join-Path -Path $resolvedInstallDirectory -ChildPath $CommandName
 $cmdCommandPath = Join-Path -Path $resolvedInstallDirectory -ChildPath "$CommandName.cmd"
 $ps1CommandPath = Join-Path -Path $resolvedInstallDirectory -ChildPath "$CommandName.ps1"
+$helperShellCommandPath = Join-Path -Path $resolvedInstallDirectory -ChildPath $configHelperCommandName
+$helperCmdCommandPath = Join-Path -Path $resolvedInstallDirectory -ChildPath "$configHelperCommandName.cmd"
+$helperPs1CommandPath = Join-Path -Path $resolvedInstallDirectory -ChildPath "$configHelperCommandName.ps1"
 $metadataPath = Get-SfAdInstallMetadataPath -ResolvedInstallDirectory $resolvedInstallDirectory -CommandName $CommandName
 $existingMetadata = Read-SfAdInstallMetadata -MetadataPath $metadataPath
 
@@ -585,7 +694,7 @@ if ($Uninstall) {
     $removedPaths = @()
 
     if ($PSCmdlet.ShouldProcess($resolvedInstallDirectory, "Uninstall terminal command '$CommandName'")) {
-        foreach ($path in @($shellCommandPath, $cmdCommandPath, $ps1CommandPath, $metadataPath)) {
+        foreach ($path in @($shellCommandPath, $cmdCommandPath, $ps1CommandPath, $helperShellCommandPath, $helperCmdCommandPath, $helperPs1CommandPath, $metadataPath)) {
             if (Test-Path -Path $path) {
                 Remove-Item -Path $path -Force
                 $removedPaths += $path
@@ -624,15 +733,20 @@ if ($Uninstall) {
 $resolvedProjectRoot = Resolve-SfAdInstallerProjectRoot -Path $ProjectRoot
 $configDirectory = Join-Path -Path $resolvedProjectRoot -ChildPath 'config'
 $dashboardPath = Join-Path -Path $resolvedProjectRoot -ChildPath 'scripts/Watch-SfAdSyncMonitor.ps1'
+$configHelperScriptPath = Join-Path -Path $resolvedProjectRoot -ChildPath 'scripts/Set-SfAdSyncTerminalCommandConfig.ps1'
 
 if (-not (Test-Path -Path $dashboardPath -PathType Leaf)) {
     throw "Dashboard script was not found at '$dashboardPath'."
 }
 
+if (-not (Test-Path -Path $configHelperScriptPath -PathType Leaf)) {
+    throw "Config helper script was not found at '$configHelperScriptPath'."
+}
+
 $resolvedConfigPath = Resolve-SfAdRequiredConfigPath -Path $ConfigPath -ConfigDirectory $configDirectory
 $resolvedMappingConfigPath = Resolve-SfAdOptionalMappingConfigPath -Path $MappingConfigPath -ConfigDirectory $configDirectory
 
-foreach ($path in @($shellCommandPath, $cmdCommandPath, $ps1CommandPath, $metadataPath)) {
+foreach ($path in @($shellCommandPath, $cmdCommandPath, $ps1CommandPath, $helperShellCommandPath, $helperCmdCommandPath, $helperPs1CommandPath, $metadataPath)) {
     if ((Test-Path -Path $path) -and -not $Force) {
         throw "The terminal command path '$path' already exists. Re-run with -Force to overwrite it."
     }
@@ -646,6 +760,9 @@ if ($PSCmdlet.ShouldProcess($resolvedInstallDirectory, "Install terminal command
     Set-Content -Path $shellCommandPath -Value (Get-SfAdShellShimContent -DashboardPath $dashboardPath -ResolvedConfigPath $resolvedConfigPath -ResolvedMappingConfigPath $resolvedMappingConfigPath)
     Set-Content -Path $cmdCommandPath -Value (Get-SfAdCmdShimContent -DashboardPath $dashboardPath -ResolvedConfigPath $resolvedConfigPath -ResolvedMappingConfigPath $resolvedMappingConfigPath)
     Set-Content -Path $ps1CommandPath -Value (Get-SfAdPowerShellShimContent -DashboardPath $dashboardPath -ResolvedConfigPath $resolvedConfigPath -ResolvedMappingConfigPath $resolvedMappingConfigPath)
+    Set-Content -Path $helperShellCommandPath -Value (Get-SfAdConfigHelperShellShimContent -HelperScriptPath $configHelperScriptPath -ResolvedInstallDirectory $resolvedInstallDirectory -CommandName $CommandName)
+    Set-Content -Path $helperCmdCommandPath -Value (Get-SfAdConfigHelperCmdShimContent -HelperScriptPath $configHelperScriptPath -ResolvedInstallDirectory $resolvedInstallDirectory -CommandName $CommandName)
+    Set-Content -Path $helperPs1CommandPath -Value (Get-SfAdConfigHelperPowerShellShimContent -HelperScriptPath $configHelperScriptPath -ResolvedInstallDirectory $resolvedInstallDirectory -CommandName $CommandName)
 
     if (-not $IsWindows) {
         $chmodPath = if (Test-Path -Path '/bin/chmod' -PathType Leaf) {
@@ -659,7 +776,7 @@ if ($PSCmdlet.ShouldProcess($resolvedInstallDirectory, "Install terminal command
             $chmodCommand.Source
         }
 
-        & $chmodPath '+x' $shellCommandPath
+        & $chmodPath '+x' $shellCommandPath $helperShellCommandPath
     }
 }
 
@@ -685,6 +802,10 @@ $metadata = [pscustomobject]@{
     shellCommandPath = $shellCommandPath
     cmdCommandPath = $cmdCommandPath
     ps1CommandPath = $ps1CommandPath
+    configCommandName = $configHelperCommandName
+    helperShellCommandPath = $helperShellCommandPath
+    helperCmdCommandPath = $helperCmdCommandPath
+    helperPs1CommandPath = $helperPs1CommandPath
     shellProfilePath = $pathUpdate.shellProfilePath
     pathUpdated = [bool]$pathUpdate.updated
     pathUpdateMode = $pathUpdate.mode
@@ -703,6 +824,10 @@ Save-SfAdInstallMetadata -MetadataPath $metadataPath -Metadata $metadata
     shellCommandPath = $shellCommandPath
     cmdCommandPath = $cmdCommandPath
     ps1CommandPath = $ps1CommandPath
+    configCommandName = $configHelperCommandName
+    helperShellCommandPath = $helperShellCommandPath
+    helperCmdCommandPath = $helperCmdCommandPath
+    helperPs1CommandPath = $helperPs1CommandPath
     metadataPath = $metadataPath
     pathUpdated = [bool]$pathUpdate.updated
     currentSessionPathUpdated = [bool]$pathUpdate.currentSessionUpdated

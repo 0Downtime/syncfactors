@@ -769,6 +769,7 @@ param(
         '{}' | Set-Content -Path $configPath
         '{}' | Set-Content -Path $mappingPath
         '# dashboard stub' | Set-Content -Path (Join-Path $scriptsDirectory 'Watch-SfAdSyncMonitor.ps1')
+        '# helper stub' | Set-Content -Path (Join-Path $scriptsDirectory 'Set-SfAdSyncTerminalCommandConfig.ps1')
 
         $result = & "$PSScriptRoot/../scripts/Install-SfAdSyncTerminalCommand.ps1" `
             -ProjectRoot $projectRoot `
@@ -785,6 +786,9 @@ param(
         Test-Path -Path $result.shellCommandPath | Should -BeTrue
         Test-Path -Path $result.cmdCommandPath | Should -BeTrue
         Test-Path -Path $result.ps1CommandPath | Should -BeTrue
+        Test-Path -Path $result.helperShellCommandPath | Should -BeTrue
+        Test-Path -Path $result.helperCmdCommandPath | Should -BeTrue
+        Test-Path -Path $result.helperPs1CommandPath | Should -BeTrue
         Test-Path -Path $result.metadataPath | Should -BeTrue
 
         (Get-Content -Path $result.shellCommandPath -Raw) | Should -Match ([regex]::Escape([System.IO.Path]::GetFullPath((Join-Path $scriptsDirectory 'Watch-SfAdSyncMonitor.ps1'))))
@@ -792,6 +796,8 @@ param(
         (Get-Content -Path $result.shellCommandPath -Raw) | Should -Match ([regex]::Escape([System.IO.Path]::GetFullPath($mappingPath)))
         (Get-Content -Path $result.cmdCommandPath -Raw) | Should -Match 'pwsh'
         (Get-Content -Path $result.ps1CommandPath -Raw) | Should -Match 'MappingConfigPath'
+        $result.configCommandName | Should -Be 'synctui-config'
+        (Get-Content -Path $result.helperPs1CommandPath -Raw) | Should -Match 'ShowCurrent'
         ((Get-Content -Path $result.metadataPath -Raw) | ConvertFrom-Json).commandName | Should -Be 'synctui'
     }
 
@@ -808,6 +814,7 @@ param(
         New-Item -Path $scriptsDirectory -ItemType Directory -Force | Out-Null
         '{}' | Set-Content -Path $configPath
         '{}' | Set-Content -Path $mappingPath
+        '# helper stub' | Set-Content -Path (Join-Path $scriptsDirectory 'Set-SfAdSyncTerminalCommandConfig.ps1')
         @'
 [CmdletBinding()]
 param(
@@ -859,6 +866,7 @@ param(
         '{}' | Set-Content -Path (Join-Path $configDirectory 'local.real.sync-config.json')
         '{}' | Set-Content -Path (Join-Path $configDirectory 'local.real.mapping-config.json')
         '# dashboard stub' | Set-Content -Path (Join-Path $scriptsDirectory 'Watch-SfAdSyncMonitor.ps1')
+        '# helper stub' | Set-Content -Path (Join-Path $scriptsDirectory 'Set-SfAdSyncTerminalCommandConfig.ps1')
 
         try {
             $env:PATH = '/usr/bin'
@@ -883,6 +891,62 @@ param(
         }
     }
 
+    It 'repoints synctui defaults through the installed config helper command' {
+        $projectRoot = Join-Path $TestDrive 'helper-install-project'
+        $configDirectory = Join-Path $projectRoot 'config'
+        $scriptsDirectory = Join-Path $projectRoot 'scripts'
+        $installDirectory = Join-Path $TestDrive 'helper-bin'
+        $initialConfigPath = Join-Path $configDirectory 'tenant-a.sync-config.json'
+        $initialMappingPath = Join-Path $configDirectory 'tenant-a.mapping-config.json'
+        $nextConfigPath = Join-Path $configDirectory 'tenant-b.sync-config.json'
+        $nextMappingPath = Join-Path $configDirectory 'tenant-b.mapping-config.json'
+        $dashboardPath = Join-Path $scriptsDirectory 'Watch-SfAdSyncMonitor.ps1'
+
+        New-Item -Path $configDirectory -ItemType Directory -Force | Out-Null
+        New-Item -Path $scriptsDirectory -ItemType Directory -Force | Out-Null
+        '{}' | Set-Content -Path $initialConfigPath
+        '{}' | Set-Content -Path $initialMappingPath
+        '{}' | Set-Content -Path $nextConfigPath
+        '{}' | Set-Content -Path $nextMappingPath
+        Copy-Item -Path "$PSScriptRoot/../scripts/Set-SfAdSyncTerminalCommandConfig.ps1" -Destination (Join-Path $scriptsDirectory 'Set-SfAdSyncTerminalCommandConfig.ps1')
+        Copy-Item -Path "$PSScriptRoot/../scripts/Install-SfAdSyncTerminalCommand.ps1" -Destination (Join-Path $scriptsDirectory 'Install-SfAdSyncTerminalCommand.ps1')
+        @'
+[CmdletBinding()]
+param(
+    [Parameter(Mandatory)]
+    [string]$ConfigPath,
+    [string]$MappingConfigPath
+)
+
+[pscustomobject]@{
+    configPath = $ConfigPath
+    mappingConfigPath = $MappingConfigPath
+} | ConvertTo-Json -Compress
+'@ | Set-Content -Path $dashboardPath
+
+        $installResult = & "$PSScriptRoot/../scripts/Install-SfAdSyncTerminalCommand.ps1" `
+            -ProjectRoot $projectRoot `
+            -InstallDirectory $installDirectory `
+            -ConfigPath $initialConfigPath `
+            -MappingConfigPath $initialMappingPath `
+            -SkipPathUpdate
+
+        $showCurrent = & $installResult.helperPs1CommandPath -ShowCurrent | ConvertTo-Json -Compress | ConvertFrom-Json
+        $showCurrent.configPath | Should -Be ([System.IO.Path]::GetFullPath($initialConfigPath))
+        $showCurrent.mappingConfigPath | Should -Be ([System.IO.Path]::GetFullPath($initialMappingPath))
+
+        $updateResult = & $installResult.helperPs1CommandPath `
+            -ConfigPath $nextConfigPath `
+            -MappingConfigPath $nextMappingPath
+
+        $updateResult.configPath | Should -Be ([System.IO.Path]::GetFullPath($nextConfigPath))
+        $updateResult.mappingConfigPath | Should -Be ([System.IO.Path]::GetFullPath($nextMappingPath))
+
+        $dashboardRun = & $installResult.ps1CommandPath | ConvertFrom-Json
+        $dashboardRun.configPath | Should -Be ([System.IO.Path]::GetFullPath($nextConfigPath))
+        $dashboardRun.mappingConfigPath | Should -Be ([System.IO.Path]::GetFullPath($nextMappingPath))
+    }
+
     It 'uninstalls synctui shims and the install metadata file' {
         $projectRoot = Join-Path $TestDrive 'uninstall-project'
         $configDirectory = Join-Path $projectRoot 'config'
@@ -896,6 +960,7 @@ param(
         '{}' | Set-Content -Path $configPath
         '{}' | Set-Content -Path $mappingPath
         '# dashboard stub' | Set-Content -Path (Join-Path $scriptsDirectory 'Watch-SfAdSyncMonitor.ps1')
+        '# helper stub' | Set-Content -Path (Join-Path $scriptsDirectory 'Set-SfAdSyncTerminalCommandConfig.ps1')
 
         $installResult = & "$PSScriptRoot/../scripts/Install-SfAdSyncTerminalCommand.ps1" `
             -ProjectRoot $projectRoot `
@@ -909,10 +974,13 @@ param(
             -Uninstall
 
         $uninstallResult.removed | Should -BeTrue
-        $uninstallResult.removedPaths.Count | Should -Be 4
+        $uninstallResult.removedPaths.Count | Should -Be 7
         Test-Path -Path $installResult.shellCommandPath | Should -BeFalse
         Test-Path -Path $installResult.cmdCommandPath | Should -BeFalse
         Test-Path -Path $installResult.ps1CommandPath | Should -BeFalse
+        Test-Path -Path $installResult.helperShellCommandPath | Should -BeFalse
+        Test-Path -Path $installResult.helperCmdCommandPath | Should -BeFalse
+        Test-Path -Path $installResult.helperPs1CommandPath | Should -BeFalse
         Test-Path -Path $installResult.metadataPath | Should -BeFalse
     }
 
@@ -930,6 +998,7 @@ param(
         '{}' | Set-Content -Path (Join-Path $configDirectory 'local.real.sync-config.json')
         '{}' | Set-Content -Path (Join-Path $configDirectory 'local.real.mapping-config.json')
         '# dashboard stub' | Set-Content -Path (Join-Path $scriptsDirectory 'Watch-SfAdSyncMonitor.ps1')
+        '# helper stub' | Set-Content -Path (Join-Path $scriptsDirectory 'Set-SfAdSyncTerminalCommandConfig.ps1')
 
         try {
             $env:PATH = '/usr/bin'

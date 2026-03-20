@@ -378,9 +378,12 @@ Describe 'Monitoring module' {
         ($lines -join "`n") | Should -Match 'Filter: manager'
         ($lines -join "`n") | Should -Match 'Diagnostics:'
         ($lines -join "`n") | Should -Match 'Selected Object'
-        ($lines -join "`n") | Should -Match 'Worker State'
         ($lines -join "`n") | Should -Match 'Operation: no matching reversible operation'
         ($lines -join "`n") | Should -Match 'workerId=1002'
+        ($lines -join "`n") | Should -Match 'Tracked: workerId=1002'
+        ($lines -join "`n") | Should -Not -Match 'Config:'
+        ($lines -join "`n") | Should -Not -Match 'Context:'
+        ($lines -join "`n") | Should -Not -Match 'Paths:'
     }
 
     It 'formats review artifacts with review summary and mapped field details' {
@@ -714,7 +717,7 @@ Describe 'Monitoring module' {
         $lines = @(Format-SfAdMonitorDashboardView -Status $status -UiState $uiState)
 
         ($lines -join "`n") | Should -Match 'Worker Preview Summary'
-        ($lines -join "`n") | Should -Match 't toggle auto-refresh'
+        ($lines -join "`n") | Should -Match 't auto-refresh'
         ($lines -join "`n") | Should -Match 'Review: existing=1 changed=1 aligned=0 creates=0 offboarding=0'
         ($lines -join "`n") | Should -Match 'Finance -> Sales'
         ($lines -join "`n") | Should -Match 'd delta dry-run'
@@ -890,7 +893,123 @@ Describe 'Monitoring module' {
 
         ($lines -join "`n") | Should -Match 'First Sync Review Summary'
         ($lines -join "`n") | Should -Match 'Status: Succeeded    Mode: Review'
-        ($lines -join "`n") | Should -Match 'Totals: C=0 U=1 E=0 D=0'
-        ($lines -join "`n") | Should -Not -Match 'Totals: C=9 U=8 E=0 D=0'
+        ($lines -join "`n") | Should -Match 'Totals: C=0 U=1 D=0 X=0'
+        ($lines -join "`n") | Should -Not -Match 'Totals: C=9 U=8 D=0 X=0'
+    }
+
+    It 'limits recent runs and detail rows in the compact dashboard' {
+        $reportPath = Join-Path $TestDrive 'sf-ad-sync-Delta-20260312-220000.json'
+        @{
+            runId = 'run-limit'
+            configPath = 'config.json'
+            mappingConfigPath = 'mapping.json'
+            mode = 'Delta'
+            dryRun = $true
+            startedAt = '2026-03-12T21:30:00'
+            completedAt = '2026-03-12T21:35:00'
+            status = 'Succeeded'
+            operations = @()
+            creates = @(
+                @{ workerId = '1001'; samAccountName = 'user1' }
+                @{ workerId = '1002'; samAccountName = 'user2' }
+                @{ workerId = '1003'; samAccountName = 'user3' }
+                @{ workerId = '1004'; samAccountName = 'user4' }
+                @{ workerId = '1005'; samAccountName = 'user5' }
+                @{ workerId = '1006'; samAccountName = 'user6' }
+            )
+            updates = @()
+            enables = @()
+            disables = @()
+            graveyardMoves = @()
+            deletions = @()
+            quarantined = @()
+            conflicts = @()
+            guardrailFailures = @()
+            manualReview = @()
+            unchanged = @()
+        } | ConvertTo-Json -Depth 10 | Set-Content -Path $reportPath
+
+        $recentRuns = @()
+        for ($i = 1; $i -le 6; $i += 1) {
+            $recentRuns += [pscustomobject]@{
+                runId = "run-$i"
+                path = $reportPath
+                status = 'Succeeded'
+                mode = 'Delta'
+                dryRun = $true
+                startedAt = "2026-03-12T21:3$($i - 1):00"
+                durationSeconds = 60 * $i
+                creates = $i
+                updates = 0
+                quarantined = 0
+                disables = 0
+                deletions = 0
+                conflicts = 0
+                guardrailFailures = 0
+            }
+        }
+
+        $status = [pscustomobject]@{
+            paths = [pscustomobject]@{
+                configPath = 'config.json'
+                statePath = 'state.json'
+            }
+            currentRun = [pscustomobject]@{
+                status = 'Idle'
+                stage = 'Completed'
+                mode = $null
+                dryRun = $false
+                startedAt = $null
+                lastUpdatedAt = '2026-03-12T21:41:00'
+                processedWorkers = 0
+                totalWorkers = 0
+                currentWorkerId = $null
+                lastAction = 'No active sync run.'
+                errorMessage = $null
+                creates = 0
+                updates = 0
+                enables = 0
+                disables = 0
+                graveyardMoves = 0
+                deletions = 0
+                quarantined = 0
+                conflicts = 0
+                guardrailFailures = 0
+                manualReview = 0
+                unchanged = 0
+            }
+            latestRun = $recentRuns[0]
+            summary = [pscustomobject]@{
+                lastCheckpoint = '2026-03-12T21:00:00'
+                totalTrackedWorkers = 10
+                suppressedWorkers = 1
+                pendingDeletionWorkers = 0
+            }
+            trackedWorkers = @()
+            context = [pscustomobject]@{
+                identityField = 'personIdExternal'
+                identityAttribute = 'employeeID'
+                defaultActiveOu = 'OU=Employees,DC=example,DC=com'
+                graveyardOu = 'OU=Graveyard,DC=example,DC=com'
+                enableBeforeStartDays = 7
+                deletionRetentionDays = 90
+                maxCreatesPerRun = 5
+                maxDisablesPerRun = 5
+                maxDeletionsPerRun = 5
+            }
+            recentRuns = $recentRuns
+        }
+        $uiState = New-SfAdMonitorUiState
+        $uiState.selectedBucketIndex = 4
+
+        $lines = @(Format-SfAdMonitorDashboardView -Status $status -UiState $uiState)
+        $joined = $lines -join "`n"
+        $recentRunLines = @($lines | Where-Object { $_ -match '^\s+[>]?\s*Succeeded\s+Delta' })
+        $detailLines = @($lines | Where-Object { $_ -match '^[>-] .*workerId=' })
+
+        $recentRunLines.Count | Should -Be 5
+        $detailLines.Count | Should -Be 4
+        $joined | Should -Match '\.\.\. 1 older runs'
+        $joined | Should -Match '\.\.\. 2 more'
     }
 }

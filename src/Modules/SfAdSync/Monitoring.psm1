@@ -1094,41 +1094,39 @@ function Format-SfAdMonitorDashboardView {
     $isReviewRun = Test-SfAdMonitorSelectedRunIsReview -Status $Status -UiState $UiState
     $lines = [System.Collections.Generic.List[string]]::new()
     $panelWidth = 110
+    $recentRunRowLimit = 5
+    $detailRowLimit = 4
     $topBorder = "╔" + ("═" * ($panelWidth - 2)) + "╗"
     $midBorder = "╠" + ("═" * ($panelWidth - 2)) + "╣"
     $bottomBorder = "╚" + ("═" * ($panelWidth - 2)) + "╝"
     $rule = "─" * $panelWidth
 
     $latestState = if ($Status.latestRun.status -eq 'Failed' -or $Status.currentRun.errorMessage) { 'ERROR' } elseif ($Status.currentRun.status -eq 'InProgress') { 'ACTIVE' } else { 'OK' }
+    $selectedRunPosition = [math]::Min([int]$UiState.selectedRunIndex + 1, [math]::Max(@($Status.recentRuns).Count, 1))
+    $selectedItemPosition = [math]::Min([int]$UiState.selectedItemIndex + 1, [math]::Max($filteredItems.Count, 1))
+    $isCurrentRunActive = "$($Status.currentRun.status)" -eq 'InProgress'
     $lines.Add($topBorder)
-    $lines.Add("║ SuccessFactors AD Sync Dashboard [$latestState]")
-    $lines.Add("║ Config: $($Status.paths.configPath)")
-    $lines.Add("║ Refreshed: $((Get-Date).ToString('yyyy-MM-dd HH:mm:ss'))    AutoRefresh: $(if ($UiState.autoRefreshEnabled) { 'On' } else { 'Paused' })    Focus: $($UiState.focus)    Selected run: $([math]::Min([int]$UiState.selectedRunIndex + 1, [math]::Max(@($Status.recentRuns).Count, 1))) / $([math]::Max(@($Status.recentRuns).Count, 1))    Bucket: $($selectedBucket.Bucket.Label)")
-    $lines.Add("║ Filter: $(if ([string]::IsNullOrWhiteSpace($UiState.filterText)) { '(none)' } else { $UiState.filterText })    Matching entries: $($filteredItems.Count) / $(@($selectedBucket.Items).Count)    Selected item: $([math]::Min([int]$UiState.selectedItemIndex + 1, [math]::Max($filteredItems.Count, 1))) / $([math]::Max($filteredItems.Count, 1))")
+    $lines.Add("║ SuccessFactors AD Sync Dashboard [$latestState]    AutoRefresh: $(if ($UiState.autoRefreshEnabled) { 'On' } else { 'Paused' })    Refreshed: $((Get-Date).ToString('yyyy-MM-dd HH:mm:ss'))")
+    $lines.Add("║ Run: $selectedRunPosition/$([math]::Max(@($Status.recentRuns).Count, 1))    Bucket: $($selectedBucket.Bucket.Label)    Filter: $(if ([string]::IsNullOrWhiteSpace($UiState.filterText)) { '(none)' } else { $UiState.filterText })    Match: $($filteredItems.Count)/$(@($selectedBucket.Items).Count)    Item: $selectedItemPosition/$([math]::Max($filteredItems.Count, 1))")
     $lines.Add($midBorder)
     $lines.Add('▓ Current Run')
     $lines.Add("Status: $($Status.currentRun.status)    Stage: $($Status.currentRun.stage)    Mode: $($Status.currentRun.mode)    DryRun: $($Status.currentRun.dryRun)")
-    $lines.Add("Started: $($Status.currentRun.startedAt)    Progress: $($Status.currentRun.processedWorkers) / $($Status.currentRun.totalWorkers)    Worker: $($Status.currentRun.currentWorkerId)")
-    $lines.Add("Last action: $($Status.currentRun.lastAction)")
+    $lines.Add("Progress: $($Status.currentRun.processedWorkers) / $($Status.currentRun.totalWorkers)    Worker: $($Status.currentRun.currentWorkerId)    Last action: $($Status.currentRun.lastAction)")
     if ($Status.currentRun.errorMessage) {
         $lines.Add("Error: $($Status.currentRun.errorMessage)")
     }
-    $lines.Add("Live counts: C=$($Status.currentRun.creates) U=$($Status.currentRun.updates) E=$($Status.currentRun.enables) D=$($Status.currentRun.disables) G=$($Status.currentRun.graveyardMoves) X=$($Status.currentRun.deletions) Q=$($Status.currentRun.quarantined) F=$($Status.currentRun.conflicts) GF=$($Status.currentRun.guardrailFailures) MR=$($Status.currentRun.manualReview) NC=$($Status.currentRun.unchanged)")
-    $lines.Add("Diagnostics: Elapsed=$(if ($null -ne $diagnostics.elapsedSeconds) { $diagnostics.elapsedSeconds } else { '-' })s    RefreshLag=$(if ($null -ne $diagnostics.refreshLagSeconds) { $diagnostics.refreshLagSeconds } else { '-' })s    Throughput=$(if ($null -ne $diagnostics.throughput) { $diagnostics.throughput } else { '-' })/s    ETA=$(if ($null -ne $diagnostics.etaSeconds) { $diagnostics.etaSeconds } else { '-' })s")
+    if ($isCurrentRunActive) {
+        $lines.Add("Diagnostics: Elapsed=$(if ($null -ne $diagnostics.elapsedSeconds) { $diagnostics.elapsedSeconds } else { '-' })s    RefreshLag=$(if ($null -ne $diagnostics.refreshLagSeconds) { $diagnostics.refreshLagSeconds } else { '-' })s    Throughput=$(if ($null -ne $diagnostics.throughput) { $diagnostics.throughput } else { '-' })/s    ETA=$(if ($null -ne $diagnostics.etaSeconds) { $diagnostics.etaSeconds } else { '-' })s")
+    }
     $lines.Add($rule)
-    $selectedRunDuration = if ($selectedRun.PSObject.Properties.Name -contains 'durationSeconds') { $selectedRun.durationSeconds } else { $null }
-    $selectedRunReversibleOperations = if ($selectedRun.PSObject.Properties.Name -contains 'reversibleOperations') { $selectedRun.reversibleOperations } else { 0 }
+    $selectedRunDuration = if ($selectedRun.PSObject.Properties.Name -contains 'durationSeconds') { $selectedRun.durationSeconds } else { '-' }
     $selectedRunCreates = if ($selectedRun.PSObject.Properties.Name -contains 'creates') { $selectedRun.creates } else { 0 }
     $selectedRunUpdates = if ($selectedRun.PSObject.Properties.Name -contains 'updates') { $selectedRun.updates } else { 0 }
-    $selectedRunEnables = if ($selectedRun.PSObject.Properties.Name -contains 'enables') { $selectedRun.enables } else { 0 }
     $selectedRunDisables = if ($selectedRun.PSObject.Properties.Name -contains 'disables') { $selectedRun.disables } else { 0 }
-    $selectedRunGraveyardMoves = if ($selectedRun.PSObject.Properties.Name -contains 'graveyardMoves') { $selectedRun.graveyardMoves } else { 0 }
     $selectedRunDeletions = if ($selectedRun.PSObject.Properties.Name -contains 'deletions') { $selectedRun.deletions } else { 0 }
     $selectedRunQuarantined = if ($selectedRun.PSObject.Properties.Name -contains 'quarantined') { $selectedRun.quarantined } else { 0 }
     $selectedRunConflicts = if ($selectedRun.PSObject.Properties.Name -contains 'conflicts') { $selectedRun.conflicts } else { 0 }
     $selectedRunGuardrailFailures = if ($selectedRun.PSObject.Properties.Name -contains 'guardrailFailures') { $selectedRun.guardrailFailures } else { 0 }
-    $selectedRunManualReview = if ($selectedRun.PSObject.Properties.Name -contains 'manualReview') { $selectedRun.manualReview } else { 0 }
-    $selectedRunUnchanged = if ($selectedRun.PSObject.Properties.Name -contains 'unchanged') { $selectedRun.unchanged } else { 0 }
     $summaryTitle = if ($selectedRun.PSObject.Properties.Name -contains 'artifactType' -and "$($selectedRun.artifactType)" -eq 'WorkerPreview') {
         '▓ Worker Preview Summary'
     } elseif ($isReviewRun) {
@@ -1137,50 +1135,50 @@ function Format-SfAdMonitorDashboardView {
         '▓ Latest Run Summary'
     }
     $lines.Add($summaryTitle)
-    $lines.Add("Status: $($selectedRun.status)    Mode: $($selectedRun.mode)    DryRun: $($selectedRun.dryRun)    Started: $($selectedRun.startedAt)")
-    $lines.Add("Duration(s): $selectedRunDuration    Reversible ops: $selectedRunReversibleOperations")
-    $lines.Add("Totals: C=$selectedRunCreates U=$selectedRunUpdates E=$selectedRunEnables D=$selectedRunDisables G=$selectedRunGraveyardMoves X=$selectedRunDeletions Q=$selectedRunQuarantined F=$selectedRunConflicts GF=$selectedRunGuardrailFailures MR=$selectedRunManualReview NC=$selectedRunUnchanged")
+    $lines.Add("Status: $($selectedRun.status)    Mode: $($selectedRun.mode)    DryRun: $($selectedRun.dryRun)    Started: $($selectedRun.startedAt)    Dur(s): $selectedRunDuration")
+    $lines.Add("Totals: C=$selectedRunCreates U=$selectedRunUpdates D=$selectedRunDisables X=$selectedRunDeletions Q=$selectedRunQuarantined F=$selectedRunConflicts GF=$selectedRunGuardrailFailures")
     if ($isReviewRun -and $selectedRun.reviewSummary) {
         $lines.Add("Review: existing=$($selectedRun.reviewSummary.existingUsersMatched) changed=$($selectedRun.reviewSummary.existingUsersWithAttributeChanges) aligned=$($selectedRun.reviewSummary.existingUsersWithoutAttributeChanges) creates=$($selectedRun.reviewSummary.proposedCreates) offboarding=$($selectedRun.reviewSummary.proposedOffboarding)")
-        $lines.Add("Review notes: mappingCount=$($selectedRun.reviewSummary.mappingCount) deletionPassSkipped=$($selectedRun.reviewSummary.deletionPassSkipped)")
     }
     if ($comparisonRun -and $runDelta) {
         $lines.Add("Compared to older run $($comparisonRun.runId): ΔC=$($runDelta.creates) ΔU=$($runDelta.updates) ΔD=$($runDelta.disables) ΔX=$($runDelta.deletions) ΔQ=$($runDelta.quarantined) ΔF=$($runDelta.conflicts) ΔGF=$($runDelta.guardrailFailures)")
     }
     $lines.Add($rule)
     $lines.Add('▓ State Summary')
-    $lines.Add("Checkpoint: $($Status.summary.lastCheckpoint)")
-    $lines.Add("Tracked: $($Status.summary.totalTrackedWorkers)    Suppressed: $($Status.summary.suppressedWorkers)    Pending deletion: $($Status.summary.pendingDeletionWorkers)")
-    $lines.Add("Context: identityField=$($Status.context.identityField) identityAttribute=$($Status.context.identityAttribute) enableBefore=$($Status.context.enableBeforeStartDays)d deleteRetention=$($Status.context.deletionRetentionDays)d")
-    $lines.Add("OUs: active=$($Status.context.defaultActiveOu)    graveyard=$($Status.context.graveyardOu)")
-    $lines.Add("Safety: create=$($Status.context.maxCreatesPerRun) disable=$($Status.context.maxDisablesPerRun) delete=$($Status.context.maxDeletionsPerRun)")
-    $lines.Add("Paths: mapping=$(Resolve-SfAdMonitorMappingConfigPath -Status $Status)    state=$($Status.paths.statePath)")
-    $liveReportDirectory = if ($Status.paths.PSObject.Properties.Name -contains 'reportDirectory') { $Status.paths.reportDirectory } else { $null }
-    $reviewReportDirectory = if ($Status.paths.PSObject.Properties.Name -contains 'reviewReportDirectory') { $Status.paths.reviewReportDirectory } else { $null }
-    $lines.Add("Reports: live=$liveReportDirectory    review=$reviewReportDirectory")
+    $lines.Add("Checkpoint: $($Status.summary.lastCheckpoint)    Tracked: $($Status.summary.totalTrackedWorkers)    Suppressed: $($Status.summary.suppressedWorkers)    Pending deletion: $($Status.summary.pendingDeletionWorkers)")
     $lines.Add($rule)
     $lines.Add('▓ Recent Runs')
-    $lines.Add(' Sel Status     Mode  Dry  Started             Dur(s) Create Update Disable Delete Conflict Guardrail')
+    $lines.Add(' Sel Status     Mode  Dry  Started             Dur(s)     C     U     D     X   Q/F')
     $runs = @($Status.recentRuns)
     if ($runs.Count -eq 0) {
         $lines.Add('  -  No sync reports found.')
     } else {
-        for ($i = 0; $i -lt $runs.Count; $i += 1) {
+        for ($i = 0; $i -lt [math]::Min($runs.Count, $recentRunRowLimit); $i += 1) {
             $run = $runs[$i]
             $marker = if ($i -eq [math]::Min([math]::Max([int]$UiState.selectedRunIndex, 0), $runs.Count - 1)) { ' > ' } else { '   ' }
-            $lines.Add(("{0}{1,-10} {2,-5} {3,-4} {4,-19} {5,6} {6,6} {7,6} {8,7} {9,6} {10,8} {11,9}" -f `
+            $runCreates = if ($run.PSObject.Properties.Name -contains 'creates') { $run.creates } else { 0 }
+            $runUpdates = if ($run.PSObject.Properties.Name -contains 'updates') { $run.updates } else { 0 }
+            $runDisables = if ($run.PSObject.Properties.Name -contains 'disables') { $run.disables } else { 0 }
+            $runDeletions = if ($run.PSObject.Properties.Name -contains 'deletions') { $run.deletions } else { 0 }
+            $runQuarantined = if ($run.PSObject.Properties.Name -contains 'quarantined') { $run.quarantined } else { 0 }
+            $runConflicts = if ($run.PSObject.Properties.Name -contains 'conflicts') { $run.conflicts } else { 0 }
+            $lines.Add(("{0}{1,-10} {2,-5} {3,-4} {4,-19} {5,6} {6,5} {7,5} {8,5} {9,5} {10,6}/{11,-2}" -f `
                     $marker, `
                     $(if ($run.status) { $run.status } else { '-' }), `
                     $(if ($run.mode) { $run.mode } else { '-' }), `
                     $(if ($run.dryRun) { 'yes' } else { 'no' }), `
                     $(if ($run.startedAt) { $run.startedAt } else { '-' }), `
                     $(if ($null -ne $run.durationSeconds) { $run.durationSeconds } else { '-' }), `
-                    $run.creates, `
-                    $run.updates, `
-                    $run.disables, `
-                    $run.deletions, `
-                    $run.conflicts, `
+                    $runCreates, `
+                    $runUpdates, `
+                    $runDisables, `
+                    $runDeletions, `
+                    $runQuarantined, `
+                    $runConflicts, `
                     $run.guardrailFailures))
+        }
+        if ($runs.Count -gt $recentRunRowLimit) {
+            $lines.Add("... $($runs.Count - $recentRunRowLimit) older runs")
         }
     }
 
@@ -1195,13 +1193,13 @@ function Format-SfAdMonitorDashboardView {
     } elseif ($filteredItems.Count -eq 0) {
         $lines.Add('No entries match the active filter.')
     } else {
-        for ($i = 0; $i -lt [math]::Min($filteredItems.Count, 8); $i += 1) {
+        for ($i = 0; $i -lt [math]::Min($filteredItems.Count, $detailRowLimit); $i += 1) {
             $prefix = if ($selectedItem -and $filteredItems[$i] -eq $selectedItem) { '>' } else { '-' }
             $lines.Add("$prefix $(ConvertTo-SfAdMonitorInlineText -Value $filteredItems[$i])")
         }
 
-        if ($filteredItems.Count -gt 8) {
-            $lines.Add("... $($filteredItems.Count - 8) more")
+        if ($filteredItems.Count -gt $detailRowLimit) {
+            $lines.Add("... $($filteredItems.Count - $detailRowLimit) more")
         }
     }
 
@@ -1210,9 +1208,6 @@ function Format-SfAdMonitorDashboardView {
     foreach ($line in @(Format-SfAdMonitorSelectedObjectLines -SelectedItem $selectedItem -SelectedOperation $selectedOperation)) {
         $lines.Add($line)
     }
-
-    $lines.Add($rule)
-    $lines.Add('▓ Worker State')
     if ($selectedWorkerState) {
         $lines.Add("Tracked: $(ConvertTo-SfAdMonitorInlineText -Value $selectedWorkerState)")
     } else {
@@ -1236,7 +1231,8 @@ function Format-SfAdMonitorDashboardView {
 
     $lines.Add($midBorder)
     $lines.Add("║ Status: $($UiState.statusMessage)")
-    $lines.Add('║ Keys: q quit, r refresh, t toggle auto-refresh, tab focus, up/down or j/k select run, [ or ] bucket, left/right or h/l select item, / filter, c clear filter, enter inspect, p preflight, d delta dry-run, s delta sync, f full dry-run, a full sync, w worker preview, v review, o open report, y copy report path, x export bucket')
+    $lines.Add('║ Keys: q quit, r refresh, t auto-refresh, tab focus, j/k run, [ ] bucket, h/l item, / filter, c clear, enter inspect')
+    $lines.Add('║ Runs: p preflight, d delta dry-run, s delta sync, f full dry-run, a full sync, w worker preview, v review, o open report, y copy path, x export bucket')
     $lines.Add($bottomBorder)
     return $lines
 }

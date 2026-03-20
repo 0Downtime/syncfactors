@@ -101,6 +101,19 @@ synctui
 
 The command supports the dashboard's normal monitor flags from [`scripts/Watch-SfAdSyncMonitor.ps1`](/Users/chrisbrien/dev/github.com/sf-ad-sync/scripts/Watch-SfAdSyncMonitor.ps1), for example `synctui -RunOnce -AsText`.
 
+To repoint the installed TUI at a different config later, use the companion helper command:
+
+```powershell
+synctui-config -ConfigPath ./config/other.sync-config.json `
+  -MappingConfigPath ./config/other.mapping-config.json
+```
+
+To inspect the current default config paths:
+
+```powershell
+synctui-config -ShowCurrent
+```
+
 To uninstall the command shims later:
 
 ```powershell
