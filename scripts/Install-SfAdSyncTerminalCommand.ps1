@@ -254,6 +254,7 @@ param(
     [int]`$RefreshIntervalSeconds,
     [ValidateRange(1, 1000)]
     [int]`$HistoryLimit,
+    [switch]`$PauseAutoRefresh,
     [switch]`$RunOnce,
     [switch]`$AsText
 )
@@ -287,6 +288,10 @@ if (`$PSBoundParameters.ContainsKey('RefreshIntervalSeconds')) {
 
 if (`$PSBoundParameters.ContainsKey('HistoryLimit')) {
     `$namedArguments['HistoryLimit'] = `$HistoryLimit
+}
+
+if (`$PauseAutoRefresh) {
+    `$namedArguments['PauseAutoRefresh'] = `$true
 }
 
 if (`$RunOnce) {

@@ -98,6 +98,8 @@ Describe 'Monitoring module' {
     It 'includes all run shortcuts in the default dashboard shortcut help' {
         $uiState = New-SfAdMonitorUiState
 
+        $uiState.autoRefreshEnabled | Should -BeTrue
+        $uiState.statusMessage | Should -Match 't toggle auto-refresh'
         $uiState.statusMessage | Should -Match 'd delta dry-run'
         $uiState.statusMessage | Should -Match 's delta sync'
         $uiState.statusMessage | Should -Match 'f full dry-run'
@@ -371,6 +373,7 @@ Describe 'Monitoring module' {
         $lines = @(Format-SfAdMonitorDashboardView -Status $status -UiState $uiState)
 
         ($lines -join "`n") | Should -Match 'SuccessFactors AD Sync Dashboard'
+        ($lines -join "`n") | Should -Match 'AutoRefresh: On'
         ($lines -join "`n") | Should -Match 'Detail: Quarantined'
         ($lines -join "`n") | Should -Match 'Filter: manager'
         ($lines -join "`n") | Should -Match 'Diagnostics:'
@@ -711,6 +714,7 @@ Describe 'Monitoring module' {
         $lines = @(Format-SfAdMonitorDashboardView -Status $status -UiState $uiState)
 
         ($lines -join "`n") | Should -Match 'Worker Preview Summary'
+        ($lines -join "`n") | Should -Match 't toggle auto-refresh'
         ($lines -join "`n") | Should -Match 'Review: existing=1 changed=1 aligned=0 creates=0 offboarding=0'
         ($lines -join "`n") | Should -Match 'Finance -> Sales'
         ($lines -join "`n") | Should -Match 'd delta dry-run'

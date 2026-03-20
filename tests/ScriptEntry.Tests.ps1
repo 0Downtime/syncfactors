@@ -816,6 +816,7 @@ param(
     [string]$MappingConfigPath,
     [ValidateRange(1, 3600)]
     [int]$RefreshIntervalSeconds = 3,
+    [switch]$PauseAutoRefresh,
     [switch]$RunOnce
 )
 
@@ -823,6 +824,7 @@ param(
     configPath = $ConfigPath
     mappingConfigPath = $MappingConfigPath
     refreshIntervalSeconds = $RefreshIntervalSeconds
+    pauseAutoRefresh = [bool]$PauseAutoRefresh
     runOnce = [bool]$RunOnce
 } | ConvertTo-Json -Compress
 '@ | Set-Content -Path $dashboardPath
@@ -834,11 +836,12 @@ param(
             -MappingConfigPath $mappingPath `
             -SkipPathUpdate
 
-        $result = & $installResult.ps1CommandPath -RefreshIntervalSeconds 9 -RunOnce | ConvertFrom-Json
+        $result = & $installResult.ps1CommandPath -RefreshIntervalSeconds 9 -PauseAutoRefresh -RunOnce | ConvertFrom-Json
 
         $result.configPath | Should -Be ([System.IO.Path]::GetFullPath($configPath))
         $result.mappingConfigPath | Should -Be ([System.IO.Path]::GetFullPath($mappingPath))
         $result.refreshIntervalSeconds | Should -Be 9
+        $result.pauseAutoRefresh | Should -BeTrue
         $result.runOnce | Should -BeTrue
     }
 

@@ -504,8 +504,9 @@ function New-SfAdMonitorUiState {
         selectedItemIndex = 0
         focus = 'History'
         filterText = ''
+        autoRefreshEnabled = $true
         preferredMode = $null
-        statusMessage = 'Ready. Keys: q quit, r refresh, tab focus, arrows or j/k select run, [ ] bucket, left/right or h/l select item, / filter, c clear filter, p preflight, d delta dry-run, s delta sync, f full dry-run, a full sync, w worker preview, v review, o open path, y copy path, x export bucket.'
+        statusMessage = 'Ready. Keys: q quit, r refresh, t toggle auto-refresh, tab focus, arrows or j/k select run, [ ] bucket, left/right or h/l select item, / filter, c clear filter, p preflight, d delta dry-run, s delta sync, f full dry-run, a full sync, w worker preview, v review, o open path, y copy path, x export bucket.'
         commandOutput = @()
     }
 }
@@ -1102,7 +1103,7 @@ function Format-SfAdMonitorDashboardView {
     $lines.Add($topBorder)
     $lines.Add("║ SuccessFactors AD Sync Dashboard [$latestState]")
     $lines.Add("║ Config: $($Status.paths.configPath)")
-    $lines.Add("║ Refreshed: $((Get-Date).ToString('yyyy-MM-dd HH:mm:ss'))    Focus: $($UiState.focus)    Selected run: $([math]::Min([int]$UiState.selectedRunIndex + 1, [math]::Max(@($Status.recentRuns).Count, 1))) / $([math]::Max(@($Status.recentRuns).Count, 1))    Bucket: $($selectedBucket.Bucket.Label)")
+    $lines.Add("║ Refreshed: $((Get-Date).ToString('yyyy-MM-dd HH:mm:ss'))    AutoRefresh: $(if ($UiState.autoRefreshEnabled) { 'On' } else { 'Paused' })    Focus: $($UiState.focus)    Selected run: $([math]::Min([int]$UiState.selectedRunIndex + 1, [math]::Max(@($Status.recentRuns).Count, 1))) / $([math]::Max(@($Status.recentRuns).Count, 1))    Bucket: $($selectedBucket.Bucket.Label)")
     $lines.Add("║ Filter: $(if ([string]::IsNullOrWhiteSpace($UiState.filterText)) { '(none)' } else { $UiState.filterText })    Matching entries: $($filteredItems.Count) / $(@($selectedBucket.Items).Count)    Selected item: $([math]::Min([int]$UiState.selectedItemIndex + 1, [math]::Max($filteredItems.Count, 1))) / $([math]::Max($filteredItems.Count, 1))")
     $lines.Add($midBorder)
     $lines.Add('▓ Current Run')
@@ -1235,7 +1236,7 @@ function Format-SfAdMonitorDashboardView {
 
     $lines.Add($midBorder)
     $lines.Add("║ Status: $($UiState.statusMessage)")
-    $lines.Add('║ Keys: q quit, r refresh, tab focus, up/down or j/k select run, [ or ] bucket, left/right or h/l select item, / filter, c clear filter, enter inspect, p preflight, d delta dry-run, s delta sync, f full dry-run, a full sync, w worker preview, v review, o open report, y copy report path, x export bucket')
+    $lines.Add('║ Keys: q quit, r refresh, t toggle auto-refresh, tab focus, up/down or j/k select run, [ or ] bucket, left/right or h/l select item, / filter, c clear filter, enter inspect, p preflight, d delta dry-run, s delta sync, f full dry-run, a full sync, w worker preview, v review, o open report, y copy report path, x export bucket')
     $lines.Add($bottomBorder)
     return $lines
 }

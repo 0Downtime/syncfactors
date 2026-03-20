@@ -7,6 +7,7 @@ param(
     [int]$RefreshIntervalSeconds = 3,
     [ValidateRange(1, 1000)]
     [int]$HistoryLimit = 10,
+    [switch]$PauseAutoRefresh,
     [switch]$RunOnce,
     [switch]$AsText
 )
@@ -494,6 +495,10 @@ function Invoke-SfAdMonitorShortcut {
 $resolvedConfigPath = (Resolve-Path -Path $ConfigPath).Path
 $resolvedMappingConfigPath = Get-OptionalResolvedPath -Path $MappingConfigPath
 $uiState = New-SfAdMonitorUiState
+$uiState.autoRefreshEnabled = -not $PauseAutoRefresh
+if ($PauseAutoRefresh) {
+    $uiState.statusMessage = 'Auto-refresh paused. Press t to resume or r to refresh once.'
+}
 $lastStatus = $null
 
 do {
@@ -509,7 +514,8 @@ do {
 
     $quitRequested = $false
     $refreshRequested = $false
-    for ($second = 0; $second -lt $RefreshIntervalSeconds; $second += 1) {
+    $elapsedSeconds = 0
+    while (-not $quitRequested -and -not $refreshRequested) {
         if ([Console]::KeyAvailable) {
             $key = [Console]::ReadKey($true)
             switch ($key.Key) {
@@ -518,6 +524,16 @@ do {
                     break
                 }
                 'R' {
+                    $refreshRequested = $true
+                    break
+                }
+                'T' {
+                    $uiState.autoRefreshEnabled = -not $uiState.autoRefreshEnabled
+                    $uiState.statusMessage = if ($uiState.autoRefreshEnabled) {
+                        "Auto-refresh resumed. Refreshing every $RefreshIntervalSeconds seconds."
+                    } else {
+                        'Auto-refresh paused. Press t to resume or r to refresh once.'
+                    }
                     $refreshRequested = $true
                     break
                 }
@@ -730,5 +746,11 @@ do {
         }
 
         Start-Sleep -Seconds 1
+        if ($uiState.autoRefreshEnabled) {
+            $elapsedSeconds += 1
+            if ($elapsedSeconds -ge $RefreshIntervalSeconds) {
+                $refreshRequested = $true
+            }
+        }
     }
 } while (-not $quitRequested)

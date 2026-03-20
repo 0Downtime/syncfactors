@@ -168,7 +168,7 @@ pwsh ./scripts/Watch-SfAdSyncMonitor.ps1 `
   -ConfigPath ./config/local.real-successfactors.real-ad.sync-config.json
 ```
 
-Press `q` to quit or `r` to refresh immediately. The dashboard shortcuts now cover the full run set: `d` delta dry-run, `s` delta sync, `f` full dry-run, `a` full sync, `v` review, and `w` single-worker preview. Any shortcut that can write anything, including reports, temp exports, or the clipboard, now requires typing `YES` before it proceeds.
+Press `q` to quit, `r` to refresh immediately, or `t` to pause/resume auto-refresh. Start paused with `-PauseAutoRefresh` if you want to browse the dashboard without timed redraws. The dashboard shortcuts now cover the full run set: `d` delta dry-run, `s` delta sync, `f` full dry-run, `a` full sync, `v` review, and `w` single-worker preview. Any shortcut that can write anything, including reports, temp exports, or the clipboard, now requires typing `YES` before it proceeds.
 
 To run the full Pester suite:
 
