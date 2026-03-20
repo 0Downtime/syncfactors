@@ -619,16 +619,19 @@ function New-SfAdMonitorUiState {
     param()
 
     return [pscustomobject]@{
+        viewMode = 'Dashboard'
         selectedRunIndex = 0
         selectedBucketIndex = 0
         selectedItemIndex = 0
+        reportCategoryIndex = 0
+        reportEntryIndex = 0
         focus = 'History'
         filterText = ''
         autoRefreshEnabled = $false
         preferredMode = $null
         pendingAction = $null
         pendingWorkerId = $null
-        statusMessage = 'Ready. Keys: q quit, r refresh, t toggle auto-refresh, tab focus, arrows or j/k select run, [ ] bucket, left/right or h/l select item, / filter, c clear filter, p preflight, d delta dry-run, s delta sync, f full dry-run, a full sync, w worker preview, v review, z fresh reset, o open path, y copy path, x export bucket.'
+        statusMessage = 'Ready. Keys: q quit, r refresh, t toggle auto-refresh, tab focus, arrows or j/k select run, [ ] bucket, left/right or h/l select item, / filter, c clear filter, p preflight, d delta dry-run, s delta sync, f full dry-run, a full sync, w worker preview, v review, z fresh reset, o open report explorer, y copy path, x export bucket.'
         commandOutput = @()
     }
 }
@@ -1146,6 +1149,335 @@ function Get-SfAdMonitorOperationDiffLines {
     )
 }
 
+function Get-SfAdMonitorReportExplorerCategoryDefinitions {
+    [CmdletBinding()]
+    param()
+
+    return @(
+        [pscustomobject]@{ Name = 'Changed'; Label = 'Changed'; Marker = '[UPDATE]' }
+        [pscustomobject]@{ Name = 'Created'; Label = 'Created'; Marker = '[CREATE]' }
+        [pscustomobject]@{ Name = 'Deleted'; Label = 'Deleted'; Marker = '[DELETE]' }
+    )
+}
+
+function Get-SfAdMonitorOperationForItem {
+    [CmdletBinding()]
+    param(
+        [pscustomobject]$Report,
+        [string]$BucketName,
+        $Item
+    )
+
+    if (-not $Report -or -not ($Report.PSObject.Properties.Name -contains 'operations')) {
+        return $null
+    }
+
+    $workerId = if ($Item -and $Item.PSObject.Properties.Name -contains 'workerId') { "$($Item.workerId)" } else { $null }
+    $samAccountName = if ($Item -and $Item.PSObject.Properties.Name -contains 'samAccountName') { "$($Item.samAccountName)" } else { $null }
+    $userPrincipalName = if ($Item -and $Item.PSObject.Properties.Name -contains 'userPrincipalName') { "$($Item.userPrincipalName)" } else { $null }
+
+    $matches = @($Report.operations | Where-Object {
+            if ($BucketName -and "$($_.bucket)" -ne $BucketName) {
+                return $false
+            }
+
+            if (-not [string]::IsNullOrWhiteSpace($workerId) -and "$($_.workerId)" -eq $workerId) {
+                return $true
+            }
+
+            if (
+                -not [string]::IsNullOrWhiteSpace($samAccountName) -and
+                $_.target -and
+                $_.target.PSObject.Properties.Name -contains 'samAccountName' -and
+                "$($_.target.samAccountName)" -eq $samAccountName
+            ) {
+                return $true
+            }
+
+            if (
+                -not [string]::IsNullOrWhiteSpace($userPrincipalName) -and
+                $_.target -and
+                $_.target.PSObject.Properties.Name -contains 'userPrincipalName' -and
+                "$($_.target.userPrincipalName)" -eq $userPrincipalName
+            ) {
+                return $true
+            }
+
+            return $false
+        } | Sort-Object sequence -Descending)
+
+    if ($matches.Count -eq 0) {
+        return $null
+    }
+
+    return $matches[0]
+}
+
+function Get-SfAdMonitorReportExplorerEntries {
+    [CmdletBinding()]
+    param(
+        [pscustomobject]$Report
+    )
+
+    if (-not $Report) {
+        return @()
+    }
+
+    $bucketCategoryMap = @{
+        updates = 'Changed'
+        enables = 'Changed'
+        disables = 'Changed'
+        graveyardMoves = 'Changed'
+        creates = 'Created'
+        deletions = 'Deleted'
+    }
+
+    $entries = [System.Collections.Generic.List[object]]::new()
+    foreach ($bucketName in @('updates', 'enables', 'disables', 'graveyardMoves', 'creates', 'deletions')) {
+        if ($Report.PSObject.Properties.Name -notcontains $bucketName) {
+            continue
+        }
+
+        foreach ($item in @($Report.$bucketName)) {
+            $operation = Get-SfAdMonitorOperationForItem -Report $Report -BucketName $bucketName -Item $item
+            $changeCount = 0
+            if ($item -and $item.PSObject.Properties.Name -contains 'changedAttributeDetails') {
+                $changeCount = @($item.changedAttributeDetails).Count
+            } elseif ($item -and $item.PSObject.Properties.Name -contains 'attributeRows') {
+                $changeCount = @($item.attributeRows | Where-Object { $_.changed }).Count
+            } elseif ($operation) {
+                $changeCount = @(Get-SfAdMonitorOperationDiffLines -Operation $operation).Count
+            }
+
+            $entries.Add([pscustomobject]@{
+                    Category = $bucketCategoryMap[$bucketName]
+                    BucketName = $bucketName
+                    WorkerId = if ($item -and $item.PSObject.Properties.Name -contains 'workerId') { "$($item.workerId)" } else { '' }
+                    SamAccountName = if ($item -and $item.PSObject.Properties.Name -contains 'samAccountName') { "$($item.samAccountName)" } else { '' }
+                    UserPrincipalName = if ($item -and $item.PSObject.Properties.Name -contains 'userPrincipalName') { "$($item.userPrincipalName)" } else { '' }
+                    Reason = if ($item -and $item.PSObject.Properties.Name -contains 'reason') { "$($item.reason)" } else { '' }
+                    ReviewCategory = if ($item -and $item.PSObject.Properties.Name -contains 'reviewCategory') { "$($item.reviewCategory)" } else { '' }
+                    TargetOu = if ($item -and $item.PSObject.Properties.Name -contains 'targetOu') { "$($item.targetOu)" } else { '' }
+                    ChangeCount = $changeCount
+                    Item = $item
+                    Operation = $operation
+                })
+        }
+    }
+
+    return @($entries)
+}
+
+function Get-SfAdMonitorReportExplorerSelection {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [pscustomobject]$Status,
+        [Parameter(Mandatory)]
+        [pscustomobject]$UiState
+    )
+
+    $report = Get-SfAdMonitorSelectedRunReport -Status $Status -UiState $UiState
+    $categories = @(Get-SfAdMonitorReportExplorerCategoryDefinitions)
+    $entries = @(Get-SfAdMonitorReportExplorerEntries -Report $report)
+    $categoryIndex = if ($categories.Count -eq 0) { 0 } else { [math]::Min([math]::Max([int]$UiState.reportCategoryIndex, 0), $categories.Count - 1) }
+    $selectedCategory = if ($categories.Count -eq 0) { $null } else { $categories[$categoryIndex] }
+    $categoryEntries = if ($selectedCategory) { @($entries | Where-Object { $_.Category -eq $selectedCategory.Name }) } else { @() }
+    $entryIndex = if ($categoryEntries.Count -eq 0) { 0 } else { [math]::Min([math]::Max([int]$UiState.reportEntryIndex, 0), $categoryEntries.Count - 1) }
+    $selectedEntry = if ($categoryEntries.Count -eq 0) { $null } else { $categoryEntries[$entryIndex] }
+
+    return [pscustomobject]@{
+        Report = $report
+        Categories = $categories
+        Entries = $entries
+        SelectedCategory = $selectedCategory
+        CategoryEntries = $categoryEntries
+        SelectedEntry = $selectedEntry
+        SelectedCategoryIndex = $categoryIndex
+        SelectedEntryIndex = $entryIndex
+    }
+}
+
+function Get-SfAdMonitorReportExplorerDiffRows {
+    [CmdletBinding()]
+    param(
+        $Entry
+    )
+
+    if (-not $Entry) {
+        return @()
+    }
+
+    $item = $Entry.Item
+    if ($item -and $item.PSObject.Properties.Name -contains 'changedAttributeDetails') {
+        return @(
+            foreach ($row in @($item.changedAttributeDetails)) {
+                [pscustomobject]@{
+                    Marker = '[UPDATE]'
+                    Attribute = "$($row.targetAttribute)"
+                    Before = ConvertTo-SfAdMonitorInlineText -Value $row.currentAdValue
+                    After = ConvertTo-SfAdMonitorInlineText -Value $row.proposedValue
+                    Source = if ($row.PSObject.Properties.Name -contains 'sourceField') { "$($row.sourceField)" } else { '' }
+                }
+            }
+        )
+    }
+
+    if ($item -and $item.PSObject.Properties.Name -contains 'attributeRows') {
+        return @(
+            foreach ($row in @($item.attributeRows | Where-Object { $_.changed })) {
+                [pscustomobject]@{
+                    Marker = '[UPDATE]'
+                    Attribute = "$($row.targetAttribute)"
+                    Before = ConvertTo-SfAdMonitorInlineText -Value $row.currentAdValue
+                    After = ConvertTo-SfAdMonitorInlineText -Value $row.proposedValue
+                    Source = if ($row.PSObject.Properties.Name -contains 'sourceField') { "$($row.sourceField)" } else { '' }
+                }
+            }
+        )
+    }
+
+    if ($Entry.Operation) {
+        $beforeMap = @{}
+        foreach ($property in @(Get-SfAdMonitorPropertyPairs -Value $Entry.Operation.before)) {
+            $beforeMap[$property.Name] = ConvertTo-SfAdMonitorInlineText -Value $property.Value
+        }
+
+        $afterMap = @{}
+        foreach ($property in @(Get-SfAdMonitorPropertyPairs -Value $Entry.Operation.after)) {
+            $afterMap[$property.Name] = ConvertTo-SfAdMonitorInlineText -Value $property.Value
+        }
+
+        $keys = @($beforeMap.Keys + $afterMap.Keys | Sort-Object -Unique)
+        return @(
+            foreach ($key in $keys) {
+                $beforeValue = if ($beforeMap.ContainsKey($key)) { $beforeMap[$key] } else { '(unset)' }
+                $afterValue = if ($afterMap.ContainsKey($key)) { $afterMap[$key] } else { '(unset)' }
+                $marker = if ($beforeValue -eq '(unset)' -and $afterValue -ne '(unset)') {
+                    '[CREATE]'
+                } elseif ($beforeValue -ne '(unset)' -and $afterValue -eq '(unset)') {
+                    '[DELETE]'
+                } else {
+                    '[UPDATE]'
+                }
+
+                [pscustomobject]@{
+                    Marker = $marker
+                    Attribute = $key
+                    Before = $beforeValue
+                    After = $afterValue
+                    Source = ''
+                }
+            }
+        )
+    }
+
+    return @()
+}
+
+function Format-SfAdMonitorReportExplorerView {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [pscustomobject]$Status,
+        [Parameter(Mandatory)]
+        [pscustomobject]$UiState
+    )
+
+    $selectedRun = Get-SfAdMonitorSelectedRun -Status $Status -UiState $UiState
+    $selection = Get-SfAdMonitorReportExplorerSelection -Status $Status -UiState $UiState
+    $diffRows = @(Get-SfAdMonitorReportExplorerDiffRows -Entry $selection.SelectedEntry)
+    $lines = [System.Collections.Generic.List[string]]::new()
+    $panelWidth = 110
+    $topBorder = "╔" + ("═" * ($panelWidth - 2)) + "╗"
+    $midBorder = "╠" + ("═" * ($panelWidth - 2)) + "╣"
+    $bottomBorder = "╚" + ("═" * ($panelWidth - 2)) + "╝"
+    $rule = "─" * $panelWidth
+
+    $changedCount = @($selection.Entries | Where-Object { $_.Category -eq 'Changed' }).Count
+    $createdCount = @($selection.Entries | Where-Object { $_.Category -eq 'Created' }).Count
+    $deletedCount = @($selection.Entries | Where-Object { $_.Category -eq 'Deleted' }).Count
+    $selectedCategoryLabel = if ($selection.SelectedCategory) { $selection.SelectedCategory.Label } else { 'None' }
+    $selectedEntryPosition = [math]::Min($selection.SelectedEntryIndex + 1, [math]::Max($selection.CategoryEntries.Count, 1))
+
+    $lines.Add($topBorder)
+    $lines.Add("║ Report Explorer    Run: $(if ($selectedRun.runId) { $selectedRun.runId } else { 'no-run' })    Category: $selectedCategoryLabel    Entry: $selectedEntryPosition/$([math]::Max($selection.CategoryEntries.Count, 1))")
+    $lines.Add("║ Summary: [UPDATE] Changed=$changedCount    [CREATE] Created=$createdCount    [DELETE] Deleted=$deletedCount")
+    $lines.Add("║ Report: $(if ($selectedRun.path) { $selectedRun.path } else { '(none)' })")
+    $lines.Add($midBorder)
+    $lines.Add('▓ Categories')
+    foreach ($category in $selection.Categories) {
+        $isSelected = $selection.SelectedCategory -and $selection.SelectedCategory.Name -eq $category.Name
+        $count = @($selection.Entries | Where-Object { $_.Category -eq $category.Name }).Count
+        $prefix = if ($isSelected) { ' > ' } else { '   ' }
+        $lines.Add("$prefix$($category.Marker) $($category.Label) ($count)")
+    }
+    $lines.Add($rule)
+    $lines.Add('▓ Objects')
+    $lines.Add(' Sel Marker      WorkerId     SamAccountName        Bucket          Chg  Reason/Category')
+    if ($selection.CategoryEntries.Count -eq 0) {
+        $lines.Add('  -  No objects in the selected category.')
+    } else {
+        for ($i = 0; $i -lt [math]::Min($selection.CategoryEntries.Count, 6); $i += 1) {
+            $entry = $selection.CategoryEntries[$i]
+            $marker = if ($selection.SelectedEntry -and $entry -eq $selection.SelectedEntry) { ' > ' } else { '   ' }
+            $rowMarker = switch ($entry.Category) {
+                'Created' { '[CREATE]' }
+                'Deleted' { '[DELETE]' }
+                default { '[UPDATE]' }
+            }
+            $reasonText = if (-not [string]::IsNullOrWhiteSpace($entry.Reason)) { $entry.Reason } elseif (-not [string]::IsNullOrWhiteSpace($entry.ReviewCategory)) { $entry.ReviewCategory } else { '-' }
+            $lines.Add(("{0}{1,-11} {2,-12} {3,-21} {4,-14} {5,3}  {6}" -f `
+                    $marker, `
+                    $rowMarker, `
+                    $(if ($entry.WorkerId) { $entry.WorkerId } else { '-' }), `
+                    $(if ($entry.SamAccountName) { $entry.SamAccountName } else { '-' }), `
+                    $entry.BucketName, `
+                    $entry.ChangeCount, `
+                    $reasonText))
+        }
+
+        if ($selection.CategoryEntries.Count -gt 6) {
+            $lines.Add("... $($selection.CategoryEntries.Count - 6) more objects")
+        }
+    }
+    $lines.Add($rule)
+    $lines.Add('▓ Selected Object')
+    if (-not $selection.SelectedEntry) {
+        $lines.Add('No object is selected.')
+    } else {
+        $entry = $selection.SelectedEntry
+        $entryMarker = switch ($entry.Category) {
+            'Created' { '[CREATE]' }
+            'Deleted' { '[DELETE]' }
+            default { '[UPDATE]' }
+        }
+        $lines.Add("$entryMarker workerId=$(if ($entry.WorkerId) { $entry.WorkerId } else { '-' })    samAccountName=$(if ($entry.SamAccountName) { $entry.SamAccountName } else { '-' })    bucket=$($entry.BucketName)")
+        if (-not [string]::IsNullOrWhiteSpace($entry.TargetOu)) {
+            $lines.Add("Target OU: $($entry.TargetOu)")
+        }
+        if ($entry.Operation) {
+            $lines.Add("Operation: $($entry.Operation.operationType)")
+        }
+        if ($diffRows.Count -eq 0) {
+            $lines.Add('No attribute-level changes were recorded for this object.')
+        } else {
+            foreach ($row in $diffRows | Select-Object -First 8) {
+                $sourceText = if ([string]::IsNullOrWhiteSpace($row.Source)) { '' } else { " [$($row.Source)]" }
+                $lines.Add(("{0} {1}{2}: {3} -> {4}" -f $row.Marker, $row.Attribute, $sourceText, $row.Before, $row.After))
+            }
+            if ($diffRows.Count -gt 8) {
+                $lines.Add("... $($diffRows.Count - 8) more attributes")
+            }
+        }
+    }
+    $lines.Add($midBorder)
+    $lines.Add("║ Status: $($UiState.statusMessage)")
+    $lines.Add('║ Keys: q quit, r refresh, j/k move object, [ ] move category, o or Esc close explorer, y copy path')
+    $lines.Add($bottomBorder)
+    return $lines
+}
+
 function Format-SfAdMonitorSelectedObjectLines {
     [CmdletBinding()]
     param(
@@ -1243,6 +1575,10 @@ function Format-SfAdMonitorDashboardView {
         [Parameter(Mandatory)]
         [pscustomobject]$UiState
     )
+
+    if ($UiState.PSObject.Properties.Name -contains 'viewMode' -and "$($UiState.viewMode)" -eq 'ReportExplorer') {
+        return @(Format-SfAdMonitorReportExplorerView -Status $Status -UiState $UiState)
+    }
 
     $selectedRun = Get-SfAdMonitorSelectedRun -Status $Status -UiState $UiState
     $selectedBucket = Get-SfAdMonitorSelectedBucket -Status $Status -UiState $UiState
@@ -1452,9 +1788,9 @@ function Format-SfAdMonitorDashboardView {
     $lines.Add($midBorder)
     $lines.Add("║ Status: $($UiState.statusMessage)")
     $lines.Add('║ Keys: q quit, r refresh, t auto-refresh, tab focus, j/k run, [ ] bucket, h/l item, / filter, c clear, enter inspect')
-    $lines.Add('║ Runs: p preflight, d delta dry-run, s delta sync, f full dry-run, a full sync, w worker preview, v review, g worker apply, z fresh reset, o open report, y copy path, x export bucket')
+    $lines.Add('║ Runs: p preflight, d delta dry-run, s delta sync, f full dry-run, a full sync, w worker preview, v review, g worker apply, z fresh reset, o open report explorer, y copy path, x export bucket')
     $lines.Add($bottomBorder)
     return $lines
 }
 
-Export-ModuleMember -Function Get-SfAdRuntimeStatusPath, New-SfAdIdleRuntimeStatus, New-SfAdRuntimeStatusSnapshot, Save-SfAdRuntimeStatusSnapshot, Write-SfAdRuntimeStatusSnapshot, Get-SfAdRuntimeStatusSnapshot, Get-SfAdRecentRunSummaries, Get-SfAdMonitorStatus, Format-SfAdMonitorView, New-SfAdMonitorUiState, Get-SfAdMonitorBucketDefinitions, Get-SfAdMonitorSelectedRun, Get-SfAdMonitorSelectedRunReport, Get-SfAdMonitorSelectedBucket, Resolve-SfAdMonitorMappingConfigPath, Resolve-SfAdMonitorSelectedReportPath, Get-SfAdMonitorActionContext, Format-SfAdMonitorDashboardView, Get-SfAdMonitorFilteredBucketItems, Get-SfAdMonitorSelectedBucketItem, Get-SfAdMonitorSelectedBucketOperation, Get-SfAdMonitorFailureGroups, Get-SfAdMonitorSelectedWorkerState, Get-SfAdMonitorCurrentRunDiagnostics, Get-SfAdMonitorOperationDiffLines, Format-SfAdMonitorSelectedObjectLines, Get-SfAdReportDirectories, Test-SfAdMonitorSelectedRunIsReview, Test-SfAdMonitorSelectedRunIsWorkerPreview, Get-SfAdMonitorSelectedRunWorkerId
+Export-ModuleMember -Function Get-SfAdRuntimeStatusPath, New-SfAdIdleRuntimeStatus, New-SfAdRuntimeStatusSnapshot, Save-SfAdRuntimeStatusSnapshot, Write-SfAdRuntimeStatusSnapshot, Get-SfAdRuntimeStatusSnapshot, Get-SfAdRecentRunSummaries, Get-SfAdMonitorStatus, Format-SfAdMonitorView, New-SfAdMonitorUiState, Get-SfAdMonitorBucketDefinitions, Get-SfAdMonitorSelectedRun, Get-SfAdMonitorSelectedRunReport, Get-SfAdMonitorSelectedBucket, Resolve-SfAdMonitorMappingConfigPath, Resolve-SfAdMonitorSelectedReportPath, Get-SfAdMonitorActionContext, Format-SfAdMonitorDashboardView, Get-SfAdMonitorFilteredBucketItems, Get-SfAdMonitorSelectedBucketItem, Get-SfAdMonitorSelectedBucketOperation, Get-SfAdMonitorFailureGroups, Get-SfAdMonitorSelectedWorkerState, Get-SfAdMonitorCurrentRunDiagnostics, Get-SfAdMonitorOperationDiffLines, Format-SfAdMonitorSelectedObjectLines, Get-SfAdReportDirectories, Test-SfAdMonitorSelectedRunIsReview, Test-SfAdMonitorSelectedRunIsWorkerPreview, Get-SfAdMonitorSelectedRunWorkerId, Get-SfAdMonitorReportExplorerCategoryDefinitions, Get-SfAdMonitorReportExplorerEntries, Get-SfAdMonitorReportExplorerSelection, Get-SfAdMonitorReportExplorerDiffRows, Format-SfAdMonitorReportExplorerView

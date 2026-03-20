@@ -120,6 +120,12 @@ function Write-SfAdStyledMonitorFrame {
             } else {
                 $color = $palette.Warning
             }
+        } elseif ($line -match '\[CREATE\]') {
+            $color = $palette.Active
+        } elseif ($line -match '\[DELETE\]') {
+            $color = $palette.Error
+        } elseif ($line -match '\[UPDATE\]') {
+            $color = $palette.Warning
         } elseif ($line -match '^▓ ') {
             $color = $palette.Section
         } elseif ($line -match '^\s+>\s' -or $line -match '^\s+>') {
@@ -567,14 +573,11 @@ function Invoke-SfAdMonitorShortcut {
                 return
             }
 
-            try {
-                Start-Process -FilePath $context.reportPath | Out-Null
-                $UiState.statusMessage = "Opened report: $($context.reportPath)"
-                $UiState.commandOutput = @($context.reportPath)
-            } catch {
-                $UiState.statusMessage = 'Failed to open report path.'
-                $UiState.commandOutput = @($context.reportPath, $_.Exception.Message)
-            }
+            $UiState.viewMode = 'ReportExplorer'
+            $UiState.reportCategoryIndex = 0
+            $UiState.reportEntryIndex = 0
+            $UiState.statusMessage = 'Report explorer opened. Use [ ] to switch category and j/k to move objects.'
+            $UiState.commandOutput = @($context.reportPath)
         }
         'CopyReportPath' {
             if (-not $context.reportPath) {
@@ -650,6 +653,51 @@ do {
                         $uiState.pendingAction = $null
                         $uiState.pendingWorkerId = $null
                         $uiState.statusMessage = 'Worker action prompt cancelled.'
+                        $refreshRequested = $true
+                        continue
+                    }
+                }
+            }
+            if ("$($uiState.viewMode)" -eq 'ReportExplorer') {
+                switch ($key.Key) {
+                    'Escape' {
+                        $uiState.viewMode = 'Dashboard'
+                        $uiState.statusMessage = 'Returned to dashboard.'
+                        $refreshRequested = $true
+                        continue
+                    }
+                }
+
+                switch ($key.KeyChar) {
+                    'o' {
+                        $uiState.viewMode = 'Dashboard'
+                        $uiState.statusMessage = 'Returned to dashboard.'
+                        $refreshRequested = $true
+                        continue
+                    }
+                    'j' {
+                        $uiState.reportEntryIndex = [int]$uiState.reportEntryIndex + 1
+                        $uiState.statusMessage = 'Selected next report object.'
+                        $refreshRequested = $true
+                        continue
+                    }
+                    'k' {
+                        $uiState.reportEntryIndex = [math]::Max([int]$uiState.reportEntryIndex - 1, 0)
+                        $uiState.statusMessage = 'Selected previous report object.'
+                        $refreshRequested = $true
+                        continue
+                    }
+                    '[' {
+                        $uiState.reportCategoryIndex = [math]::Max([int]$uiState.reportCategoryIndex - 1, 0)
+                        $uiState.reportEntryIndex = 0
+                        $uiState.statusMessage = 'Selected previous report category.'
+                        $refreshRequested = $true
+                        continue
+                    }
+                    ']' {
+                        $uiState.reportCategoryIndex = [int]$uiState.reportCategoryIndex + 1
+                        $uiState.reportEntryIndex = 0
+                        $uiState.statusMessage = 'Selected next report category.'
                         $refreshRequested = $true
                         continue
                     }

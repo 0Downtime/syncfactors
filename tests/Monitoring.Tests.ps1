@@ -746,6 +746,153 @@ Describe 'Monitoring module' {
         ($lines -join "`n") | Should -Match 'z fresh reset'
     }
 
+    It 'renders a parsed report explorer with created changed and deleted objects' {
+        $reportPath = Join-Path $TestDrive 'sf-ad-sync-Delta-20260312-220000.json'
+        @{
+            runId = 'run-456'
+            artifactType = 'SyncReport'
+            mode = 'Delta'
+            dryRun = $true
+            startedAt = '2026-03-12T21:30:00'
+            completedAt = '2026-03-12T21:35:00'
+            status = 'Succeeded'
+            operations = @(
+                @{
+                    sequence = 3
+                    operationType = 'UpdateAttributes'
+                    workerId = '1001'
+                    bucket = 'updates'
+                    target = @{ samAccountName = 'jdoe' }
+                    before = @{ department = 'Finance' }
+                    after = @{ department = 'Sales' }
+                }
+                @{
+                    sequence = 2
+                    operationType = 'CreateUser'
+                    workerId = '1002'
+                    bucket = 'creates'
+                    target = @{ samAccountName = 'asmith' }
+                    before = $null
+                    after = @{ samAccountName = 'asmith'; enabled = 'True' }
+                }
+                @{
+                    sequence = 1
+                    operationType = 'DeleteUser'
+                    workerId = '1003'
+                    bucket = 'deletions'
+                    target = @{ samAccountName = 'old.user' }
+                    before = @{ samAccountName = 'old.user'; enabled = 'False' }
+                    after = $null
+                }
+            )
+            updates = @(
+                @{
+                    workerId = '1001'
+                    samAccountName = 'jdoe'
+                    changedAttributeDetails = @(
+                        @{
+                            sourceField = 'department'
+                            targetAttribute = 'department'
+                            transform = 'Trim'
+                            currentAdValue = 'Finance'
+                            proposedValue = 'Sales'
+                        }
+                    )
+                }
+            )
+            creates = @(
+                @{
+                    workerId = '1002'
+                    samAccountName = 'asmith'
+                    targetOu = 'OU=Employees,DC=example,DC=com'
+                }
+            )
+            deletions = @(
+                @{
+                    workerId = '1003'
+                    samAccountName = 'old.user'
+                    reason = 'InactiveRetentionElapsed'
+                }
+            )
+            enables = @()
+            disables = @()
+            graveyardMoves = @()
+            quarantined = @()
+            conflicts = @()
+            guardrailFailures = @()
+            manualReview = @()
+            unchanged = @()
+        } | ConvertTo-Json -Depth 20 | Set-Content -Path $reportPath
+
+        $status = [pscustomobject]@{
+            paths = [pscustomobject]@{
+                configPath = 'config.json'
+                statePath = 'state.json'
+            }
+            currentRun = [pscustomobject]@{
+                status = 'Idle'
+                stage = 'Completed'
+                mode = $null
+                dryRun = $false
+                startedAt = $null
+                lastUpdatedAt = '2026-03-12T21:41:00'
+                processedWorkers = 0
+                totalWorkers = 0
+                currentWorkerId = $null
+                lastAction = 'No active sync run.'
+                errorMessage = $null
+                creates = 0
+                updates = 0
+                enables = 0
+                disables = 0
+                graveyardMoves = 0
+                deletions = 0
+                quarantined = 0
+                conflicts = 0
+                guardrailFailures = 0
+                manualReview = 0
+                unchanged = 0
+            }
+            latestRun = [pscustomobject]@{
+                runId = 'run-456'
+                path = $reportPath
+                status = 'Succeeded'
+                mode = 'Delta'
+                artifactType = 'SyncReport'
+            }
+            recentRuns = @(
+                [pscustomobject]@{
+                    runId = 'run-456'
+                    path = $reportPath
+                    status = 'Succeeded'
+                    mode = 'Delta'
+                    artifactType = 'SyncReport'
+                }
+            )
+        }
+        $uiState = New-SfAdMonitorUiState
+        $uiState.viewMode = 'ReportExplorer'
+
+        $lines = @(Format-SfAdMonitorDashboardView -Status $status -UiState $uiState)
+
+        ($lines -join "`n") | Should -Match 'Report Explorer'
+        ($lines -join "`n") | Should -Match '\[UPDATE\] Changed=1'
+        ($lines -join "`n") | Should -Match '\[CREATE\] Created=1'
+        ($lines -join "`n") | Should -Match '\[DELETE\] Deleted=1'
+        ($lines -join "`n") | Should -Match 'jdoe'
+        ($lines -join "`n") | Should -Match '\[UPDATE\] department \[department\]: Finance -> Sales'
+
+        $uiState.reportCategoryIndex = 1
+        $createLines = @(Format-SfAdMonitorDashboardView -Status $status -UiState $uiState)
+        ($createLines -join "`n") | Should -Match 'asmith'
+        ($createLines -join "`n") | Should -Match '\[CREATE\] enabled: \(unset\) -> True'
+
+        $uiState.reportCategoryIndex = 2
+        $deleteLines = @(Format-SfAdMonitorDashboardView -Status $status -UiState $uiState)
+        ($deleteLines -join "`n") | Should -Match 'old.user'
+        ($deleteLines -join "`n") | Should -Match '\[DELETE\] enabled: False -> \(unset\)'
+    }
+
     It 'renders a modal action prompt for selected worker preview runs' {
         $status = [pscustomobject]@{
             paths = [pscustomobject]@{
