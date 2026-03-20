@@ -1,5 +1,11 @@
 Set-StrictMode -Version Latest
 
+$moduleRoot = $PSScriptRoot
+Import-Module (Join-Path $moduleRoot 'Config.psm1') -Force -DisableNameChecking
+Import-Module (Join-Path $moduleRoot 'State.psm1') -Force -DisableNameChecking
+Import-Module (Join-Path $moduleRoot 'SuccessFactors.psm1') -Force -DisableNameChecking
+Import-Module (Join-Path $moduleRoot 'ActiveDirectorySync.psm1') -Force -DisableNameChecking
+
 function Get-SfAdCollectionCount {
     [CmdletBinding()]
     param($Value)
@@ -24,6 +30,102 @@ function Get-SfAdRuntimeStatusPath {
     }
 
     return Join-Path -Path $directory -ChildPath 'runtime-status.json'
+}
+
+function Test-SfAdMonitorSuccessFactorsConnection {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [pscustomobject]$Config
+    )
+
+    try {
+        $probeQuery = @{
+            '$select' = $Config.successFactors.query.identityField
+            '$top'    = '1'
+        }
+        Invoke-SfODataGet -Config $Config -RelativePath $Config.successFactors.query.entitySet -Query $probeQuery | Out-Null
+        return [pscustomobject]@{
+            status = 'OK'
+            detail = Get-SfAdSuccessFactorsAuthSummary -Config $Config
+        }
+    } catch {
+        return [pscustomobject]@{
+            status = 'ERROR'
+            detail = $_.Exception.Message
+        }
+    }
+}
+
+function Test-SfAdMonitorActiveDirectoryConnection {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [pscustomobject]$Config
+    )
+
+    try {
+        Ensure-ActiveDirectoryModule
+
+        $directoryContext = @{}
+        $server = if ($Config.ad.PSObject.Properties.Name -contains 'server') { "$($Config.ad.server)" } else { '' }
+        $username = if ($Config.ad.PSObject.Properties.Name -contains 'username') { "$($Config.ad.username)" } else { '' }
+        $bindPassword = if ($Config.ad.PSObject.Properties.Name -contains 'bindPassword') { "$($Config.ad.bindPassword)" } else { '' }
+
+        if (-not [string]::IsNullOrWhiteSpace($server)) {
+            $directoryContext['Server'] = $server
+        }
+
+        if (-not [string]::IsNullOrWhiteSpace($username)) {
+            $securePassword = ConvertTo-SecureString -String $bindPassword -AsPlainText -Force
+            $directoryContext['Credential'] = [pscredential]::new($username, $securePassword)
+        }
+
+        Get-ADRootDSE -ErrorAction Stop @directoryContext | Out-Null
+        return [pscustomobject]@{
+            status = 'OK'
+            detail = if (-not [string]::IsNullOrWhiteSpace($server)) { $server } else { 'default domain context' }
+        }
+    } catch {
+        return [pscustomobject]@{
+            status = 'ERROR'
+            detail = $_.Exception.Message
+        }
+    }
+}
+
+function Format-SfAdMonitorHealthSummary {
+    [CmdletBinding()]
+    param(
+        [AllowNull()]
+        [pscustomobject]$Health
+    )
+
+    if (-not $Health) {
+        return '-'
+    }
+
+    $status = if ($Health.PSObject.Properties.Name -contains 'status' -and -not [string]::IsNullOrWhiteSpace("$($Health.status)")) {
+        "$($Health.status)"
+    } else {
+        '-'
+    }
+
+    $detail = if ($Health.PSObject.Properties.Name -contains 'detail' -and -not [string]::IsNullOrWhiteSpace("$($Health.detail)")) {
+        "$($Health.detail)".Replace([Environment]::NewLine, ' ').Trim()
+    } else {
+        ''
+    }
+
+    if ([string]::IsNullOrWhiteSpace($detail)) {
+        return $status
+    }
+
+    if ($detail.Length -gt 36) {
+        $detail = $detail.Substring(0, 36) + '...'
+    }
+
+    return "$status ($detail)"
 }
 
 function New-SfAdIdleRuntimeStatus {
@@ -401,6 +503,8 @@ function Get-SfAdMonitorStatus {
     if (-not $currentRun) {
         $currentRun = New-SfAdIdleRuntimeStatus -StatePath $config.state.path
     }
+    $successFactorsConnection = Test-SfAdMonitorSuccessFactorsConnection -Config $config
+    $activeDirectoryConnection = Test-SfAdMonitorActiveDirectoryConnection -Config $config
 
     $resolvedConfigPath = (Resolve-Path -Path $ConfigPath).Path
     return [pscustomobject]@{
@@ -418,6 +522,10 @@ function Get-SfAdMonitorStatus {
             totalTrackedWorkers = $workerProperties.Count
             suppressedWorkers = $suppressedWorkers.Count
             pendingDeletionWorkers = $pendingDeletionWorkers.Count
+        }
+        health = [pscustomobject]@{
+            successFactors = $successFactorsConnection
+            activeDirectory = $activeDirectoryConnection
         }
         trackedWorkers = $trackedWorkers
         context = [pscustomobject]@{
@@ -462,6 +570,7 @@ function Format-SfAdMonitorView {
     $lines.Add('SuccessFactors AD Sync Monitor')
     $lines.Add("Config: $($Status.paths.configPath)")
     $lines.Add("SuccessFactors auth: $authSummary")
+    $lines.Add("Health: SF=$(Format-SfAdMonitorHealthSummary -Health $Status.health.successFactors)    AD=$(Format-SfAdMonitorHealthSummary -Health $Status.health.activeDirectory)")
     $lines.Add("Refreshed: $((Get-Date).ToString('yyyy-MM-dd HH:mm:ss'))")
     $lines.Add('')
     $lines.Add('Current Run')
@@ -1128,13 +1237,26 @@ function Format-SfAdMonitorDashboardView {
         $Status.context.PSObject.Properties.Name -contains 'identityAttribute' -and
         -not [string]::IsNullOrWhiteSpace("$($Status.context.identityAttribute)")
     ) { "$($Status.context.identityAttribute)" } else { '-' }
+    $successFactorsHealth = if (
+        $Status.PSObject.Properties.Name -contains 'health' -and
+        $Status.health -and
+        $Status.health.PSObject.Properties.Name -contains 'successFactors' -and
+        $Status.health.successFactors
+    ) { Format-SfAdMonitorHealthSummary -Health $Status.health.successFactors } else { '-' }
+    $activeDirectoryHealth = if (
+        $Status.PSObject.Properties.Name -contains 'health' -and
+        $Status.health -and
+        $Status.health.PSObject.Properties.Name -contains 'activeDirectory' -and
+        $Status.health.activeDirectory
+    ) { Format-SfAdMonitorHealthSummary -Health $Status.health.activeDirectory } else { '-' }
     $latestState = if ($Status.latestRun.status -eq 'Failed' -or $Status.currentRun.errorMessage) { 'ERROR' } elseif ($Status.currentRun.status -eq 'InProgress') { 'ACTIVE' } else { 'OK' }
     $selectedRunPosition = [math]::Min([int]$UiState.selectedRunIndex + 1, [math]::Max(@($Status.recentRuns).Count, 1))
     $selectedItemPosition = [math]::Min([int]$UiState.selectedItemIndex + 1, [math]::Max($filteredItems.Count, 1))
     $isCurrentRunActive = "$($Status.currentRun.status)" -eq 'InProgress'
     $lines.Add($topBorder)
     $lines.Add("║ SuccessFactors AD Sync Dashboard [$latestState]    AutoRefresh: $(if ($UiState.autoRefreshEnabled) { 'On' } else { 'Paused' })    Refreshed: $((Get-Date).ToString('yyyy-MM-dd HH:mm:ss'))")
-    $lines.Add("║ Run: $selectedRunPosition/$([math]::Max(@($Status.recentRuns).Count, 1))    Bucket: $($selectedBucket.Bucket.Label)    Filter: $(if ([string]::IsNullOrWhiteSpace($UiState.filterText)) { '(none)' } else { $UiState.filterText })    Match: $($filteredItems.Count)/$(@($selectedBucket.Items).Count)    Item: $selectedItemPosition/$([math]::Max($filteredItems.Count, 1))")
+    $lines.Add("║ Health: SF=$successFactorsHealth    AD=$activeDirectoryHealth    Run: $selectedRunPosition/$([math]::Max(@($Status.recentRuns).Count, 1))    Bucket: $($selectedBucket.Bucket.Label)")
+    $lines.Add("║ Filter: $(if ([string]::IsNullOrWhiteSpace($UiState.filterText)) { '(none)' } else { $UiState.filterText })    Match: $($filteredItems.Count)/$(@($selectedBucket.Items).Count)    Item: $selectedItemPosition/$([math]::Max($filteredItems.Count, 1))")
     $lines.Add("║ Config: SF Auth=$authSummary    Identity=$identityField -> AD $identityAttribute")
     $lines.Add($midBorder)
     $lines.Add('▓ Current Run')

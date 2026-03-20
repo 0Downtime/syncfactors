@@ -325,6 +325,16 @@ Describe 'Monitoring module' {
                 suppressedWorkers = 1
                 pendingDeletionWorkers = 0
             }
+            health = [pscustomobject]@{
+                successFactors = [pscustomobject]@{
+                    status = 'OK'
+                    detail = 'basic auth ok'
+                }
+                activeDirectory = [pscustomobject]@{
+                    status = 'ERROR'
+                    detail = 'bind failed'
+                }
+            }
             trackedWorkers = @(
                 [pscustomobject]@{
                     workerId = '1002'
@@ -375,6 +385,7 @@ Describe 'Monitoring module' {
 
         ($lines -join "`n") | Should -Match 'SuccessFactors AD Sync Dashboard'
         ($lines -join "`n") | Should -Match 'AutoRefresh: Paused'
+        ($lines -join "`n") | Should -Match 'Health: SF=OK \(basic auth ok\)    AD=ERROR \(bind failed\)'
         ($lines -join "`n") | Should -Match 'SF Auth=oauth \(body client auth\)'
         ($lines -join "`n") | Should -Match 'Detail: Quarantined'
         ($lines -join "`n") | Should -Match 'Filter: manager'
