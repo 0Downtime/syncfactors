@@ -142,6 +142,7 @@ function Get-SfAdWorkerPreviewOperationLines {
 $projectRoot = Split-Path -Path $PSScriptRoot -Parent
 $moduleRoot = Join-Path -Path $projectRoot -ChildPath 'src/Modules/SfAdSync'
 Import-Module (Join-Path $moduleRoot 'Config.psm1') -Force -DisableNameChecking
+Import-Module (Join-Path $moduleRoot 'SuccessFactors.psm1') -Force -DisableNameChecking
 
 $resolvedConfigPath = (Resolve-Path -Path $ConfigPath).Path
 $resolvedMappingConfigPath = (Resolve-Path -Path $MappingConfigPath).Path
@@ -183,6 +184,64 @@ if ($PreviewMode -ne 'Configured' -or -not [string]::IsNullOrWhiteSpace($OutputD
         }
         throw
     }
+}
+
+if ($PreviewMode -eq 'Minimal') {
+    $worker = Get-SfWorkerById -Config $config -WorkerId $WorkerId
+    if (-not $worker) {
+        throw "Worker '$WorkerId' was not found in SuccessFactors using identity field '$($config.successFactors.query.identityField)'."
+    }
+
+    $rawPropertyNames = @($worker.PSObject.Properties | ForEach-Object { $_.Name } | Sort-Object)
+    $result = [pscustomobject]@{
+        reportPath = $null
+        runId = $null
+        mode = 'Review'
+        status = 'Succeeded'
+        artifactType = 'WorkerFetchPreview'
+        successFactorsAuth = $successFactorsAuth
+        previewMode = $PreviewMode.ToLowerInvariant()
+        workerScope = [pscustomobject]@{
+            identityField = $config.successFactors.query.identityField
+            workerId = $WorkerId
+        }
+        reviewSummary = $null
+        preview = [pscustomobject]@{
+            workerId = $WorkerId
+            buckets = @()
+            matchedExistingUser = $null
+            reviewCategory = $null
+            reason = 'MinimalPreview'
+            samAccountName = $null
+            targetOu = $null
+            currentDistinguishedName = $null
+            currentEnabled = $null
+            proposedEnable = $null
+        }
+        changedAttributes = @()
+        operations = @()
+        entries = @()
+        rawWorker = $worker
+        rawPropertyNames = $rawPropertyNames
+    }
+
+    if ($AsJson) {
+        $result | ConvertTo-Json -Depth 20
+        return
+    }
+
+    Write-Host 'SuccessFactors Worker Preview'
+    Write-Host 'Artifact: WorkerFetchPreview'
+    Write-Host "Status: $($result.status)"
+    Write-Host "SuccessFactors auth: $($result.successFactorsAuth)"
+    Write-Host "Preview mode: $($result.previewMode)"
+    Write-Host "Worker: $WorkerId"
+    Write-Host "Identity field: $($result.workerScope.identityField)"
+    Write-Host "Returned properties: $(if ($rawPropertyNames.Count -gt 0) { $rawPropertyNames -join ', ' } else { '(none)' })"
+    Write-Host ''
+    Write-Host 'Raw Worker'
+    $worker | ConvertTo-Json -Depth 20
+    return
 }
 
 $invokePath = Join-Path -Path $projectRoot -ChildPath 'src/Invoke-SfAdSync.ps1'

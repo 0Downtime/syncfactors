@@ -284,64 +284,22 @@ param(
     It 'uses identity-only fallback for minimal worker preview when previewQuery is not configured' {
         $configPath = Join-Path $TestDrive 'preview-minimal-config.json'
         $mappingPath = Join-Path $TestDrive 'preview-minimal-mapping.json'
-        $invokeStubPath = Join-Path $TestDrive 'invoke-preview-minimal-stub.ps1'
-        $capturedConfigPath = Join-Path $TestDrive 'captured-preview-config-path.txt'
-        $reportPath = Join-Path $TestDrive 'sf-ad-sync-Review-minimal.json'
 
         (New-StatusConfigContent -StatePath (Join-Path $TestDrive 'state-minimal.json') -ReportDirectory (Join-Path $TestDrive 'reports-minimal')) | Set-Content -Path $configPath
         '{}' | Set-Content -Path $mappingPath
-        @'
-{
-  "runId": "preview-minimal-123",
-  "mode": "Review",
-  "status": "Succeeded",
-  "artifactType": "WorkerPreview",
-  "workerScope": {
-    "identityField": "personIdExternal",
-    "workerId": "1001"
-  },
-  "reviewSummary": {},
-  "operations": [],
-  "updates": [],
-  "creates": [],
-  "enables": [],
-  "disables": [],
-  "graveyardMoves": [],
-  "deletions": [],
-  "quarantined": [],
-  "conflicts": [],
-  "guardrailFailures": [],
-  "manualReview": [],
-  "unchanged": []
-}
-'@ | Set-Content -Path $reportPath
-        @"
-param(
-    [string]`$ConfigPath,
-    [string]`$MappingConfigPath,
-    [string]`$Mode,
-    [string]`$WorkerId,
-    [string]`$PreviewMode
-)
-
-Set-Content -Path '$capturedConfigPath' -Value `$ConfigPath
-'$reportPath'
-"@ | Set-Content -Path $invokeStubPath
-
-        Mock Join-Path {
-            if ($ChildPath -eq 'src/Invoke-SfAdSync.ps1') {
-                return $invokeStubPath
+        Import-Module "$PSScriptRoot/../src/Modules/SfAdSync/SuccessFactors.psm1" -Force -DisableNameChecking
+        Mock Get-SfWorkerById {
+            [pscustomobject]@{
+                personIdExternal = '1001'
             }
-
-            return [System.IO.Path]::Combine($Path, $ChildPath)
         }
 
-        & "$PSScriptRoot/../scripts/Invoke-SfAdWorkerPreview.ps1" -ConfigPath $configPath -MappingConfigPath $mappingPath -WorkerId '1001' -PreviewMode Minimal -AsJson | Out-Null
-        $effectiveConfigPath = (Get-Content -Path $capturedConfigPath -Raw).Trim()
-        $effectiveConfig = Get-Content -Path $effectiveConfigPath -Raw | ConvertFrom-Json -Depth 20
+        $result = & "$PSScriptRoot/../scripts/Invoke-SfAdWorkerPreview.ps1" -ConfigPath $configPath -MappingConfigPath $mappingPath -WorkerId '1001' -PreviewMode Minimal -AsJson | ConvertFrom-Json -Depth 20
 
-        $effectiveConfig.successFactors.previewQuery.select | Should -Be @('personIdExternal')
-        @($effectiveConfig.successFactors.previewQuery.expand).Count | Should -Be 0
+        $result.artifactType | Should -Be 'WorkerFetchPreview'
+        $result.previewMode | Should -Be 'minimal'
+        $result.rawPropertyNames | Should -Be @('personIdExternal')
+        $result.rawWorker.personIdExternal | Should -Be '1001'
     }
 
     It 'returns preflight details from the preflight script in json mode' {
