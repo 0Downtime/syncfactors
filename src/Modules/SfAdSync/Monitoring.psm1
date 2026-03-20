@@ -1503,6 +1503,9 @@ function Get-SfAdMonitorReportExplorerDiffRows {
         }
 
         $keys = @($beforeMap.Keys + $afterMap.Keys | Sort-Object -Unique)
+        if ("$($Entry.Operation.operationType)" -eq 'MoveUser') {
+            $keys = @($keys | Where-Object { $_ -notin @('distinguishedName', 'parentOu', 'targetOu') })
+        }
         return @(
             foreach ($key in $keys) {
                 $beforeValue = if ($beforeMap.ContainsKey($key)) { $beforeMap[$key] } else { '(unset)' }
@@ -1668,6 +1671,9 @@ function Format-SfAdMonitorSelectedObjectLines {
             $lines.Add($summaryLine)
         }
         $diffLines = @(Get-SfAdMonitorOperationDiffLines -Operation $SelectedOperation)
+        if ("$($SelectedOperation.operationType)" -eq 'MoveUser') {
+            $diffLines = @($diffLines | Where-Object { $_ -notmatch '^(distinguishedName|parentOu|targetOu): ' })
+        }
         if ($diffLines.Count -eq 0) {
             if ($null -ne $SelectedOperation.after) {
                 $lines.Add("After: $(ConvertTo-SfAdMonitorInlineText -Value $SelectedOperation.after)")

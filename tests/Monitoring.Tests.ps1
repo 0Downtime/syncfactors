@@ -927,6 +927,9 @@ Describe 'Monitoring module' {
         ($moveLines -join "`n") | Should -Match 'Action: Move account 44522'
         ($moveLines -join "`n") | Should -Match 'From OU: OU=TestUsers,DC=example,DC=com'
         ($moveLines -join "`n") | Should -Match 'To OU: OU=GRAVEYARD,DC=example,DC=com'
+        ($moveLines -join "`n") | Should -Not -Match 'Δ distinguishedName:'
+        ($moveLines -join "`n") | Should -Not -Match 'Δ parentOu:'
+        ($moveLines -join "`n") | Should -Not -Match 'Δ targetOu:'
     }
 
     It 'renders a modal action prompt for selected worker preview runs' {
