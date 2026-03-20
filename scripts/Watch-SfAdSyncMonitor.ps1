@@ -101,6 +101,7 @@ function Write-SfAdStyledMonitorFrame {
     param(
         [Parameter(Mandatory)]
         [AllowEmptyCollection()]
+        [AllowEmptyString()]
         [string[]]$Lines
     )
 
