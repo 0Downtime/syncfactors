@@ -8,7 +8,9 @@ function New-SfAdSyncReport {
         [string]$ConfigPath,
         [string]$MappingConfigPath,
         [string]$StatePath,
-        [string]$ArtifactType = 'SyncReport'
+        [string]$ArtifactType = 'SyncReport',
+        [AllowNull()]
+        [object]$WorkerScope
     )
 
     return [ordered]@{
@@ -21,6 +23,7 @@ function New-SfAdSyncReport {
         configPath = $ConfigPath
         mappingConfigPath = $MappingConfigPath
         statePath = $StatePath
+        workerScope = $WorkerScope
         completedAt = $null
         failedAt = $null
         errorMessage = $null

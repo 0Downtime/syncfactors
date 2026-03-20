@@ -106,14 +106,16 @@ Describe 'Script entrypoints' {
         Import-Module "$PSScriptRoot/../src/Modules/SfAdSync/Sync.psm1" -Force -DisableNameChecking
         Mock Invoke-SfAdSyncRun { 'report.json' }
 
-        & "$PSScriptRoot/../src/Invoke-SfAdSync.ps1" -ConfigPath 'config.json' -MappingConfigPath 'mapping.json' -Mode Full -DryRun
+        $result = & "$PSScriptRoot/../src/Invoke-SfAdSync.ps1" -ConfigPath 'config.json' -MappingConfigPath 'mapping.json' -Mode Review -DryRun -WorkerId '1001'
 
         Assert-MockCalled Invoke-SfAdSyncRun -Times 1 -Exactly -ParameterFilter {
             $ConfigPath -eq 'config.json' -and
             $MappingConfigPath -eq 'mapping.json' -and
-            $Mode -eq 'Full' -and
-            $DryRun
+            $Mode -eq 'Review' -and
+            $DryRun -and
+            $WorkerId -eq '1001'
         }
+        $result | Should -Be 'report.json'
     }
 
     It 'delegates the rollback entry script to Invoke-SfAdRollback' {
@@ -176,6 +178,104 @@ param(
         $result.status | Should -Be 'Succeeded'
         $result.reviewSummary.existingUsersMatched | Should -Be 2
         $result.reviewSummary.proposedCreates | Should -Be 1
+    }
+
+    It 'runs the worker preview entry script and returns the scoped preview in json mode' {
+        $configPath = Join-Path $TestDrive 'preview-config.json'
+        $mappingPath = Join-Path $TestDrive 'preview-mapping.json'
+        $invokeStubPath = Join-Path $TestDrive 'invoke-preview-stub.ps1'
+        $reportPath = Join-Path $TestDrive 'sf-ad-sync-Review.json'
+
+        (New-StatusConfigContent -StatePath (Join-Path $TestDrive 'state.json') -ReportDirectory (Join-Path $TestDrive 'reports')) | Set-Content -Path $configPath
+        '{}' | Set-Content -Path $mappingPath
+        @"
+{
+  "runId": "preview-123",
+  "mode": "Review",
+  "status": "Succeeded",
+  "artifactType": "WorkerPreview",
+  "workerScope": {
+    "identityField": "personIdExternal",
+    "workerId": "1001"
+  },
+  "reviewSummary": {
+    "existingUsersMatched": 1,
+    "existingUsersWithAttributeChanges": 1,
+    "proposedCreates": 0,
+    "proposedOffboarding": 0,
+    "quarantined": 0,
+    "conflicts": 0
+  },
+  "operations": [
+    {
+      "workerId": "1001",
+      "operationType": "UpdateAttributes",
+      "before": {
+        "GivenName": "OldJamie"
+      },
+      "after": {
+        "GivenName": "Jamie"
+      }
+    }
+  ],
+  "updates": [
+    {
+      "workerId": "1001",
+      "samAccountName": "jdoe",
+      "reviewCategory": "ExistingUserChanges",
+      "targetOu": "OU=Employees,DC=example,DC=com",
+      "currentDistinguishedName": "CN=Jamie Doe,OU=Employees,DC=example,DC=com",
+      "currentEnabled": true,
+      "changedAttributeDetails": [
+        {
+          "sourceField": "firstName",
+          "targetAttribute": "GivenName",
+          "transform": "Trim",
+          "currentAdValue": "OldJamie",
+          "proposedValue": "Jamie"
+        }
+      ]
+    }
+  ],
+  "creates": [],
+  "enables": [],
+  "disables": [],
+  "graveyardMoves": [],
+  "deletions": [],
+  "quarantined": [],
+  "conflicts": [],
+  "guardrailFailures": [],
+  "manualReview": [],
+  "unchanged": []
+}
+"@ | Set-Content -Path $reportPath
+        @"
+param(
+    [string]`$ConfigPath,
+    [string]`$MappingConfigPath,
+    [string]`$Mode,
+    [string]`$WorkerId
+)
+
+'$reportPath'
+"@ | Set-Content -Path $invokeStubPath
+
+        Mock Join-Path {
+            if ($ChildPath -eq 'src/Invoke-SfAdSync.ps1') {
+                return $invokeStubPath
+            }
+
+            return [System.IO.Path]::Combine($Path, $ChildPath)
+        }
+
+        $result = & "$PSScriptRoot/../scripts/Invoke-SfAdWorkerPreview.ps1" -ConfigPath $configPath -MappingConfigPath $mappingPath -WorkerId '1001' -AsJson | ConvertFrom-Json -Depth 20
+
+        $result.artifactType | Should -Be 'WorkerPreview'
+        $result.workerScope.workerId | Should -Be '1001'
+        $result.preview.samAccountName | Should -Be 'jdoe'
+        $result.preview.reviewCategory | Should -Be 'ExistingUserChanges'
+        $result.changedAttributes[0].targetAttribute | Should -Be 'GivenName'
+        $result.operations[0].operationType | Should -Be 'UpdateAttributes'
     }
 
     It 'returns preflight details from the preflight script in json mode' {

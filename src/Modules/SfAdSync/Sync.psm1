@@ -193,6 +193,24 @@ function Test-SfAdReviewMode {
     return "$Mode" -eq 'Review'
 }
 
+function Get-SfAdArtifactType {
+    [CmdletBinding()]
+    param(
+        [string]$Mode,
+        [string]$WorkerId
+    )
+
+    if (Test-SfAdReviewMode -Mode $Mode) {
+        if (-not [string]::IsNullOrWhiteSpace($WorkerId)) {
+            return 'WorkerPreview'
+        }
+
+        return 'FirstSyncReview'
+    }
+
+    return 'SyncReport'
+}
+
 function Get-SfAdChangedMappingRows {
     [CmdletBinding()]
     param($Rows)
@@ -580,18 +598,38 @@ function Invoke-SfAdSyncRun {
         [string]$MappingConfigPath,
         [ValidateSet('Delta','Full','Review')]
         [string]$Mode = 'Delta',
-        [switch]$DryRun
+        [switch]$DryRun,
+        [string]$WorkerId
     )
+
+    if (-not [string]::IsNullOrWhiteSpace($WorkerId) -and -not (Test-SfAdReviewMode -Mode $Mode)) {
+        throw '-WorkerId is only supported with -Mode Review.'
+    }
 
     $resolvedConfigPath = (Resolve-Path -Path $ConfigPath).Path
     $resolvedMappingConfigPath = (Resolve-Path -Path $MappingConfigPath).Path
     $config = Get-SfAdSyncConfig -Path $resolvedConfigPath
     $mappingConfig = Get-SfAdSyncMappingConfig -Path $resolvedMappingConfigPath
     $isReviewMode = Test-SfAdReviewMode -Mode $Mode
+    $isScopedWorkerPreview = -not [string]::IsNullOrWhiteSpace($WorkerId)
     $effectiveDryRun = ($DryRun -or $isReviewMode)
     $workerFetchMode = if ($isReviewMode) { 'Full' } else { $Mode }
     $reportOutputDirectory = Get-SfAdReportOutputDirectory -Config $config -Mode $Mode
-    $report = New-SfAdSyncReport -Mode $Mode -DryRun:$effectiveDryRun -ConfigPath $resolvedConfigPath -MappingConfigPath $resolvedMappingConfigPath -StatePath $config.state.path -ArtifactType $(if ($isReviewMode) { 'FirstSyncReview' } else { 'SyncReport' })
+    $report = New-SfAdSyncReport `
+        -Mode $Mode `
+        -DryRun:$effectiveDryRun `
+        -ConfigPath $resolvedConfigPath `
+        -MappingConfigPath $resolvedMappingConfigPath `
+        -StatePath $config.state.path `
+        -ArtifactType (Get-SfAdArtifactType -Mode $Mode -WorkerId $WorkerId) `
+        -WorkerScope $(if ($isScopedWorkerPreview) {
+            [pscustomobject]@{
+                identityField = $config.successFactors.query.identityField
+                workerId = $WorkerId
+            }
+        } else {
+            $null
+        })
     Update-SfAdRuntimeStatus -Report $report -StatePath $config.state.path -Stage 'Initializing' -LastAction 'Starting sync run.'
     Update-SfAdRuntimeStatus -Report $report -StatePath $config.state.path -Stage 'LoadingState' -LastAction 'Loading sync state.'
     $state = Get-SfAdSyncState -Path $config.state.path
@@ -602,9 +640,23 @@ function Invoke-SfAdSyncRun {
     $totalWorkers = 0
 
     try {
-        Update-SfAdRuntimeStatus -Report $report -StatePath $config.state.path -Stage 'FetchingWorkers' -ProcessedWorkers $processedWorkers -TotalWorkers $totalWorkers -LastAction "Fetching SuccessFactors workers in $workerFetchMode mode."
-        Write-SfAdSyncLog -Message "Fetching SuccessFactors workers in $workerFetchMode mode."
-        $workers = @(Get-SfWorkers -Config $config -Mode $workerFetchMode -Checkpoint $checkpoint)
+        $fetchDescription = if ($isScopedWorkerPreview) {
+            "Fetching SuccessFactors worker $WorkerId by $($config.successFactors.query.identityField)."
+        } else {
+            "Fetching SuccessFactors workers in $workerFetchMode mode."
+        }
+        Update-SfAdRuntimeStatus -Report $report -StatePath $config.state.path -Stage 'FetchingWorkers' -ProcessedWorkers $processedWorkers -TotalWorkers $totalWorkers -LastAction $fetchDescription
+        Write-SfAdSyncLog -Message $fetchDescription
+        if ($isScopedWorkerPreview) {
+            $worker = Get-SfWorkerById -Config $config -WorkerId $WorkerId
+            if (-not $worker) {
+                throw "Worker '$WorkerId' was not found in SuccessFactors using identity field '$($config.successFactors.query.identityField)'."
+            }
+
+            $workers = @($worker)
+        } else {
+            $workers = @(Get-SfWorkers -Config $config -Mode $workerFetchMode -Checkpoint $checkpoint)
+        }
         $totalWorkers = @($workers).Count
         Update-SfAdRuntimeStatus -Report $report -StatePath $config.state.path -Stage 'ProcessingWorkers' -ProcessedWorkers $processedWorkers -TotalWorkers $totalWorkers -LastAction "Fetched $totalWorkers workers."
         $workerCountsByIdentity = @{}
@@ -896,8 +948,10 @@ function Invoke-SfAdSyncRun {
             }
         }
 
-        Update-SfAdRuntimeStatus -Report $report -StatePath $config.state.path -Stage 'DeletionPass' -ProcessedWorkers $processedWorkers -TotalWorkers $totalWorkers -LastAction 'Running deletion pass.'
-        Invoke-SfAdDeletionPass -Config $config -State $state -Report $report -DryRun:$effectiveDryRun -ReviewMode:$isReviewMode
+        if (-not $isReviewMode) {
+            Update-SfAdRuntimeStatus -Report $report -StatePath $config.state.path -Stage 'DeletionPass' -ProcessedWorkers $processedWorkers -TotalWorkers $totalWorkers -LastAction 'Running deletion pass.'
+            Invoke-SfAdDeletionPass -Config $config -State $state -Report $report -DryRun:$effectiveDryRun -ReviewMode:$isReviewMode
+        }
 
         Update-SfAdRuntimeStatus -Report $report -StatePath $config.state.path -Stage 'SavingState' -ProcessedWorkers $processedWorkers -TotalWorkers $totalWorkers -LastAction 'Persisting checkpoint and state.'
         if (-not $isReviewMode) {

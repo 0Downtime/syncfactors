@@ -6,7 +6,8 @@ param(
     [string]$MappingConfigPath,
     [ValidateSet('Delta','Full','Review')]
     [string]$Mode = 'Delta',
-    [switch]$DryRun
+    [switch]$DryRun,
+    [string]$WorkerId
 )
 
 Set-StrictMode -Version Latest
@@ -182,4 +183,4 @@ foreach ($promptDefinition in $runtimePrompts) {
 }
 
 $invokePath = Join-Path -Path (Split-Path -Path $PSScriptRoot -Parent) -ChildPath 'src/Invoke-SfAdSync.ps1'
-& $invokePath -ConfigPath $resolvedConfigPath -MappingConfigPath $MappingConfigPath -Mode $Mode -DryRun:$DryRun
+& $invokePath -ConfigPath $resolvedConfigPath -MappingConfigPath $MappingConfigPath -Mode $Mode -DryRun:$DryRun -WorkerId $WorkerId

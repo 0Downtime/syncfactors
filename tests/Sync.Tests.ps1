@@ -1146,6 +1146,105 @@ Describe 'Invoke-SfAdSyncRun' {
         }
     }
 
+    It 'scopes review mode to one worker when WorkerId is provided' {
+        InModuleScope Sync {
+            $global:SyncTestBaseConfig.reporting | Add-Member -MemberType NoteProperty -Name reviewOutputDirectory -Value (Join-Path $TestDrive 'reviews') -Force
+            Mock Get-SfAdSyncConfig { $global:SyncTestBaseConfig }
+            Mock Get-SfAdSyncMappingConfig {
+                [pscustomobject]@{
+                    mappings = @(
+                        [pscustomobject]@{
+                            source = 'firstName'
+                            target = 'GivenName'
+                            enabled = $true
+                            required = $true
+                            transform = 'Trim'
+                        }
+                    )
+                }
+            }
+            Mock Get-SfAdSyncState { [pscustomobject]@{ checkpoint = '2026-03-05T10:00:00'; workers = [pscustomobject]@{} } }
+            Mock Get-SfWorkers { throw 'Get-SfWorkers should not be used for scoped preview.' }
+            Mock Get-SfWorkerById {
+                [pscustomobject]@{
+                    personIdExternal = '7001'
+                    firstName = 'Jamie'
+                    lastName = 'Doe'
+                    status = 'active'
+                    startDate = (Get-Date).ToString('o')
+                    managerEmployeeId = $null
+                }
+            }
+            Mock Get-SfAdTargetUser {
+                [pscustomobject]@{
+                    ObjectGuid = [guid]'77777777-7777-7777-7777-777777777777'
+                    DistinguishedName = 'CN=Jamie Doe,OU=Employees,DC=example,DC=com'
+                    SamAccountName = 'jdoe'
+                    employeeID = '7001'
+                    Enabled = $true
+                    GivenName = 'OldJamie'
+                }
+            }
+            Mock Get-SfAdWorkerState { $null }
+            Mock Get-SfAdAttributeChanges {
+                [pscustomobject]@{
+                    Changes = @{ GivenName = 'Jamie' }
+                    MissingRequired = @()
+                }
+            }
+            Mock Get-SfAdMappingEvaluation {
+                [pscustomobject]@{
+                    Changes = @{ GivenName = 'Jamie' }
+                    MissingRequired = @()
+                    Rows = @(
+                        [pscustomobject]@{
+                            sourceField = 'firstName'
+                            targetAttribute = 'GivenName'
+                            transform = 'Trim'
+                            required = $true
+                            sourceValue = 'Jamie'
+                            currentAdValue = 'OldJamie'
+                            proposedValue = 'Jamie'
+                            changed = $true
+                        }
+                    )
+                }
+            }
+            Mock Set-SfAdUserAttributes {}
+            Mock Invoke-SfAdDeletionPass { throw 'Deletion pass should not run during review preview.' }
+            Mock Save-SfAdSyncState { throw 'state should not be saved in scoped preview mode' }
+            Mock Set-SfAdWorkerState { throw 'tracked state should not be written in scoped preview mode' }
+            Mock Save-SfAdSyncReport {
+                param($Report, $Directory, $Mode)
+                $global:CapturedReport = $Report
+                $global:CapturedReviewDirectory = $Directory
+                return (Join-Path $Directory "sf-ad-sync-$Mode.json")
+            }
+            Mock Ensure-ActiveDirectoryModule {}
+
+            Invoke-SfAdSyncRun -ConfigPath $global:SyncTestConfigPath -MappingConfigPath $global:SyncTestMappingConfigPath -Mode Review -WorkerId '7001' | Out-Null
+
+            $global:CapturedReviewDirectory | Should -Be $global:SyncTestBaseConfig.reporting.reviewOutputDirectory
+            $global:CapturedReport.artifactType | Should -Be 'WorkerPreview'
+            $global:CapturedReport.workerScope.workerId | Should -Be '7001'
+            $global:CapturedReport.workerScope.identityField | Should -Be 'personIdExternal'
+            $global:CapturedReport.reviewSummary.existingUsersMatched | Should -Be 1
+            $global:CapturedReport.updates[0].changedAttributeDetails[0].targetAttribute | Should -Be 'GivenName'
+            Assert-MockCalled Get-SfWorkerById -Times 1 -Exactly -ParameterFilter { $WorkerId -eq '7001' }
+            Assert-MockCalled Get-SfWorkers -Times 0 -Exactly
+            Assert-MockCalled Invoke-SfAdDeletionPass -Times 0 -Exactly
+            Assert-MockCalled Save-SfAdSyncState -Times 0 -Exactly
+            Assert-MockCalled Set-SfAdWorkerState -Times 0 -Exactly
+            Assert-MockCalled Set-SfAdUserAttributes -Times 1 -Exactly -ParameterFilter { $DryRun }
+        }
+    }
+
+    It 'rejects WorkerId outside review mode' {
+        InModuleScope Sync {
+            { Invoke-SfAdSyncRun -ConfigPath $global:SyncTestConfigPath -MappingConfigPath $global:SyncTestMappingConfigPath -Mode Delta -WorkerId '7001' } | Should -Throw '-WorkerId is only supported with -Mode Review.'
+        }
+    }
+
     It 'counts matched review users that land in quarantine or manual review' {
         InModuleScope Sync {
             $global:SyncTestBaseConfig.reporting | Add-Member -MemberType NoteProperty -Name reviewOutputDirectory -Value (Join-Path $TestDrive 'reviews') -Force
