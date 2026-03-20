@@ -50,6 +50,14 @@
         "employmentNav",
         "employmentNav/jobInfoNav"
       ]
+    },
+    "previewQuery": {
+      "select": [
+        "personIdExternal",
+        "firstName",
+        "lastName"
+      ],
+      "expand": []
     }
   },
   "ad": {

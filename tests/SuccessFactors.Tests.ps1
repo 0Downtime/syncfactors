@@ -143,6 +143,24 @@ Describe 'SuccessFactors module' {
         }
     }
 
+    It 'omits blank query values from OData GET URLs' {
+        InModuleScope SuccessFactors {
+            Mock Get-SfAuthHeaders { @{ Authorization = 'Bearer token-1' } }
+            Mock Invoke-RestMethod {
+                $script:CapturedGetUri = $Uri
+                [pscustomobject]@{ value = @() }
+            }
+
+            Invoke-SfODataGet -Config $global:SuccessFactorsTestConfig -RelativePath 'PerPerson' -Query @{
+                '$filter' = "personIdExternal eq '1001'"
+                '$expand' = ''
+            } | Out-Null
+
+            $script:CapturedGetUri | Should -Match '%24filter='
+            $script:CapturedGetUri | Should -Not -Match '%24expand='
+        }
+    }
+
     It 'uses the delta checkpoint filter when fetching workers in delta mode' {
         InModuleScope SuccessFactors {
             Mock Invoke-SfODataGet {
@@ -197,6 +215,45 @@ Describe 'SuccessFactors module' {
 
             Mock Invoke-SfODataGet { [pscustomobject]@{ value = @() } }
             (Get-SfWorkerById -Config $global:SuccessFactorsTestConfig -WorkerId '9999') | Should -Be $null
+        }
+    }
+
+    It 'uses previewQuery overrides for single-worker preview requests' {
+        InModuleScope SuccessFactors {
+            $previewConfig = [pscustomobject]@{
+                successFactors = [pscustomobject]@{
+                    baseUrl = 'https://tenant.example.com/odata/v2'
+                    oauth = [pscustomobject]@{
+                        tokenUrl = 'https://tenant.example.com/oauth/token'
+                        clientId = 'client-id'
+                        clientSecret = 'client-secret'
+                    }
+                    query = [pscustomobject]@{
+                        entitySet = 'PerPerson'
+                        identityField = 'personIdExternal'
+                        deltaField = 'lastModifiedDateTime'
+                        select = @('personIdExternal', 'employmentNav/jobInfoNav/employmentType')
+                        expand = @('employmentNav', 'employmentNav/jobInfoNav')
+                    }
+                    previewQuery = [pscustomobject]@{
+                        select = @('personIdExternal', 'firstName', 'lastName')
+                        expand = @()
+                    }
+                }
+            }
+
+            Mock Invoke-SfODataGet {
+                $script:CapturedPreviewRelativePath = $RelativePath
+                $script:CapturedPreviewQuery = $Query
+                [pscustomobject]@{ value = @() }
+            }
+
+            Get-SfWorkerById -Config $previewConfig -WorkerId '3001' | Out-Null
+
+            $script:CapturedPreviewRelativePath | Should -Be 'PerPerson'
+            $script:CapturedPreviewQuery['$select'] | Should -Be 'personIdExternal,firstName,lastName'
+            $script:CapturedPreviewQuery.ContainsKey('$expand') | Should -BeFalse
+            $script:CapturedPreviewQuery['$filter'] | Should -Be "personIdExternal eq '3001'"
         }
     }
 

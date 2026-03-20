@@ -254,7 +254,8 @@ param(
     [string]`$ConfigPath,
     [string]`$MappingConfigPath,
     [string]`$Mode,
-    [string]`$WorkerId
+    [string]`$WorkerId,
+    [string]`$PreviewMode
 )
 
 '$reportPath'
@@ -268,10 +269,11 @@ param(
             return [System.IO.Path]::Combine($Path, $ChildPath)
         }
 
-        $result = & "$PSScriptRoot/../scripts/Invoke-SfAdWorkerPreview.ps1" -ConfigPath $configPath -MappingConfigPath $mappingPath -WorkerId '1001' -AsJson | ConvertFrom-Json -Depth 20
+        $result = & "$PSScriptRoot/../scripts/Invoke-SfAdWorkerPreview.ps1" -ConfigPath $configPath -MappingConfigPath $mappingPath -WorkerId '1001' -PreviewMode Full -AsJson | ConvertFrom-Json -Depth 20
 
         $result.artifactType | Should -Be 'WorkerPreview'
         $result.successFactorsAuth | Should -Be 'oauth (body client auth)'
+        $result.previewMode | Should -Be 'full'
         $result.workerScope.workerId | Should -Be '1001'
         $result.preview.samAccountName | Should -Be 'jdoe'
         $result.preview.reviewCategory | Should -Be 'ExistingUserChanges'

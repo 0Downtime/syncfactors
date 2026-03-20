@@ -292,6 +292,17 @@ function Test-SfAdSyncConfig {
         throw "Sync config must define successFactors.query.expand."
     }
 
+    if ((Test-SfAdHasProperty -InputObject $Config.successFactors -PropertyName 'previewQuery') -and $null -ne $Config.successFactors.previewQuery) {
+        $previewQuery = $Config.successFactors.previewQuery
+        if ((Test-SfAdHasProperty -InputObject $previewQuery -PropertyName 'entitySet') -and -not [string]::IsNullOrWhiteSpace("$($previewQuery.entitySet)")) {
+            Assert-SfAdRequiredString -Value $previewQuery.entitySet -PropertyPath 'successFactors.previewQuery.entitySet'
+        }
+
+        if ((Test-SfAdHasProperty -InputObject $previewQuery -PropertyName 'identityField') -and -not [string]::IsNullOrWhiteSpace("$($previewQuery.identityField)")) {
+            Assert-SfAdRequiredString -Value $previewQuery.identityField -PropertyPath 'successFactors.previewQuery.identityField'
+        }
+    }
+
     Assert-SfAdRequiredString -Value $Config.ad.identityAttribute -PropertyPath 'ad.identityAttribute'
     Assert-SfAdRequiredString -Value $Config.ad.defaultActiveOu -PropertyPath 'ad.defaultActiveOu'
     Assert-SfAdRequiredString -Value $Config.ad.graveyardOu -PropertyPath 'ad.graveyardOu'

@@ -6,6 +6,8 @@ param(
     [string]$MappingConfigPath,
     [Parameter(Mandatory)]
     [string]$WorkerId,
+    [ValidateSet('Configured','Minimal','Full')]
+    [string]$PreviewMode = 'Configured',
     [string]$OutputDirectory,
     [switch]$AsJson
 )
@@ -144,10 +146,33 @@ $resolvedMappingConfigPath = (Resolve-Path -Path $MappingConfigPath).Path
 $effectiveConfigPath = $resolvedConfigPath
 $resolvedConfig = Get-SfAdSyncConfig -Path $resolvedConfigPath
 $successFactorsAuth = Get-SfAdSuccessFactorsAuthSummary -Config $resolvedConfig
+$config = $resolvedConfig
+
+switch ($PreviewMode) {
+    'Full' {
+        if ($config.successFactors.PSObject.Properties.Name -contains 'previewQuery') {
+            $config.successFactors.PSObject.Properties.Remove('previewQuery')
+        }
+    }
+    'Minimal' {
+        if (-not ($config.successFactors.PSObject.Properties.Name -contains 'previewQuery') -or $null -eq $config.successFactors.previewQuery) {
+            $config.successFactors | Add-Member -MemberType NoteProperty -Name 'previewQuery' -Value ([pscustomobject]@{
+                    select = @(
+                        $config.successFactors.query.identityField,
+                        'firstName',
+                        'lastName'
+                    )
+                    expand = @()
+                }) -Force
+        }
+    }
+}
 
 if (-not [string]::IsNullOrWhiteSpace($OutputDirectory)) {
-    $config = $resolvedConfig
     $config.reporting.reviewOutputDirectory = (Resolve-Path -Path (New-Item -Path $OutputDirectory -ItemType Directory -Force)).Path
+}
+
+if ($PreviewMode -ne 'Configured' -or -not [string]::IsNullOrWhiteSpace($OutputDirectory)) {
     $overlayPath = Join-Path -Path ([System.IO.Path]::GetTempPath()) -ChildPath ("sf-ad-sync-worker-preview-config-{0}.json" -f ([guid]::NewGuid().Guid))
     try {
         $config | ConvertTo-Json -Depth 30 | Set-Content -Path $overlayPath
@@ -184,6 +209,7 @@ $result = [pscustomobject]@{
     status = $report.status
     artifactType = $report.artifactType
     successFactorsAuth = $successFactorsAuth
+    previewMode = $PreviewMode.ToLowerInvariant()
     workerScope = $report.workerScope
     reviewSummary = $report.reviewSummary
     preview = [pscustomobject]@{
@@ -218,6 +244,7 @@ Write-Host "Report: $($result.reportPath)"
 Write-Host "Run ID: $($result.runId)"
 Write-Host "Status: $($result.status)"
 Write-Host "SuccessFactors auth: $($result.successFactorsAuth)"
+Write-Host "Preview mode: $($result.previewMode)"
 Write-Host "Worker: $WorkerId"
 if ($result.workerScope) {
     Write-Host "Identity field: $($result.workerScope.identityField)"

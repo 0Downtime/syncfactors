@@ -155,6 +155,26 @@ function Read-SfAdMonitorWorkerId {
     return Read-Host -Prompt 'WorkerId'
 }
 
+function Read-SfAdMonitorWorkerPreviewMode {
+    [CmdletBinding()]
+    param()
+
+    Write-Host 'Choose query scope for the worker preview. Enter minimal or full.' -ForegroundColor Cyan
+    $response = Read-Host -Prompt 'PreviewMode [minimal]'
+    if ([string]::IsNullOrWhiteSpace($response)) {
+        return 'Minimal'
+    }
+
+    $normalized = "$response".Trim().ToLowerInvariant()
+    switch ($normalized) {
+        'm' { return 'Minimal' }
+        'minimal' { return 'Minimal' }
+        'f' { return 'Full' }
+        'full' { return 'Full' }
+        default { return $null }
+    }
+}
+
 function Confirm-SfAdMonitorWriteAction {
     [CmdletBinding()]
     param(
@@ -422,6 +442,13 @@ function Invoke-SfAdMonitorShortcut {
                 return
             }
 
+            $previewMode = Read-SfAdMonitorWorkerPreviewMode
+            if ([string]::IsNullOrWhiteSpace($previewMode)) {
+                $UiState.statusMessage = 'Worker preview cancelled: preview mode must be minimal or full.'
+                $UiState.commandOutput = @()
+                return
+            }
+
             if (-not (Confirm-SfAdMonitorWriteAction -Label "Worker preview for $($workerId.Trim())" -WriteTarget 'runtime status and review report files')) {
                 $UiState.statusMessage = 'Worker preview cancelled.'
                 $UiState.commandOutput = @()
@@ -439,12 +466,14 @@ function Invoke-SfAdMonitorShortcut {
                 $context.mappingConfigPath
                 '-WorkerId'
                 $workerId.Trim()
+                '-PreviewMode'
+                $previewMode
             )
 
             try {
                 Start-Process -FilePath 'pwsh' -ArgumentList $argumentList | Out-Null
-                $UiState.statusMessage = "Started worker preview for $($workerId.Trim()) in a new PowerShell process."
-                $UiState.commandOutput = @("Config=$($context.configPath)", "Mapping=$($context.mappingConfigPath)", "WorkerId=$($workerId.Trim())")
+                $UiState.statusMessage = "Started $($previewMode.ToLowerInvariant()) worker preview for $($workerId.Trim()) in a new PowerShell process."
+                $UiState.commandOutput = @("Config=$($context.configPath)", "Mapping=$($context.mappingConfigPath)", "WorkerId=$($workerId.Trim())", "PreviewMode=$($previewMode.ToLowerInvariant())")
             } catch {
                 $UiState.statusMessage = 'Failed to start worker preview.'
                 $UiState.commandOutput = @($_.Exception.Message)

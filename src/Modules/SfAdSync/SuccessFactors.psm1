@@ -310,6 +310,34 @@ function Get-SfAuthHeaders {
     }
 }
 
+function Get-SfQueryDefinition {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [pscustomobject]$Config,
+        [switch]$ForWorkerPreview
+    )
+
+    $query = $Config.successFactors.query
+    if (
+        $ForWorkerPreview -and
+        $Config.successFactors.PSObject.Properties.Name -contains 'previewQuery' -and
+        $null -ne $Config.successFactors.previewQuery
+    ) {
+        $previewQuery = $Config.successFactors.previewQuery
+        return [pscustomobject]@{
+            entitySet     = if ($previewQuery.PSObject.Properties.Name -contains 'entitySet' -and -not [string]::IsNullOrWhiteSpace("$($previewQuery.entitySet)")) { $previewQuery.entitySet } else { $query.entitySet }
+            identityField = if ($previewQuery.PSObject.Properties.Name -contains 'identityField' -and -not [string]::IsNullOrWhiteSpace("$($previewQuery.identityField)")) { $previewQuery.identityField } else { $query.identityField }
+            deltaField    = if ($previewQuery.PSObject.Properties.Name -contains 'deltaField' -and -not [string]::IsNullOrWhiteSpace("$($previewQuery.deltaField)")) { $previewQuery.deltaField } else { $query.deltaField }
+            select        = if ($previewQuery.PSObject.Properties.Name -contains 'select') { @($previewQuery.select) } else { @($query.select) }
+            expand        = if ($previewQuery.PSObject.Properties.Name -contains 'expand') { @($previewQuery.expand) } else { @($query.expand) }
+            baseFilter    = if ($previewQuery.PSObject.Properties.Name -contains 'baseFilter') { $previewQuery.baseFilter } elseif ($query.PSObject.Properties.Name -contains 'baseFilter') { $query.baseFilter } else { $null }
+        }
+    }
+
+    return $query
+}
+
 function Invoke-SfODataGet {
     [CmdletBinding()]
     param(
@@ -325,12 +353,17 @@ function Invoke-SfODataGet {
 
     if ($Query) {
         $pairs = foreach ($key in $Query.Keys) {
+            if ([string]::IsNullOrWhiteSpace("$($Query[$key])")) {
+                continue
+            }
             $encodedKey = [System.Uri]::EscapeDataString($key)
             $encodedValue = [System.Uri]::EscapeDataString("$($Query[$key])")
             "$encodedKey=$encodedValue"
         }
 
-        $uriBuilder.Query = ($pairs -join '&')
+        if (@($pairs).Count -gt 0) {
+            $uriBuilder.Query = ($pairs -join '&')
+        }
     }
 
     $requestUri = $uriBuilder.Uri.AbsoluteUri
@@ -360,18 +393,22 @@ function Get-SfWorkers {
         [string]$Checkpoint
     )
 
-    $workerQuery = @{
-        '$select' = ($Config.successFactors.query.select -join ',')
-        '$expand' = ($Config.successFactors.query.expand -join ',')
+    $queryDefinition = Get-SfQueryDefinition -Config $Config
+    $workerQuery = @{}
+    if (@($queryDefinition.select).Count -gt 0) {
+        $workerQuery['$select'] = ($queryDefinition.select -join ',')
+    }
+    if (@($queryDefinition.expand).Count -gt 0) {
+        $workerQuery['$expand'] = ($queryDefinition.expand -join ',')
     }
 
     if ($Mode -eq 'Delta' -and $Checkpoint) {
-        $workerQuery['$filter'] = "$($Config.successFactors.query.deltaField) ge datetime'$Checkpoint'"
-    } elseif ($Config.successFactors.query.baseFilter) {
-        $workerQuery['$filter'] = $Config.successFactors.query.baseFilter
+        $workerQuery['$filter'] = "$($queryDefinition.deltaField) ge datetime'$Checkpoint'"
+    } elseif ($queryDefinition.baseFilter) {
+        $workerQuery['$filter'] = $queryDefinition.baseFilter
     }
 
-    $response = Invoke-SfODataGet -Config $Config -RelativePath $Config.successFactors.query.entitySet -Query $workerQuery
+    $response = Invoke-SfODataGet -Config $Config -RelativePath $queryDefinition.entitySet -Query $workerQuery
     if ($response.PSObject.Properties.Name -contains 'd' -and $response.d -and $response.d.results) {
         return $response.d.results
     }
@@ -392,13 +429,18 @@ function Get-SfWorkerById {
         [string]$WorkerId
     )
 
+    $queryDefinition = Get-SfQueryDefinition -Config $Config -ForWorkerPreview
     $query = @{
-        '$select' = ($Config.successFactors.query.select -join ',')
-        '$expand' = ($Config.successFactors.query.expand -join ',')
-        '$filter' = "$($Config.successFactors.query.identityField) eq '$WorkerId'"
+        '$filter' = "$($queryDefinition.identityField) eq '$WorkerId'"
+    }
+    if (@($queryDefinition.select).Count -gt 0) {
+        $query['$select'] = ($queryDefinition.select -join ',')
+    }
+    if (@($queryDefinition.expand).Count -gt 0) {
+        $query['$expand'] = ($queryDefinition.expand -join ',')
     }
 
-    $response = Invoke-SfODataGet -Config $Config -RelativePath $Config.successFactors.query.entitySet -Query $query
+    $response = Invoke-SfODataGet -Config $Config -RelativePath $queryDefinition.entitySet -Query $query
     if ($response.PSObject.Properties.Name -contains 'd' -and $response.d -and $response.d.results -and $response.d.results.Count -gt 0) {
         return $response.d.results[0]
     }
