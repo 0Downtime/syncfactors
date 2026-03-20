@@ -105,6 +105,7 @@ Describe 'Monitoring module' {
         $uiState.statusMessage | Should -Match 'f full dry-run'
         $uiState.statusMessage | Should -Match 'a full sync'
         $uiState.statusMessage | Should -Match 'w worker preview'
+        $uiState.statusMessage | Should -Match 'z fresh reset'
         $uiState.statusMessage | Should -Match 'v review'
     }
 
@@ -737,6 +738,7 @@ Describe 'Monitoring module' {
         ($lines -join "`n") | Should -Match 'f full dry-run'
         ($lines -join "`n") | Should -Match 'a full sync'
         ($lines -join "`n") | Should -Match 'w worker preview'
+        ($lines -join "`n") | Should -Match 'z fresh reset'
     }
 
     It 'uses the selected run rather than latest run in the summary panel' {

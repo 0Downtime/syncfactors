@@ -212,6 +212,41 @@ Describe 'ActiveDirectorySync module' {
         }
     }
 
+    It 'returns unique managed sync OUs from the config' {
+        InModuleScope ActiveDirectorySync {
+            $ous = @(Get-SfAdManagedOus -Config $global:AdTestConfig)
+
+            $ous | Should -Be @(
+                'OU=Employees,DC=example,DC=com',
+                'OU=Graveyard,DC=example,DC=com',
+                'OU=IT,DC=example,DC=com'
+            )
+        }
+    }
+
+    It 'deduplicates users discovered across managed OUs' {
+        InModuleScope ActiveDirectorySync {
+            Mock Ensure-ActiveDirectoryModule {} -ModuleName ActiveDirectorySync
+            Mock Get-ADUser {
+                @(
+                    [pscustomobject]@{
+                        SamAccountName = 'jdoe'
+                        DistinguishedName = 'CN=Jamie Doe,OU=Employees,DC=example,DC=com'
+                    }
+                )
+            } -ModuleName ActiveDirectorySync
+
+            $users = @(Get-SfAdUsersInOrganizationalUnits -Config $global:AdTestConfig -OrganizationalUnits @(
+                    'OU=Employees,DC=example,DC=com',
+                    'OU=IT,DC=example,DC=com'
+                ))
+
+            $users.Count | Should -Be 1
+            $users[0].SamAccountName | Should -Be 'jdoe'
+            Assert-MockCalled Get-ADUser -Times 2 -Exactly -ModuleName ActiveDirectorySync
+        }
+    }
+
     It 'restores a user snapshot by replaying AD attributes, state, and groups' {
         InModuleScope ActiveDirectorySync {
             $snapshot = [pscustomobject]@{

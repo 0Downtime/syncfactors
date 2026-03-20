@@ -624,7 +624,7 @@ function New-SfAdMonitorUiState {
         filterText = ''
         autoRefreshEnabled = $false
         preferredMode = $null
-        statusMessage = 'Ready. Keys: q quit, r refresh, t toggle auto-refresh, tab focus, arrows or j/k select run, [ ] bucket, left/right or h/l select item, / filter, c clear filter, p preflight, d delta dry-run, s delta sync, f full dry-run, a full sync, w worker preview, v review, o open path, y copy path, x export bucket.'
+        statusMessage = 'Ready. Keys: q quit, r refresh, t toggle auto-refresh, tab focus, arrows or j/k select run, [ ] bucket, left/right or h/l select item, / filter, c clear filter, p preflight, d delta dry-run, s delta sync, f full dry-run, a full sync, w worker preview, v review, z fresh reset, o open path, y copy path, x export bucket.'
         commandOutput = @()
     }
 }
@@ -1382,7 +1382,7 @@ function Format-SfAdMonitorDashboardView {
     $lines.Add($midBorder)
     $lines.Add("║ Status: $($UiState.statusMessage)")
     $lines.Add('║ Keys: q quit, r refresh, t auto-refresh, tab focus, j/k run, [ ] bucket, h/l item, / filter, c clear, enter inspect')
-    $lines.Add('║ Runs: p preflight, d delta dry-run, s delta sync, f full dry-run, a full sync, w worker preview, v review, o open report, y copy path, x export bucket')
+    $lines.Add('║ Runs: p preflight, d delta dry-run, s delta sync, f full dry-run, a full sync, w worker preview, v review, z fresh reset, o open report, y copy path, x export bucket')
     $lines.Add($bottomBorder)
     return $lines
 }

@@ -178,6 +178,16 @@ Use `-PreviewMode Minimal` to use `successFactors.previewQuery`, `-PreviewMode F
 Use `-AsJson` for machine-readable output or `-OutputDirectory` to write the preview report to a separate folder.
 If your tenant metadata is still being validated, set `successFactors.previewQuery` to the smallest confirmed-valid field list, starting with just `personIdExternal`. Single-worker preview uses `previewQuery` when present, while full and delta sync continue using `successFactors.query`.
 
+To delete all AD user objects found recursively under the managed sync OUs and reset local sync state for a true fresh sync:
+
+```powershell
+pwsh ./scripts/Invoke-SfAdFreshSyncReset.ps1 `
+  -ConfigPath ./config/local.real-successfactors.real-ad.sync-config.json
+```
+
+This targets the configured sync user OUs only: `ad.defaultActiveOu`, `ad.graveyardOu`, and any `ad.ouRoutingRules[].targetOu`.
+The reset requires three separate typed confirmations before any deletion happens.
+
 To watch the current stage/progress and the last few syncs in a terminal dashboard:
 
 ```powershell
@@ -185,7 +195,7 @@ pwsh ./scripts/Watch-SfAdSyncMonitor.ps1 `
   -ConfigPath ./config/local.real-successfactors.real-ad.sync-config.json
 ```
 
-Press `q` to quit, `r` to refresh immediately, or `t` to pause/resume auto-refresh. Start paused with `-PauseAutoRefresh` if you want to browse the dashboard without timed redraws. The dashboard shortcuts now cover the full run set: `d` delta dry-run, `s` delta sync, `f` full dry-run, `a` full sync, `v` review, and `w` single-worker preview. The `w` shortcut now asks whether to run a `minimal` or `full` worker preview before it launches. Any shortcut that can write anything, including reports, temp exports, or the clipboard, now requires typing `YES` before it proceeds.
+Press `q` to quit, `r` to refresh immediately, or `t` to pause/resume auto-refresh. Start paused with `-PauseAutoRefresh` if you want to browse the dashboard without timed redraws. The dashboard shortcuts now cover the full run set: `d` delta dry-run, `s` delta sync, `f` full dry-run, `a` full sync, `v` review, `w` single-worker preview, and `z` fresh reset. The `w` shortcut now asks whether to run a `minimal` or `full` worker preview before it launches. The `z` shortcut launches the fresh sync reset script, which still requires three typed confirmations before any deletion happens. Any shortcut that can write anything, including reports, temp exports, or the clipboard, now requires typing `YES` before it proceeds.
 
 To run the full Pester suite:
 

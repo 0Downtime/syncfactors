@@ -232,7 +232,7 @@ function Invoke-SfAdMonitorShortcut {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
-        [ValidateSet('Preflight','DeltaDryRun','DeltaRun','FullDryRun','FullRun','ReviewRun','WorkerPreview','OpenReport','CopyReportPath')]
+        [ValidateSet('Preflight','DeltaDryRun','DeltaRun','FullDryRun','FullRun','ReviewRun','WorkerPreview','FreshSyncReset','OpenReport','CopyReportPath')]
         [string]$Action,
         [Parameter(Mandatory)]
         [pscustomobject]$Status,
@@ -487,6 +487,31 @@ function Invoke-SfAdMonitorShortcut {
                 $UiState.commandOutput = @($_.Exception.Message)
             }
         }
+        'FreshSyncReset' {
+            if (-not (Confirm-SfAdMonitorWriteAction -Label 'Fresh sync reset' -WriteTarget 'managed AD user objects and local sync state')) {
+                $UiState.statusMessage = 'Fresh sync reset cancelled.'
+                $UiState.commandOutput = @()
+                return
+            }
+
+            $argumentList = @(
+                '-NoLogo'
+                '-NoProfile'
+                '-File'
+                (Join-Path $projectRoot 'scripts/Invoke-SfAdFreshSyncReset.ps1')
+                '-ConfigPath'
+                $context.configPath
+            )
+
+            try {
+                Start-Process -FilePath 'pwsh' -ArgumentList $argumentList | Out-Null
+                $UiState.statusMessage = 'Started fresh sync reset in a new PowerShell process.'
+                $UiState.commandOutput = @("Config=$($context.configPath)")
+            } catch {
+                $UiState.statusMessage = 'Failed to start fresh sync reset.'
+                $UiState.commandOutput = @($_.Exception.Message)
+            }
+        }
         'OpenReport' {
             if (-not $context.reportPath) {
                 $UiState.statusMessage = 'Open report unavailable: no selected report path.'
@@ -719,6 +744,13 @@ do {
                         'w' {
                             if ($lastStatus) {
                                 Invoke-SfAdMonitorShortcut -Action WorkerPreview -Status $lastStatus -UiState $uiState -ResolvedMappingConfigPath $resolvedMappingConfigPath
+                            }
+                            $refreshRequested = $true
+                            break
+                        }
+                        'z' {
+                            if ($lastStatus) {
+                                Invoke-SfAdMonitorShortcut -Action FreshSyncReset -Status $lastStatus -UiState $uiState -ResolvedMappingConfigPath $resolvedMappingConfigPath
                             }
                             $refreshRequested = $true
                             break

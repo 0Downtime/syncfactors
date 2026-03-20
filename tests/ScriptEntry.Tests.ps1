@@ -325,6 +325,64 @@ param(
         $result.mappingCount | Should -Be 3
     }
 
+    It 'requires three confirmations before deleting managed OU users and resetting sync state' {
+        $configPath = Join-Path $TestDrive 'fresh-reset-config.json'
+        $statePath = Join-Path $TestDrive 'fresh-reset-state.json'
+        $reportDirectory = Join-Path $TestDrive 'fresh-reset-reports'
+
+        (New-StatusConfigContent -StatePath $statePath -ReportDirectory $reportDirectory) | Set-Content -Path $configPath
+
+        Import-Module "$PSScriptRoot/../src/Modules/SfAdSync/ActiveDirectorySync.psm1" -Force -DisableNameChecking
+        Import-Module "$PSScriptRoot/../src/Modules/SfAdSync/State.psm1" -Force -DisableNameChecking
+
+        $global:RemovedUsers = @()
+        $global:SavedResetState = $null
+        $global:SavedResetStatePath = $null
+
+        Mock Get-SfAdManagedOus {
+            @(
+                'OU=Employees,DC=example,DC=com',
+                'OU=Graveyard,DC=example,DC=com'
+            )
+        }
+        Mock Get-SfAdUsersInOrganizationalUnits {
+            @(
+                [pscustomobject]@{
+                    SamAccountName = 'jdoe'
+                    DistinguishedName = 'CN=Jamie Doe,OU=Employees,DC=example,DC=com'
+                },
+                [pscustomobject]@{
+                    SamAccountName = 'adoe'
+                    DistinguishedName = 'CN=Alex Doe,OU=Graveyard,DC=example,DC=com'
+                }
+            )
+        }
+        Mock Remove-SfAdUser {
+            param($Config, $User)
+            $global:RemovedUsers += $User.SamAccountName
+        }
+        Mock Save-SfAdSyncState {
+            param($State, $Path)
+            $global:SavedResetState = $State
+            $global:SavedResetStatePath = $Path
+        }
+        $responses = [System.Collections.Generic.Queue[string]]::new()
+        $responses.Enqueue('DELETE')
+        $responses.Enqueue('2')
+        $responses.Enqueue('DELETE ALL SYNCED OU USERS')
+        Mock Read-Host { $responses.Dequeue() }
+
+        & "$PSScriptRoot/../scripts/Invoke-SfAdFreshSyncReset.ps1" -ConfigPath $configPath | Out-Null
+
+        $global:RemovedUsers | Should -Be @('jdoe', 'adoe')
+        $global:SavedResetStatePath | Should -Be $statePath
+        $global:SavedResetState.checkpoint | Should -Be $null
+        @($global:SavedResetState.workers.Keys).Count | Should -Be 0
+        Assert-MockCalled Read-Host -Times 3 -Exactly
+        Assert-MockCalled Remove-SfAdUser -Times 2 -Exactly
+        Assert-MockCalled Save-SfAdSyncState -Times 1 -Exactly
+    }
+
     It 'prompts for placeholder secret values and stores them in process environment variables' {
         $configPath = Join-Path $TestDrive 'interactive-config.json'
         $mappingPath = Join-Path $TestDrive 'interactive-mapping.json'

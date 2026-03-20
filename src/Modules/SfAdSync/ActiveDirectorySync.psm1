@@ -458,6 +458,58 @@ function Remove-SfAdUser {
     Remove-ADUser -Identity $User -Confirm:$false @directoryContext
 }
 
+function Get-SfAdManagedOus {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [pscustomobject]$Config
+    )
+
+    $ous = [System.Collections.Generic.List[string]]::new()
+    foreach ($candidate in @(
+            $Config.ad.defaultActiveOu,
+            $Config.ad.graveyardOu,
+            @($Config.ad.ouRoutingRules | ForEach-Object { $_.targetOu })
+        )) {
+        if ([string]::IsNullOrWhiteSpace("$candidate")) {
+            continue
+        }
+
+        if (-not $ous.Contains("$candidate")) {
+            $ous.Add("$candidate")
+        }
+    }
+
+    return @($ous)
+}
+
+function Get-SfAdUsersInOrganizationalUnits {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [pscustomobject]$Config,
+        [Parameter(Mandatory)]
+        [string[]]$OrganizationalUnits
+    )
+
+    Ensure-ActiveDirectoryModule
+    $directoryContext = Get-SfAdDirectoryContextParameters -Config $Config
+    $seenDns = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+    $results = [System.Collections.Generic.List[object]]::new()
+
+    foreach ($ou in @($OrganizationalUnits | Where-Object { -not [string]::IsNullOrWhiteSpace("$_") })) {
+        foreach ($user in @(Get-ADUser -LDAPFilter '(objectClass=user)' -SearchBase $ou -SearchScope Subtree -Properties * -ErrorAction SilentlyContinue @directoryContext)) {
+            $distinguishedName = if ($user.PSObject.Properties.Name -contains 'DistinguishedName') { "$($user.DistinguishedName)" } else { '' }
+            $dedupeKey = if (-not [string]::IsNullOrWhiteSpace($distinguishedName)) { $distinguishedName } else { "$($user.SamAccountName)" }
+            if ($seenDns.Add($dedupeKey)) {
+                $results.Add($user)
+            }
+        }
+    }
+
+    return @($results)
+}
+
 function Add-SfAdUserToConfiguredGroups {
     [CmdletBinding()]
     param(
@@ -596,4 +648,4 @@ function Restore-SfAdUserFromSnapshot {
     return Get-ADUser -Identity $user -Properties * -ErrorAction Stop @directoryContext
 }
 
-Export-ModuleMember -Function Ensure-ActiveDirectoryModule, Get-SfAdUserByObjectGuid, Get-SfAdTargetUser, Get-SfAdUserBySamAccountName, Get-SfAdUserByUserPrincipalName, Get-SfAdUserGroupMembershipDns, Get-SfAdUserSnapshot, Get-SfAdParentOuFromDistinguishedName, Resolve-SfAdTargetOu, New-SfAdUser, Set-SfAdUserAttributes, Enable-SfAdUser, Disable-SfAdUser, Move-SfAdUser, Remove-SfAdUser, Add-SfAdUserToConfiguredGroups, Remove-SfAdUserFromGroups, Restore-SfAdUserFromSnapshot
+Export-ModuleMember -Function Ensure-ActiveDirectoryModule, Get-SfAdUserByObjectGuid, Get-SfAdTargetUser, Get-SfAdUserBySamAccountName, Get-SfAdUserByUserPrincipalName, Get-SfAdUserGroupMembershipDns, Get-SfAdUserSnapshot, Get-SfAdParentOuFromDistinguishedName, Resolve-SfAdTargetOu, New-SfAdUser, Set-SfAdUserAttributes, Enable-SfAdUser, Disable-SfAdUser, Move-SfAdUser, Remove-SfAdUser, Get-SfAdManagedOus, Get-SfAdUsersInOrganizationalUnits, Add-SfAdUserToConfiguredGroups, Remove-SfAdUserFromGroups, Restore-SfAdUserFromSnapshot
