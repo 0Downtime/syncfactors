@@ -102,13 +102,13 @@ Describe 'Script entrypoints' {
         }
     }
 
-    It 'delegates the main sync entry script to Invoke-SfAdSyncRun' {
-        Import-Module "$PSScriptRoot/../src/Modules/SfAdSync/Sync.psm1" -Force -DisableNameChecking
-        Mock Invoke-SfAdSyncRun { 'report.json' }
+    It 'delegates the main sync entry script to Invoke-SyncFactorsRun' {
+        Import-Module "$PSScriptRoot/../src/Modules/SyncFactors/Sync.psm1" -Force -DisableNameChecking
+        Mock Invoke-SyncFactorsRun { 'report.json' }
 
-        $result = & "$PSScriptRoot/../src/Invoke-SfAdSync.ps1" -ConfigPath 'config.json' -MappingConfigPath 'mapping.json' -Mode Review -DryRun -WorkerId '1001'
+        $result = & "$PSScriptRoot/../src/Invoke-SyncFactors.ps1" -ConfigPath 'config.json' -MappingConfigPath 'mapping.json' -Mode Review -DryRun -WorkerId '1001'
 
-        Assert-MockCalled Invoke-SfAdSyncRun -Times 1 -Exactly -ParameterFilter {
+        Assert-MockCalled Invoke-SyncFactorsRun -Times 1 -Exactly -ParameterFilter {
             $ConfigPath -eq 'config.json' -and
             $MappingConfigPath -eq 'mapping.json' -and
             $Mode -eq 'Review' -and
@@ -118,13 +118,13 @@ Describe 'Script entrypoints' {
         $result | Should -Be 'report.json'
     }
 
-    It 'delegates the rollback entry script to Invoke-SfAdRollback' {
-        Import-Module "$PSScriptRoot/../src/Modules/SfAdSync/Rollback.psm1" -Force -DisableNameChecking
-        Mock Invoke-SfAdRollback {}
+    It 'delegates the rollback entry script to Invoke-SyncFactorsRollback' {
+        Import-Module "$PSScriptRoot/../src/Modules/SyncFactors/Rollback.psm1" -Force -DisableNameChecking
+        Mock Invoke-SyncFactorsRollback {}
 
-        & "$PSScriptRoot/../scripts/Undo-SfAdSyncRun.ps1" -ReportPath 'report.json' -ConfigPath 'config.json' -DryRun
+        & "$PSScriptRoot/../scripts/Undo-SyncFactorsRun.ps1" -ReportPath 'report.json' -ConfigPath 'config.json' -DryRun
 
-        Assert-MockCalled Invoke-SfAdRollback -Times 1 -Exactly -ParameterFilter {
+        Assert-MockCalled Invoke-SyncFactorsRollback -Times 1 -Exactly -ParameterFilter {
             $ReportPath -eq 'report.json' -and
             $ConfigPath -eq 'config.json' -and
             $DryRun
@@ -135,7 +135,7 @@ Describe 'Script entrypoints' {
         $configPath = Join-Path $TestDrive 'review-config.json'
         $mappingPath = Join-Path $TestDrive 'review-mapping.json'
         $invokeStubPath = Join-Path $TestDrive 'invoke-review-stub.ps1'
-        $reportPath = Join-Path $TestDrive 'sf-ad-sync-Review.json'
+        $reportPath = Join-Path $TestDrive 'syncfactors-Review.json'
 
         (New-StatusConfigContent -StatePath (Join-Path $TestDrive 'state.json') -ReportDirectory (Join-Path $TestDrive 'reports')) | Set-Content -Path $configPath
         '{}' | Set-Content -Path $mappingPath
@@ -165,14 +165,14 @@ param(
 "@ | Set-Content -Path $invokeStubPath
 
         Mock Join-Path {
-            if ($ChildPath -eq 'src/Invoke-SfAdSync.ps1') {
+            if ($ChildPath -eq 'src/Invoke-SyncFactors.ps1') {
                 return $invokeStubPath
             }
 
             return [System.IO.Path]::Combine($Path, $ChildPath)
         }
 
-        $result = & "$PSScriptRoot/../scripts/Invoke-SfAdFirstSyncReview.ps1" -ConfigPath $configPath -MappingConfigPath $mappingPath -AsJson | ConvertFrom-Json -Depth 10
+        $result = & "$PSScriptRoot/../scripts/Invoke-SyncFactorsFirstSyncReview.ps1" -ConfigPath $configPath -MappingConfigPath $mappingPath -AsJson | ConvertFrom-Json -Depth 10
 
         $result.mode | Should -Be 'Review'
         $result.status | Should -Be 'Succeeded'
@@ -184,7 +184,7 @@ param(
         $configPath = Join-Path $TestDrive 'preview-config.json'
         $mappingPath = Join-Path $TestDrive 'preview-mapping.json'
         $invokeStubPath = Join-Path $TestDrive 'invoke-preview-stub.ps1'
-        $reportPath = Join-Path $TestDrive 'sf-ad-sync-Review.json'
+        $reportPath = Join-Path $TestDrive 'syncfactors-Review.json'
 
         (New-StatusConfigContent -StatePath (Join-Path $TestDrive 'state.json') -ReportDirectory (Join-Path $TestDrive 'reports')) | Set-Content -Path $configPath
         '{}' | Set-Content -Path $mappingPath
@@ -262,14 +262,14 @@ param(
 "@ | Set-Content -Path $invokeStubPath
 
         Mock Join-Path {
-            if ($ChildPath -eq 'src/Invoke-SfAdSync.ps1') {
+            if ($ChildPath -eq 'src/Invoke-SyncFactors.ps1') {
                 return $invokeStubPath
             }
 
             return [System.IO.Path]::Combine($Path, $ChildPath)
         }
 
-        $result = & "$PSScriptRoot/../scripts/Invoke-SfAdWorkerPreview.ps1" -ConfigPath $configPath -MappingConfigPath $mappingPath -WorkerId '1001' -PreviewMode Full -AsJson | ConvertFrom-Json -Depth 20
+        $result = & "$PSScriptRoot/../scripts/Invoke-SyncFactorsWorkerPreview.ps1" -ConfigPath $configPath -MappingConfigPath $mappingPath -WorkerId '1001' -PreviewMode Full -AsJson | ConvertFrom-Json -Depth 20
 
         $result.artifactType | Should -Be 'WorkerPreview'
         $result.successFactorsAuth | Should -Be 'oauth (body client auth)'
@@ -287,14 +287,14 @@ param(
 
         (New-StatusConfigContent -StatePath (Join-Path $TestDrive 'state-minimal.json') -ReportDirectory (Join-Path $TestDrive 'reports-minimal')) | Set-Content -Path $configPath
         '{}' | Set-Content -Path $mappingPath
-        Import-Module "$PSScriptRoot/../src/Modules/SfAdSync/SuccessFactors.psm1" -Force -DisableNameChecking
+        Import-Module "$PSScriptRoot/../src/Modules/SyncFactors/SuccessFactors.psm1" -Force -DisableNameChecking
         Mock Get-SfWorkerById {
             [pscustomobject]@{
                 personIdExternal = '1001'
             }
         }
 
-        $result = & "$PSScriptRoot/../scripts/Invoke-SfAdWorkerPreview.ps1" -ConfigPath $configPath -MappingConfigPath $mappingPath -WorkerId '1001' -PreviewMode Minimal -AsJson | ConvertFrom-Json -Depth 20
+        $result = & "$PSScriptRoot/../scripts/Invoke-SyncFactorsWorkerPreview.ps1" -ConfigPath $configPath -MappingConfigPath $mappingPath -WorkerId '1001' -PreviewMode Minimal -AsJson | ConvertFrom-Json -Depth 20
 
         $result.artifactType | Should -Be 'WorkerFetchPreview'
         $result.previewMode | Should -Be 'minimal'
@@ -303,8 +303,8 @@ param(
     }
 
     It 'returns preflight details from the preflight script in json mode' {
-        Import-Module "$PSScriptRoot/../src/Modules/SfAdSync/Sync.psm1" -Force -DisableNameChecking
-        Mock Test-SfAdSyncPreflight {
+        Import-Module "$PSScriptRoot/../src/Modules/SyncFactors/Sync.psm1" -Force -DisableNameChecking
+        Mock Test-SyncFactorsPreflight {
             [pscustomobject]@{
                 success = $true
                 configPath = 'config.json'
@@ -319,7 +319,7 @@ param(
             }
         }
 
-        $result = & "$PSScriptRoot/../scripts/Invoke-SfAdPreflight.ps1" -ConfigPath 'config.json' -MappingConfigPath 'mapping.json' -AsJson | ConvertFrom-Json
+        $result = & "$PSScriptRoot/../scripts/Invoke-SyncFactorsPreflight.ps1" -ConfigPath 'config.json' -MappingConfigPath 'mapping.json' -AsJson | ConvertFrom-Json
 
         $result.success | Should -BeTrue
         $result.mappingCount | Should -Be 3
@@ -330,9 +330,9 @@ param(
         $outputDirectory = Join-Path $TestDrive 'schema-output'
         '{}' | Set-Content -Path $configPath
 
-        Import-Module "$PSScriptRoot/../src/Modules/SfAdSync/Config.psm1" -Force -DisableNameChecking
-        Import-Module "$PSScriptRoot/../src/Modules/SfAdSync/SuccessFactors.psm1" -Force -DisableNameChecking
-        Mock Get-SfAdSyncConfig {
+        Import-Module "$PSScriptRoot/../src/Modules/SyncFactors/Config.psm1" -Force -DisableNameChecking
+        Import-Module "$PSScriptRoot/../src/Modules/SyncFactors/SuccessFactors.psm1" -Force -DisableNameChecking
+        Mock Get-SyncFactorsConfig {
             [pscustomobject]@{
                 reporting = [pscustomobject]@{
                     outputDirectory = (Join-Path $TestDrive 'reports')
@@ -374,7 +374,7 @@ param(
             }
         }
 
-        $result = & "$PSScriptRoot/../scripts/Invoke-SfAdSchemaExport.ps1" -ConfigPath $configPath -OutputDirectory $outputDirectory -AsJson | ConvertFrom-Json -Depth 20
+        $result = & "$PSScriptRoot/../scripts/Invoke-SyncFactorsSchemaExport.ps1" -ConfigPath $configPath -OutputDirectory $outputDirectory -AsJson | ConvertFrom-Json -Depth 20
 
         $result.artifactType | Should -Be 'SchemaExport'
         $result.entitySetName | Should -Be 'PerPerson'
@@ -387,7 +387,7 @@ param(
         $configPath = Join-Path $TestDrive 'worker-sync-config.json'
         $mappingPath = Join-Path $TestDrive 'worker-sync-mapping.json'
         $invokeStubPath = Join-Path $TestDrive 'invoke-worker-sync-stub.ps1'
-        $reportPath = Join-Path $TestDrive 'sf-ad-sync-Full.json'
+        $reportPath = Join-Path $TestDrive 'syncfactors-Full.json'
 
         (New-StatusConfigContent -StatePath (Join-Path $TestDrive 'state.json') -ReportDirectory (Join-Path $TestDrive 'reports')) | Set-Content -Path $configPath
         '{}' | Set-Content -Path $mappingPath
@@ -415,14 +415,14 @@ param(
 "@ | Set-Content -Path $invokeStubPath
 
         Mock Join-Path {
-            if ($ChildPath -eq 'src/Invoke-SfAdSync.ps1') {
+            if ($ChildPath -eq 'src/Invoke-SyncFactors.ps1') {
                 return $invokeStubPath
             }
 
             return [System.IO.Path]::Combine($Path, $ChildPath)
         }
 
-        $result = & "$PSScriptRoot/../scripts/Invoke-SfAdWorkerSync.ps1" -ConfigPath $configPath -MappingConfigPath $mappingPath -WorkerId '1001' -AsJson | ConvertFrom-Json -Depth 20
+        $result = & "$PSScriptRoot/../scripts/Invoke-SyncFactorsWorkerSync.ps1" -ConfigPath $configPath -MappingConfigPath $mappingPath -WorkerId '1001' -AsJson | ConvertFrom-Json -Depth 20
 
         $result.status | Should -Be 'Succeeded'
         $result.mode | Should -Be 'Full'
@@ -437,20 +437,20 @@ param(
 
         (New-StatusConfigContent -StatePath $statePath -ReportDirectory $reportDirectory) | Set-Content -Path $configPath
 
-        Import-Module "$PSScriptRoot/../src/Modules/SfAdSync/ActiveDirectorySync.psm1" -Force -DisableNameChecking
-        Import-Module "$PSScriptRoot/../src/Modules/SfAdSync/State.psm1" -Force -DisableNameChecking
+        Import-Module "$PSScriptRoot/../src/Modules/SyncFactors/ActiveDirectorySync.psm1" -Force -DisableNameChecking
+        Import-Module "$PSScriptRoot/../src/Modules/SyncFactors/State.psm1" -Force -DisableNameChecking
 
         $global:RemovedUsers = @()
         $global:SavedResetState = $null
         $global:SavedResetStatePath = $null
 
-        Mock Get-SfAdManagedOus {
+        Mock Get-SyncFactorsManagedOus {
             @(
                 'OU=Employees,DC=example,DC=com',
                 'OU=Graveyard,DC=example,DC=com'
             )
         }
-        Mock Get-SfAdUsersInOrganizationalUnits {
+        Mock Get-SyncFactorsUsersInOrganizationalUnits {
             @(
                 [pscustomobject]@{
                     SamAccountName = 'jdoe'
@@ -462,11 +462,11 @@ param(
                 }
             )
         }
-        Mock Remove-SfAdUser {
+        Mock Remove-SyncFactorsUser {
             param($Config, $User)
             $global:RemovedUsers += $User.SamAccountName
         }
-        Mock Save-SfAdSyncState {
+        Mock Save-SyncFactorsState {
             param($State, $Path)
             $global:SavedResetState = $State
             $global:SavedResetStatePath = $Path
@@ -477,13 +477,13 @@ param(
         $responses.Enqueue('DELETE ALL SYNCED OU USERS')
         Mock Read-Host { $responses.Dequeue() }
 
-        & "$PSScriptRoot/../scripts/Invoke-SfAdFreshSyncReset.ps1" -ConfigPath $configPath | Out-Null
+        & "$PSScriptRoot/../scripts/Invoke-SyncFactorsFreshSyncReset.ps1" -ConfigPath $configPath | Out-Null
 
         $global:RemovedUsers | Should -Be @('jdoe', 'adoe')
         $global:SavedResetStatePath | Should -Be $statePath
         $global:SavedResetState.checkpoint | Should -Be $null
         @($global:SavedResetState.workers.Keys).Count | Should -Be 0
-        $resetLogs = @(Get-ChildItem -Path $reportDirectory -Filter 'sf-ad-sync-fresh-reset-*.log' -File)
+        $resetLogs = @(Get-ChildItem -Path $reportDirectory -Filter 'syncfactors-fresh-reset-*.log' -File)
         $resetLogs.Count | Should -Be 1
         $resetLogContent = Get-Content -Path $resetLogs[0].FullName -Raw
         $resetLogContent | Should -Match 'Discovered AD user objects: 2'
@@ -491,7 +491,7 @@ param(
         $resetLogContent | Should -Match 'Deleting user: samAccountName=jdoe'
         $resetLogContent | Should -Match 'Deleted user: samAccountName=adoe'
         $resetLogContent | Should -Match 'Reset sync state:'
-        $previewReports = @(Get-ChildItem -Path $reportDirectory -Filter 'sf-ad-sync-ResetPreview-*.json' -File)
+        $previewReports = @(Get-ChildItem -Path $reportDirectory -Filter 'syncfactors-ResetPreview-*.json' -File)
         $previewReports.Count | Should -Be 1
         $previewReport = Get-Content -Path $previewReports[0].FullName -Raw | ConvertFrom-Json -Depth 20
         $previewReport.artifactType | Should -Be 'FreshSyncResetPreview'
@@ -499,8 +499,8 @@ param(
         $previewReport.deletions.Count | Should -Be 2
         $previewReport.operations.Count | Should -Be 2
         Assert-MockCalled Read-Host -Times 3 -Exactly
-        Assert-MockCalled Remove-SfAdUser -Times 2 -Exactly
-        Assert-MockCalled Save-SfAdSyncState -Times 1 -Exactly
+        Assert-MockCalled Remove-SyncFactorsUser -Times 2 -Exactly
+        Assert-MockCalled Save-SyncFactorsState -Times 1 -Exactly
     }
 
     It 'writes the fresh reset log to an explicit requested log path' {
@@ -511,11 +511,11 @@ param(
 
         (New-StatusConfigContent -StatePath $statePath -ReportDirectory $reportDirectory) | Set-Content -Path $configPath
 
-        Import-Module "$PSScriptRoot/../src/Modules/SfAdSync/ActiveDirectorySync.psm1" -Force -DisableNameChecking
-        Import-Module "$PSScriptRoot/../src/Modules/SfAdSync/State.psm1" -Force -DisableNameChecking
+        Import-Module "$PSScriptRoot/../src/Modules/SyncFactors/ActiveDirectorySync.psm1" -Force -DisableNameChecking
+        Import-Module "$PSScriptRoot/../src/Modules/SyncFactors/State.psm1" -Force -DisableNameChecking
 
-        Mock Get-SfAdManagedOus { @('OU=Employees,DC=example,DC=com') }
-        Mock Get-SfAdUsersInOrganizationalUnits {
+        Mock Get-SyncFactorsManagedOus { @('OU=Employees,DC=example,DC=com') }
+        Mock Get-SyncFactorsUsersInOrganizationalUnits {
             @(
                 [pscustomobject]@{
                     SamAccountName = 'jdoe'
@@ -523,15 +523,15 @@ param(
                 }
             )
         }
-        Mock Remove-SfAdUser {}
-        Mock Save-SfAdSyncState {}
+        Mock Remove-SyncFactorsUser {}
+        Mock Save-SyncFactorsState {}
         $responses = [System.Collections.Generic.Queue[string]]::new()
         $responses.Enqueue('DELETE')
         $responses.Enqueue('1')
         $responses.Enqueue('DELETE ALL SYNCED OU USERS')
         Mock Read-Host { $responses.Dequeue() }
 
-        & "$PSScriptRoot/../scripts/Invoke-SfAdFreshSyncReset.ps1" -ConfigPath $configPath -LogPath $requestedLogPath | Out-Null
+        & "$PSScriptRoot/../scripts/Invoke-SyncFactorsFreshSyncReset.ps1" -ConfigPath $configPath -LogPath $requestedLogPath | Out-Null
 
         Test-Path -Path $requestedLogPath -PathType Leaf | Should -BeTrue
         (Get-Content -Path $requestedLogPath -Raw) | Should -Match 'SuccessFactors Fresh Sync Reset'
@@ -574,7 +574,7 @@ param(
 
         Mock Join-Path {
             $invokeStubPath
-        } -ParameterFilter { $ChildPath -eq 'src/Invoke-SfAdSync.ps1' }
+        } -ParameterFilter { $ChildPath -eq 'src/Invoke-SyncFactors.ps1' }
 
         $promptValues = @{
             'Enter the SuccessFactors OAuth client id' = 'interactive-client-id'
@@ -598,7 +598,7 @@ param(
                 [pscustomobject]@{ PartOfDomain = $false }
             }
 
-            $result = & "$PSScriptRoot/../scripts/Invoke-SfAdSyncInteractive.ps1" -ConfigPath $configPath -MappingConfigPath $mappingPath -Mode Full -DryRun | ConvertFrom-Json -Depth 10
+            $result = & "$PSScriptRoot/../scripts/Invoke-SyncFactorsInteractive.ps1" -ConfigPath $configPath -MappingConfigPath $mappingPath -Mode Full -DryRun | ConvertFrom-Json -Depth 10
 
             $result.mode | Should -Be 'Full'
             $result.dryRun | Should -BeTrue
@@ -657,7 +657,7 @@ param(
 
         Mock Join-Path {
             $invokeStubPath
-        } -ParameterFilter { $ChildPath -eq 'src/Invoke-SfAdSync.ps1' }
+        } -ParameterFilter { $ChildPath -eq 'src/Invoke-SyncFactors.ps1' }
         Mock Read-Host { throw 'Read-Host should not be called when required process environment variables are already set.' }
 
         try {
@@ -665,7 +665,7 @@ param(
                 [pscustomobject]@{ PartOfDomain = $true }
             }
 
-            $result = & "$PSScriptRoot/../scripts/Invoke-SfAdSyncInteractive.ps1" -ConfigPath $configPath -MappingConfigPath $mappingPath | ConvertFrom-Json -Depth 10
+            $result = & "$PSScriptRoot/../scripts/Invoke-SyncFactorsInteractive.ps1" -ConfigPath $configPath -MappingConfigPath $mappingPath | ConvertFrom-Json -Depth 10
 
             $result.mode | Should -Be 'Delta'
             $result.dryRun | Should -BeFalse
@@ -714,7 +714,7 @@ param(
 
         Mock Join-Path {
             $invokeStubPath
-        } -ParameterFilter { $ChildPath -eq 'src/Invoke-SfAdSync.ps1' }
+        } -ParameterFilter { $ChildPath -eq 'src/Invoke-SyncFactors.ps1' }
 
         $promptResponses = @{
             'Enter the SuccessFactors OAuth client id' = @('', 'interactive-client-id')
@@ -743,7 +743,7 @@ param(
                 [pscustomobject]@{ PartOfDomain = $true }
             }
 
-            $result = & "$PSScriptRoot/../scripts/Invoke-SfAdSyncInteractive.ps1" -ConfigPath $configPath -MappingConfigPath $mappingPath | ConvertFrom-Json -Depth 10
+            $result = & "$PSScriptRoot/../scripts/Invoke-SyncFactorsInteractive.ps1" -ConfigPath $configPath -MappingConfigPath $mappingPath | ConvertFrom-Json -Depth 10
 
             $result.env.clientId | Should -Be 'interactive-client-id'
             $result.env.clientSecret | Should -Be 'interactive-client-secret'
@@ -761,8 +761,8 @@ param(
         $configPath = Join-Path $TestDrive 'status-config.json'
         $statePath = Join-Path $TestDrive 'state.json'
         $reportDir = Join-Path $TestDrive 'reports'
-        $reportPath = Join-Path $reportDir 'sf-ad-sync-Delta-20260312-220000.json'
-        $olderReportPath = Join-Path $reportDir 'sf-ad-sync-Full-20260312-210000.json'
+        $reportPath = Join-Path $reportDir 'syncfactors-Delta-20260312-220000.json'
+        $olderReportPath = Join-Path $reportDir 'syncfactors-Full-20260312-210000.json'
         $runtimeStatusPath = Join-Path $TestDrive 'runtime-status.json'
 
         New-Item -Path $reportDir -ItemType Directory -Force | Out-Null
@@ -848,7 +848,7 @@ param(
             errorMessage = $null
         } | ConvertTo-Json -Depth 10 | Set-Content -Path $runtimeStatusPath
 
-        $result = & "$PSScriptRoot/../scripts/Get-SfAdSyncStatus.ps1" -ConfigPath $configPath -AsJson | ConvertFrom-Json -Depth 10
+        $result = & "$PSScriptRoot/../scripts/Get-SyncFactorsStatus.ps1" -ConfigPath $configPath -AsJson | ConvertFrom-Json -Depth 10
 
         $result.totalTrackedWorkers | Should -Be 2
         $result.suppressedWorkers | Should -Be 1
@@ -875,7 +875,7 @@ param(
         (New-StatusConfigContent -StatePath $statePath -ReportDirectory $reportDir) | Set-Content -Path $configPath
         @{ checkpoint = $null; workers = @{} } | ConvertTo-Json -Depth 10 | Set-Content -Path $statePath
 
-        $result = & "$PSScriptRoot/../scripts/Get-SfAdSyncStatus.ps1" -ConfigPath $configPath -AsJson | ConvertFrom-Json -Depth 10
+        $result = & "$PSScriptRoot/../scripts/Get-SyncFactorsStatus.ps1" -ConfigPath $configPath -AsJson | ConvertFrom-Json -Depth 10
 
         $result.totalTrackedWorkers | Should -Be 0
         $result.latestReport.path | Should -Be $null
@@ -894,28 +894,28 @@ param(
         (New-StatusConfigContent -StatePath $statePath -ReportDirectory $reportDir) | Set-Content -Path $configPath
         '{bad json' | Set-Content -Path $statePath
 
-        { & "$PSScriptRoot/../scripts/Get-SfAdSyncStatus.ps1" -ConfigPath $configPath -AsJson | Out-Null } | Should -Throw
+        { & "$PSScriptRoot/../scripts/Get-SyncFactorsStatus.ps1" -ConfigPath $configPath -AsJson | Out-Null } | Should -Throw
     }
 
     It 'throws when the latest report json is corrupt' {
         $configPath = Join-Path $TestDrive 'status-config-corrupt-report.json'
         $statePath = Join-Path $TestDrive 'state-valid.json'
         $reportDir = Join-Path $TestDrive 'reports-corrupt-report'
-        $reportPath = Join-Path $reportDir 'sf-ad-sync-Delta-corrupt.json'
+        $reportPath = Join-Path $reportDir 'syncfactors-Delta-corrupt.json'
 
         New-Item -Path $reportDir -ItemType Directory -Force | Out-Null
         (New-StatusConfigContent -StatePath $statePath -ReportDirectory $reportDir) | Set-Content -Path $configPath
         @{ checkpoint = $null; workers = @{} } | ConvertTo-Json -Depth 10 | Set-Content -Path $statePath
         '{bad json' | Set-Content -Path $reportPath
 
-        { & "$PSScriptRoot/../scripts/Get-SfAdSyncStatus.ps1" -ConfigPath $configPath -AsJson | Out-Null } | Should -Throw
+        { & "$PSScriptRoot/../scripts/Get-SyncFactorsStatus.ps1" -ConfigPath $configPath -AsJson | Out-Null } | Should -Throw
     }
 
     It 'renders the monitor view in text mode with current and recent run details' {
         $configPath = Join-Path $TestDrive 'monitor-config.json'
         $statePath = Join-Path $TestDrive 'monitor-state.json'
         $reportDir = Join-Path $TestDrive 'monitor-reports'
-        $reportPath = Join-Path $reportDir 'sf-ad-sync-Delta-20260312-220000.json'
+        $reportPath = Join-Path $reportDir 'syncfactors-Delta-20260312-220000.json'
         $runtimeStatusPath = Join-Path $TestDrive 'runtime-status.json'
 
         New-Item -Path $reportDir -ItemType Directory -Force | Out-Null
@@ -968,7 +968,7 @@ param(
             errorMessage = $null
         } | ConvertTo-Json -Depth 10 | Set-Content -Path $runtimeStatusPath
 
-        $result = & "$PSScriptRoot/../scripts/Watch-SfAdSyncMonitor.ps1" -ConfigPath $configPath -RunOnce -AsText
+        $result = & "$PSScriptRoot/../scripts/Watch-SyncFactorsMonitor.ps1" -ConfigPath $configPath -RunOnce -AsText
 
         $result | Should -Match 'SuccessFactors AD Sync Monitor'
         $result | Should -Match 'SuccessFactors auth: oauth \(body client auth\)'
@@ -988,12 +988,12 @@ param(
         @{ checkpoint = $null; workers = @{} } | ConvertTo-Json -Depth 10 | Set-Content -Path $statePath
         '{bad json' | Set-Content -Path $runtimeStatusPath
 
-        $result = & "$PSScriptRoot/../scripts/Watch-SfAdSyncMonitor.ps1" -ConfigPath $configPath -RunOnce -AsText
+        $result = & "$PSScriptRoot/../scripts/Watch-SyncFactorsMonitor.ps1" -ConfigPath $configPath -RunOnce -AsText
 
         $result | Should -Match 'Monitor error'
     }
 
-    It 'installs synctui shims that point at the dashboard with explicit config paths' {
+    It 'installs syncfactors shims that point at the dashboard with explicit config paths' {
         $projectRoot = Join-Path $TestDrive 'install-project'
         $configDirectory = Join-Path $projectRoot 'config'
         $scriptsDirectory = Join-Path $projectRoot 'scripts'
@@ -1005,17 +1005,17 @@ param(
         New-Item -Path $scriptsDirectory -ItemType Directory -Force | Out-Null
         '{}' | Set-Content -Path $configPath
         '{}' | Set-Content -Path $mappingPath
-        '# dashboard stub' | Set-Content -Path (Join-Path $scriptsDirectory 'Watch-SfAdSyncMonitor.ps1')
-        '# helper stub' | Set-Content -Path (Join-Path $scriptsDirectory 'Set-SfAdSyncTerminalCommandConfig.ps1')
+        '# dashboard stub' | Set-Content -Path (Join-Path $scriptsDirectory 'Watch-SyncFactorsMonitor.ps1')
+        '# helper stub' | Set-Content -Path (Join-Path $scriptsDirectory 'Set-SyncFactorsTerminalCommandConfig.ps1')
 
-        $result = & "$PSScriptRoot/../scripts/Install-SfAdSyncTerminalCommand.ps1" `
+        $result = & "$PSScriptRoot/../scripts/Install-SyncFactorsTerminalCommand.ps1" `
             -ProjectRoot $projectRoot `
             -InstallDirectory $installDirectory `
             -ConfigPath $configPath `
             -MappingConfigPath $mappingPath `
             -SkipPathUpdate
 
-        $result.commandName | Should -Be 'synctui'
+        $result.commandName | Should -Be 'syncfactors'
         $result.configPath | Should -Be ([System.IO.Path]::GetFullPath($configPath))
         $result.mappingConfigPath | Should -Be ([System.IO.Path]::GetFullPath($mappingPath))
         $result.pathUpdated | Should -BeFalse
@@ -1028,30 +1028,30 @@ param(
         Test-Path -Path $result.helperPs1CommandPath | Should -BeTrue
         Test-Path -Path $result.metadataPath | Should -BeTrue
 
-        (Get-Content -Path $result.shellCommandPath -Raw) | Should -Match ([regex]::Escape([System.IO.Path]::GetFullPath((Join-Path $scriptsDirectory 'Watch-SfAdSyncMonitor.ps1'))))
+        (Get-Content -Path $result.shellCommandPath -Raw) | Should -Match ([regex]::Escape([System.IO.Path]::GetFullPath((Join-Path $scriptsDirectory 'Watch-SyncFactorsMonitor.ps1'))))
         (Get-Content -Path $result.shellCommandPath -Raw) | Should -Match ([regex]::Escape([System.IO.Path]::GetFullPath($configPath)))
         (Get-Content -Path $result.shellCommandPath -Raw) | Should -Match ([regex]::Escape([System.IO.Path]::GetFullPath($mappingPath)))
         (Get-Content -Path $result.cmdCommandPath -Raw) | Should -Match 'pwsh'
         (Get-Content -Path $result.ps1CommandPath -Raw) | Should -Match 'MappingConfigPath'
-        $result.configCommandName | Should -Be 'synctui-config'
+        $result.configCommandName | Should -Be 'syncfactors-config'
         (Get-Content -Path $result.helperPs1CommandPath -Raw) | Should -Match 'ShowCurrent'
-        ((Get-Content -Path $result.metadataPath -Raw) | ConvertFrom-Json).commandName | Should -Be 'synctui'
+        ((Get-Content -Path $result.metadataPath -Raw) | ConvertFrom-Json).commandName | Should -Be 'syncfactors'
     }
 
-    It 'runs the generated synctui powershell shim with named config forwarding and extra monitor args' {
+    It 'runs the generated syncfactors powershell shim with named config forwarding and extra monitor args' {
         $projectRoot = Join-Path $TestDrive 'invoke-install-project'
         $configDirectory = Join-Path $projectRoot 'config'
         $scriptsDirectory = Join-Path $projectRoot 'scripts'
         $installDirectory = Join-Path $TestDrive 'invoke-bin'
         $configPath = Join-Path $configDirectory 'tenant.sync-config.json'
         $mappingPath = Join-Path $configDirectory 'tenant.mapping-config.json'
-        $dashboardPath = Join-Path $scriptsDirectory 'Watch-SfAdSyncMonitor.ps1'
+        $dashboardPath = Join-Path $scriptsDirectory 'Watch-SyncFactorsMonitor.ps1'
 
         New-Item -Path $configDirectory -ItemType Directory -Force | Out-Null
         New-Item -Path $scriptsDirectory -ItemType Directory -Force | Out-Null
         '{}' | Set-Content -Path $configPath
         '{}' | Set-Content -Path $mappingPath
-        '# helper stub' | Set-Content -Path (Join-Path $scriptsDirectory 'Set-SfAdSyncTerminalCommandConfig.ps1')
+        '# helper stub' | Set-Content -Path (Join-Path $scriptsDirectory 'Set-SyncFactorsTerminalCommandConfig.ps1')
         @'
 [CmdletBinding()]
 param(
@@ -1073,7 +1073,7 @@ param(
 } | ConvertTo-Json -Compress
 '@ | Set-Content -Path $dashboardPath
 
-        $installResult = & "$PSScriptRoot/../scripts/Install-SfAdSyncTerminalCommand.ps1" `
+        $installResult = & "$PSScriptRoot/../scripts/Install-SyncFactorsTerminalCommand.ps1" `
             -ProjectRoot $projectRoot `
             -InstallDirectory $installDirectory `
             -ConfigPath $configPath `
@@ -1102,14 +1102,14 @@ param(
         New-Item -Path $scriptsDirectory -ItemType Directory -Force | Out-Null
         '{}' | Set-Content -Path (Join-Path $configDirectory 'local.real.sync-config.json')
         '{}' | Set-Content -Path (Join-Path $configDirectory 'local.real.mapping-config.json')
-        '# dashboard stub' | Set-Content -Path (Join-Path $scriptsDirectory 'Watch-SfAdSyncMonitor.ps1')
-        '# helper stub' | Set-Content -Path (Join-Path $scriptsDirectory 'Set-SfAdSyncTerminalCommandConfig.ps1')
+        '# dashboard stub' | Set-Content -Path (Join-Path $scriptsDirectory 'Watch-SyncFactorsMonitor.ps1')
+        '# helper stub' | Set-Content -Path (Join-Path $scriptsDirectory 'Set-SyncFactorsTerminalCommandConfig.ps1')
 
         try {
             $env:PATH = '/usr/bin'
             $env:SHELL = '/bin/zsh'
 
-            $result = & "$PSScriptRoot/../scripts/Install-SfAdSyncTerminalCommand.ps1" `
+            $result = & "$PSScriptRoot/../scripts/Install-SyncFactorsTerminalCommand.ps1" `
                 -ProjectRoot $projectRoot `
                 -InstallDirectory $installDirectory `
                 -ShellProfilePath $profilePath
@@ -1128,7 +1128,7 @@ param(
         }
     }
 
-    It 'repoints synctui defaults through the installed config helper command' {
+    It 'repoints syncfactors defaults through the installed config helper command' {
         $projectRoot = Join-Path $TestDrive 'helper-install-project'
         $configDirectory = Join-Path $projectRoot 'config'
         $scriptsDirectory = Join-Path $projectRoot 'scripts'
@@ -1137,7 +1137,7 @@ param(
         $initialMappingPath = Join-Path $configDirectory 'tenant-a.mapping-config.json'
         $nextConfigPath = Join-Path $configDirectory 'tenant-b.sync-config.json'
         $nextMappingPath = Join-Path $configDirectory 'tenant-b.mapping-config.json'
-        $dashboardPath = Join-Path $scriptsDirectory 'Watch-SfAdSyncMonitor.ps1'
+        $dashboardPath = Join-Path $scriptsDirectory 'Watch-SyncFactorsMonitor.ps1'
 
         New-Item -Path $configDirectory -ItemType Directory -Force | Out-Null
         New-Item -Path $scriptsDirectory -ItemType Directory -Force | Out-Null
@@ -1145,8 +1145,8 @@ param(
         '{}' | Set-Content -Path $initialMappingPath
         '{}' | Set-Content -Path $nextConfigPath
         '{}' | Set-Content -Path $nextMappingPath
-        Copy-Item -Path "$PSScriptRoot/../scripts/Set-SfAdSyncTerminalCommandConfig.ps1" -Destination (Join-Path $scriptsDirectory 'Set-SfAdSyncTerminalCommandConfig.ps1')
-        Copy-Item -Path "$PSScriptRoot/../scripts/Install-SfAdSyncTerminalCommand.ps1" -Destination (Join-Path $scriptsDirectory 'Install-SfAdSyncTerminalCommand.ps1')
+        Copy-Item -Path "$PSScriptRoot/../scripts/Set-SyncFactorsTerminalCommandConfig.ps1" -Destination (Join-Path $scriptsDirectory 'Set-SyncFactorsTerminalCommandConfig.ps1')
+        Copy-Item -Path "$PSScriptRoot/../scripts/Install-SyncFactorsTerminalCommand.ps1" -Destination (Join-Path $scriptsDirectory 'Install-SyncFactorsTerminalCommand.ps1')
         @'
 [CmdletBinding()]
 param(
@@ -1161,7 +1161,7 @@ param(
 } | ConvertTo-Json -Compress
 '@ | Set-Content -Path $dashboardPath
 
-        $installResult = & "$PSScriptRoot/../scripts/Install-SfAdSyncTerminalCommand.ps1" `
+        $installResult = & "$PSScriptRoot/../scripts/Install-SyncFactorsTerminalCommand.ps1" `
             -ProjectRoot $projectRoot `
             -InstallDirectory $installDirectory `
             -ConfigPath $initialConfigPath `
@@ -1184,7 +1184,7 @@ param(
         $dashboardRun.mappingConfigPath | Should -Be ([System.IO.Path]::GetFullPath($nextMappingPath))
     }
 
-    It 'uninstalls synctui shims and the install metadata file' {
+    It 'uninstalls syncfactors shims and the install metadata file' {
         $projectRoot = Join-Path $TestDrive 'uninstall-project'
         $configDirectory = Join-Path $projectRoot 'config'
         $scriptsDirectory = Join-Path $projectRoot 'scripts'
@@ -1196,17 +1196,17 @@ param(
         New-Item -Path $scriptsDirectory -ItemType Directory -Force | Out-Null
         '{}' | Set-Content -Path $configPath
         '{}' | Set-Content -Path $mappingPath
-        '# dashboard stub' | Set-Content -Path (Join-Path $scriptsDirectory 'Watch-SfAdSyncMonitor.ps1')
-        '# helper stub' | Set-Content -Path (Join-Path $scriptsDirectory 'Set-SfAdSyncTerminalCommandConfig.ps1')
+        '# dashboard stub' | Set-Content -Path (Join-Path $scriptsDirectory 'Watch-SyncFactorsMonitor.ps1')
+        '# helper stub' | Set-Content -Path (Join-Path $scriptsDirectory 'Set-SyncFactorsTerminalCommandConfig.ps1')
 
-        $installResult = & "$PSScriptRoot/../scripts/Install-SfAdSyncTerminalCommand.ps1" `
+        $installResult = & "$PSScriptRoot/../scripts/Install-SyncFactorsTerminalCommand.ps1" `
             -ProjectRoot $projectRoot `
             -InstallDirectory $installDirectory `
             -ConfigPath $configPath `
             -MappingConfigPath $mappingPath `
             -SkipPathUpdate
 
-        $uninstallResult = & "$PSScriptRoot/../scripts/Install-SfAdSyncTerminalCommand.ps1" `
+        $uninstallResult = & "$PSScriptRoot/../scripts/Install-SyncFactorsTerminalCommand.ps1" `
             -InstallDirectory $installDirectory `
             -Uninstall
 
@@ -1221,7 +1221,7 @@ param(
         Test-Path -Path $installResult.metadataPath | Should -BeFalse
     }
 
-    It 'can uninstall synctui and remove the installer PATH update' {
+    It 'can uninstall syncfactors and remove the installer PATH update' {
         $projectRoot = Join-Path $TestDrive 'uninstall-path-project'
         $configDirectory = Join-Path $projectRoot 'config'
         $scriptsDirectory = Join-Path $projectRoot 'scripts'
@@ -1234,19 +1234,19 @@ param(
         New-Item -Path $scriptsDirectory -ItemType Directory -Force | Out-Null
         '{}' | Set-Content -Path (Join-Path $configDirectory 'local.real.sync-config.json')
         '{}' | Set-Content -Path (Join-Path $configDirectory 'local.real.mapping-config.json')
-        '# dashboard stub' | Set-Content -Path (Join-Path $scriptsDirectory 'Watch-SfAdSyncMonitor.ps1')
-        '# helper stub' | Set-Content -Path (Join-Path $scriptsDirectory 'Set-SfAdSyncTerminalCommandConfig.ps1')
+        '# dashboard stub' | Set-Content -Path (Join-Path $scriptsDirectory 'Watch-SyncFactorsMonitor.ps1')
+        '# helper stub' | Set-Content -Path (Join-Path $scriptsDirectory 'Set-SyncFactorsTerminalCommandConfig.ps1')
 
         try {
             $env:PATH = '/usr/bin'
             $env:SHELL = '/bin/zsh'
 
-            & "$PSScriptRoot/../scripts/Install-SfAdSyncTerminalCommand.ps1" `
+            & "$PSScriptRoot/../scripts/Install-SyncFactorsTerminalCommand.ps1" `
                 -ProjectRoot $projectRoot `
                 -InstallDirectory $installDirectory `
                 -ShellProfilePath $profilePath | Out-Null
 
-            $result = & "$PSScriptRoot/../scripts/Install-SfAdSyncTerminalCommand.ps1" `
+            $result = & "$PSScriptRoot/../scripts/Install-SyncFactorsTerminalCommand.ps1" `
                 -InstallDirectory $installDirectory `
                 -ShellProfilePath $profilePath `
                 -Uninstall `
@@ -1285,7 +1285,7 @@ param(
 
         Mock Invoke-Pester { [pscustomobject]@{ FailedCount = 0 } }
 
-        $result = & "$PSScriptRoot/../scripts/Invoke-SyntheticSfAdDryRun.ps1" -UserCount 10 -ManagerCount 2 -OutputDirectory $outputDirectory -AsJson | ConvertFrom-Json -Depth 10
+        $result = & "$PSScriptRoot/../scripts/Invoke-SyntheticSyncFactorsDryRun.ps1" -UserCount 10 -ManagerCount 2 -OutputDirectory $outputDirectory -AsJson | ConvertFrom-Json -Depth 10
 
         $result.userCount | Should -Be 10
         $result.managerCount | Should -Be 2

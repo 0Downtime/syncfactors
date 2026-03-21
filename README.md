@@ -1,10 +1,10 @@
-# [Alpha] SuccessFactors to Active Directory Sync
+# [Alpha] SyncFactors
 
-[![Test](https://github.com/0Downtime/sf-ad-sync/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/0Downtime/sf-ad-sync/actions/workflows/test.yml)
-[![Security](https://github.com/0Downtime/sf-ad-sync/actions/workflows/security.yml/badge.svg?branch=main)](https://github.com/0Downtime/sf-ad-sync/actions/workflows/security.yml)
-[![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://github.com/0Downtime/sf-ad-sync/blob/main/LICENSE)
+[![Test](https://github.com/0Downtime/syncfactors/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/0Downtime/syncfactors/actions/workflows/test.yml)
+[![Security](https://github.com/0Downtime/syncfactors/actions/workflows/security.yml/badge.svg?branch=main)](https://github.com/0Downtime/syncfactors/actions/workflows/security.yml)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://github.com/0Downtime/syncfactors/blob/main/LICENSE)
 
-PowerShell automation for syncing SAP SuccessFactors worker data into on-premises Active Directory.
+SyncFactors is PowerShell automation for syncing SAP SuccessFactors worker data into on-premises Active Directory.
 
 > [!WARNING]
 > Alpha status only. This application has a high chance of being broken, is still in active development, and is not ready for production use.
@@ -22,7 +22,7 @@ PowerShell automation for syncing SAP SuccessFactors worker data into on-premise
 ## Feature Comparison
 Comparison against the Microsoft Entra SuccessFactors connector documented here: [Configure SAP SuccessFactors to Active Directory user provisioning](https://learn.microsoft.com/en-us/entra/identity/saas-apps/sap-successfactors-inbound-provisioning-tutorial).
 
-| Feature | `sf-ad-sync` | Microsoft Entra SuccessFactors connector |
+| Feature | `syncfactors` | Microsoft Entra SuccessFactors connector |
 | --- | --- | --- |
 | SuccessFactors Employee Central as the authoritative HR source for AD provisioning | ✅ | ✅ |
 | AD account create, update, disable, and lifecycle sync | ✅ | ✅ |
@@ -65,20 +65,20 @@ Planned work is ordered by delivery priority so the roadmap is easy to scan from
 - Expanded regression fixture packs for replaying tenant-specific edge cases in tests.
 
 ## Project Layout
-- `src/Invoke-SfAdSync.ps1`: main sync entrypoint.
-- `src/Modules/SfAdSync`: config, state, mapping, reporting, sync orchestration, rollback, SuccessFactors, and AD modules.
+- `src/Invoke-SyncFactors.ps1`: main sync entrypoint.
+- `src/Modules/SyncFactors`: config, state, mapping, reporting, sync orchestration, rollback, SuccessFactors, and AD modules.
 - `config`: sample tenant config and mapping config.
-- `scripts/Register-SfAdSyncScheduledTask.ps1`: scheduled task bootstrap.
-- `scripts/Get-SfAdSyncStatus.ps1`: summary view of the latest sync report and runtime state.
-- `scripts/Watch-SfAdSyncMonitor.ps1`: terminal dashboard for current sync stage and recent run history.
-- `scripts/Invoke-SfAdWorkerPreview.ps1`: preview one worker and print the mapped diff against the current AD user.
-- `scripts/Install-SfAdSyncTerminalCommand.ps1`: installs the `synctui` terminal command for launching the dashboard from any shell.
+- `scripts/Register-SyncFactorsScheduledTask.ps1`: scheduled task bootstrap.
+- `scripts/Get-SyncFactorsStatus.ps1`: summary view of the latest sync report and runtime state.
+- `scripts/Watch-SyncFactorsMonitor.ps1`: terminal dashboard for current sync stage and recent run history.
+- `scripts/Invoke-SyncFactorsWorkerPreview.ps1`: preview one worker and print the mapped diff against the current AD user.
+- `scripts/Install-SyncFactorsTerminalCommand.ps1`: installs the `syncfactors` terminal command for launching the dashboard from any shell.
 - `scripts/Invoke-TestSuite.ps1`: run the Pester test suite.
-- `scripts/Undo-SfAdSyncRun.ps1`: rollback one sync run using the recorded operation journal.
+- `scripts/Undo-SyncFactorsRun.ps1`: rollback one sync run using the recorded operation journal.
 - `tests`: Pester tests for config and mapping behavior.
 
 ## Setup
-1. Start from `config/local.real-successfactors.real-ad.sync-config.json` and `config/local.successfactors-to-ad.mapping-config.json` for your real environment. Those `local.*` files are ignored by git so you can store tenant-specific AD and SuccessFactors settings safely outside version control.
+1. Start from `config/local.real-successfactors.real-ad.sync-config.json` and `config/local.syncfactors.mapping-config.json` for your real environment. Those `local.*` files are ignored by git so you can store tenant-specific AD and SuccessFactors settings safely outside version control.
 2. Fill in the SuccessFactors auth block, tenant query fields, OU routing, and licensing groups. The real sample config defaults to basic auth, while the mock sample uses OAuth. Only fill in the AD server and bind credentials if you are running from a non-domain-joined host or need to target a specific DC.
    If your SuccessFactors OAuth token endpoint requires HTTP Basic client authentication, set `successFactors.auth.oauth.clientAuthentication` to `basic`; leave it as `body` when the endpoint expects `client_id` and `client_secret` in the form body.
 3. Confirm the immutable SuccessFactors identity field and the AD attribute that stores it.
@@ -87,51 +87,51 @@ Planned work is ordered by delivery priority so the roadmap is easy to scan from
 6. Run a dry-run first.
 
 ## Usage
-If you want the terminal dashboard to be the main operator entry point, install the `synctui` command once:
+If you want the terminal dashboard to be the main operator entry point, install the `syncfactors` command once:
 
 ```powershell
-pwsh ./scripts/Install-SfAdSyncTerminalCommand.ps1 `
+pwsh ./scripts/Install-SyncFactorsTerminalCommand.ps1 `
   -ConfigPath ./config/local.real-successfactors.real-ad.sync-config.json `
-  -MappingConfigPath ./config/local.successfactors-to-ad.mapping-config.json
+  -MappingConfigPath ./config/local.syncfactors.mapping-config.json
 ```
 
-The installer writes `synctui`, `synctui.cmd`, and `synctui.ps1` shims into a user bin directory, updates `PATH` when needed, and points them at your chosen config files. Open a new terminal after the install if your shell has not picked up the PATH change yet, then launch the dashboard with:
+The installer writes `syncfactors`, `syncfactors.cmd`, and `syncfactors.ps1` shims into a user bin directory, updates `PATH` when needed, and points them at your chosen config files. Open a new terminal after the install if your shell has not picked up the PATH change yet, then launch the dashboard with:
 
 ```powershell
-synctui
+syncfactors
 ```
 
-The command supports the dashboard's normal monitor flags from [`scripts/Watch-SfAdSyncMonitor.ps1`](/Users/chrisbrien/dev/github.com/sf-ad-sync/scripts/Watch-SfAdSyncMonitor.ps1), for example `synctui -RunOnce -AsText`.
+The command supports the dashboard's normal monitor flags from [`scripts/Watch-SyncFactorsMonitor.ps1`](/Users/chrisbrien/dev/github.com/syncfactors/scripts/Watch-SyncFactorsMonitor.ps1), for example `syncfactors -RunOnce -AsText`.
 
 To repoint the installed TUI at a different config later, use the companion helper command:
 
 ```powershell
-synctui-config -ConfigPath ./config/other.sync-config.json `
+syncfactors-config -ConfigPath ./config/other.sync-config.json `
   -MappingConfigPath ./config/other.mapping-config.json
 ```
 
 To inspect the current default config paths:
 
 ```powershell
-synctui-config -ShowCurrent
+syncfactors-config -ShowCurrent
 ```
 
 To uninstall the command shims later:
 
 ```powershell
-pwsh ./scripts/Install-SfAdSyncTerminalCommand.ps1 -Uninstall
+pwsh ./scripts/Install-SyncFactorsTerminalCommand.ps1 -Uninstall
 ```
 
 If you also want the installer to remove the PATH entry it added, use:
 
 ```powershell
-pwsh ./scripts/Install-SfAdSyncTerminalCommand.ps1 -Uninstall -RemovePathUpdate
+pwsh ./scripts/Install-SyncFactorsTerminalCommand.ps1 -Uninstall -RemovePathUpdate
 ```
 
 ```powershell
-pwsh ./src/Invoke-SfAdSync.ps1 `
+pwsh ./src/Invoke-SyncFactors.ps1 `
   -ConfigPath ./config/local.real-successfactors.real-ad.sync-config.json `
-  -MappingConfigPath ./config/local.successfactors-to-ad.mapping-config.json `
+  -MappingConfigPath ./config/local.syncfactors.mapping-config.json `
   -Mode Delta `
   -DryRun
 ```
@@ -139,9 +139,9 @@ pwsh ./src/Invoke-SfAdSync.ps1 `
 If you want the script to prompt for missing runtime values such as SuccessFactors credentials, AD bind credentials, or the default AD password, use:
 
 ```powershell
-pwsh ./scripts/Invoke-SfAdSyncInteractive.ps1 `
+pwsh ./scripts/Invoke-SyncFactorsInteractive.ps1 `
   -ConfigPath ./config/local.real-successfactors.real-ad.sync-config.json `
-  -MappingConfigPath ./config/local.successfactors-to-ad.mapping-config.json `
+  -MappingConfigPath ./config/local.syncfactors.mapping-config.json `
   -Mode Delta `
   -DryRun
 ```
@@ -149,15 +149,15 @@ pwsh ./scripts/Invoke-SfAdSyncInteractive.ps1 `
 Run a preflight validation before the first sync or after config changes:
 
 ```powershell
-pwsh ./scripts/Invoke-SfAdPreflight.ps1 `
+pwsh ./scripts/Invoke-SyncFactorsPreflight.ps1 `
   -ConfigPath ./config/local.real-successfactors.real-ad.sync-config.json `
-  -MappingConfigPath ./config/local.successfactors-to-ad.mapping-config.json
+  -MappingConfigPath ./config/local.syncfactors.mapping-config.json
 ```
 
 To view the current sync status from the configured state/report files:
 
 ```powershell
-pwsh ./scripts/Get-SfAdSyncStatus.ps1 `
+pwsh ./scripts/Get-SyncFactorsStatus.ps1 `
   -ConfigPath ./config/local.real-successfactors.real-ad.sync-config.json
 ```
 
@@ -167,9 +167,9 @@ Use `-IncludeCurrentRun` to print the live runtime snapshot and `-IncludeHistory
 To preview a single worker by the configured SuccessFactors identity field and see the proposed AD diff without mutating AD or sync state:
 
 ```powershell
-pwsh ./scripts/Invoke-SfAdWorkerPreview.ps1 `
+pwsh ./scripts/Invoke-SyncFactorsWorkerPreview.ps1 `
   -ConfigPath ./config/local.real-successfactors.real-ad.sync-config.json `
-  -MappingConfigPath ./config/local.successfactors-to-ad.mapping-config.json `
+  -MappingConfigPath ./config/local.syncfactors.mapping-config.json `
   -WorkerId 1000123 `
   -PreviewMode Minimal
 ```
@@ -182,7 +182,7 @@ If your tenant metadata is still being validated, set `successFactors.previewQue
 To delete all AD user objects found recursively under the managed sync OUs and reset local sync state for a true fresh sync:
 
 ```powershell
-pwsh ./scripts/Invoke-SfAdFreshSyncReset.ps1 `
+pwsh ./scripts/Invoke-SyncFactorsFreshSyncReset.ps1 `
   -ConfigPath ./config/local.real-successfactors.real-ad.sync-config.json
 ```
 
@@ -192,7 +192,7 @@ The reset requires three separate typed confirmations before any deletion happen
 To watch the current stage/progress and the last few syncs in a terminal dashboard:
 
 ```powershell
-pwsh ./scripts/Watch-SfAdSyncMonitor.ps1 `
+pwsh ./scripts/Watch-SyncFactorsMonitor.ps1 `
   -ConfigPath ./config/local.real-successfactors.real-ad.sync-config.json
 ```
 
@@ -219,7 +219,7 @@ pwsh ./scripts/Invoke-TestSuite.ps1 -Coverage -CoverageSummaryPath ./artifacts/t
 To simulate a large local dry-run without calling SuccessFactors or Active Directory:
 
 ```powershell
-pwsh ./scripts/Invoke-SyntheticSfAdDryRun.ps1 `
+pwsh ./scripts/Invoke-SyntheticSyncFactorsDryRun.ps1 `
   -UserCount 1000 `
   -OutputDirectory ./reports/synthetic
 ```
@@ -243,17 +243,17 @@ pwsh ./scripts/Start-MockSuccessFactorsApi.ps1 `
 3. Run preflight:
 
 ```powershell
-pwsh ./scripts/Invoke-SfAdPreflight.ps1 `
+pwsh ./scripts/Invoke-SyncFactorsPreflight.ps1 `
   -ConfigPath ./config/local.mock-successfactors.real-ad.sync-config.json `
-  -MappingConfigPath ./config/local.successfactors-to-ad.mapping-config.json
+  -MappingConfigPath ./config/local.syncfactors.mapping-config.json
 ```
 
 4. Run the actual sync command against the mock API. Use `-DryRun` first, then remove it when you are ready to create lab users:
 
 ```powershell
-pwsh ./src/Invoke-SfAdSync.ps1 `
+pwsh ./src/Invoke-SyncFactors.ps1 `
   -ConfigPath ./config/local.mock-successfactors.real-ad.sync-config.json `
-  -MappingConfigPath ./config/local.successfactors-to-ad.mapping-config.json `
+  -MappingConfigPath ./config/local.syncfactors.mapping-config.json `
   -Mode Full `
   -DryRun
 ```
@@ -266,8 +266,8 @@ The mock server exposes:
 To roll back a specific run from its report file:
 
 ```powershell
-pwsh ./scripts/Undo-SfAdSyncRun.ps1 `
-  -ReportPath ./reports/output/sf-ad-sync-Delta-20260306-090018.json `
+pwsh ./scripts/Undo-SyncFactorsRun.ps1 `
+  -ReportPath ./reports/output/syncfactors-Delta-20260306-090018.json `
   -ConfigPath ./config/local.real-successfactors.real-ad.sync-config.json `
   -DryRun
 ```
@@ -283,7 +283,7 @@ Remove `-DryRun` to apply the rollback.
 ## SonarCloud
 - Import the repository into SonarCloud before running the workflow.
 - In GitHub, set `Settings -> Secrets and variables -> Actions` with secret `SONAR_TOKEN` and variables `SONAR_ORGANIZATION` plus `SONAR_PROJECT_KEY`.
-- The repository scan workflow is [`.github/workflows/sonarcloud.yml`](/Users/chrisbrien/dev/github.com/sf-ad-sync/.github/workflows/sonarcloud.yml) and reads stable project settings from [`sonar-project.properties`](/Users/chrisbrien/dev/github.com/sf-ad-sync/sonar-project.properties).
+- The repository scan workflow is [`.github/workflows/sonarcloud.yml`](/Users/chrisbrien/dev/github.com/syncfactors/.github/workflows/sonarcloud.yml) and reads stable project settings from [`sonar-project.properties`](/Users/chrisbrien/dev/github.com/syncfactors/sonar-project.properties).
 
 ## Notes
 - This software is provided as-is and is used at your own risk. You are responsible for validating configuration, testing changes safely, and assessing operational impact before using it in any environment. The maintainers are not responsible for data loss, directory damage, outages, or other issues caused by use or misuse of this project.

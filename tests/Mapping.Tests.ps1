@@ -1,6 +1,6 @@
 Describe 'Get-NestedValue' {
     BeforeAll {
-        Import-Module "$PSScriptRoot/../src/Modules/SfAdSync/Mapping.psm1" -Force
+        Import-Module "$PSScriptRoot/../src/Modules/SyncFactors/Mapping.psm1" -Force
     }
 
     It 'resolves indexed nested paths for navigation collections' {
@@ -30,9 +30,9 @@ Describe 'Get-NestedValue' {
     }
 }
 
-Describe 'Get-SfAdAttributeChanges' {
+Describe 'Get-SyncFactorsAttributeChanges' {
     BeforeAll {
-        Import-Module "$PSScriptRoot/../src/Modules/SfAdSync/Mapping.psm1" -Force
+        Import-Module "$PSScriptRoot/../src/Modules/SyncFactors/Mapping.psm1" -Force
     }
 
     It 'ignores disabled mappings and preserves required validation' {
@@ -56,7 +56,7 @@ Describe 'Get-SfAdAttributeChanges' {
             )
         }
 
-        $result = Get-SfAdAttributeChanges -Worker $worker -ExistingUser $existing -MappingConfig $mapping
+        $result = Get-SyncFactorsAttributeChanges -Worker $worker -ExistingUser $existing -MappingConfig $mapping
 
         $result.Changes.GivenName | Should -Be 'Chris'
         $result.Changes.UserPrincipalName | Should -Be 'chris.brien@example.com'
@@ -90,7 +90,7 @@ Describe 'Get-SfAdAttributeChanges' {
             )
         }
 
-        $result = Get-SfAdAttributeChanges -Worker $worker -ExistingUser $existing -MappingConfig $mapping
+        $result = Get-SyncFactorsAttributeChanges -Worker $worker -ExistingUser $existing -MappingConfig $mapping
 
         $result.Changes.title | Should -Be 'Director of Infrastructure'
         $result.Changes.extensionAttribute3 | Should -Be 'IT-1001'

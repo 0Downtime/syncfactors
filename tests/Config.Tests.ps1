@@ -1,11 +1,11 @@
-Describe 'Get-SfAdSyncConfig' {
+Describe 'Get-SyncFactorsConfig' {
     BeforeAll {
-        Import-Module "$PSScriptRoot/../src/Modules/SfAdSync/Config.psm1" -Force
+        Import-Module "$PSScriptRoot/../src/Modules/SyncFactors/Config.psm1" -Force
     }
 
     It 'loads the sample config successfully' {
         $configPath = Join-Path $PSScriptRoot '../config/sample.real-successfactors.real-ad.sync-config.json'
-        $config = Get-SfAdSyncConfig -Path $configPath
+        $config = Get-SyncFactorsConfig -Path $configPath
         $config.successFactors.baseUrl | Should -Not -BeNullOrEmpty
         $config.ad.graveyardOu | Should -Not -BeNullOrEmpty
     }
@@ -67,7 +67,7 @@ Describe 'Get-SfAdSyncConfig' {
         [System.Environment]::SetEnvironmentVariable('TEST_AD_PASSWORD', 'env-password')
 
         try {
-            $config = Get-SfAdSyncConfig -Path $configPath
+            $config = Get-SyncFactorsConfig -Path $configPath
             $config.successFactors.oauth.clientId | Should -Be 'env-client-id'
             $config.successFactors.oauth.clientSecret | Should -Be 'env-client-secret'
             $config.ad.server | Should -Be 'env-dc.example.com'
@@ -133,7 +133,7 @@ Describe 'Get-SfAdSyncConfig' {
         [System.Environment]::SetEnvironmentVariable('TEST_AD_PASSWORD', 'env-ad-password')
 
         try {
-            $config = Get-SfAdSyncConfig -Path $configPath
+            $config = Get-SyncFactorsConfig -Path $configPath
             $config.successFactors.auth.mode | Should -Be 'basic'
             $config.successFactors.auth.basic.username | Should -Be 'env-username'
             $config.successFactors.auth.basic.password | Should -Be 'env-password'
@@ -202,7 +202,7 @@ Describe 'Get-SfAdSyncConfig' {
         [System.Environment]::SetEnvironmentVariable('TEST_AD_PASSWORD_BLANK', '')
 
         try {
-            $config = Get-SfAdSyncConfig -Path $configPath
+            $config = Get-SyncFactorsConfig -Path $configPath
             $config.successFactors.oauth.clientId | Should -Be 'config-client-id'
             $config.successFactors.oauth.clientSecret | Should -Be 'config-client-secret'
             $config.ad.server | Should -Be 'config-dc.example.com'
@@ -259,7 +259,7 @@ Describe 'Get-SfAdSyncConfig' {
 }
 '@ | Set-Content -Path $configPath
 
-        { Get-SfAdSyncConfig -Path $configPath } | Should -Throw '*ad.server*'
+        { Get-SyncFactorsConfig -Path $configPath } | Should -Throw '*ad.server*'
     }
 
     It 'rejects environment-provided AD credentials without an environment-provided server' {
@@ -310,7 +310,7 @@ Describe 'Get-SfAdSyncConfig' {
         [System.Environment]::SetEnvironmentVariable('TEST_AD_BIND_PASSWORD_ENV_ONLY', 'env-bind-password')
 
         try {
-            { Get-SfAdSyncConfig -Path $configPath } | Should -Throw '*ad.server*'
+            { Get-SyncFactorsConfig -Path $configPath } | Should -Throw '*ad.server*'
         } finally {
             [System.Environment]::SetEnvironmentVariable('TEST_AD_SERVER_ENV_ONLY', $null)
             [System.Environment]::SetEnvironmentVariable('TEST_AD_USERNAME_ENV_ONLY', $null)
@@ -366,7 +366,7 @@ Describe 'Get-SfAdSyncConfig' {
         [System.Environment]::SetEnvironmentVariable('TEST_AD_BIND_PASSWORD_ENV_MISSING_PASSWORD', '')
 
         try {
-            { Get-SfAdSyncConfig -Path $configPath } | Should -Throw '*ad.bindPassword*'
+            { Get-SyncFactorsConfig -Path $configPath } | Should -Throw '*ad.bindPassword*'
         } finally {
             [System.Environment]::SetEnvironmentVariable('TEST_AD_SERVER_ENV_MISSING_PASSWORD', $null)
             [System.Environment]::SetEnvironmentVariable('TEST_AD_USERNAME_ENV_MISSING_PASSWORD', $null)
@@ -412,13 +412,13 @@ Describe 'Get-SfAdSyncConfig' {
 }
 '@ | Set-Content -Path $configPath
 
-        { Get-SfAdSyncConfig -Path $configPath } | Should -Throw '*successFactors.auth.oauth.tokenUrl*'
+        { Get-SyncFactorsConfig -Path $configPath } | Should -Throw '*successFactors.auth.oauth.tokenUrl*'
     }
 }
 
-Describe 'Get-SfAdSyncMappingConfig' {
+Describe 'Get-SyncFactorsMappingConfig' {
     BeforeAll {
-        Import-Module "$PSScriptRoot/../src/Modules/SfAdSync/Config.psm1" -Force
+        Import-Module "$PSScriptRoot/../src/Modules/SyncFactors/Config.psm1" -Force
     }
 
     It 'rejects unsupported transforms' {
@@ -437,6 +437,6 @@ Describe 'Get-SfAdSyncMappingConfig' {
 }
 '@ | Set-Content -Path $mappingPath
 
-        { Get-SfAdSyncMappingConfig -Path $mappingPath } | Should -Throw '*unsupported transform*'
+        { Get-SyncFactorsMappingConfig -Path $mappingPath } | Should -Throw '*unsupported transform*'
     }
 }

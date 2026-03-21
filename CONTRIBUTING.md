@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for contributing to `sf-ad-sync`.
+Thanks for contributing to `syncfactors`.
 
 ## Before You Open A Change
 - Open an issue first for behavior changes, larger refactors, or new features.

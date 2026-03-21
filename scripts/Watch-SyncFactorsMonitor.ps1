@@ -15,7 +15,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$moduleRoot = Join-Path -Path (Split-Path -Path $PSScriptRoot -Parent) -ChildPath 'src/Modules/SfAdSync'
+$moduleRoot = Join-Path -Path (Split-Path -Path $PSScriptRoot -Parent) -ChildPath 'src/Modules/SyncFactors'
 Import-Module (Join-Path $moduleRoot 'Config.psm1') -Force
 Import-Module (Join-Path $moduleRoot 'State.psm1') -Force
 Import-Module (Join-Path $moduleRoot 'Monitoring.psm1') -Force
@@ -34,7 +34,7 @@ function Get-OptionalResolvedPath {
     return (Resolve-Path -Path $Path).Path
 }
 
-function Get-SfAdMonitorFreshResetLogPath {
+function Get-SyncFactorsMonitorFreshResetLogPath {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
@@ -58,10 +58,10 @@ function Get-SfAdMonitorFreshResetLogPath {
     }
 
     $timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
-    return Join-Path -Path $directory -ChildPath "sf-ad-sync-fresh-reset-$timestamp.log"
+    return Join-Path -Path $directory -ChildPath "syncfactors-fresh-reset-$timestamp.log"
 }
 
-function Get-SfAdMonitorFreshResetPreviewReportPath {
+function Get-SyncFactorsMonitorFreshResetPreviewReportPath {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
@@ -85,10 +85,10 @@ function Get-SfAdMonitorFreshResetPreviewReportPath {
     }
 
     $timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
-    return Join-Path -Path $directory -ChildPath "sf-ad-sync-ResetPreview-$timestamp.json"
+    return Join-Path -Path $directory -ChildPath "syncfactors-ResetPreview-$timestamp.json"
 }
 
-function Show-SfAdMonitorFrame {
+function Show-SyncFactorsMonitorFrame {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
@@ -102,11 +102,11 @@ function Show-SfAdMonitorFrame {
     )
 
     try {
-        $status = Get-SfAdMonitorStatus -ConfigPath $ResolvedConfigPath -HistoryLimit $HistoryDepth
+        $status = Get-SyncFactorsMonitorStatus -ConfigPath $ResolvedConfigPath -HistoryLimit $HistoryDepth
         $rawLines = if ($AsTextOutput) {
-            @(Format-SfAdMonitorView -Status $status)
+            @(Format-SyncFactorsMonitorView -Status $status)
         } else {
-            @(Format-SfAdMonitorDashboardView -Status $status -UiState $UiState)
+            @(Format-SyncFactorsMonitorDashboardView -Status $status -UiState $UiState)
         }
         $lines = @($rawLines | Where-Object { $null -ne $_ } | ForEach-Object { "$_" })
         if ($lines.Count -eq 0) {
@@ -142,7 +142,7 @@ function Show-SfAdMonitorFrame {
     }
 
     Clear-Host
-    Write-SfAdStyledMonitorFrame -Lines $lines
+    Write-SyncFactorsStyledMonitorFrame -Lines $lines
 
     return [pscustomobject]@{
         Status = $status
@@ -150,7 +150,7 @@ function Show-SfAdMonitorFrame {
     }
 }
 
-function Write-SfAdStyledMonitorFrame {
+function Write-SyncFactorsStyledMonitorFrame {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
@@ -216,7 +216,7 @@ function Write-SfAdStyledMonitorFrame {
     }
 }
 
-function Read-SfAdMonitorFilterText {
+function Read-SyncFactorsMonitorFilterText {
     [CmdletBinding()]
     param(
         [string]$CurrentFilter
@@ -228,7 +228,7 @@ function Read-SfAdMonitorFilterText {
     return Read-Host -Prompt $prompt
 }
 
-function Read-SfAdMonitorWorkerId {
+function Read-SyncFactorsMonitorWorkerId {
     [CmdletBinding()]
     param()
 
@@ -237,7 +237,7 @@ function Read-SfAdMonitorWorkerId {
     return Read-Host -Prompt 'WorkerId'
 }
 
-function Confirm-SfAdMonitorWriteAction {
+function Confirm-SyncFactorsMonitorWriteAction {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
@@ -252,7 +252,7 @@ function Confirm-SfAdMonitorWriteAction {
     return "$response".Trim() -ceq 'YES'
 }
 
-function Get-SfAdMonitorWorkerPreviewEntriesFromReport {
+function Get-SyncFactorsMonitorWorkerPreviewEntriesFromReport {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
@@ -282,7 +282,7 @@ function Get-SfAdMonitorWorkerPreviewEntriesFromReport {
     return @($entries)
 }
 
-function Get-SfAdMonitorWorkerPreviewValueFromEntries {
+function Get-SyncFactorsMonitorWorkerPreviewValueFromEntries {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
@@ -304,7 +304,7 @@ function Get-SfAdMonitorWorkerPreviewValueFromEntries {
     return $null
 }
 
-function ConvertTo-SfAdMonitorWorkerPreviewResult {
+function ConvertTo-SyncFactorsMonitorWorkerPreviewResult {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
@@ -328,7 +328,7 @@ function ConvertTo-SfAdMonitorWorkerPreviewResult {
         return $null
     }
 
-    $entries = @(Get-SfAdMonitorWorkerPreviewEntriesFromReport -Report $Report -WorkerId $workerId)
+    $entries = @(Get-SyncFactorsMonitorWorkerPreviewEntriesFromReport -Report $Report -WorkerId $workerId)
     $bucketNames = @($entries | ForEach-Object { $_.bucket } | Select-Object -Unique)
     $changedAttributes = @()
     foreach ($entry in $entries) {
@@ -366,13 +366,13 @@ function ConvertTo-SfAdMonitorWorkerPreviewResult {
             workerId = $workerId
             buckets = $bucketNames
             matchedExistingUser = $matchedExistingUser
-            reviewCategory = Get-SfAdMonitorWorkerPreviewValueFromEntries -Entries $entries -PropertyName 'reviewCategory'
-            reason = Get-SfAdMonitorWorkerPreviewValueFromEntries -Entries $entries -PropertyName 'reason'
-            samAccountName = Get-SfAdMonitorWorkerPreviewValueFromEntries -Entries $entries -PropertyName 'samAccountName'
-            targetOu = Get-SfAdMonitorWorkerPreviewValueFromEntries -Entries $entries -PropertyName 'targetOu'
-            currentDistinguishedName = Get-SfAdMonitorWorkerPreviewValueFromEntries -Entries $entries -PropertyName 'currentDistinguishedName'
-            currentEnabled = Get-SfAdMonitorWorkerPreviewValueFromEntries -Entries $entries -PropertyName 'currentEnabled'
-            proposedEnable = Get-SfAdMonitorWorkerPreviewValueFromEntries -Entries $entries -PropertyName 'proposedEnable'
+            reviewCategory = Get-SyncFactorsMonitorWorkerPreviewValueFromEntries -Entries $entries -PropertyName 'reviewCategory'
+            reason = Get-SyncFactorsMonitorWorkerPreviewValueFromEntries -Entries $entries -PropertyName 'reason'
+            samAccountName = Get-SyncFactorsMonitorWorkerPreviewValueFromEntries -Entries $entries -PropertyName 'samAccountName'
+            targetOu = Get-SyncFactorsMonitorWorkerPreviewValueFromEntries -Entries $entries -PropertyName 'targetOu'
+            currentDistinguishedName = Get-SyncFactorsMonitorWorkerPreviewValueFromEntries -Entries $entries -PropertyName 'currentDistinguishedName'
+            currentEnabled = Get-SyncFactorsMonitorWorkerPreviewValueFromEntries -Entries $entries -PropertyName 'currentEnabled'
+            proposedEnable = Get-SyncFactorsMonitorWorkerPreviewValueFromEntries -Entries $entries -PropertyName 'proposedEnable'
         }
         changedAttributes = $changedAttributes
         operations = @($Report.operations | Where-Object { "$($_.workerId)" -eq $workerId })
@@ -380,7 +380,7 @@ function ConvertTo-SfAdMonitorWorkerPreviewResult {
     }
 }
 
-function Set-SfAdMonitorWorkerPreviewState {
+function Set-SyncFactorsMonitorWorkerPreviewState {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
@@ -400,7 +400,7 @@ function Set-SfAdMonitorWorkerPreviewState {
         $PreviewResult.workerScope.PSObject.Properties.Name -contains 'workerId'
     ) { "$($PreviewResult.workerScope.workerId)" } else { $null }
     $UiState.workerPreviewResult = $PreviewResult
-    $UiState.workerPreviewDiffRows = @(Get-SfAdMonitorWorkerPreviewDiffRows -PreviewResult $PreviewResult)
+    $UiState.workerPreviewDiffRows = @(Get-SyncFactorsMonitorWorkerPreviewDiffRows -PreviewResult $PreviewResult)
     $UiState.statusMessage = "Worker preview loaded for $($UiState.pendingWorkerId). Review the diff, then press a to apply or Esc to cancel."
     $UiState.commandOutput = @(
         "PreviewRunId=$($PreviewResult.runId)"
@@ -418,7 +418,7 @@ function Set-SfAdMonitorWorkerPreviewState {
     }
 }
 
-function Clear-SfAdMonitorWorkerPreviewState {
+function Clear-SyncFactorsMonitorWorkerPreviewState {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
@@ -432,7 +432,7 @@ function Clear-SfAdMonitorWorkerPreviewState {
     $UiState.workerPreviewDiffRows = @()
 }
 
-function Invoke-SfAdMonitorInlineWorkerPreview {
+function Invoke-SyncFactorsMonitorInlineWorkerPreview {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
@@ -443,14 +443,14 @@ function Invoke-SfAdMonitorInlineWorkerPreview {
         [string]$ResolvedMappingConfigPath
     )
 
-    $context = Get-SfAdMonitorActionContext -Status $Status -UiState $UiState -MappingConfigPath $ResolvedMappingConfigPath
+    $context = Get-SyncFactorsMonitorActionContext -Status $Status -UiState $UiState -MappingConfigPath $ResolvedMappingConfigPath
     if (-not $context.mappingConfigPath) {
         $UiState.statusMessage = 'Worker preview unavailable: no mapping config path was provided and none could be inferred from recent runs.'
         $UiState.commandOutput = @()
         return
     }
 
-    $workerId = Read-SfAdMonitorWorkerId
+    $workerId = Read-SyncFactorsMonitorWorkerId
     if ([string]::IsNullOrWhiteSpace($workerId)) {
         $UiState.statusMessage = 'Worker preview cancelled: no worker ID was provided.'
         $UiState.commandOutput = @()
@@ -460,22 +460,22 @@ function Invoke-SfAdMonitorInlineWorkerPreview {
     $workerId = $workerId.Trim()
     $projectRoot = Split-Path -Path $PSScriptRoot -Parent
     try {
-        $json = & pwsh -NoLogo -NoProfile -File (Join-Path $projectRoot 'scripts/Invoke-SfAdWorkerPreview.ps1') `
+        $json = & pwsh -NoLogo -NoProfile -File (Join-Path $projectRoot 'scripts/Invoke-SyncFactorsWorkerPreview.ps1') `
             -ConfigPath $context.configPath `
             -MappingConfigPath $context.mappingConfigPath `
             -WorkerId $workerId `
             -PreviewMode Full `
             -AsJson 2>&1
         $previewResult = @($json) -join [Environment]::NewLine | ConvertFrom-Json -Depth 30
-        Set-SfAdMonitorWorkerPreviewState -UiState $UiState -PreviewResult $previewResult
+        Set-SyncFactorsMonitorWorkerPreviewState -UiState $UiState -PreviewResult $previewResult
     } catch {
-        Clear-SfAdMonitorWorkerPreviewState -UiState $UiState
+        Clear-SyncFactorsMonitorWorkerPreviewState -UiState $UiState
         $UiState.statusMessage = "Worker preview failed for $workerId."
         $UiState.commandOutput = @($_.Exception.Message)
     }
 }
 
-function Open-SfAdMonitorSelectedWorkerPreview {
+function Open-SyncFactorsMonitorSelectedWorkerPreview {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
@@ -484,13 +484,13 @@ function Open-SfAdMonitorSelectedWorkerPreview {
         [pscustomobject]$UiState
     )
 
-    if (-not (Test-SfAdMonitorSelectedRunIsWorkerPreview -Status $Status -UiState $UiState)) {
+    if (-not (Test-SyncFactorsMonitorSelectedRunIsWorkerPreview -Status $Status -UiState $UiState)) {
         $UiState.statusMessage = 'Worker apply is only available on a selected single-worker review run.'
         $UiState.commandOutput = @()
         return
     }
 
-    $selectedRun = Get-SfAdMonitorSelectedRun -Status $Status -UiState $UiState
+    $selectedRun = Get-SyncFactorsMonitorSelectedRun -Status $Status -UiState $UiState
     if (-not $selectedRun -or [string]::IsNullOrWhiteSpace("$($selectedRun.path)") -or -not (Test-Path -Path $selectedRun.path -PathType Leaf)) {
         $UiState.statusMessage = 'Selected worker preview report is unavailable.'
         $UiState.commandOutput = @()
@@ -499,19 +499,19 @@ function Open-SfAdMonitorSelectedWorkerPreview {
 
     try {
         $report = Get-Content -Path $selectedRun.path -Raw | ConvertFrom-Json -Depth 30
-        $previewResult = ConvertTo-SfAdMonitorWorkerPreviewResult -Report $report -ReportPath $selectedRun.path
+        $previewResult = ConvertTo-SyncFactorsMonitorWorkerPreviewResult -Report $report -ReportPath $selectedRun.path
         if (-not $previewResult) {
             throw 'Selected worker preview is missing worker scope.'
         }
-        Set-SfAdMonitorWorkerPreviewState -UiState $UiState -PreviewResult $previewResult -Status $Status
+        Set-SyncFactorsMonitorWorkerPreviewState -UiState $UiState -PreviewResult $previewResult -Status $Status
     } catch {
-        Clear-SfAdMonitorWorkerPreviewState -UiState $UiState
+        Clear-SyncFactorsMonitorWorkerPreviewState -UiState $UiState
         $UiState.statusMessage = 'Failed to load the selected worker preview.'
         $UiState.commandOutput = @($_.Exception.Message)
     }
 }
 
-function Invoke-SfAdMonitorInlineWorkerApply {
+function Invoke-SyncFactorsMonitorInlineWorkerApply {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
@@ -524,7 +524,7 @@ function Invoke-SfAdMonitorInlineWorkerApply {
         [int]$HistoryDepth
     )
 
-    $context = Get-SfAdMonitorActionContext -Status $Status -UiState $UiState -MappingConfigPath $ResolvedMappingConfigPath
+    $context = Get-SyncFactorsMonitorActionContext -Status $Status -UiState $UiState -MappingConfigPath $ResolvedMappingConfigPath
     if (-not $context.mappingConfigPath) {
         $UiState.statusMessage = 'Worker apply unavailable: no mapping config path was provided and none could be inferred from recent runs.'
         $UiState.commandOutput = @()
@@ -544,7 +544,7 @@ function Invoke-SfAdMonitorInlineWorkerApply {
         return
     }
 
-    if (-not (Confirm-SfAdMonitorWriteAction -Label "Apply worker sync for $workerId" -WriteTarget 'AD objects, sync state, runtime status, and report files')) {
+    if (-not (Confirm-SyncFactorsMonitorWriteAction -Label "Apply worker sync for $workerId" -WriteTarget 'AD objects, sync state, runtime status, and report files')) {
         $UiState.statusMessage = 'Worker apply cancelled.'
         $UiState.commandOutput = @()
         return
@@ -552,7 +552,7 @@ function Invoke-SfAdMonitorInlineWorkerApply {
 
     $projectRoot = Split-Path -Path $PSScriptRoot -Parent
     try {
-        $json = & pwsh -NoLogo -NoProfile -File (Join-Path $projectRoot 'scripts/Invoke-SfAdWorkerSync.ps1') `
+        $json = & pwsh -NoLogo -NoProfile -File (Join-Path $projectRoot 'scripts/Invoke-SyncFactorsWorkerSync.ps1') `
             -ConfigPath $context.configPath `
             -MappingConfigPath $context.mappingConfigPath `
             -WorkerId $workerId `
@@ -563,8 +563,8 @@ function Invoke-SfAdMonitorInlineWorkerApply {
         } else {
             $null
         }
-        $freshStatus = Get-SfAdMonitorStatus -ConfigPath $context.configPath -HistoryLimit $HistoryDepth
-        Clear-SfAdMonitorWorkerPreviewState -UiState $UiState
+        $freshStatus = Get-SyncFactorsMonitorStatus -ConfigPath $context.configPath -HistoryLimit $HistoryDepth
+        Clear-SyncFactorsMonitorWorkerPreviewState -UiState $UiState
         if ($syncResult.reportPath) {
             $runs = @($freshStatus.recentRuns)
             for ($index = 0; $index -lt $runs.Count; $index += 1) {
@@ -575,14 +575,14 @@ function Invoke-SfAdMonitorInlineWorkerApply {
             }
         }
         $UiState.statusMessage = "Single-worker sync completed for $workerId."
-        $UiState.commandOutput = @(Get-SfAdMonitorWorkerSyncSummaryLines -SyncResult $syncResult -Report $syncReport)
+        $UiState.commandOutput = @(Get-SyncFactorsMonitorWorkerSyncSummaryLines -SyncResult $syncResult -Report $syncReport)
     } catch {
         $UiState.statusMessage = "Worker apply failed for $workerId."
         $UiState.commandOutput = @($_.Exception.Message)
     }
 }
 
-function Export-SfAdMonitorBucketSelection {
+function Export-SyncFactorsMonitorBucketSelection {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
@@ -591,28 +591,28 @@ function Export-SfAdMonitorBucketSelection {
         [pscustomobject]$UiState
     )
 
-    $bucketSelection = Get-SfAdMonitorSelectedBucket -Status $Status -UiState $UiState
-    $items = @(Get-SfAdMonitorFilteredBucketItems -BucketSelection $bucketSelection -UiState $UiState)
+    $bucketSelection = Get-SyncFactorsMonitorSelectedBucket -Status $Status -UiState $UiState
+    $items = @(Get-SyncFactorsMonitorFilteredBucketItems -BucketSelection $bucketSelection -UiState $UiState)
     if ($items.Count -eq 0) {
         $UiState.statusMessage = 'Export skipped: no filtered bucket entries to export.'
         $UiState.commandOutput = @()
         return
     }
 
-    if (-not (Confirm-SfAdMonitorWriteAction -Label 'Bucket export' -WriteTarget 'a JSON file in the temp directory')) {
+    if (-not (Confirm-SyncFactorsMonitorWriteAction -Label 'Bucket export' -WriteTarget 'a JSON file in the temp directory')) {
         $UiState.statusMessage = 'Bucket export cancelled.'
         $UiState.commandOutput = @()
         return
     }
 
     $timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
-    $path = Join-Path -Path ([System.IO.Path]::GetTempPath()) -ChildPath "sf-ad-sync-monitor-$($bucketSelection.Bucket.Name)-$timestamp.json"
+    $path = Join-Path -Path ([System.IO.Path]::GetTempPath()) -ChildPath "syncfactors-monitor-$($bucketSelection.Bucket.Name)-$timestamp.json"
     $items | ConvertTo-Json -Depth 20 | Set-Content -Path $path
     $UiState.statusMessage = "Exported filtered bucket to $path"
     $UiState.commandOutput = @($path)
 }
 
-function Invoke-SfAdMonitorShortcut {
+function Invoke-SyncFactorsMonitorShortcut {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
@@ -625,7 +625,7 @@ function Invoke-SfAdMonitorShortcut {
         [string]$ResolvedMappingConfigPath
     )
 
-    $context = Get-SfAdMonitorActionContext -Status $Status -UiState $UiState -MappingConfigPath $ResolvedMappingConfigPath
+    $context = Get-SyncFactorsMonitorActionContext -Status $Status -UiState $UiState -MappingConfigPath $ResolvedMappingConfigPath
     $projectRoot = Split-Path -Path $PSScriptRoot -Parent
 
     switch ($Action) {
@@ -637,7 +637,7 @@ function Invoke-SfAdMonitorShortcut {
             }
 
             try {
-                $output = & pwsh -NoLogo -NoProfile -File (Join-Path $projectRoot 'scripts/Invoke-SfAdPreflight.ps1') -ConfigPath $context.configPath -MappingConfigPath $context.mappingConfigPath 2>&1
+                $output = & pwsh -NoLogo -NoProfile -File (Join-Path $projectRoot 'scripts/Invoke-SyncFactorsPreflight.ps1') -ConfigPath $context.configPath -MappingConfigPath $context.mappingConfigPath 2>&1
                 $UiState.statusMessage = 'Preflight completed.'
                 $UiState.commandOutput = @($output | ForEach-Object { "$_" })
             } catch {
@@ -652,7 +652,7 @@ function Invoke-SfAdMonitorShortcut {
                 return
             }
 
-            if (-not (Confirm-SfAdMonitorWriteAction -Label 'Delta dry-run' -WriteTarget 'runtime status and report files')) {
+            if (-not (Confirm-SyncFactorsMonitorWriteAction -Label 'Delta dry-run' -WriteTarget 'runtime status and report files')) {
                 $UiState.statusMessage = 'Delta dry-run cancelled.'
                 $UiState.commandOutput = @()
                 return
@@ -662,7 +662,7 @@ function Invoke-SfAdMonitorShortcut {
                 '-NoLogo'
                 '-NoProfile'
                 '-File'
-                (Join-Path $projectRoot 'src/Invoke-SfAdSync.ps1')
+                (Join-Path $projectRoot 'src/Invoke-SyncFactors.ps1')
                 '-ConfigPath'
                 $context.configPath
                 '-MappingConfigPath'
@@ -688,7 +688,7 @@ function Invoke-SfAdMonitorShortcut {
                 return
             }
 
-            if (-not (Confirm-SfAdMonitorWriteAction -Label 'Delta sync' -WriteTarget 'AD objects, sync state, runtime status, and report files')) {
+            if (-not (Confirm-SyncFactorsMonitorWriteAction -Label 'Delta sync' -WriteTarget 'AD objects, sync state, runtime status, and report files')) {
                 $UiState.statusMessage = 'Delta sync cancelled.'
                 $UiState.commandOutput = @()
                 return
@@ -698,7 +698,7 @@ function Invoke-SfAdMonitorShortcut {
                 '-NoLogo'
                 '-NoProfile'
                 '-File'
-                (Join-Path $projectRoot 'src/Invoke-SfAdSync.ps1')
+                (Join-Path $projectRoot 'src/Invoke-SyncFactors.ps1')
                 '-ConfigPath'
                 $context.configPath
                 '-MappingConfigPath'
@@ -723,7 +723,7 @@ function Invoke-SfAdMonitorShortcut {
                 return
             }
 
-            if (-not (Confirm-SfAdMonitorWriteAction -Label 'Full dry-run' -WriteTarget 'runtime status and report files')) {
+            if (-not (Confirm-SyncFactorsMonitorWriteAction -Label 'Full dry-run' -WriteTarget 'runtime status and report files')) {
                 $UiState.statusMessage = 'Full dry-run cancelled.'
                 $UiState.commandOutput = @()
                 return
@@ -733,7 +733,7 @@ function Invoke-SfAdMonitorShortcut {
                 '-NoLogo'
                 '-NoProfile'
                 '-File'
-                (Join-Path $projectRoot 'src/Invoke-SfAdSync.ps1')
+                (Join-Path $projectRoot 'src/Invoke-SyncFactors.ps1')
                 '-ConfigPath'
                 $context.configPath
                 '-MappingConfigPath'
@@ -759,7 +759,7 @@ function Invoke-SfAdMonitorShortcut {
                 return
             }
 
-            if (-not (Confirm-SfAdMonitorWriteAction -Label 'Full sync' -WriteTarget 'AD objects, sync state, runtime status, and report files')) {
+            if (-not (Confirm-SyncFactorsMonitorWriteAction -Label 'Full sync' -WriteTarget 'AD objects, sync state, runtime status, and report files')) {
                 $UiState.statusMessage = 'Full sync cancelled.'
                 $UiState.commandOutput = @()
                 return
@@ -769,7 +769,7 @@ function Invoke-SfAdMonitorShortcut {
                 '-NoLogo'
                 '-NoProfile'
                 '-File'
-                (Join-Path $projectRoot 'src/Invoke-SfAdSync.ps1')
+                (Join-Path $projectRoot 'src/Invoke-SyncFactors.ps1')
                 '-ConfigPath'
                 $context.configPath
                 '-MappingConfigPath'
@@ -794,7 +794,7 @@ function Invoke-SfAdMonitorShortcut {
                 return
             }
 
-            if (-not (Confirm-SfAdMonitorWriteAction -Label 'First-sync review' -WriteTarget 'runtime status and review report files')) {
+            if (-not (Confirm-SyncFactorsMonitorWriteAction -Label 'First-sync review' -WriteTarget 'runtime status and review report files')) {
                 $UiState.statusMessage = 'First-sync review cancelled.'
                 $UiState.commandOutput = @()
                 return
@@ -804,7 +804,7 @@ function Invoke-SfAdMonitorShortcut {
                 '-NoLogo'
                 '-NoProfile'
                 '-File'
-                (Join-Path $projectRoot 'scripts/Invoke-SfAdFirstSyncReview.ps1')
+                (Join-Path $projectRoot 'scripts/Invoke-SyncFactorsFirstSyncReview.ps1')
                 '-ConfigPath'
                 $context.configPath
                 '-MappingConfigPath'
@@ -821,7 +821,7 @@ function Invoke-SfAdMonitorShortcut {
             }
         }
         'WorkerPreview' {
-            Invoke-SfAdMonitorInlineWorkerPreview -Status $Status -UiState $UiState -ResolvedMappingConfigPath $ResolvedMappingConfigPath
+            Invoke-SyncFactorsMonitorInlineWorkerPreview -Status $Status -UiState $UiState -ResolvedMappingConfigPath $ResolvedMappingConfigPath
         }
         'ApplyReviewedWorker' {
             if (-not $context.mappingConfigPath) {
@@ -843,7 +843,7 @@ function Invoke-SfAdMonitorShortcut {
                 return
             }
 
-            if (-not (Confirm-SfAdMonitorWriteAction -Label "Apply worker sync for $workerId" -WriteTarget 'AD and sync state')) {
+            if (-not (Confirm-SyncFactorsMonitorWriteAction -Label "Apply worker sync for $workerId" -WriteTarget 'AD and sync state')) {
                 $UiState.statusMessage = 'Worker apply cancelled.'
                 $UiState.commandOutput = @()
                 return
@@ -853,7 +853,7 @@ function Invoke-SfAdMonitorShortcut {
                 '-NoLogo'
                 '-NoProfile'
                 '-File'
-                (Join-Path $projectRoot 'scripts/Invoke-SfAdWorkerSync.ps1')
+                (Join-Path $projectRoot 'scripts/Invoke-SyncFactorsWorkerSync.ps1')
                 '-ConfigPath'
                 $context.configPath
                 '-MappingConfigPath'
@@ -872,20 +872,20 @@ function Invoke-SfAdMonitorShortcut {
             }
         }
         'FreshSyncReset' {
-            if (-not (Confirm-SfAdMonitorWriteAction -Label 'Fresh sync reset' -WriteTarget 'managed AD user objects and local sync state')) {
+            if (-not (Confirm-SyncFactorsMonitorWriteAction -Label 'Fresh sync reset' -WriteTarget 'managed AD user objects and local sync state')) {
                 $UiState.statusMessage = 'Fresh sync reset cancelled.'
                 $UiState.commandOutput = @()
                 return
             }
 
-            $freshResetLogPath = Get-SfAdMonitorFreshResetLogPath -ConfigPath $context.configPath
-            $freshResetPreviewReportPath = Get-SfAdMonitorFreshResetPreviewReportPath -ConfigPath $context.configPath
+            $freshResetLogPath = Get-SyncFactorsMonitorFreshResetLogPath -ConfigPath $context.configPath
+            $freshResetPreviewReportPath = Get-SyncFactorsMonitorFreshResetPreviewReportPath -ConfigPath $context.configPath
 
             $argumentList = @(
                 '-NoLogo'
                 '-NoProfile'
                 '-File'
-                (Join-Path $projectRoot 'scripts/Invoke-SfAdFreshSyncReset.ps1')
+                (Join-Path $projectRoot 'scripts/Invoke-SyncFactorsFreshSyncReset.ps1')
                 '-ConfigPath'
                 $context.configPath
                 '-LogPath'
@@ -923,7 +923,7 @@ function Invoke-SfAdMonitorShortcut {
                 return
             }
 
-            if (-not (Confirm-SfAdMonitorWriteAction -Label 'Copy report path' -WriteTarget 'the clipboard')) {
+            if (-not (Confirm-SyncFactorsMonitorWriteAction -Label 'Copy report path' -WriteTarget 'the clipboard')) {
                 $UiState.statusMessage = 'Copy report path cancelled.'
                 $UiState.commandOutput = @()
                 return
@@ -944,13 +944,13 @@ function Invoke-SfAdMonitorShortcut {
 
 $resolvedConfigPath = (Resolve-Path -Path $ConfigPath).Path
 $resolvedMappingConfigPath = Get-OptionalResolvedPath -Path $MappingConfigPath
-$uiState = New-SfAdMonitorUiState
+$uiState = New-SyncFactorsMonitorUiState
 $uiState.autoRefreshEnabled = $false
 $uiState.statusMessage = 'Auto-refresh paused. Press t to resume or r to refresh once.'
 $lastStatus = $null
 
 do {
-    $frame = Show-SfAdMonitorFrame -ResolvedConfigPath $resolvedConfigPath -ResolvedMappingConfigPath $resolvedMappingConfigPath -HistoryDepth $HistoryLimit -UiState $uiState -AsTextOutput:$AsText
+    $frame = Show-SyncFactorsMonitorFrame -ResolvedConfigPath $resolvedConfigPath -ResolvedMappingConfigPath $resolvedMappingConfigPath -HistoryDepth $HistoryLimit -UiState $uiState -AsTextOutput:$AsText
     $lastStatus = $frame.Status
 
     if ($RunOnce -or $AsText) {
@@ -969,7 +969,7 @@ do {
             if ("$($uiState.viewMode)" -eq 'WorkerPreviewDiff') {
                 switch ($key.Key) {
                     'Escape' {
-                        Clear-SfAdMonitorWorkerPreviewState -UiState $uiState
+                        Clear-SyncFactorsMonitorWorkerPreviewState -UiState $uiState
                         $uiState.statusMessage = 'Returned to dashboard.'
                         $refreshRequested = $true
                         continue
@@ -979,7 +979,7 @@ do {
                 switch ($key.KeyChar) {
                     'a' {
                         if ($lastStatus) {
-                            Invoke-SfAdMonitorInlineWorkerApply -Status $lastStatus -UiState $uiState -ResolvedMappingConfigPath $resolvedMappingConfigPath -HistoryDepth $HistoryLimit
+                            Invoke-SyncFactorsMonitorInlineWorkerApply -Status $lastStatus -UiState $uiState -ResolvedMappingConfigPath $resolvedMappingConfigPath -HistoryDepth $HistoryLimit
                         }
                         $refreshRequested = $true
                         continue
@@ -994,7 +994,7 @@ do {
                                 }
                             }
                             $uiState.viewMode = 'Dashboard'
-                            Invoke-SfAdMonitorShortcut -Action OpenReport -Status $lastStatus -UiState $uiState -ResolvedMappingConfigPath $resolvedMappingConfigPath
+                            Invoke-SyncFactorsMonitorShortcut -Action OpenReport -Status $lastStatus -UiState $uiState -ResolvedMappingConfigPath $resolvedMappingConfigPath
                         }
                         $refreshRequested = $true
                         continue
@@ -1005,7 +1005,7 @@ do {
                 switch ($key.Key) {
                     'A' {
                         if ($lastStatus) {
-                            Invoke-SfAdMonitorShortcut -Action ApplyReviewedWorker -Status $lastStatus -UiState $uiState -ResolvedMappingConfigPath $resolvedMappingConfigPath
+                            Invoke-SyncFactorsMonitorShortcut -Action ApplyReviewedWorker -Status $lastStatus -UiState $uiState -ResolvedMappingConfigPath $resolvedMappingConfigPath
                         }
                         $uiState.pendingAction = $null
                         $uiState.pendingWorkerId = $null
@@ -1014,7 +1014,7 @@ do {
                     }
                     'O' {
                         if ($lastStatus) {
-                            $relatedRuns = @(Get-SfAdMonitorWorkerRelatedRuns -Status $lastStatus -WorkerId $uiState.pendingWorkerId)
+                            $relatedRuns = @(Get-SyncFactorsMonitorWorkerRelatedRuns -Status $lastStatus -WorkerId $uiState.pendingWorkerId)
                             if ($relatedRuns.Count -eq 0) {
                                 $uiState.statusMessage = 'No related worker reports were found.'
                             } else {
@@ -1039,12 +1039,12 @@ do {
                 switch ($key.Key) {
                     'Enter' {
                         if ($lastStatus) {
-                            $relatedRuns = @(Get-SfAdMonitorWorkerRelatedRuns -Status $lastStatus -WorkerId $uiState.pendingWorkerId)
+                            $relatedRuns = @(Get-SyncFactorsMonitorWorkerRelatedRuns -Status $lastStatus -WorkerId $uiState.pendingWorkerId)
                             if ($relatedRuns.Count -gt 0) {
                                 $selectedIndex = [math]::Min([math]::Max([int]$uiState.pendingReportIndex, 0), $relatedRuns.Count - 1)
                                 $uiState.selectedRunIndex = [int]$relatedRuns[$selectedIndex].RunIndex
                                 $uiState.pendingAction = $null
-                                Invoke-SfAdMonitorShortcut -Action OpenReport -Status $lastStatus -UiState $uiState -ResolvedMappingConfigPath $resolvedMappingConfigPath
+                                Invoke-SyncFactorsMonitorShortcut -Action OpenReport -Status $lastStatus -UiState $uiState -ResolvedMappingConfigPath $resolvedMappingConfigPath
                             } else {
                                 $uiState.statusMessage = 'No related worker reports were found.'
                             }
@@ -1064,12 +1064,12 @@ do {
                 switch ($key.KeyChar) {
                     'o' {
                         if ($lastStatus) {
-                            $relatedRuns = @(Get-SfAdMonitorWorkerRelatedRuns -Status $lastStatus -WorkerId $uiState.pendingWorkerId)
+                            $relatedRuns = @(Get-SyncFactorsMonitorWorkerRelatedRuns -Status $lastStatus -WorkerId $uiState.pendingWorkerId)
                             if ($relatedRuns.Count -gt 0) {
                                 $selectedIndex = [math]::Min([math]::Max([int]$uiState.pendingReportIndex, 0), $relatedRuns.Count - 1)
                                 $uiState.selectedRunIndex = [int]$relatedRuns[$selectedIndex].RunIndex
                                 $uiState.pendingAction = $null
-                                Invoke-SfAdMonitorShortcut -Action OpenReport -Status $lastStatus -UiState $uiState -ResolvedMappingConfigPath $resolvedMappingConfigPath
+                                Invoke-SyncFactorsMonitorShortcut -Action OpenReport -Status $lastStatus -UiState $uiState -ResolvedMappingConfigPath $resolvedMappingConfigPath
                             } else {
                                 $uiState.statusMessage = 'No related worker reports were found.'
                             }
@@ -1182,8 +1182,8 @@ do {
                 'RightArrow' {
                     $maxItemIndex = 0
                     if ($lastStatus) {
-                        $bucketSelection = Get-SfAdMonitorSelectedBucket -Status $lastStatus -UiState $uiState
-                        $maxItemIndex = [math]::Max(@(Get-SfAdMonitorFilteredBucketItems -BucketSelection $bucketSelection -UiState $uiState).Count - 1, 0)
+                        $bucketSelection = Get-SyncFactorsMonitorSelectedBucket -Status $lastStatus -UiState $uiState
+                        $maxItemIndex = [math]::Max(@(Get-SyncFactorsMonitorFilteredBucketItems -BucketSelection $bucketSelection -UiState $uiState).Count - 1, 0)
                     }
                     $uiState.selectedItemIndex = [math]::Min([int]$uiState.selectedItemIndex + 1, $maxItemIndex)
                     $uiState.focus = 'Detail'
@@ -1237,8 +1237,8 @@ do {
                         'l' {
                             $maxItemIndex = 0
                             if ($lastStatus) {
-                                $bucketSelection = Get-SfAdMonitorSelectedBucket -Status $lastStatus -UiState $uiState
-                                $maxItemIndex = [math]::Max(@(Get-SfAdMonitorFilteredBucketItems -BucketSelection $bucketSelection -UiState $uiState).Count - 1, 0)
+                                $bucketSelection = Get-SyncFactorsMonitorSelectedBucket -Status $lastStatus -UiState $uiState
+                                $maxItemIndex = [math]::Max(@(Get-SyncFactorsMonitorFilteredBucketItems -BucketSelection $bucketSelection -UiState $uiState).Count - 1, 0)
                             }
                             $uiState.selectedItemIndex = [math]::Min([int]$uiState.selectedItemIndex + 1, $maxItemIndex)
                             $uiState.focus = 'Detail'
@@ -1255,8 +1255,8 @@ do {
                             break
                         }
                         ']' {
-                            $bucketMode = if ($lastStatus) { (Get-SfAdMonitorSelectedRun -Status $lastStatus -UiState $uiState).mode } else { $null }
-                            $maxBucketIndex = [math]::Max(@(Get-SfAdMonitorBucketDefinitions -Mode $bucketMode).Count - 1, 0)
+                            $bucketMode = if ($lastStatus) { (Get-SyncFactorsMonitorSelectedRun -Status $lastStatus -UiState $uiState).mode } else { $null }
+                            $maxBucketIndex = [math]::Max(@(Get-SyncFactorsMonitorBucketDefinitions -Mode $bucketMode).Count - 1, 0)
                             $uiState.selectedBucketIndex = [math]::Min([int]$uiState.selectedBucketIndex + 1, $maxBucketIndex)
                             $uiState.selectedItemIndex = 0
                             $uiState.focus = 'Detail'
@@ -1266,84 +1266,84 @@ do {
                         }
                         'p' {
                             if ($lastStatus) {
-                                Invoke-SfAdMonitorShortcut -Action Preflight -Status $lastStatus -UiState $uiState -ResolvedMappingConfigPath $resolvedMappingConfigPath
+                                Invoke-SyncFactorsMonitorShortcut -Action Preflight -Status $lastStatus -UiState $uiState -ResolvedMappingConfigPath $resolvedMappingConfigPath
                             }
                             $refreshRequested = $true
                             break
                         }
                         'd' {
                             if ($lastStatus) {
-                                Invoke-SfAdMonitorShortcut -Action DeltaDryRun -Status $lastStatus -UiState $uiState -ResolvedMappingConfigPath $resolvedMappingConfigPath
+                                Invoke-SyncFactorsMonitorShortcut -Action DeltaDryRun -Status $lastStatus -UiState $uiState -ResolvedMappingConfigPath $resolvedMappingConfigPath
                             }
                             $refreshRequested = $true
                             break
                         }
                         's' {
                             if ($lastStatus) {
-                                Invoke-SfAdMonitorShortcut -Action DeltaRun -Status $lastStatus -UiState $uiState -ResolvedMappingConfigPath $resolvedMappingConfigPath
+                                Invoke-SyncFactorsMonitorShortcut -Action DeltaRun -Status $lastStatus -UiState $uiState -ResolvedMappingConfigPath $resolvedMappingConfigPath
                             }
                             $refreshRequested = $true
                             break
                         }
                         'f' {
                             if ($lastStatus) {
-                                Invoke-SfAdMonitorShortcut -Action FullDryRun -Status $lastStatus -UiState $uiState -ResolvedMappingConfigPath $resolvedMappingConfigPath
+                                Invoke-SyncFactorsMonitorShortcut -Action FullDryRun -Status $lastStatus -UiState $uiState -ResolvedMappingConfigPath $resolvedMappingConfigPath
                             }
                             $refreshRequested = $true
                             break
                         }
                         'a' {
                             if ($lastStatus) {
-                                Invoke-SfAdMonitorShortcut -Action FullRun -Status $lastStatus -UiState $uiState -ResolvedMappingConfigPath $resolvedMappingConfigPath
+                                Invoke-SyncFactorsMonitorShortcut -Action FullRun -Status $lastStatus -UiState $uiState -ResolvedMappingConfigPath $resolvedMappingConfigPath
                             }
                             $refreshRequested = $true
                             break
                         }
                         'w' {
                             if ($lastStatus) {
-                                Invoke-SfAdMonitorShortcut -Action WorkerPreview -Status $lastStatus -UiState $uiState -ResolvedMappingConfigPath $resolvedMappingConfigPath
+                                Invoke-SyncFactorsMonitorShortcut -Action WorkerPreview -Status $lastStatus -UiState $uiState -ResolvedMappingConfigPath $resolvedMappingConfigPath
                             }
                             $refreshRequested = $true
                             break
                         }
                         'z' {
                             if ($lastStatus) {
-                                Invoke-SfAdMonitorShortcut -Action FreshSyncReset -Status $lastStatus -UiState $uiState -ResolvedMappingConfigPath $resolvedMappingConfigPath
+                                Invoke-SyncFactorsMonitorShortcut -Action FreshSyncReset -Status $lastStatus -UiState $uiState -ResolvedMappingConfigPath $resolvedMappingConfigPath
                             }
                             $refreshRequested = $true
                             break
                         }
                         'o' {
                             if ($lastStatus) {
-                                Invoke-SfAdMonitorShortcut -Action OpenReport -Status $lastStatus -UiState $uiState -ResolvedMappingConfigPath $resolvedMappingConfigPath
+                                Invoke-SyncFactorsMonitorShortcut -Action OpenReport -Status $lastStatus -UiState $uiState -ResolvedMappingConfigPath $resolvedMappingConfigPath
                             }
                             $refreshRequested = $true
                             break
                         }
                         'v' {
                             if ($lastStatus) {
-                                Invoke-SfAdMonitorShortcut -Action ReviewRun -Status $lastStatus -UiState $uiState -ResolvedMappingConfigPath $resolvedMappingConfigPath
+                                Invoke-SyncFactorsMonitorShortcut -Action ReviewRun -Status $lastStatus -UiState $uiState -ResolvedMappingConfigPath $resolvedMappingConfigPath
                             }
                             $refreshRequested = $true
                             break
                         }
                         'g' {
                             if ($lastStatus) {
-                                Open-SfAdMonitorSelectedWorkerPreview -Status $lastStatus -UiState $uiState
+                                Open-SyncFactorsMonitorSelectedWorkerPreview -Status $lastStatus -UiState $uiState
                             }
                             $refreshRequested = $true
                             break
                         }
                         'y' {
                             if ($lastStatus) {
-                                Invoke-SfAdMonitorShortcut -Action CopyReportPath -Status $lastStatus -UiState $uiState -ResolvedMappingConfigPath $resolvedMappingConfigPath
+                                Invoke-SyncFactorsMonitorShortcut -Action CopyReportPath -Status $lastStatus -UiState $uiState -ResolvedMappingConfigPath $resolvedMappingConfigPath
                             }
                             $refreshRequested = $true
                             break
                         }
                         '/' {
                             $uiState.focus = 'Detail'
-                            $filterText = Read-SfAdMonitorFilterText -CurrentFilter $uiState.filterText
+                            $filterText = Read-SyncFactorsMonitorFilterText -CurrentFilter $uiState.filterText
                             $uiState.filterText = if ([string]::IsNullOrWhiteSpace($filterText)) { '' } else { $filterText.Trim() }
                             $uiState.selectedItemIndex = 0
                             if ([string]::IsNullOrWhiteSpace($uiState.filterText)) {
@@ -1363,7 +1363,7 @@ do {
                         }
                         'x' {
                             if ($lastStatus) {
-                                Export-SfAdMonitorBucketSelection -Status $lastStatus -UiState $uiState
+                                Export-SyncFactorsMonitorBucketSelection -Status $lastStatus -UiState $uiState
                             }
                             $refreshRequested = $true
                             break

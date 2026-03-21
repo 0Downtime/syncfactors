@@ -1,6 +1,6 @@
 Describe 'SuccessFactors module' {
     BeforeAll {
-        Import-Module "$PSScriptRoot/../src/Modules/SfAdSync/SuccessFactors.psm1" -Force
+        Import-Module "$PSScriptRoot/../src/Modules/SyncFactors/SuccessFactors.psm1" -Force
     }
 
     BeforeEach {

@@ -1,10 +1,10 @@
 Describe 'Reporting journal' {
     BeforeAll {
-        Import-Module "$PSScriptRoot/../src/Modules/SfAdSync/Reporting.psm1" -Force
+        Import-Module "$PSScriptRoot/../src/Modules/SyncFactors/Reporting.psm1" -Force
     }
 
     It 'creates a report with run metadata and operation journal' {
-        $report = New-SfAdSyncReport -Mode 'Delta' -DryRun -ConfigPath 'config.json' -MappingConfigPath 'mapping.json' -StatePath 'state.json'
+        $report = New-SyncFactorsReport -Mode 'Delta' -DryRun -ConfigPath 'config.json' -MappingConfigPath 'mapping.json' -StatePath 'state.json'
 
         $report.runId | Should -Not -BeNullOrEmpty
         $report.mode | Should -Be 'Delta'
@@ -16,8 +16,8 @@ Describe 'Reporting journal' {
     }
 
     It 'appends ordered operations' {
-        $report = New-SfAdSyncReport
-        $entry = Add-SfAdReportOperation -Report $report -OperationType 'UpdateAttributes' -WorkerId '1001' -Bucket 'updates' -Target @{ samAccountName = 'jdoe' } -Before ([pscustomobject]@{ title = 'Old' }) -After ([pscustomobject]@{ title = 'New' })
+        $report = New-SyncFactorsReport
+        $entry = Add-SyncFactorsReportOperation -Report $report -OperationType 'UpdateAttributes' -WorkerId '1001' -Bucket 'updates' -Target @{ samAccountName = 'jdoe' } -Before ([pscustomobject]@{ title = 'Old' }) -After ([pscustomobject]@{ title = 'New' })
 
         $entry.sequence | Should -Be 1
         $entry.workerId | Should -Be '1001'
@@ -27,11 +27,11 @@ Describe 'Reporting journal' {
 
     It 'writes a persisted report with the expected top-level shape' {
         $reportDirectory = Join-Path $TestDrive 'reports'
-        $report = New-SfAdSyncReport -Mode 'Full' -DryRun -ConfigPath 'config.json' -MappingConfigPath 'mapping.json' -StatePath 'state.json'
-        Add-SfAdReportEntry -Report $report -Bucket 'creates' -Entry @{ workerId = '1001'; samAccountName = 'jdoe' }
-        Add-SfAdReportOperation -Report $report -OperationType 'CreateUser' -WorkerId '1001' -Bucket 'creates' -Target @{ samAccountName = 'jdoe' } -Before $null -After ([pscustomobject]@{ samAccountName = 'jdoe' }) | Out-Null
+        $report = New-SyncFactorsReport -Mode 'Full' -DryRun -ConfigPath 'config.json' -MappingConfigPath 'mapping.json' -StatePath 'state.json'
+        Add-SyncFactorsReportEntry -Report $report -Bucket 'creates' -Entry @{ workerId = '1001'; samAccountName = 'jdoe' }
+        Add-SyncFactorsReportOperation -Report $report -OperationType 'CreateUser' -WorkerId '1001' -Bucket 'creates' -Target @{ samAccountName = 'jdoe' } -Before $null -After ([pscustomobject]@{ samAccountName = 'jdoe' }) | Out-Null
 
-        $reportPath = Save-SfAdSyncReport -Report $report -Directory $reportDirectory -Mode 'Full'
+        $reportPath = Save-SyncFactorsReport -Report $report -Directory $reportDirectory -Mode 'Full'
         $persisted = Get-Content -Path $reportPath -Raw | ConvertFrom-Json -Depth 20
 
         $persisted.runId | Should -Not -BeNullOrEmpty
@@ -45,10 +45,10 @@ Describe 'Reporting journal' {
 
     It 'persists operation entries with rollback-relevant fields intact' {
         $reportDirectory = Join-Path $TestDrive 'reports'
-        $report = New-SfAdSyncReport -Mode 'Delta' -ConfigPath 'config.json' -MappingConfigPath 'mapping.json' -StatePath 'state.json'
-        Add-SfAdReportOperation -Report $report -OperationType 'MoveUser' -WorkerId '2001' -Bucket 'graveyardMoves' -TargetType 'ADUser' -Target @{ objectGuid = '11111111-1111-1111-1111-111111111111' } -Before ([pscustomobject]@{ parentOu = 'OU=Employees,DC=example,DC=com' }) -After ([pscustomobject]@{ targetOu = 'OU=Graveyard,DC=example,DC=com' }) | Out-Null
+        $report = New-SyncFactorsReport -Mode 'Delta' -ConfigPath 'config.json' -MappingConfigPath 'mapping.json' -StatePath 'state.json'
+        Add-SyncFactorsReportOperation -Report $report -OperationType 'MoveUser' -WorkerId '2001' -Bucket 'graveyardMoves' -TargetType 'ADUser' -Target @{ objectGuid = '11111111-1111-1111-1111-111111111111' } -Before ([pscustomobject]@{ parentOu = 'OU=Employees,DC=example,DC=com' }) -After ([pscustomobject]@{ targetOu = 'OU=Graveyard,DC=example,DC=com' }) | Out-Null
 
-        $reportPath = Save-SfAdSyncReport -Report $report -Directory $reportDirectory -Mode 'Delta'
+        $reportPath = Save-SyncFactorsReport -Report $report -Directory $reportDirectory -Mode 'Delta'
         $persisted = Get-Content -Path $reportPath -Raw | ConvertFrom-Json -Depth 20
 
         $persisted.operations[0].operationType | Should -Be 'MoveUser'

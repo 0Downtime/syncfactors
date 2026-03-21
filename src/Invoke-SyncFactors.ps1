@@ -13,7 +13,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$moduleRoot = Join-Path -Path $PSScriptRoot -ChildPath 'Modules/SfAdSync'
+$moduleRoot = Join-Path -Path $PSScriptRoot -ChildPath 'Modules/SyncFactors'
 Import-Module (Join-Path $moduleRoot 'Sync.psm1') -Force -DisableNameChecking
 
-Invoke-SfAdSyncRun -ConfigPath $ConfigPath -MappingConfigPath $MappingConfigPath -Mode $Mode -DryRun:$DryRun -WorkerId $WorkerId
+Invoke-SyncFactorsRun -ConfigPath $ConfigPath -MappingConfigPath $MappingConfigPath -Mode $Mode -DryRun:$DryRun -WorkerId $WorkerId

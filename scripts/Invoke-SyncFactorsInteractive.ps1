@@ -231,5 +231,5 @@ foreach ($promptDefinition in $runtimePrompts) {
     [System.Environment]::SetEnvironmentVariable($environmentVariableName, $value, 'Process')
 }
 
-$invokePath = Join-Path -Path (Split-Path -Path $PSScriptRoot -Parent) -ChildPath 'src/Invoke-SfAdSync.ps1'
+$invokePath = Join-Path -Path (Split-Path -Path $PSScriptRoot -Parent) -ChildPath 'src/Invoke-SyncFactors.ps1'
 & $invokePath -ConfigPath $resolvedConfigPath -MappingConfigPath $MappingConfigPath -Mode $Mode -DryRun:$DryRun -WorkerId $WorkerId

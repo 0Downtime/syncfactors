@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [string]$ConfigPath = './config/sample.real-successfactors.real-ad.sync-config.json',
-    [string]$MappingConfigPath = './config/sample.successfactors-to-ad.mapping-config.json',
+    [string]$MappingConfigPath = './config/sample.syncfactors.mapping-config.json',
     [ValidateRange(1, 50000)]
     [int]$UserCount = 1000,
     [ValidateRange(0, 5000)]
@@ -22,7 +22,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $projectRoot = Split-Path -Path $PSScriptRoot -Parent
-$moduleRoot = Join-Path -Path $projectRoot -ChildPath 'src/Modules/SfAdSync'
+$moduleRoot = Join-Path -Path $projectRoot -ChildPath 'src/Modules/SyncFactors'
 $bundledPesterManifest = Join-Path $projectRoot '.tools/Pester/5.7.1/Pester.psd1'
 
 if (-not (Get-Command Invoke-Pester -ErrorAction SilentlyContinue)) {
@@ -63,7 +63,7 @@ if (-not (Test-Path -Path $resolvedOutputDirectory -PathType Container)) {
     New-Item -Path $resolvedOutputDirectory -ItemType Directory -Force | Out-Null
 }
 
-$syntheticDirectory = New-SfAdSyntheticWorkers -UserCount $UserCount -InactiveCount $InactiveCount -DuplicateWorkerIdCount $DuplicateWorkerIdCount -ManagerCount $ManagerCount
+$syntheticDirectory = New-SyncFactorsSyntheticWorkers -UserCount $UserCount -InactiveCount $InactiveCount -DuplicateWorkerIdCount $DuplicateWorkerIdCount -ManagerCount $ManagerCount
 $workers = @($syntheticDirectory.workers)
 $managerDirectory = @($syntheticDirectory.managers)
 $collisionUpns = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
@@ -116,7 +116,7 @@ Describe 'Synthetic dry-run harness' {
             )
 
             Mock Get-SfWorkers { `$HarnessWorkers }
-            Mock Get-SfAdTargetUser {
+            Mock Get-SyncFactorsTargetUser {
                 param([pscustomobject]`$Config, [string]`$WorkerId)
 
                 `$managerRecord = @(`$HarnessManagers | Where-Object { `$_.employeeId -eq `$WorkerId })
@@ -129,8 +129,8 @@ Describe 'Synthetic dry-run harness' {
 
                 return `$null
             }
-            Mock Get-SfAdUserBySamAccountName { `$null }
-            Mock Get-SfAdUserByUserPrincipalName {
+            Mock Get-SyncFactorsUserBySamAccountName { `$null }
+            Mock Get-SyncFactorsUserByUserPrincipalName {
                 param([string]`$UserPrincipalName)
 
                 if (`$HarnessCollisionEmails -contains `$UserPrincipalName) {
@@ -144,7 +144,7 @@ Describe 'Synthetic dry-run harness' {
             }
             Mock Ensure-ActiveDirectoryModule {}
 
-            `$reportPath = Invoke-SfAdSyncRun -ConfigPath `$HarnessConfigPath -MappingConfigPath `$HarnessMappingConfigPath -Mode Full -DryRun
+            `$reportPath = Invoke-SyncFactorsRun -ConfigPath `$HarnessConfigPath -MappingConfigPath `$HarnessMappingConfigPath -Mode Full -DryRun
             Set-Content -Path `$HarnessReportPathFile -Value `$reportPath
         } -Parameters @{
             HarnessConfigPath = '$tempConfigPath'

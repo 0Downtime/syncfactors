@@ -23,7 +23,7 @@ $bundleItems = @(
     'CONTRIBUTING.md'
 )
 
-$stagingRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("sf-ad-sync-release-{0}" -f [System.Guid]::NewGuid().ToString('N'))
+$stagingRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("syncfactors-release-{0}" -f [System.Guid]::NewGuid().ToString('N'))
 $outputDirectory = Split-Path -Path $OutputPath -Parent
 if ($outputDirectory -and -not (Test-Path -Path $outputDirectory -PathType Container)) {
     New-Item -Path $outputDirectory -ItemType Directory -Force | Out-Null

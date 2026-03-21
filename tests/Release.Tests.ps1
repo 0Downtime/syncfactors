@@ -1,9 +1,9 @@
-Describe 'Get-SfAdReleaseInfo' {
+Describe 'Get-SyncFactorsReleaseInfo' {
     It 'builds prerelease metadata from the base version, run number, and commit sha' {
         $versionPath = Join-Path $TestDrive 'VERSION'
         '0.1.0' | Set-Content -Path $versionPath
 
-        $info = & "$PSScriptRoot/../scripts/Get-SfAdReleaseInfo.ps1" `
+        $info = & "$PSScriptRoot/../scripts/Get-SyncFactorsReleaseInfo.ps1" `
             -Channel Prerelease `
             -VersionPath $versionPath `
             -RunNumber 42 `
@@ -20,7 +20,7 @@ Describe 'Get-SfAdReleaseInfo' {
         $versionPath = Join-Path $TestDrive 'VERSION'
         '0.2.0' | Set-Content -Path $versionPath
 
-        $info = & "$PSScriptRoot/../scripts/Get-SfAdReleaseInfo.ps1" `
+        $info = & "$PSScriptRoot/../scripts/Get-SyncFactorsReleaseInfo.ps1" `
             -Channel Stable `
             -VersionPath $versionPath `
             -Version '0.2.0' `
@@ -36,7 +36,7 @@ Describe 'Get-SfAdReleaseInfo' {
         '0.2.0' | Set-Content -Path $versionPath
 
         {
-            & "$PSScriptRoot/../scripts/Get-SfAdReleaseInfo.ps1" `
+            & "$PSScriptRoot/../scripts/Get-SyncFactorsReleaseInfo.ps1" `
                 -Channel Stable `
                 -VersionPath $versionPath `
                 -Version '0.3.0' `
@@ -45,10 +45,10 @@ Describe 'Get-SfAdReleaseInfo' {
     }
 }
 
-Describe 'New-SfAdReleaseBundle' {
+Describe 'New-SyncFactorsReleaseBundle' {
     It 'packages only the deployment bundle contents' {
         $repoRoot = Join-Path $TestDrive 'repo'
-        $outputPath = Join-Path $TestDrive 'sf-ad-sync-0.1.0.zip'
+        $outputPath = Join-Path $TestDrive 'syncfactors-0.1.0.zip'
 
         foreach ($path in @('src', 'scripts', 'config', '.github', 'tests')) {
             New-Item -Path (Join-Path $repoRoot $path) -ItemType Directory -Force | Out-Null
@@ -64,7 +64,7 @@ Describe 'New-SfAdReleaseBundle' {
         'security' | Set-Content -Path (Join-Path $repoRoot 'SECURITY.md')
         'contributing' | Set-Content -Path (Join-Path $repoRoot 'CONTRIBUTING.md')
 
-        $bundle = & "$PSScriptRoot/../scripts/New-SfAdReleaseBundle.ps1" -RepoRoot $repoRoot -OutputPath $outputPath
+        $bundle = & "$PSScriptRoot/../scripts/New-SyncFactorsReleaseBundle.ps1" -RepoRoot $repoRoot -OutputPath $outputPath
 
         $bundle.bundlePath | Should -Be ([System.IO.Path]::GetFullPath($outputPath))
         Test-Path -Path $outputPath -PathType Leaf | Should -BeTrue

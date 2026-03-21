@@ -1,11 +1,11 @@
 Describe 'Monitoring module' {
     BeforeAll {
-        Import-Module "$PSScriptRoot/../src/Modules/SfAdSync/Monitoring.psm1" -Force
+        Import-Module "$PSScriptRoot/../src/Modules/SyncFactors/Monitoring.psm1" -Force
     }
 
     It 'includes config and mapping paths in run summaries' {
         $reportDirectory = Join-Path $TestDrive 'reports'
-        $reportPath = Join-Path $reportDirectory 'sf-ad-sync-Delta-20260312-220000.json'
+        $reportPath = Join-Path $reportDirectory 'syncfactors-Delta-20260312-220000.json'
         New-Item -Path $reportDirectory -ItemType Directory -Force | Out-Null
 
         @{
@@ -31,7 +31,7 @@ Describe 'Monitoring module' {
             unchanged = @()
         } | ConvertTo-Json -Depth 10 | Set-Content -Path $reportPath
 
-        $result = @(Get-SfAdRecentRunSummaries -Directory $reportDirectory -Limit 5)
+        $result = @(Get-SyncFactorsRecentRunSummaries -Directory $reportDirectory -Limit 5)
 
         $result[0].configPath | Should -Be 'config.json'
         $result[0].mappingConfigPath | Should -Be 'mapping.json'
@@ -49,13 +49,13 @@ Describe 'Monitoring module' {
             )
         }
 
-        $resolved = Resolve-SfAdMonitorMappingConfigPath -Status $status
+        $resolved = Resolve-SyncFactorsMonitorMappingConfigPath -Status $status
 
         $resolved | Should -Be (Resolve-Path -Path $mappingPath).Path
     }
 
     It 'includes all operation buckets in the dashboard browser' {
-        $bucketNames = @(Get-SfAdMonitorBucketDefinitions | ForEach-Object { $_.Name })
+        $bucketNames = @(Get-SyncFactorsMonitorBucketDefinitions | ForEach-Object { $_.Name })
 
         $bucketNames | Should -Contain 'creates'
         $bucketNames | Should -Contain 'updates'
@@ -67,7 +67,7 @@ Describe 'Monitoring module' {
     }
 
     It 'uses review-first bucket ordering for review artifacts' {
-        $bucketNames = @(Get-SfAdMonitorBucketDefinitions -Mode Review | ForEach-Object { $_.Name })
+        $bucketNames = @(Get-SyncFactorsMonitorBucketDefinitions -Mode Review | ForEach-Object { $_.Name })
 
         $bucketNames[0] | Should -Be 'updates'
         $bucketNames[1] | Should -Be 'unchanged'
@@ -86,17 +86,17 @@ Describe 'Monitoring module' {
                 [pscustomobject]@{ workerId = '1002'; samAccountName = 'asmith'; department = 'Finance' }
             )
         }
-        $uiState = New-SfAdMonitorUiState
+        $uiState = New-SyncFactorsMonitorUiState
         $uiState.filterText = 'finance'
 
-        $items = @(Get-SfAdMonitorFilteredBucketItems -BucketSelection $bucketSelection -UiState $uiState)
+        $items = @(Get-SyncFactorsMonitorFilteredBucketItems -BucketSelection $bucketSelection -UiState $uiState)
 
         $items.Count | Should -Be 1
         $items[0].workerId | Should -Be '1002'
     }
 
     It 'includes all run shortcuts in the default dashboard shortcut help' {
-        $uiState = New-SfAdMonitorUiState
+        $uiState = New-SyncFactorsMonitorUiState
 
         $uiState.autoRefreshEnabled | Should -BeFalse
         $uiState.statusMessage | Should -Match 't toggle auto-refresh'
@@ -110,7 +110,7 @@ Describe 'Monitoring module' {
     }
 
     It 'finds the selected operation journal entry for the selected bucket object' {
-        $reportPath = Join-Path $TestDrive 'sf-ad-sync-Delta-20260312-220000.json'
+        $reportPath = Join-Path $TestDrive 'syncfactors-Delta-20260312-220000.json'
         @{
             runId = 'run-123'
             status = 'Succeeded'
@@ -150,10 +150,10 @@ Describe 'Monitoring module' {
                 path = $reportPath
             }
         }
-        $uiState = New-SfAdMonitorUiState
+        $uiState = New-SyncFactorsMonitorUiState
         $uiState.selectedBucketIndex = 5
 
-        $operation = Get-SfAdMonitorSelectedBucketOperation -Status $status -UiState $uiState
+        $operation = Get-SyncFactorsMonitorSelectedBucketOperation -Status $status -UiState $uiState
 
         $operation.operationType | Should -Be 'UpdateAttributes'
         $operation.before.title | Should -Be 'Old Title'
@@ -181,7 +181,7 @@ Describe 'Monitoring module' {
             }
         }
 
-        $lines = @(Format-SfAdMonitorSelectedObjectLines -SelectedItem $selectedItem -SelectedOperation $selectedOperation)
+        $lines = @(Format-SyncFactorsMonitorSelectedObjectLines -SelectedItem $selectedItem -SelectedOperation $selectedOperation)
 
         ($lines -join "`n") | Should -Match 'Item: workerId=1001'
         ($lines -join "`n") | Should -Match 'Action: Update attributes for jdoe'
@@ -190,7 +190,7 @@ Describe 'Monitoring module' {
     }
 
     It 'formats create and delete style operations without generic blobs' {
-        $createLines = @(Format-SfAdMonitorSelectedObjectLines `
+        $createLines = @(Format-SyncFactorsMonitorSelectedObjectLines `
                 -SelectedItem ([pscustomobject]@{ workerId = '1001'; samAccountName = 'jdoe' }) `
                 -SelectedOperation ([pscustomobject]@{
                     operationType = 'CreateUser'
@@ -198,7 +198,7 @@ Describe 'Monitoring module' {
                     before = $null
                     after = [pscustomobject]@{ samAccountName = 'jdoe'; enabled = 'True' }
                 }))
-        $deleteLines = @(Format-SfAdMonitorSelectedObjectLines `
+        $deleteLines = @(Format-SyncFactorsMonitorSelectedObjectLines `
                 -SelectedItem ([pscustomobject]@{ workerId = '1002'; samAccountName = 'adoe' }) `
                 -SelectedOperation ([pscustomobject]@{
                     operationType = 'DeleteUser'
@@ -228,7 +228,7 @@ Describe 'Monitoring module' {
             )
         }
 
-        $lines = @(Format-SfAdMonitorSelectedObjectLines -SelectedItem $selectedItem -SelectedOperation $null)
+        $lines = @(Format-SyncFactorsMonitorSelectedObjectLines -SelectedItem $selectedItem -SelectedOperation $null)
 
         ($lines -join "`n") | Should -Match 'Operation: no matching reversible operation recorded'
         ($lines -join "`n") | Should -Match 'Map: jobInfo.department -> department \[none\]'
@@ -257,7 +257,7 @@ Describe 'Monitoring module' {
             }
         }
 
-        $rows = @(Get-SfAdMonitorReportExplorerDiffRows -Entry $entry)
+        $rows = @(Get-SyncFactorsMonitorReportExplorerDiffRows -Entry $entry)
 
         $rows.Attribute | Should -Contain 'title'
         $rows.Attribute | Should -Contain 'department'
@@ -268,7 +268,7 @@ Describe 'Monitoring module' {
     }
 
     It 'renders the report explorer for changed, created, and deleted entries' {
-        $reportPath = Join-Path $TestDrive 'sf-ad-sync-Review-20260312-220000.json'
+        $reportPath = Join-Path $TestDrive 'syncfactors-Review-20260312-220000.json'
         @{
             runId = 'review-123'
             status = 'Succeeded'
@@ -355,29 +355,29 @@ Describe 'Monitoring module' {
                 mode = 'Review'
             }
         }
-        $uiState = New-SfAdMonitorUiState
+        $uiState = New-SyncFactorsMonitorUiState
         $uiState.viewMode = 'ReportExplorer'
         $uiState.statusMessage = 'Explorer ready'
 
-        $selection = Get-SfAdMonitorReportExplorerSelection -Status $status -UiState $uiState
+        $selection = Get-SyncFactorsMonitorReportExplorerSelection -Status $status -UiState $uiState
         $selection.Categories.Count | Should -Be 3
         $selection.Entries.Count | Should -Be 3
         $selection.SelectedCategory.Name | Should -Be 'Changed'
         $selection.SelectedEntry.SamAccountName | Should -Be 'jdoe'
 
-        $createdState = New-SfAdMonitorUiState
+        $createdState = New-SyncFactorsMonitorUiState
         $createdState.viewMode = 'ReportExplorer'
         $createdState.reportCategoryIndex = 1
         $createdState.statusMessage = 'Explorer ready'
 
-        $deletedState = New-SfAdMonitorUiState
+        $deletedState = New-SyncFactorsMonitorUiState
         $deletedState.viewMode = 'ReportExplorer'
         $deletedState.reportCategoryIndex = 2
         $deletedState.statusMessage = 'Explorer ready'
 
-        $changedLines = @(Format-SfAdMonitorDashboardView -Status $status -UiState $uiState)
-        $createdLines = @(Format-SfAdMonitorDashboardView -Status $status -UiState $createdState)
-        $deletedLines = @(Format-SfAdMonitorDashboardView -Status $status -UiState $deletedState)
+        $changedLines = @(Format-SyncFactorsMonitorDashboardView -Status $status -UiState $uiState)
+        $createdLines = @(Format-SyncFactorsMonitorDashboardView -Status $status -UiState $createdState)
+        $deletedLines = @(Format-SyncFactorsMonitorDashboardView -Status $status -UiState $deletedState)
 
         ($changedLines -join "`n") | Should -Match 'Report Explorer'
         ($changedLines -join "`n") | Should -Match 'Summary: \[UPDATE\] Changed=1    \[CREATE\] Created=1    \[DELETE\] Deleted=1'
@@ -403,7 +403,7 @@ Describe 'Monitoring module' {
                 }
             )
         }
-        $uiState = New-SfAdMonitorUiState
+        $uiState = New-SyncFactorsMonitorUiState
         $uiState.selectedBucketIndex = 0
         $bucketSelection = [pscustomobject]@{
             Bucket = [pscustomobject]@{
@@ -415,16 +415,16 @@ Describe 'Monitoring module' {
             )
         }
 
-        Mock Get-SfAdMonitorSelectedBucket { $bucketSelection } -ModuleName Monitoring
+        Mock Get-SyncFactorsMonitorSelectedBucket { $bucketSelection } -ModuleName Monitoring
 
-        $workerState = Get-SfAdMonitorSelectedWorkerState -Status $status -UiState $uiState
+        $workerState = Get-SyncFactorsMonitorSelectedWorkerState -Status $status -UiState $uiState
 
         $workerState.workerId | Should -Be '1002'
         $workerState.suppressed | Should -BeTrue
     }
 
     It 'formats dashboard view with selected run and selected bucket details' {
-        $reportPath = Join-Path $TestDrive 'sf-ad-sync-Delta-20260312-220000.json'
+        $reportPath = Join-Path $TestDrive 'syncfactors-Delta-20260312-220000.json'
         @{
             runId = 'run-123'
             configPath = 'config.json'
@@ -557,10 +557,10 @@ Describe 'Monitoring module' {
                 }
             )
         }
-        $uiState = New-SfAdMonitorUiState
+        $uiState = New-SyncFactorsMonitorUiState
         $uiState.filterText = 'manager'
 
-        $lines = @(Format-SfAdMonitorDashboardView -Status $status -UiState $uiState)
+        $lines = @(Format-SyncFactorsMonitorDashboardView -Status $status -UiState $uiState)
 
         ($lines -join "`n") | Should -Match 'SuccessFactors AD Sync Dashboard'
         ($lines -join "`n") | Should -Match 'AutoRefresh: Paused'
@@ -578,7 +578,7 @@ Describe 'Monitoring module' {
     }
 
     It 'formats review artifacts with review summary and mapped field details' {
-        $reportPath = Join-Path $TestDrive 'sf-ad-sync-Review-20260312-220000.json'
+        $reportPath = Join-Path $TestDrive 'syncfactors-Review-20260312-220000.json'
         @{
             runId = 'review-123'
             artifactType = 'FirstSyncReview'
@@ -735,9 +735,9 @@ Describe 'Monitoring module' {
                 }
             )
         }
-        $uiState = New-SfAdMonitorUiState
+        $uiState = New-SyncFactorsMonitorUiState
 
-        $lines = @(Format-SfAdMonitorDashboardView -Status $status -UiState $uiState)
+        $lines = @(Format-SyncFactorsMonitorDashboardView -Status $status -UiState $uiState)
 
         ($lines -join "`n") | Should -Match 'First Sync Review Summary'
         ($lines -join "`n") | Should -Match 'Review: existing=2 changed=1 aligned=1 creates=1 offboarding=0'
@@ -746,7 +746,7 @@ Describe 'Monitoring module' {
     }
 
     It 'formats worker preview artifacts as review-style summaries' {
-        $reportPath = Join-Path $TestDrive 'sf-ad-sync-Review-20260312-220000.json'
+        $reportPath = Join-Path $TestDrive 'syncfactors-Review-20260312-220000.json'
         @{
             runId = 'preview-123'
             artifactType = 'WorkerPreview'
@@ -906,9 +906,9 @@ Describe 'Monitoring module' {
                 }
             )
         }
-        $uiState = New-SfAdMonitorUiState
+        $uiState = New-SyncFactorsMonitorUiState
 
-        $lines = @(Format-SfAdMonitorDashboardView -Status $status -UiState $uiState)
+        $lines = @(Format-SyncFactorsMonitorDashboardView -Status $status -UiState $uiState)
 
         ($lines -join "`n") | Should -Match 'Worker Preview Summary'
         ($lines -join "`n") | Should -Match 't auto-refresh'
@@ -960,13 +960,13 @@ Describe 'Monitoring module' {
             recentRuns = @()
             latestRun = [pscustomobject]@{}
         }
-        $uiState = New-SfAdMonitorUiState
+        $uiState = New-SyncFactorsMonitorUiState
         $uiState.viewMode = 'WorkerPreviewDiff'
         $uiState.workerPreviewResult = $previewResult
-        $uiState.workerPreviewDiffRows = @(Get-SfAdMonitorWorkerPreviewDiffRows -PreviewResult $previewResult)
+        $uiState.workerPreviewDiffRows = @(Get-SyncFactorsMonitorWorkerPreviewDiffRows -PreviewResult $previewResult)
         $uiState.statusMessage = 'Ready to apply.'
 
-        $lines = @(Format-SfAdMonitorDashboardView -Status $status -UiState $uiState)
+        $lines = @(Format-SyncFactorsMonitorDashboardView -Status $status -UiState $uiState)
         $joined = $lines -join "`n"
 
         $joined | Should -Match 'Single-Worker Diff Review'
@@ -997,12 +997,12 @@ Describe 'Monitoring module' {
             recentRuns = @()
             latestRun = [pscustomobject]@{}
         }
-        $uiState = New-SfAdMonitorUiState
+        $uiState = New-SyncFactorsMonitorUiState
         $uiState.viewMode = 'WorkerPreviewDiff'
         $uiState.workerPreviewResult = $previewResult
         $uiState.statusMessage = 'No changes found.'
 
-        $lines = @(Format-SfAdMonitorDashboardView -Status $status -UiState $uiState)
+        $lines = @(Format-SyncFactorsMonitorDashboardView -Status $status -UiState $uiState)
 
         ($lines -join "`n") | Should -Match 'No attribute changes were detected for this worker preview'
     }
@@ -1043,7 +1043,7 @@ Describe 'Monitoring module' {
             )
         }
 
-        $lines = @(Get-SfAdMonitorWorkerSyncSummaryLines -SyncResult $syncResult -Report $report)
+        $lines = @(Get-SyncFactorsMonitorWorkerSyncSummaryLines -SyncResult $syncResult -Report $report)
         $joined = $lines -join "`n"
 
         $joined | Should -Match 'Single-worker sync completed'
@@ -1056,7 +1056,7 @@ Describe 'Monitoring module' {
     }
 
     It 'renders a parsed report explorer with created changed and deleted objects' {
-        $reportPath = Join-Path $TestDrive 'sf-ad-sync-Delta-20260312-220000.json'
+        $reportPath = Join-Path $TestDrive 'syncfactors-Delta-20260312-220000.json'
         @{
             runId = 'run-456'
             artifactType = 'SyncReport'
@@ -1179,10 +1179,10 @@ Describe 'Monitoring module' {
                 }
             )
         }
-        $uiState = New-SfAdMonitorUiState
+        $uiState = New-SyncFactorsMonitorUiState
         $uiState.viewMode = 'ReportExplorer'
 
-        $lines = @(Format-SfAdMonitorDashboardView -Status $status -UiState $uiState)
+        $lines = @(Format-SyncFactorsMonitorDashboardView -Status $status -UiState $uiState)
 
         ($lines -join "`n") | Should -Match 'Report Explorer'
         ($lines -join "`n") | Should -Match '\[UPDATE\] Changed=1'
@@ -1193,20 +1193,20 @@ Describe 'Monitoring module' {
         ($lines -join "`n") | Should -Match '\[UPDATE\] department \[department\]: Finance -> Sales'
 
         $uiState.reportCategoryIndex = 1
-        $createLines = @(Format-SfAdMonitorDashboardView -Status $status -UiState $uiState)
+        $createLines = @(Format-SyncFactorsMonitorDashboardView -Status $status -UiState $uiState)
         ($createLines -join "`n") | Should -Match 'asmith'
         ($createLines -join "`n") | Should -Match 'Action: Create account asmith'
         ($createLines -join "`n") | Should -Match '\[CREATE\] enabled: \(unset\) -> True'
 
         $uiState.reportCategoryIndex = 2
-        $deleteLines = @(Format-SfAdMonitorDashboardView -Status $status -UiState $uiState)
+        $deleteLines = @(Format-SyncFactorsMonitorDashboardView -Status $status -UiState $uiState)
         ($deleteLines -join "`n") | Should -Match 'old.user'
         ($deleteLines -join "`n") | Should -Match 'Action: Delete account old.user'
         ($deleteLines -join "`n") | Should -Match '\[DELETE\] enabled: False -> \(unset\)'
     }
 
     It 'formats disable and move operations as human readable actions' {
-        $disableLines = @(Format-SfAdMonitorSelectedObjectLines `
+        $disableLines = @(Format-SyncFactorsMonitorSelectedObjectLines `
                 -SelectedItem ([pscustomobject]@{ workerId = '44522'; samAccountName = '44522' }) `
                 -SelectedOperation ([pscustomobject]@{
                     operationType = 'DisableUser'
@@ -1214,7 +1214,7 @@ Describe 'Monitoring module' {
                     before = [pscustomobject]@{ enabled = 'True' }
                     after = [pscustomobject]@{ enabled = 'False' }
                 }))
-        $moveLines = @(Format-SfAdMonitorSelectedObjectLines `
+        $moveLines = @(Format-SyncFactorsMonitorSelectedObjectLines `
                 -SelectedItem ([pscustomobject]@{ workerId = '44522'; samAccountName = '44522'; targetOu = 'OU=GRAVEYARD,DC=example,DC=com' }) `
                 -SelectedOperation ([pscustomobject]@{
                     operationType = 'MoveUser'
@@ -1318,11 +1318,11 @@ Describe 'Monitoring module' {
                 }
             )
         }
-        $uiState = New-SfAdMonitorUiState
+        $uiState = New-SyncFactorsMonitorUiState
         $uiState.pendingAction = 'ApplyWorkerSync'
         $uiState.pendingWorkerId = '1001'
 
-        $lines = @(Format-SfAdMonitorDashboardView -Status $status -UiState $uiState)
+        $lines = @(Format-SyncFactorsMonitorDashboardView -Status $status -UiState $uiState)
 
         ($lines -join "`n") | Should -Match 'Worker Review Actions'
         ($lines -join "`n") | Should -Match 'Press a to write the reviewed changes to AD'
@@ -1432,16 +1432,16 @@ Describe 'Monitoring module' {
                 }
             )
         }
-        $uiState = New-SfAdMonitorUiState
+        $uiState = New-SyncFactorsMonitorUiState
         $uiState.pendingAction = 'WorkerReportPicker'
         $uiState.pendingWorkerId = '1001'
 
-        $relatedRuns = @(Get-SfAdMonitorWorkerRelatedRuns -Status $status -WorkerId '1001')
+        $relatedRuns = @(Get-SyncFactorsMonitorWorkerRelatedRuns -Status $status -WorkerId '1001')
         $relatedRuns.Count | Should -Be 2
         $relatedRuns[0].Run.artifactType | Should -Be 'WorkerPreview'
         $relatedRuns[1].Run.artifactType | Should -Be 'WorkerSync'
 
-        $lines = @(Format-SfAdMonitorDashboardView -Status $status -UiState $uiState)
+        $lines = @(Format-SyncFactorsMonitorDashboardView -Status $status -UiState $uiState)
         ($lines -join "`n") | Should -Match 'Worker Report Picker'
         ($lines -join "`n") | Should -Match 'WorkerPreview Succeeded'
         ($lines -join "`n") | Should -Match 'WorkerSync Succeeded'
@@ -1449,7 +1449,7 @@ Describe 'Monitoring module' {
     }
 
     It 'uses the selected run rather than latest run in the summary panel' {
-        $selectedReportPath = Join-Path $TestDrive 'sf-ad-sync-Review-20260312-220000.json'
+        $selectedReportPath = Join-Path $TestDrive 'syncfactors-Review-20260312-220000.json'
         @{
             runId = 'review-older'
             artifactType = 'FirstSyncReview'
@@ -1607,10 +1607,10 @@ Describe 'Monitoring module' {
                 }
             )
         }
-        $uiState = New-SfAdMonitorUiState
+        $uiState = New-SyncFactorsMonitorUiState
         $uiState.selectedRunIndex = 1
 
-        $lines = @(Format-SfAdMonitorDashboardView -Status $status -UiState $uiState)
+        $lines = @(Format-SyncFactorsMonitorDashboardView -Status $status -UiState $uiState)
 
         ($lines -join "`n") | Should -Match 'First Sync Review Summary'
         ($lines -join "`n") | Should -Match 'Status: Succeeded    Mode: Review'
@@ -1619,7 +1619,7 @@ Describe 'Monitoring module' {
     }
 
     It 'limits recent runs and detail rows in the compact dashboard' {
-        $reportPath = Join-Path $TestDrive 'sf-ad-sync-Delta-20260312-220000.json'
+        $reportPath = Join-Path $TestDrive 'syncfactors-Delta-20260312-220000.json'
         @{
             runId = 'run-limit'
             configPath = 'config.json'
@@ -1720,10 +1720,10 @@ Describe 'Monitoring module' {
             }
             recentRuns = $recentRuns
         }
-        $uiState = New-SfAdMonitorUiState
+        $uiState = New-SyncFactorsMonitorUiState
         $uiState.selectedBucketIndex = 4
 
-        $lines = @(Format-SfAdMonitorDashboardView -Status $status -UiState $uiState)
+        $lines = @(Format-SyncFactorsMonitorDashboardView -Status $status -UiState $uiState)
         $joined = $lines -join "`n"
         $recentRunLines = @($lines | Where-Object { $_ -match '^\s+[>]?\s*Succeeded\s+Delta' })
         $detailLines = @($lines | Where-Object { $_ -match '^[>-] .*workerId=' })

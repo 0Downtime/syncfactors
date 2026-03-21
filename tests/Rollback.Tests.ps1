@@ -1,6 +1,6 @@
 Describe 'Rollback helpers' {
     BeforeAll {
-        Import-Module "$PSScriptRoot/../src/Modules/SfAdSync/Rollback.psm1" -Force -DisableNameChecking
+        Import-Module "$PSScriptRoot/../src/Modules/SyncFactors/Rollback.psm1" -Force -DisableNameChecking
     }
 
     It 'converts PSCustomObject values into hashtables' {
@@ -9,7 +9,7 @@ Describe 'Rollback helpers' {
             department = 'IT'
         }
 
-        $result = Convert-SfAdRollbackValueToHashtable -Value $value
+        $result = Convert-SyncFactorsRollbackValueToHashtable -Value $value
 
         $result['title'] | Should -Be 'Director'
         $result['department'] | Should -Be 'IT'

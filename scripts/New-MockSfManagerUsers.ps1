@@ -12,7 +12,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $projectRoot = Split-Path -Path $PSScriptRoot -Parent
-$moduleRoot = Join-Path -Path $projectRoot -ChildPath 'src/Modules/SfAdSync'
+$moduleRoot = Join-Path -Path $projectRoot -ChildPath 'src/Modules/SyncFactors'
 
 Import-Module (Join-Path $moduleRoot 'SyntheticHarness.psm1') -Force
 Import-Module (Join-Path $moduleRoot 'Config.psm1') -Force -DisableNameChecking
@@ -73,13 +73,13 @@ function Get-ManagerSeedDirectoryContextParameters {
 }
 
 $resolvedConfigPath = (Resolve-Path -Path (Get-ResolvedPathOrJoin -Path $ConfigPath -BasePath $projectRoot)).Path
-$config = Get-SfAdSyncConfig -Path $resolvedConfigPath
+$config = Get-SyncFactorsConfig -Path $resolvedConfigPath
 
 Ensure-ActiveDirectoryModule
 $directoryContext = Get-ManagerSeedDirectoryContextParameters -Config $config
 $resolvedTargetOu = if ([string]::IsNullOrWhiteSpace($TargetOu)) { $config.ad.defaultActiveOu } else { $TargetOu }
 $securePassword = ConvertTo-ManagerSeedSecureString -Value $config.ad.defaultPassword
-$managers = @(New-SfAdSyntheticManagerDirectory -ManagerCount $ManagerCount)
+$managers = @(New-SyncFactorsSyntheticManagerDirectory -ManagerCount $ManagerCount)
 
 $summary = [ordered]@{
     configPath = $resolvedConfigPath
@@ -92,7 +92,7 @@ $summary = [ordered]@{
 }
 
 foreach ($manager in $managers) {
-    $existingByEmployeeId = @(Get-SfAdTargetUser -Config $config -WorkerId $manager.employeeId)
+    $existingByEmployeeId = @(Get-SyncFactorsTargetUser -Config $config -WorkerId $manager.employeeId)
     if ($existingByEmployeeId.Count -gt 0) {
         $summary.skippedExisting += [pscustomobject]@{
             employeeId = $manager.employeeId
@@ -102,7 +102,7 @@ foreach ($manager in $managers) {
         continue
     }
 
-    $existingBySamAccountName = @(Get-SfAdUserBySamAccountName -Config $config -SamAccountName $manager.samAccountName)
+    $existingBySamAccountName = @(Get-SyncFactorsUserBySamAccountName -Config $config -SamAccountName $manager.samAccountName)
     if ($existingBySamAccountName.Count -gt 0) {
         $summary.conflicts += [pscustomobject]@{
             employeeId = $manager.employeeId

@@ -1,6 +1,6 @@
 Describe 'ActiveDirectorySync module' {
     BeforeAll {
-        Import-Module "$PSScriptRoot/../src/Modules/SfAdSync/ActiveDirectorySync.psm1" -Force -DisableNameChecking
+        Import-Module "$PSScriptRoot/../src/Modules/SyncFactors/ActiveDirectorySync.psm1" -Force -DisableNameChecking
         function global:Add-ADGroupMember {}
         function global:Enable-ADAccount {}
         function global:Disable-ADAccount {}
@@ -39,7 +39,7 @@ Describe 'ActiveDirectorySync module' {
 
     It 'builds AD directory context parameters from explicit bind settings' {
         InModuleScope ActiveDirectorySync {
-            $context = Get-SfAdDirectoryContextParameters -Config $global:AdTestConfig
+            $context = Get-SyncFactorsDirectoryContextParameters -Config $global:AdTestConfig
 
             $context.Server | Should -Be 'dc01.example.com'
             $context.Credential.UserName | Should -Be 'EXAMPLE\svc_sync'
@@ -50,8 +50,8 @@ Describe 'ActiveDirectorySync module' {
         $itWorker = [pscustomobject]@{ department = 'IT' }
         $otherWorker = [pscustomobject]@{ department = 'HR' }
 
-        (Resolve-SfAdTargetOu -Config $global:AdTestConfig -Worker $itWorker) | Should -Be 'OU=IT,DC=example,DC=com'
-        (Resolve-SfAdTargetOu -Config $global:AdTestConfig -Worker $otherWorker) | Should -Be 'OU=Employees,DC=example,DC=com'
+        (Resolve-SyncFactorsTargetOu -Config $global:AdTestConfig -Worker $itWorker) | Should -Be 'OU=IT,DC=example,DC=com'
+        (Resolve-SyncFactorsTargetOu -Config $global:AdTestConfig -Worker $otherWorker) | Should -Be 'OU=Employees,DC=example,DC=com'
     }
 
     It 'returns a detailed dry-run payload for new user creation' {
@@ -61,7 +61,7 @@ Describe 'ActiveDirectorySync module' {
             department = 'IT'
         }
 
-        $result = New-SfAdUser -Config $global:AdTestConfig -Worker $worker -WorkerId '1001' -Attributes @{
+        $result = New-SyncFactorsUser -Config $global:AdTestConfig -Worker $worker -WorkerId '1001' -Attributes @{
             UserPrincipalName = 'jamie.doe@example.com'
             title = 'Engineer'
         } -DryRun
@@ -79,7 +79,7 @@ Describe 'ActiveDirectorySync module' {
             department = 'IT'
         }
 
-        $result = New-SfAdUser -Config $global:AdTestConfig -Worker $worker -WorkerId '1001' -Attributes @{
+        $result = New-SyncFactorsUser -Config $global:AdTestConfig -Worker $worker -WorkerId '1001' -Attributes @{
             UserPrincipalName = 'jamie.doe@example.com'
             mail = 'jamie.doe@example.com'
             physicalDeliveryOfficeName = 'New York'
@@ -97,7 +97,7 @@ Describe 'ActiveDirectorySync module' {
 
     It 'returns dry-run metadata for attribute updates and restores' {
         $user = [pscustomobject]@{ SamAccountName = 'jdoe' }
-        $update = Set-SfAdUserAttributes -Config $global:AdTestConfig -User $user -Changes @{ title = 'Lead' } -DryRun
+        $update = Set-SyncFactorsUserAttributes -Config $global:AdTestConfig -User $user -Changes @{ title = 'Lead' } -DryRun
         $snapshot = [pscustomobject]@{
             parentOu = 'OU=Employees,DC=example,DC=com'
             enabled = $true
@@ -112,7 +112,7 @@ Describe 'ActiveDirectorySync module' {
             groupMemberships = @('CN=LicenseA,OU=Groups,DC=example,DC=com')
         }
 
-        $restore = Restore-SfAdUserFromSnapshot -Config $global:AdTestConfig -Snapshot $snapshot -DryRun
+        $restore = Restore-SyncFactorsUserFromSnapshot -Config $global:AdTestConfig -Snapshot $snapshot -DryRun
 
         $update.Action | Should -Be 'Update'
         $update.Changes.title | Should -Be 'Lead'
@@ -124,10 +124,10 @@ Describe 'ActiveDirectorySync module' {
     It 'adds only missing configured groups when not in dry-run mode' {
         InModuleScope ActiveDirectorySync {
             $user = [pscustomobject]@{ SamAccountName = 'jdoe' }
-            Mock Get-SfAdUserGroupMembershipDns { @('CN=LicenseA,OU=Groups,DC=example,DC=com') }
+            Mock Get-SyncFactorsUserGroupMembershipDns { @('CN=LicenseA,OU=Groups,DC=example,DC=com') }
             Mock Add-ADGroupMember {} -ModuleName ActiveDirectorySync
 
-            $groups = @(Add-SfAdUserToConfiguredGroups -Config $global:AdTestConfig -User $user)
+            $groups = @(Add-SyncFactorsUserToConfiguredGroups -Config $global:AdTestConfig -User $user)
 
             $groups | Should -Be @('CN=LicenseB,OU=Groups,DC=example,DC=com')
         }
@@ -153,9 +153,9 @@ Describe 'ActiveDirectorySync module' {
                 whenCreated = [datetime]'2026-03-01T10:15:00'
             }
 
-            Mock Get-SfAdUserGroupMembershipDns { @('CN=LicenseA,OU=Groups,DC=example,DC=com') }
+            Mock Get-SyncFactorsUserGroupMembershipDns { @('CN=LicenseA,OU=Groups,DC=example,DC=com') }
 
-            $snapshot = Get-SfAdUserSnapshot -Config $global:AdTestConfig -User $user
+            $snapshot = Get-SyncFactorsUserSnapshot -Config $global:AdTestConfig -User $user
 
             $snapshot.objectGuid | Should -Be '11111111-1111-1111-1111-111111111111'
             $snapshot.parentOu | Should -Be 'OU=Employees,DC=example,DC=com'
@@ -195,10 +195,10 @@ Describe 'ActiveDirectorySync module' {
                 $script:RemovedIdentity = $Identity
             } -ModuleName ActiveDirectorySync
 
-            Enable-SfAdUser -Config $global:AdTestConfig -User $user
-            Disable-SfAdUser -Config $global:AdTestConfig -User $user
-            Move-SfAdUser -Config $global:AdTestConfig -User $user -TargetOu 'OU=Graveyard,DC=example,DC=com'
-            Remove-SfAdUser -Config $global:AdTestConfig -User $user
+            Enable-SyncFactorsUser -Config $global:AdTestConfig -User $user
+            Disable-SyncFactorsUser -Config $global:AdTestConfig -User $user
+            Move-SyncFactorsUser -Config $global:AdTestConfig -User $user -TargetOu 'OU=Graveyard,DC=example,DC=com'
+            Remove-SyncFactorsUser -Config $global:AdTestConfig -User $user
 
             Assert-MockCalled Enable-ADAccount -Times 1 -Exactly -ModuleName ActiveDirectorySync
             Assert-MockCalled Disable-ADAccount -Times 1 -Exactly -ModuleName ActiveDirectorySync
@@ -214,7 +214,7 @@ Describe 'ActiveDirectorySync module' {
 
     It 'returns unique managed sync OUs from the config' {
         InModuleScope ActiveDirectorySync {
-            $ous = @(Get-SfAdManagedOus -Config $global:AdTestConfig)
+            $ous = @(Get-SyncFactorsManagedOus -Config $global:AdTestConfig)
 
             $ous | Should -Be @(
                 'OU=Employees,DC=example,DC=com',
@@ -236,7 +236,7 @@ Describe 'ActiveDirectorySync module' {
                 )
             } -ModuleName ActiveDirectorySync
 
-            $users = @(Get-SfAdUsersInOrganizationalUnits -Config $global:AdTestConfig -OrganizationalUnits @(
+            $users = @(Get-SyncFactorsUsersInOrganizationalUnits -Config $global:AdTestConfig -OrganizationalUnits @(
                     'OU=Employees,DC=example,DC=com',
                     'OU=IT,DC=example,DC=com'
                 ))
@@ -265,7 +265,7 @@ Describe 'ActiveDirectorySync module' {
                 )
             } -ModuleName ActiveDirectorySync
 
-            $result = @(Get-SfAdUsersInOrganizationalUnits -Config $global:AdTestConfig -OrganizationalUnits @(
+            $result = @(Get-SyncFactorsUsersInOrganizationalUnits -Config $global:AdTestConfig -OrganizationalUnits @(
                     'OU=Invalid,DC=example,DC=com',
                     'OU=Employees,DC=example,DC=com'
                 ) 3>&1)
@@ -330,7 +330,7 @@ Describe 'ActiveDirectorySync module' {
                 $script:AddedGroups += $Identity
             } -ModuleName ActiveDirectorySync
 
-            $result = Restore-SfAdUserFromSnapshot -Config $global:AdTestConfig -Snapshot $snapshot
+            $result = Restore-SyncFactorsUserFromSnapshot -Config $global:AdTestConfig -Snapshot $snapshot
 
             $result.SamAccountName | Should -Be 'jdoe'
             Assert-MockCalled New-ADUser -Times 1 -Exactly -ModuleName ActiveDirectorySync

@@ -43,7 +43,7 @@ if ($moduleVersion.Major -ge 5 -and (Get-Command New-PesterConfiguration -ErrorA
         $configuration.CodeCoverage.Enabled = $true
         $configuration.CodeCoverage.CoveragePercentTarget = 0
         $configuration.CodeCoverage.Path = @(
-            (Join-Path $repoRoot 'src/Modules/SfAdSync'),
+            (Join-Path $repoRoot 'src/Modules/SyncFactors'),
             (Join-Path $repoRoot 'src'),
             (Join-Path $repoRoot 'scripts')
         )
@@ -80,7 +80,7 @@ if ($moduleVersion.Major -ge 5 -and (Get-Command New-PesterConfiguration -ErrorA
 
     if ($Coverage -and $invokePester.Parameters.ContainsKey('CodeCoverage')) {
         $parameters['CodeCoverage'] = @(
-            Join-Path $repoRoot 'src/Modules/SfAdSync/*.psm1',
+            Join-Path $repoRoot 'src/Modules/SyncFactors/*.psm1',
             Join-Path $repoRoot 'src/*.ps1',
             Join-Path $repoRoot 'scripts/*.ps1'
         )

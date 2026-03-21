@@ -67,7 +67,7 @@ function Get-NestedValue {
     return $current
 }
 
-function Convert-SfAdMappedValue {
+function Convert-SyncFactorsMappedValue {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
@@ -87,7 +87,7 @@ function Convert-SfAdMappedValue {
     }
 }
 
-function Get-SfAdAttributeChanges {
+function Get-SyncFactorsAttributeChanges {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
@@ -98,14 +98,14 @@ function Get-SfAdAttributeChanges {
         [pscustomobject]$MappingConfig
     )
 
-    $evaluation = Get-SfAdMappingEvaluation -Worker $Worker -ExistingUser $ExistingUser -MappingConfig $MappingConfig
+    $evaluation = Get-SyncFactorsMappingEvaluation -Worker $Worker -ExistingUser $ExistingUser -MappingConfig $MappingConfig
     return [pscustomobject]@{
         Changes = $evaluation.Changes
         MissingRequired = $evaluation.MissingRequired
     }
 }
 
-function Get-SfAdMappingEvaluation {
+function Get-SyncFactorsMappingEvaluation {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
@@ -131,7 +131,7 @@ function Get-SfAdMappingEvaluation {
             $targetValue = $ExistingUser.$($mapping.target)
         }
 
-        $mappedValue = Convert-SfAdMappedValue -Value $sourceValue -Transform $mapping.transform
+        $mappedValue = Convert-SyncFactorsMappedValue -Value $sourceValue -Transform $mapping.transform
         $changed = "$mappedValue" -ne "$targetValue"
         $rows += [pscustomobject]@{
             sourceField = $mapping.source
@@ -161,4 +161,4 @@ function Get-SfAdMappingEvaluation {
     }
 }
 
-Export-ModuleMember -Function Get-PathSegments, Get-NestedValue, Convert-SfAdMappedValue, Get-SfAdAttributeChanges, Get-SfAdMappingEvaluation
+Export-ModuleMember -Function Get-PathSegments, Get-NestedValue, Convert-SyncFactorsMappedValue, Get-SyncFactorsAttributeChanges, Get-SyncFactorsMappingEvaluation

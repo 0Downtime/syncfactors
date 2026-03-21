@@ -12,12 +12,12 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$moduleRoot = Join-Path -Path (Split-Path -Path $PSScriptRoot -Parent) -ChildPath 'src/Modules/SfAdSync'
+$moduleRoot = Join-Path -Path (Split-Path -Path $PSScriptRoot -Parent) -ChildPath 'src/Modules/SyncFactors'
 Import-Module (Join-Path $moduleRoot 'Config.psm1') -Force
 Import-Module (Join-Path $moduleRoot 'State.psm1') -Force
 Import-Module (Join-Path $moduleRoot 'Monitoring.psm1') -Force
 
-$status = Get-SfAdMonitorStatus -ConfigPath $ConfigPath -HistoryLimit $HistoryLimit
+$status = Get-SyncFactorsMonitorStatus -ConfigPath $ConfigPath -HistoryLimit $HistoryLimit
 
 if ($AsJson) {
     $status | ConvertTo-Json -Depth 10

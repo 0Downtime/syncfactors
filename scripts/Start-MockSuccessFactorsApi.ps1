@@ -17,7 +17,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $projectRoot = Split-Path -Path $PSScriptRoot -Parent
-$moduleRoot = Join-Path -Path $projectRoot -ChildPath 'src/Modules/SfAdSync'
+$moduleRoot = Join-Path -Path $projectRoot -ChildPath 'src/Modules/SyncFactors'
 Import-Module (Join-Path $moduleRoot 'SyntheticHarness.psm1') -Force
 
 function Write-MockApiLog {
@@ -137,7 +137,7 @@ function Get-MockWorkersByQuery {
     return $results
 }
 
-$syntheticDirectory = New-SfAdSyntheticWorkers -UserCount $UserCount -InactiveCount $InactiveCount -DuplicateWorkerIdCount $DuplicateWorkerIdCount -ManagerCount $ManagerCount
+$syntheticDirectory = New-SyncFactorsSyntheticWorkers -UserCount $UserCount -InactiveCount $InactiveCount -DuplicateWorkerIdCount $DuplicateWorkerIdCount -ManagerCount $ManagerCount
 $workers = @($syntheticDirectory.workers)
 
 $listener = [System.Net.HttpListener]::new()

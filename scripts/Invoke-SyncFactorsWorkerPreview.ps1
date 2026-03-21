@@ -15,7 +15,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-function Get-SfAdWorkerPreviewEntries {
+function Get-SyncFactorsWorkerPreviewEntries {
     param(
         [Parameter(Mandatory)]
         [pscustomobject]$Report,
@@ -44,7 +44,7 @@ function Get-SfAdWorkerPreviewEntries {
     return @($entries)
 }
 
-function Get-SfAdWorkerPreviewChangedAttributes {
+function Get-SyncFactorsWorkerPreviewChangedAttributes {
     param(
         [Parameter(Mandatory)]
         [AllowEmptyCollection()]
@@ -64,7 +64,7 @@ function Get-SfAdWorkerPreviewChangedAttributes {
     return @()
 }
 
-function Get-SfAdWorkerPreviewValue {
+function Get-SyncFactorsWorkerPreviewValue {
     param(
         [Parameter(Mandatory)]
         [AllowEmptyCollection()]
@@ -85,7 +85,7 @@ function Get-SfAdWorkerPreviewValue {
     return $null
 }
 
-function ConvertTo-SfAdWorkerPreviewInlineText {
+function ConvertTo-SyncFactorsWorkerPreviewInlineText {
     param($Value)
 
     if ($null -eq $Value -or [string]::IsNullOrWhiteSpace("$Value")) {
@@ -93,18 +93,18 @@ function ConvertTo-SfAdWorkerPreviewInlineText {
     }
 
     if ($Value -is [System.Array]) {
-        return (@($Value) | ForEach-Object { ConvertTo-SfAdWorkerPreviewInlineText -Value $_ }) -join ', '
+        return (@($Value) | ForEach-Object { ConvertTo-SyncFactorsWorkerPreviewInlineText -Value $_ }) -join ', '
     }
 
     $properties = @($Value.PSObject.Properties)
     if ($properties.Count -gt 0 -and -not ($Value -is [string])) {
-        return (($properties | ForEach-Object { "$($_.Name)=$(ConvertTo-SfAdWorkerPreviewInlineText -Value $_.Value)" }) -join '; ')
+        return (($properties | ForEach-Object { "$($_.Name)=$(ConvertTo-SyncFactorsWorkerPreviewInlineText -Value $_.Value)" }) -join '; ')
     }
 
     return "$Value"
 }
 
-function Get-SfAdWorkerPreviewOperationLines {
+function Get-SyncFactorsWorkerPreviewOperationLines {
     param(
         [Parameter(Mandatory)]
         [object[]]$Operations
@@ -115,12 +115,12 @@ function Get-SfAdWorkerPreviewOperationLines {
         $details = [System.Collections.Generic.List[string]]::new()
         $beforeMap = @{}
         foreach ($property in @($operation.before.PSObject.Properties)) {
-            $beforeMap[$property.Name] = ConvertTo-SfAdWorkerPreviewInlineText -Value $property.Value
+            $beforeMap[$property.Name] = ConvertTo-SyncFactorsWorkerPreviewInlineText -Value $property.Value
         }
 
         $afterMap = @{}
         foreach ($property in @($operation.after.PSObject.Properties)) {
-            $afterMap[$property.Name] = ConvertTo-SfAdWorkerPreviewInlineText -Value $property.Value
+            $afterMap[$property.Name] = ConvertTo-SyncFactorsWorkerPreviewInlineText -Value $property.Value
         }
 
         foreach ($key in @($beforeMap.Keys + $afterMap.Keys | Sort-Object -Unique)) {
@@ -140,15 +140,15 @@ function Get-SfAdWorkerPreviewOperationLines {
 }
 
 $projectRoot = Split-Path -Path $PSScriptRoot -Parent
-$moduleRoot = Join-Path -Path $projectRoot -ChildPath 'src/Modules/SfAdSync'
+$moduleRoot = Join-Path -Path $projectRoot -ChildPath 'src/Modules/SyncFactors'
 Import-Module (Join-Path $moduleRoot 'Config.psm1') -Force -DisableNameChecking
 Import-Module (Join-Path $moduleRoot 'SuccessFactors.psm1') -Force -DisableNameChecking
 
 $resolvedConfigPath = (Resolve-Path -Path $ConfigPath).Path
 $resolvedMappingConfigPath = (Resolve-Path -Path $MappingConfigPath).Path
 $effectiveConfigPath = $resolvedConfigPath
-$resolvedConfig = Get-SfAdSyncConfig -Path $resolvedConfigPath
-$successFactorsAuth = Get-SfAdSuccessFactorsAuthSummary -Config $resolvedConfig
+$resolvedConfig = Get-SyncFactorsConfig -Path $resolvedConfigPath
+$successFactorsAuth = Get-SyncFactorsSuccessFactorsAuthSummary -Config $resolvedConfig
 $config = $resolvedConfig
 
 switch ($PreviewMode) {
@@ -174,7 +174,7 @@ if (-not [string]::IsNullOrWhiteSpace($OutputDirectory)) {
 }
 
 if ($PreviewMode -ne 'Configured' -or -not [string]::IsNullOrWhiteSpace($OutputDirectory)) {
-    $overlayPath = Join-Path -Path ([System.IO.Path]::GetTempPath()) -ChildPath ("sf-ad-sync-worker-preview-config-{0}.json" -f ([guid]::NewGuid().Guid))
+    $overlayPath = Join-Path -Path ([System.IO.Path]::GetTempPath()) -ChildPath ("syncfactors-worker-preview-config-{0}.json" -f ([guid]::NewGuid().Guid))
     try {
         $config | ConvertTo-Json -Depth 30 | Set-Content -Path $overlayPath
         $effectiveConfigPath = $overlayPath
@@ -244,11 +244,11 @@ if ($PreviewMode -eq 'Minimal') {
     return
 }
 
-$invokePath = Join-Path -Path $projectRoot -ChildPath 'src/Invoke-SfAdSync.ps1'
+$invokePath = Join-Path -Path $projectRoot -ChildPath 'src/Invoke-SyncFactors.ps1'
 $reportPath = & $invokePath -ConfigPath $effectiveConfigPath -MappingConfigPath $resolvedMappingConfigPath -Mode Review -WorkerId $WorkerId
 $report = Get-Content -Path $reportPath -Raw | ConvertFrom-Json -Depth 30
-$entries = @(Get-SfAdWorkerPreviewEntries -Report $report -WorkerId $WorkerId)
-$changedAttributes = @(Get-SfAdWorkerPreviewChangedAttributes -Entries $entries)
+$entries = @(Get-SyncFactorsWorkerPreviewEntries -Report $report -WorkerId $WorkerId)
+$changedAttributes = @(Get-SyncFactorsWorkerPreviewChangedAttributes -Entries $entries)
 $operations = @($report.operations | Where-Object { "$($_.workerId)" -eq $WorkerId })
 $bucketNames = @($entries | ForEach-Object { $_.bucket } | Select-Object -Unique)
 $matchedExistingUser = if (@($entries | Where-Object { $_.item.PSObject.Properties.Name -contains 'matchedExistingUser' -and [bool]$_.item.matchedExistingUser }).Count -gt 0) {
@@ -275,13 +275,13 @@ $result = [pscustomobject]@{
         workerId = $WorkerId
         buckets = $bucketNames
         matchedExistingUser = $matchedExistingUser
-        reviewCategory = Get-SfAdWorkerPreviewValue -Entries $entries -PropertyName 'reviewCategory'
-        reason = Get-SfAdWorkerPreviewValue -Entries $entries -PropertyName 'reason'
-        samAccountName = Get-SfAdWorkerPreviewValue -Entries $entries -PropertyName 'samAccountName'
-        targetOu = Get-SfAdWorkerPreviewValue -Entries $entries -PropertyName 'targetOu'
-        currentDistinguishedName = Get-SfAdWorkerPreviewValue -Entries $entries -PropertyName 'currentDistinguishedName'
-        currentEnabled = Get-SfAdWorkerPreviewValue -Entries $entries -PropertyName 'currentEnabled'
-        proposedEnable = Get-SfAdWorkerPreviewValue -Entries $entries -PropertyName 'proposedEnable'
+        reviewCategory = Get-SyncFactorsWorkerPreviewValue -Entries $entries -PropertyName 'reviewCategory'
+        reason = Get-SyncFactorsWorkerPreviewValue -Entries $entries -PropertyName 'reason'
+        samAccountName = Get-SyncFactorsWorkerPreviewValue -Entries $entries -PropertyName 'samAccountName'
+        targetOu = Get-SyncFactorsWorkerPreviewValue -Entries $entries -PropertyName 'targetOu'
+        currentDistinguishedName = Get-SyncFactorsWorkerPreviewValue -Entries $entries -PropertyName 'currentDistinguishedName'
+        currentEnabled = Get-SyncFactorsWorkerPreviewValue -Entries $entries -PropertyName 'currentEnabled'
+        proposedEnable = Get-SyncFactorsWorkerPreviewValue -Entries $entries -PropertyName 'proposedEnable'
     }
     changedAttributes = $changedAttributes
     operations = $operations
@@ -343,14 +343,14 @@ if ($changedAttributes.Count -eq 0) {
     foreach ($row in $changedAttributes) {
         Write-Host ("- {0}: {1} -> {2}" -f `
                 $row.targetAttribute, `
-                (ConvertTo-SfAdWorkerPreviewInlineText -Value $row.currentAdValue), `
-                (ConvertTo-SfAdWorkerPreviewInlineText -Value $row.proposedValue))
+                (ConvertTo-SyncFactorsWorkerPreviewInlineText -Value $row.currentAdValue), `
+                (ConvertTo-SyncFactorsWorkerPreviewInlineText -Value $row.proposedValue))
     }
 }
 
 Write-Host ''
 Write-Host 'Operations'
-$operationLines = @(Get-SfAdWorkerPreviewOperationLines -Operations $operations)
+$operationLines = @(Get-SyncFactorsWorkerPreviewOperationLines -Operations $operations)
 if ($operationLines.Count -eq 0) {
     Write-Host 'none'
 } else {

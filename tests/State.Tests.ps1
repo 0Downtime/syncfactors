@@ -1,6 +1,6 @@
 Describe 'State helpers' {
     BeforeAll {
-        Import-Module "$PSScriptRoot/../src/Modules/SfAdSync/State.psm1" -Force
+        Import-Module "$PSScriptRoot/../src/Modules/SyncFactors/State.psm1" -Force
         $script:SupportsDateKind = (Get-Command ConvertFrom-Json -CommandType Cmdlet).Parameters.ContainsKey('DateKind')
     }
 
@@ -10,14 +10,14 @@ Describe 'State helpers' {
             return
         }
 
-        $state = ConvertFrom-SfAdJsonDocument -Json '{"checkpoint":"2026-03-12T21:00:00","workers":{}}'
+        $state = ConvertFrom-SyncFactorsJsonDocument -Json '{"checkpoint":"2026-03-12T21:00:00","workers":{}}'
 
         $state.checkpoint | Should -BeOfType ([string])
         $state.checkpoint | Should -Be '2026-03-12T21:00:00'
     }
 
     It 'enumerates hashtable worker entries' {
-        $entries = Get-SfAdWorkerEntries -Workers @{
+        $entries = Get-SyncFactorsWorkerEntries -Workers @{
             '1001' = [pscustomobject]@{ suppressed = $true }
         }
 
@@ -34,8 +34,8 @@ Describe 'State helpers' {
             }
         }
 
-        Remove-SfAdWorkerState -State $state -WorkerId '1001'
-        (Get-SfAdWorkerState -State $state -WorkerId '1001') | Should -Be $null
+        Remove-SyncFactorsWorkerState -State $state -WorkerId '1001'
+        (Get-SyncFactorsWorkerState -State $state -WorkerId '1001') | Should -Be $null
     }
 
     It 'falls back when ConvertFrom-Json lacks DateKind' {
@@ -48,7 +48,7 @@ Describe 'State helpers' {
                 }
             } -ParameterFilter { $Name -eq 'ConvertFrom-Json' -and $CommandType -eq 'Cmdlet' }
 
-            $state = ConvertFrom-SfAdJsonDocument -Json '{"checkpoint":"2026-03-12T21:00:00","workers":{}}'
+            $state = ConvertFrom-SyncFactorsJsonDocument -Json '{"checkpoint":"2026-03-12T21:00:00","workers":{}}'
 
             (Get-Date $state.checkpoint).ToString('s') | Should -Be '2026-03-12T21:00:00'
             Assert-MockCalled Get-Command -Times 1 -Exactly

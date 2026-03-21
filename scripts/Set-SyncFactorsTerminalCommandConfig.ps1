@@ -4,14 +4,14 @@ param(
     [string]$MappingConfigPath,
     [string]$InstallDirectory,
     [ValidatePattern('^[A-Za-z0-9][A-Za-z0-9._-]*$')]
-    [string]$CommandName = 'synctui',
+    [string]$CommandName = 'syncfactors',
     [switch]$ShowCurrent
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-function Get-SfAdDefaultInstallDirectory {
+function Get-SyncFactorsDefaultInstallDirectory {
     if ($IsWindows) {
         $windowsAppsDirectory = Join-Path -Path (Join-Path -Path (Join-Path -Path $HOME -ChildPath 'AppData') -ChildPath 'Local') -ChildPath 'Microsoft/WindowsApps'
         if (Test-Path -Path $windowsAppsDirectory -PathType Container) {
@@ -22,7 +22,7 @@ function Get-SfAdDefaultInstallDirectory {
     return Join-Path -Path $HOME -ChildPath '.local/bin'
 }
 
-function Get-SfAdInstallMetadataPath {
+function Get-SyncFactorsInstallMetadataPath {
     param(
         [Parameter(Mandatory)]
         [string]$ResolvedInstallDirectory,
@@ -34,12 +34,12 @@ function Get-SfAdInstallMetadataPath {
 }
 
 $resolvedInstallDirectory = if ([string]::IsNullOrWhiteSpace($InstallDirectory)) {
-    [System.IO.Path]::GetFullPath((Get-SfAdDefaultInstallDirectory))
+    [System.IO.Path]::GetFullPath((Get-SyncFactorsDefaultInstallDirectory))
 } else {
     [System.IO.Path]::GetFullPath($InstallDirectory)
 }
 
-$metadataPath = Get-SfAdInstallMetadataPath -ResolvedInstallDirectory $resolvedInstallDirectory -CommandName $CommandName
+$metadataPath = Get-SyncFactorsInstallMetadataPath -ResolvedInstallDirectory $resolvedInstallDirectory -CommandName $CommandName
 if (-not (Test-Path -Path $metadataPath -PathType Leaf)) {
     throw "Install metadata was not found at '$metadataPath'. Install '$CommandName' first."
 }
@@ -49,7 +49,7 @@ if ([string]::IsNullOrWhiteSpace("$($metadata.projectRoot)")) {
     throw "Install metadata at '$metadataPath' is missing the project root."
 }
 
-$installerPath = Join-Path -Path ([System.IO.Path]::GetFullPath("$($metadata.projectRoot)")) -ChildPath 'scripts/Install-SfAdSyncTerminalCommand.ps1'
+$installerPath = Join-Path -Path ([System.IO.Path]::GetFullPath("$($metadata.projectRoot)")) -ChildPath 'scripts/Install-SyncFactorsTerminalCommand.ps1'
 if (-not (Test-Path -Path $installerPath -PathType Leaf)) {
     throw "Installer script was not found at '$installerPath'."
 }

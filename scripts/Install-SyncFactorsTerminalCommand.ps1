@@ -4,7 +4,7 @@ param(
     [string]$MappingConfigPath,
     [string]$InstallDirectory,
     [ValidatePattern('^[A-Za-z0-9][A-Za-z0-9._-]*$')]
-    [string]$CommandName = 'synctui',
+    [string]$CommandName = 'syncfactors',
     [string]$ProjectRoot,
     [string]$ShellProfilePath,
     [switch]$Uninstall,
@@ -16,7 +16,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-function Resolve-SfAdInstallerProjectRoot {
+function Resolve-SyncFactorsInstallerProjectRoot {
     param([string]$Path)
 
     if ([string]::IsNullOrWhiteSpace($Path)) {
@@ -26,7 +26,7 @@ function Resolve-SfAdInstallerProjectRoot {
     return (Resolve-Path -Path $Path).ProviderPath
 }
 
-function Resolve-SfAdOptionalLocalConfigPath {
+function Resolve-SyncFactorsOptionalLocalConfigPath {
     param(
         [Parameter(Mandatory)]
         [string]$ConfigDirectory,
@@ -52,7 +52,7 @@ function Resolve-SfAdOptionalLocalConfigPath {
     return $candidates[0].FullName
 }
 
-function Resolve-SfAdRequiredConfigPath {
+function Resolve-SyncFactorsRequiredConfigPath {
     param(
         [AllowNull()]
         [string]$Path,
@@ -64,7 +64,7 @@ function Resolve-SfAdRequiredConfigPath {
         return (Resolve-Path -Path $Path).ProviderPath
     }
 
-    $resolvedPath = Resolve-SfAdOptionalLocalConfigPath -ConfigDirectory $ConfigDirectory -Filter 'local*.sync-config.json' -Description 'sync config'
+    $resolvedPath = Resolve-SyncFactorsOptionalLocalConfigPath -ConfigDirectory $ConfigDirectory -Filter 'local*.sync-config.json' -Description 'sync config'
     if ($null -ne $resolvedPath) {
         return $resolvedPath
     }
@@ -72,7 +72,7 @@ function Resolve-SfAdRequiredConfigPath {
     throw "ConfigPath is required. No local sync config file matching 'local*.sync-config.json' was found under '$ConfigDirectory'."
 }
 
-function Resolve-SfAdOptionalMappingConfigPath {
+function Resolve-SyncFactorsOptionalMappingConfigPath {
     param(
         [AllowNull()]
         [string]$Path,
@@ -84,10 +84,10 @@ function Resolve-SfAdOptionalMappingConfigPath {
         return (Resolve-Path -Path $Path).ProviderPath
     }
 
-    return Resolve-SfAdOptionalLocalConfigPath -ConfigDirectory $ConfigDirectory -Filter 'local*.mapping-config.json' -Description 'mapping config'
+    return Resolve-SyncFactorsOptionalLocalConfigPath -ConfigDirectory $ConfigDirectory -Filter 'local*.mapping-config.json' -Description 'mapping config'
 }
 
-function Get-SfAdDefaultInstallDirectory {
+function Get-SyncFactorsDefaultInstallDirectory {
     if ($IsWindows) {
         $windowsAppsDirectory = Join-Path -Path (Join-Path -Path (Join-Path -Path $HOME -ChildPath 'AppData') -ChildPath 'Local') -ChildPath 'Microsoft/WindowsApps'
         if (Test-Path -Path $windowsAppsDirectory -PathType Container) {
@@ -98,7 +98,7 @@ function Get-SfAdDefaultInstallDirectory {
     return Join-Path -Path $HOME -ChildPath '.local/bin'
 }
 
-function Test-SfAdPathContainsDirectory {
+function Test-SyncFactorsPathContainsDirectory {
     param(
         [AllowNull()]
         [string]$PathValue,
@@ -131,7 +131,7 @@ function Test-SfAdPathContainsDirectory {
     return $false
 }
 
-function Remove-SfAdPathDirectory {
+function Remove-SyncFactorsPathDirectory {
     param(
         [AllowNull()]
         [string]$PathValue,
@@ -167,7 +167,7 @@ function Remove-SfAdPathDirectory {
     return [string]::Join([System.IO.Path]::PathSeparator, $entries)
 }
 
-function Get-SfAdInstallMetadataPath {
+function Get-SyncFactorsInstallMetadataPath {
     param(
         [Parameter(Mandatory)]
         [string]$ResolvedInstallDirectory,
@@ -178,7 +178,7 @@ function Get-SfAdInstallMetadataPath {
     return Join-Path -Path $ResolvedInstallDirectory -ChildPath ".$CommandName.install.json"
 }
 
-function Get-SfAdConfigHelperCommandName {
+function Get-SyncFactorsConfigHelperCommandName {
     param(
         [Parameter(Mandatory)]
         [string]$CommandName
@@ -187,7 +187,7 @@ function Get-SfAdConfigHelperCommandName {
     return "$CommandName-config"
 }
 
-function Read-SfAdInstallMetadata {
+function Read-SyncFactorsInstallMetadata {
     param(
         [Parameter(Mandatory)]
         [string]$MetadataPath
@@ -200,7 +200,7 @@ function Read-SfAdInstallMetadata {
     return Get-Content -Path $MetadataPath -Raw | ConvertFrom-Json -Depth 20
 }
 
-function Save-SfAdInstallMetadata {
+function Save-SyncFactorsInstallMetadata {
     param(
         [Parameter(Mandatory)]
         [string]$MetadataPath,
@@ -216,7 +216,7 @@ function Save-SfAdInstallMetadata {
     $Metadata | ConvertTo-Json -Depth 10 | Set-Content -Path $MetadataPath
 }
 
-function ConvertTo-SfAdPowerShellLiteral {
+function ConvertTo-SyncFactorsPowerShellLiteral {
     param(
         [AllowNull()]
         [string]$Value
@@ -229,7 +229,7 @@ function ConvertTo-SfAdPowerShellLiteral {
     return "'$($Value.Replace("'", "''"))'"
 }
 
-function ConvertTo-SfAdDoubleQuotedShellValue {
+function ConvertTo-SyncFactorsDoubleQuotedShellValue {
     param(
         [AllowNull()]
         [string]$Value
@@ -242,7 +242,7 @@ function ConvertTo-SfAdDoubleQuotedShellValue {
     return $Value.Replace('"', '\"').Replace('$', '\$').Replace('`', '\`')
 }
 
-function Get-SfAdPowerShellShimContent {
+function Get-SyncFactorsPowerShellShimContent {
     param(
         [Parameter(Mandatory)]
         [string]$DashboardPath,
@@ -252,7 +252,7 @@ function Get-SfAdPowerShellShimContent {
         [string]$ResolvedMappingConfigPath
     )
 
-    $resolvedMappingConfigLiteral = ConvertTo-SfAdPowerShellLiteral -Value $ResolvedMappingConfigPath
+    $resolvedMappingConfigLiteral = ConvertTo-SyncFactorsPowerShellLiteral -Value $ResolvedMappingConfigPath
 
     return @"
 [CmdletBinding(PositionalBinding = `$false)]
@@ -274,7 +274,7 @@ Set-StrictMode -Version Latest
 `$effectiveConfigPath = if (`$PSBoundParameters.ContainsKey('ConfigPath')) {
     `$ConfigPath
 } else {
-    $(ConvertTo-SfAdPowerShellLiteral -Value $ResolvedConfigPath)
+    $(ConvertTo-SyncFactorsPowerShellLiteral -Value $ResolvedConfigPath)
 }
 
 `$effectiveMappingConfigPath = if (`$PSBoundParameters.ContainsKey('MappingConfigPath')) {
@@ -311,14 +311,14 @@ if (`$AsText) {
     `$namedArguments['AsText'] = `$true
 }
 
-& $(ConvertTo-SfAdPowerShellLiteral -Value $DashboardPath) @namedArguments
+& $(ConvertTo-SyncFactorsPowerShellLiteral -Value $DashboardPath) @namedArguments
 if (Get-Variable -Name LASTEXITCODE -ErrorAction SilentlyContinue) {
     exit `$LASTEXITCODE
 }
 "@
 }
 
-function Get-SfAdCmdShimContent {
+function Get-SyncFactorsCmdShimContent {
     param(
         [Parameter(Mandatory)]
         [string]$DashboardPath,
@@ -348,7 +348,7 @@ exit /b %errorlevel%
 "@
 }
 
-function Get-SfAdShellShimContent {
+function Get-SyncFactorsShellShimContent {
     param(
         [Parameter(Mandatory)]
         [string]$DashboardPath,
@@ -358,12 +358,12 @@ function Get-SfAdShellShimContent {
         [string]$ResolvedMappingConfigPath
     )
 
-    $dashboardValue = ConvertTo-SfAdDoubleQuotedShellValue -Value $DashboardPath
-    $configValue = ConvertTo-SfAdDoubleQuotedShellValue -Value $ResolvedConfigPath
+    $dashboardValue = ConvertTo-SyncFactorsDoubleQuotedShellValue -Value $DashboardPath
+    $configValue = ConvertTo-SyncFactorsDoubleQuotedShellValue -Value $ResolvedConfigPath
     $mappingArgument = if ([string]::IsNullOrWhiteSpace($ResolvedMappingConfigPath)) {
         ''
     } else {
-        " -MappingConfigPath ""$(ConvertTo-SfAdDoubleQuotedShellValue -Value $ResolvedMappingConfigPath)"""
+        " -MappingConfigPath ""$(ConvertTo-SyncFactorsDoubleQuotedShellValue -Value $ResolvedMappingConfigPath)"""
     }
 
     return @"
@@ -379,7 +379,7 @@ exit 1
 "@
 }
 
-function Get-SfAdConfigHelperPowerShellShimContent {
+function Get-SyncFactorsConfigHelperPowerShellShimContent {
     param(
         [Parameter(Mandatory)]
         [string]$HelperScriptPath,
@@ -401,8 +401,8 @@ Set-StrictMode -Version Latest
 `$ErrorActionPreference = 'Stop'
 
 `$namedArguments = @{
-    InstallDirectory = $(ConvertTo-SfAdPowerShellLiteral -Value $ResolvedInstallDirectory)
-    CommandName = $(ConvertTo-SfAdPowerShellLiteral -Value $CommandName)
+    InstallDirectory = $(ConvertTo-SyncFactorsPowerShellLiteral -Value $ResolvedInstallDirectory)
+    CommandName = $(ConvertTo-SyncFactorsPowerShellLiteral -Value $CommandName)
 }
 
 if (`$PSBoundParameters.ContainsKey('ConfigPath')) {
@@ -417,14 +417,14 @@ if (`$ShowCurrent) {
     `$namedArguments['ShowCurrent'] = `$true
 }
 
-& $(ConvertTo-SfAdPowerShellLiteral -Value $HelperScriptPath) @namedArguments
+& $(ConvertTo-SyncFactorsPowerShellLiteral -Value $HelperScriptPath) @namedArguments
 if (Get-Variable -Name LASTEXITCODE -ErrorAction SilentlyContinue) {
     exit `$LASTEXITCODE
 }
 "@
 }
 
-function Get-SfAdConfigHelperCmdShimContent {
+function Get-SyncFactorsConfigHelperCmdShimContent {
     param(
         [Parameter(Mandatory)]
         [string]$HelperScriptPath,
@@ -448,7 +448,7 @@ exit /b %errorlevel%
 "@
 }
 
-function Get-SfAdConfigHelperShellShimContent {
+function Get-SyncFactorsConfigHelperShellShimContent {
     param(
         [Parameter(Mandatory)]
         [string]$HelperScriptPath,
@@ -458,9 +458,9 @@ function Get-SfAdConfigHelperShellShimContent {
         [string]$CommandName
     )
 
-    $helperValue = ConvertTo-SfAdDoubleQuotedShellValue -Value $HelperScriptPath
-    $installDirectoryValue = ConvertTo-SfAdDoubleQuotedShellValue -Value $ResolvedInstallDirectory
-    $commandNameValue = ConvertTo-SfAdDoubleQuotedShellValue -Value $CommandName
+    $helperValue = ConvertTo-SyncFactorsDoubleQuotedShellValue -Value $HelperScriptPath
+    $installDirectoryValue = ConvertTo-SyncFactorsDoubleQuotedShellValue -Value $ResolvedInstallDirectory
+    $commandNameValue = ConvertTo-SyncFactorsDoubleQuotedShellValue -Value $CommandName
 
     return @"
 #!/usr/bin/env sh
@@ -475,7 +475,7 @@ exit 1
 "@
 }
 
-function Get-SfAdShellProfilePath {
+function Get-SyncFactorsShellProfilePath {
     param([string]$OverridePath)
 
     if (-not [string]::IsNullOrWhiteSpace($OverridePath)) {
@@ -490,14 +490,14 @@ function Get-SfAdShellProfilePath {
     }
 }
 
-function Add-SfAdInstallDirectoryToPath {
+function Add-SyncFactorsInstallDirectoryToPath {
     param(
         [Parameter(Mandatory)]
         [string]$ResolvedInstallDirectory,
         [string]$ShellProfilePathOverride
     )
 
-    if (Test-SfAdPathContainsDirectory -PathValue $env:PATH -Directory $ResolvedInstallDirectory) {
+    if (Test-SyncFactorsPathContainsDirectory -PathValue $env:PATH -Directory $ResolvedInstallDirectory) {
         return [pscustomobject]@{
             updated = $false
             currentSessionUpdated = $false
@@ -511,13 +511,13 @@ function Add-SfAdInstallDirectoryToPath {
     $env:PATH = "$ResolvedInstallDirectory$pathSeparator$env:PATH"
 
     if (-not [string]::IsNullOrWhiteSpace($ShellProfilePathOverride)) {
-        $profilePath = Get-SfAdShellProfilePath -OverridePath $ShellProfilePathOverride
+        $profilePath = Get-SyncFactorsShellProfilePath -OverridePath $ShellProfilePathOverride
         $profileDirectory = Split-Path -Path $profilePath -Parent
         if ($profileDirectory -and -not (Test-Path -Path $profileDirectory -PathType Container)) {
             New-Item -Path $profileDirectory -ItemType Directory -Force | Out-Null
         }
 
-        $escapedDirectory = ConvertTo-SfAdDoubleQuotedShellValue -Value $ResolvedInstallDirectory
+        $escapedDirectory = ConvertTo-SyncFactorsDoubleQuotedShellValue -Value $ResolvedInstallDirectory
         $exportLine = "export PATH=""${escapedDirectory}:`$PATH"""
 
         if (Test-Path -Path $profilePath -PathType Leaf) {
@@ -544,7 +544,7 @@ function Add-SfAdInstallDirectoryToPath {
 
     if ($IsWindows) {
         $userPath = [System.Environment]::GetEnvironmentVariable('Path', 'User')
-        if (-not (Test-SfAdPathContainsDirectory -PathValue $userPath -Directory $ResolvedInstallDirectory)) {
+        if (-not (Test-SyncFactorsPathContainsDirectory -PathValue $userPath -Directory $ResolvedInstallDirectory)) {
             if ([string]::IsNullOrWhiteSpace($userPath)) {
                 $userPath = $ResolvedInstallDirectory
             } else {
@@ -563,13 +563,13 @@ function Add-SfAdInstallDirectoryToPath {
         }
     }
 
-    $profilePath = Get-SfAdShellProfilePath -OverridePath $ShellProfilePathOverride
+    $profilePath = Get-SyncFactorsShellProfilePath -OverridePath $ShellProfilePathOverride
     $profileDirectory = Split-Path -Path $profilePath -Parent
     if ($profileDirectory -and -not (Test-Path -Path $profileDirectory -PathType Container)) {
         New-Item -Path $profileDirectory -ItemType Directory -Force | Out-Null
     }
 
-    $escapedDirectory = ConvertTo-SfAdDoubleQuotedShellValue -Value $ResolvedInstallDirectory
+    $escapedDirectory = ConvertTo-SyncFactorsDoubleQuotedShellValue -Value $ResolvedInstallDirectory
     $exportLine = "export PATH=""${escapedDirectory}:`$PATH"""
 
     if (Test-Path -Path $profilePath -PathType Leaf) {
@@ -594,7 +594,7 @@ function Add-SfAdInstallDirectoryToPath {
     }
 }
 
-function Remove-SfAdInstallDirectoryFromPath {
+function Remove-SyncFactorsInstallDirectoryFromPath {
     param(
         [Parameter(Mandatory)]
         [string]$ResolvedInstallDirectory,
@@ -614,8 +614,8 @@ function Remove-SfAdInstallDirectoryFromPath {
     }
 
     $currentSessionUpdated = $false
-    if (Test-SfAdPathContainsDirectory -PathValue $env:PATH -Directory $ResolvedInstallDirectory) {
-        $env:PATH = Remove-SfAdPathDirectory -PathValue $env:PATH -Directory $ResolvedInstallDirectory
+    if (Test-SyncFactorsPathContainsDirectory -PathValue $env:PATH -Directory $ResolvedInstallDirectory) {
+        $env:PATH = Remove-SyncFactorsPathDirectory -PathValue $env:PATH -Directory $ResolvedInstallDirectory
         $currentSessionUpdated = $true
     }
 
@@ -623,7 +623,7 @@ function Remove-SfAdInstallDirectoryFromPath {
     switch ($mode) {
         'UserPath' {
             $userPath = [System.Environment]::GetEnvironmentVariable('Path', 'User')
-            $newUserPath = Remove-SfAdPathDirectory -PathValue $userPath -Directory $ResolvedInstallDirectory
+            $newUserPath = Remove-SyncFactorsPathDirectory -PathValue $userPath -Directory $ResolvedInstallDirectory
             if ($newUserPath -ne $userPath) {
                 [System.Environment]::SetEnvironmentVariable('Path', $newUserPath, 'User')
             }
@@ -642,10 +642,10 @@ function Remove-SfAdInstallDirectoryFromPath {
             } elseif (-not [string]::IsNullOrWhiteSpace("$($Metadata.shellProfilePath)")) {
                 [System.IO.Path]::GetFullPath("$($Metadata.shellProfilePath)")
             } else {
-                Get-SfAdShellProfilePath
+                Get-SyncFactorsShellProfilePath
             }
 
-            $escapedDirectory = ConvertTo-SfAdDoubleQuotedShellValue -Value $ResolvedInstallDirectory
+            $escapedDirectory = ConvertTo-SyncFactorsDoubleQuotedShellValue -Value $ResolvedInstallDirectory
             $exportLine = "export PATH=""${escapedDirectory}:`$PATH"""
             if (Test-Path -Path $profilePath -PathType Leaf) {
                 $remainingLines = @(
@@ -676,19 +676,19 @@ function Remove-SfAdInstallDirectoryFromPath {
 }
 
 $resolvedInstallDirectory = if ([string]::IsNullOrWhiteSpace($InstallDirectory)) {
-    [System.IO.Path]::GetFullPath((Get-SfAdDefaultInstallDirectory))
+    [System.IO.Path]::GetFullPath((Get-SyncFactorsDefaultInstallDirectory))
 } else {
     [System.IO.Path]::GetFullPath($InstallDirectory)
 }
-$configHelperCommandName = Get-SfAdConfigHelperCommandName -CommandName $CommandName
+$configHelperCommandName = Get-SyncFactorsConfigHelperCommandName -CommandName $CommandName
 $shellCommandPath = Join-Path -Path $resolvedInstallDirectory -ChildPath $CommandName
 $cmdCommandPath = Join-Path -Path $resolvedInstallDirectory -ChildPath "$CommandName.cmd"
 $ps1CommandPath = Join-Path -Path $resolvedInstallDirectory -ChildPath "$CommandName.ps1"
 $helperShellCommandPath = Join-Path -Path $resolvedInstallDirectory -ChildPath $configHelperCommandName
 $helperCmdCommandPath = Join-Path -Path $resolvedInstallDirectory -ChildPath "$configHelperCommandName.cmd"
 $helperPs1CommandPath = Join-Path -Path $resolvedInstallDirectory -ChildPath "$configHelperCommandName.ps1"
-$metadataPath = Get-SfAdInstallMetadataPath -ResolvedInstallDirectory $resolvedInstallDirectory -CommandName $CommandName
-$existingMetadata = Read-SfAdInstallMetadata -MetadataPath $metadataPath
+$metadataPath = Get-SyncFactorsInstallMetadataPath -ResolvedInstallDirectory $resolvedInstallDirectory -CommandName $CommandName
+$existingMetadata = Read-SyncFactorsInstallMetadata -MetadataPath $metadataPath
 
 if ($Uninstall) {
     $removedPaths = @()
@@ -711,7 +711,7 @@ if ($Uninstall) {
     }
 
     if ($RemovePathUpdate -and $PSCmdlet.ShouldProcess($resolvedInstallDirectory, "Remove PATH registration for '$CommandName'")) {
-        $pathRemoval = Remove-SfAdInstallDirectoryFromPath -ResolvedInstallDirectory $resolvedInstallDirectory -Metadata $existingMetadata -ShellProfilePathOverride $ShellProfilePath
+        $pathRemoval = Remove-SyncFactorsInstallDirectoryFromPath -ResolvedInstallDirectory $resolvedInstallDirectory -Metadata $existingMetadata -ShellProfilePathOverride $ShellProfilePath
     }
 
     return [pscustomobject]@{
@@ -730,10 +730,10 @@ if ($Uninstall) {
     }
 }
 
-$resolvedProjectRoot = Resolve-SfAdInstallerProjectRoot -Path $ProjectRoot
+$resolvedProjectRoot = Resolve-SyncFactorsInstallerProjectRoot -Path $ProjectRoot
 $configDirectory = Join-Path -Path $resolvedProjectRoot -ChildPath 'config'
-$dashboardPath = Join-Path -Path $resolvedProjectRoot -ChildPath 'scripts/Watch-SfAdSyncMonitor.ps1'
-$configHelperScriptPath = Join-Path -Path $resolvedProjectRoot -ChildPath 'scripts/Set-SfAdSyncTerminalCommandConfig.ps1'
+$dashboardPath = Join-Path -Path $resolvedProjectRoot -ChildPath 'scripts/Watch-SyncFactorsMonitor.ps1'
+$configHelperScriptPath = Join-Path -Path $resolvedProjectRoot -ChildPath 'scripts/Set-SyncFactorsTerminalCommandConfig.ps1'
 
 if (-not (Test-Path -Path $dashboardPath -PathType Leaf)) {
     throw "Dashboard script was not found at '$dashboardPath'."
@@ -743,8 +743,8 @@ if (-not (Test-Path -Path $configHelperScriptPath -PathType Leaf)) {
     throw "Config helper script was not found at '$configHelperScriptPath'."
 }
 
-$resolvedConfigPath = Resolve-SfAdRequiredConfigPath -Path $ConfigPath -ConfigDirectory $configDirectory
-$resolvedMappingConfigPath = Resolve-SfAdOptionalMappingConfigPath -Path $MappingConfigPath -ConfigDirectory $configDirectory
+$resolvedConfigPath = Resolve-SyncFactorsRequiredConfigPath -Path $ConfigPath -ConfigDirectory $configDirectory
+$resolvedMappingConfigPath = Resolve-SyncFactorsOptionalMappingConfigPath -Path $MappingConfigPath -ConfigDirectory $configDirectory
 
 foreach ($path in @($shellCommandPath, $cmdCommandPath, $ps1CommandPath, $helperShellCommandPath, $helperCmdCommandPath, $helperPs1CommandPath, $metadataPath)) {
     if ((Test-Path -Path $path) -and -not $Force) {
@@ -757,12 +757,12 @@ if (-not (Test-Path -Path $resolvedInstallDirectory -PathType Container)) {
 }
 
 if ($PSCmdlet.ShouldProcess($resolvedInstallDirectory, "Install terminal command '$CommandName'")) {
-    Set-Content -Path $shellCommandPath -Value (Get-SfAdShellShimContent -DashboardPath $dashboardPath -ResolvedConfigPath $resolvedConfigPath -ResolvedMappingConfigPath $resolvedMappingConfigPath)
-    Set-Content -Path $cmdCommandPath -Value (Get-SfAdCmdShimContent -DashboardPath $dashboardPath -ResolvedConfigPath $resolvedConfigPath -ResolvedMappingConfigPath $resolvedMappingConfigPath)
-    Set-Content -Path $ps1CommandPath -Value (Get-SfAdPowerShellShimContent -DashboardPath $dashboardPath -ResolvedConfigPath $resolvedConfigPath -ResolvedMappingConfigPath $resolvedMappingConfigPath)
-    Set-Content -Path $helperShellCommandPath -Value (Get-SfAdConfigHelperShellShimContent -HelperScriptPath $configHelperScriptPath -ResolvedInstallDirectory $resolvedInstallDirectory -CommandName $CommandName)
-    Set-Content -Path $helperCmdCommandPath -Value (Get-SfAdConfigHelperCmdShimContent -HelperScriptPath $configHelperScriptPath -ResolvedInstallDirectory $resolvedInstallDirectory -CommandName $CommandName)
-    Set-Content -Path $helperPs1CommandPath -Value (Get-SfAdConfigHelperPowerShellShimContent -HelperScriptPath $configHelperScriptPath -ResolvedInstallDirectory $resolvedInstallDirectory -CommandName $CommandName)
+    Set-Content -Path $shellCommandPath -Value (Get-SyncFactorsShellShimContent -DashboardPath $dashboardPath -ResolvedConfigPath $resolvedConfigPath -ResolvedMappingConfigPath $resolvedMappingConfigPath)
+    Set-Content -Path $cmdCommandPath -Value (Get-SyncFactorsCmdShimContent -DashboardPath $dashboardPath -ResolvedConfigPath $resolvedConfigPath -ResolvedMappingConfigPath $resolvedMappingConfigPath)
+    Set-Content -Path $ps1CommandPath -Value (Get-SyncFactorsPowerShellShimContent -DashboardPath $dashboardPath -ResolvedConfigPath $resolvedConfigPath -ResolvedMappingConfigPath $resolvedMappingConfigPath)
+    Set-Content -Path $helperShellCommandPath -Value (Get-SyncFactorsConfigHelperShellShimContent -HelperScriptPath $configHelperScriptPath -ResolvedInstallDirectory $resolvedInstallDirectory -CommandName $CommandName)
+    Set-Content -Path $helperCmdCommandPath -Value (Get-SyncFactorsConfigHelperCmdShimContent -HelperScriptPath $configHelperScriptPath -ResolvedInstallDirectory $resolvedInstallDirectory -CommandName $CommandName)
+    Set-Content -Path $helperPs1CommandPath -Value (Get-SyncFactorsConfigHelperPowerShellShimContent -HelperScriptPath $configHelperScriptPath -ResolvedInstallDirectory $resolvedInstallDirectory -CommandName $CommandName)
 
     if (-not $IsWindows) {
         $chmodPath = if (Test-Path -Path '/bin/chmod' -PathType Leaf) {
@@ -789,7 +789,7 @@ $pathUpdate = [pscustomobject]@{
 }
 
 if (-not $SkipPathUpdate -and $PSCmdlet.ShouldProcess($resolvedInstallDirectory, "Register '$resolvedInstallDirectory' on PATH")) {
-    $pathUpdate = Add-SfAdInstallDirectoryToPath -ResolvedInstallDirectory $resolvedInstallDirectory -ShellProfilePathOverride $ShellProfilePath
+    $pathUpdate = Add-SyncFactorsInstallDirectoryToPath -ResolvedInstallDirectory $resolvedInstallDirectory -ShellProfilePathOverride $ShellProfilePath
 }
 
 $metadata = [pscustomobject]@{
@@ -812,7 +812,7 @@ $metadata = [pscustomobject]@{
     installedAt = (Get-Date).ToString('o')
 }
 
-Save-SfAdInstallMetadata -MetadataPath $metadataPath -Metadata $metadata
+Save-SyncFactorsInstallMetadata -MetadataPath $metadataPath -Metadata $metadata
 
 [pscustomobject]@{
     commandName = $CommandName

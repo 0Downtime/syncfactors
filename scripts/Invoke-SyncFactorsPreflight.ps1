@@ -10,10 +10,10 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$moduleRoot = Join-Path -Path (Split-Path -Path $PSScriptRoot -Parent) -ChildPath 'src/Modules/SfAdSync'
+$moduleRoot = Join-Path -Path (Split-Path -Path $PSScriptRoot -Parent) -ChildPath 'src/Modules/SyncFactors'
 Import-Module (Join-Path $moduleRoot 'Sync.psm1') -Force -DisableNameChecking
 
-$result = Test-SfAdSyncPreflight -ConfigPath $ConfigPath -MappingConfigPath $MappingConfigPath
+$result = Test-SyncFactorsPreflight -ConfigPath $ConfigPath -MappingConfigPath $MappingConfigPath
 
 if ($AsJson) {
     $result | ConvertTo-Json -Depth 10

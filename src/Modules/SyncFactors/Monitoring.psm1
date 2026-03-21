@@ -6,7 +6,7 @@ Import-Module (Join-Path $moduleRoot 'State.psm1') -Force -DisableNameChecking
 Import-Module (Join-Path $moduleRoot 'SuccessFactors.psm1') -Force -DisableNameChecking
 Import-Module (Join-Path $moduleRoot 'ActiveDirectorySync.psm1') -Force -DisableNameChecking
 
-function Get-SfAdCollectionCount {
+function Get-SyncFactorsCollectionCount {
     [CmdletBinding()]
     param($Value)
 
@@ -17,7 +17,7 @@ function Get-SfAdCollectionCount {
     return @($Value).Count
 }
 
-function Get-SfAdRuntimeStatusPath {
+function Get-SyncFactorsRuntimeStatusPath {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
@@ -32,7 +32,7 @@ function Get-SfAdRuntimeStatusPath {
     return Join-Path -Path $directory -ChildPath 'runtime-status.json'
 }
 
-function Test-SfAdMonitorSuccessFactorsConnection {
+function Test-SyncFactorsMonitorSuccessFactorsConnection {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
@@ -47,7 +47,7 @@ function Test-SfAdMonitorSuccessFactorsConnection {
         Invoke-SfODataGet -Config $Config -RelativePath $Config.successFactors.query.entitySet -Query $probeQuery | Out-Null
         return [pscustomobject]@{
             status = 'OK'
-            detail = Get-SfAdSuccessFactorsAuthSummary -Config $Config
+            detail = Get-SyncFactorsSuccessFactorsAuthSummary -Config $Config
         }
     } catch {
         return [pscustomobject]@{
@@ -57,7 +57,7 @@ function Test-SfAdMonitorSuccessFactorsConnection {
     }
 }
 
-function Test-SfAdMonitorActiveDirectoryConnection {
+function Test-SyncFactorsMonitorActiveDirectoryConnection {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
@@ -77,7 +77,7 @@ function Test-SfAdMonitorActiveDirectoryConnection {
         }
 
         if (-not [string]::IsNullOrWhiteSpace($username)) {
-            $securePassword = ConvertTo-SfAdSecureString -Value $bindPassword
+            $securePassword = ConvertTo-SyncFactorsSecureString -Value $bindPassword
             $directoryContext['Credential'] = [pscredential]::new($username, $securePassword)
         }
 
@@ -94,7 +94,7 @@ function Test-SfAdMonitorActiveDirectoryConnection {
     }
 }
 
-function Format-SfAdMonitorHealthSummary {
+function Format-SyncFactorsMonitorHealthSummary {
     [CmdletBinding()]
     param(
         [AllowNull()]
@@ -128,7 +128,7 @@ function Format-SfAdMonitorHealthSummary {
     return "$status ($detail)"
 }
 
-function New-SfAdIdleRuntimeStatus {
+function New-SyncFactorsIdleRuntimeStatus {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
@@ -160,11 +160,11 @@ function New-SfAdIdleRuntimeStatus {
         manualReview = 0
         unchanged = 0
         errorMessage = $null
-        runtimeStatusPath = Get-SfAdRuntimeStatusPath -StatePath $StatePath
+        runtimeStatusPath = Get-SyncFactorsRuntimeStatusPath -StatePath $StatePath
     }
 }
 
-function New-SfAdRuntimeStatusSnapshot {
+function New-SyncFactorsRuntimeStatusSnapshot {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
@@ -203,23 +203,23 @@ function New-SfAdRuntimeStatusSnapshot {
         lastAction = $LastAction
         processedWorkers = $ProcessedWorkers
         totalWorkers = $TotalWorkers
-        creates = if ($Report.Contains('creates')) { Get-SfAdCollectionCount -Value $Report['creates'] } else { 0 }
-        updates = if ($Report.Contains('updates')) { Get-SfAdCollectionCount -Value $Report['updates'] } else { 0 }
-        enables = if ($Report.Contains('enables')) { Get-SfAdCollectionCount -Value $Report['enables'] } else { 0 }
-        disables = if ($Report.Contains('disables')) { Get-SfAdCollectionCount -Value $Report['disables'] } else { 0 }
-        graveyardMoves = if ($Report.Contains('graveyardMoves')) { Get-SfAdCollectionCount -Value $Report['graveyardMoves'] } else { 0 }
-        deletions = if ($Report.Contains('deletions')) { Get-SfAdCollectionCount -Value $Report['deletions'] } else { 0 }
-        quarantined = if ($Report.Contains('quarantined')) { Get-SfAdCollectionCount -Value $Report['quarantined'] } else { 0 }
-        conflicts = if ($Report.Contains('conflicts')) { Get-SfAdCollectionCount -Value $Report['conflicts'] } else { 0 }
-        guardrailFailures = if ($Report.Contains('guardrailFailures')) { Get-SfAdCollectionCount -Value $Report['guardrailFailures'] } else { 0 }
-        manualReview = if ($Report.Contains('manualReview')) { Get-SfAdCollectionCount -Value $Report['manualReview'] } else { 0 }
-        unchanged = if ($Report.Contains('unchanged')) { Get-SfAdCollectionCount -Value $Report['unchanged'] } else { 0 }
+        creates = if ($Report.Contains('creates')) { Get-SyncFactorsCollectionCount -Value $Report['creates'] } else { 0 }
+        updates = if ($Report.Contains('updates')) { Get-SyncFactorsCollectionCount -Value $Report['updates'] } else { 0 }
+        enables = if ($Report.Contains('enables')) { Get-SyncFactorsCollectionCount -Value $Report['enables'] } else { 0 }
+        disables = if ($Report.Contains('disables')) { Get-SyncFactorsCollectionCount -Value $Report['disables'] } else { 0 }
+        graveyardMoves = if ($Report.Contains('graveyardMoves')) { Get-SyncFactorsCollectionCount -Value $Report['graveyardMoves'] } else { 0 }
+        deletions = if ($Report.Contains('deletions')) { Get-SyncFactorsCollectionCount -Value $Report['deletions'] } else { 0 }
+        quarantined = if ($Report.Contains('quarantined')) { Get-SyncFactorsCollectionCount -Value $Report['quarantined'] } else { 0 }
+        conflicts = if ($Report.Contains('conflicts')) { Get-SyncFactorsCollectionCount -Value $Report['conflicts'] } else { 0 }
+        guardrailFailures = if ($Report.Contains('guardrailFailures')) { Get-SyncFactorsCollectionCount -Value $Report['guardrailFailures'] } else { 0 }
+        manualReview = if ($Report.Contains('manualReview')) { Get-SyncFactorsCollectionCount -Value $Report['manualReview'] } else { 0 }
+        unchanged = if ($Report.Contains('unchanged')) { Get-SyncFactorsCollectionCount -Value $Report['unchanged'] } else { 0 }
         errorMessage = $ErrorMessage
-        runtimeStatusPath = Get-SfAdRuntimeStatusPath -StatePath $StatePath
+        runtimeStatusPath = Get-SyncFactorsRuntimeStatusPath -StatePath $StatePath
     }
 }
 
-function Save-SfAdRuntimeStatusSnapshot {
+function Save-SyncFactorsRuntimeStatusSnapshot {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
@@ -228,7 +228,7 @@ function Save-SfAdRuntimeStatusSnapshot {
         [string]$StatePath
     )
 
-    $runtimeStatusPath = Get-SfAdRuntimeStatusPath -StatePath $StatePath
+    $runtimeStatusPath = Get-SyncFactorsRuntimeStatusPath -StatePath $StatePath
     $runtimeDirectory = Split-Path -Path $runtimeStatusPath -Parent
     if ($runtimeDirectory -and -not (Test-Path -Path $runtimeDirectory -PathType Container)) {
         New-Item -Path $runtimeDirectory -ItemType Directory -Force | Out-Null
@@ -238,7 +238,7 @@ function Save-SfAdRuntimeStatusSnapshot {
     return $runtimeStatusPath
 }
 
-function Write-SfAdRuntimeStatusSnapshot {
+function Write-SyncFactorsRuntimeStatusSnapshot {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
@@ -256,19 +256,19 @@ function Write-SfAdRuntimeStatusSnapshot {
         [string]$ErrorMessage
     )
 
-    $snapshot = New-SfAdRuntimeStatusSnapshot -Report $Report -StatePath $StatePath -Stage $Stage -Status $Status -ProcessedWorkers $ProcessedWorkers -TotalWorkers $TotalWorkers -CurrentWorkerId $CurrentWorkerId -LastAction $LastAction -CompletedAt $CompletedAt -ErrorMessage $ErrorMessage
-    [void](Save-SfAdRuntimeStatusSnapshot -Snapshot $snapshot -StatePath $StatePath)
+    $snapshot = New-SyncFactorsRuntimeStatusSnapshot -Report $Report -StatePath $StatePath -Stage $Stage -Status $Status -ProcessedWorkers $ProcessedWorkers -TotalWorkers $TotalWorkers -CurrentWorkerId $CurrentWorkerId -LastAction $LastAction -CompletedAt $CompletedAt -ErrorMessage $ErrorMessage
+    [void](Save-SyncFactorsRuntimeStatusSnapshot -Snapshot $snapshot -StatePath $StatePath)
     return $snapshot
 }
 
-function Get-SfAdRuntimeStatusSnapshot {
+function Get-SyncFactorsRuntimeStatusSnapshot {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
         [string]$StatePath
     )
 
-    $runtimeStatusPath = Get-SfAdRuntimeStatusPath -StatePath $StatePath
+    $runtimeStatusPath = Get-SyncFactorsRuntimeStatusPath -StatePath $StatePath
     if (-not (Test-Path -Path $runtimeStatusPath -PathType Leaf)) {
         return $null
     }
@@ -276,7 +276,7 @@ function Get-SfAdRuntimeStatusSnapshot {
     return Get-Content -Path $runtimeStatusPath -Raw | ConvertFrom-Json -Depth 20
 }
 
-function Get-SfAdWorkerEntries {
+function Get-SyncFactorsWorkerEntries {
     [CmdletBinding()]
     param($Workers)
 
@@ -303,7 +303,7 @@ function Get-SfAdWorkerEntries {
     })
 }
 
-function Get-SfAdDateTimeOrNull {
+function Get-SyncFactorsDateTimeOrNull {
     [CmdletBinding()]
     param($Value)
 
@@ -318,15 +318,15 @@ function Get-SfAdDateTimeOrNull {
     }
 }
 
-function Get-SfAdDurationSeconds {
+function Get-SyncFactorsDurationSeconds {
     [CmdletBinding()]
     param(
         $StartedAt,
         $CompletedAt
     )
 
-    $start = Get-SfAdDateTimeOrNull -Value $StartedAt
-    $end = Get-SfAdDateTimeOrNull -Value $CompletedAt
+    $start = Get-SyncFactorsDateTimeOrNull -Value $StartedAt
+    $end = Get-SyncFactorsDateTimeOrNull -Value $CompletedAt
     if ($null -eq $start -or $null -eq $end) {
         return $null
     }
@@ -334,7 +334,7 @@ function Get-SfAdDurationSeconds {
     return [int][math]::Max(0, [math]::Round(($end - $start).TotalSeconds))
 }
 
-function New-SfAdEmptyRunSummary {
+function New-SyncFactorsEmptyRunSummary {
     [CmdletBinding()]
     param()
 
@@ -365,7 +365,7 @@ function New-SfAdEmptyRunSummary {
     }
 }
 
-function Get-SfAdReportDirectories {
+function Get-SyncFactorsReportDirectories {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
@@ -386,7 +386,7 @@ function Get-SfAdReportDirectories {
     return @($directories)
 }
 
-function ConvertTo-SfAdRunSummary {
+function ConvertTo-SyncFactorsRunSummary {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
@@ -407,24 +407,24 @@ function ConvertTo-SfAdRunSummary {
         status = if ($Report.PSObject.Properties.Name -contains 'status') { $Report.status } else { $null }
         startedAt = if ($Report.PSObject.Properties.Name -contains 'startedAt') { $Report.startedAt } else { $null }
         completedAt = if ($Report.PSObject.Properties.Name -contains 'completedAt') { $Report.completedAt } else { $null }
-        durationSeconds = Get-SfAdDurationSeconds -StartedAt $(if ($Report.PSObject.Properties.Name -contains 'startedAt') { $Report.startedAt } else { $null }) -CompletedAt $(if ($Report.PSObject.Properties.Name -contains 'completedAt') { $Report.completedAt } else { $null })
-        reversibleOperations = Get-SfAdCollectionCount -Value $(if ($Report.PSObject.Properties.Name -contains 'operations') { $Report.operations } else { @() })
-        creates = Get-SfAdCollectionCount -Value $(if ($Report.PSObject.Properties.Name -contains 'creates') { $Report.creates } else { @() })
-        updates = Get-SfAdCollectionCount -Value $(if ($Report.PSObject.Properties.Name -contains 'updates') { $Report.updates } else { @() })
-        enables = Get-SfAdCollectionCount -Value $(if ($Report.PSObject.Properties.Name -contains 'enables') { $Report.enables } else { @() })
-        disables = Get-SfAdCollectionCount -Value $(if ($Report.PSObject.Properties.Name -contains 'disables') { $Report.disables } else { @() })
-        graveyardMoves = Get-SfAdCollectionCount -Value $(if ($Report.PSObject.Properties.Name -contains 'graveyardMoves') { $Report.graveyardMoves } else { @() })
-        deletions = Get-SfAdCollectionCount -Value $(if ($Report.PSObject.Properties.Name -contains 'deletions') { $Report.deletions } else { @() })
-        quarantined = Get-SfAdCollectionCount -Value $(if ($Report.PSObject.Properties.Name -contains 'quarantined') { $Report.quarantined } else { @() })
-        conflicts = Get-SfAdCollectionCount -Value $(if ($Report.PSObject.Properties.Name -contains 'conflicts') { $Report.conflicts } else { @() })
-        guardrailFailures = Get-SfAdCollectionCount -Value $(if ($Report.PSObject.Properties.Name -contains 'guardrailFailures') { $Report.guardrailFailures } else { @() })
-        manualReview = Get-SfAdCollectionCount -Value $(if ($Report.PSObject.Properties.Name -contains 'manualReview') { $Report.manualReview } else { @() })
-        unchanged = Get-SfAdCollectionCount -Value $(if ($Report.PSObject.Properties.Name -contains 'unchanged') { $Report.unchanged } else { @() })
+        durationSeconds = Get-SyncFactorsDurationSeconds -StartedAt $(if ($Report.PSObject.Properties.Name -contains 'startedAt') { $Report.startedAt } else { $null }) -CompletedAt $(if ($Report.PSObject.Properties.Name -contains 'completedAt') { $Report.completedAt } else { $null })
+        reversibleOperations = Get-SyncFactorsCollectionCount -Value $(if ($Report.PSObject.Properties.Name -contains 'operations') { $Report.operations } else { @() })
+        creates = Get-SyncFactorsCollectionCount -Value $(if ($Report.PSObject.Properties.Name -contains 'creates') { $Report.creates } else { @() })
+        updates = Get-SyncFactorsCollectionCount -Value $(if ($Report.PSObject.Properties.Name -contains 'updates') { $Report.updates } else { @() })
+        enables = Get-SyncFactorsCollectionCount -Value $(if ($Report.PSObject.Properties.Name -contains 'enables') { $Report.enables } else { @() })
+        disables = Get-SyncFactorsCollectionCount -Value $(if ($Report.PSObject.Properties.Name -contains 'disables') { $Report.disables } else { @() })
+        graveyardMoves = Get-SyncFactorsCollectionCount -Value $(if ($Report.PSObject.Properties.Name -contains 'graveyardMoves') { $Report.graveyardMoves } else { @() })
+        deletions = Get-SyncFactorsCollectionCount -Value $(if ($Report.PSObject.Properties.Name -contains 'deletions') { $Report.deletions } else { @() })
+        quarantined = Get-SyncFactorsCollectionCount -Value $(if ($Report.PSObject.Properties.Name -contains 'quarantined') { $Report.quarantined } else { @() })
+        conflicts = Get-SyncFactorsCollectionCount -Value $(if ($Report.PSObject.Properties.Name -contains 'conflicts') { $Report.conflicts } else { @() })
+        guardrailFailures = Get-SyncFactorsCollectionCount -Value $(if ($Report.PSObject.Properties.Name -contains 'guardrailFailures') { $Report.guardrailFailures } else { @() })
+        manualReview = Get-SyncFactorsCollectionCount -Value $(if ($Report.PSObject.Properties.Name -contains 'manualReview') { $Report.manualReview } else { @() })
+        unchanged = Get-SyncFactorsCollectionCount -Value $(if ($Report.PSObject.Properties.Name -contains 'unchanged') { $Report.unchanged } else { @() })
         reviewSummary = if ($Report.PSObject.Properties.Name -contains 'reviewSummary') { $Report.reviewSummary } else { $null }
     }
 }
 
-function Get-SfAdRecentRunSummaries {
+function Get-SyncFactorsRecentRunSummaries {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
@@ -445,7 +445,7 @@ function Get-SfAdRecentRunSummaries {
                 continue
             }
 
-            Get-ChildItem -Path $path -Filter 'sf-ad-sync-*.json' -File
+            Get-ChildItem -Path $path -Filter 'syncfactors-*.json' -File
         }) |
             Sort-Object `
                 @{ Expression = {
@@ -459,12 +459,12 @@ function Get-SfAdRecentRunSummaries {
             Select-Object -First $Limit |
             ForEach-Object {
                 $report = Get-Content -Path $_.FullName -Raw | ConvertFrom-Json -Depth 20
-                ConvertTo-SfAdRunSummary -Path $_.FullName -Report $report
+                ConvertTo-SyncFactorsRunSummary -Path $_.FullName -Report $report
             }
     )
 }
 
-function Get-SfAdMonitorStatus {
+function Get-SyncFactorsMonitorStatus {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
@@ -473,9 +473,9 @@ function Get-SfAdMonitorStatus {
         [int]$HistoryLimit = 10
     )
 
-    $config = Get-SfAdSyncConfig -Path $ConfigPath
-    $state = if ($config.state.path) { Get-SfAdSyncState -Path $config.state.path } else { [pscustomobject]@{ checkpoint = $null; workers = @{} } }
-    $workerProperties = @(Get-SfAdWorkerEntries -Workers $state.workers)
+    $config = Get-SyncFactorsConfig -Path $ConfigPath
+    $state = if ($config.state.path) { Get-SyncFactorsState -Path $config.state.path } else { [pscustomobject]@{ checkpoint = $null; workers = @{} } }
+    $workerProperties = @(Get-SyncFactorsWorkerEntries -Workers $state.workers)
     $trackedWorkers = @(
         $workerProperties |
             Sort-Object Name |
@@ -498,15 +498,15 @@ function Get-SfAdMonitorStatus {
         }
     )
 
-    $reportDirectories = @(Get-SfAdReportDirectories -Config $config)
-    $recentRuns = @(Get-SfAdRecentRunSummaries -Directory $reportDirectories -Limit $HistoryLimit)
-    $latestRun = if ($recentRuns.Count -gt 0) { $recentRuns[0] } else { New-SfAdEmptyRunSummary }
-    $currentRun = Get-SfAdRuntimeStatusSnapshot -StatePath $config.state.path
+    $reportDirectories = @(Get-SyncFactorsReportDirectories -Config $config)
+    $recentRuns = @(Get-SyncFactorsRecentRunSummaries -Directory $reportDirectories -Limit $HistoryLimit)
+    $latestRun = if ($recentRuns.Count -gt 0) { $recentRuns[0] } else { New-SyncFactorsEmptyRunSummary }
+    $currentRun = Get-SyncFactorsRuntimeStatusSnapshot -StatePath $config.state.path
     if (-not $currentRun) {
-        $currentRun = New-SfAdIdleRuntimeStatus -StatePath $config.state.path
+        $currentRun = New-SyncFactorsIdleRuntimeStatus -StatePath $config.state.path
     }
-    $successFactorsConnection = Test-SfAdMonitorSuccessFactorsConnection -Config $config
-    $activeDirectoryConnection = Test-SfAdMonitorActiveDirectoryConnection -Config $config
+    $successFactorsConnection = Test-SyncFactorsMonitorSuccessFactorsConnection -Config $config
+    $activeDirectoryConnection = Test-SyncFactorsMonitorActiveDirectoryConnection -Config $config
 
     $resolvedConfigPath = (Resolve-Path -Path $ConfigPath).Path
     return [pscustomobject]@{
@@ -531,7 +531,7 @@ function Get-SfAdMonitorStatus {
         }
         trackedWorkers = $trackedWorkers
         context = [pscustomobject]@{
-            successFactorsAuth = Get-SfAdSuccessFactorsAuthSummary -Config $config
+            successFactorsAuth = Get-SyncFactorsSuccessFactorsAuthSummary -Config $config
             identityField = $config.successFactors.query.identityField
             identityAttribute = $config.ad.identityAttribute
             defaultActiveOu = $config.ad.defaultActiveOu
@@ -549,12 +549,12 @@ function Get-SfAdMonitorStatus {
             reportDirectory = $config.reporting.outputDirectory
             reviewReportDirectory = $config.reporting.reviewOutputDirectory
             reportDirectories = $reportDirectories
-            runtimeStatusPath = Get-SfAdRuntimeStatusPath -StatePath $config.state.path
+            runtimeStatusPath = Get-SyncFactorsRuntimeStatusPath -StatePath $config.state.path
         }
     }
 }
 
-function Format-SfAdMonitorView {
+function Format-SyncFactorsMonitorView {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
@@ -572,7 +572,7 @@ function Format-SfAdMonitorView {
     $lines.Add('SuccessFactors AD Sync Monitor')
     $lines.Add("Config: $($Status.paths.configPath)")
     $lines.Add("SuccessFactors auth: $authSummary")
-    $lines.Add("Health: SF=$(Format-SfAdMonitorHealthSummary -Health $Status.health.successFactors)    AD=$(Format-SfAdMonitorHealthSummary -Health $Status.health.activeDirectory)")
+    $lines.Add("Health: SF=$(Format-SyncFactorsMonitorHealthSummary -Health $Status.health.successFactors)    AD=$(Format-SyncFactorsMonitorHealthSummary -Health $Status.health.activeDirectory)")
     $lines.Add("Refreshed: $((Get-Date).ToString('yyyy-MM-dd HH:mm:ss'))")
     $lines.Add('')
     $lines.Add('Current Run')
@@ -614,7 +614,7 @@ function Format-SfAdMonitorView {
     return $lines
 }
 
-function New-SfAdMonitorUiState {
+function New-SyncFactorsMonitorUiState {
     [CmdletBinding()]
     param()
 
@@ -639,7 +639,7 @@ function New-SfAdMonitorUiState {
     }
 }
 
-function Get-SfAdMonitorBucketDefinitions {
+function Get-SyncFactorsMonitorBucketDefinitions {
     [CmdletBinding()]
     param(
         [string]$Mode
@@ -675,7 +675,7 @@ function Get-SfAdMonitorBucketDefinitions {
     )
 }
 
-function Get-SfAdMonitorSelectedRun {
+function Get-SyncFactorsMonitorSelectedRun {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
@@ -693,7 +693,7 @@ function Get-SfAdMonitorSelectedRun {
     return $runs[$index]
 }
 
-function Get-SfAdMonitorSelectedRunReport {
+function Get-SyncFactorsMonitorSelectedRunReport {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
@@ -702,7 +702,7 @@ function Get-SfAdMonitorSelectedRunReport {
         [pscustomobject]$UiState
     )
 
-    $selectedRun = Get-SfAdMonitorSelectedRun -Status $Status -UiState $UiState
+    $selectedRun = Get-SyncFactorsMonitorSelectedRun -Status $Status -UiState $UiState
     if (-not $selectedRun -or [string]::IsNullOrWhiteSpace("$($selectedRun.path)")) {
         return $null
     }
@@ -714,7 +714,7 @@ function Get-SfAdMonitorSelectedRunReport {
     return Get-Content -Path $selectedRun.path -Raw | ConvertFrom-Json -Depth 20
 }
 
-function Get-SfAdMonitorSelectedBucket {
+function Get-SyncFactorsMonitorSelectedBucket {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
@@ -723,13 +723,13 @@ function Get-SfAdMonitorSelectedBucket {
         [pscustomobject]$UiState
     )
 
-    $selectedRun = Get-SfAdMonitorSelectedRun -Status $Status -UiState $UiState
+    $selectedRun = Get-SyncFactorsMonitorSelectedRun -Status $Status -UiState $UiState
     $selectedRunMode = if ($selectedRun -and $selectedRun.PSObject.Properties.Name -contains 'mode') { $selectedRun.mode } else { $null }
-    $buckets = @(Get-SfAdMonitorBucketDefinitions -Mode $selectedRunMode)
+    $buckets = @(Get-SyncFactorsMonitorBucketDefinitions -Mode $selectedRunMode)
     $index = if ($buckets.Count -eq 0) { 0 } else { [math]::Min([math]::Max([int]$UiState.selectedBucketIndex, 0), $buckets.Count - 1) }
     $bucket = if ($buckets.Count -eq 0) { [pscustomobject]@{ Name = 'quarantined'; Label = 'Quarantined' } } else { $buckets[$index] }
 
-    $report = Get-SfAdMonitorSelectedRunReport -Status $Status -UiState $UiState
+    $report = Get-SyncFactorsMonitorSelectedRunReport -Status $Status -UiState $UiState
     $items = @()
     if ($report -and $report.PSObject.Properties.Name -contains $bucket.Name) {
         $items = @($report.$($bucket.Name))
@@ -741,7 +741,7 @@ function Get-SfAdMonitorSelectedBucket {
     }
 }
 
-function Resolve-SfAdMonitorMappingConfigPath {
+function Resolve-SyncFactorsMonitorMappingConfigPath {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
@@ -762,7 +762,7 @@ function Resolve-SfAdMonitorMappingConfigPath {
     return $null
 }
 
-function Resolve-SfAdMonitorSelectedReportPath {
+function Resolve-SyncFactorsMonitorSelectedReportPath {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
@@ -771,7 +771,7 @@ function Resolve-SfAdMonitorSelectedReportPath {
         [pscustomobject]$UiState
     )
 
-    $selectedRun = Get-SfAdMonitorSelectedRun -Status $Status -UiState $UiState
+    $selectedRun = Get-SyncFactorsMonitorSelectedRun -Status $Status -UiState $UiState
     if (-not $selectedRun -or [string]::IsNullOrWhiteSpace("$($selectedRun.path)")) {
         return $null
     }
@@ -779,7 +779,7 @@ function Resolve-SfAdMonitorSelectedReportPath {
     return $selectedRun.path
 }
 
-function Get-SfAdMonitorActionContext {
+function Get-SyncFactorsMonitorActionContext {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
@@ -789,17 +789,17 @@ function Get-SfAdMonitorActionContext {
         [string]$MappingConfigPath
     )
 
-    $selectedRun = Get-SfAdMonitorSelectedRun -Status $Status -UiState $UiState
+    $selectedRun = Get-SyncFactorsMonitorSelectedRun -Status $Status -UiState $UiState
     return [pscustomobject]@{
         configPath = $Status.paths.configPath
-        mappingConfigPath = Resolve-SfAdMonitorMappingConfigPath -Status $Status -MappingConfigPath $MappingConfigPath
-        reportPath = Resolve-SfAdMonitorSelectedReportPath -Status $Status -UiState $UiState
+        mappingConfigPath = Resolve-SyncFactorsMonitorMappingConfigPath -Status $Status -MappingConfigPath $MappingConfigPath
+        reportPath = Resolve-SyncFactorsMonitorSelectedReportPath -Status $Status -UiState $UiState
         selectedRun = $selectedRun
-        selectedBucket = Get-SfAdMonitorSelectedBucket -Status $Status -UiState $UiState
+        selectedBucket = Get-SyncFactorsMonitorSelectedBucket -Status $Status -UiState $UiState
     }
 }
 
-function ConvertTo-SfAdMonitorInlineText {
+function ConvertTo-SyncFactorsMonitorInlineText {
     [CmdletBinding()]
     param($Value)
 
@@ -823,7 +823,7 @@ function ConvertTo-SfAdMonitorInlineText {
     return "$Value"
 }
 
-function Test-SfAdMonitorItemMatchesFilter {
+function Test-SyncFactorsMonitorItemMatchesFilter {
     [CmdletBinding()]
     param(
         $Item,
@@ -835,11 +835,11 @@ function Test-SfAdMonitorItemMatchesFilter {
     }
 
     $needle = $FilterText.Trim().ToLowerInvariant()
-    $haystack = (ConvertTo-SfAdMonitorInlineText -Value $Item).ToLowerInvariant()
+    $haystack = (ConvertTo-SyncFactorsMonitorInlineText -Value $Item).ToLowerInvariant()
     return $haystack.Contains($needle)
 }
 
-function Get-SfAdMonitorFilteredBucketItems {
+function Get-SyncFactorsMonitorFilteredBucketItems {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
@@ -850,12 +850,12 @@ function Get-SfAdMonitorFilteredBucketItems {
 
     return @(
         @($BucketSelection.Items) | Where-Object {
-            Test-SfAdMonitorItemMatchesFilter -Item $_ -FilterText $UiState.filterText
+            Test-SyncFactorsMonitorItemMatchesFilter -Item $_ -FilterText $UiState.filterText
         }
     )
 }
 
-function Get-SfAdMonitorSelectedBucketItem {
+function Get-SyncFactorsMonitorSelectedBucketItem {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
@@ -864,7 +864,7 @@ function Get-SfAdMonitorSelectedBucketItem {
         [pscustomobject]$UiState
     )
 
-    $items = @(Get-SfAdMonitorFilteredBucketItems -BucketSelection $BucketSelection -UiState $UiState)
+    $items = @(Get-SyncFactorsMonitorFilteredBucketItems -BucketSelection $BucketSelection -UiState $UiState)
     if ($items.Count -eq 0) {
         return $null
     }
@@ -873,7 +873,7 @@ function Get-SfAdMonitorSelectedBucketItem {
     return $items[$index]
 }
 
-function Get-SfAdMonitorSelectedWorkerId {
+function Get-SyncFactorsMonitorSelectedWorkerId {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
@@ -882,8 +882,8 @@ function Get-SfAdMonitorSelectedWorkerId {
         [pscustomobject]$UiState
     )
 
-    $bucketSelection = Get-SfAdMonitorSelectedBucket -Status $Status -UiState $UiState
-    $selectedItem = Get-SfAdMonitorSelectedBucketItem -BucketSelection $bucketSelection -UiState $UiState
+    $bucketSelection = Get-SyncFactorsMonitorSelectedBucket -Status $Status -UiState $UiState
+    $selectedItem = Get-SyncFactorsMonitorSelectedBucketItem -BucketSelection $bucketSelection -UiState $UiState
     if ($selectedItem -and $selectedItem.PSObject.Properties.Name -contains 'workerId' -and -not [string]::IsNullOrWhiteSpace("$($selectedItem.workerId)")) {
         return "$($selectedItem.workerId)"
     }
@@ -895,7 +895,7 @@ function Get-SfAdMonitorSelectedWorkerId {
     return $null
 }
 
-function Get-SfAdMonitorSelectedBucketOperation {
+function Get-SyncFactorsMonitorSelectedBucketOperation {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
@@ -904,13 +904,13 @@ function Get-SfAdMonitorSelectedBucketOperation {
         [pscustomobject]$UiState
     )
 
-    $report = Get-SfAdMonitorSelectedRunReport -Status $Status -UiState $UiState
+    $report = Get-SyncFactorsMonitorSelectedRunReport -Status $Status -UiState $UiState
     if (-not $report -or -not ($report.PSObject.Properties.Name -contains 'operations')) {
         return $null
     }
 
-    $bucketSelection = Get-SfAdMonitorSelectedBucket -Status $Status -UiState $UiState
-    $selectedItem = Get-SfAdMonitorSelectedBucketItem -BucketSelection $bucketSelection -UiState $UiState
+    $bucketSelection = Get-SyncFactorsMonitorSelectedBucket -Status $Status -UiState $UiState
+    $selectedItem = Get-SyncFactorsMonitorSelectedBucketItem -BucketSelection $bucketSelection -UiState $UiState
     $workerId = if ($selectedItem -and $selectedItem.PSObject.Properties.Name -contains 'workerId') { "$($selectedItem.workerId)" } else { $null }
     if ([string]::IsNullOrWhiteSpace($workerId)) {
         return $null
@@ -927,7 +927,7 @@ function Get-SfAdMonitorSelectedBucketOperation {
     return $operations[0]
 }
 
-function Test-SfAdMonitorSelectedRunIsReview {
+function Test-SyncFactorsMonitorSelectedRunIsReview {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
@@ -936,13 +936,13 @@ function Test-SfAdMonitorSelectedRunIsReview {
         [pscustomobject]$UiState
     )
 
-    $selectedRun = Get-SfAdMonitorSelectedRun -Status $Status -UiState $UiState
+    $selectedRun = Get-SyncFactorsMonitorSelectedRun -Status $Status -UiState $UiState
     $mode = if ($selectedRun -and $selectedRun.PSObject.Properties.Name -contains 'mode') { "$($selectedRun.mode)" } else { '' }
     $artifactType = if ($selectedRun -and $selectedRun.PSObject.Properties.Name -contains 'artifactType') { "$($selectedRun.artifactType)" } else { '' }
     return $mode -eq 'Review' -or $artifactType -in @('FirstSyncReview', 'WorkerPreview')
 }
 
-function Test-SfAdMonitorSelectedRunIsWorkerPreview {
+function Test-SyncFactorsMonitorSelectedRunIsWorkerPreview {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
@@ -951,7 +951,7 @@ function Test-SfAdMonitorSelectedRunIsWorkerPreview {
         [pscustomobject]$UiState
     )
 
-    $selectedRun = Get-SfAdMonitorSelectedRun -Status $Status -UiState $UiState
+    $selectedRun = Get-SyncFactorsMonitorSelectedRun -Status $Status -UiState $UiState
     if (-not $selectedRun) {
         return $false
     }
@@ -963,7 +963,7 @@ function Test-SfAdMonitorSelectedRunIsWorkerPreview {
     return "$($selectedRun.artifactType)" -eq 'WorkerPreview'
 }
 
-function Get-SfAdMonitorSelectedRunWorkerId {
+function Get-SyncFactorsMonitorSelectedRunWorkerId {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
@@ -972,7 +972,7 @@ function Get-SfAdMonitorSelectedRunWorkerId {
         [pscustomobject]$UiState
     )
 
-    $selectedRun = Get-SfAdMonitorSelectedRun -Status $Status -UiState $UiState
+    $selectedRun = Get-SyncFactorsMonitorSelectedRun -Status $Status -UiState $UiState
     if (
         $selectedRun -and
         $selectedRun.PSObject.Properties.Name -contains 'workerScope' -and
@@ -986,7 +986,7 @@ function Get-SfAdMonitorSelectedRunWorkerId {
     return $null
 }
 
-function Get-SfAdMonitorWorkerRelatedRuns {
+function Get-SyncFactorsMonitorWorkerRelatedRuns {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
@@ -1040,7 +1040,7 @@ function Get-SfAdMonitorWorkerRelatedRuns {
     return @($results)
 }
 
-function Get-SfAdMonitorFailureGroups {
+function Get-SyncFactorsMonitorFailureGroups {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
@@ -1049,7 +1049,7 @@ function Get-SfAdMonitorFailureGroups {
         [pscustomobject]$UiState
     )
 
-    $items = @(Get-SfAdMonitorFilteredBucketItems -BucketSelection $BucketSelection -UiState $UiState)
+    $items = @(Get-SyncFactorsMonitorFilteredBucketItems -BucketSelection $BucketSelection -UiState $UiState)
     return @(
         $items |
             Group-Object -Property {
@@ -1081,7 +1081,7 @@ function Get-SfAdMonitorFailureGroups {
     )
 }
 
-function Get-SfAdMonitorFilteredTrackedWorkers {
+function Get-SyncFactorsMonitorFilteredTrackedWorkers {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
@@ -1092,12 +1092,12 @@ function Get-SfAdMonitorFilteredTrackedWorkers {
 
     return @(
         @($Status.trackedWorkers) | Where-Object {
-            Test-SfAdMonitorItemMatchesFilter -Item $_ -FilterText $UiState.filterText
+            Test-SyncFactorsMonitorItemMatchesFilter -Item $_ -FilterText $UiState.filterText
         }
     )
 }
 
-function Get-SfAdMonitorSelectedWorkerState {
+function Get-SyncFactorsMonitorSelectedWorkerState {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
@@ -1106,7 +1106,7 @@ function Get-SfAdMonitorSelectedWorkerState {
         [pscustomobject]$UiState
     )
 
-    $workerId = Get-SfAdMonitorSelectedWorkerId -Status $Status -UiState $UiState
+    $workerId = Get-SyncFactorsMonitorSelectedWorkerId -Status $Status -UiState $UiState
     if ([string]::IsNullOrWhiteSpace($workerId)) {
         return $null
     }
@@ -1119,15 +1119,15 @@ function Get-SfAdMonitorSelectedWorkerState {
     return $worker[0]
 }
 
-function Get-SfAdMonitorCurrentRunDiagnostics {
+function Get-SyncFactorsMonitorCurrentRunDiagnostics {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
         [pscustomobject]$CurrentRun
     )
 
-    $startedAt = Get-SfAdDateTimeOrNull -Value $CurrentRun.startedAt
-    $lastUpdatedAt = Get-SfAdDateTimeOrNull -Value $CurrentRun.lastUpdatedAt
+    $startedAt = Get-SyncFactorsDateTimeOrNull -Value $CurrentRun.startedAt
+    $lastUpdatedAt = Get-SyncFactorsDateTimeOrNull -Value $CurrentRun.lastUpdatedAt
     $now = [datetimeoffset](Get-Date)
     $elapsedSeconds = if ($startedAt) { [int][math]::Max(0, [math]::Round(($now - $startedAt).TotalSeconds)) } else { $null }
     $refreshLagSeconds = if ($lastUpdatedAt) { [int][math]::Max(0, [math]::Round(($now - $lastUpdatedAt).TotalSeconds)) } else { $null }
@@ -1150,7 +1150,7 @@ function Get-SfAdMonitorCurrentRunDiagnostics {
     }
 }
 
-function Get-SfAdMonitorPropertyPairs {
+function Get-SyncFactorsMonitorPropertyPairs {
     [CmdletBinding()]
     param($Value)
 
@@ -1179,7 +1179,7 @@ function Get-SfAdMonitorPropertyPairs {
     )
 }
 
-function Get-SfAdMonitorOperationDiffLines {
+function Get-SyncFactorsMonitorOperationDiffLines {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
@@ -1187,13 +1187,13 @@ function Get-SfAdMonitorOperationDiffLines {
     )
 
     $beforeMap = @{}
-    foreach ($property in @(Get-SfAdMonitorPropertyPairs -Value $Operation.before)) {
-        $beforeMap[$property.Name] = ConvertTo-SfAdMonitorInlineText -Value $property.Value
+    foreach ($property in @(Get-SyncFactorsMonitorPropertyPairs -Value $Operation.before)) {
+        $beforeMap[$property.Name] = ConvertTo-SyncFactorsMonitorInlineText -Value $property.Value
     }
 
     $afterMap = @{}
-    foreach ($property in @(Get-SfAdMonitorPropertyPairs -Value $Operation.after)) {
-        $afterMap[$property.Name] = ConvertTo-SfAdMonitorInlineText -Value $property.Value
+    foreach ($property in @(Get-SyncFactorsMonitorPropertyPairs -Value $Operation.after)) {
+        $afterMap[$property.Name] = ConvertTo-SyncFactorsMonitorInlineText -Value $property.Value
     }
 
     $keys = @($beforeMap.Keys + $afterMap.Keys | Sort-Object -Unique)
@@ -1210,7 +1210,7 @@ function Get-SfAdMonitorOperationDiffLines {
     )
 }
 
-function Get-SfAdMonitorBucketDisplayLabel {
+function Get-SyncFactorsMonitorBucketDisplayLabel {
     [CmdletBinding()]
     param(
         [string]$BucketName
@@ -1228,7 +1228,7 @@ function Get-SfAdMonitorBucketDisplayLabel {
     }
 }
 
-function Get-SfAdMonitorOperationSummaryLines {
+function Get-SyncFactorsMonitorOperationSummaryLines {
     [CmdletBinding()]
     param(
         $Item,
@@ -1293,7 +1293,7 @@ function Get-SfAdMonitorOperationSummaryLines {
             $lines.Add('Effect: The AD user object will be removed.')
         }
         'UpdateAttributes' {
-            $attributeCount = @(Get-SfAdMonitorOperationDiffLines -Operation $Operation).Count
+            $attributeCount = @(Get-SyncFactorsMonitorOperationDiffLines -Operation $Operation).Count
             $lines.Add("Action: Update attributes for $targetSam")
             $lines.Add("Effect: $attributeCount attribute$(if ($attributeCount -eq 1) { '' } else { 's' }) will change.")
         }
@@ -1308,7 +1308,7 @@ function Get-SfAdMonitorOperationSummaryLines {
     return @($lines)
 }
 
-function Get-SfAdMonitorReportExplorerCategoryDefinitions {
+function Get-SyncFactorsMonitorReportExplorerCategoryDefinitions {
     [CmdletBinding()]
     param()
 
@@ -1319,7 +1319,7 @@ function Get-SfAdMonitorReportExplorerCategoryDefinitions {
     )
 }
 
-function Get-SfAdMonitorOperationForItem {
+function Get-SyncFactorsMonitorOperationForItem {
     [CmdletBinding()]
     param(
         [pscustomobject]$Report,
@@ -1372,7 +1372,7 @@ function Get-SfAdMonitorOperationForItem {
     return $matches[0]
 }
 
-function Get-SfAdMonitorReportExplorerEntries {
+function Get-SyncFactorsMonitorReportExplorerEntries {
     [CmdletBinding()]
     param(
         [pscustomobject]$Report
@@ -1398,20 +1398,20 @@ function Get-SfAdMonitorReportExplorerEntries {
         }
 
         foreach ($item in @($Report.$bucketName)) {
-            $operation = Get-SfAdMonitorOperationForItem -Report $Report -BucketName $bucketName -Item $item
+            $operation = Get-SyncFactorsMonitorOperationForItem -Report $Report -BucketName $bucketName -Item $item
             $changeCount = 0
             if ($item -and $item.PSObject.Properties.Name -contains 'changedAttributeDetails') {
                 $changeCount = @($item.changedAttributeDetails).Count
             } elseif ($item -and $item.PSObject.Properties.Name -contains 'attributeRows') {
                 $changeCount = @($item.attributeRows | Where-Object { $_.changed }).Count
             } elseif ($operation) {
-                $changeCount = @(Get-SfAdMonitorOperationDiffLines -Operation $operation).Count
+                $changeCount = @(Get-SyncFactorsMonitorOperationDiffLines -Operation $operation).Count
             }
 
             $entries.Add([pscustomobject]@{
                     Category = $bucketCategoryMap[$bucketName]
                     BucketName = $bucketName
-                    BucketLabel = Get-SfAdMonitorBucketDisplayLabel -BucketName $bucketName
+                    BucketLabel = Get-SyncFactorsMonitorBucketDisplayLabel -BucketName $bucketName
                     WorkerId = if ($item -and $item.PSObject.Properties.Name -contains 'workerId') { "$($item.workerId)" } else { '' }
                     SamAccountName = if ($item -and $item.PSObject.Properties.Name -contains 'samAccountName') { "$($item.samAccountName)" } else { '' }
                     UserPrincipalName = if ($item -and $item.PSObject.Properties.Name -contains 'userPrincipalName') { "$($item.userPrincipalName)" } else { '' }
@@ -1428,7 +1428,7 @@ function Get-SfAdMonitorReportExplorerEntries {
     return @($entries)
 }
 
-function Get-SfAdMonitorReportExplorerSelection {
+function Get-SyncFactorsMonitorReportExplorerSelection {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
@@ -1437,9 +1437,9 @@ function Get-SfAdMonitorReportExplorerSelection {
         [pscustomobject]$UiState
     )
 
-    $report = Get-SfAdMonitorSelectedRunReport -Status $Status -UiState $UiState
-    $categories = @(Get-SfAdMonitorReportExplorerCategoryDefinitions)
-    $entries = @(Get-SfAdMonitorReportExplorerEntries -Report $report)
+    $report = Get-SyncFactorsMonitorSelectedRunReport -Status $Status -UiState $UiState
+    $categories = @(Get-SyncFactorsMonitorReportExplorerCategoryDefinitions)
+    $entries = @(Get-SyncFactorsMonitorReportExplorerEntries -Report $report)
     $categoryIndex = if ($categories.Count -eq 0) { 0 } else { [math]::Min([math]::Max([int]$UiState.reportCategoryIndex, 0), $categories.Count - 1) }
     $selectedCategory = if ($categories.Count -eq 0) { $null } else { $categories[$categoryIndex] }
     $categoryEntries = if ($selectedCategory) { @($entries | Where-Object { $_.Category -eq $selectedCategory.Name }) } else { @() }
@@ -1458,7 +1458,7 @@ function Get-SfAdMonitorReportExplorerSelection {
     }
 }
 
-function Get-SfAdMonitorReportExplorerDiffRows {
+function Get-SyncFactorsMonitorReportExplorerDiffRows {
     [CmdletBinding()]
     param(
         $Entry
@@ -1475,8 +1475,8 @@ function Get-SfAdMonitorReportExplorerDiffRows {
                 [pscustomobject]@{
                     Marker = '[UPDATE]'
                     Attribute = "$($row.targetAttribute)"
-                    Before = ConvertTo-SfAdMonitorInlineText -Value $row.currentAdValue
-                    After = ConvertTo-SfAdMonitorInlineText -Value $row.proposedValue
+                    Before = ConvertTo-SyncFactorsMonitorInlineText -Value $row.currentAdValue
+                    After = ConvertTo-SyncFactorsMonitorInlineText -Value $row.proposedValue
                     Source = if ($row.PSObject.Properties.Name -contains 'sourceField') { "$($row.sourceField)" } else { '' }
                 }
             }
@@ -1489,8 +1489,8 @@ function Get-SfAdMonitorReportExplorerDiffRows {
                 [pscustomobject]@{
                     Marker = '[UPDATE]'
                     Attribute = "$($row.targetAttribute)"
-                    Before = ConvertTo-SfAdMonitorInlineText -Value $row.currentAdValue
-                    After = ConvertTo-SfAdMonitorInlineText -Value $row.proposedValue
+                    Before = ConvertTo-SyncFactorsMonitorInlineText -Value $row.currentAdValue
+                    After = ConvertTo-SyncFactorsMonitorInlineText -Value $row.proposedValue
                     Source = if ($row.PSObject.Properties.Name -contains 'sourceField') { "$($row.sourceField)" } else { '' }
                 }
             }
@@ -1499,13 +1499,13 @@ function Get-SfAdMonitorReportExplorerDiffRows {
 
     if ($Entry.Operation) {
         $beforeMap = @{}
-        foreach ($property in @(Get-SfAdMonitorPropertyPairs -Value $Entry.Operation.before)) {
-            $beforeMap[$property.Name] = ConvertTo-SfAdMonitorInlineText -Value $property.Value
+        foreach ($property in @(Get-SyncFactorsMonitorPropertyPairs -Value $Entry.Operation.before)) {
+            $beforeMap[$property.Name] = ConvertTo-SyncFactorsMonitorInlineText -Value $property.Value
         }
 
         $afterMap = @{}
-        foreach ($property in @(Get-SfAdMonitorPropertyPairs -Value $Entry.Operation.after)) {
-            $afterMap[$property.Name] = ConvertTo-SfAdMonitorInlineText -Value $property.Value
+        foreach ($property in @(Get-SyncFactorsMonitorPropertyPairs -Value $Entry.Operation.after)) {
+            $afterMap[$property.Name] = ConvertTo-SyncFactorsMonitorInlineText -Value $property.Value
         }
 
         $keys = @($beforeMap.Keys + $afterMap.Keys | Sort-Object -Unique)
@@ -1538,7 +1538,7 @@ function Get-SfAdMonitorReportExplorerDiffRows {
     return @()
 }
 
-function Get-SfAdMonitorWorkerPreviewDiffRows {
+function Get-SyncFactorsMonitorWorkerPreviewDiffRows {
     [CmdletBinding()]
     param(
         [AllowNull()]
@@ -1554,12 +1554,12 @@ function Get-SfAdMonitorWorkerPreviewDiffRows {
             foreach ($row in @($PreviewResult.changedAttributes)) {
                 $attribute = if ($row.PSObject.Properties.Name -contains 'targetAttribute') { "$($row.targetAttribute)" } else { '' }
                 $beforeValue = if ($row.PSObject.Properties.Name -contains 'currentAdValue') {
-                    ConvertTo-SfAdMonitorInlineText -Value $row.currentAdValue
+                    ConvertTo-SyncFactorsMonitorInlineText -Value $row.currentAdValue
                 } else {
                     '(unset)'
                 }
                 $afterValue = if ($row.PSObject.Properties.Name -contains 'proposedValue') {
-                    ConvertTo-SfAdMonitorInlineText -Value $row.proposedValue
+                    ConvertTo-SyncFactorsMonitorInlineText -Value $row.proposedValue
                 } else {
                     '(unset)'
                 }
@@ -1588,13 +1588,13 @@ function Get-SfAdMonitorWorkerPreviewDiffRows {
         $results = [System.Collections.Generic.List[object]]::new()
         foreach ($operation in @($PreviewResult.operations)) {
             $beforeMap = @{}
-            foreach ($property in @(Get-SfAdMonitorPropertyPairs -Value $operation.before)) {
-                $beforeMap[$property.Name] = ConvertTo-SfAdMonitorInlineText -Value $property.Value
+            foreach ($property in @(Get-SyncFactorsMonitorPropertyPairs -Value $operation.before)) {
+                $beforeMap[$property.Name] = ConvertTo-SyncFactorsMonitorInlineText -Value $property.Value
             }
 
             $afterMap = @{}
-            foreach ($property in @(Get-SfAdMonitorPropertyPairs -Value $operation.after)) {
-                $afterMap[$property.Name] = ConvertTo-SfAdMonitorInlineText -Value $property.Value
+            foreach ($property in @(Get-SyncFactorsMonitorPropertyPairs -Value $operation.after)) {
+                $afterMap[$property.Name] = ConvertTo-SyncFactorsMonitorInlineText -Value $property.Value
             }
 
             $keys = @($beforeMap.Keys + $afterMap.Keys | Sort-Object -Unique)
@@ -1623,7 +1623,7 @@ function Get-SfAdMonitorWorkerPreviewDiffRows {
     return @()
 }
 
-function Get-SfAdMonitorWorkerSyncSummaryLines {
+function Get-SyncFactorsMonitorWorkerSyncSummaryLines {
     [CmdletBinding()]
     param(
         [AllowNull()]
@@ -1707,7 +1707,7 @@ function Get-SfAdMonitorWorkerSyncSummaryLines {
     return @($lines)
 }
 
-function Format-SfAdMonitorWorkerPreviewFlowView {
+function Format-SyncFactorsMonitorWorkerPreviewFlowView {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
@@ -1717,7 +1717,7 @@ function Format-SfAdMonitorWorkerPreviewFlowView {
     )
 
     $previewResult = $UiState.workerPreviewResult
-    $diffRows = @(if (@($UiState.workerPreviewDiffRows).Count -gt 0) { $UiState.workerPreviewDiffRows } else { Get-SfAdMonitorWorkerPreviewDiffRows -PreviewResult $previewResult })
+    $diffRows = @(if (@($UiState.workerPreviewDiffRows).Count -gt 0) { $UiState.workerPreviewDiffRows } else { Get-SyncFactorsMonitorWorkerPreviewDiffRows -PreviewResult $previewResult })
     $panelWidth = 110
     $topBorder = "╔" + ("═" * ($panelWidth - 2)) + "╗"
     $midBorder = "╠" + ("═" * ($panelWidth - 2)) + "╣"
@@ -1771,7 +1771,7 @@ function Format-SfAdMonitorWorkerPreviewFlowView {
     return $lines
 }
 
-function Format-SfAdMonitorReportExplorerView {
+function Format-SyncFactorsMonitorReportExplorerView {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
@@ -1780,12 +1780,12 @@ function Format-SfAdMonitorReportExplorerView {
         [pscustomobject]$UiState
     )
 
-    $selectedRun = Get-SfAdMonitorSelectedRun -Status $Status -UiState $UiState
-    $selection = Get-SfAdMonitorReportExplorerSelection -Status $Status -UiState $UiState
+    $selectedRun = Get-SyncFactorsMonitorSelectedRun -Status $Status -UiState $UiState
+    $selection = Get-SyncFactorsMonitorReportExplorerSelection -Status $Status -UiState $UiState
     $selectionEntries = @($selection.Entries)
     $selectionCategoryEntries = @($selection.CategoryEntries)
     $selectionCategories = @($selection.Categories)
-    $diffRows = @(Get-SfAdMonitorReportExplorerDiffRows -Entry $selection.SelectedEntry)
+    $diffRows = @(Get-SyncFactorsMonitorReportExplorerDiffRows -Entry $selection.SelectedEntry)
     $lines = [System.Collections.Generic.List[string]]::new()
     $panelWidth = 110
     $topBorder = "╔" + ("═" * ($panelWidth - 2)) + "╗"
@@ -1858,7 +1858,7 @@ function Format-SfAdMonitorReportExplorerView {
         if ($entry.Operation) {
             $lines.Add("Operation: $($entry.Operation.operationType)")
         }
-        foreach ($summaryLine in @(Get-SfAdMonitorOperationSummaryLines -Item $entry.Item -Operation $entry.Operation)) {
+        foreach ($summaryLine in @(Get-SyncFactorsMonitorOperationSummaryLines -Item $entry.Item -Operation $entry.Operation)) {
             $lines.Add($summaryLine)
         }
         if ($diffRows.Count -eq 0) {
@@ -1880,7 +1880,7 @@ function Format-SfAdMonitorReportExplorerView {
     return $lines
 }
 
-function Format-SfAdMonitorSelectedObjectLines {
+function Format-SyncFactorsMonitorSelectedObjectLines {
     [CmdletBinding()]
     param(
         $SelectedItem,
@@ -1897,7 +1897,7 @@ function Format-SfAdMonitorSelectedObjectLines {
         }
 
         if ($summaryParts.Count -eq 0) {
-            $summaryParts.Add((ConvertTo-SfAdMonitorInlineText -Value $SelectedItem))
+            $summaryParts.Add((ConvertTo-SyncFactorsMonitorInlineText -Value $SelectedItem))
         }
 
         $lines.Add("Item: $($summaryParts -join '    ')")
@@ -1908,19 +1908,19 @@ function Format-SfAdMonitorSelectedObjectLines {
     if (-not $SelectedOperation) {
         $lines.Add('Operation: no matching reversible operation recorded for the selected object.')
     } else {
-        $lines.Add("Operation: $($SelectedOperation.operationType)    Target: $(ConvertTo-SfAdMonitorInlineText -Value $SelectedOperation.target)")
-        foreach ($summaryLine in @(Get-SfAdMonitorOperationSummaryLines -Item $SelectedItem -Operation $SelectedOperation)) {
+        $lines.Add("Operation: $($SelectedOperation.operationType)    Target: $(ConvertTo-SyncFactorsMonitorInlineText -Value $SelectedOperation.target)")
+        foreach ($summaryLine in @(Get-SyncFactorsMonitorOperationSummaryLines -Item $SelectedItem -Operation $SelectedOperation)) {
             $lines.Add($summaryLine)
         }
-        $diffLines = @(Get-SfAdMonitorOperationDiffLines -Operation $SelectedOperation)
+        $diffLines = @(Get-SyncFactorsMonitorOperationDiffLines -Operation $SelectedOperation)
         if ("$($SelectedOperation.operationType)" -eq 'MoveUser') {
             $diffLines = @($diffLines | Where-Object { $_ -notmatch '^(distinguishedName|parentOu|targetOu): ' })
         }
         if ($diffLines.Count -eq 0) {
             if ($null -ne $SelectedOperation.after) {
-                $lines.Add("After: $(ConvertTo-SfAdMonitorInlineText -Value $SelectedOperation.after)")
+                $lines.Add("After: $(ConvertTo-SyncFactorsMonitorInlineText -Value $SelectedOperation.after)")
             } elseif ($null -ne $SelectedOperation.before) {
-                $lines.Add("Before: $(ConvertTo-SfAdMonitorInlineText -Value $SelectedOperation.before)")
+                $lines.Add("Before: $(ConvertTo-SyncFactorsMonitorInlineText -Value $SelectedOperation.before)")
             }
         } else {
             foreach ($line in $diffLines | Select-Object -First 6) {
@@ -1953,7 +1953,7 @@ function Format-SfAdMonitorSelectedObjectLines {
     return $lines
 }
 
-function Get-SfAdMonitorRunDelta {
+function Get-SyncFactorsMonitorRunDelta {
     [CmdletBinding()]
     param(
         [pscustomobject]$ReferenceRun,
@@ -1975,7 +1975,7 @@ function Get-SfAdMonitorRunDelta {
     }
 }
 
-function Format-SfAdMonitorDashboardView {
+function Format-SyncFactorsMonitorDashboardView {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
@@ -1985,27 +1985,27 @@ function Format-SfAdMonitorDashboardView {
     )
 
     if ($UiState.PSObject.Properties.Name -contains 'viewMode' -and "$($UiState.viewMode)" -eq 'ReportExplorer') {
-        return @(Format-SfAdMonitorReportExplorerView -Status $Status -UiState $UiState)
+        return @(Format-SyncFactorsMonitorReportExplorerView -Status $Status -UiState $UiState)
     }
 
     if ($UiState.PSObject.Properties.Name -contains 'viewMode' -and "$($UiState.viewMode)" -eq 'WorkerPreviewDiff') {
-        return @(Format-SfAdMonitorWorkerPreviewFlowView -Status $Status -UiState $UiState)
+        return @(Format-SyncFactorsMonitorWorkerPreviewFlowView -Status $Status -UiState $UiState)
     }
 
-    $selectedRun = Get-SfAdMonitorSelectedRun -Status $Status -UiState $UiState
-    $selectedBucket = Get-SfAdMonitorSelectedBucket -Status $Status -UiState $UiState
-    $filteredItems = @(Get-SfAdMonitorFilteredBucketItems -BucketSelection $selectedBucket -UiState $UiState)
-    $selectedItem = Get-SfAdMonitorSelectedBucketItem -BucketSelection $selectedBucket -UiState $UiState
-    $selectedOperation = Get-SfAdMonitorSelectedBucketOperation -Status $Status -UiState $UiState
-    $selectedWorkerState = Get-SfAdMonitorSelectedWorkerState -Status $Status -UiState $UiState
-    $failureGroups = @(Get-SfAdMonitorFailureGroups -BucketSelection $selectedBucket -UiState $UiState)
-    $diagnostics = Get-SfAdMonitorCurrentRunDiagnostics -CurrentRun $Status.currentRun
+    $selectedRun = Get-SyncFactorsMonitorSelectedRun -Status $Status -UiState $UiState
+    $selectedBucket = Get-SyncFactorsMonitorSelectedBucket -Status $Status -UiState $UiState
+    $filteredItems = @(Get-SyncFactorsMonitorFilteredBucketItems -BucketSelection $selectedBucket -UiState $UiState)
+    $selectedItem = Get-SyncFactorsMonitorSelectedBucketItem -BucketSelection $selectedBucket -UiState $UiState
+    $selectedOperation = Get-SyncFactorsMonitorSelectedBucketOperation -Status $Status -UiState $UiState
+    $selectedWorkerState = Get-SyncFactorsMonitorSelectedWorkerState -Status $Status -UiState $UiState
+    $failureGroups = @(Get-SyncFactorsMonitorFailureGroups -BucketSelection $selectedBucket -UiState $UiState)
+    $diagnostics = Get-SyncFactorsMonitorCurrentRunDiagnostics -CurrentRun $Status.currentRun
     $comparisonRun = $null
     if (@($Status.recentRuns).Count -gt ([int]$UiState.selectedRunIndex + 1)) {
         $comparisonRun = @($Status.recentRuns)[[int]$UiState.selectedRunIndex + 1]
     }
-    $runDelta = Get-SfAdMonitorRunDelta -ReferenceRun $selectedRun -ComparisonRun $comparisonRun
-    $isReviewRun = Test-SfAdMonitorSelectedRunIsReview -Status $Status -UiState $UiState
+    $runDelta = Get-SyncFactorsMonitorRunDelta -ReferenceRun $selectedRun -ComparisonRun $comparisonRun
+    $isReviewRun = Test-SyncFactorsMonitorSelectedRunIsReview -Status $Status -UiState $UiState
     $lines = [System.Collections.Generic.List[string]]::new()
     $panelWidth = 110
     $recentRunRowLimit = 5
@@ -2038,13 +2038,13 @@ function Format-SfAdMonitorDashboardView {
         $Status.health -and
         $Status.health.PSObject.Properties.Name -contains 'successFactors' -and
         $Status.health.successFactors
-    ) { Format-SfAdMonitorHealthSummary -Health $Status.health.successFactors } else { '-' }
+    ) { Format-SyncFactorsMonitorHealthSummary -Health $Status.health.successFactors } else { '-' }
     $activeDirectoryHealth = if (
         $Status.PSObject.Properties.Name -contains 'health' -and
         $Status.health -and
         $Status.health.PSObject.Properties.Name -contains 'activeDirectory' -and
         $Status.health.activeDirectory
-    ) { Format-SfAdMonitorHealthSummary -Health $Status.health.activeDirectory } else { '-' }
+    ) { Format-SyncFactorsMonitorHealthSummary -Health $Status.health.activeDirectory } else { '-' }
     $latestState = if ($Status.latestRun.status -eq 'Failed' -or $Status.currentRun.errorMessage) { 'ERROR' } elseif ($Status.currentRun.status -eq 'InProgress') { 'ACTIVE' } else { 'OK' }
     $selectedRunPosition = [math]::Min([int]$UiState.selectedRunIndex + 1, [math]::Max(@($Status.recentRuns).Count, 1))
     $selectedItemPosition = [math]::Min([int]$UiState.selectedItemIndex + 1, [math]::Max($filteredItems.Count, 1))
@@ -2146,7 +2146,7 @@ function Format-SfAdMonitorDashboardView {
     } else {
         for ($i = 0; $i -lt [math]::Min($filteredItems.Count, $detailRowLimit); $i += 1) {
             $prefix = if ($selectedItem -and $filteredItems[$i] -eq $selectedItem) { '>' } else { '-' }
-            $lines.Add("$prefix $(ConvertTo-SfAdMonitorInlineText -Value $filteredItems[$i])")
+            $lines.Add("$prefix $(ConvertTo-SyncFactorsMonitorInlineText -Value $filteredItems[$i])")
         }
 
         if ($filteredItems.Count -gt $detailRowLimit) {
@@ -2156,18 +2156,18 @@ function Format-SfAdMonitorDashboardView {
 
     $lines.Add($rule)
     $lines.Add('▓ Selected Object')
-    foreach ($line in @(Format-SfAdMonitorSelectedObjectLines -SelectedItem $selectedItem -SelectedOperation $selectedOperation)) {
+    foreach ($line in @(Format-SyncFactorsMonitorSelectedObjectLines -SelectedItem $selectedItem -SelectedOperation $selectedOperation)) {
         $lines.Add($line)
     }
     if ($selectedWorkerState) {
-        $lines.Add("Tracked: $(ConvertTo-SfAdMonitorInlineText -Value $selectedWorkerState)")
+        $lines.Add("Tracked: $(ConvertTo-SyncFactorsMonitorInlineText -Value $selectedWorkerState)")
     } else {
-        $stateMatches = @(Get-SfAdMonitorFilteredTrackedWorkers -Status $Status -UiState $UiState)
+        $stateMatches = @(Get-SyncFactorsMonitorFilteredTrackedWorkers -Status $Status -UiState $UiState)
         if ($stateMatches.Count -eq 0) {
             $lines.Add('No tracked worker state matches the current context.')
         } else {
             foreach ($stateMatch in $stateMatches | Select-Object -First 4) {
-                $lines.Add("- $(ConvertTo-SfAdMonitorInlineText -Value $stateMatch)")
+                $lines.Add("- $(ConvertTo-SyncFactorsMonitorInlineText -Value $stateMatch)")
             }
         }
     }
@@ -2191,7 +2191,7 @@ function Format-SfAdMonitorDashboardView {
         $lines.Add($rule)
         $lines.Add('▓ Worker Report Picker')
         $lines.Add("Selected worker: $($UiState.pendingWorkerId)")
-        $relatedRuns = @(Get-SfAdMonitorWorkerRelatedRuns -Status $Status -WorkerId $UiState.pendingWorkerId)
+        $relatedRuns = @(Get-SyncFactorsMonitorWorkerRelatedRuns -Status $Status -WorkerId $UiState.pendingWorkerId)
         if ($relatedRuns.Count -eq 0) {
             $lines.Add('No related one-worker reports were found.')
         } else {
@@ -2206,8 +2206,8 @@ function Format-SfAdMonitorDashboardView {
         $lines.Add('Press Enter or o to open the selected report.')
         $lines.Add('Press j/k to move through related reports.')
         $lines.Add('Press Esc to return to worker actions.')
-    } elseif (Test-SfAdMonitorSelectedRunIsWorkerPreview -Status $Status -UiState $UiState) {
-        $workerPreviewWorkerId = Get-SfAdMonitorSelectedRunWorkerId -Status $Status -UiState $UiState
+    } elseif (Test-SyncFactorsMonitorSelectedRunIsWorkerPreview -Status $Status -UiState $UiState) {
+        $workerPreviewWorkerId = Get-SyncFactorsMonitorSelectedRunWorkerId -Status $Status -UiState $UiState
         if (-not [string]::IsNullOrWhiteSpace($workerPreviewWorkerId)) {
             $lines.Add($rule)
             $lines.Add('▓ Worker Review Actions')
@@ -2224,4 +2224,4 @@ function Format-SfAdMonitorDashboardView {
     return $lines
 }
 
-Export-ModuleMember -Function Get-SfAdRuntimeStatusPath, New-SfAdIdleRuntimeStatus, New-SfAdRuntimeStatusSnapshot, Save-SfAdRuntimeStatusSnapshot, Write-SfAdRuntimeStatusSnapshot, Get-SfAdRuntimeStatusSnapshot, Get-SfAdRecentRunSummaries, Get-SfAdMonitorStatus, Format-SfAdMonitorView, New-SfAdMonitorUiState, Get-SfAdMonitorBucketDefinitions, Get-SfAdMonitorSelectedRun, Get-SfAdMonitorSelectedRunReport, Get-SfAdMonitorSelectedBucket, Resolve-SfAdMonitorMappingConfigPath, Resolve-SfAdMonitorSelectedReportPath, Get-SfAdMonitorActionContext, Format-SfAdMonitorDashboardView, Get-SfAdMonitorFilteredBucketItems, Get-SfAdMonitorSelectedBucketItem, Get-SfAdMonitorSelectedBucketOperation, Get-SfAdMonitorFailureGroups, Get-SfAdMonitorSelectedWorkerState, Get-SfAdMonitorCurrentRunDiagnostics, Get-SfAdMonitorOperationDiffLines, Format-SfAdMonitorSelectedObjectLines, Get-SfAdReportDirectories, Test-SfAdMonitorSelectedRunIsReview, Test-SfAdMonitorSelectedRunIsWorkerPreview, Get-SfAdMonitorSelectedRunWorkerId, Get-SfAdMonitorWorkerRelatedRuns, Get-SfAdMonitorReportExplorerCategoryDefinitions, Get-SfAdMonitorReportExplorerEntries, Get-SfAdMonitorReportExplorerSelection, Get-SfAdMonitorReportExplorerDiffRows, Format-SfAdMonitorReportExplorerView, Get-SfAdMonitorWorkerPreviewDiffRows, Get-SfAdMonitorWorkerSyncSummaryLines, Format-SfAdMonitorWorkerPreviewFlowView
+Export-ModuleMember -Function Get-SyncFactorsRuntimeStatusPath, New-SyncFactorsIdleRuntimeStatus, New-SyncFactorsRuntimeStatusSnapshot, Save-SyncFactorsRuntimeStatusSnapshot, Write-SyncFactorsRuntimeStatusSnapshot, Get-SyncFactorsRuntimeStatusSnapshot, Get-SyncFactorsRecentRunSummaries, Get-SyncFactorsMonitorStatus, Format-SyncFactorsMonitorView, New-SyncFactorsMonitorUiState, Get-SyncFactorsMonitorBucketDefinitions, Get-SyncFactorsMonitorSelectedRun, Get-SyncFactorsMonitorSelectedRunReport, Get-SyncFactorsMonitorSelectedBucket, Resolve-SyncFactorsMonitorMappingConfigPath, Resolve-SyncFactorsMonitorSelectedReportPath, Get-SyncFactorsMonitorActionContext, Format-SyncFactorsMonitorDashboardView, Get-SyncFactorsMonitorFilteredBucketItems, Get-SyncFactorsMonitorSelectedBucketItem, Get-SyncFactorsMonitorSelectedBucketOperation, Get-SyncFactorsMonitorFailureGroups, Get-SyncFactorsMonitorSelectedWorkerState, Get-SyncFactorsMonitorCurrentRunDiagnostics, Get-SyncFactorsMonitorOperationDiffLines, Format-SyncFactorsMonitorSelectedObjectLines, Get-SyncFactorsReportDirectories, Test-SyncFactorsMonitorSelectedRunIsReview, Test-SyncFactorsMonitorSelectedRunIsWorkerPreview, Get-SyncFactorsMonitorSelectedRunWorkerId, Get-SyncFactorsMonitorWorkerRelatedRuns, Get-SyncFactorsMonitorReportExplorerCategoryDefinitions, Get-SyncFactorsMonitorReportExplorerEntries, Get-SyncFactorsMonitorReportExplorerSelection, Get-SyncFactorsMonitorReportExplorerDiffRows, Format-SyncFactorsMonitorReportExplorerView, Get-SyncFactorsMonitorWorkerPreviewDiffRows, Get-SyncFactorsMonitorWorkerSyncSummaryLines, Format-SyncFactorsMonitorWorkerPreviewFlowView

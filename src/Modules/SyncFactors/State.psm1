@@ -1,6 +1,6 @@
 Set-StrictMode -Version Latest
 
-function ConvertFrom-SfAdJsonDocument {
+function ConvertFrom-SyncFactorsJsonDocument {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
@@ -15,7 +15,7 @@ function ConvertFrom-SfAdJsonDocument {
     return $Json | ConvertFrom-Json -Depth 20
 }
 
-function Get-SfAdSyncState {
+function Get-SyncFactorsState {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
@@ -29,7 +29,7 @@ function Get-SfAdSyncState {
         }
     }
 
-    $state = ConvertFrom-SfAdJsonDocument -Json (Get-Content -Path $Path -Raw)
+    $state = ConvertFrom-SyncFactorsJsonDocument -Json (Get-Content -Path $Path -Raw)
     if (-not $state.workers) {
         $state | Add-Member -MemberType NoteProperty -Name workers -Value @{} -Force
     }
@@ -37,7 +37,7 @@ function Get-SfAdSyncState {
     return $state
 }
 
-function Get-SfAdWorkerEntries {
+function Get-SyncFactorsWorkerEntries {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
@@ -67,7 +67,7 @@ function Get-SfAdWorkerEntries {
     })
 }
 
-function Save-SfAdSyncState {
+function Save-SyncFactorsState {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
@@ -84,7 +84,7 @@ function Save-SfAdSyncState {
     $State | ConvertTo-Json -Depth 20 | Set-Content -Path $Path
 }
 
-function Get-SfAdWorkerState {
+function Get-SyncFactorsWorkerState {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
@@ -108,7 +108,7 @@ function Get-SfAdWorkerState {
     return $null
 }
 
-function Set-SfAdWorkerState {
+function Set-SyncFactorsWorkerState {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
@@ -122,7 +122,7 @@ function Set-SfAdWorkerState {
     $State.workers | Add-Member -MemberType NoteProperty -Name $WorkerId -Value $WorkerState -Force
 }
 
-function Remove-SfAdWorkerState {
+function Remove-SyncFactorsWorkerState {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
@@ -142,4 +142,4 @@ function Remove-SfAdWorkerState {
     }
 }
 
-Export-ModuleMember -Function ConvertFrom-SfAdJsonDocument, Get-SfAdSyncState, Get-SfAdWorkerEntries, Save-SfAdSyncState, Get-SfAdWorkerState, Set-SfAdWorkerState, Remove-SfAdWorkerState
+Export-ModuleMember -Function ConvertFrom-SyncFactorsJsonDocument, Get-SyncFactorsState, Get-SyncFactorsWorkerEntries, Save-SyncFactorsState, Get-SyncFactorsWorkerState, Set-SyncFactorsWorkerState, Remove-SyncFactorsWorkerState

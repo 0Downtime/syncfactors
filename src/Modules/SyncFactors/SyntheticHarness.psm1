@@ -1,6 +1,6 @@
 Set-StrictMode -Version Latest
 
-function New-SfAdSyntheticManagerDirectory {
+function New-SyncFactorsSyntheticManagerDirectory {
     [CmdletBinding()]
     param(
         [ValidateRange(1, 5000)]
@@ -23,7 +23,7 @@ function New-SfAdSyntheticManagerDirectory {
     return $managers
 }
 
-function New-SfAdSyntheticWorkers {
+function New-SyncFactorsSyntheticWorkers {
     [CmdletBinding()]
     param(
         [ValidateRange(1, 50000)]
@@ -45,7 +45,7 @@ function New-SfAdSyntheticWorkers {
     }
 
     $uniqueWorkerCount = $UserCount - $DuplicateWorkerIdCount
-    $managerDirectory = @(New-SfAdSyntheticManagerDirectory -ManagerCount $ManagerCount)
+    $managerDirectory = @(New-SyncFactorsSyntheticManagerDirectory -ManagerCount $ManagerCount)
     $workers = @()
 
     for ($i = 0; $i -lt $uniqueWorkerCount; $i++) {
@@ -101,4 +101,4 @@ function New-SfAdSyntheticWorkers {
     }
 }
 
-Export-ModuleMember -Function New-SfAdSyntheticManagerDirectory, New-SfAdSyntheticWorkers
+Export-ModuleMember -Function New-SyncFactorsSyntheticManagerDirectory, New-SyncFactorsSyntheticWorkers

@@ -12,7 +12,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $projectRoot = Split-Path -Path $PSScriptRoot -Parent
-$moduleRoot = Join-Path -Path $projectRoot -ChildPath 'src/Modules/SfAdSync'
+$moduleRoot = Join-Path -Path $projectRoot -ChildPath 'src/Modules/SyncFactors'
 Import-Module (Join-Path $moduleRoot 'Config.psm1') -Force -DisableNameChecking
 
 $resolvedConfigPath = (Resolve-Path -Path $ConfigPath).Path
@@ -20,9 +20,9 @@ $resolvedMappingConfigPath = (Resolve-Path -Path $MappingConfigPath).Path
 $effectiveConfigPath = $resolvedConfigPath
 
 if (-not [string]::IsNullOrWhiteSpace($OutputDirectory)) {
-    $config = Get-SfAdSyncConfig -Path $resolvedConfigPath
+    $config = Get-SyncFactorsConfig -Path $resolvedConfigPath
     $config.reporting.reviewOutputDirectory = (Resolve-Path -Path (New-Item -Path $OutputDirectory -ItemType Directory -Force)).Path
-    $overlayPath = Join-Path -Path ([System.IO.Path]::GetTempPath()) -ChildPath ("sf-ad-sync-review-config-{0}.json" -f ([guid]::NewGuid().Guid))
+    $overlayPath = Join-Path -Path ([System.IO.Path]::GetTempPath()) -ChildPath ("syncfactors-review-config-{0}.json" -f ([guid]::NewGuid().Guid))
     try {
         $config | ConvertTo-Json -Depth 30 | Set-Content -Path $overlayPath
         $effectiveConfigPath = $overlayPath
@@ -34,7 +34,7 @@ if (-not [string]::IsNullOrWhiteSpace($OutputDirectory)) {
     }
 }
 
-$invokePath = Join-Path -Path $projectRoot -ChildPath 'src/Invoke-SfAdSync.ps1'
+$invokePath = Join-Path -Path $projectRoot -ChildPath 'src/Invoke-SyncFactors.ps1'
 $reportPath = & $invokePath -ConfigPath $effectiveConfigPath -MappingConfigPath $resolvedMappingConfigPath -Mode Review
 $report = Get-Content -Path $reportPath -Raw | ConvertFrom-Json -Depth 30
 

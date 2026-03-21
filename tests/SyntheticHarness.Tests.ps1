@@ -1,10 +1,10 @@
-Describe 'New-SfAdSyntheticWorkers' {
+Describe 'New-SyncFactorsSyntheticWorkers' {
     BeforeAll {
-        Import-Module "$PSScriptRoot/../src/Modules/SfAdSync/SyntheticHarness.psm1" -Force
+        Import-Module "$PSScriptRoot/../src/Modules/SyncFactors/SyntheticHarness.psm1" -Force
     }
 
     It 'generates the requested number of workers with duplicates included in the total count' {
-        $syntheticDirectory = New-SfAdSyntheticWorkers -UserCount 25 -DuplicateWorkerIdCount 5
+        $syntheticDirectory = New-SyncFactorsSyntheticWorkers -UserCount 25 -DuplicateWorkerIdCount 5
         $workers = @($syntheticDirectory.workers)
 
         $workers.Count | Should -Be 25
@@ -12,14 +12,14 @@ Describe 'New-SfAdSyntheticWorkers' {
     }
 
     It 'marks the requested number of inactive workers' {
-        $syntheticDirectory = New-SfAdSyntheticWorkers -UserCount 20 -InactiveCount 4
+        $syntheticDirectory = New-SyncFactorsSyntheticWorkers -UserCount 20 -InactiveCount 4
         $workers = @($syntheticDirectory.workers)
 
         (@($workers | Where-Object status -eq 'inactive')).Count | Should -Be 4
     }
 
     It 'assigns manager employee ids from the synthetic manager directory' {
-        $syntheticDirectory = New-SfAdSyntheticWorkers -UserCount 20 -ManagerCount 4
+        $syntheticDirectory = New-SyncFactorsSyntheticWorkers -UserCount 20 -ManagerCount 4
         $workers = @($syntheticDirectory.workers)
         $managers = @($syntheticDirectory.managers)
 

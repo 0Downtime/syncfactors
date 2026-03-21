@@ -1,6 +1,6 @@
 Set-StrictMode -Version Latest
 
-$SfAdRollbackAttributeAllowList = @(
+$SyncFactorsRollbackAttributeAllowList = @(
     'company',
     'department',
     'description',
@@ -45,7 +45,7 @@ $SfAdRollbackAttributeAllowList = @(
     'wWWHomePage'
 )
 
-function Convert-SfAdValueForJson {
+function Convert-SyncFactorsValueForJson {
     param($Value)
 
     if ($null -eq $Value) {
@@ -53,7 +53,7 @@ function Convert-SfAdValueForJson {
     }
 
     if ($Value -is [System.Array]) {
-        return @($Value | ForEach-Object { Convert-SfAdValueForJson -Value $_ })
+        return @($Value | ForEach-Object { Convert-SyncFactorsValueForJson -Value $_ })
     }
 
     if ($Value -is [datetime]) {
@@ -75,7 +75,7 @@ function Convert-SfAdValueForJson {
     return "$Value"
 }
 
-function Get-SfAdParentOuFromDistinguishedName {
+function Get-SyncFactorsParentOuFromDistinguishedName {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
@@ -100,7 +100,7 @@ function Ensure-ActiveDirectoryModule {
     }
 }
 
-function Get-SfAdDirectoryContextParameters {
+function Get-SyncFactorsDirectoryContextParameters {
     [CmdletBinding()]
     param(
         [AllowNull()]
@@ -121,14 +121,14 @@ function Get-SfAdDirectoryContextParameters {
     }
 
     if (-not [string]::IsNullOrWhiteSpace($username)) {
-        $securePassword = ConvertTo-SfAdSecureString -Value $bindPassword
+        $securePassword = ConvertTo-SyncFactorsSecureString -Value $bindPassword
         $parameters['Credential'] = [pscredential]::new($username, $securePassword)
     }
 
     return $parameters
 }
 
-function ConvertTo-SfAdSecureString {
+function ConvertTo-SyncFactorsSecureString {
     [System.Diagnostics.CodeAnalysis.SuppressMessageAttribute(
         'PSAvoidUsingConvertToSecureStringWithPlainText',
         '',
@@ -144,7 +144,7 @@ function ConvertTo-SfAdSecureString {
     return ConvertTo-SecureString -String $Value -AsPlainText -Force
 }
 
-function Get-SfAdUserByObjectGuid {
+function Get-SyncFactorsUserByObjectGuid {
     [CmdletBinding()]
     param(
         [AllowNull()]
@@ -154,11 +154,11 @@ function Get-SfAdUserByObjectGuid {
     )
 
     Ensure-ActiveDirectoryModule
-    $directoryContext = Get-SfAdDirectoryContextParameters -Config $Config
+    $directoryContext = Get-SyncFactorsDirectoryContextParameters -Config $Config
     return Get-ADUser -Identity $ObjectGuid -Properties * -ErrorAction SilentlyContinue @directoryContext
 }
 
-function Get-SfAdTargetUser {
+function Get-SyncFactorsTargetUser {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
@@ -170,11 +170,11 @@ function Get-SfAdTargetUser {
     Ensure-ActiveDirectoryModule
     $attribute = $Config.ad.identityAttribute
     $ldapFilter = "($attribute=$WorkerId)"
-    $directoryContext = Get-SfAdDirectoryContextParameters -Config $Config
+    $directoryContext = Get-SyncFactorsDirectoryContextParameters -Config $Config
     return Get-ADUser -LDAPFilter $ldapFilter -Properties * -ErrorAction SilentlyContinue @directoryContext
 }
 
-function Get-SfAdUserBySamAccountName {
+function Get-SyncFactorsUserBySamAccountName {
     [CmdletBinding()]
     param(
         [AllowNull()]
@@ -184,11 +184,11 @@ function Get-SfAdUserBySamAccountName {
     )
 
     Ensure-ActiveDirectoryModule
-    $directoryContext = Get-SfAdDirectoryContextParameters -Config $Config
+    $directoryContext = Get-SyncFactorsDirectoryContextParameters -Config $Config
     return Get-ADUser -LDAPFilter "(samAccountName=$SamAccountName)" -Properties * -ErrorAction SilentlyContinue @directoryContext
 }
 
-function Get-SfAdUserByUserPrincipalName {
+function Get-SyncFactorsUserByUserPrincipalName {
     [CmdletBinding()]
     param(
         [AllowNull()]
@@ -198,11 +198,11 @@ function Get-SfAdUserByUserPrincipalName {
     )
 
     Ensure-ActiveDirectoryModule
-    $directoryContext = Get-SfAdDirectoryContextParameters -Config $Config
+    $directoryContext = Get-SyncFactorsDirectoryContextParameters -Config $Config
     return Get-ADUser -LDAPFilter "(userPrincipalName=$UserPrincipalName)" -Properties * -ErrorAction SilentlyContinue @directoryContext
 }
 
-function Get-SfAdUserGroupMembershipDns {
+function Get-SyncFactorsUserGroupMembershipDns {
     [CmdletBinding()]
     param(
         [AllowNull()]
@@ -212,7 +212,7 @@ function Get-SfAdUserGroupMembershipDns {
     )
 
     Ensure-ActiveDirectoryModule
-    $directoryContext = Get-SfAdDirectoryContextParameters -Config $Config
+    $directoryContext = Get-SyncFactorsDirectoryContextParameters -Config $Config
     $groups = Get-ADPrincipalGroupMembership -Identity $User -ErrorAction SilentlyContinue @directoryContext
     if (-not $groups) {
         return @()
@@ -221,7 +221,7 @@ function Get-SfAdUserGroupMembershipDns {
     return @($groups | ForEach-Object { $_.DistinguishedName })
 }
 
-function Get-SfAdUserSnapshot {
+function Get-SyncFactorsUserSnapshot {
     [CmdletBinding()]
     param(
         [AllowNull()]
@@ -232,14 +232,14 @@ function Get-SfAdUserSnapshot {
 
     $allProperties = @{}
     foreach ($property in $User.PSObject.Properties) {
-        $allProperties[$property.Name] = Convert-SfAdValueForJson -Value $property.Value
+        $allProperties[$property.Name] = Convert-SyncFactorsValueForJson -Value $property.Value
     }
 
     $restoreAttributes = @{}
-    foreach ($name in $SfAdRollbackAttributeAllowList) {
+    foreach ($name in $SyncFactorsRollbackAttributeAllowList) {
         $property = $User.PSObject.Properties[$name]
         if ($property) {
-            $restoreAttributes[$name] = Convert-SfAdValueForJson -Value $property.Value
+            $restoreAttributes[$name] = Convert-SyncFactorsValueForJson -Value $property.Value
         }
     }
 
@@ -252,17 +252,17 @@ function Get-SfAdUserSnapshot {
     return [pscustomobject]@{
         objectGuid = if ($User.ObjectGuid) { $User.ObjectGuid.Guid } else { $null }
         distinguishedName = $User.DistinguishedName
-        parentOu = Get-SfAdParentOuFromDistinguishedName -DistinguishedName $User.DistinguishedName
+        parentOu = Get-SyncFactorsParentOuFromDistinguishedName -DistinguishedName $User.DistinguishedName
         samAccountName = $User.SamAccountName
         userPrincipalName = $userPrincipalName
         enabled = [bool]$User.Enabled
         restoreAttributes = [pscustomobject]$restoreAttributes
-        groupMemberships = @(Get-SfAdUserGroupMembershipDns -Config $Config -User $User)
+        groupMemberships = @(Get-SyncFactorsUserGroupMembershipDns -Config $Config -User $User)
         rawProperties = [pscustomobject]$allProperties
     }
 }
 
-function Resolve-SfAdTargetOu {
+function Resolve-SyncFactorsTargetOu {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
@@ -291,7 +291,7 @@ function Resolve-SfAdTargetOu {
     return $Config.ad.defaultActiveOu
 }
 
-function New-SfAdUser {
+function New-SyncFactorsUser {
     [CmdletBinding(SupportsShouldProcess)]
     param(
         [Parameter(Mandatory)]
@@ -305,10 +305,10 @@ function New-SfAdUser {
         [switch]$DryRun
     )
 
-    $targetOu = Resolve-SfAdTargetOu -Config $Config -Worker $Worker
+    $targetOu = Resolve-SyncFactorsTargetOu -Config $Config -Worker $Worker
     $samAccountName = if ($Attributes.ContainsKey('SamAccountName')) { $Attributes['SamAccountName'] } else { $WorkerId }
 
-    $securePassword = ConvertTo-SfAdSecureString -Value $Config.ad.defaultPassword
+    $securePassword = ConvertTo-SyncFactorsSecureString -Value $Config.ad.defaultPassword
     $newUserParams = @{
         Name                  = "$($Worker.firstName) $($Worker.lastName)"
         SamAccountName        = $samAccountName
@@ -351,12 +351,12 @@ function New-SfAdUser {
 
     Ensure-ActiveDirectoryModule
 
-    $directoryContext = Get-SfAdDirectoryContextParameters -Config $Config
+    $directoryContext = Get-SyncFactorsDirectoryContextParameters -Config $Config
     New-ADUser @newUserParams @directoryContext
-    return Get-SfAdTargetUser -Config $Config -WorkerId $WorkerId
+    return Get-SyncFactorsTargetUser -Config $Config -WorkerId $WorkerId
 }
 
-function Set-SfAdUserAttributes {
+function Set-SyncFactorsUserAttributes {
     [CmdletBinding(SupportsShouldProcess)]
     param(
         [AllowNull()]
@@ -380,11 +380,11 @@ function Set-SfAdUserAttributes {
         return $null
     }
 
-    $directoryContext = Get-SfAdDirectoryContextParameters -Config $Config
+    $directoryContext = Get-SyncFactorsDirectoryContextParameters -Config $Config
     Set-ADUser -Identity $User -Replace $Changes @directoryContext
 }
 
-function Enable-SfAdUser {
+function Enable-SyncFactorsUser {
     [CmdletBinding()]
     param(
         [AllowNull()]
@@ -398,11 +398,11 @@ function Enable-SfAdUser {
         return
     }
 
-    $directoryContext = Get-SfAdDirectoryContextParameters -Config $Config
+    $directoryContext = Get-SyncFactorsDirectoryContextParameters -Config $Config
     Enable-ADAccount -Identity $User @directoryContext
 }
 
-function Disable-SfAdUser {
+function Disable-SyncFactorsUser {
     [CmdletBinding()]
     param(
         [AllowNull()]
@@ -416,11 +416,11 @@ function Disable-SfAdUser {
         return
     }
 
-    $directoryContext = Get-SfAdDirectoryContextParameters -Config $Config
+    $directoryContext = Get-SyncFactorsDirectoryContextParameters -Config $Config
     Disable-ADAccount -Identity $User @directoryContext
 }
 
-function Move-SfAdUser {
+function Move-SyncFactorsUser {
     [CmdletBinding()]
     param(
         [AllowNull()]
@@ -436,11 +436,11 @@ function Move-SfAdUser {
         return
     }
 
-    $directoryContext = Get-SfAdDirectoryContextParameters -Config $Config
+    $directoryContext = Get-SyncFactorsDirectoryContextParameters -Config $Config
     Move-ADObject -Identity $User.DistinguishedName -TargetPath $TargetOu @directoryContext
 }
 
-function Remove-SfAdUser {
+function Remove-SyncFactorsUser {
     [CmdletBinding()]
     param(
         [AllowNull()]
@@ -454,11 +454,11 @@ function Remove-SfAdUser {
         return
     }
 
-    $directoryContext = Get-SfAdDirectoryContextParameters -Config $Config
+    $directoryContext = Get-SyncFactorsDirectoryContextParameters -Config $Config
     Remove-ADUser -Identity $User -Confirm:$false @directoryContext
 }
 
-function Get-SfAdManagedOus {
+function Get-SyncFactorsManagedOus {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
@@ -483,7 +483,7 @@ function Get-SfAdManagedOus {
     return @($ous)
 }
 
-function Get-SfAdUsersInOrganizationalUnits {
+function Get-SyncFactorsUsersInOrganizationalUnits {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
@@ -493,7 +493,7 @@ function Get-SfAdUsersInOrganizationalUnits {
     )
 
     Ensure-ActiveDirectoryModule
-    $directoryContext = Get-SfAdDirectoryContextParameters -Config $Config
+    $directoryContext = Get-SyncFactorsDirectoryContextParameters -Config $Config
     $seenDns = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
     $results = [System.Collections.Generic.List[object]]::new()
 
@@ -518,7 +518,7 @@ function Get-SfAdUsersInOrganizationalUnits {
     return @($results)
 }
 
-function Add-SfAdUserToConfiguredGroups {
+function Add-SyncFactorsUserToConfiguredGroups {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
@@ -534,7 +534,7 @@ function Add-SfAdUserToConfiguredGroups {
 
     $existingMemberships = @()
     if (-not $DryRun) {
-        $existingMemberships = @(Get-SfAdUserGroupMembershipDns -Config $Config -User $User)
+        $existingMemberships = @(Get-SyncFactorsUserGroupMembershipDns -Config $Config -User $User)
     }
 
     $changes = @()
@@ -545,7 +545,7 @@ function Add-SfAdUserToConfiguredGroups {
 
         $changes += $groupDn
         if (-not $DryRun) {
-            $directoryContext = Get-SfAdDirectoryContextParameters -Config $Config
+            $directoryContext = Get-SyncFactorsDirectoryContextParameters -Config $Config
             Add-ADGroupMember -Identity $groupDn -Members $User -ErrorAction Stop @directoryContext
         }
     }
@@ -553,7 +553,7 @@ function Add-SfAdUserToConfiguredGroups {
     return $changes
 }
 
-function Remove-SfAdUserFromGroups {
+function Remove-SyncFactorsUserFromGroups {
     [CmdletBinding()]
     param(
         [AllowNull()]
@@ -570,12 +570,12 @@ function Remove-SfAdUserFromGroups {
     }
 
     foreach ($groupDn in $Groups) {
-        $directoryContext = Get-SfAdDirectoryContextParameters -Config $Config
+        $directoryContext = Get-SyncFactorsDirectoryContextParameters -Config $Config
         Remove-ADGroupMember -Identity $groupDn -Members $User -Confirm:$false -ErrorAction Stop @directoryContext
     }
 }
 
-function Restore-SfAdUserFromSnapshot {
+function Restore-SyncFactorsUserFromSnapshot {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
@@ -598,7 +598,7 @@ function Restore-SfAdUserFromSnapshot {
     $surname = $restoreAttributes['sn']
     $displayName = if ($restoreAttributes.ContainsKey('displayName')) { $restoreAttributes['displayName'] } else { "$givenName $surname".Trim() }
     $path = if ($Snapshot.parentOu) { $Snapshot.parentOu } else { $Config.ad.defaultActiveOu }
-    $securePassword = ConvertTo-SfAdSecureString -Value $Config.ad.defaultPassword
+    $securePassword = ConvertTo-SyncFactorsSecureString -Value $Config.ad.defaultPassword
 
     $newUserParams = @{
         Name = $displayName
@@ -622,7 +622,7 @@ function Restore-SfAdUserFromSnapshot {
     }
 
     Ensure-ActiveDirectoryModule
-    $directoryContext = Get-SfAdDirectoryContextParameters -Config $Config
+    $directoryContext = Get-SyncFactorsDirectoryContextParameters -Config $Config
     New-ADUser @newUserParams @directoryContext
     $user = Get-ADUser -Identity $samAccountName -Properties * -ErrorAction Stop @directoryContext
 
@@ -656,4 +656,4 @@ function Restore-SfAdUserFromSnapshot {
     return Get-ADUser -Identity $user -Properties * -ErrorAction Stop @directoryContext
 }
 
-Export-ModuleMember -Function Ensure-ActiveDirectoryModule, Get-SfAdUserByObjectGuid, Get-SfAdTargetUser, Get-SfAdUserBySamAccountName, Get-SfAdUserByUserPrincipalName, Get-SfAdUserGroupMembershipDns, Get-SfAdUserSnapshot, Get-SfAdParentOuFromDistinguishedName, Resolve-SfAdTargetOu, New-SfAdUser, Set-SfAdUserAttributes, Enable-SfAdUser, Disable-SfAdUser, Move-SfAdUser, Remove-SfAdUser, Get-SfAdManagedOus, Get-SfAdUsersInOrganizationalUnits, Add-SfAdUserToConfiguredGroups, Remove-SfAdUserFromGroups, Restore-SfAdUserFromSnapshot
+Export-ModuleMember -Function Ensure-ActiveDirectoryModule, Get-SyncFactorsUserByObjectGuid, Get-SyncFactorsTargetUser, Get-SyncFactorsUserBySamAccountName, Get-SyncFactorsUserByUserPrincipalName, Get-SyncFactorsUserGroupMembershipDns, Get-SyncFactorsUserSnapshot, Get-SyncFactorsParentOuFromDistinguishedName, Resolve-SyncFactorsTargetOu, New-SyncFactorsUser, Set-SyncFactorsUserAttributes, Enable-SyncFactorsUser, Disable-SyncFactorsUser, Move-SyncFactorsUser, Remove-SyncFactorsUser, Get-SyncFactorsManagedOus, Get-SyncFactorsUsersInOrganizationalUnits, Add-SyncFactorsUserToConfiguredGroups, Remove-SyncFactorsUserFromGroups, Restore-SyncFactorsUserFromSnapshot

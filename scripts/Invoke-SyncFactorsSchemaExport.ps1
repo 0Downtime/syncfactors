@@ -11,12 +11,12 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
  $projectRoot = Split-Path -Path $PSScriptRoot -Parent
-$moduleRoot = Join-Path -Path $projectRoot -ChildPath 'src/Modules/SfAdSync'
+$moduleRoot = Join-Path -Path $projectRoot -ChildPath 'src/Modules/SyncFactors'
 Import-Module (Join-Path $moduleRoot 'Config.psm1') -Force -DisableNameChecking
 Import-Module (Join-Path $moduleRoot 'SuccessFactors.psm1') -Force -DisableNameChecking
 
 $resolvedConfigPath = (Resolve-Path -Path $ConfigPath).Path
-$config = Get-SfAdSyncConfig -Path $resolvedConfigPath
+$config = Get-SyncFactorsConfig -Path $resolvedConfigPath
 
 if ([string]::IsNullOrWhiteSpace($OutputDirectory)) {
     $defaultOutputRoot = if (

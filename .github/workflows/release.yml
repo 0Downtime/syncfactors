@@ -47,7 +47,7 @@ jobs:
         id: release_info
         shell: pwsh
         run: |
-          $info = & ./scripts/Get-SfAdReleaseInfo.ps1 -Channel Prerelease -RunNumber $env:GITHUB_RUN_NUMBER -CommitSha $env:GITHUB_SHA
+          $info = & ./scripts/Get-SyncFactorsReleaseInfo.ps1 -Channel Prerelease -RunNumber $env:GITHUB_RUN_NUMBER -CommitSha $env:GITHUB_SHA
           "version=$($info.version)" >> $env:GITHUB_OUTPUT
           "tag=$($info.tag)" >> $env:GITHUB_OUTPUT
           "commit_sha=$($info.commitSha)" >> $env:GITHUB_OUTPUT
@@ -57,8 +57,8 @@ jobs:
         shell: pwsh
         run: |
           New-Item -Path ./artifacts/releases -ItemType Directory -Force | Out-Null
-          $bundlePath = Join-Path (Resolve-Path ./artifacts/releases) "sf-ad-sync-${{ steps.release_info.outputs.version }}.zip"
-          $bundle = & ./scripts/New-SfAdReleaseBundle.ps1 -OutputPath $bundlePath
+          $bundlePath = Join-Path (Resolve-Path ./artifacts/releases) "syncfactors-${{ steps.release_info.outputs.version }}.zip"
+          $bundle = & ./scripts/New-SyncFactorsReleaseBundle.ps1 -OutputPath $bundlePath
           "bundle_path=$($bundle.bundlePath)" >> $env:GITHUB_OUTPUT
 
       - name: Publish prerelease
@@ -94,7 +94,7 @@ jobs:
         shell: pwsh
         run: |
           $commitSha = (git rev-parse HEAD).Trim()
-          $info = & ./scripts/Get-SfAdReleaseInfo.ps1 -Channel Stable -Version $env:RELEASE_VERSION -CommitSha $commitSha
+          $info = & ./scripts/Get-SyncFactorsReleaseInfo.ps1 -Channel Stable -Version $env:RELEASE_VERSION -CommitSha $commitSha
           "version=$($info.version)" >> $env:GITHUB_OUTPUT
           "tag=$($info.tag)" >> $env:GITHUB_OUTPUT
           "commit_sha=$($info.commitSha)" >> $env:GITHUB_OUTPUT
@@ -147,8 +147,8 @@ jobs:
         shell: pwsh
         run: |
           New-Item -Path ./artifacts/releases -ItemType Directory -Force | Out-Null
-          $bundlePath = Join-Path (Resolve-Path ./artifacts/releases) "sf-ad-sync-${{ steps.release_info.outputs.version }}.zip"
-          $bundle = & ./scripts/New-SfAdReleaseBundle.ps1 -OutputPath $bundlePath
+          $bundlePath = Join-Path (Resolve-Path ./artifacts/releases) "syncfactors-${{ steps.release_info.outputs.version }}.zip"
+          $bundle = & ./scripts/New-SyncFactorsReleaseBundle.ps1 -OutputPath $bundlePath
           "bundle_path=$($bundle.bundlePath)" >> $env:GITHUB_OUTPUT
 
       - name: Publish stable release

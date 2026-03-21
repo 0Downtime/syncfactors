@@ -1,8 +1,8 @@
-Describe 'Invoke-SfAdRollback' {
+Describe 'Invoke-SyncFactorsRollback' {
     BeforeAll {
-        Import-Module "$PSScriptRoot/../src/Modules/SfAdSync/State.psm1" -Force -DisableNameChecking
-        Import-Module "$PSScriptRoot/../src/Modules/SfAdSync/ActiveDirectorySync.psm1" -Force -DisableNameChecking
-        Import-Module "$PSScriptRoot/../src/Modules/SfAdSync/Rollback.psm1" -Force -DisableNameChecking
+        Import-Module "$PSScriptRoot/../src/Modules/SyncFactors/State.psm1" -Force -DisableNameChecking
+        Import-Module "$PSScriptRoot/../src/Modules/SyncFactors/ActiveDirectorySync.psm1" -Force -DisableNameChecking
+        Import-Module "$PSScriptRoot/../src/Modules/SyncFactors/Rollback.psm1" -Force -DisableNameChecking
     }
 
     BeforeEach {
@@ -88,16 +88,16 @@ Describe 'Invoke-SfAdRollback' {
                 Enabled = $true
             }
 
-            Mock Get-SfAdSyncConfig { $global:RollbackTestConfig }
-            Mock Get-SfAdSyncState { Get-Content -Path $global:RollbackTestStatePath -Raw | ConvertFrom-Json -Depth 20 }
-            Mock Get-SfAdUserByObjectGuid { $user }
-            Mock Get-SfAdTargetUser { $user }
-            Mock Remove-SfAdUserFromGroups { param($User, $Groups) $global:RollbackCalls += "remove-group:$($Groups[0])" }
-            Mock Set-SfAdUserAttributes { param($User, $Changes) $global:RollbackCalls += "restore-title:$($Changes['title'])" }
-            Mock Remove-SfAdWorkerState { param($State, $WorkerId) $global:RollbackCalls += "remove-state:$WorkerId"; [void]$State.workers.PSObject.Properties.Remove($WorkerId) }
-            Mock Save-SfAdSyncState { param($State, $Path) $global:RollbackCalls += "save-state:$($State.checkpoint)"; $State | ConvertTo-Json -Depth 20 | Set-Content -Path $Path }
+            Mock Get-SyncFactorsConfig { $global:RollbackTestConfig }
+            Mock Get-SyncFactorsState { Get-Content -Path $global:RollbackTestStatePath -Raw | ConvertFrom-Json -Depth 20 }
+            Mock Get-SyncFactorsUserByObjectGuid { $user }
+            Mock Get-SyncFactorsTargetUser { $user }
+            Mock Remove-SyncFactorsUserFromGroups { param($User, $Groups) $global:RollbackCalls += "remove-group:$($Groups[0])" }
+            Mock Set-SyncFactorsUserAttributes { param($User, $Changes) $global:RollbackCalls += "restore-title:$($Changes['title'])" }
+            Mock Remove-SyncFactorsWorkerState { param($State, $WorkerId) $global:RollbackCalls += "remove-state:$WorkerId"; [void]$State.workers.PSObject.Properties.Remove($WorkerId) }
+            Mock Save-SyncFactorsState { param($State, $Path) $global:RollbackCalls += "save-state:$($State.checkpoint)"; $State | ConvertTo-Json -Depth 20 | Set-Content -Path $Path }
 
-            Invoke-SfAdRollback -ReportPath $global:RollbackTestReportPath -ConfigPath $global:RollbackTestConfigPath
+            Invoke-SyncFactorsRollback -ReportPath $global:RollbackTestReportPath -ConfigPath $global:RollbackTestConfigPath
 
             $global:RollbackCalls[0] | Should -Be 'remove-group:CN=License,OU=Groups,DC=example,DC=com'
             $global:RollbackCalls[1] | Should -Be 'restore-title:Old Title'
@@ -129,16 +129,16 @@ Describe 'Invoke-SfAdRollback' {
                 Enabled = $true
             }
 
-            Mock Get-SfAdSyncConfig { $global:RollbackTestConfig }
-            Mock Get-SfAdSyncState { Get-Content -Path $global:RollbackTestStatePath -Raw | ConvertFrom-Json -Depth 20 }
-            Mock Get-SfAdUserByObjectGuid { $user }
-            Mock Get-SfAdTargetUser { $user }
-            Mock Remove-SfAdUserFromGroups { throw 'rollback group removal failed' }
-            Mock Save-SfAdSyncState { throw 'should not save state' }
+            Mock Get-SyncFactorsConfig { $global:RollbackTestConfig }
+            Mock Get-SyncFactorsState { Get-Content -Path $global:RollbackTestStatePath -Raw | ConvertFrom-Json -Depth 20 }
+            Mock Get-SyncFactorsUserByObjectGuid { $user }
+            Mock Get-SyncFactorsTargetUser { $user }
+            Mock Remove-SyncFactorsUserFromGroups { throw 'rollback group removal failed' }
+            Mock Save-SyncFactorsState { throw 'should not save state' }
 
-            { Invoke-SfAdRollback -ReportPath $global:RollbackTestReportPath -ConfigPath $global:RollbackTestConfigPath } | Should -Throw 'rollback group removal failed'
+            { Invoke-SyncFactorsRollback -ReportPath $global:RollbackTestReportPath -ConfigPath $global:RollbackTestConfigPath } | Should -Throw 'rollback group removal failed'
 
-            Assert-MockCalled Save-SfAdSyncState -Times 0 -Exactly
+            Assert-MockCalled Save-SyncFactorsState -Times 0 -Exactly
         }
     }
 
@@ -151,7 +151,7 @@ Describe 'Invoke-SfAdRollback' {
                 statePath = $global:RollbackTestStatePath
             } | ConvertTo-Json -Depth 20 | Set-Content -Path $reportPath
 
-            { Invoke-SfAdRollback -ReportPath $reportPath } | Should -Throw 'ConfigPath is required when the report does not include it.'
+            { Invoke-SyncFactorsRollback -ReportPath $reportPath } | Should -Throw 'ConfigPath is required when the report does not include it.'
         }
     }
 }

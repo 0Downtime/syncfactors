@@ -1,6 +1,6 @@
 Set-StrictMode -Version Latest
 
-function New-SfAdSyncReport {
+function New-SyncFactorsReport {
     [CmdletBinding()]
     param(
         [string]$Mode,
@@ -44,7 +44,7 @@ function New-SfAdSyncReport {
     }
 }
 
-function Add-SfAdReportEntry {
+function Add-SyncFactorsReportEntry {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
@@ -62,7 +62,7 @@ function Add-SfAdReportEntry {
     $Report[$Bucket] = @($Report[$Bucket]) + [pscustomobject]$Entry
 }
 
-function Add-SfAdReportOperation {
+function Add-SyncFactorsReportOperation {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
@@ -102,7 +102,7 @@ function Add-SfAdReportOperation {
     return $entry
 }
 
-function Save-SfAdSyncReport {
+function Save-SyncFactorsReport {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
@@ -118,11 +118,11 @@ function Save-SfAdSyncReport {
     }
 
     $timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
-    $path = Join-Path -Path $Directory -ChildPath "sf-ad-sync-$Mode-$timestamp.json"
+    $path = Join-Path -Path $Directory -ChildPath "syncfactors-$Mode-$timestamp.json"
     $Report['completedAt'] = (Get-Date).ToString('o')
     [void]$Report.Remove('operationSequence')
     $Report | ConvertTo-Json -Depth 20 | Set-Content -Path $path
     return $path
 }
 
-Export-ModuleMember -Function New-SfAdSyncReport, Add-SfAdReportEntry, Add-SfAdReportOperation, Save-SfAdSyncReport
+Export-ModuleMember -Function New-SyncFactorsReport, Add-SyncFactorsReportEntry, Add-SyncFactorsReportOperation, Save-SyncFactorsReport

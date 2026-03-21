@@ -9,13 +9,13 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$moduleRoot = Join-Path -Path (Split-Path -Path $PSScriptRoot -Parent) -ChildPath 'src/Modules/SfAdSync'
+$moduleRoot = Join-Path -Path (Split-Path -Path $PSScriptRoot -Parent) -ChildPath 'src/Modules/SyncFactors'
 Import-Module (Join-Path $moduleRoot 'Config.psm1') -Force -DisableNameChecking
 Import-Module (Join-Path $moduleRoot 'State.psm1') -Force -DisableNameChecking
 Import-Module (Join-Path $moduleRoot 'ActiveDirectorySync.psm1') -Force -DisableNameChecking
 Import-Module (Join-Path $moduleRoot 'Reporting.psm1') -Force -DisableNameChecking
 
-function Read-SfAdResetConfirmation {
+function Read-SyncFactorsResetConfirmation {
     param(
         [Parameter(Mandatory)]
         [string]$Prompt,
@@ -27,7 +27,7 @@ function Read-SfAdResetConfirmation {
     return "$response".Trim() -ceq $ExpectedValue
 }
 
-function Get-SfAdFreshResetLogPath {
+function Get-SyncFactorsFreshResetLogPath {
     param(
         [Parameter(Mandatory)]
         [pscustomobject]$Config,
@@ -59,10 +59,10 @@ function Get-SfAdFreshResetLogPath {
     }
 
     $timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
-    return Join-Path -Path $directory -ChildPath "sf-ad-sync-fresh-reset-$timestamp.log"
+    return Join-Path -Path $directory -ChildPath "syncfactors-fresh-reset-$timestamp.log"
 }
 
-function Get-SfAdFreshResetPreviewReportPath {
+function Get-SyncFactorsFreshResetPreviewReportPath {
     param(
         [Parameter(Mandatory)]
         [pscustomobject]$Config,
@@ -94,10 +94,10 @@ function Get-SfAdFreshResetPreviewReportPath {
     }
 
     $timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
-    return Join-Path -Path $directory -ChildPath "sf-ad-sync-ResetPreview-$timestamp.json"
+    return Join-Path -Path $directory -ChildPath "syncfactors-ResetPreview-$timestamp.json"
 }
 
-function Write-SfAdFreshResetLog {
+function Write-SyncFactorsFreshResetLog {
     param(
         [Parameter(Mandatory)]
         [string]$Path,
@@ -111,7 +111,7 @@ function Write-SfAdFreshResetLog {
     Write-Host $line
 }
 
-function Get-SfAdFreshResetUserLabel {
+function Get-SyncFactorsFreshResetUserLabel {
     param(
         [Parameter(Mandatory)]
         [pscustomobject]$User
@@ -131,7 +131,7 @@ function Get-SfAdFreshResetUserLabel {
     return "samAccountName=$samAccountName dn=$distinguishedName"
 }
 
-function Get-SfAdFreshResetParentOu {
+function Get-SyncFactorsFreshResetParentOu {
     param(
         [Parameter(Mandatory)]
         [pscustomobject]$User
@@ -149,7 +149,7 @@ function Get-SfAdFreshResetParentOu {
     return $parts[1]
 }
 
-function New-SfAdFreshResetPreviewReport {
+function New-SyncFactorsFreshResetPreviewReport {
     param(
         [Parameter(Mandatory)]
         [pscustomobject]$Config,
@@ -159,7 +159,7 @@ function New-SfAdFreshResetPreviewReport {
         [object[]]$Users
     )
 
-    $report = New-SfAdSyncReport -Mode 'Full' -DryRun -ConfigPath $ResolvedConfigPath -MappingConfigPath '' -StatePath $Config.state.path -ArtifactType 'FreshSyncResetPreview'
+    $report = New-SyncFactorsReport -Mode 'Full' -DryRun -ConfigPath $ResolvedConfigPath -MappingConfigPath '' -StatePath $Config.state.path -ArtifactType 'FreshSyncResetPreview'
     foreach ($user in $Users) {
         $samAccountName = if ($user.PSObject.Properties.Name -contains 'SamAccountName' -and -not [string]::IsNullOrWhiteSpace("$($user.SamAccountName)")) {
             "$($user.SamAccountName)"
@@ -167,15 +167,15 @@ function New-SfAdFreshResetPreviewReport {
             "(unknown-$([guid]::NewGuid().Guid.Substring(0, 8)))"
         }
         $distinguishedName = if ($user.PSObject.Properties.Name -contains 'DistinguishedName') { "$($user.DistinguishedName)" } else { $null }
-        $parentOu = Get-SfAdFreshResetParentOu -User $user
-        Add-SfAdReportEntry -Report $report -Bucket 'deletions' -Entry @{
+        $parentOu = Get-SyncFactorsFreshResetParentOu -User $user
+        Add-SyncFactorsReportEntry -Report $report -Bucket 'deletions' -Entry @{
             workerId = $samAccountName
             samAccountName = $samAccountName
             distinguishedName = $distinguishedName
             parentOu = $parentOu
             reason = 'FreshSyncReset'
         }
-        Add-SfAdReportOperation -Report $report -OperationType 'DeleteUser' -WorkerId $samAccountName -Bucket 'deletions' -Target @{
+        Add-SyncFactorsReportOperation -Report $report -OperationType 'DeleteUser' -WorkerId $samAccountName -Bucket 'deletions' -Target @{
             samAccountName = $samAccountName
             distinguishedName = $distinguishedName
         } -Before ([pscustomobject]@{
@@ -188,12 +188,12 @@ function New-SfAdFreshResetPreviewReport {
     $report.status = 'Preview'
     $report.reviewSummary = [pscustomobject]@{
         proposedDeletes = @($Users).Count
-        managedOus = @(Get-SfAdManagedOus -Config $Config)
+        managedOus = @(Get-SyncFactorsManagedOus -Config $Config)
     }
     return $report
 }
 
-function Save-SfAdFreshResetPreviewReport {
+function Save-SyncFactorsFreshResetPreviewReport {
     param(
         [Parameter(Mandatory)]
         [System.Collections.IDictionary]$Report,
@@ -213,34 +213,34 @@ function Save-SfAdFreshResetPreviewReport {
 }
 
 $resolvedConfigPath = (Resolve-Path -Path $ConfigPath).Path
-$config = Get-SfAdSyncConfig -Path $resolvedConfigPath
-$logPath = Get-SfAdFreshResetLogPath -Config $config -RequestedPath $LogPath
-$previewReportPath = Get-SfAdFreshResetPreviewReportPath -Config $config -RequestedPath $PreviewReportPath
-$managedOus = @(Get-SfAdManagedOus -Config $config)
-$users = @(Get-SfAdUsersInOrganizationalUnits -Config $config -OrganizationalUnits $managedOus)
-$previewReport = New-SfAdFreshResetPreviewReport -Config $config -ResolvedConfigPath $resolvedConfigPath -Users $users
-[void](Save-SfAdFreshResetPreviewReport -Report $previewReport -Path $previewReportPath)
+$config = Get-SyncFactorsConfig -Path $resolvedConfigPath
+$logPath = Get-SyncFactorsFreshResetLogPath -Config $config -RequestedPath $LogPath
+$previewReportPath = Get-SyncFactorsFreshResetPreviewReportPath -Config $config -RequestedPath $PreviewReportPath
+$managedOus = @(Get-SyncFactorsManagedOus -Config $config)
+$users = @(Get-SyncFactorsUsersInOrganizationalUnits -Config $config -OrganizationalUnits $managedOus)
+$previewReport = New-SyncFactorsFreshResetPreviewReport -Config $config -ResolvedConfigPath $resolvedConfigPath -Users $users
+[void](Save-SyncFactorsFreshResetPreviewReport -Report $previewReport -Path $previewReportPath)
 
-Write-SfAdFreshResetLog -Path $logPath -Message 'SuccessFactors Fresh Sync Reset'
-Write-SfAdFreshResetLog -Path $logPath -Message "Config: $resolvedConfigPath"
-Write-SfAdFreshResetLog -Path $logPath -Message "Log: $logPath"
-Write-SfAdFreshResetLog -Path $logPath -Message "Preview report: $previewReportPath"
+Write-SyncFactorsFreshResetLog -Path $logPath -Message 'SuccessFactors Fresh Sync Reset'
+Write-SyncFactorsFreshResetLog -Path $logPath -Message "Config: $resolvedConfigPath"
+Write-SyncFactorsFreshResetLog -Path $logPath -Message "Log: $logPath"
+Write-SyncFactorsFreshResetLog -Path $logPath -Message "Preview report: $previewReportPath"
 Write-Host ''
 Write-Host 'Managed sync OUs'
 foreach ($ou in $managedOus) {
     Write-Host "- $ou"
-    Write-SfAdFreshResetLog -Path $logPath -Message "Managed OU: $ou"
+    Write-SyncFactorsFreshResetLog -Path $logPath -Message "Managed OU: $ou"
 }
 Write-Host ''
 Write-Host "Discovered AD user objects: $($users.Count)"
-Write-SfAdFreshResetLog -Path $logPath -Message "Discovered AD user objects: $($users.Count)"
+Write-SyncFactorsFreshResetLog -Path $logPath -Message "Discovered AD user objects: $($users.Count)"
 foreach ($user in $users) {
-    Write-SfAdFreshResetLog -Path $logPath -Message "Discovered user: $(Get-SfAdFreshResetUserLabel -User $user)"
+    Write-SyncFactorsFreshResetLog -Path $logPath -Message "Discovered user: $(Get-SyncFactorsFreshResetUserLabel -User $user)"
 }
 Write-Host "Preview report: $previewReportPath"
 Write-Host 'Deletion preview'
 foreach ($user in $users | Select-Object -First 10) {
-    Write-Host "- $(Get-SfAdFreshResetUserLabel -User $user)"
+    Write-Host "- $(Get-SyncFactorsFreshResetUserLabel -User $user)"
 }
 if ($users.Count -gt 10) {
     Write-Host "... $($users.Count - 10) more users in preview report"
@@ -251,41 +251,41 @@ Write-Host 'Warning 2: This is intended for a true fresh sync reset and cannot b
 Write-Host 'Warning 3: This also resets the local sync state checkpoint and tracked worker state.' -ForegroundColor Yellow
 Write-Host ''
 
-if (-not (Read-SfAdResetConfirmation -Prompt 'Type DELETE to continue' -ExpectedValue 'DELETE')) {
-    Write-SfAdFreshResetLog -Path $logPath -Message 'Fresh sync reset cancelled at confirmation 1.'
+if (-not (Read-SyncFactorsResetConfirmation -Prompt 'Type DELETE to continue' -ExpectedValue 'DELETE')) {
+    Write-SyncFactorsFreshResetLog -Path $logPath -Message 'Fresh sync reset cancelled at confirmation 1.'
     Write-Host 'Fresh sync reset cancelled at confirmation 1.'
     return
 }
 
-if (-not (Read-SfAdResetConfirmation -Prompt "Type $($users.Count) to confirm the discovered AD user count" -ExpectedValue "$($users.Count)")) {
-    Write-SfAdFreshResetLog -Path $logPath -Message 'Fresh sync reset cancelled at confirmation 2.'
+if (-not (Read-SyncFactorsResetConfirmation -Prompt "Type $($users.Count) to confirm the discovered AD user count" -ExpectedValue "$($users.Count)")) {
+    Write-SyncFactorsFreshResetLog -Path $logPath -Message 'Fresh sync reset cancelled at confirmation 2.'
     Write-Host 'Fresh sync reset cancelled at confirmation 2.'
     return
 }
 
 $finalPhrase = 'DELETE ALL SYNCED OU USERS'
-if (-not (Read-SfAdResetConfirmation -Prompt "Type '$finalPhrase' to permanently delete the users and reset local sync state" -ExpectedValue $finalPhrase)) {
-    Write-SfAdFreshResetLog -Path $logPath -Message 'Fresh sync reset cancelled at confirmation 3.'
+if (-not (Read-SyncFactorsResetConfirmation -Prompt "Type '$finalPhrase' to permanently delete the users and reset local sync state" -ExpectedValue $finalPhrase)) {
+    Write-SyncFactorsFreshResetLog -Path $logPath -Message 'Fresh sync reset cancelled at confirmation 3.'
     Write-Host 'Fresh sync reset cancelled at confirmation 3.'
     return
 }
 
 $deleteFailures = [System.Collections.Generic.List[string]]::new()
 foreach ($user in $users) {
-    $userLabel = Get-SfAdFreshResetUserLabel -User $user
+    $userLabel = Get-SyncFactorsFreshResetUserLabel -User $user
     try {
-        Write-SfAdFreshResetLog -Path $logPath -Message "Deleting user: $userLabel"
-        Remove-SfAdUser -Config $config -User $user
-        Write-SfAdFreshResetLog -Path $logPath -Message "Deleted user: $userLabel"
+        Write-SyncFactorsFreshResetLog -Path $logPath -Message "Deleting user: $userLabel"
+        Remove-SyncFactorsUser -Config $config -User $user
+        Write-SyncFactorsFreshResetLog -Path $logPath -Message "Deleted user: $userLabel"
     } catch {
         $failureMessage = "Failed to delete user: $userLabel :: $($_.Exception.Message)"
         $deleteFailures.Add($failureMessage)
-        Write-SfAdFreshResetLog -Path $logPath -Message $failureMessage -Level 'ERROR'
+        Write-SyncFactorsFreshResetLog -Path $logPath -Message $failureMessage -Level 'ERROR'
     }
 }
 
 if ($deleteFailures.Count -gt 0) {
-    Write-SfAdFreshResetLog -Path $logPath -Message 'Fresh sync reset aborted before state reset because one or more AD deletions failed.' -Level 'ERROR'
+    Write-SyncFactorsFreshResetLog -Path $logPath -Message 'Fresh sync reset aborted before state reset because one or more AD deletions failed.' -Level 'ERROR'
     throw "Fresh sync reset failed before state reset. See log: $logPath"
 }
 
@@ -293,12 +293,12 @@ $emptyState = [pscustomobject]@{
     checkpoint = $null
     workers = @{}
 }
-Save-SfAdSyncState -State $emptyState -Path $config.state.path
-Write-SfAdFreshResetLog -Path $logPath -Message "Reset sync state: $($config.state.path)"
+Save-SyncFactorsState -State $emptyState -Path $config.state.path
+Write-SyncFactorsFreshResetLog -Path $logPath -Message "Reset sync state: $($config.state.path)"
 
 Write-Host ''
-Write-SfAdFreshResetLog -Path $logPath -Message 'Fresh sync reset completed.'
-Write-SfAdFreshResetLog -Path $logPath -Message "Deleted AD user objects: $($users.Count)"
+Write-SyncFactorsFreshResetLog -Path $logPath -Message 'Fresh sync reset completed.'
+Write-SyncFactorsFreshResetLog -Path $logPath -Message "Deleted AD user objects: $($users.Count)"
 Write-Host 'Fresh sync reset completed.'
 Write-Host "Deleted AD user objects: $($users.Count)"
 Write-Host "Reset sync state: $($config.state.path)"
