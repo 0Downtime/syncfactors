@@ -498,7 +498,15 @@ function Get-SfAdUsersInOrganizationalUnits {
     $results = [System.Collections.Generic.List[object]]::new()
 
     foreach ($ou in @($OrganizationalUnits | Where-Object { -not [string]::IsNullOrWhiteSpace("$_") })) {
-        foreach ($user in @(Get-ADUser -LDAPFilter '(objectClass=user)' -SearchBase $ou -SearchScope Subtree -Properties * -ErrorAction SilentlyContinue @directoryContext)) {
+        $ouUsers = @()
+        try {
+            $ouUsers = @(Get-ADUser -LDAPFilter '(objectClass=user)' -SearchBase $ou -SearchScope Subtree -Properties * -ErrorAction Stop @directoryContext)
+        } catch {
+            Write-Warning "Skipping OU '$ou' during AD user discovery: $($_.Exception.Message)"
+            continue
+        }
+
+        foreach ($user in $ouUsers) {
             $distinguishedName = if ($user.PSObject.Properties.Name -contains 'DistinguishedName') { "$($user.DistinguishedName)" } else { '' }
             $dedupeKey = if (-not [string]::IsNullOrWhiteSpace($distinguishedName)) { $distinguishedName } else { "$($user.SamAccountName)" }
             if ($seenDns.Add($dedupeKey)) {

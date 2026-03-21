@@ -1,4 +1,4 @@
-# SuccessFactors to Active Directory Sync
+# [Alpha] SuccessFactors to Active Directory Sync
 
 [![Test](https://github.com/0Downtime/sf-ad-sync/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/0Downtime/sf-ad-sync/actions/workflows/test.yml)
 [![Security](https://github.com/0Downtime/sf-ad-sync/actions/workflows/security.yml/badge.svg?branch=main)](https://github.com/0Downtime/sf-ad-sync/actions/workflows/security.yml)
@@ -7,7 +7,8 @@
 PowerShell automation for syncing SAP SuccessFactors worker data into on-premises Active Directory.
 
 > [!WARNING]
-> This project is still in active development and is not ready for production use.
+> Alpha status only. This application has a high chance of being broken, is still in active development, and is not ready for production use.
+> No stable builds are available yet.
 
 ## What It Does
 - Pulls workers from SAP SuccessFactors OData v2 using configurable basic auth or OAuth2 client credentials.

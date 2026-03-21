@@ -247,6 +247,40 @@ Describe 'ActiveDirectorySync module' {
         }
     }
 
+    It 'skips invalid search base OUs and continues discovery for valid ones' {
+        InModuleScope ActiveDirectorySync {
+            Mock Ensure-ActiveDirectoryModule {} -ModuleName ActiveDirectorySync
+            Mock Get-ADUser {
+                param($SearchBase)
+
+                if ($SearchBase -eq 'OU=Invalid,DC=example,DC=com') {
+                    throw 'The supplied distinguishedName must belong to one of the following partition(s).'
+                }
+
+                @(
+                    [pscustomobject]@{
+                        SamAccountName = 'jdoe'
+                        DistinguishedName = 'CN=Jamie Doe,OU=Employees,DC=example,DC=com'
+                    }
+                )
+            } -ModuleName ActiveDirectorySync
+
+            $result = @(Get-SfAdUsersInOrganizationalUnits -Config $global:AdTestConfig -OrganizationalUnits @(
+                    'OU=Invalid,DC=example,DC=com',
+                    'OU=Employees,DC=example,DC=com'
+                ) 3>&1)
+
+            $warningMessages = @($result | Where-Object { $_ -is [System.Management.Automation.WarningRecord] })
+            $users = @($result | Where-Object { $_ -isnot [System.Management.Automation.WarningRecord] })
+
+            $users.Count | Should -Be 1
+            $users[0].SamAccountName | Should -Be 'jdoe'
+            $warningMessages.Count | Should -Be 1
+            $warningMessages[0].Message | Should -Match "Skipping OU 'OU=Invalid,DC=example,DC=com'"
+            Assert-MockCalled Get-ADUser -Times 2 -Exactly -ModuleName ActiveDirectorySync
+        }
+    }
+
     It 'restores a user snapshot by replaying AD attributes, state, and groups' {
         InModuleScope ActiveDirectorySync {
             $snapshot = [pscustomobject]@{
