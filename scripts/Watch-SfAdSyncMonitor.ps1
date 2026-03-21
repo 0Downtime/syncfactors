@@ -237,26 +237,6 @@ function Read-SfAdMonitorWorkerId {
     return Read-Host -Prompt 'WorkerId'
 }
 
-function Read-SfAdMonitorWorkerPreviewMode {
-    [CmdletBinding()]
-    param()
-
-    Write-Host 'Choose query scope for the worker preview. Enter minimal or full.' -ForegroundColor Cyan
-    $response = Read-Host -Prompt 'PreviewMode [minimal]'
-    if ([string]::IsNullOrWhiteSpace($response)) {
-        return 'Minimal'
-    }
-
-    $normalized = "$response".Trim().ToLowerInvariant()
-    switch ($normalized) {
-        'm' { return 'Minimal' }
-        'minimal' { return 'Minimal' }
-        'f' { return 'Full' }
-        'full' { return 'Full' }
-        default { return $null }
-    }
-}
-
 function Confirm-SfAdMonitorWriteAction {
     [CmdletBinding()]
     param(
@@ -270,6 +250,336 @@ function Confirm-SfAdMonitorWriteAction {
     Write-Host "$Label may write $WriteTarget." -ForegroundColor Yellow
     $response = Read-Host -Prompt 'Type YES to continue'
     return "$response".Trim() -ceq 'YES'
+}
+
+function Get-SfAdMonitorWorkerPreviewEntriesFromReport {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [pscustomobject]$Report,
+        [Parameter(Mandatory)]
+        [string]$WorkerId
+    )
+
+    $entries = [System.Collections.Generic.List[object]]::new()
+    foreach ($bucket in @('manualReview', 'conflicts', 'quarantined', 'creates', 'updates', 'enables', 'disables', 'graveyardMoves', 'deletions', 'unchanged')) {
+        if ($Report.PSObject.Properties.Name -notcontains $bucket) {
+            continue
+        }
+
+        foreach ($item in @($Report.$bucket | Where-Object {
+                    $_ -and
+                    $_.PSObject.Properties.Name -contains 'workerId' -and
+                    "$($_.workerId)" -eq $WorkerId
+                })) {
+            $entries.Add([pscustomobject]@{
+                    bucket = $bucket
+                    item = $item
+                })
+        }
+    }
+
+    return @($entries)
+}
+
+function Get-SfAdMonitorWorkerPreviewValueFromEntries {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [AllowEmptyCollection()]
+        [object[]]$Entries,
+        [Parameter(Mandatory)]
+        [string]$PropertyName
+    )
+
+    foreach ($entry in $Entries) {
+        if ($entry.item.PSObject.Properties.Name -contains $PropertyName) {
+            $value = $entry.item.$PropertyName
+            if ($null -ne $value -and -not [string]::IsNullOrWhiteSpace("$value")) {
+                return $value
+            }
+        }
+    }
+
+    return $null
+}
+
+function ConvertTo-SfAdMonitorWorkerPreviewResult {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [pscustomobject]$Report,
+        [Parameter(Mandatory)]
+        [string]$ReportPath
+    )
+
+    $workerId = if (
+        $Report.PSObject.Properties.Name -contains 'workerScope' -and
+        $Report.workerScope -and
+        $Report.workerScope.PSObject.Properties.Name -contains 'workerId' -and
+        -not [string]::IsNullOrWhiteSpace("$($Report.workerScope.workerId)")
+    ) {
+        "$($Report.workerScope.workerId)"
+    } else {
+        $null
+    }
+
+    if ([string]::IsNullOrWhiteSpace($workerId)) {
+        return $null
+    }
+
+    $entries = @(Get-SfAdMonitorWorkerPreviewEntriesFromReport -Report $Report -WorkerId $workerId)
+    $bucketNames = @($entries | ForEach-Object { $_.bucket } | Select-Object -Unique)
+    $changedAttributes = @()
+    foreach ($entry in $entries) {
+        if ($entry.item.PSObject.Properties.Name -contains 'changedAttributeDetails') {
+            $changedAttributes = @($entry.item.changedAttributeDetails)
+            break
+        }
+
+        if ($entry.item.PSObject.Properties.Name -contains 'attributeRows') {
+            $changedAttributes = @($entry.item.attributeRows | Where-Object { $_.changed })
+            break
+        }
+    }
+
+    $matchedExistingUser = if (@($entries | Where-Object { $_.item.PSObject.Properties.Name -contains 'matchedExistingUser' -and [bool]$_.item.matchedExistingUser }).Count -gt 0) {
+        $true
+    } elseif (@($bucketNames | Where-Object { $_ -in @('updates', 'unchanged', 'enables', 'disables', 'graveyardMoves', 'deletions') }).Count -gt 0) {
+        $true
+    } elseif (@($bucketNames | Where-Object { $_ -eq 'creates' }).Count -gt 0) {
+        $false
+    } else {
+        $null
+    }
+
+    return [pscustomobject]@{
+        reportPath = $ReportPath
+        runId = $Report.runId
+        mode = $Report.mode
+        status = $Report.status
+        artifactType = $Report.artifactType
+        workerScope = $Report.workerScope
+        reviewSummary = $Report.reviewSummary
+        previewMode = 'full'
+        preview = [pscustomobject]@{
+            workerId = $workerId
+            buckets = $bucketNames
+            matchedExistingUser = $matchedExistingUser
+            reviewCategory = Get-SfAdMonitorWorkerPreviewValueFromEntries -Entries $entries -PropertyName 'reviewCategory'
+            reason = Get-SfAdMonitorWorkerPreviewValueFromEntries -Entries $entries -PropertyName 'reason'
+            samAccountName = Get-SfAdMonitorWorkerPreviewValueFromEntries -Entries $entries -PropertyName 'samAccountName'
+            targetOu = Get-SfAdMonitorWorkerPreviewValueFromEntries -Entries $entries -PropertyName 'targetOu'
+            currentDistinguishedName = Get-SfAdMonitorWorkerPreviewValueFromEntries -Entries $entries -PropertyName 'currentDistinguishedName'
+            currentEnabled = Get-SfAdMonitorWorkerPreviewValueFromEntries -Entries $entries -PropertyName 'currentEnabled'
+            proposedEnable = Get-SfAdMonitorWorkerPreviewValueFromEntries -Entries $entries -PropertyName 'proposedEnable'
+        }
+        changedAttributes = $changedAttributes
+        operations = @($Report.operations | Where-Object { "$($_.workerId)" -eq $workerId })
+        entries = @($entries)
+    }
+}
+
+function Set-SfAdMonitorWorkerPreviewState {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [pscustomobject]$UiState,
+        [Parameter(Mandatory)]
+        [pscustomobject]$PreviewResult,
+        [AllowNull()]
+        [pscustomobject]$Status
+    )
+
+    $UiState.viewMode = 'WorkerPreviewDiff'
+    $UiState.pendingAction = $null
+    $UiState.pendingReportIndex = 0
+    $UiState.pendingWorkerId = if (
+        $PreviewResult.PSObject.Properties.Name -contains 'workerScope' -and
+        $PreviewResult.workerScope -and
+        $PreviewResult.workerScope.PSObject.Properties.Name -contains 'workerId'
+    ) { "$($PreviewResult.workerScope.workerId)" } else { $null }
+    $UiState.workerPreviewResult = $PreviewResult
+    $UiState.workerPreviewDiffRows = @(Get-SfAdMonitorWorkerPreviewDiffRows -PreviewResult $PreviewResult)
+    $UiState.statusMessage = "Worker preview loaded for $($UiState.pendingWorkerId). Review the diff, then press a to apply or Esc to cancel."
+    $UiState.commandOutput = @(
+        "PreviewRunId=$($PreviewResult.runId)"
+        "PreviewReport=$($PreviewResult.reportPath)"
+    )
+
+    if ($Status -and -not [string]::IsNullOrWhiteSpace("$($PreviewResult.reportPath)")) {
+        $runs = @($Status.recentRuns)
+        for ($index = 0; $index -lt $runs.Count; $index += 1) {
+            if ("$($runs[$index].path)" -eq "$($PreviewResult.reportPath)") {
+                $UiState.selectedRunIndex = $index
+                break
+            }
+        }
+    }
+}
+
+function Clear-SfAdMonitorWorkerPreviewState {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [pscustomobject]$UiState
+    )
+
+    $UiState.viewMode = 'Dashboard'
+    $UiState.pendingAction = $null
+    $UiState.pendingWorkerId = $null
+    $UiState.workerPreviewResult = $null
+    $UiState.workerPreviewDiffRows = @()
+}
+
+function Invoke-SfAdMonitorInlineWorkerPreview {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [pscustomobject]$Status,
+        [Parameter(Mandatory)]
+        [pscustomobject]$UiState,
+        [Parameter(Mandatory)]
+        [string]$ResolvedMappingConfigPath
+    )
+
+    $context = Get-SfAdMonitorActionContext -Status $Status -UiState $UiState -MappingConfigPath $ResolvedMappingConfigPath
+    if (-not $context.mappingConfigPath) {
+        $UiState.statusMessage = 'Worker preview unavailable: no mapping config path was provided and none could be inferred from recent runs.'
+        $UiState.commandOutput = @()
+        return
+    }
+
+    $workerId = Read-SfAdMonitorWorkerId
+    if ([string]::IsNullOrWhiteSpace($workerId)) {
+        $UiState.statusMessage = 'Worker preview cancelled: no worker ID was provided.'
+        $UiState.commandOutput = @()
+        return
+    }
+
+    $workerId = $workerId.Trim()
+    $projectRoot = Split-Path -Path $PSScriptRoot -Parent
+    try {
+        $json = & pwsh -NoLogo -NoProfile -File (Join-Path $projectRoot 'scripts/Invoke-SfAdWorkerPreview.ps1') `
+            -ConfigPath $context.configPath `
+            -MappingConfigPath $context.mappingConfigPath `
+            -WorkerId $workerId `
+            -PreviewMode Full `
+            -AsJson 2>&1
+        $previewResult = @($json) -join [Environment]::NewLine | ConvertFrom-Json -Depth 30
+        Set-SfAdMonitorWorkerPreviewState -UiState $UiState -PreviewResult $previewResult
+    } catch {
+        Clear-SfAdMonitorWorkerPreviewState -UiState $UiState
+        $UiState.statusMessage = "Worker preview failed for $workerId."
+        $UiState.commandOutput = @($_.Exception.Message)
+    }
+}
+
+function Open-SfAdMonitorSelectedWorkerPreview {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [pscustomobject]$Status,
+        [Parameter(Mandatory)]
+        [pscustomobject]$UiState
+    )
+
+    if (-not (Test-SfAdMonitorSelectedRunIsWorkerPreview -Status $Status -UiState $UiState)) {
+        $UiState.statusMessage = 'Worker apply is only available on a selected single-worker review run.'
+        $UiState.commandOutput = @()
+        return
+    }
+
+    $selectedRun = Get-SfAdMonitorSelectedRun -Status $Status -UiState $UiState
+    if (-not $selectedRun -or [string]::IsNullOrWhiteSpace("$($selectedRun.path)") -or -not (Test-Path -Path $selectedRun.path -PathType Leaf)) {
+        $UiState.statusMessage = 'Selected worker preview report is unavailable.'
+        $UiState.commandOutput = @()
+        return
+    }
+
+    try {
+        $report = Get-Content -Path $selectedRun.path -Raw | ConvertFrom-Json -Depth 30
+        $previewResult = ConvertTo-SfAdMonitorWorkerPreviewResult -Report $report -ReportPath $selectedRun.path
+        if (-not $previewResult) {
+            throw 'Selected worker preview is missing worker scope.'
+        }
+        Set-SfAdMonitorWorkerPreviewState -UiState $UiState -PreviewResult $previewResult -Status $Status
+    } catch {
+        Clear-SfAdMonitorWorkerPreviewState -UiState $UiState
+        $UiState.statusMessage = 'Failed to load the selected worker preview.'
+        $UiState.commandOutput = @($_.Exception.Message)
+    }
+}
+
+function Invoke-SfAdMonitorInlineWorkerApply {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [pscustomobject]$Status,
+        [Parameter(Mandatory)]
+        [pscustomobject]$UiState,
+        [Parameter(Mandatory)]
+        [string]$ResolvedMappingConfigPath,
+        [Parameter(Mandatory)]
+        [int]$HistoryDepth
+    )
+
+    $context = Get-SfAdMonitorActionContext -Status $Status -UiState $UiState -MappingConfigPath $ResolvedMappingConfigPath
+    if (-not $context.mappingConfigPath) {
+        $UiState.statusMessage = 'Worker apply unavailable: no mapping config path was provided and none could be inferred from recent runs.'
+        $UiState.commandOutput = @()
+        return
+    }
+
+    $previewResult = $UiState.workerPreviewResult
+    $workerId = if (
+        $previewResult -and
+        $previewResult.PSObject.Properties.Name -contains 'workerScope' -and
+        $previewResult.workerScope -and
+        $previewResult.workerScope.PSObject.Properties.Name -contains 'workerId'
+    ) { "$($previewResult.workerScope.workerId)" } else { $null }
+    if ([string]::IsNullOrWhiteSpace($workerId)) {
+        $UiState.statusMessage = 'Worker apply unavailable: the inline worker preview is missing worker scope.'
+        $UiState.commandOutput = @()
+        return
+    }
+
+    if (-not (Confirm-SfAdMonitorWriteAction -Label "Apply worker sync for $workerId" -WriteTarget 'AD objects, sync state, runtime status, and report files')) {
+        $UiState.statusMessage = 'Worker apply cancelled.'
+        $UiState.commandOutput = @()
+        return
+    }
+
+    $projectRoot = Split-Path -Path $PSScriptRoot -Parent
+    try {
+        $json = & pwsh -NoLogo -NoProfile -File (Join-Path $projectRoot 'scripts/Invoke-SfAdWorkerSync.ps1') `
+            -ConfigPath $context.configPath `
+            -MappingConfigPath $context.mappingConfigPath `
+            -WorkerId $workerId `
+            -AsJson 2>&1
+        $syncResult = @($json) -join [Environment]::NewLine | ConvertFrom-Json -Depth 30
+        $syncReport = if ($syncResult.reportPath -and (Test-Path -Path $syncResult.reportPath -PathType Leaf)) {
+            Get-Content -Path $syncResult.reportPath -Raw | ConvertFrom-Json -Depth 30
+        } else {
+            $null
+        }
+        $freshStatus = Get-SfAdMonitorStatus -ConfigPath $context.configPath -HistoryLimit $HistoryDepth
+        Clear-SfAdMonitorWorkerPreviewState -UiState $UiState
+        if ($syncResult.reportPath) {
+            $runs = @($freshStatus.recentRuns)
+            for ($index = 0; $index -lt $runs.Count; $index += 1) {
+                if ("$($runs[$index].path)" -eq "$($syncResult.reportPath)") {
+                    $UiState.selectedRunIndex = $index
+                    break
+                }
+            }
+        }
+        $UiState.statusMessage = "Single-worker sync completed for $workerId."
+        $UiState.commandOutput = @(Get-SfAdMonitorWorkerSyncSummaryLines -SyncResult $syncResult -Report $syncReport)
+    } catch {
+        $UiState.statusMessage = "Worker apply failed for $workerId."
+        $UiState.commandOutput = @($_.Exception.Message)
+    }
 }
 
 function Export-SfAdMonitorBucketSelection {
@@ -511,55 +821,7 @@ function Invoke-SfAdMonitorShortcut {
             }
         }
         'WorkerPreview' {
-            if (-not $context.mappingConfigPath) {
-                $UiState.statusMessage = 'Worker preview unavailable: no mapping config path was provided and none could be inferred from recent runs.'
-                $UiState.commandOutput = @()
-                return
-            }
-
-            $workerId = Read-SfAdMonitorWorkerId
-            if ([string]::IsNullOrWhiteSpace($workerId)) {
-                $UiState.statusMessage = 'Worker preview cancelled: no worker ID was provided.'
-                $UiState.commandOutput = @()
-                return
-            }
-
-            $previewMode = Read-SfAdMonitorWorkerPreviewMode
-            if ([string]::IsNullOrWhiteSpace($previewMode)) {
-                $UiState.statusMessage = 'Worker preview cancelled: preview mode must be minimal or full.'
-                $UiState.commandOutput = @()
-                return
-            }
-
-            if (-not (Confirm-SfAdMonitorWriteAction -Label "Worker preview for $($workerId.Trim())" -WriteTarget 'runtime status and review report files')) {
-                $UiState.statusMessage = 'Worker preview cancelled.'
-                $UiState.commandOutput = @()
-                return
-            }
-
-            $argumentList = @(
-                '-NoLogo'
-                '-NoProfile'
-                '-File'
-                (Join-Path $projectRoot 'scripts/Invoke-SfAdWorkerPreview.ps1')
-                '-ConfigPath'
-                $context.configPath
-                '-MappingConfigPath'
-                $context.mappingConfigPath
-                '-WorkerId'
-                $workerId.Trim()
-                '-PreviewMode'
-                $previewMode
-            )
-
-            try {
-                Start-Process -FilePath 'pwsh' -ArgumentList $argumentList | Out-Null
-                $UiState.statusMessage = "Started $($previewMode.ToLowerInvariant()) worker preview for $($workerId.Trim()) in a new PowerShell process."
-                $UiState.commandOutput = @("Config=$($context.configPath)", "Mapping=$($context.mappingConfigPath)", "WorkerId=$($workerId.Trim())", "PreviewMode=$($previewMode.ToLowerInvariant())")
-            } catch {
-                $UiState.statusMessage = 'Failed to start worker preview.'
-                $UiState.commandOutput = @($_.Exception.Message)
-            }
+            Invoke-SfAdMonitorInlineWorkerPreview -Status $Status -UiState $UiState -ResolvedMappingConfigPath $ResolvedMappingConfigPath
         }
         'ApplyReviewedWorker' {
             if (-not $context.mappingConfigPath) {
@@ -704,6 +966,41 @@ do {
     while (-not $quitRequested -and -not $refreshRequested) {
         if ([Console]::KeyAvailable) {
             $key = [Console]::ReadKey($true)
+            if ("$($uiState.viewMode)" -eq 'WorkerPreviewDiff') {
+                switch ($key.Key) {
+                    'Escape' {
+                        Clear-SfAdMonitorWorkerPreviewState -UiState $uiState
+                        $uiState.statusMessage = 'Returned to dashboard.'
+                        $refreshRequested = $true
+                        continue
+                    }
+                }
+
+                switch ($key.KeyChar) {
+                    'a' {
+                        if ($lastStatus) {
+                            Invoke-SfAdMonitorInlineWorkerApply -Status $lastStatus -UiState $uiState -ResolvedMappingConfigPath $resolvedMappingConfigPath -HistoryDepth $HistoryLimit
+                        }
+                        $refreshRequested = $true
+                        continue
+                    }
+                    'o' {
+                        if ($lastStatus -and $uiState.workerPreviewResult -and $uiState.workerPreviewResult.reportPath) {
+                            $runs = @($lastStatus.recentRuns)
+                            for ($index = 0; $index -lt $runs.Count; $index += 1) {
+                                if ("$($runs[$index].path)" -eq "$($uiState.workerPreviewResult.reportPath)") {
+                                    $uiState.selectedRunIndex = $index
+                                    break
+                                }
+                            }
+                            $uiState.viewMode = 'Dashboard'
+                            Invoke-SfAdMonitorShortcut -Action OpenReport -Status $lastStatus -UiState $uiState -ResolvedMappingConfigPath $resolvedMappingConfigPath
+                        }
+                        $refreshRequested = $true
+                        continue
+                    }
+                }
+            }
             if ($uiState.pendingAction -eq 'ApplyWorkerSync') {
                 switch ($key.Key) {
                     'A' {
@@ -1031,17 +1328,8 @@ do {
                             break
                         }
                         'g' {
-                            if ($lastStatus -and (Test-SfAdMonitorSelectedRunIsWorkerPreview -Status $lastStatus -UiState $uiState)) {
-                                $workerId = Get-SfAdMonitorSelectedRunWorkerId -Status $lastStatus -UiState $uiState
-                                if (-not [string]::IsNullOrWhiteSpace($workerId)) {
-                                    $uiState.pendingAction = 'ApplyWorkerSync'
-                                    $uiState.pendingWorkerId = $workerId
-                                    $uiState.statusMessage = "Choose an action for reviewed worker $workerId."
-                                } else {
-                                    $uiState.statusMessage = 'Worker apply unavailable: the selected review is missing worker scope.'
-                                }
-                            } else {
-                                $uiState.statusMessage = 'Worker apply is only available on a selected single-worker review run.'
+                            if ($lastStatus) {
+                                Open-SfAdMonitorSelectedWorkerPreview -Status $lastStatus -UiState $uiState
                             }
                             $refreshRequested = $true
                             break

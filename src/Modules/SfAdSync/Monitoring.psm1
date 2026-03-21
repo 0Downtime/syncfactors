@@ -632,6 +632,8 @@ function New-SfAdMonitorUiState {
         preferredMode = $null
         pendingAction = $null
         pendingWorkerId = $null
+        workerPreviewResult = $null
+        workerPreviewDiffRows = @()
         statusMessage = 'Ready. Keys: q quit, r refresh, t toggle auto-refresh, tab focus, arrows or j/k select run, [ ] bucket, left/right or h/l select item, / filter, c clear filter, p preflight, d delta dry-run, s delta sync, f full dry-run, a full sync, w worker preview, v review, z fresh reset, o open report explorer, y copy path, x export bucket.'
         commandOutput = @()
     }
@@ -1536,6 +1538,239 @@ function Get-SfAdMonitorReportExplorerDiffRows {
     return @()
 }
 
+function Get-SfAdMonitorWorkerPreviewDiffRows {
+    [CmdletBinding()]
+    param(
+        [AllowNull()]
+        [pscustomobject]$PreviewResult
+    )
+
+    if (-not $PreviewResult) {
+        return @()
+    }
+
+    if ($PreviewResult.PSObject.Properties.Name -contains 'changedAttributes') {
+        $rows = @(
+            foreach ($row in @($PreviewResult.changedAttributes)) {
+                $attribute = if ($row.PSObject.Properties.Name -contains 'targetAttribute') { "$($row.targetAttribute)" } else { '' }
+                $beforeValue = if ($row.PSObject.Properties.Name -contains 'currentAdValue') {
+                    ConvertTo-SfAdMonitorInlineText -Value $row.currentAdValue
+                } else {
+                    '(unset)'
+                }
+                $afterValue = if ($row.PSObject.Properties.Name -contains 'proposedValue') {
+                    ConvertTo-SfAdMonitorInlineText -Value $row.proposedValue
+                } else {
+                    '(unset)'
+                }
+
+                if (
+                    [string]::IsNullOrWhiteSpace($attribute) -or
+                    $beforeValue -eq $afterValue
+                ) {
+                    continue
+                }
+
+                [pscustomobject]@{
+                    Attribute = $attribute
+                    Before = $beforeValue
+                    After = $afterValue
+                }
+            }
+        )
+
+        if ($rows.Count -gt 0) {
+            return @($rows)
+        }
+    }
+
+    if ($PreviewResult.PSObject.Properties.Name -contains 'operations') {
+        $results = [System.Collections.Generic.List[object]]::new()
+        foreach ($operation in @($PreviewResult.operations)) {
+            $beforeMap = @{}
+            foreach ($property in @(Get-SfAdMonitorPropertyPairs -Value $operation.before)) {
+                $beforeMap[$property.Name] = ConvertTo-SfAdMonitorInlineText -Value $property.Value
+            }
+
+            $afterMap = @{}
+            foreach ($property in @(Get-SfAdMonitorPropertyPairs -Value $operation.after)) {
+                $afterMap[$property.Name] = ConvertTo-SfAdMonitorInlineText -Value $property.Value
+            }
+
+            $keys = @($beforeMap.Keys + $afterMap.Keys | Sort-Object -Unique)
+            if ("$($operation.operationType)" -eq 'MoveUser') {
+                $keys = @($keys | Where-Object { $_ -notin @('distinguishedName', 'parentOu', 'targetOu') })
+            }
+
+            foreach ($key in $keys) {
+                $beforeValue = if ($beforeMap.ContainsKey($key)) { $beforeMap[$key] } else { '(unset)' }
+                $afterValue = if ($afterMap.ContainsKey($key)) { $afterMap[$key] } else { '(unset)' }
+                if ($beforeValue -eq $afterValue) {
+                    continue
+                }
+
+                $results.Add([pscustomobject]@{
+                        Attribute = $key
+                        Before = $beforeValue
+                        After = $afterValue
+                    })
+            }
+        }
+
+        return @($results)
+    }
+
+    return @()
+}
+
+function Get-SfAdMonitorWorkerSyncSummaryLines {
+    [CmdletBinding()]
+    param(
+        [AllowNull()]
+        [pscustomobject]$SyncResult,
+        [AllowNull()]
+        [pscustomobject]$Report
+    )
+
+    if (-not $SyncResult -and -not $Report) {
+        return @()
+    }
+
+    $workerId = if (
+        $SyncResult -and
+        $SyncResult.PSObject.Properties.Name -contains 'workerScope' -and
+        $SyncResult.workerScope -and
+        $SyncResult.workerScope.PSObject.Properties.Name -contains 'workerId'
+    ) {
+        "$($SyncResult.workerScope.workerId)"
+    } elseif (
+        $Report -and
+        $Report.PSObject.Properties.Name -contains 'workerScope' -and
+        $Report.workerScope -and
+        $Report.workerScope.PSObject.Properties.Name -contains 'workerId'
+    ) {
+        "$($Report.workerScope.workerId)"
+    } else {
+        '-'
+    }
+
+    $reportPath = if ($SyncResult -and $SyncResult.PSObject.Properties.Name -contains 'reportPath') { "$($SyncResult.reportPath)" } else { '-' }
+    $runId = if ($SyncResult -and $SyncResult.PSObject.Properties.Name -contains 'runId') { "$($SyncResult.runId)" } else { $(if ($Report) { "$($Report.runId)" } else { '-' }) }
+    $status = if ($SyncResult -and $SyncResult.PSObject.Properties.Name -contains 'status') { "$($SyncResult.status)" } else { $(if ($Report) { "$($Report.status)" } else { '-' }) }
+    $artifactType = if ($SyncResult -and $SyncResult.PSObject.Properties.Name -contains 'artifactType') { "$($SyncResult.artifactType)" } else { $(if ($Report) { "$($Report.artifactType)" } else { '-' }) }
+
+    $lines = [System.Collections.Generic.List[string]]::new()
+    $lines.Add('Single-worker sync completed.')
+    $lines.Add("WorkerId=$workerId")
+    $lines.Add("RunId=$runId")
+    $lines.Add("Status=$status")
+    $lines.Add("Artifact=$artifactType")
+    $lines.Add("Report=$reportPath")
+
+    if ($Report) {
+        $bucketParts = [System.Collections.Generic.List[string]]::new()
+        foreach ($bucketName in @('creates', 'updates', 'enables', 'disables', 'graveyardMoves', 'deletions')) {
+            $bucketCount = if ($Report.PSObject.Properties.Name -contains $bucketName) { @($Report.$bucketName).Count } else { 0 }
+            if ($bucketCount -gt 0) {
+                $bucketParts.Add("$bucketName=$bucketCount")
+            }
+        }
+        if ($bucketParts.Count -gt 0) {
+            $lines.Add("Buckets: $($bucketParts -join ', ')")
+        } else {
+            $lines.Add('Buckets: none')
+        }
+
+        $operationLines = [System.Collections.Generic.List[string]]::new()
+        foreach ($operation in @($Report.operations | Select-Object -First 6)) {
+            $targetSam = if (
+                $operation.PSObject.Properties.Name -contains 'target' -and
+                $operation.target -and
+                $operation.target.PSObject.Properties.Name -contains 'samAccountName' -and
+                -not [string]::IsNullOrWhiteSpace("$($operation.target.samAccountName)")
+            ) {
+                "$($operation.target.samAccountName)"
+            } else {
+                '-'
+            }
+
+            $operationLines.Add("$($operation.operationType) ($targetSam)")
+        }
+        if ($operationLines.Count -gt 0) {
+            $lines.Add('Operations:')
+            foreach ($line in $operationLines) {
+                $lines.Add("- $line")
+            }
+        }
+    }
+
+    return @($lines)
+}
+
+function Format-SfAdMonitorWorkerPreviewFlowView {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [pscustomobject]$Status,
+        [Parameter(Mandatory)]
+        [pscustomobject]$UiState
+    )
+
+    $previewResult = $UiState.workerPreviewResult
+    $diffRows = @(if (@($UiState.workerPreviewDiffRows).Count -gt 0) { $UiState.workerPreviewDiffRows } else { Get-SfAdMonitorWorkerPreviewDiffRows -PreviewResult $previewResult })
+    $panelWidth = 110
+    $topBorder = "╔" + ("═" * ($panelWidth - 2)) + "╗"
+    $midBorder = "╠" + ("═" * ($panelWidth - 2)) + "╣"
+    $bottomBorder = "╚" + ("═" * ($panelWidth - 2)) + "╝"
+    $rule = "─" * $panelWidth
+    $lines = [System.Collections.Generic.List[string]]::new()
+
+    $preview = if ($previewResult -and $previewResult.PSObject.Properties.Name -contains 'preview') { $previewResult.preview } else { $null }
+    $workerId = if (
+        $previewResult -and
+        $previewResult.PSObject.Properties.Name -contains 'workerScope' -and
+        $previewResult.workerScope -and
+        $previewResult.workerScope.PSObject.Properties.Name -contains 'workerId'
+    ) {
+        "$($previewResult.workerScope.workerId)"
+    } else {
+        '-'
+    }
+
+    $lines.Add($topBorder)
+    $lines.Add("║ Single-Worker Diff Review    Worker: $workerId    Run: $(if ($previewResult -and $previewResult.runId) { $previewResult.runId } else { 'no-run' })")
+    $lines.Add("║ Report: $(if ($previewResult -and $previewResult.reportPath) { $previewResult.reportPath } else { '(none)' })")
+    $lines.Add("║ Matched AD user: $(if ($preview -and $preview.PSObject.Properties.Name -contains 'matchedExistingUser' -and $null -ne $preview.matchedExistingUser) { $preview.matchedExistingUser } else { '-' })    SamAccountName: $(if ($preview -and $preview.PSObject.Properties.Name -contains 'samAccountName' -and -not [string]::IsNullOrWhiteSpace("$($preview.samAccountName)")) { $preview.samAccountName } else { '-' })")
+    $lines.Add("║ Review category: $(if ($preview -and $preview.PSObject.Properties.Name -contains 'reviewCategory' -and -not [string]::IsNullOrWhiteSpace("$($preview.reviewCategory)")) { $preview.reviewCategory } else { '-' })    Reason: $(if ($preview -and $preview.PSObject.Properties.Name -contains 'reason' -and -not [string]::IsNullOrWhiteSpace("$($preview.reason)")) { $preview.reason } else { '-' })")
+    $lines.Add("║ Target OU: $(if ($preview -and $preview.PSObject.Properties.Name -contains 'targetOu' -and -not [string]::IsNullOrWhiteSpace("$($preview.targetOu)")) { $preview.targetOu } else { '-' })")
+    $lines.Add($midBorder)
+    $lines.Add('▓ Attribute Diff')
+    $lines.Add((' {0,-28} {1,-36} {2,-36}' -f 'Attribute', 'Old Value', 'New Value'))
+    if ($diffRows.Count -eq 0) {
+        $lines.Add(' No attribute changes were detected for this worker preview.')
+    } else {
+        foreach ($row in $diffRows | Select-Object -First 12) {
+            $lines.Add((' {0,-28} {1,-36} {2,-36}' -f `
+                    "$($row.Attribute)", `
+                    "$($row.Before)", `
+                    "$($row.After)"))
+        }
+        if ($diffRows.Count -gt 12) {
+            $lines.Add(" ... $($diffRows.Count - 12) more changed attributes")
+        }
+    }
+    $lines.Add($rule)
+    $lines.Add('▓ Actions')
+    $lines.Add('Press a to apply this worker sync.')
+    $lines.Add('Press o to open the full report explorer for this preview.')
+    $lines.Add('Press Esc to return to the dashboard without applying.')
+    $lines.Add($midBorder)
+    $lines.Add("║ Status: $($UiState.statusMessage)")
+    $lines.Add('║ Keys: a apply worker sync, o open preview report, Esc dashboard')
+    $lines.Add($bottomBorder)
+    return $lines
+}
+
 function Format-SfAdMonitorReportExplorerView {
     [CmdletBinding()]
     param(
@@ -1751,6 +1986,10 @@ function Format-SfAdMonitorDashboardView {
 
     if ($UiState.PSObject.Properties.Name -contains 'viewMode' -and "$($UiState.viewMode)" -eq 'ReportExplorer') {
         return @(Format-SfAdMonitorReportExplorerView -Status $Status -UiState $UiState)
+    }
+
+    if ($UiState.PSObject.Properties.Name -contains 'viewMode' -and "$($UiState.viewMode)" -eq 'WorkerPreviewDiff') {
+        return @(Format-SfAdMonitorWorkerPreviewFlowView -Status $Status -UiState $UiState)
     }
 
     $selectedRun = Get-SfAdMonitorSelectedRun -Status $Status -UiState $UiState
@@ -1985,4 +2224,4 @@ function Format-SfAdMonitorDashboardView {
     return $lines
 }
 
-Export-ModuleMember -Function Get-SfAdRuntimeStatusPath, New-SfAdIdleRuntimeStatus, New-SfAdRuntimeStatusSnapshot, Save-SfAdRuntimeStatusSnapshot, Write-SfAdRuntimeStatusSnapshot, Get-SfAdRuntimeStatusSnapshot, Get-SfAdRecentRunSummaries, Get-SfAdMonitorStatus, Format-SfAdMonitorView, New-SfAdMonitorUiState, Get-SfAdMonitorBucketDefinitions, Get-SfAdMonitorSelectedRun, Get-SfAdMonitorSelectedRunReport, Get-SfAdMonitorSelectedBucket, Resolve-SfAdMonitorMappingConfigPath, Resolve-SfAdMonitorSelectedReportPath, Get-SfAdMonitorActionContext, Format-SfAdMonitorDashboardView, Get-SfAdMonitorFilteredBucketItems, Get-SfAdMonitorSelectedBucketItem, Get-SfAdMonitorSelectedBucketOperation, Get-SfAdMonitorFailureGroups, Get-SfAdMonitorSelectedWorkerState, Get-SfAdMonitorCurrentRunDiagnostics, Get-SfAdMonitorOperationDiffLines, Format-SfAdMonitorSelectedObjectLines, Get-SfAdReportDirectories, Test-SfAdMonitorSelectedRunIsReview, Test-SfAdMonitorSelectedRunIsWorkerPreview, Get-SfAdMonitorSelectedRunWorkerId, Get-SfAdMonitorWorkerRelatedRuns, Get-SfAdMonitorReportExplorerCategoryDefinitions, Get-SfAdMonitorReportExplorerEntries, Get-SfAdMonitorReportExplorerSelection, Get-SfAdMonitorReportExplorerDiffRows, Format-SfAdMonitorReportExplorerView
+Export-ModuleMember -Function Get-SfAdRuntimeStatusPath, New-SfAdIdleRuntimeStatus, New-SfAdRuntimeStatusSnapshot, Save-SfAdRuntimeStatusSnapshot, Write-SfAdRuntimeStatusSnapshot, Get-SfAdRuntimeStatusSnapshot, Get-SfAdRecentRunSummaries, Get-SfAdMonitorStatus, Format-SfAdMonitorView, New-SfAdMonitorUiState, Get-SfAdMonitorBucketDefinitions, Get-SfAdMonitorSelectedRun, Get-SfAdMonitorSelectedRunReport, Get-SfAdMonitorSelectedBucket, Resolve-SfAdMonitorMappingConfigPath, Resolve-SfAdMonitorSelectedReportPath, Get-SfAdMonitorActionContext, Format-SfAdMonitorDashboardView, Get-SfAdMonitorFilteredBucketItems, Get-SfAdMonitorSelectedBucketItem, Get-SfAdMonitorSelectedBucketOperation, Get-SfAdMonitorFailureGroups, Get-SfAdMonitorSelectedWorkerState, Get-SfAdMonitorCurrentRunDiagnostics, Get-SfAdMonitorOperationDiffLines, Format-SfAdMonitorSelectedObjectLines, Get-SfAdReportDirectories, Test-SfAdMonitorSelectedRunIsReview, Test-SfAdMonitorSelectedRunIsWorkerPreview, Get-SfAdMonitorSelectedRunWorkerId, Get-SfAdMonitorWorkerRelatedRuns, Get-SfAdMonitorReportExplorerCategoryDefinitions, Get-SfAdMonitorReportExplorerEntries, Get-SfAdMonitorReportExplorerSelection, Get-SfAdMonitorReportExplorerDiffRows, Format-SfAdMonitorReportExplorerView, Get-SfAdMonitorWorkerPreviewDiffRows, Get-SfAdMonitorWorkerSyncSummaryLines, Format-SfAdMonitorWorkerPreviewFlowView

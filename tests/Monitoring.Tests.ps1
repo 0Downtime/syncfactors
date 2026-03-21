@@ -924,6 +924,137 @@ Describe 'Monitoring module' {
         ($lines -join "`n") | Should -Match 'z fresh reset'
     }
 
+    It 'renders the inline worker preview diff screen with only changed attributes' {
+        $previewResult = [pscustomobject]@{
+            reportPath = 'preview-report.json'
+            runId = 'preview-123'
+            status = 'Succeeded'
+            artifactType = 'WorkerPreview'
+            workerScope = [pscustomobject]@{
+                workerId = '1001'
+            }
+            preview = [pscustomobject]@{
+                matchedExistingUser = $true
+                samAccountName = 'jdoe'
+                reviewCategory = 'ExistingUserChanges'
+                reason = 'AttributeDelta'
+                targetOu = 'OU=Employees,DC=example,DC=com'
+            }
+            changedAttributes = @(
+                [pscustomobject]@{
+                    sourceField = 'department'
+                    targetAttribute = 'department'
+                    currentAdValue = 'Finance'
+                    proposedValue = 'Sales'
+                }
+                [pscustomobject]@{
+                    sourceField = 'company'
+                    targetAttribute = 'company'
+                    currentAdValue = 'ExampleCo'
+                    proposedValue = 'ExampleCo'
+                }
+            )
+            operations = @()
+        }
+        $status = [pscustomobject]@{
+            recentRuns = @()
+            latestRun = [pscustomobject]@{}
+        }
+        $uiState = New-SfAdMonitorUiState
+        $uiState.viewMode = 'WorkerPreviewDiff'
+        $uiState.workerPreviewResult = $previewResult
+        $uiState.workerPreviewDiffRows = @(Get-SfAdMonitorWorkerPreviewDiffRows -PreviewResult $previewResult)
+        $uiState.statusMessage = 'Ready to apply.'
+
+        $lines = @(Format-SfAdMonitorDashboardView -Status $status -UiState $uiState)
+        $joined = $lines -join "`n"
+
+        $joined | Should -Match 'Single-Worker Diff Review'
+        $joined | Should -Match 'Attribute\s+Old Value\s+New Value'
+        $joined | Should -Match 'department\s+Finance\s+Sales'
+        $joined | Should -Not -Match 'company'
+        $joined | Should -Match 'Press a to apply this worker sync'
+        $joined | Should -Match 'Press Esc to return to the dashboard'
+    }
+
+    It 'renders a no-changes message for empty inline worker preview diffs' {
+        $previewResult = [pscustomobject]@{
+            reportPath = 'preview-report.json'
+            runId = 'preview-456'
+            status = 'Succeeded'
+            artifactType = 'WorkerPreview'
+            workerScope = [pscustomobject]@{
+                workerId = '1002'
+            }
+            preview = [pscustomobject]@{
+                matchedExistingUser = $true
+                samAccountName = 'asmith'
+            }
+            changedAttributes = @()
+            operations = @()
+        }
+        $status = [pscustomobject]@{
+            recentRuns = @()
+            latestRun = [pscustomobject]@{}
+        }
+        $uiState = New-SfAdMonitorUiState
+        $uiState.viewMode = 'WorkerPreviewDiff'
+        $uiState.workerPreviewResult = $previewResult
+        $uiState.statusMessage = 'No changes found.'
+
+        $lines = @(Format-SfAdMonitorDashboardView -Status $status -UiState $uiState)
+
+        ($lines -join "`n") | Should -Match 'No attribute changes were detected for this worker preview'
+    }
+
+    It 'formats concise post-run summary lines for a single-worker sync' {
+        $syncResult = [pscustomobject]@{
+            reportPath = 'worker-sync-report.json'
+            runId = 'worker-sync-123'
+            status = 'Succeeded'
+            artifactType = 'WorkerSync'
+            workerScope = [pscustomobject]@{
+                workerId = '1001'
+            }
+        }
+        $report = [pscustomobject]@{
+            runId = 'worker-sync-123'
+            status = 'Succeeded'
+            artifactType = 'WorkerSync'
+            creates = @()
+            updates = @(
+                [pscustomobject]@{ workerId = '1001'; samAccountName = 'jdoe' }
+            )
+            enables = @(
+                [pscustomobject]@{ workerId = '1001'; samAccountName = 'jdoe' }
+            )
+            disables = @()
+            graveyardMoves = @()
+            deletions = @()
+            operations = @(
+                [pscustomobject]@{
+                    operationType = 'UpdateAttributes'
+                    target = [pscustomobject]@{ samAccountName = 'jdoe' }
+                }
+                [pscustomobject]@{
+                    operationType = 'EnableUser'
+                    target = [pscustomobject]@{ samAccountName = 'jdoe' }
+                }
+            )
+        }
+
+        $lines = @(Get-SfAdMonitorWorkerSyncSummaryLines -SyncResult $syncResult -Report $report)
+        $joined = $lines -join "`n"
+
+        $joined | Should -Match 'Single-worker sync completed'
+        $joined | Should -Match 'WorkerId=1001'
+        $joined | Should -Match 'RunId=worker-sync-123'
+        $joined | Should -Match 'Report=worker-sync-report.json'
+        $joined | Should -Match 'Buckets: updates=1, enables=1'
+        $joined | Should -Match 'UpdateAttributes \(jdoe\)'
+        $joined | Should -Match 'EnableUser \(jdoe\)'
+    }
+
     It 'renders a parsed report explorer with created changed and deleted objects' {
         $reportPath = Join-Path $TestDrive 'sf-ad-sync-Delta-20260312-220000.json'
         @{
