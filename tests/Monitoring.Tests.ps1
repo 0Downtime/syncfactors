@@ -213,6 +213,181 @@ Describe 'Monitoring module' {
         ($deleteLines -join "`n") | Should -Match 'Δ samAccountName: adoe -> \(unset\)'
     }
 
+    It 'formats mapped attribute detail rows and handles missing operations' {
+        $selectedItem = [pscustomobject]@{
+            workerId = '1001'
+            samAccountName = 'jdoe'
+            changedAttributeDetails = @(
+                [pscustomobject]@{
+                    sourceField = 'jobInfo.department'
+                    targetAttribute = 'department'
+                    transform = 'none'
+                    currentAdValue = 'Finance'
+                    proposedValue = 'Engineering'
+                }
+            )
+        }
+
+        $lines = @(Format-SfAdMonitorSelectedObjectLines -SelectedItem $selectedItem -SelectedOperation $null)
+
+        ($lines -join "`n") | Should -Match 'Operation: no matching reversible operation recorded'
+        ($lines -join "`n") | Should -Match 'Map: jobInfo.department -> department \[none\]'
+        ($lines -join "`n") | Should -Match 'Finance -> Engineering'
+    }
+
+    It 'builds explorer diff rows from move operations without DN-only fields' {
+        $entry = [pscustomobject]@{
+            Item = [pscustomobject]@{
+                workerId = '1001'
+                samAccountName = 'jdoe'
+            }
+            Operation = [pscustomobject]@{
+                operationType = 'MoveUser'
+                before = [pscustomobject]@{
+                    distinguishedName = 'CN=Jamie Doe,OU=Old,DC=example,DC=com'
+                    parentOu = 'OU=Old,DC=example,DC=com'
+                    title = 'Old Title'
+                }
+                after = [pscustomobject]@{
+                    distinguishedName = 'CN=Jamie Doe,OU=New,DC=example,DC=com'
+                    targetOu = 'OU=New,DC=example,DC=com'
+                    title = 'New Title'
+                    department = 'Engineering'
+                }
+            }
+        }
+
+        $rows = @(Get-SfAdMonitorReportExplorerDiffRows -Entry $entry)
+
+        $rows.Attribute | Should -Contain 'title'
+        $rows.Attribute | Should -Contain 'department'
+        $rows.Attribute | Should -Not -Contain 'distinguishedName'
+        $rows.Attribute | Should -Not -Contain 'parentOu'
+        $rows.Attribute | Should -Not -Contain 'targetOu'
+        (@($rows | Where-Object { $_.Attribute -eq 'department' })[0].Marker) | Should -Be '[CREATE]'
+    }
+
+    It 'renders the report explorer for changed, created, and deleted entries' {
+        $reportPath = Join-Path $TestDrive 'sf-ad-sync-Review-20260312-220000.json'
+        @{
+            runId = 'review-123'
+            status = 'Succeeded'
+            operations = @(
+                @{
+                    sequence = 3
+                    operationType = 'UpdateAttributes'
+                    workerId = '1001'
+                    bucket = 'updates'
+                    target = @{ samAccountName = 'jdoe'; userPrincipalName = 'jdoe@example.com' }
+                    before = @{ title = 'Old Title'; department = 'Finance' }
+                    after = @{ title = 'New Title'; department = 'Engineering' }
+                }
+                @{
+                    sequence = 2
+                    operationType = 'CreateUser'
+                    workerId = '1002'
+                    bucket = 'creates'
+                    target = @{ samAccountName = 'asmith'; userPrincipalName = 'asmith@example.com' }
+                    before = @{}
+                    after = @{ samAccountName = 'asmith'; enabled = 'True' }
+                }
+                @{
+                    sequence = 1
+                    operationType = 'DeleteUser'
+                    workerId = '1003'
+                    bucket = 'deletions'
+                    target = @{ samAccountName = 'bdoe'; userPrincipalName = 'bdoe@example.com' }
+                    before = @{ samAccountName = 'bdoe'; enabled = 'False' }
+                    after = @{}
+                }
+            )
+            updates = @(
+                @{
+                    workerId = '1001'
+                    samAccountName = 'jdoe'
+                    changedAttributeDetails = @(
+                        @{
+                            sourceField = 'jobInfo.title'
+                            targetAttribute = 'title'
+                            currentAdValue = 'Old Title'
+                            proposedValue = 'New Title'
+                        }
+                    )
+                }
+            )
+            creates = @(
+                @{
+                    workerId = '1002'
+                    samAccountName = 'asmith'
+                    targetOu = 'OU=Employees,DC=example,DC=com'
+                }
+            )
+            deletions = @(
+                @{
+                    workerId = '1003'
+                    samAccountName = 'bdoe'
+                    reason = 'Inactive'
+                }
+            )
+            enables = @()
+            disables = @()
+            graveyardMoves = @()
+            quarantined = @()
+            conflicts = @()
+            guardrailFailures = @()
+            manualReview = @()
+            unchanged = @()
+        } | ConvertTo-Json -Depth 20 | Set-Content -Path $reportPath
+
+        $status = [pscustomobject]@{
+            recentRuns = @(
+                [pscustomobject]@{
+                    runId = 'review-123'
+                    path = $reportPath
+                    status = 'Succeeded'
+                    mode = 'Review'
+                }
+            )
+            latestRun = [pscustomobject]@{
+                runId = 'review-123'
+                path = $reportPath
+                status = 'Succeeded'
+                mode = 'Review'
+            }
+        }
+        $uiState = New-SfAdMonitorUiState
+        $uiState.viewMode = 'ReportExplorer'
+        $uiState.statusMessage = 'Explorer ready'
+
+        $selection = Get-SfAdMonitorReportExplorerSelection -Status $status -UiState $uiState
+        $selection.Categories.Count | Should -Be 3
+        $selection.Entries.Count | Should -Be 3
+        $selection.SelectedCategory.Name | Should -Be 'Changed'
+        $selection.SelectedEntry.SamAccountName | Should -Be 'jdoe'
+
+        $createdState = New-SfAdMonitorUiState
+        $createdState.viewMode = 'ReportExplorer'
+        $createdState.reportCategoryIndex = 1
+        $createdState.statusMessage = 'Explorer ready'
+
+        $deletedState = New-SfAdMonitorUiState
+        $deletedState.viewMode = 'ReportExplorer'
+        $deletedState.reportCategoryIndex = 2
+        $deletedState.statusMessage = 'Explorer ready'
+
+        $changedLines = @(Format-SfAdMonitorDashboardView -Status $status -UiState $uiState)
+        $createdLines = @(Format-SfAdMonitorDashboardView -Status $status -UiState $createdState)
+        $deletedLines = @(Format-SfAdMonitorDashboardView -Status $status -UiState $deletedState)
+
+        ($changedLines -join "`n") | Should -Match 'Report Explorer'
+        ($changedLines -join "`n") | Should -Match 'Summary: \[UPDATE\] Changed=1    \[CREATE\] Created=1    \[DELETE\] Deleted=1'
+        ($changedLines -join "`n") | Should -Match 'jobInfo.title'
+        ($createdLines -join "`n") | Should -Match '\[CREATE\] workerId=1002'
+        ($createdLines -join "`n") | Should -Match 'Target OU: OU=Employees,DC=example,DC=com'
+        ($deletedLines -join "`n") | Should -Match '\[DELETE\] workerId=1003'
+        ($deletedLines -join "`n") | Should -Match 'Inactive'
+    }
+
     It 'resolves selected worker state from tracked workers' {
         $status = [pscustomobject]@{
             currentRun = [pscustomobject]@{

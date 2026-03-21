@@ -77,7 +77,7 @@ function Test-SfAdMonitorActiveDirectoryConnection {
         }
 
         if (-not [string]::IsNullOrWhiteSpace($username)) {
-            $securePassword = ConvertTo-SecureString -String $bindPassword -AsPlainText -Force
+            $securePassword = ConvertTo-SfAdSecureString -Value $bindPassword
             $directoryContext['Credential'] = [pscredential]::new($username, $securePassword)
         }
 
@@ -702,6 +702,10 @@ function Get-SfAdMonitorSelectedRunReport {
 
     $selectedRun = Get-SfAdMonitorSelectedRun -Status $Status -UiState $UiState
     if (-not $selectedRun -or [string]::IsNullOrWhiteSpace("$($selectedRun.path)")) {
+        return $null
+    }
+
+    if (-not (Test-Path -Path $selectedRun.path -PathType Leaf)) {
         return $null
     }
 
