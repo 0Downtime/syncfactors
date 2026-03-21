@@ -76,7 +76,36 @@ function Get-SyncFactorsWorkerPreviewValue {
     foreach ($entry in $Entries) {
         if ($entry.item.PSObject.Properties.Name -contains $PropertyName) {
             $value = $entry.item.$PropertyName
-            if ($null -ne $value -and -not [string]::IsNullOrWhiteSpace("$value")) {
+            if ($null -eq $value) {
+                continue
+            }
+
+            if ($value -is [string]) {
+                if (-not [string]::IsNullOrWhiteSpace($value)) {
+                    return $value
+                }
+                continue
+            }
+
+            if ($value -is [System.Array]) {
+                if (@($value).Count -gt 0) {
+                    return $value
+                }
+                continue
+            }
+
+            if ($value -is [System.ValueType]) {
+                return $value
+            }
+
+            if ($value -is [System.Collections.IEnumerable]) {
+                if (@($value).Count -gt 0) {
+                    return $value
+                }
+                continue
+            }
+
+            if ($value.PSObject -and @($value.PSObject.Properties).Count -gt 0) {
                 return $value
             }
         }
@@ -276,7 +305,10 @@ $result = [pscustomobject]@{
         buckets = $bucketNames
         matchedExistingUser = $matchedExistingUser
         reviewCategory = Get-SyncFactorsWorkerPreviewValue -Entries $entries -PropertyName 'reviewCategory'
+        reviewCaseType = Get-SyncFactorsWorkerPreviewValue -Entries $entries -PropertyName 'reviewCaseType'
         reason = Get-SyncFactorsWorkerPreviewValue -Entries $entries -PropertyName 'reason'
+        operatorActionSummary = Get-SyncFactorsWorkerPreviewValue -Entries $entries -PropertyName 'operatorActionSummary'
+        operatorActions = @(Get-SyncFactorsWorkerPreviewValue -Entries $entries -PropertyName 'operatorActions')
         samAccountName = Get-SyncFactorsWorkerPreviewValue -Entries $entries -PropertyName 'samAccountName'
         targetOu = Get-SyncFactorsWorkerPreviewValue -Entries $entries -PropertyName 'targetOu'
         currentDistinguishedName = Get-SyncFactorsWorkerPreviewValue -Entries $entries -PropertyName 'currentDistinguishedName'
@@ -316,8 +348,14 @@ if ($null -ne $result.preview.matchedExistingUser) {
 if ($result.preview.reviewCategory) {
     Write-Host "Category: $($result.preview.reviewCategory)"
 }
+if ($result.preview.reviewCaseType) {
+    Write-Host "Review case: $($result.preview.reviewCaseType)"
+}
 if ($result.preview.reason) {
     Write-Host "Reason: $($result.preview.reason)"
+}
+if ($result.preview.operatorActionSummary) {
+    Write-Host "Operator summary: $($result.preview.operatorActionSummary)"
 }
 if ($result.preview.samAccountName) {
     Write-Host "SamAccountName: $($result.preview.samAccountName)"
@@ -333,6 +371,16 @@ if ($null -ne $result.preview.currentEnabled) {
 }
 if ($null -ne $result.preview.proposedEnable) {
     Write-Host "Proposed enable: $($result.preview.proposedEnable)"
+}
+
+Write-Host ''
+Write-Host 'Operator Actions'
+if (@($result.preview.operatorActions).Count -eq 0) {
+    Write-Host 'none'
+} else {
+    foreach ($action in @($result.preview.operatorActions)) {
+        Write-Host ("- {0}: {1}" -f $action.label, $action.description)
+    }
 }
 
 Write-Host ''

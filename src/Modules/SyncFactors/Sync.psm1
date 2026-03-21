@@ -291,6 +291,68 @@ function Get-SyncFactorsReviewAttributeRows {
     )
 }
 
+function New-SyncFactorsOperatorAction {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string]$Code,
+        [Parameter(Mandatory)]
+        [string]$Label,
+        [Parameter(Mandatory)]
+        [string]$Description
+    )
+
+    return [pscustomobject]@{
+        code = $Code
+        label = $Label
+        description = $Description
+    }
+}
+
+function Get-SyncFactorsManualReviewMetadata {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string]$ReviewCaseType,
+        [string]$Reason,
+        [string]$ManagerEmployeeId,
+        [AllowNull()]
+        [string[]]$Fields,
+        [string]$DistinguishedName
+    )
+
+    $actions = [System.Collections.Generic.List[object]]::new()
+    $operatorActionSummary = $null
+
+    switch ($ReviewCaseType) {
+        'UnresolvedManager' {
+            $operatorActionSummary = 'Resolve the worker manager before applying AD changes.'
+            $actions.Add((New-SyncFactorsOperatorAction -Code 'ResolveManagerIdentity' -Label 'Resolve manager identity' -Description $(if ([string]::IsNullOrWhiteSpace($ManagerEmployeeId)) { 'Confirm the worker has a valid manager employee ID in SuccessFactors.' } else { "Find or create the manager account for employee ID $ManagerEmployeeId before retrying the worker sync." })))
+            $actions.Add((New-SyncFactorsOperatorAction -Code 'CorrectManagerReference' -Label 'Correct manager reference' -Description 'Fix the worker manager reference in SuccessFactors if it points to the wrong or retired record.'))
+            $actions.Add((New-SyncFactorsOperatorAction -Code 'RerunWorkerPreview' -Label 'Rerun worker preview' -Description 'Run a one-worker review again after the manager resolves, then apply the worker sync.'))
+        }
+        'RehireCase' {
+            $operatorActionSummary = 'Confirm how this rehire should reuse or restore the existing AD identity.'
+            $actions.Add((New-SyncFactorsOperatorAction -Code 'ConfirmAccountReuse' -Label 'Confirm account reuse' -Description $(if ([string]::IsNullOrWhiteSpace($DistinguishedName)) { 'Decide whether the rehire should reuse the prior AD account or be handled another way.' } else { "Review the prior AD account at $DistinguishedName and confirm whether it should be reused." })))
+            $actions.Add((New-SyncFactorsOperatorAction -Code 'RestoreOrUnsuppress' -Label 'Restore or unsuppress account' -Description 'Restore the existing AD account from suppression or pending deletion before continuing lifecycle changes.'))
+            $actions.Add((New-SyncFactorsOperatorAction -Code 'RerunWorkerSync' -Label 'Rerun worker sync' -Description 'Run the worker preview or worker sync again after the rehire decision is recorded.'))
+        }
+        default {
+            $fieldList = @($Fields | Where-Object { -not [string]::IsNullOrWhiteSpace("$_") })
+            $operatorActionSummary = 'Fix the worker data issue before allowing this record back into the normal sync flow.'
+            $actions.Add((New-SyncFactorsOperatorAction -Code 'InspectWorkerRecord' -Label 'Inspect worker record' -Description 'Review the SuccessFactors worker payload and the mapped AD identity values for this quarantined worker.'))
+            $actions.Add((New-SyncFactorsOperatorAction -Code 'CorrectWorkerData' -Label 'Correct worker data' -Description $(if ($Reason -eq 'MissingEmployeeId') { 'Populate the authoritative employee identifier so the worker can be matched safely.' } elseif ($Reason -eq 'MissingRequiredData' -and $fieldList.Count -gt 0) { "Populate the required fields: $($fieldList -join ', ')." } else { 'Correct the source data or mapping inputs that caused the worker to be quarantined.' })))
+            $actions.Add((New-SyncFactorsOperatorAction -Code 'RerunWorkerPreview' -Label 'Rerun worker preview' -Description 'Run the one-worker review again and confirm the worker exits quarantine before applying changes.'))
+        }
+    }
+
+    return @{
+        reviewCaseType = $ReviewCaseType
+        operatorActionSummary = $operatorActionSummary
+        operatorActions = @($actions)
+    }
+}
+
 function Get-SyncFactorsReportOutputDirectory {
     [CmdletBinding()]
     param(
@@ -341,6 +403,11 @@ function Set-SyncFactorsReviewSummary {
         proposedOffboarding = @(& $uniqueWorkers @($Report['disables']) + @($Report['graveyardMoves'])).Count
         mappingCount = @($MappingConfig.mappings).Count
         deletionPassSkipped = [bool]$DeletionPassSkipped
+        operatorActionCases = [pscustomobject]@{
+            quarantinedWorkers = @(@($Report['quarantined']) | Where-Object { $_.PSObject.Properties.Name -contains 'reviewCaseType' -and "$($_.reviewCaseType)" -eq 'QuarantinedWorker' }).Count
+            unresolvedManagers = @(@($Report['quarantined']) | Where-Object { $_.PSObject.Properties.Name -contains 'reviewCaseType' -and "$($_.reviewCaseType)" -eq 'UnresolvedManager' }).Count
+            rehireCases = @(@($Report['manualReview']) | Where-Object { $_.PSObject.Properties.Name -contains 'reviewCaseType' -and "$($_.reviewCaseType)" -eq 'RehireCase' }).Count
+        }
     }
 }
 
@@ -395,12 +462,16 @@ function Set-SyncFactorsManagerAttributeIfPossible {
         return $true
     }
 
-    Add-SyncFactorsReportEntry -Report $Report -Bucket 'quarantined' -Entry @{
+    $entry = @{
         workerId = $WorkerId
         reason = 'ManagerNotResolved'
         managerEmployeeId = $managerEmployeeId
         matchedExistingUser = [bool]$MatchedExistingUser
     }
+    foreach ($property in (Get-SyncFactorsManualReviewMetadata -ReviewCaseType 'UnresolvedManager' -Reason 'ManagerNotResolved' -ManagerEmployeeId $managerEmployeeId).GetEnumerator()) {
+        $entry[$property.Key] = $property.Value
+    }
+    Add-SyncFactorsReportEntry -Report $Report -Bucket 'quarantined' -Entry $entry
     return $false
 }
 
@@ -584,11 +655,15 @@ function Invoke-SyncFactorsDeletionPass {
 
         $latestWorker = Get-SfWorkerById -Config $Config -WorkerId $property.Name
         if ($latestWorker -and (Test-SyncFactorsWorkerIsActive -Worker $latestWorker)) {
-            Add-SyncFactorsReportEntry -Report $Report -Bucket 'manualReview' -Entry @{
+            $manualReviewEntry = @{
                 workerId = $property.Name
                 reason = 'RehireDetectedBeforeDelete'
                 distinguishedName = $user.DistinguishedName
             }
+            foreach ($propertyMetadata in (Get-SyncFactorsManualReviewMetadata -ReviewCaseType 'RehireCase' -Reason 'RehireDetectedBeforeDelete' -DistinguishedName $user.DistinguishedName).GetEnumerator()) {
+                $manualReviewEntry[$propertyMetadata.Key] = $propertyMetadata.Value
+            }
+            Add-SyncFactorsReportEntry -Report $Report -Bucket 'manualReview' -Entry $manualReviewEntry
             continue
         }
 
@@ -722,10 +797,14 @@ function Invoke-SyncFactorsRun {
 
             try {
                 if ([string]::IsNullOrWhiteSpace($workerId)) {
-                    Add-SyncFactorsReportEntry -Report $report -Bucket 'quarantined' -Entry @{
+                    $quarantineEntry = @{
                         workerId = $null
                         reason = 'MissingEmployeeId'
                     }
+                    foreach ($property in (Get-SyncFactorsManualReviewMetadata -ReviewCaseType 'QuarantinedWorker' -Reason 'MissingEmployeeId').GetEnumerator()) {
+                        $quarantineEntry[$property.Key] = $property.Value
+                    }
+                    Add-SyncFactorsReportEntry -Report $report -Bucket 'quarantined' -Entry $quarantineEntry
                     $lastAction = 'Quarantined worker with missing employee ID.'
                     continue
                 }
@@ -761,6 +840,9 @@ function Invoke-SyncFactorsRun {
                         reason = 'RehireDetected'
                         distinguishedName = $workerState.distinguishedName
                     }
+                    foreach ($property in (Get-SyncFactorsManualReviewMetadata -ReviewCaseType 'RehireCase' -Reason 'RehireDetected' -DistinguishedName $workerState.distinguishedName).GetEnumerator()) {
+                        $manualReviewEntry[$property.Key] = $property.Value
+                    }
                     if ($isReviewMode) {
                         $manualReviewEntry['matchedExistingUser'] = $true
                     }
@@ -786,6 +868,9 @@ function Invoke-SyncFactorsRun {
                         workerId = $workerId
                         reason = 'MissingRequiredData'
                         fields = $attributeResult.MissingRequired
+                    }
+                    foreach ($property in (Get-SyncFactorsManualReviewMetadata -ReviewCaseType 'QuarantinedWorker' -Reason 'MissingRequiredData' -Fields $attributeResult.MissingRequired).GetEnumerator()) {
+                        $quarantineEntry[$property.Key] = $property.Value
                     }
                     if ($isReviewMode -and $reviewEvaluation) {
                         $quarantineEntry['attributeRows'] = Get-SyncFactorsReviewAttributeRows -Rows $reviewEvaluation.Rows

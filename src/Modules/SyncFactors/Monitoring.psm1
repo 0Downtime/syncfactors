@@ -1308,6 +1308,41 @@ function Get-SyncFactorsMonitorOperationSummaryLines {
     return @($lines)
 }
 
+function Get-SyncFactorsMonitorOperatorActionLines {
+    [CmdletBinding()]
+    param(
+        $Item
+    )
+
+    $lines = [System.Collections.Generic.List[string]]::new()
+    if (-not $Item) {
+        return @()
+    }
+
+    if ($Item.PSObject.Properties.Name -contains 'reviewCaseType' -and -not [string]::IsNullOrWhiteSpace("$($Item.reviewCaseType)")) {
+        $lines.Add("Review workflow: $($Item.reviewCaseType)")
+    }
+    if ($Item.PSObject.Properties.Name -contains 'operatorActionSummary' -and -not [string]::IsNullOrWhiteSpace("$($Item.operatorActionSummary)")) {
+        $lines.Add("Operator summary: $($Item.operatorActionSummary)")
+    }
+    if ($Item.PSObject.Properties.Name -contains 'operatorActions' -and $Item.operatorActions) {
+        foreach ($action in @($Item.operatorActions) | Select-Object -First 3) {
+            $label = if ($action.PSObject.Properties.Name -contains 'label' -and -not [string]::IsNullOrWhiteSpace("$($action.label)")) { "$($action.label)" } else { 'Action' }
+            $description = if ($action.PSObject.Properties.Name -contains 'description' -and -not [string]::IsNullOrWhiteSpace("$($action.description)")) { "$($action.description)" } else { '' }
+            if ([string]::IsNullOrWhiteSpace($description)) {
+                $lines.Add("Operator action: $label")
+            } else {
+                $lines.Add("Operator action: $label - $description")
+            }
+        }
+        if (@($Item.operatorActions).Count -gt 3) {
+            $lines.Add("... $(@($Item.operatorActions).Count - 3) more operator actions")
+        }
+    }
+
+    return @($lines)
+}
+
 function Get-SyncFactorsMonitorReportExplorerCategoryDefinitions {
     [CmdletBinding()]
     param()
@@ -1890,7 +1925,7 @@ function Format-SyncFactorsMonitorSelectedObjectLines {
     $lines = [System.Collections.Generic.List[string]]::new()
     if ($SelectedItem) {
         $summaryParts = [System.Collections.Generic.List[string]]::new()
-        foreach ($key in @('workerId','samAccountName','userPrincipalName','reason','threshold','targetOu')) {
+        foreach ($key in @('workerId','samAccountName','userPrincipalName','reason','threshold','targetOu','reviewCaseType')) {
             if ($SelectedItem.PSObject.Properties.Name -contains $key -and -not [string]::IsNullOrWhiteSpace("$(($SelectedItem.$key))")) {
                 $summaryParts.Add("$key=$($SelectedItem.$key)")
             }
@@ -1948,6 +1983,10 @@ function Format-SyncFactorsMonitorSelectedObjectLines {
             $lines.Add("Map: $($row.sourceField) -> $($row.targetAttribute) [$($row.transform)]")
             $lines.Add("     $($row.currentAdValue) -> $($row.proposedValue)")
         }
+    }
+
+    foreach ($operatorLine in @(Get-SyncFactorsMonitorOperatorActionLines -Item $SelectedItem)) {
+        $lines.Add($operatorLine)
     }
 
     return $lines
@@ -2073,6 +2112,7 @@ function Format-SyncFactorsMonitorDashboardView {
     $selectedRunQuarantined = if ($selectedRun.PSObject.Properties.Name -contains 'quarantined') { $selectedRun.quarantined } else { 0 }
     $selectedRunConflicts = if ($selectedRun.PSObject.Properties.Name -contains 'conflicts') { $selectedRun.conflicts } else { 0 }
     $selectedRunGuardrailFailures = if ($selectedRun.PSObject.Properties.Name -contains 'guardrailFailures') { $selectedRun.guardrailFailures } else { 0 }
+    $selectedRunManualReview = if ($selectedRun.PSObject.Properties.Name -contains 'manualReview') { $selectedRun.manualReview } else { 0 }
     $summaryTitle = if ($selectedRun.PSObject.Properties.Name -contains 'artifactType' -and "$($selectedRun.artifactType)" -eq 'WorkerPreview') {
         '▓ Worker Preview Summary'
     } elseif ($selectedRun.PSObject.Properties.Name -contains 'artifactType' -and "$($selectedRun.artifactType)" -eq 'WorkerSync') {
@@ -2084,9 +2124,12 @@ function Format-SyncFactorsMonitorDashboardView {
     }
     $lines.Add($summaryTitle)
     $lines.Add("Status: $($selectedRun.status)    Mode: $($selectedRun.mode)    DryRun: $($selectedRun.dryRun)    Started: $($selectedRun.startedAt)    Dur(s): $selectedRunDuration")
-    $lines.Add("Totals: C=$selectedRunCreates U=$selectedRunUpdates D=$selectedRunDisables X=$selectedRunDeletions Q=$selectedRunQuarantined F=$selectedRunConflicts GF=$selectedRunGuardrailFailures")
+    $lines.Add("Totals: C=$selectedRunCreates U=$selectedRunUpdates D=$selectedRunDisables X=$selectedRunDeletions Q=$selectedRunQuarantined F=$selectedRunConflicts GF=$selectedRunGuardrailFailures MR=$selectedRunManualReview")
     if ($isReviewRun -and $selectedRun.PSObject.Properties.Name -contains 'reviewSummary' -and $selectedRun.reviewSummary) {
         $lines.Add("Review: existing=$($selectedRun.reviewSummary.existingUsersMatched) changed=$($selectedRun.reviewSummary.existingUsersWithAttributeChanges) aligned=$($selectedRun.reviewSummary.existingUsersWithoutAttributeChanges) creates=$($selectedRun.reviewSummary.proposedCreates) offboarding=$($selectedRun.reviewSummary.proposedOffboarding)")
+        if ($selectedRun.reviewSummary.PSObject.Properties.Name -contains 'operatorActionCases' -and $selectedRun.reviewSummary.operatorActionCases) {
+            $lines.Add("Manual review cases: quarantined=$($selectedRun.reviewSummary.operatorActionCases.quarantinedWorkers) unresolvedManagers=$($selectedRun.reviewSummary.operatorActionCases.unresolvedManagers) rehires=$($selectedRun.reviewSummary.operatorActionCases.rehireCases)")
+        }
     }
     if ($selectedRun.PSObject.Properties.Name -contains 'workerScope' -and $selectedRun.workerScope -and $selectedRun.workerScope.PSObject.Properties.Name -contains 'workerId') {
         $lines.Add("Worker scope: $($selectedRun.workerScope.workerId)")

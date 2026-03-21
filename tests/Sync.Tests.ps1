@@ -554,6 +554,8 @@ Describe 'Invoke-SyncFactorsRun' {
 
             $global:CapturedReport.quarantined.Count | Should -Be 1
             $global:CapturedReport.quarantined[0].reason | Should -Be 'ManagerNotResolved'
+            $global:CapturedReport.quarantined[0].reviewCaseType | Should -Be 'UnresolvedManager'
+            $global:CapturedReport.quarantined[0].operatorActions[0].code | Should -Be 'ResolveManagerIdentity'
             Assert-MockCalled New-SyncFactorsUser -Times 0 -Exactly
         }
     }
@@ -698,6 +700,8 @@ Describe 'Invoke-SyncFactorsRun' {
 
             $global:CapturedReport.quarantined.Count | Should -Be 1
             $global:CapturedReport.quarantined[0].reason | Should -Be 'MissingEmployeeId'
+            $global:CapturedReport.quarantined[0].reviewCaseType | Should -Be 'QuarantinedWorker'
+            $global:CapturedReport.quarantined[0].operatorActionSummary | Should -Match 'Fix the worker data issue'
         }
     }
 
@@ -736,6 +740,8 @@ Describe 'Invoke-SyncFactorsRun' {
             $global:CapturedReport.quarantined.Count | Should -Be 1
             $global:CapturedReport.quarantined[0].reason | Should -Be 'MissingRequiredData'
             $global:CapturedReport.quarantined[0].fields | Should -Be @('firstName', 'lastName')
+            $global:CapturedReport.quarantined[0].reviewCaseType | Should -Be 'QuarantinedWorker'
+            $global:CapturedReport.quarantined[0].operatorActions[1].description | Should -Match 'firstName, lastName'
         }
     }
 
@@ -813,6 +819,8 @@ Describe 'Invoke-SyncFactorsRun' {
 
             $global:CapturedReport.manualReview.Count | Should -Be 1
             $global:CapturedReport.manualReview[0].reason | Should -Be 'RehireDetected'
+            $global:CapturedReport.manualReview[0].reviewCaseType | Should -Be 'RehireCase'
+            $global:CapturedReport.manualReview[0].operatorActions.Count | Should -Be 3
         }
     }
 
@@ -943,6 +951,8 @@ Describe 'Invoke-SyncFactorsRun' {
 
             $global:CapturedReport.manualReview.Count | Should -Be 1
             $global:CapturedReport.manualReview[0].reason | Should -Be 'RehireDetectedBeforeDelete'
+            $global:CapturedReport.manualReview[0].reviewCaseType | Should -Be 'RehireCase'
+            $global:CapturedReport.manualReview[0].operatorActionSummary | Should -Match 'reuse or restore'
             Assert-MockCalled Remove-SyncFactorsUser -Times 0 -Exactly
         }
     }
@@ -1395,6 +1405,9 @@ Describe 'Invoke-SyncFactorsRun' {
             Invoke-SyncFactorsRun -ConfigPath $global:SyncTestConfigPath -MappingConfigPath $global:SyncTestMappingConfigPath -Mode Review | Out-Null
 
             $global:CapturedReport.reviewSummary.existingUsersMatched | Should -Be 2
+            $global:CapturedReport.reviewSummary.operatorActionCases.quarantinedWorkers | Should -Be 1
+            $global:CapturedReport.reviewSummary.operatorActionCases.unresolvedManagers | Should -Be 0
+            $global:CapturedReport.reviewSummary.operatorActionCases.rehireCases | Should -Be 1
             $global:CapturedReport.quarantined[0].matchedExistingUser | Should -BeTrue
             $global:CapturedReport.manualReview[0].matchedExistingUser | Should -BeTrue
         }

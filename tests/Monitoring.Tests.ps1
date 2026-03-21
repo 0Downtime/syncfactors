@@ -731,6 +731,11 @@ Describe 'Monitoring module' {
                         proposedOffboarding = 0
                         mappingCount = 3
                         deletionPassSkipped = $true
+                        operatorActionCases = [pscustomobject]@{
+                            quarantinedWorkers = 1
+                            unresolvedManagers = 1
+                            rehireCases = 1
+                        }
                     }
                 }
             )
@@ -741,6 +746,7 @@ Describe 'Monitoring module' {
 
         ($lines -join "`n") | Should -Match 'First Sync Review Summary'
         ($lines -join "`n") | Should -Match 'Review: existing=2 changed=1 aligned=1 creates=1 offboarding=0'
+        ($lines -join "`n") | Should -Match 'Manual review cases: quarantined=1 unresolvedManagers=1 rehires=1'
         ($lines -join "`n") | Should -Match 'Map: department -> department \[Trim\]'
         ($lines -join "`n") | Should -Match 'Finance -> Sales'
     }
@@ -902,6 +908,11 @@ Describe 'Monitoring module' {
                         proposedOffboarding = 0
                         mappingCount = 3
                         deletionPassSkipped = $true
+                        operatorActionCases = [pscustomobject]@{
+                            quarantinedWorkers = 0
+                            unresolvedManagers = 0
+                            rehireCases = 1
+                        }
                     }
                 }
             )
@@ -913,6 +924,7 @@ Describe 'Monitoring module' {
         ($lines -join "`n") | Should -Match 'Worker Preview Summary'
         ($lines -join "`n") | Should -Match 't auto-refresh'
         ($lines -join "`n") | Should -Match 'Review: existing=1 changed=1 aligned=0 creates=0 offboarding=0'
+        ($lines -join "`n") | Should -Match 'Manual review cases: quarantined=0 unresolvedManagers=0 rehires=1'
         ($lines -join "`n") | Should -Match 'Finance -> Sales'
         ($lines -join "`n") | Should -Match 'd delta dry-run'
         ($lines -join "`n") | Should -Match 's delta sync'
@@ -1236,6 +1248,28 @@ Describe 'Monitoring module' {
         ($moveLines -join "`n") | Should -Not -Match 'Δ distinguishedName:'
         ($moveLines -join "`n") | Should -Not -Match 'Δ parentOu:'
         ($moveLines -join "`n") | Should -Not -Match 'Δ targetOu:'
+    }
+
+    It 'renders operator actions for manual review cases' {
+        $lines = @(Format-SyncFactorsMonitorSelectedObjectLines `
+                -SelectedItem ([pscustomobject]@{
+                    workerId = '6051'
+                    reason = 'ManagerNotResolved'
+                    reviewCaseType = 'UnresolvedManager'
+                    operatorActionSummary = 'Resolve the worker manager before applying AD changes.'
+                    operatorActions = @(
+                        [pscustomobject]@{
+                            code = 'ResolveManagerIdentity'
+                            label = 'Resolve manager identity'
+                            description = 'Find or create the manager account for employee ID 9999 before retrying the worker sync.'
+                        }
+                    )
+                }) `
+                -SelectedOperation $null)
+
+        ($lines -join "`n") | Should -Match 'Review workflow: UnresolvedManager'
+        ($lines -join "`n") | Should -Match 'Operator summary: Resolve the worker manager before applying AD changes.'
+        ($lines -join "`n") | Should -Match 'Operator action: Resolve manager identity - Find or create the manager account'
     }
 
     It 'renders a modal action prompt for selected worker preview runs' {

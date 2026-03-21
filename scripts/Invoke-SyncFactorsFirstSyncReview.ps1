@@ -62,4 +62,7 @@ if ($result.reviewSummary) {
     Write-Host "Offboarding: $($result.reviewSummary.proposedOffboarding)"
     Write-Host "Quarantined: $($result.reviewSummary.quarantined)"
     Write-Host "Conflicts: $($result.reviewSummary.conflicts)"
+    if ($result.reviewSummary.PSObject.Properties.Name -contains 'operatorActionCases' -and $result.reviewSummary.operatorActionCases) {
+        Write-Host "Manual review cases: quarantined=$($result.reviewSummary.operatorActionCases.quarantinedWorkers) unresolvedManagers=$($result.reviewSummary.operatorActionCases.unresolvedManagers) rehires=$($result.reviewSummary.operatorActionCases.rehireCases)"
+    }
 }

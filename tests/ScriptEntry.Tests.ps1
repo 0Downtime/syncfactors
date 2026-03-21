@@ -223,6 +223,15 @@ param(
       "workerId": "1001",
       "samAccountName": "jdoe",
       "reviewCategory": "ExistingUserChanges",
+      "reviewCaseType": "RehireCase",
+      "operatorActionSummary": "Confirm how this rehire should reuse or restore the existing AD identity.",
+      "operatorActions": [
+        {
+          "code": "ConfirmAccountReuse",
+          "label": "Confirm account reuse",
+          "description": "Review the prior AD account and confirm whether it should be reused."
+        }
+      ],
       "targetOu": "OU=Employees,DC=example,DC=com",
       "currentDistinguishedName": "CN=Jamie Doe,OU=Employees,DC=example,DC=com",
       "currentEnabled": true,
@@ -277,6 +286,8 @@ param(
         $result.workerScope.workerId | Should -Be '1001'
         $result.preview.samAccountName | Should -Be 'jdoe'
         $result.preview.reviewCategory | Should -Be 'ExistingUserChanges'
+        $result.preview.reviewCaseType | Should -Be 'RehireCase'
+        (@($result.preview.operatorActions) | ConvertTo-Json -Depth 10) | Should -Match 'Confirm account reuse'
         $result.changedAttributes[0].targetAttribute | Should -Be 'GivenName'
         $result.operations[0].operationType | Should -Be 'UpdateAttributes'
     }
