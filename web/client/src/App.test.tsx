@@ -2,6 +2,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, expect, vi } from 'vitest';
 import { App } from './App.js';
+import { getToneForReviewEntry } from './triage-components.js';
 
 const mockGetStatus = vi.fn();
 const mockGetRun = vi.fn();
@@ -412,6 +413,13 @@ beforeEach(() => {
 });
 
 describe('App', () => {
+  it('classifies review explorer tones by operation type instead of raw bucket', () => {
+    expect(getToneForReviewEntry({ bucket: 'manualReview', reviewCategory: null })).toBe('delete');
+    expect(getToneForReviewEntry({ bucket: 'quarantined', reviewCategory: null })).toBe('delete');
+    expect(getToneForReviewEntry({ bucket: 'updates', reviewCategory: null })).toBe('update');
+    expect(getToneForReviewEntry({ bucket: 'creates', reviewCategory: 'NewUser' })).toBe('create');
+  });
+
   it('renders dashboard, queue, and worker triage views with url-backed state', async () => {
     render(<App />);
 

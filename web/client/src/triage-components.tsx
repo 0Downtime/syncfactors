@@ -39,28 +39,44 @@ export function getToneForReviewExplorer(mode: 'all' | 'changed' | 'created' | '
   }
 }
 
+export function getToneForReviewEntry(entry: Pick<EntryRecord, 'bucket' | 'reviewCategory'>): string {
+  if (entry.bucket === 'creates' || entry.reviewCategory === 'NewUser') {
+    return 'create';
+  }
+  if (['updates', 'enables', 'disables', 'graveyardMoves', 'unchanged'].includes(entry.bucket)) {
+    return 'update';
+  }
+  if (['deletions', 'manualReview', 'quarantined', 'conflicts', 'guardrailFailures'].includes(entry.bucket)) {
+    return 'delete';
+  }
+  return getToneForBucket(entry.bucket);
+}
+
 export function SelectedEntryPanel(props: {
   entry: EntryRecord | null;
   diffMode: 'changed' | 'all';
   onDiffModeChange: (mode: 'changed' | 'all') => void;
   onOpenWorker: (workerId: string) => void;
   compact?: boolean;
+  tone?: string;
 }) {
-  const { entry, diffMode, onDiffModeChange, onOpenWorker, compact = false } = props;
+  const { entry, diffMode, onDiffModeChange, onOpenWorker, compact = false, tone } = props;
   if (!entry) {
     return <div className="selected-panel empty-state">No entry selected.</div>;
   }
 
+  const panelTone = tone ?? getToneForBucket(entry.bucket);
+
   const visibleDiffRows = diffMode === 'all' ? entry.diffRows : entry.diffRows.filter((row) => row.changed);
   return (
-    <div className="selected-panel" data-tone={getToneForBucket(entry.bucket)}>
+    <div className="selected-panel" data-tone={panelTone}>
       <div className="selected-header">
         <div>
           <p className="section-kicker">Selected Object</p>
           <h3>{entry.workerId ?? entry.samAccountName ?? 'Unknown object'}</h3>
         </div>
         <div className="header-actions">
-          <span className="badge" data-tone={getToneForBucket(entry.bucket)}>{entry.bucketLabel}</span>
+          <span className="badge" data-tone={panelTone}>{entry.bucketLabel}</span>
           {entry.workerId && !compact ? <button type="button" onClick={() => onOpenWorker(entry.workerId!)}>Worker page</button> : null}
         </div>
       </div>

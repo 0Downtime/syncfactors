@@ -1,7 +1,7 @@
 import type { DashboardStatus, EntryListResponse, EntryRecord, QueueName, QueueResponse, RunDetailResponse, WorkerDetailResponse } from './types.js';
 import type { RouteState } from './route-state.js';
 import { mapReviewExplorerToBucket } from './route-state.js';
-import { CopyLinkButton, DetailRow, GroupPanel, SelectedEntryPanel, SummaryMetric, WarningPanel, getToneForBucket, getToneForReviewExplorer } from './triage-components.js';
+import { CopyLinkButton, DetailRow, GroupPanel, SelectedEntryPanel, SummaryMetric, WarningPanel, getToneForBucket, getToneForReviewEntry, getToneForReviewExplorer } from './triage-components.js';
 import type { FilterRef } from './triage-components.js';
 
 export function DashboardView(props: {
@@ -21,6 +21,7 @@ export function DashboardView(props: {
   onOpenWorker: (workerId: string) => void;
 }) {
   const { status, route, runDetail, entryResponse, selectedEntry, runBuckets, filterInputRef } = props;
+  const useReviewExplorerTones = runDetail?.run.mode === 'Review';
   return (
     <main className="main-grid">
       <section className="card runs-card">
@@ -121,7 +122,7 @@ export function DashboardView(props: {
                     key={entry.entryId}
                     type="button"
                     className={`entry-row ${route.entryId === entry.entryId ? 'selected' : ''}`}
-                    data-tone={getToneForBucket(entry.bucket)}
+                    data-tone={useReviewExplorerTones ? getToneForReviewEntry(entry) : getToneForBucket(entry.bucket)}
                     onClick={() => props.onSelectEntry(entry)}
                   >
                     <strong>{entry.workerId ?? 'Unknown worker'}</strong>
@@ -135,6 +136,7 @@ export function DashboardView(props: {
               <SelectedEntryPanel
                 entry={selectedEntry}
                 diffMode={route.diffMode}
+                tone={selectedEntry && useReviewExplorerTones ? getToneForReviewEntry(selectedEntry) : undefined}
                 onDiffModeChange={props.onChangeDiffMode}
                 onOpenWorker={props.onOpenWorker}
               />
