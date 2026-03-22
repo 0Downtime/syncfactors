@@ -1,0 +1,1833 @@
+{
+  "runId": "c55ae299-2f7e-4687-9765-164ced6fa053",
+  "startedAt": "2026-03-21T15:40:16.4124930-04:00",
+  "status": "Succeeded",
+  "mode": "Full",
+  "artifactType": "WorkerSync",
+  "dryRun": true,
+  "configPath": "/Users/chrisbrien/dev/github.com/syncfactors/./reports/demo/config/demo.mock-sync-config.json",
+  "mappingConfigPath": "/Users/chrisbrien/dev/github.com/syncfactors/config/sample.syncfactors.mapping-config.json",
+  "statePath": "/Users/chrisbrien/dev/github.com/syncfactors/./reports/demo/state/demo-sync-state.json",
+  "workerScope": null,
+  "completedAt": "2026-03-21T15:58:16.4124930-04:00",
+  "failedAt": null,
+  "errorMessage": null,
+  "reviewSummary": null,
+  "operations": [
+    {
+      "operationId": "c55ae299-2f7e-4687-9765-164ced6fa053-0001",
+      "sequence": 1,
+      "timestamp": "2026-03-21T20:58:16.4375190-04:00",
+      "operationType": "CreateUser",
+      "workerId": "100006",
+      "bucket": "creates",
+      "targetType": "ADUser",
+      "target": {
+        "samAccountName": "sf100006"
+      },
+      "before": null,
+      "after": {
+        "samAccountName": "sf100006",
+        "userPrincipalName": "synthetic100006@example.com",
+        "targetOu": "OU=LabCorp,OU=LabUsers,DC=example,DC=com",
+        "enabled": true
+      },
+      "status": "Applied",
+      "errorMessage": ""
+    },
+    {
+      "operationId": "c55ae299-2f7e-4687-9765-164ced6fa053-0002",
+      "sequence": 2,
+      "timestamp": "2026-03-21T20:58:16.4381070-04:00",
+      "operationType": "CreateUser",
+      "workerId": "100007",
+      "bucket": "creates",
+      "targetType": "ADUser",
+      "target": {
+        "samAccountName": "sf100007"
+      },
+      "before": null,
+      "after": {
+        "samAccountName": "sf100007",
+        "userPrincipalName": "synthetic100007@example.com",
+        "targetOu": "OU=LabField,OU=LabUsers,DC=example,DC=com",
+        "enabled": true
+      },
+      "status": "Applied",
+      "errorMessage": ""
+    },
+    {
+      "operationId": "c55ae299-2f7e-4687-9765-164ced6fa053-0003",
+      "sequence": 3,
+      "timestamp": "2026-03-21T20:58:16.4383640-04:00",
+      "operationType": "CreateUser",
+      "workerId": "100008",
+      "bucket": "creates",
+      "targetType": "ADUser",
+      "target": {
+        "samAccountName": "sf100008"
+      },
+      "before": null,
+      "after": {
+        "samAccountName": "sf100008",
+        "userPrincipalName": "synthetic100008@example.com",
+        "targetOu": "OU=LabField,OU=LabUsers,DC=example,DC=com",
+        "enabled": true
+      },
+      "status": "Applied",
+      "errorMessage": ""
+    },
+    {
+      "operationId": "c55ae299-2f7e-4687-9765-164ced6fa053-0004",
+      "sequence": 4,
+      "timestamp": "2026-03-21T20:58:16.4386040-04:00",
+      "operationType": "CreateUser",
+      "workerId": "100009",
+      "bucket": "creates",
+      "targetType": "ADUser",
+      "target": {
+        "samAccountName": "sf100009"
+      },
+      "before": null,
+      "after": {
+        "samAccountName": "sf100009",
+        "userPrincipalName": "synthetic100009@example.com",
+        "targetOu": "OU=LabCorp,OU=LabUsers,DC=example,DC=com",
+        "enabled": true
+      },
+      "status": "Applied",
+      "errorMessage": ""
+    },
+    {
+      "operationId": "c55ae299-2f7e-4687-9765-164ced6fa053-0005",
+      "sequence": 5,
+      "timestamp": "2026-03-21T20:58:16.4388480-04:00",
+      "operationType": "CreateUser",
+      "workerId": "100010",
+      "bucket": "creates",
+      "targetType": "ADUser",
+      "target": {
+        "samAccountName": "sf100010"
+      },
+      "before": null,
+      "after": {
+        "samAccountName": "sf100010",
+        "userPrincipalName": "synthetic100010@example.com",
+        "targetOu": "OU=LabField,OU=LabUsers,DC=example,DC=com",
+        "enabled": true
+      },
+      "status": "Applied",
+      "errorMessage": ""
+    },
+    {
+      "operationId": "c55ae299-2f7e-4687-9765-164ced6fa053-0006",
+      "sequence": 6,
+      "timestamp": "2026-03-21T20:58:16.4390940-04:00",
+      "operationType": "CreateUser",
+      "workerId": "100011",
+      "bucket": "creates",
+      "targetType": "ADUser",
+      "target": {
+        "samAccountName": "sf100011"
+      },
+      "before": null,
+      "after": {
+        "samAccountName": "sf100011",
+        "userPrincipalName": "synthetic100011@example.com",
+        "targetOu": "OU=LabField,OU=LabUsers,DC=example,DC=com",
+        "enabled": true
+      },
+      "status": "Applied",
+      "errorMessage": ""
+    },
+    {
+      "operationId": "c55ae299-2f7e-4687-9765-164ced6fa053-0007",
+      "sequence": 7,
+      "timestamp": "2026-03-21T20:58:16.4393270-04:00",
+      "operationType": "CreateUser",
+      "workerId": "100012",
+      "bucket": "creates",
+      "targetType": "ADUser",
+      "target": {
+        "samAccountName": "sf100012"
+      },
+      "before": null,
+      "after": {
+        "samAccountName": "sf100012",
+        "userPrincipalName": "synthetic100012@example.com",
+        "targetOu": "OU=LabCorp,OU=LabUsers,DC=example,DC=com",
+        "enabled": true
+      },
+      "status": "Applied",
+      "errorMessage": ""
+    },
+    {
+      "operationId": "c55ae299-2f7e-4687-9765-164ced6fa053-0008",
+      "sequence": 8,
+      "timestamp": "2026-03-21T20:58:16.4395540-04:00",
+      "operationType": "CreateUser",
+      "workerId": "100013",
+      "bucket": "creates",
+      "targetType": "ADUser",
+      "target": {
+        "samAccountName": "sf100013"
+      },
+      "before": null,
+      "after": {
+        "samAccountName": "sf100013",
+        "userPrincipalName": "synthetic100013@example.com",
+        "targetOu": "OU=LabField,OU=LabUsers,DC=example,DC=com",
+        "enabled": true
+      },
+      "status": "Applied",
+      "errorMessage": ""
+    },
+    {
+      "operationId": "c55ae299-2f7e-4687-9765-164ced6fa053-0009",
+      "sequence": 9,
+      "timestamp": "2026-03-21T20:58:16.4448700-04:00",
+      "operationType": "UpdateAttributes",
+      "workerId": "100001",
+      "bucket": "updates",
+      "targetType": "ADUser",
+      "target": {
+        "samAccountName": "sf100001"
+      },
+      "before": {
+        "Department": "Finance",
+        "Division": "Shared Services"
+      },
+      "after": {
+        "Department": "Operations",
+        "Division": "Operations"
+      },
+      "status": "Applied",
+      "errorMessage": ""
+    },
+    {
+      "operationId": "c55ae299-2f7e-4687-9765-164ced6fa053-0010",
+      "sequence": 10,
+      "timestamp": "2026-03-21T20:58:16.4453810-04:00",
+      "operationType": "UpdateAttributes",
+      "workerId": "100002",
+      "bucket": "updates",
+      "targetType": "ADUser",
+      "target": {
+        "samAccountName": "sf100002"
+      },
+      "before": {
+        "Department": "Finance",
+        "Division": "Shared Services"
+      },
+      "after": {
+        "Department": "Operations",
+        "Division": "Operations"
+      },
+      "status": "Applied",
+      "errorMessage": ""
+    },
+    {
+      "operationId": "c55ae299-2f7e-4687-9765-164ced6fa053-0011",
+      "sequence": 11,
+      "timestamp": "2026-03-21T20:58:16.4458470-04:00",
+      "operationType": "UpdateAttributes",
+      "workerId": "100046",
+      "bucket": "updates",
+      "targetType": "ADUser",
+      "target": {
+        "samAccountName": "sf100046"
+      },
+      "before": {
+        "Department": "Finance",
+        "Division": "Shared Services"
+      },
+      "after": {
+        "Department": "Operations",
+        "Division": "Operations"
+      },
+      "status": "Applied",
+      "errorMessage": ""
+    },
+    {
+      "operationId": "c55ae299-2f7e-4687-9765-164ced6fa053-0012",
+      "sequence": 12,
+      "timestamp": "2026-03-21T20:58:16.4462960-04:00",
+      "operationType": "UpdateAttributes",
+      "workerId": "100047",
+      "bucket": "updates",
+      "targetType": "ADUser",
+      "target": {
+        "samAccountName": "sf100047"
+      },
+      "before": {
+        "Department": "Finance",
+        "Division": "Shared Services"
+      },
+      "after": {
+        "Department": "Operations",
+        "Division": "Operations"
+      },
+      "status": "Applied",
+      "errorMessage": ""
+    },
+    {
+      "operationId": "c55ae299-2f7e-4687-9765-164ced6fa053-0013",
+      "sequence": 13,
+      "timestamp": "2026-03-21T20:58:16.4490450-04:00",
+      "operationType": "UpdateAttributes",
+      "workerId": "100048",
+      "bucket": "updates",
+      "targetType": "ADUser",
+      "target": {
+        "samAccountName": "sf100048"
+      },
+      "before": {
+        "Department": "Finance",
+        "Division": "Shared Services"
+      },
+      "after": {
+        "Department": "Operations",
+        "Division": "Operations"
+      },
+      "status": "Applied",
+      "errorMessage": ""
+    },
+    {
+      "operationId": "c55ae299-2f7e-4687-9765-164ced6fa053-0014",
+      "sequence": 14,
+      "timestamp": "2026-03-21T20:58:16.4495200-04:00",
+      "operationType": "UpdateAttributes",
+      "workerId": "100049",
+      "bucket": "updates",
+      "targetType": "ADUser",
+      "target": {
+        "samAccountName": "sf100049"
+      },
+      "before": {
+        "Department": "Finance",
+        "Division": "Shared Services"
+      },
+      "after": {
+        "Department": "Operations",
+        "Division": "Operations"
+      },
+      "status": "Applied",
+      "errorMessage": ""
+    },
+    {
+      "operationId": "c55ae299-2f7e-4687-9765-164ced6fa053-0015",
+      "sequence": 15,
+      "timestamp": "2026-03-21T20:58:16.4500010-04:00",
+      "operationType": "UpdateAttributes",
+      "workerId": "100050",
+      "bucket": "updates",
+      "targetType": "ADUser",
+      "target": {
+        "samAccountName": "sf100050"
+      },
+      "before": {
+        "Department": "Finance",
+        "Division": "Shared Services"
+      },
+      "after": {
+        "Department": "IT",
+        "Division": "Technology"
+      },
+      "status": "Applied",
+      "errorMessage": ""
+    },
+    {
+      "operationId": "c55ae299-2f7e-4687-9765-164ced6fa053-0016",
+      "sequence": 16,
+      "timestamp": "2026-03-21T20:58:16.4504440-04:00",
+      "operationType": "UpdateAttributes",
+      "workerId": "100051",
+      "bucket": "updates",
+      "targetType": "ADUser",
+      "target": {
+        "samAccountName": "sf100051"
+      },
+      "before": {
+        "Department": "Finance",
+        "Division": "Shared Services"
+      },
+      "after": {
+        "Department": "Operations",
+        "Division": "Operations"
+      },
+      "status": "Applied",
+      "errorMessage": ""
+    },
+    {
+      "operationId": "c55ae299-2f7e-4687-9765-164ced6fa053-0017",
+      "sequence": 17,
+      "timestamp": "2026-03-21T20:58:16.4508880-04:00",
+      "operationType": "UpdateAttributes",
+      "workerId": "100052",
+      "bucket": "updates",
+      "targetType": "ADUser",
+      "target": {
+        "samAccountName": "sf100052"
+      },
+      "before": {
+        "Department": "Finance",
+        "Division": "Shared Services"
+      },
+      "after": {
+        "Department": "Operations",
+        "Division": "Operations"
+      },
+      "status": "Applied",
+      "errorMessage": ""
+    },
+    {
+      "operationId": "c55ae299-2f7e-4687-9765-164ced6fa053-0018",
+      "sequence": 18,
+      "timestamp": "2026-03-21T20:58:16.4513250-04:00",
+      "operationType": "UpdateAttributes",
+      "workerId": "100053",
+      "bucket": "updates",
+      "targetType": "ADUser",
+      "target": {
+        "samAccountName": "sf100053"
+      },
+      "before": {
+        "Department": "Finance",
+        "Division": "Shared Services"
+      },
+      "after": {
+        "Department": "Operations",
+        "Division": "Operations"
+      },
+      "status": "Applied",
+      "errorMessage": ""
+    }
+  ],
+  "creates": [
+    {
+      "reviewCategory": "NewUser",
+      "matchedExistingUser": false,
+      "samAccountName": "sf100006",
+      "proposedEnable": true,
+      "targetOu": "OU=LabCorp,OU=LabUsers,DC=example,DC=com",
+      "workerId": "100006",
+      "attributeRows": [
+        {
+          "sourceField": "firstName",
+          "targetAttribute": "GivenName",
+          "currentAdValue": null,
+          "proposedValue": "Synthetic100006",
+          "changed": true
+        },
+        {
+          "sourceField": "lastName",
+          "targetAttribute": "Surname",
+          "currentAdValue": null,
+          "proposedValue": "User",
+          "changed": true
+        }
+      ]
+    },
+    {
+      "reviewCategory": "NewUser",
+      "matchedExistingUser": false,
+      "samAccountName": "sf100007",
+      "proposedEnable": true,
+      "targetOu": "OU=LabField,OU=LabUsers,DC=example,DC=com",
+      "workerId": "100007",
+      "attributeRows": [
+        {
+          "sourceField": "firstName",
+          "targetAttribute": "GivenName",
+          "currentAdValue": null,
+          "proposedValue": "Synthetic100007",
+          "changed": true
+        },
+        {
+          "sourceField": "lastName",
+          "targetAttribute": "Surname",
+          "currentAdValue": null,
+          "proposedValue": "User",
+          "changed": true
+        }
+      ]
+    },
+    {
+      "reviewCategory": "NewUser",
+      "matchedExistingUser": false,
+      "samAccountName": "sf100008",
+      "proposedEnable": true,
+      "targetOu": "OU=LabField,OU=LabUsers,DC=example,DC=com",
+      "workerId": "100008",
+      "attributeRows": [
+        {
+          "sourceField": "firstName",
+          "targetAttribute": "GivenName",
+          "currentAdValue": null,
+          "proposedValue": "Synthetic100008",
+          "changed": true
+        },
+        {
+          "sourceField": "lastName",
+          "targetAttribute": "Surname",
+          "currentAdValue": null,
+          "proposedValue": "User",
+          "changed": true
+        }
+      ]
+    },
+    {
+      "reviewCategory": "NewUser",
+      "matchedExistingUser": false,
+      "samAccountName": "sf100009",
+      "proposedEnable": true,
+      "targetOu": "OU=LabCorp,OU=LabUsers,DC=example,DC=com",
+      "workerId": "100009",
+      "attributeRows": [
+        {
+          "sourceField": "firstName",
+          "targetAttribute": "GivenName",
+          "currentAdValue": null,
+          "proposedValue": "Synthetic100009",
+          "changed": true
+        },
+        {
+          "sourceField": "lastName",
+          "targetAttribute": "Surname",
+          "currentAdValue": null,
+          "proposedValue": "User",
+          "changed": true
+        }
+      ]
+    },
+    {
+      "reviewCategory": "NewUser",
+      "matchedExistingUser": false,
+      "samAccountName": "sf100010",
+      "proposedEnable": true,
+      "targetOu": "OU=LabField,OU=LabUsers,DC=example,DC=com",
+      "workerId": "100010",
+      "attributeRows": [
+        {
+          "sourceField": "firstName",
+          "targetAttribute": "GivenName",
+          "currentAdValue": null,
+          "proposedValue": "Synthetic100010",
+          "changed": true
+        },
+        {
+          "sourceField": "lastName",
+          "targetAttribute": "Surname",
+          "currentAdValue": null,
+          "proposedValue": "User",
+          "changed": true
+        }
+      ]
+    },
+    {
+      "reviewCategory": "NewUser",
+      "matchedExistingUser": false,
+      "samAccountName": "sf100011",
+      "proposedEnable": true,
+      "targetOu": "OU=LabField,OU=LabUsers,DC=example,DC=com",
+      "workerId": "100011",
+      "attributeRows": [
+        {
+          "sourceField": "firstName",
+          "targetAttribute": "GivenName",
+          "currentAdValue": null,
+          "proposedValue": "Synthetic100011",
+          "changed": true
+        },
+        {
+          "sourceField": "lastName",
+          "targetAttribute": "Surname",
+          "currentAdValue": null,
+          "proposedValue": "User",
+          "changed": true
+        }
+      ]
+    },
+    {
+      "reviewCategory": "NewUser",
+      "matchedExistingUser": false,
+      "samAccountName": "sf100012",
+      "proposedEnable": true,
+      "targetOu": "OU=LabCorp,OU=LabUsers,DC=example,DC=com",
+      "workerId": "100012",
+      "attributeRows": [
+        {
+          "sourceField": "firstName",
+          "targetAttribute": "GivenName",
+          "currentAdValue": null,
+          "proposedValue": "Synthetic100012",
+          "changed": true
+        },
+        {
+          "sourceField": "lastName",
+          "targetAttribute": "Surname",
+          "currentAdValue": null,
+          "proposedValue": "User",
+          "changed": true
+        }
+      ]
+    },
+    {
+      "reviewCategory": "NewUser",
+      "matchedExistingUser": false,
+      "samAccountName": "sf100013",
+      "proposedEnable": true,
+      "targetOu": "OU=LabField,OU=LabUsers,DC=example,DC=com",
+      "workerId": "100013",
+      "attributeRows": [
+        {
+          "sourceField": "firstName",
+          "targetAttribute": "GivenName",
+          "currentAdValue": null,
+          "proposedValue": "Synthetic100013",
+          "changed": true
+        },
+        {
+          "sourceField": "lastName",
+          "targetAttribute": "Surname",
+          "currentAdValue": null,
+          "proposedValue": "User",
+          "changed": true
+        }
+      ]
+    },
+    {
+      "reviewCategory": "NewUser",
+      "matchedExistingUser": false,
+      "samAccountName": "sf100014",
+      "proposedEnable": true,
+      "targetOu": "OU=LabField,OU=LabUsers,DC=example,DC=com",
+      "workerId": "100014",
+      "attributeRows": [
+        {
+          "sourceField": "firstName",
+          "targetAttribute": "GivenName",
+          "currentAdValue": null,
+          "proposedValue": "Synthetic100014",
+          "changed": true
+        },
+        {
+          "sourceField": "lastName",
+          "targetAttribute": "Surname",
+          "currentAdValue": null,
+          "proposedValue": "User",
+          "changed": true
+        }
+      ]
+    },
+    {
+      "reviewCategory": "NewUser",
+      "matchedExistingUser": false,
+      "samAccountName": "sf100015",
+      "proposedEnable": true,
+      "targetOu": "OU=LabIT,OU=LabUsers,DC=example,DC=com",
+      "workerId": "100015",
+      "attributeRows": [
+        {
+          "sourceField": "firstName",
+          "targetAttribute": "GivenName",
+          "currentAdValue": null,
+          "proposedValue": "Synthetic100015",
+          "changed": true
+        },
+        {
+          "sourceField": "lastName",
+          "targetAttribute": "Surname",
+          "currentAdValue": null,
+          "proposedValue": "User",
+          "changed": true
+        }
+      ]
+    },
+    {
+      "reviewCategory": "NewUser",
+      "matchedExistingUser": false,
+      "samAccountName": "sf100016",
+      "proposedEnable": true,
+      "targetOu": "OU=LabField,OU=LabUsers,DC=example,DC=com",
+      "workerId": "100016",
+      "attributeRows": [
+        {
+          "sourceField": "firstName",
+          "targetAttribute": "GivenName",
+          "currentAdValue": null,
+          "proposedValue": "Synthetic100016",
+          "changed": true
+        },
+        {
+          "sourceField": "lastName",
+          "targetAttribute": "Surname",
+          "currentAdValue": null,
+          "proposedValue": "User",
+          "changed": true
+        }
+      ]
+    },
+    {
+      "reviewCategory": "NewUser",
+      "matchedExistingUser": false,
+      "samAccountName": "sf100017",
+      "proposedEnable": true,
+      "targetOu": "OU=LabField,OU=LabUsers,DC=example,DC=com",
+      "workerId": "100017",
+      "attributeRows": [
+        {
+          "sourceField": "firstName",
+          "targetAttribute": "GivenName",
+          "currentAdValue": null,
+          "proposedValue": "Synthetic100017",
+          "changed": true
+        },
+        {
+          "sourceField": "lastName",
+          "targetAttribute": "Surname",
+          "currentAdValue": null,
+          "proposedValue": "User",
+          "changed": true
+        }
+      ]
+    },
+    {
+      "reviewCategory": "NewUser",
+      "matchedExistingUser": false,
+      "samAccountName": "sf100018",
+      "proposedEnable": true,
+      "targetOu": "OU=LabCorp,OU=LabUsers,DC=example,DC=com",
+      "workerId": "100018",
+      "attributeRows": [
+        {
+          "sourceField": "firstName",
+          "targetAttribute": "GivenName",
+          "currentAdValue": null,
+          "proposedValue": "Synthetic100018",
+          "changed": true
+        },
+        {
+          "sourceField": "lastName",
+          "targetAttribute": "Surname",
+          "currentAdValue": null,
+          "proposedValue": "User",
+          "changed": true
+        }
+      ]
+    },
+    {
+      "reviewCategory": "NewUser",
+      "matchedExistingUser": false,
+      "samAccountName": "sf100019",
+      "proposedEnable": true,
+      "targetOu": "OU=LabField,OU=LabUsers,DC=example,DC=com",
+      "workerId": "100019",
+      "attributeRows": [
+        {
+          "sourceField": "firstName",
+          "targetAttribute": "GivenName",
+          "currentAdValue": null,
+          "proposedValue": "Synthetic100019",
+          "changed": true
+        },
+        {
+          "sourceField": "lastName",
+          "targetAttribute": "Surname",
+          "currentAdValue": null,
+          "proposedValue": "User",
+          "changed": true
+        }
+      ]
+    },
+    {
+      "reviewCategory": "NewUser",
+      "matchedExistingUser": false,
+      "samAccountName": "sf100020",
+      "proposedEnable": true,
+      "targetOu": "OU=LabField,OU=LabUsers,DC=example,DC=com",
+      "workerId": "100020",
+      "attributeRows": [
+        {
+          "sourceField": "firstName",
+          "targetAttribute": "GivenName",
+          "currentAdValue": null,
+          "proposedValue": "Synthetic100020",
+          "changed": true
+        },
+        {
+          "sourceField": "lastName",
+          "targetAttribute": "Surname",
+          "currentAdValue": null,
+          "proposedValue": "User",
+          "changed": true
+        }
+      ]
+    },
+    {
+      "reviewCategory": "NewUser",
+      "matchedExistingUser": false,
+      "samAccountName": "sf100021",
+      "proposedEnable": true,
+      "targetOu": "OU=LabCorp,OU=LabUsers,DC=example,DC=com",
+      "workerId": "100021",
+      "attributeRows": [
+        {
+          "sourceField": "firstName",
+          "targetAttribute": "GivenName",
+          "currentAdValue": null,
+          "proposedValue": "Synthetic100021",
+          "changed": true
+        },
+        {
+          "sourceField": "lastName",
+          "targetAttribute": "Surname",
+          "currentAdValue": null,
+          "proposedValue": "User",
+          "changed": true
+        }
+      ]
+    },
+    {
+      "reviewCategory": "NewUser",
+      "matchedExistingUser": false,
+      "samAccountName": "sf100022",
+      "proposedEnable": true,
+      "targetOu": "OU=LabField,OU=LabUsers,DC=example,DC=com",
+      "workerId": "100022",
+      "attributeRows": [
+        {
+          "sourceField": "firstName",
+          "targetAttribute": "GivenName",
+          "currentAdValue": null,
+          "proposedValue": "Synthetic100022",
+          "changed": true
+        },
+        {
+          "sourceField": "lastName",
+          "targetAttribute": "Surname",
+          "currentAdValue": null,
+          "proposedValue": "User",
+          "changed": true
+        }
+      ]
+    },
+    {
+      "reviewCategory": "NewUser",
+      "matchedExistingUser": false,
+      "samAccountName": "sf100023",
+      "proposedEnable": true,
+      "targetOu": "OU=LabField,OU=LabUsers,DC=example,DC=com",
+      "workerId": "100023",
+      "attributeRows": [
+        {
+          "sourceField": "firstName",
+          "targetAttribute": "GivenName",
+          "currentAdValue": null,
+          "proposedValue": "Synthetic100023",
+          "changed": true
+        },
+        {
+          "sourceField": "lastName",
+          "targetAttribute": "Surname",
+          "currentAdValue": null,
+          "proposedValue": "User",
+          "changed": true
+        }
+      ]
+    },
+    {
+      "reviewCategory": "NewUser",
+      "matchedExistingUser": false,
+      "samAccountName": "sf100024",
+      "proposedEnable": true,
+      "targetOu": "OU=LabCorp,OU=LabUsers,DC=example,DC=com",
+      "workerId": "100024",
+      "attributeRows": [
+        {
+          "sourceField": "firstName",
+          "targetAttribute": "GivenName",
+          "currentAdValue": null,
+          "proposedValue": "Synthetic100024",
+          "changed": true
+        },
+        {
+          "sourceField": "lastName",
+          "targetAttribute": "Surname",
+          "currentAdValue": null,
+          "proposedValue": "User",
+          "changed": true
+        }
+      ]
+    },
+    {
+      "reviewCategory": "NewUser",
+      "matchedExistingUser": false,
+      "samAccountName": "sf100025",
+      "proposedEnable": true,
+      "targetOu": "OU=LabField,OU=LabUsers,DC=example,DC=com",
+      "workerId": "100025",
+      "attributeRows": [
+        {
+          "sourceField": "firstName",
+          "targetAttribute": "GivenName",
+          "currentAdValue": null,
+          "proposedValue": "Synthetic100025",
+          "changed": true
+        },
+        {
+          "sourceField": "lastName",
+          "targetAttribute": "Surname",
+          "currentAdValue": null,
+          "proposedValue": "User",
+          "changed": true
+        }
+      ]
+    },
+    {
+      "reviewCategory": "NewUser",
+      "matchedExistingUser": false,
+      "samAccountName": "sf100026",
+      "proposedEnable": true,
+      "targetOu": "OU=LabField,OU=LabUsers,DC=example,DC=com",
+      "workerId": "100026",
+      "attributeRows": [
+        {
+          "sourceField": "firstName",
+          "targetAttribute": "GivenName",
+          "currentAdValue": null,
+          "proposedValue": "Synthetic100026",
+          "changed": true
+        },
+        {
+          "sourceField": "lastName",
+          "targetAttribute": "Surname",
+          "currentAdValue": null,
+          "proposedValue": "User",
+          "changed": true
+        }
+      ]
+    },
+    {
+      "reviewCategory": "NewUser",
+      "matchedExistingUser": false,
+      "samAccountName": "sf100027",
+      "proposedEnable": true,
+      "targetOu": "OU=LabCorp,OU=LabUsers,DC=example,DC=com",
+      "workerId": "100027",
+      "attributeRows": [
+        {
+          "sourceField": "firstName",
+          "targetAttribute": "GivenName",
+          "currentAdValue": null,
+          "proposedValue": "Synthetic100027",
+          "changed": true
+        },
+        {
+          "sourceField": "lastName",
+          "targetAttribute": "Surname",
+          "currentAdValue": null,
+          "proposedValue": "User",
+          "changed": true
+        }
+      ]
+    },
+    {
+      "reviewCategory": "NewUser",
+      "matchedExistingUser": false,
+      "samAccountName": "sf100028",
+      "proposedEnable": true,
+      "targetOu": "OU=LabField,OU=LabUsers,DC=example,DC=com",
+      "workerId": "100028",
+      "attributeRows": [
+        {
+          "sourceField": "firstName",
+          "targetAttribute": "GivenName",
+          "currentAdValue": null,
+          "proposedValue": "Synthetic100028",
+          "changed": true
+        },
+        {
+          "sourceField": "lastName",
+          "targetAttribute": "Surname",
+          "currentAdValue": null,
+          "proposedValue": "User",
+          "changed": true
+        }
+      ]
+    },
+    {
+      "reviewCategory": "NewUser",
+      "matchedExistingUser": false,
+      "samAccountName": "sf100029",
+      "proposedEnable": true,
+      "targetOu": "OU=LabField,OU=LabUsers,DC=example,DC=com",
+      "workerId": "100029",
+      "attributeRows": [
+        {
+          "sourceField": "firstName",
+          "targetAttribute": "GivenName",
+          "currentAdValue": null,
+          "proposedValue": "Synthetic100029",
+          "changed": true
+        },
+        {
+          "sourceField": "lastName",
+          "targetAttribute": "Surname",
+          "currentAdValue": null,
+          "proposedValue": "User",
+          "changed": true
+        }
+      ]
+    },
+    {
+      "reviewCategory": "NewUser",
+      "matchedExistingUser": false,
+      "samAccountName": "sf100030",
+      "proposedEnable": true,
+      "targetOu": "OU=LabIT,OU=LabUsers,DC=example,DC=com",
+      "workerId": "100030",
+      "attributeRows": [
+        {
+          "sourceField": "firstName",
+          "targetAttribute": "GivenName",
+          "currentAdValue": null,
+          "proposedValue": "Synthetic100030",
+          "changed": true
+        },
+        {
+          "sourceField": "lastName",
+          "targetAttribute": "Surname",
+          "currentAdValue": null,
+          "proposedValue": "User",
+          "changed": true
+        }
+      ]
+    },
+    {
+      "reviewCategory": "NewUser",
+      "matchedExistingUser": false,
+      "samAccountName": "sf100031",
+      "proposedEnable": true,
+      "targetOu": "OU=LabField,OU=LabUsers,DC=example,DC=com",
+      "workerId": "100031",
+      "attributeRows": [
+        {
+          "sourceField": "firstName",
+          "targetAttribute": "GivenName",
+          "currentAdValue": null,
+          "proposedValue": "Synthetic100031",
+          "changed": true
+        },
+        {
+          "sourceField": "lastName",
+          "targetAttribute": "Surname",
+          "currentAdValue": null,
+          "proposedValue": "User",
+          "changed": true
+        }
+      ]
+    },
+    {
+      "reviewCategory": "NewUser",
+      "matchedExistingUser": false,
+      "samAccountName": "sf100032",
+      "proposedEnable": true,
+      "targetOu": "OU=LabField,OU=LabUsers,DC=example,DC=com",
+      "workerId": "100032",
+      "attributeRows": [
+        {
+          "sourceField": "firstName",
+          "targetAttribute": "GivenName",
+          "currentAdValue": null,
+          "proposedValue": "Synthetic100032",
+          "changed": true
+        },
+        {
+          "sourceField": "lastName",
+          "targetAttribute": "Surname",
+          "currentAdValue": null,
+          "proposedValue": "User",
+          "changed": true
+        }
+      ]
+    },
+    {
+      "reviewCategory": "NewUser",
+      "matchedExistingUser": false,
+      "samAccountName": "sf100033",
+      "proposedEnable": true,
+      "targetOu": "OU=LabCorp,OU=LabUsers,DC=example,DC=com",
+      "workerId": "100033",
+      "attributeRows": [
+        {
+          "sourceField": "firstName",
+          "targetAttribute": "GivenName",
+          "currentAdValue": null,
+          "proposedValue": "Synthetic100033",
+          "changed": true
+        },
+        {
+          "sourceField": "lastName",
+          "targetAttribute": "Surname",
+          "currentAdValue": null,
+          "proposedValue": "User",
+          "changed": true
+        }
+      ]
+    },
+    {
+      "reviewCategory": "NewUser",
+      "matchedExistingUser": false,
+      "samAccountName": "sf100034",
+      "proposedEnable": true,
+      "targetOu": "OU=LabField,OU=LabUsers,DC=example,DC=com",
+      "workerId": "100034",
+      "attributeRows": [
+        {
+          "sourceField": "firstName",
+          "targetAttribute": "GivenName",
+          "currentAdValue": null,
+          "proposedValue": "Synthetic100034",
+          "changed": true
+        },
+        {
+          "sourceField": "lastName",
+          "targetAttribute": "Surname",
+          "currentAdValue": null,
+          "proposedValue": "User",
+          "changed": true
+        }
+      ]
+    },
+    {
+      "reviewCategory": "NewUser",
+      "matchedExistingUser": false,
+      "samAccountName": "sf100035",
+      "proposedEnable": true,
+      "targetOu": "OU=LabField,OU=LabUsers,DC=example,DC=com",
+      "workerId": "100035",
+      "attributeRows": [
+        {
+          "sourceField": "firstName",
+          "targetAttribute": "GivenName",
+          "currentAdValue": null,
+          "proposedValue": "Synthetic100035",
+          "changed": true
+        },
+        {
+          "sourceField": "lastName",
+          "targetAttribute": "Surname",
+          "currentAdValue": null,
+          "proposedValue": "User",
+          "changed": true
+        }
+      ]
+    },
+    {
+      "reviewCategory": "NewUser",
+      "matchedExistingUser": false,
+      "samAccountName": "sf100036",
+      "proposedEnable": true,
+      "targetOu": "OU=LabCorp,OU=LabUsers,DC=example,DC=com",
+      "workerId": "100036",
+      "attributeRows": [
+        {
+          "sourceField": "firstName",
+          "targetAttribute": "GivenName",
+          "currentAdValue": null,
+          "proposedValue": "Synthetic100036",
+          "changed": true
+        },
+        {
+          "sourceField": "lastName",
+          "targetAttribute": "Surname",
+          "currentAdValue": null,
+          "proposedValue": "User",
+          "changed": true
+        }
+      ]
+    },
+    {
+      "reviewCategory": "NewUser",
+      "matchedExistingUser": false,
+      "samAccountName": "sf100037",
+      "proposedEnable": true,
+      "targetOu": "OU=LabField,OU=LabUsers,DC=example,DC=com",
+      "workerId": "100037",
+      "attributeRows": [
+        {
+          "sourceField": "firstName",
+          "targetAttribute": "GivenName",
+          "currentAdValue": null,
+          "proposedValue": "Synthetic100037",
+          "changed": true
+        },
+        {
+          "sourceField": "lastName",
+          "targetAttribute": "Surname",
+          "currentAdValue": null,
+          "proposedValue": "User",
+          "changed": true
+        }
+      ]
+    },
+    {
+      "reviewCategory": "NewUser",
+      "matchedExistingUser": false,
+      "samAccountName": "sf100038",
+      "proposedEnable": true,
+      "targetOu": "OU=LabField,OU=LabUsers,DC=example,DC=com",
+      "workerId": "100038",
+      "attributeRows": [
+        {
+          "sourceField": "firstName",
+          "targetAttribute": "GivenName",
+          "currentAdValue": null,
+          "proposedValue": "Synthetic100038",
+          "changed": true
+        },
+        {
+          "sourceField": "lastName",
+          "targetAttribute": "Surname",
+          "currentAdValue": null,
+          "proposedValue": "User",
+          "changed": true
+        }
+      ]
+    },
+    {
+      "reviewCategory": "NewUser",
+      "matchedExistingUser": false,
+      "samAccountName": "sf100039",
+      "proposedEnable": true,
+      "targetOu": "OU=LabCorp,OU=LabUsers,DC=example,DC=com",
+      "workerId": "100039",
+      "attributeRows": [
+        {
+          "sourceField": "firstName",
+          "targetAttribute": "GivenName",
+          "currentAdValue": null,
+          "proposedValue": "Synthetic100039",
+          "changed": true
+        },
+        {
+          "sourceField": "lastName",
+          "targetAttribute": "Surname",
+          "currentAdValue": null,
+          "proposedValue": "User",
+          "changed": true
+        }
+      ]
+    },
+    {
+      "reviewCategory": "NewUser",
+      "matchedExistingUser": false,
+      "samAccountName": "sf100040",
+      "proposedEnable": true,
+      "targetOu": "OU=LabField,OU=LabUsers,DC=example,DC=com",
+      "workerId": "100040",
+      "attributeRows": [
+        {
+          "sourceField": "firstName",
+          "targetAttribute": "GivenName",
+          "currentAdValue": null,
+          "proposedValue": "Synthetic100040",
+          "changed": true
+        },
+        {
+          "sourceField": "lastName",
+          "targetAttribute": "Surname",
+          "currentAdValue": null,
+          "proposedValue": "User",
+          "changed": true
+        }
+      ]
+    },
+    {
+      "reviewCategory": "NewUser",
+      "matchedExistingUser": false,
+      "samAccountName": "sf100041",
+      "proposedEnable": true,
+      "targetOu": "OU=LabField,OU=LabUsers,DC=example,DC=com",
+      "workerId": "100041",
+      "attributeRows": [
+        {
+          "sourceField": "firstName",
+          "targetAttribute": "GivenName",
+          "currentAdValue": null,
+          "proposedValue": "Synthetic100041",
+          "changed": true
+        },
+        {
+          "sourceField": "lastName",
+          "targetAttribute": "Surname",
+          "currentAdValue": null,
+          "proposedValue": "User",
+          "changed": true
+        }
+      ]
+    },
+    {
+      "reviewCategory": "NewUser",
+      "matchedExistingUser": false,
+      "samAccountName": "sf100042",
+      "proposedEnable": true,
+      "targetOu": "OU=LabCorp,OU=LabUsers,DC=example,DC=com",
+      "workerId": "100042",
+      "attributeRows": [
+        {
+          "sourceField": "firstName",
+          "targetAttribute": "GivenName",
+          "currentAdValue": null,
+          "proposedValue": "Synthetic100042",
+          "changed": true
+        },
+        {
+          "sourceField": "lastName",
+          "targetAttribute": "Surname",
+          "currentAdValue": null,
+          "proposedValue": "User",
+          "changed": true
+        }
+      ]
+    },
+    {
+      "reviewCategory": "NewUser",
+      "matchedExistingUser": false,
+      "samAccountName": "sf100043",
+      "proposedEnable": true,
+      "targetOu": "OU=LabField,OU=LabUsers,DC=example,DC=com",
+      "workerId": "100043",
+      "attributeRows": [
+        {
+          "sourceField": "firstName",
+          "targetAttribute": "GivenName",
+          "currentAdValue": null,
+          "proposedValue": "Synthetic100043",
+          "changed": true
+        },
+        {
+          "sourceField": "lastName",
+          "targetAttribute": "Surname",
+          "currentAdValue": null,
+          "proposedValue": "User",
+          "changed": true
+        }
+      ]
+    },
+    {
+      "reviewCategory": "NewUser",
+      "matchedExistingUser": false,
+      "samAccountName": "sf100044",
+      "proposedEnable": true,
+      "targetOu": "OU=LabField,OU=LabUsers,DC=example,DC=com",
+      "workerId": "100044",
+      "attributeRows": [
+        {
+          "sourceField": "firstName",
+          "targetAttribute": "GivenName",
+          "currentAdValue": null,
+          "proposedValue": "Synthetic100044",
+          "changed": true
+        },
+        {
+          "sourceField": "lastName",
+          "targetAttribute": "Surname",
+          "currentAdValue": null,
+          "proposedValue": "User",
+          "changed": true
+        }
+      ]
+    },
+    {
+      "reviewCategory": "NewUser",
+      "matchedExistingUser": false,
+      "samAccountName": "sf100045",
+      "proposedEnable": true,
+      "targetOu": "OU=LabIT,OU=LabUsers,DC=example,DC=com",
+      "workerId": "100045",
+      "attributeRows": [
+        {
+          "sourceField": "firstName",
+          "targetAttribute": "GivenName",
+          "currentAdValue": null,
+          "proposedValue": "Synthetic100045",
+          "changed": true
+        },
+        {
+          "sourceField": "lastName",
+          "targetAttribute": "Surname",
+          "currentAdValue": null,
+          "proposedValue": "User",
+          "changed": true
+        }
+      ]
+    }
+  ],
+  "updates": [
+    {
+      "changedAttributeDetails": [
+        {
+          "sourceField": "department",
+          "targetAttribute": "Department",
+          "currentAdValue": "Finance",
+          "proposedValue": "Operations"
+        },
+        {
+          "sourceField": "employmentNav[0].jobInfoNav[0].division",
+          "targetAttribute": "Division",
+          "currentAdValue": "Shared Services",
+          "proposedValue": "Operations"
+        }
+      ],
+      "matchedExistingUser": true,
+      "proposedEnable": true,
+      "currentDistinguishedName": "CN=Synthetic100001 User,OU=LabField,OU=LabUsers,DC=example,DC=com",
+      "targetOu": "OU=LabField,OU=LabUsers,DC=example,DC=com",
+      "samAccountName": "sf100001",
+      "workerId": "100001",
+      "currentEnabled": true
+    },
+    {
+      "changedAttributeDetails": [
+        {
+          "sourceField": "department",
+          "targetAttribute": "Department",
+          "currentAdValue": "Finance",
+          "proposedValue": "Operations"
+        },
+        {
+          "sourceField": "employmentNav[0].jobInfoNav[0].division",
+          "targetAttribute": "Division",
+          "currentAdValue": "Shared Services",
+          "proposedValue": "Operations"
+        }
+      ],
+      "matchedExistingUser": true,
+      "proposedEnable": true,
+      "currentDistinguishedName": "CN=Synthetic100002 User,OU=LabField,OU=LabUsers,DC=example,DC=com",
+      "targetOu": "OU=LabField,OU=LabUsers,DC=example,DC=com",
+      "samAccountName": "sf100002",
+      "workerId": "100002",
+      "currentEnabled": true
+    },
+    {
+      "changedAttributeDetails": [
+        {
+          "sourceField": "department",
+          "targetAttribute": "Department",
+          "currentAdValue": "Finance",
+          "proposedValue": "Operations"
+        },
+        {
+          "sourceField": "employmentNav[0].jobInfoNav[0].division",
+          "targetAttribute": "Division",
+          "currentAdValue": "Shared Services",
+          "proposedValue": "Operations"
+        }
+      ],
+      "matchedExistingUser": true,
+      "proposedEnable": true,
+      "currentDistinguishedName": "CN=Synthetic100046 User,OU=LabField,OU=LabUsers,DC=example,DC=com",
+      "targetOu": "OU=LabField,OU=LabUsers,DC=example,DC=com",
+      "samAccountName": "sf100046",
+      "workerId": "100046",
+      "currentEnabled": true
+    },
+    {
+      "changedAttributeDetails": [
+        {
+          "sourceField": "department",
+          "targetAttribute": "Department",
+          "currentAdValue": "Finance",
+          "proposedValue": "Operations"
+        },
+        {
+          "sourceField": "employmentNav[0].jobInfoNav[0].division",
+          "targetAttribute": "Division",
+          "currentAdValue": "Shared Services",
+          "proposedValue": "Operations"
+        }
+      ],
+      "matchedExistingUser": true,
+      "proposedEnable": true,
+      "currentDistinguishedName": "CN=Synthetic100047 User,OU=LabField,OU=LabUsers,DC=example,DC=com",
+      "targetOu": "OU=LabField,OU=LabUsers,DC=example,DC=com",
+      "samAccountName": "sf100047",
+      "workerId": "100047",
+      "currentEnabled": true
+    },
+    {
+      "changedAttributeDetails": [
+        {
+          "sourceField": "department",
+          "targetAttribute": "Department",
+          "currentAdValue": "Finance",
+          "proposedValue": "Operations"
+        },
+        {
+          "sourceField": "employmentNav[0].jobInfoNav[0].division",
+          "targetAttribute": "Division",
+          "currentAdValue": "Shared Services",
+          "proposedValue": "Operations"
+        }
+      ],
+      "matchedExistingUser": true,
+      "proposedEnable": true,
+      "currentDistinguishedName": "CN=Synthetic100048 User,OU=LabCorp,OU=LabUsers,DC=example,DC=com",
+      "targetOu": "OU=LabCorp,OU=LabUsers,DC=example,DC=com",
+      "samAccountName": "sf100048",
+      "workerId": "100048",
+      "currentEnabled": true
+    },
+    {
+      "changedAttributeDetails": [
+        {
+          "sourceField": "department",
+          "targetAttribute": "Department",
+          "currentAdValue": "Finance",
+          "proposedValue": "Operations"
+        },
+        {
+          "sourceField": "employmentNav[0].jobInfoNav[0].division",
+          "targetAttribute": "Division",
+          "currentAdValue": "Shared Services",
+          "proposedValue": "Operations"
+        }
+      ],
+      "matchedExistingUser": true,
+      "proposedEnable": true,
+      "currentDistinguishedName": "CN=Synthetic100049 User,OU=LabField,OU=LabUsers,DC=example,DC=com",
+      "targetOu": "OU=LabField,OU=LabUsers,DC=example,DC=com",
+      "samAccountName": "sf100049",
+      "workerId": "100049",
+      "currentEnabled": true
+    },
+    {
+      "changedAttributeDetails": [
+        {
+          "sourceField": "department",
+          "targetAttribute": "Department",
+          "currentAdValue": "Finance",
+          "proposedValue": "IT"
+        },
+        {
+          "sourceField": "employmentNav[0].jobInfoNav[0].division",
+          "targetAttribute": "Division",
+          "currentAdValue": "Shared Services",
+          "proposedValue": "Technology"
+        }
+      ],
+      "matchedExistingUser": true,
+      "proposedEnable": true,
+      "currentDistinguishedName": "CN=Synthetic100050 User,OU=LabField,OU=LabUsers,DC=example,DC=com",
+      "targetOu": "OU=LabField,OU=LabUsers,DC=example,DC=com",
+      "samAccountName": "sf100050",
+      "workerId": "100050",
+      "currentEnabled": true
+    },
+    {
+      "changedAttributeDetails": [
+        {
+          "sourceField": "department",
+          "targetAttribute": "Department",
+          "currentAdValue": "Finance",
+          "proposedValue": "Operations"
+        },
+        {
+          "sourceField": "employmentNav[0].jobInfoNav[0].division",
+          "targetAttribute": "Division",
+          "currentAdValue": "Shared Services",
+          "proposedValue": "Operations"
+        }
+      ],
+      "matchedExistingUser": true,
+      "proposedEnable": true,
+      "currentDistinguishedName": "CN=Synthetic100051 User,OU=LabCorp,OU=LabUsers,DC=example,DC=com",
+      "targetOu": "OU=LabCorp,OU=LabUsers,DC=example,DC=com",
+      "samAccountName": "sf100051",
+      "workerId": "100051",
+      "currentEnabled": true
+    },
+    {
+      "changedAttributeDetails": [
+        {
+          "sourceField": "department",
+          "targetAttribute": "Department",
+          "currentAdValue": "Finance",
+          "proposedValue": "Operations"
+        },
+        {
+          "sourceField": "employmentNav[0].jobInfoNav[0].division",
+          "targetAttribute": "Division",
+          "currentAdValue": "Shared Services",
+          "proposedValue": "Operations"
+        }
+      ],
+      "matchedExistingUser": true,
+      "proposedEnable": true,
+      "currentDistinguishedName": "CN=Synthetic100052 User,OU=LabField,OU=LabUsers,DC=example,DC=com",
+      "targetOu": "OU=LabField,OU=LabUsers,DC=example,DC=com",
+      "samAccountName": "sf100052",
+      "workerId": "100052",
+      "currentEnabled": true
+    },
+    {
+      "changedAttributeDetails": [
+        {
+          "sourceField": "department",
+          "targetAttribute": "Department",
+          "currentAdValue": "Finance",
+          "proposedValue": "Operations"
+        },
+        {
+          "sourceField": "employmentNav[0].jobInfoNav[0].division",
+          "targetAttribute": "Division",
+          "currentAdValue": "Shared Services",
+          "proposedValue": "Operations"
+        }
+      ],
+      "matchedExistingUser": true,
+      "proposedEnable": true,
+      "currentDistinguishedName": "CN=Synthetic100053 User,OU=LabField,OU=LabUsers,DC=example,DC=com",
+      "targetOu": "OU=LabField,OU=LabUsers,DC=example,DC=com",
+      "samAccountName": "sf100053",
+      "workerId": "100053",
+      "currentEnabled": true
+    }
+  ],
+  "enables": [
+    {
+      "currentEnabled": false,
+      "workerId": "100054",
+      "proposedEnable": true,
+      "samAccountName": "sf100054",
+      "licensingGroups": [
+        "CN=Lab-M365,OU=Groups,DC=example,DC=com"
+      ]
+    },
+    {
+      "currentEnabled": false,
+      "workerId": "100055",
+      "proposedEnable": true,
+      "samAccountName": "sf100055",
+      "licensingGroups": [
+        "CN=Lab-M365,OU=Groups,DC=example,DC=com"
+      ]
+    },
+    {
+      "currentEnabled": false,
+      "workerId": "100056",
+      "proposedEnable": true,
+      "samAccountName": "sf100056",
+      "licensingGroups": [
+        "CN=Lab-M365,OU=Groups,DC=example,DC=com"
+      ]
+    },
+    {
+      "currentEnabled": false,
+      "workerId": "100057",
+      "proposedEnable": true,
+      "samAccountName": "sf100057",
+      "licensingGroups": [
+        "CN=Lab-M365,OU=Groups,DC=example,DC=com"
+      ]
+    },
+    {
+      "currentEnabled": false,
+      "workerId": "100058",
+      "proposedEnable": true,
+      "samAccountName": "sf100058",
+      "licensingGroups": [
+        "CN=Lab-M365,OU=Groups,DC=example,DC=com"
+      ]
+    },
+    {
+      "currentEnabled": false,
+      "workerId": "100059",
+      "proposedEnable": true,
+      "samAccountName": "sf100059",
+      "licensingGroups": [
+        "CN=Lab-M365,OU=Groups,DC=example,DC=com"
+      ]
+    }
+  ],
+  "disables": [],
+  "graveyardMoves": [],
+  "deletions": [],
+  "quarantined": [],
+  "conflicts": [],
+  "guardrailFailures": [],
+  "manualReview": [],
+  "unchanged": [
+    {
+      "matchedExistingUser": true,
+      "currentDistinguishedName": "CN=Synthetic100000 User,OU=LabIT,OU=LabUsers,DC=example,DC=com",
+      "samAccountName": "sf100000",
+      "proposedEnable": true,
+      "currentEnabled": true,
+      "workerId": "100000"
+    },
+    {
+      "matchedExistingUser": true,
+      "currentDistinguishedName": "CN=Synthetic100001 User,OU=LabField,OU=LabUsers,DC=example,DC=com",
+      "samAccountName": "sf100001",
+      "proposedEnable": true,
+      "currentEnabled": true,
+      "workerId": "100001"
+    },
+    {
+      "matchedExistingUser": true,
+      "currentDistinguishedName": "CN=Synthetic100002 User,OU=LabField,OU=LabUsers,DC=example,DC=com",
+      "samAccountName": "sf100002",
+      "proposedEnable": true,
+      "currentEnabled": true,
+      "workerId": "100002"
+    },
+    {
+      "matchedExistingUser": true,
+      "currentDistinguishedName": "CN=Synthetic100003 User,OU=LabCorp,OU=LabUsers,DC=example,DC=com",
+      "samAccountName": "sf100003",
+      "proposedEnable": true,
+      "currentEnabled": true,
+      "workerId": "100003"
+    },
+    {
+      "matchedExistingUser": true,
+      "currentDistinguishedName": "CN=Synthetic100004 User,OU=LabField,OU=LabUsers,DC=example,DC=com",
+      "samAccountName": "sf100004",
+      "proposedEnable": true,
+      "currentEnabled": true,
+      "workerId": "100004"
+    },
+    {
+      "matchedExistingUser": true,
+      "currentDistinguishedName": "CN=Synthetic100005 User,OU=LabField,OU=LabUsers,DC=example,DC=com",
+      "samAccountName": "sf100005",
+      "proposedEnable": true,
+      "currentEnabled": true,
+      "workerId": "100005"
+    },
+    {
+      "matchedExistingUser": true,
+      "currentDistinguishedName": "CN=Synthetic100006 User,OU=LabCorp,OU=LabUsers,DC=example,DC=com",
+      "samAccountName": "sf100006",
+      "proposedEnable": true,
+      "currentEnabled": true,
+      "workerId": "100006"
+    },
+    {
+      "matchedExistingUser": true,
+      "currentDistinguishedName": "CN=Synthetic100007 User,OU=LabField,OU=LabUsers,DC=example,DC=com",
+      "samAccountName": "sf100007",
+      "proposedEnable": true,
+      "currentEnabled": true,
+      "workerId": "100007"
+    },
+    {
+      "matchedExistingUser": true,
+      "currentDistinguishedName": "CN=Synthetic100008 User,OU=LabField,OU=LabUsers,DC=example,DC=com",
+      "samAccountName": "sf100008",
+      "proposedEnable": true,
+      "currentEnabled": true,
+      "workerId": "100008"
+    },
+    {
+      "matchedExistingUser": true,
+      "currentDistinguishedName": "CN=Synthetic100009 User,OU=LabCorp,OU=LabUsers,DC=example,DC=com",
+      "samAccountName": "sf100009",
+      "proposedEnable": true,
+      "currentEnabled": true,
+      "workerId": "100009"
+    },
+    {
+      "matchedExistingUser": true,
+      "currentDistinguishedName": "CN=Synthetic100010 User,OU=LabField,OU=LabUsers,DC=example,DC=com",
+      "samAccountName": "sf100010",
+      "proposedEnable": true,
+      "currentEnabled": true,
+      "workerId": "100010"
+    },
+    {
+      "matchedExistingUser": true,
+      "currentDistinguishedName": "CN=Synthetic100011 User,OU=LabField,OU=LabUsers,DC=example,DC=com",
+      "samAccountName": "sf100011",
+      "proposedEnable": true,
+      "currentEnabled": true,
+      "workerId": "100011"
+    },
+    {
+      "matchedExistingUser": true,
+      "currentDistinguishedName": "CN=Synthetic100012 User,OU=LabCorp,OU=LabUsers,DC=example,DC=com",
+      "samAccountName": "sf100012",
+      "proposedEnable": true,
+      "currentEnabled": true,
+      "workerId": "100012"
+    },
+    {
+      "matchedExistingUser": true,
+      "currentDistinguishedName": "CN=Synthetic100013 User,OU=LabField,OU=LabUsers,DC=example,DC=com",
+      "samAccountName": "sf100013",
+      "proposedEnable": true,
+      "currentEnabled": true,
+      "workerId": "100013"
+    },
+    {
+      "matchedExistingUser": true,
+      "currentDistinguishedName": "CN=Synthetic100014 User,OU=LabField,OU=LabUsers,DC=example,DC=com",
+      "samAccountName": "sf100014",
+      "proposedEnable": true,
+      "currentEnabled": true,
+      "workerId": "100014"
+    },
+    {
+      "matchedExistingUser": true,
+      "currentDistinguishedName": "CN=Synthetic100015 User,OU=LabIT,OU=LabUsers,DC=example,DC=com",
+      "samAccountName": "sf100015",
+      "proposedEnable": true,
+      "currentEnabled": true,
+      "workerId": "100015"
+    },
+    {
+      "matchedExistingUser": true,
+      "currentDistinguishedName": "CN=Synthetic100016 User,OU=LabField,OU=LabUsers,DC=example,DC=com",
+      "samAccountName": "sf100016",
+      "proposedEnable": true,
+      "currentEnabled": true,
+      "workerId": "100016"
+    },
+    {
+      "matchedExistingUser": true,
+      "currentDistinguishedName": "CN=Synthetic100017 User,OU=LabField,OU=LabUsers,DC=example,DC=com",
+      "samAccountName": "sf100017",
+      "proposedEnable": true,
+      "currentEnabled": true,
+      "workerId": "100017"
+    },
+    {
+      "matchedExistingUser": true,
+      "currentDistinguishedName": "CN=Synthetic100018 User,OU=LabCorp,OU=LabUsers,DC=example,DC=com",
+      "samAccountName": "sf100018",
+      "proposedEnable": true,
+      "currentEnabled": true,
+      "workerId": "100018"
+    },
+    {
+      "matchedExistingUser": true,
+      "currentDistinguishedName": "CN=Synthetic100019 User,OU=LabField,OU=LabUsers,DC=example,DC=com",
+      "samAccountName": "sf100019",
+      "proposedEnable": true,
+      "currentEnabled": true,
+      "workerId": "100019"
+    },
+    {
+      "matchedExistingUser": true,
+      "currentDistinguishedName": "CN=Synthetic100020 User,OU=LabField,OU=LabUsers,DC=example,DC=com",
+      "samAccountName": "sf100020",
+      "proposedEnable": true,
+      "currentEnabled": true,
+      "workerId": "100020"
+    }
+  ]
+}
