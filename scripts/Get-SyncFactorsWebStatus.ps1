@@ -4,7 +4,8 @@ param(
     [string]$ConfigPath,
     [ValidateRange(1, 1000)]
     [int]$HistoryLimit = 25,
-    [switch]$AsJson
+    [switch]$AsJson,
+    [string]$OutputPath
 )
 
 Set-StrictMode -Version Latest
@@ -23,6 +24,13 @@ $getSyncFactorsRuntimeStatusSnapshot = $monitoringModule.ExportedFunctions['Get-
 $newSyncFactorsIdleRuntimeStatus = $monitoringModule.ExportedFunctions['New-SyncFactorsIdleRuntimeStatus']
 $getSyncFactorsMonitorStatus = $monitoringModule.ExportedFunctions['Get-SyncFactorsMonitorStatus']
 $getSyncFactorsRuntimeStatusPath = $monitoringModule.ExportedFunctions['Get-SyncFactorsRuntimeStatusPath']
+
+function New-SyncFactorsWebEmptyState {
+    return [pscustomobject]@{
+        checkpoint = $null
+        workers = @{}
+    }
+}
 
 function New-SyncFactorsWebEmptyRunSummary {
     return [pscustomobject]@{
@@ -176,8 +184,21 @@ function Get-SyncFactorsWebRecentRunSummaries {
 $warnings = [System.Collections.Generic.List[string]]::new()
 $resolvedConfigPath = (Resolve-Path -Path $ConfigPath).Path
 $config = & $getSyncFactorsConfig -Path $resolvedConfigPath
-$state = & $getSyncFactorsState -Path $config.state.path
-$runtimeStatus = & $getSyncFactorsRuntimeStatusSnapshot -StatePath $config.state.path
+$state = $null
+try {
+    $state = & $getSyncFactorsState -Path $config.state.path
+} catch {
+    $warnings.Add("State file unavailable: $($_.Exception.Message)")
+    $state = New-SyncFactorsWebEmptyState
+}
+
+$runtimeStatus = $null
+try {
+    $runtimeStatus = & $getSyncFactorsRuntimeStatusSnapshot -StatePath $config.state.path
+} catch {
+    $warnings.Add("Runtime status unavailable: $($_.Exception.Message)")
+}
+
 if (-not $runtimeStatus) {
     $runtimeStatus = & $newSyncFactorsIdleRuntimeStatus -StatePath $config.state.path
 }
@@ -295,7 +316,18 @@ $result = [pscustomobject]@{
 }
 
 if ($AsJson) {
-    $result | ConvertTo-Json -Depth 30
+    $json = $result | ConvertTo-Json -Depth 30
+    if (-not [string]::IsNullOrWhiteSpace($OutputPath)) {
+        $outputDirectory = Split-Path -Path $OutputPath -Parent
+        if (-not [string]::IsNullOrWhiteSpace($outputDirectory) -and -not (Test-Path -Path $outputDirectory -PathType Container)) {
+            New-Item -Path $outputDirectory -ItemType Directory -Force | Out-Null
+        }
+
+        Set-Content -Path $OutputPath -Value $json -Encoding utf8
+        return
+    }
+
+    $json
     return
 }
 

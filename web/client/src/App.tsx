@@ -234,18 +234,25 @@ export function App() {
   const statusWarnings = dashboardWarnings.filter((warning) => warning !== adProbeSkipWarning);
   const showAdProbeNote = dashboardWarnings.includes(adProbeSkipWarning);
   const reportLinks = useMemo(() => buildReportLinks(status), [status]);
+  const currentViewLabel = route.view === 'queues' ? 'Queues' : route.view === 'worker' ? 'Worker' : 'Dashboard';
 
   return (
     <div className="app-shell">
       <header className="hero">
+        <div className="portal-breadcrumbs" aria-label="Breadcrumb">
+          <span>Home</span>
+          <span aria-hidden="true">/</span>
+          <span>SyncFactors</span>
+          <span aria-hidden="true">/</span>
+          <span>{currentViewLabel}</span>
+        </div>
         <div className="hero-topbar">
           <div className="hero-copy">
             <p className="eyebrow">SyncFactors Operator UI</p>
             <div className="hero-title-row">
               <h1>Operations Console</h1>
-              <span className="hero-divider" aria-hidden="true" />
-              <span className="hero-context">Operator workspace</span>
             </div>
+            <p className="hero-context">Operator workspace</p>
           </div>
           <div className="hero-meta">
             <span className="badge">Read-only</span>
@@ -291,6 +298,9 @@ export function App() {
             <button className={route.view === 'queues' ? 'active' : ''} onClick={() => navigateTo({ ...route, view: 'queues' })} type="button">Queues</button>
             <button className={route.view === 'worker' ? 'active' : ''} onClick={() => navigateTo({ ...route, view: 'worker' })} type="button" disabled={!route.workerId}>Worker</button>
           </nav>
+          <div className="portal-command-meta">
+            <span>Context: {currentViewLabel}</span>
+          </div>
         </div>
       </header>
 

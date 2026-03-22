@@ -14,6 +14,7 @@ export interface StatusProvider {
 export class PowerShellStatusProvider implements StatusProvider {
   private readonly cache = new Map<string, { expiresAt: number; value: DashboardStatus }>();
   private readonly isolatedHome = path.join(os.tmpdir(), 'syncfactors-web-pwsh-home');
+  private readonly outputDirectory = path.join(os.tmpdir(), 'syncfactors-web-status');
 
   constructor(private readonly ttlMs = 5000) {}
 
@@ -25,34 +26,69 @@ export class PowerShellStatusProvider implements StatusProvider {
     }
 
     fs.mkdirSync(this.isolatedHome, { recursive: true });
+    fs.mkdirSync(this.outputDirectory, { recursive: true });
+    const outputPath = path.join(this.outputDirectory, `status-${process.pid}.json`);
     const pwshEnv = {
       ...process.env,
       HOME: this.isolatedHome,
       XDG_CACHE_HOME: path.join(this.isolatedHome, '.cache'),
     };
 
-    const { stdout } = await execFileAsync(
-      'pwsh',
-      [
+    if (process.platform === 'win32') {
+      await execFileAsync(
+        'pwsh',
+        [
+          '-NoLogo',
+          '-NoProfile',
+          '-File',
+          'scripts/Get-SyncFactorsWebStatus.ps1',
+          '-ConfigPath',
+          configPath,
+          '-HistoryLimit',
+          String(historyLimit),
+          '-AsJson',
+          '-OutputPath',
+          outputPath,
+        ],
+        {
+          cwd: process.cwd(),
+          env: pwshEnv,
+          maxBuffer: 1024 * 1024 * 10,
+        },
+      );
+    } else {
+      const command = [
+        'pwsh',
         '-NoLogo',
         '-NoProfile',
         '-File',
-        'scripts/Get-SyncFactorsWebStatus.ps1',
+        shellQuote('scripts/Get-SyncFactorsWebStatus.ps1'),
         '-ConfigPath',
-        configPath,
+        shellQuote(configPath),
         '-HistoryLimit',
-        String(historyLimit),
+        shellQuote(String(historyLimit)),
         '-AsJson',
-      ],
-      {
-        cwd: process.cwd(),
-        env: pwshEnv,
-        maxBuffer: 1024 * 1024 * 10,
-      },
-    );
+        '-OutputPath',
+        shellQuote(outputPath),
+      ].join(' ');
 
-    const value = JSON.parse(stdout) as DashboardStatus;
+      await execFileAsync(
+        'bash',
+        ['-lc', command],
+        {
+          cwd: process.cwd(),
+          env: pwshEnv,
+          maxBuffer: 1024 * 1024 * 10,
+        },
+      );
+    }
+
+    const value = JSON.parse(fs.readFileSync(outputPath, 'utf8')) as DashboardStatus;
     this.cache.set(cacheKey, { expiresAt: Date.now() + this.ttlMs, value });
     return value;
   }
+}
+
+function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, `'\"'\"'`)}'`;
 }
