@@ -1,6 +1,6 @@
 {
-  "runId": "4444dcaf-9f7a-4bfe-85f9-06b1ce4d838b",
-  "startedAt": "2026-03-22T14:05:31.0245240-04:00",
+  "runId": "6fb4e1fe-3062-43f4-bf39-1645aa5616bd",
+  "startedAt": "2026-03-22T14:15:05.6547600-04:00",
   "status": "Succeeded",
   "mode": "Review",
   "artifactType": "WorkerPreview",
@@ -12,7 +12,7 @@
     "identityField": "personIdExternal",
     "workerId": "100002"
   },
-  "completedAt": "2026-03-22T14:11:31.0245240-04:00",
+  "completedAt": "2026-03-22T14:21:05.6547600-04:00",
   "failedAt": null,
   "errorMessage": null,
   "reviewSummary": {
@@ -25,9 +25,9 @@
   },
   "operations": [
     {
-      "operationId": "4444dcaf-9f7a-4bfe-85f9-06b1ce4d838b-0001",
+      "operationId": "6fb4e1fe-3062-43f4-bf39-1645aa5616bd-0001",
       "sequence": 1,
-      "timestamp": "2026-03-22T15:31:31.0930410-04:00",
+      "timestamp": "2026-03-22T15:41:05.7171830-04:00",
       "operationType": "UpdateAttributes",
       "workerId": "100002",
       "bucket": "updates",
@@ -50,12 +50,6 @@
   "creates": [],
   "updates": [
     {
-      "proposedEnable": true,
-      "reviewCaseType": "RehireCase",
-      "operatorActionSummary": "Confirm how this rehire should reuse or restore the existing AD identity.",
-      "workerId": "100002",
-      "currentEnabled": true,
-      "matchedExistingUser": true,
       "operatorActions": [
         {
           "code": "ConfirmAccountReuse",
@@ -68,9 +62,15 @@
           "description": "Restore the worker's previous licensing and security groups after review."
         }
       ],
+      "operatorActionSummary": "Confirm how this rehire should reuse or restore the existing AD identity.",
+      "targetOu": "OU=LabField,OU=LabUsers,DC=example,DC=com",
+      "reviewCaseType": "RehireCase",
       "samAccountName": "sf100002",
-      "currentDistinguishedName": "CN=Synthetic100002 User,OU=LabField,OU=LabUsers,DC=example,DC=com",
+      "currentEnabled": true,
+      "workerId": "100002",
       "reviewCategory": "ExistingUserChanges",
+      "currentDistinguishedName": "CN=Synthetic100002 User,OU=LabField,OU=LabUsers,DC=example,DC=com",
+      "proposedEnable": true,
       "changedAttributeDetails": [
         {
           "sourceField": "status",
@@ -85,7 +85,7 @@
           "proposedValue": "Operations"
         }
       ],
-      "targetOu": "OU=LabField,OU=LabUsers,DC=example,DC=com"
+      "matchedExistingUser": true
     }
   ],
   "enables": [],

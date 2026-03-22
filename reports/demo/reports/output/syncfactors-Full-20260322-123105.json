@@ -1,6 +1,6 @@
 {
-  "runId": "d1aaee79-9bab-44cc-a8df-6c5e2fcedffe",
-  "startedAt": "2026-03-22T12:12:31.0245240-04:00",
+  "runId": "5285511b-a928-455b-884c-debc73a5dd34",
+  "startedAt": "2026-03-22T12:22:05.6547600-04:00",
   "status": "Failed",
   "mode": "Full",
   "artifactType": "WorkerSync",
@@ -9,15 +9,14 @@
   "mappingConfigPath": "/Users/chrisbrien/dev/github.com/syncfactors/config/sample.syncfactors.mapping-config.json",
   "statePath": "/Users/chrisbrien/dev/github.com/syncfactors/./reports/demo/state/demo-sync-state.json",
   "workerScope": null,
-  "completedAt": "2026-03-22T12:21:31.0245240-04:00",
-  "failedAt": "2026-03-22T12:21:31.0245240-04:00",
+  "completedAt": "2026-03-22T12:31:05.6547600-04:00",
+  "failedAt": "2026-03-22T12:31:05.6547600-04:00",
   "errorMessage": "Create guardrail exceeded the configured threshold.",
   "reviewSummary": null,
   "operations": [],
   "creates": [
     {
-      "matchedExistingUser": false,
-      "workerId": "100060",
+      "reviewCategory": "NewUser",
       "attributeRows": [
         {
           "sourceField": "firstName",
@@ -34,14 +33,14 @@
           "changed": true
         }
       ],
-      "samAccountName": "sf100060",
+      "workerId": "100060",
+      "proposedEnable": true,
       "targetOu": "OU=LabIT,OU=LabUsers,DC=example,DC=com",
-      "reviewCategory": "NewUser",
-      "proposedEnable": true
+      "samAccountName": "sf100060",
+      "matchedExistingUser": false
     },
     {
-      "matchedExistingUser": false,
-      "workerId": "100061",
+      "reviewCategory": "NewUser",
       "attributeRows": [
         {
           "sourceField": "firstName",
@@ -58,14 +57,14 @@
           "changed": true
         }
       ],
-      "samAccountName": "sf100061",
+      "workerId": "100061",
+      "proposedEnable": true,
       "targetOu": "OU=LabField,OU=LabUsers,DC=example,DC=com",
-      "reviewCategory": "NewUser",
-      "proposedEnable": true
+      "samAccountName": "sf100061",
+      "matchedExistingUser": false
     },
     {
-      "matchedExistingUser": false,
-      "workerId": "100062",
+      "reviewCategory": "NewUser",
       "attributeRows": [
         {
           "sourceField": "firstName",
@@ -82,14 +81,14 @@
           "changed": true
         }
       ],
-      "samAccountName": "sf100062",
+      "workerId": "100062",
+      "proposedEnable": true,
       "targetOu": "OU=LabField,OU=LabUsers,DC=example,DC=com",
-      "reviewCategory": "NewUser",
-      "proposedEnable": true
+      "samAccountName": "sf100062",
+      "matchedExistingUser": false
     },
     {
-      "matchedExistingUser": false,
-      "workerId": "100063",
+      "reviewCategory": "NewUser",
       "attributeRows": [
         {
           "sourceField": "firstName",
@@ -106,10 +105,11 @@
           "changed": true
         }
       ],
-      "samAccountName": "sf100063",
+      "workerId": "100063",
+      "proposedEnable": true,
       "targetOu": "OU=LabCorp,OU=LabUsers,DC=example,DC=com",
-      "reviewCategory": "NewUser",
-      "proposedEnable": true
+      "samAccountName": "sf100063",
+      "matchedExistingUser": false
     }
   ],
   "updates": [],
@@ -121,14 +121,14 @@
   "conflicts": [],
   "guardrailFailures": [
     {
-      "reason": "CreateThresholdExceeded",
-      "reviewCaseType": "GuardrailCase",
-      "workerId": "100004",
-      "threshold": "maxCreatesPerRun",
+      "operatorActionSummary": "The run stopped before creating additional accounts.",
       "attemptedCount": 41,
-      "configuredLimit": 25,
+      "reason": "CreateThresholdExceeded",
       "samAccountName": "sf100004",
-      "operatorActionSummary": "The run stopped before creating additional accounts."
+      "threshold": "maxCreatesPerRun",
+      "configuredLimit": 25,
+      "workerId": "100004",
+      "reviewCaseType": "GuardrailCase"
     }
   ],
   "manualReview": [],

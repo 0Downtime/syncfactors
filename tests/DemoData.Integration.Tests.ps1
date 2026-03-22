@@ -1,4 +1,8 @@
 Describe 'Demo data generator integration' {
+    BeforeAll {
+        Import-Module "$PSScriptRoot/../src/Modules/SyncFactors/Persistence.psm1" -Force
+    }
+
     It 'creates demo config, state, runtime status, and mixed-history reports' {
         $outputDirectory = Join-Path $TestDrive 'demo-output'
 
@@ -29,11 +33,20 @@ Describe 'Demo data generator integration' {
         @($state.workers.PSObject.Properties).Count | Should -Be 40
         (@($state.workers.PSObject.Properties | Where-Object { $_.Value.suppressed })).Count | Should -BeGreaterThan 0
 
+        $demoConfig = Get-Content -Path $result.configPath -Raw | ConvertFrom-Json -Depth 20
+        $sqlitePath = Get-SyncFactorsSqlitePath -Config $demoConfig
+        Test-Path -Path $sqlitePath | Should -BeTrue
+
         $reportDocuments = @($reports | ForEach-Object { Get-Content -Path $_.FullName -Raw | ConvertFrom-Json -Depth 30 })
         (@($reportDocuments | Where-Object { @($_.manualReview).Count -gt 0 })).Count | Should -BeGreaterThan 0
         (@($reportDocuments | Where-Object { @($_.quarantined).Count -gt 0 })).Count | Should -BeGreaterThan 0
         (@($reportDocuments | Where-Object { @($_.conflicts).Count -gt 0 })).Count | Should -BeGreaterThan 0
         (@($reportDocuments | Where-Object { @($_.guardrailFailures).Count -gt 0 })).Count | Should -BeGreaterThan 0
+
+        $recentRuns = @(Get-SyncFactorsRecentRunsFromSqlite -StatePath $demoConfig.state.path -DatabasePath $sqlitePath -Limit 10)
+        $recentRuns.Count | Should -Be $result.reportCount
+        @($recentRuns | Where-Object { $_.artifactType -eq 'WorkerPreview' }).Count | Should -BeGreaterThan 0
+        @($recentRuns | Where-Object { $_.artifactType -eq 'FirstSyncReview' }).Count | Should -BeGreaterThan 0
 
         $workerIdCounts = @{}
         foreach ($report in $reportDocuments) {
