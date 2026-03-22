@@ -9,6 +9,7 @@ const execFileAsync = promisify(execFile);
 
 export interface StatusProvider {
   getStatus(configPath: string, historyLimit: number): Promise<DashboardStatus>;
+  invalidate?(configPath?: string): void;
 }
 
 export class PowerShellStatusProvider implements StatusProvider {
@@ -86,6 +87,19 @@ export class PowerShellStatusProvider implements StatusProvider {
     const value = JSON.parse(fs.readFileSync(outputPath, 'utf8')) as DashboardStatus;
     this.cache.set(cacheKey, { expiresAt: Date.now() + this.ttlMs, value });
     return value;
+  }
+
+  invalidate(configPath?: string): void {
+    if (!configPath) {
+      this.cache.clear();
+      return;
+    }
+
+    for (const key of this.cache.keys()) {
+      if (key.startsWith(`${configPath}:`)) {
+        this.cache.delete(key);
+      }
+    }
   }
 }
 

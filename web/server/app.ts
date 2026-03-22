@@ -1,18 +1,22 @@
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { spawn } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
+import { promisify } from 'node:util';
 import express from 'express';
 import type { Express, Response } from 'express';
-import type { DashboardStatus, QueueName } from './types.js';
+import type { DashboardStatus, QueueName, WorkerActionKind, WorkerActionResponse } from './types.js';
 import { PowerShellStatusProvider, type StatusProvider } from './status-provider.js';
 import { ReportService } from './report-service.js';
+
+const execFileAsync = promisify(execFile);
 
 export type AppDependencies = {
   configPath: string;
   historyLimit?: number;
   statusProvider?: StatusProvider;
   reportService?: ReportService;
+  workerActionRunner?: typeof runWorkerAction;
 };
 
 export function createApp(dependencies: AppDependencies): Express {
@@ -21,6 +25,7 @@ export function createApp(dependencies: AppDependencies): Express {
   const historyLimit = dependencies.historyLimit ?? 25;
   const statusProvider = dependencies.statusProvider ?? new PowerShellStatusProvider();
   const reportService = dependencies.reportService ?? new ReportService();
+  const workerActionRunner = dependencies.workerActionRunner ?? runWorkerAction;
 
   app.get('/api/status', async (_request, response) => {
     try {
@@ -124,6 +129,34 @@ export function createApp(dependencies: AppDependencies): Express {
     }
   });
 
+  app.post('/api/workers/:workerId/actions', async (request, response) => {
+    try {
+      const action = asWorkerAction(request.body?.action);
+      if (!action) {
+        respondWithError(response, 400, 'Unknown worker action.', new Error('Request body must include action: test-sync, review-sync, or real-sync.'));
+        return;
+      }
+
+      const status = await statusProvider.getStatus(dependencies.configPath, historyLimit);
+      const mappingConfigPath = resolveMappingConfigPath(status);
+      const result = await workerActionRunner({
+        action,
+        workerId: request.params.workerId,
+        configPath: status.paths.configPath || dependencies.configPath,
+        mappingConfigPath,
+      });
+
+      statusProvider.invalidate?.(dependencies.configPath);
+      response.json({
+        action,
+        workerId: request.params.workerId,
+        result,
+      } satisfies WorkerActionResponse);
+    } catch (error) {
+      respondWithError(response, 500, 'Failed to execute worker action.', error);
+    }
+  });
+
   app.get('/api/health', async (_request, response) => {
     try {
       const status = await statusProvider.getStatus(dependencies.configPath, historyLimit);
@@ -178,6 +211,81 @@ function asQueryNumber(value: unknown): number | undefined {
   return Number.isFinite(parsed) ? parsed : undefined;
 }
 
+function asWorkerAction(value: unknown): WorkerActionKind | null {
+  return value === 'test-sync' || value === 'review-sync' || value === 'real-sync' ? value : null;
+}
+
+function resolveMappingConfigPath(status: DashboardStatus): string {
+  const candidates = [status.latestRun, ...status.recentRuns];
+  for (const run of candidates) {
+    if (run?.mappingConfigPath) {
+      return run.mappingConfigPath;
+    }
+  }
+
+  throw new Error('No mapping config path is available from recent runs. Run at least one sync or review with mapping metadata first.');
+}
+
+async function runWorkerAction(args: {
+  action: WorkerActionKind;
+  workerId: string;
+  configPath: string;
+  mappingConfigPath: string;
+}): Promise<WorkerActionResponse['result']> {
+  const pwshArgs = ['-NoLogo', '-NoProfile', '-File'];
+  if (args.action === 'real-sync') {
+    pwshArgs.push(
+      'scripts/Invoke-SyncFactorsWorkerSync.ps1',
+      '-ConfigPath',
+      args.configPath,
+      '-MappingConfigPath',
+      args.mappingConfigPath,
+      '-WorkerId',
+      args.workerId,
+      '-AsJson',
+    );
+  } else {
+    pwshArgs.push(
+      'scripts/Invoke-SyncFactorsWorkerPreview.ps1',
+      '-ConfigPath',
+      args.configPath,
+      '-MappingConfigPath',
+      args.mappingConfigPath,
+      '-WorkerId',
+      args.workerId,
+      '-PreviewMode',
+      args.action === 'test-sync' ? 'Minimal' : 'Full',
+      '-AsJson',
+    );
+  }
+
+  const { stdout } = await execFileAsync('pwsh', pwshArgs, {
+    cwd: process.cwd(),
+    env: process.env,
+    maxBuffer: 1024 * 1024 * 10,
+  });
+
+  const parsed = JSON.parse(stdout) as Record<string, unknown>;
+  const workerScope = parsed.workerScope && typeof parsed.workerScope === 'object'
+    ? parsed.workerScope as WorkerActionResponse['result']['workerScope']
+    : null;
+
+  return {
+    reportPath: asNullableString(parsed.reportPath),
+    runId: asNullableString(parsed.runId),
+    mode: asNullableString(parsed.mode),
+    status: asNullableString(parsed.status),
+    artifactType: asNullableString(parsed.artifactType),
+    previewMode: asNullableString(parsed.previewMode),
+    successFactorsAuth: asNullableString(parsed.successFactorsAuth),
+    workerScope,
+  };
+}
+
+function asNullableString(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() ? value : null;
+}
+
 async function openPathInDefaultApp(targetPath: string, isDirectory: boolean): Promise<void> {
   const platform = os.platform();
   let command: string;
@@ -212,6 +320,9 @@ export function createMockStatusProvider(status: DashboardStatus): StatusProvide
   return {
     async getStatus() {
       return status;
+    },
+    invalidate() {
+      return;
     },
   };
 }
