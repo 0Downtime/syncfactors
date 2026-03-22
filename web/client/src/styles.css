@@ -1425,6 +1425,15 @@ button:disabled {
   opacity: 0.45;
 }
 
+.worker-actions-card[data-tone='delete'] {
+  border-color: rgba(196, 62, 62, 0.35);
+}
+
+.worker-actions-card button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 @media (max-width: 1100px) {
   .status-grid,
   .main-grid,

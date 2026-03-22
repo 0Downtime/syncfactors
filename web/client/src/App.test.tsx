@@ -16,6 +16,8 @@ const mockGetWorkerDetail = vi.fn();
 const mockRunWorkerAction = vi.fn();
 const mockPreviewWorker = vi.fn();
 const mockApplyWorker = vi.fn();
+const mockRunOperatorAction = vi.fn();
+const mockRunPreflight = vi.fn();
 
 vi.mock('./api.js', () => ({
   getStatus: (...args: unknown[]) => mockGetStatus(...args),
@@ -27,8 +29,8 @@ vi.mock('./api.js', () => ({
   runWorkerAction: (...args: unknown[]) => mockRunWorkerAction(...args),
   previewWorker: (...args: unknown[]) => mockPreviewWorker(...args),
   applyWorker: (...args: unknown[]) => mockApplyWorker(...args),
-  runOperatorAction: vi.fn(),
-  runPreflight: vi.fn(),
+  runOperatorAction: (...args: unknown[]) => mockRunOperatorAction(...args),
+  runPreflight: (...args: unknown[]) => mockRunPreflight(...args),
   runFreshReset: vi.fn(),
   exportRunBucket: vi.fn(),
   openRunReport: vi.fn(),
@@ -46,6 +48,8 @@ beforeEach(() => {
   mockRunWorkerAction.mockReset();
   mockPreviewWorker.mockReset();
   mockApplyWorker.mockReset();
+  mockRunOperatorAction.mockReset();
+  mockRunPreflight.mockReset();
 
   mockGetStatus.mockResolvedValue({
     latestRun: {
@@ -473,6 +477,26 @@ beforeEach(() => {
     operationSummary: { action: 'UpdateAttributes', effect: null, targetOu: null, fromOu: null, toOu: null },
     entries: [],
   });
+  mockRunOperatorAction.mockResolvedValue({
+    status: 'accepted',
+    started: true,
+    completed: false,
+    message: 'Started delta dry-run in a new PowerShell process.',
+    commandSummary: ['Config=/tmp/config.json', 'Mapping=/tmp/mapping.json'],
+    runId: 'run-2',
+    reportPath: '/tmp/run-2.json',
+    outputLines: [],
+  });
+  mockRunPreflight.mockResolvedValue({
+    status: 'completed',
+    started: false,
+    completed: true,
+    message: 'Preflight completed.',
+    commandSummary: ['Config=/tmp/config.json', 'Mapping=/tmp/mapping.json'],
+    runId: null,
+    reportPath: null,
+    outputLines: ['ok'],
+  });
 });
 
 describe('App', () => {
@@ -566,7 +590,7 @@ describe('App', () => {
   });
 
   it('runs single-worker test, review, and real sync actions from the worker view', async () => {
-    window.history.replaceState(null, '', '/?view=worker&worker=1001');
+    window.history.replaceState(null, '', '/?view=worker&workerId=1001');
     render(<App />);
 
     await waitFor(() => expect(screen.getByText(/SyncFactors Operator UI/i)).toBeInTheDocument());
@@ -574,7 +598,8 @@ describe('App', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Review sync' }));
 
-    await waitFor(() => expect(mockPreviewWorker).toHaveBeenCalledWith('1001', 'full'));
+    await waitFor(() => expect(mockPreviewWorker).toHaveBeenCalled());
+    expect(mockPreviewWorker.mock.calls[0]?.[1]).toBe('full');
     expect(screen.getByText(/Worker Preview 1001/i)).toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: 'Open run' }).length).toBeGreaterThan(0);
     expect(mockGetStatus).toHaveBeenCalledTimes(2);
@@ -597,5 +622,81 @@ describe('App', () => {
     expect(screen.queryByText(/Status warnings/i)).not.toBeInTheDocument();
     expect(screen.getByText('Active Directory health is unavailable on this macOS host.')).toBeInTheDocument();
     expect(screen.queryByText(NON_WINDOWS_AD_WARNING)).not.toBeInTheDocument();
+  });
+
+  it('improves the operations page with action gating and result promotion', async () => {
+    const baseStatus = await mockGetStatus();
+    mockGetStatus.mockReset();
+    mockGetStatus.mockResolvedValue({
+      ...baseStatus,
+      currentRun: {
+        status: 'InProgress',
+        stage: 'ProcessingWorkers',
+        processedWorkers: 3,
+        totalWorkers: 10,
+        currentWorkerId: '1001',
+        lastAction: 'Running delta sync.',
+      },
+    });
+
+    window.history.replaceState(null, '', '/?view=operations');
+    const rendered = render(<App />);
+
+    await waitFor(() => expect(screen.getByText(/Operator State/i)).toBeInTheDocument());
+    expect(screen.getByText(/Run in progress/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Delta dry-run/i })).toBeDisabled();
+    expect(screen.getByText(/Run at least one sync\/review with mapping metadata/i)).toBeInTheDocument();
+
+    rendered.unmount();
+
+    mockGetStatus.mockReset();
+    mockGetStatus.mockResolvedValue({
+      ...baseStatus,
+      currentRun: {
+        status: 'Idle',
+        stage: 'Completed',
+        processedWorkers: 0,
+        totalWorkers: 0,
+        currentWorkerId: null,
+        lastAction: 'No active sync run.',
+      },
+      recentRuns: [
+        {
+          ...baseStatus.recentRuns[0],
+          runId: 'run-2',
+          path: '/tmp/run-2.json',
+          mappingConfigPath: '/tmp/mapping.json',
+        },
+      ],
+    });
+
+    window.history.replaceState(null, '', '/?view=operations');
+    render(<App />);
+    await waitFor(() => expect(screen.getByRole('button', { name: /Delta dry-run/i })).not.toBeDisabled());
+
+    fireEvent.click(screen.getByRole('button', { name: /Delta dry-run/i }));
+
+    await waitFor(() => expect(mockRunOperatorAction).toHaveBeenCalledWith('delta-dry-run'));
+    await waitFor(() => expect(window.location.search).toMatch(/view=report/));
+    expect(screen.getByText(/Started delta dry-run in a new PowerShell process./i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Report' })).toHaveClass('active');
+  });
+
+  it('keeps the report detail selection aligned to the active report category', async () => {
+    const mixedEntries = (await mockGetRunEntries('run-1')).entries;
+    mockGetRunEntries.mockImplementation(async () => ({
+      run: { runId: 'run-1' },
+      total: mixedEntries.length,
+      warnings: [],
+      entries: mixedEntries,
+    }));
+
+    window.history.replaceState(null, '', '/?view=report&run=run-1&reportCategory=Deleted');
+    render(<App />);
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Report' })).toHaveClass('active'));
+    expect(screen.queryByText('Create account newuser')).not.toBeInTheDocument();
+    await waitFor(() => expect(window.location.search).toMatch(/reportCategory=Deleted/));
+    expect(screen.getByText('retireduser')).toBeInTheDocument();
   });
 });

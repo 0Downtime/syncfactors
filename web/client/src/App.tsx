@@ -20,6 +20,7 @@ import {
   BUCKET_ORDER,
   chooseSelectedEntry,
   getRouteState,
+  mapEntryToReportCategory,
   mapReviewExplorerToBucket,
   normalizeRoute,
   resolveActiveBucket,
@@ -75,6 +76,8 @@ export function App() {
   const [workerPreview, setWorkerPreview] = useState<WorkerPreviewResponse | null>(null);
   const [pendingConfirmation, setPendingConfirmation] = useState<PendingConfirmation | null>(null);
   const [commandResult, setCommandResult] = useState<OperatorCommandResult | null>(null);
+  const [recentCommandResults, setRecentCommandResults] = useState<OperatorCommandResult[]>([]);
+  const [pendingOperatorActionLabel, setPendingOperatorActionLabel] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [streamConnected, setStreamConnected] = useState(false);
   const [theme, setTheme] = useState<ThemeMode>(() => getInitialTheme());
@@ -189,7 +192,7 @@ export function App() {
 
         setRunDetail(nextRunDetail);
         setEntryResponse(nextEntries);
-        const resolvedEntry = chooseSelectedEntry(nextEntries.entries, route.entryId);
+        const resolvedEntry = chooseSelectedEntry(getVisibleEntries(nextEntries.entries, route), route.entryId);
         if (resolvedEntry && resolvedEntry.entryId !== route.entryId) {
           setRouteAndUrl({ ...route, entryId: resolvedEntry.entryId, workerId: resolvedEntry.workerId ?? route.workerId }, false);
         }
@@ -262,6 +265,11 @@ export function App() {
     };
   }, [route.view, route.workerId]);
 
+  const visibleEntries = useMemo(
+    () => getVisibleEntries(entryResponse?.entries ?? [], route),
+    [entryResponse?.entries, route],
+  );
+
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === '/') {
@@ -287,9 +295,9 @@ export function App() {
       } else if (event.key === 'o') {
         event.preventDefault();
         navigateTo({ ...route, view: 'operations' });
-      } else if ((event.key === 'j' || event.key === 'k') && entryResponse?.entries?.length) {
+      } else if ((event.key === 'j' || event.key === 'k') && visibleEntries.length) {
         event.preventDefault();
-        const nextEntry = stepSelection(entryResponse.entries, route.entryId, event.key === 'j' ? 1 : -1);
+        const nextEntry = stepSelection(visibleEntries, route.entryId, event.key === 'j' ? 1 : -1);
         if (nextEntry) {
           navigateTo({ ...route, entryId: nextEntry.entryId, workerId: nextEntry.workerId ?? route.workerId }, false);
         }
@@ -298,12 +306,34 @@ export function App() {
 
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [route, entryResponse]);
+  }, [route, visibleEntries]);
 
   const selectedEntry = useMemo(
-    () => chooseSelectedEntry(entryResponse?.entries ?? [], route.entryId),
-    [entryResponse?.entries, route.entryId],
+    () => chooseSelectedEntry(visibleEntries, route.entryId),
+    [visibleEntries, route.entryId],
   );
+
+  useEffect(() => {
+    if (!selectedEntry) {
+      return;
+    }
+
+    const nextWorkerId = selectedEntry.workerId ?? route.workerId;
+    if (selectedEntry.entryId === route.entryId && nextWorkerId === route.workerId) {
+      return;
+    }
+
+    const normalized = normalizeRoute(
+      {
+        ...route,
+        entryId: selectedEntry.entryId,
+        workerId: nextWorkerId,
+      },
+      status,
+    );
+    setRoute(normalized);
+    syncRouteState(normalized, false);
+  }, [route, selectedEntry, status]);
 
   const runBuckets = useMemo(() => {
     if (!runDetail) {
@@ -462,7 +492,15 @@ export function App() {
           onPageChange={(page) => navigateTo({ ...route, page })}
           onPageSizeChange={(pageSize) => navigateTo({ ...route, pageSize, page: 1 })}
           onOpenWorker={(workerId) => navigateTo({ ...route, view: 'worker', workerId })}
-          onOpenRun={(entry) => navigateTo({ ...route, view: 'report', runId: entry.runId, bucket: entry.bucket, entryId: entry.entryId, workerId: entry.workerId })}
+          onOpenRun={(entry) => navigateTo({
+            ...route,
+            view: 'report',
+            runId: entry.runId,
+            bucket: entry.bucket,
+            entryId: entry.entryId,
+            workerId: entry.workerId,
+            reportCategory: mapEntryToReportCategory(entry),
+          })}
         />
       ) : null}
 
@@ -479,12 +517,18 @@ export function App() {
             bucket: entry?.bucket ?? route.bucket,
             entryId: entry?.entryId ?? null,
             workerId: entry?.workerId ?? route.workerId,
+            reportCategory: entry ? mapEntryToReportCategory(entry) : route.reportCategory,
           })}
         />
       ) : null}
 
       {route.view === 'operations' ? (
         <OperationsView
+          status={status}
+          pendingActionLabel={pendingOperatorActionLabel}
+          latestResult={commandResult}
+          recentResults={recentCommandResults}
+          streamConnected={streamConnected}
           onRunAction={(action) => void handleRunOperatorAction(action)}
           onRunPreflight={() => void handleRunPreflight()}
           onRunFreshReset={() => setPendingConfirmation({
@@ -499,6 +543,11 @@ export function App() {
             countText: '',
             destructiveText: '',
           })}
+          onOpenLatestRun={(runId) => {
+            if (runId) {
+              navigateTo({ ...route, view: 'report', runId, entryId: null });
+            }
+          }}
         />
       ) : null}
 
@@ -597,6 +646,9 @@ export function App() {
       } else {
         const result = await runWorkerAction(route.workerId, action);
         setWorkerActionState({ pendingAction: null, result });
+        if (result.result.runId) {
+          navigateTo({ ...route, view: 'report', runId: result.result.runId, workerId: route.workerId, entryId: null });
+        }
         await refreshAfterAction(route.workerId);
         return;
       }
@@ -612,21 +664,30 @@ export function App() {
   async function handleRunOperatorAction(action: OperatorActionKind) {
     try {
       setError(null);
+      setPendingOperatorActionLabel(getOperatorActionLabel(action));
       const result = await runOperatorAction(action);
-      setCommandResult(result);
+      recordCommandResult(result);
+      if (result.runId) {
+        navigateTo({ ...route, view: 'report', runId: result.runId, entryId: null }, false);
+      }
       await refreshAfterAction();
     } catch (actionError) {
       setError(actionError instanceof Error ? actionError.message : 'Failed to run operator action.');
+    } finally {
+      setPendingOperatorActionLabel(null);
     }
   }
 
   async function handleRunPreflight() {
     try {
       setError(null);
+      setPendingOperatorActionLabel('Preflight');
       const result = await runPreflight();
-      setCommandResult(result);
+      recordCommandResult(result);
     } catch (actionError) {
       setError(actionError instanceof Error ? actionError.message : 'Failed to run preflight.');
+    } finally {
+      setPendingOperatorActionLabel(null);
     }
   }
 
@@ -648,22 +709,22 @@ export function App() {
 
       if (pendingConfirmation.kind === 'run-open' && route.runId) {
         const result = await openRunReport(route.runId, pendingConfirmation.confirmText);
-        setCommandResult(result);
+        recordCommandResult(result);
       } else if (pendingConfirmation.kind === 'run-copy' && route.runId) {
         const result = await copyRunReportPath(route.runId, pendingConfirmation.confirmText);
-        setCommandResult(result);
+        recordCommandResult(result);
         if (result.reportPath) {
           await navigator.clipboard?.writeText(result.reportPath);
         }
       } else if (pendingConfirmation.kind === 'run-export' && route.runId) {
         const result = await exportRunBucket(route.runId, route.bucket, route.filter, pendingConfirmation.confirmText);
-        setCommandResult(result);
+        recordCommandResult(result);
       } else if (pendingConfirmation.kind === 'fresh-reset') {
         const result = await runFreshReset(
           pendingConfirmation.confirmText,
           [pendingConfirmation.countText, pendingConfirmation.destructiveText],
         );
-        setCommandResult(result);
+        recordCommandResult(result);
         await refreshAfterAction();
       }
 
@@ -671,6 +732,11 @@ export function App() {
     } catch (actionError) {
       setError(actionError instanceof Error ? actionError.message : 'Confirmation action failed.');
     }
+  }
+
+  function recordCommandResult(result: OperatorCommandResult) {
+    setCommandResult(result);
+    setRecentCommandResults((current) => [result, ...current].slice(0, 8));
   }
 }
 
@@ -746,6 +812,14 @@ function getCurrentViewLabel(view: RouteState['view']): string {
   }
 }
 
+function getVisibleEntries(entries: EntryListResponse['entries'], route: RouteState): EntryListResponse['entries'] {
+  if (route.view !== 'report') {
+    return entries;
+  }
+
+  return entries.filter((entry) => mapEntryToReportCategory(entry) === route.reportCategory);
+}
+
 function mapReportCategoryToBucket(category: 'Changed' | 'Created' | 'Deleted'): string | undefined {
   if (category === 'Created') {
     return 'creates';
@@ -754,4 +828,19 @@ function mapReportCategoryToBucket(category: 'Changed' | 'Created' | 'Deleted'):
     return 'deletions';
   }
   return undefined;
+}
+
+function getOperatorActionLabel(action: OperatorActionKind): string {
+  switch (action) {
+    case 'delta-dry-run':
+      return 'Delta dry-run';
+    case 'delta-sync':
+      return 'Delta sync';
+    case 'full-dry-run':
+      return 'Full dry-run';
+    case 'full-sync':
+      return 'Full sync';
+    case 'review-run':
+      return 'First-sync review';
+  }
 }

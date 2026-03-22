@@ -1,6 +1,7 @@
 import type { DashboardStatus, EntryRecord, QueueName, WorkerPreviewMode } from './types.js';
 
 export type ViewName = 'dashboard' | 'queues' | 'worker' | 'report' | 'worker-preview' | 'operations';
+export type ReportCategory = 'Changed' | 'Created' | 'Deleted';
 
 export type RouteState = {
   view: ViewName;
@@ -17,7 +18,7 @@ export type RouteState = {
   page: number;
   pageSize: number;
   previewMode: WorkerPreviewMode;
-  reportCategory: 'Changed' | 'Created' | 'Deleted';
+  reportCategory: ReportCategory;
 };
 
 export const DEFAULT_ROUTE: RouteState = {
@@ -152,6 +153,16 @@ export function mapReviewExplorerToBucket(mode: 'all' | 'changed' | 'created' | 
   return 'updates';
 }
 
+export function mapEntryToReportCategory(entry: Pick<EntryRecord, 'bucket' | 'reviewCategory'>): ReportCategory {
+  if (entry.bucket === 'creates' || entry.reviewCategory === 'NewUser') {
+    return 'Created';
+  }
+  if (['updates', 'enables', 'disables', 'graveyardMoves', 'unchanged'].includes(entry.bucket)) {
+    return 'Changed';
+  }
+  return 'Deleted';
+}
+
 function parseView(value: string | null): ViewName {
   if (value === 'queues' || value === 'worker' || value === 'report' || value === 'worker-preview' || value === 'operations') {
     return value;
@@ -163,7 +174,7 @@ function parsePreviewMode(value: string | null): WorkerPreviewMode {
   return value === 'minimal' ? 'minimal' : 'full';
 }
 
-function parseReportCategory(value: string | null): 'Changed' | 'Created' | 'Deleted' {
+function parseReportCategory(value: string | null): ReportCategory {
   if (value === 'Created' || value === 'Deleted') {
     return value;
   }

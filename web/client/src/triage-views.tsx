@@ -1,6 +1,6 @@
-import type { DashboardStatus, EntryListResponse, EntryRecord, OperatorActionKind, QueueName, QueueResponse, RunDetailResponse, WorkerActionKind, WorkerActionResponse, WorkerDetailResponse } from './types.js';
+import type { DashboardStatus, EntryListResponse, EntryRecord, OperatorActionKind, OperatorCommandResult, QueueName, QueueResponse, RunDetailResponse, WorkerActionKind, WorkerActionResponse, WorkerDetailResponse } from './types.js';
 import type { RouteState } from './route-state.js';
-import { mapReviewExplorerToBucket } from './route-state.js';
+import { mapEntryToReportCategory, mapReviewExplorerToBucket } from './route-state.js';
 import { AbsoluteTimeLabel, CopyLinkButton, DashboardOverviewPanel, DetailRow, GroupPanel, RelativeTimeLabel, SelectedEntryPanel, SummaryMetric, WarningPanel, getToneForBucket, getToneForReviewEntry, getToneForReviewExplorer } from './triage-components.js';
 import type { FilterRef } from './triage-components.js';
 
@@ -407,7 +407,7 @@ export function ReportExplorerView(props: {
   onExport: () => void;
 }) {
   const entries = props.entryResponse?.entries ?? [];
-  const categoryEntries = entries.filter((entry) => mapEntryCategory(entry) === props.route.reportCategory);
+  const categoryEntries = entries.filter((entry) => mapEntryToReportCategory(entry) === props.route.reportCategory);
   return (
     <main className="dashboard-layout">
       <section className="card detail-card full-width">
@@ -430,7 +430,7 @@ export function ReportExplorerView(props: {
               className={props.route.reportCategory === category ? 'active' : ''}
               onClick={() => props.onCategoryChange(category)}
             >
-              {category} ({entries.filter((entry) => mapEntryCategory(entry) === category).length})
+              {category} ({entries.filter((entry) => mapEntryToReportCategory(entry) === category).length})
             </button>
           ))}
         </div>
@@ -464,10 +464,18 @@ export function ReportExplorerView(props: {
 }
 
 export function OperationsView(props: {
+  status: DashboardStatus | null;
+  pendingActionLabel: string | null;
+  latestResult: OperatorCommandResult | null;
+  recentResults: OperatorCommandResult[];
+  streamConnected: boolean;
   onRunAction: (action: OperatorActionKind) => void;
   onRunPreflight: () => void;
   onRunFreshReset: () => void;
+  onOpenLatestRun: (runId: string | null) => void;
 }) {
+  const currentRunActive = `${props.status?.currentRun?.status ?? ''}` === 'InProgress';
+  const hasRecentRunContext = Boolean(props.status?.recentRuns?.some((run) => run.mappingConfigPath));
   const runActions: Array<{ action: OperatorActionKind; label: string; detail: string }> = [
     { action: 'delta-dry-run', label: 'Delta dry-run', detail: 'Write runtime status and report files only.' },
     { action: 'delta-sync', label: 'Delta sync', detail: 'Apply delta changes to AD and sync state.' },
@@ -475,31 +483,120 @@ export function OperationsView(props: {
     { action: 'full-sync', label: 'Full sync', detail: 'Apply a full synchronization to AD.' },
     { action: 'review-run', label: 'First-sync review', detail: 'Launch the review flow in a separate PowerShell process.' },
   ];
+  const disabledReason = !hasRecentRunContext
+    ? 'Run at least one sync/review with mapping metadata before launching browser actions.'
+    : currentRunActive
+      ? 'A sync is already in progress. Wait for it to complete before launching another action.'
+      : null;
 
   return (
     <main className="worker-grid">
+      <section className="card worker-summary">
+        <div className="card-header">
+          <div>
+            <p className="section-kicker">Operator State</p>
+            <h2>{currentRunActive ? 'Run in progress' : 'Ready'}</h2>
+          </div>
+          <span className="badge ghost">{props.streamConnected ? 'Live via SSE' : 'Polling fallback'}</span>
+        </div>
+        <dl className="detail-list">
+          <DetailRow label="Current run" value={`${props.status?.currentRun?.status ?? 'Idle'} / ${props.status?.currentRun?.stage ?? 'Completed'}`} />
+          <DetailRow label="Current worker" value={`${props.status?.currentRun?.currentWorkerId ?? '-'}`} />
+          <DetailRow label="Mapping metadata" value={hasRecentRunContext ? 'Available' : 'Missing'} />
+          <DetailRow label="Pending command" value={props.pendingActionLabel ?? '-'} />
+        </dl>
+        {disabledReason ? <WarningPanel title="Action gating" warnings={[disabledReason]} /> : null}
+      </section>
+
       <section className="card worker-actions-card">
         <div className="card-header">
           <div>
             <p className="section-kicker">Operations</p>
-            <h2>Command launcher</h2>
+            <h2>Safe and scoped actions</h2>
           </div>
         </div>
         <div className="worker-action-buttons">
-          <button type="button" onClick={props.onRunPreflight}>
+          <button type="button" onClick={props.onRunPreflight} disabled={currentRunActive || !hasRecentRunContext}>
             <strong>Preflight</strong>
             <span>Run validation against the current config and mapping files.</span>
           </button>
-          {runActions.map(({ action, label, detail }) => (
-            <button key={action} type="button" onClick={() => props.onRunAction(action)}>
+          {runActions.slice(0, 3).map(({ action, label, detail }) => (
+            <button key={action} type="button" onClick={() => props.onRunAction(action)} disabled={Boolean(disabledReason)}>
               <strong>{label}</strong>
               <span>{detail}</span>
             </button>
           ))}
-          <button type="button" onClick={props.onRunFreshReset}>
+        </div>
+      </section>
+
+      <section className="card worker-actions-card" data-tone="delete">
+        <div className="card-header">
+          <div>
+            <p className="section-kicker">Write Actions</p>
+            <h2>Broad mutations</h2>
+          </div>
+        </div>
+        <div className="worker-action-buttons">
+          {runActions.slice(3).map(({ action, label, detail }) => (
+            <button key={action} type="button" onClick={() => props.onRunAction(action)} disabled={Boolean(disabledReason)}>
+              <strong>{label}</strong>
+              <span>{detail}</span>
+            </button>
+          ))}
+          <button type="button" onClick={props.onRunFreshReset} disabled={Boolean(disabledReason)}>
             <strong>Fresh sync reset</strong>
             <span>Delete managed AD user objects and reset local sync state.</span>
           </button>
+        </div>
+      </section>
+
+      <section className="card worker-latest">
+        <div className="card-header">
+          <div>
+            <p className="section-kicker">Latest Result</p>
+            <h2>{props.latestResult?.message ?? 'No commands run yet'}</h2>
+          </div>
+        </div>
+        {props.latestResult ? (
+          <div className="queue-list">
+            <div className="queue-item">
+              <div>
+                <strong>{props.latestResult.completed ? 'Completed' : 'Accepted'}</strong>
+                <p>{props.latestResult.commandSummary.join(' · ') || 'No command summary recorded.'}</p>
+                <small>{props.latestResult.reportPath ?? props.latestResult.runId ?? '-'}</small>
+              </div>
+              <div className="queue-item-actions">
+                {props.latestResult.runId ? <button type="button" onClick={() => props.onOpenLatestRun(props.latestResult.runId)}>Open run</button> : null}
+              </div>
+            </div>
+          </div>
+        ) : (
+          <p className="empty-state">Run an operation to see the latest result and jump straight into the produced run.</p>
+        )}
+      </section>
+
+      <section className="card worker-history-card">
+        <div className="card-header">
+          <div>
+            <p className="section-kicker">Recent Commands</p>
+            <h2>{props.recentResults.length} results</h2>
+          </div>
+        </div>
+        <div className="queue-list">
+          {props.recentResults.length === 0 ? (
+            <p className="empty-state">No commands have completed in this session.</p>
+          ) : props.recentResults.map((result, index) => (
+            <div className="queue-item" key={`${result.message}:${result.runId ?? result.reportPath ?? index}`}>
+              <div>
+                <strong>{result.message}</strong>
+                <p>{result.commandSummary.join(' · ') || 'No command summary recorded.'}</p>
+                <small>{result.outputLines[0] ?? result.reportPath ?? result.runId ?? '-'}</small>
+              </div>
+              <div className="queue-item-actions">
+                {result.runId ? <button type="button" onClick={() => props.onOpenLatestRun(result.runId)}>Open run</button> : null}
+              </div>
+            </div>
+          ))}
         </div>
       </section>
     </main>
@@ -515,16 +612,6 @@ function formatWorkerActionLabel(action: WorkerActionKind): string {
     case 'real-sync':
       return 'Real sync';
   }
-}
-
-function mapEntryCategory(entry: EntryRecord): 'Changed' | 'Created' | 'Deleted' {
-  if (entry.bucket === 'creates' || entry.reviewCategory === 'NewUser') {
-    return 'Created';
-  }
-  if (['updates', 'enables', 'disables', 'graveyardMoves', 'unchanged'].includes(entry.bucket)) {
-    return 'Changed';
-  }
-  return 'Deleted';
 }
 
 function QueuePagination(props: {
