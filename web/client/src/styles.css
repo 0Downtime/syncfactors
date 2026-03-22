@@ -122,7 +122,7 @@ a:focus-visible {
   border-radius: 0.35rem;
   background: var(--surface-primary);
   box-shadow: var(--shadow-soft);
-  overflow: hidden;
+  overflow: visible;
 }
 
 .portal-breadcrumbs {

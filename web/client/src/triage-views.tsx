@@ -22,6 +22,8 @@ export function DashboardView(props: {
 }) {
   const { status, route, runDetail, entryResponse, selectedEntry, runBuckets, filterInputRef } = props;
   const useReviewExplorerTones = runDetail?.run.mode === 'Review';
+  const runId = runDetail?.run.runId ?? null;
+  const runTitle = runId ? formatRunIdDisplay(runId) : 'Select a run';
   return (
     <main className="dashboard-layout">
       <DashboardOverviewPanel status={status} />
@@ -61,7 +63,7 @@ export function DashboardView(props: {
           <div className="card-header">
             <div className="detail-heading">
               <p className="section-kicker">Run Detail</p>
-              <h2 className="detail-run-id">{runDetail?.run.runId ?? 'Select a run'}</h2>
+              <h2 className="detail-run-id" title={runId ?? undefined}>{runTitle}</h2>
             </div>
             <div className="header-actions">
               {runDetail?.run ? <span className="badge ghost">{runDetail.run.artifactType}</span> : null}
@@ -158,6 +160,14 @@ export function DashboardView(props: {
       </section>
     </main>
   );
+}
+
+function formatRunIdDisplay(runId: string): string {
+  if (runId.length <= 18) {
+    return runId;
+  }
+
+  return `${runId.slice(0, 8)}...${runId.slice(-8)}`;
 }
 
 export function QueueView(props: {
