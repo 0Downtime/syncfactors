@@ -4,6 +4,8 @@ import type {
   QueueName,
   QueueResponse,
   RunDetailResponse,
+  WorkerActionKind,
+  WorkerActionResponse,
   WorkerDetailResponse,
   WorkerHistoryResponse,
 } from './types.js';
@@ -63,6 +65,16 @@ export async function getWorkerHistory(workerId: string): Promise<WorkerHistoryR
 
 export async function getWorkerDetail(workerId: string): Promise<WorkerDetailResponse> {
   return fetchJson<WorkerDetailResponse>(`/api/workers/${encodeURIComponent(workerId)}`);
+}
+
+export async function runWorkerAction(workerId: string, action: WorkerActionKind): Promise<WorkerActionResponse> {
+  return fetchJson<WorkerActionResponse>(`/api/workers/${encodeURIComponent(workerId)}/actions`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ action }),
+  } as RequestInit);
 }
 
 export async function openLocalPath(path: string): Promise<void> {

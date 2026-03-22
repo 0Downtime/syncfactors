@@ -1,4 +1,4 @@
-import type { DashboardStatus, EntryListResponse, EntryRecord, QueueName, QueueResponse, RunDetailResponse, WorkerDetailResponse } from './types.js';
+import type { DashboardStatus, EntryListResponse, EntryRecord, QueueName, QueueResponse, RunDetailResponse, WorkerActionKind, WorkerActionResponse, WorkerDetailResponse } from './types.js';
 import type { RouteState } from './route-state.js';
 import { mapReviewExplorerToBucket } from './route-state.js';
 import { AbsoluteTimeLabel, CopyLinkButton, DashboardOverviewPanel, DetailRow, GroupPanel, RelativeTimeLabel, SelectedEntryPanel, SummaryMetric, WarningPanel, getToneForBucket, getToneForReviewEntry, getToneForReviewExplorer } from './triage-components.js';
@@ -268,8 +268,14 @@ export function QueueView(props: {
   );
 }
 
-export function WorkerView(props: { route: RouteState; workerDetail: WorkerDetailResponse | null; onOpenRun: (entry: EntryRecord) => void }) {
-  const { route, workerDetail } = props;
+export function WorkerView(props: {
+  route: RouteState;
+  workerDetail: WorkerDetailResponse | null;
+  workerActionState: { pendingAction: WorkerActionKind | null; result: WorkerActionResponse | null };
+  onRunWorkerAction: (action: WorkerActionKind) => void;
+  onOpenRun: (runId: string | null, entry?: EntryRecord | null) => void;
+}) {
+  const { route, workerDetail, workerActionState } = props;
   return (
     <main className="worker-grid">
       <section className="card worker-summary">
@@ -289,6 +295,62 @@ export function WorkerView(props: { route: RouteState; workerDetail: WorkerDetai
           </dl>
         ) : (
           <p className="empty-state">No tracked state is available for this worker.</p>
+        )}
+      </section>
+
+      <section className="card worker-actions-card">
+        <div className="card-header">
+          <div>
+            <p className="section-kicker">Scoped Actions</p>
+            <h2>Single-worker sync</h2>
+          </div>
+        </div>
+        <div className="worker-action-buttons">
+          {([
+            { action: 'test-sync', label: 'Test sync', detail: 'Minimal preview using previewQuery.' },
+            { action: 'review-sync', label: 'Review sync', detail: 'Full preview using the main worker query.' },
+            { action: 'real-sync', label: 'Real sync', detail: 'Apply the scoped worker sync to AD.' },
+          ] as const).map(({ action, label, detail }) => (
+            <button
+              key={action}
+              aria-label={label}
+              type="button"
+              onClick={() => props.onRunWorkerAction(action)}
+              disabled={!route.workerId || workerActionState.pendingAction !== null}
+            >
+              <strong>{label}</strong>
+              <span>{workerActionState.pendingAction === action ? 'Running...' : detail}</span>
+            </button>
+          ))}
+        </div>
+        {workerActionState.result ? (
+          <div className="worker-action-result">
+            <p>
+              <strong>{formatWorkerActionLabel(workerActionState.result.action)}</strong> finished with{' '}
+              <strong>{workerActionState.result.result.status ?? 'unknown status'}</strong>.
+            </p>
+            <p>
+              {workerActionState.result.result.artifactType ?? 'Run'} · {workerActionState.result.result.runId ?? 'no run id'}
+            </p>
+            {workerActionState.result.result.previewMode ? (
+              <p>Preview mode: {workerActionState.result.result.previewMode}</p>
+            ) : null}
+            <div className="queue-item-actions">
+              {workerActionState.result.result.runId ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const matchedEntry = workerDetail?.relatedEntries.find((entry) => entry.runId === workerActionState.result?.result.runId);
+                    props.onOpenRun(workerActionState.result?.result.runId ?? null, matchedEntry ?? null);
+                  }}
+                >
+                  Open run
+                </button>
+              ) : null}
+            </div>
+          </div>
+        ) : (
+          <p className="empty-state">Run a minimal preview, a full review preview, or the scoped real sync for this worker.</p>
         )}
       </section>
 
@@ -320,7 +382,7 @@ export function WorkerView(props: { route: RouteState; workerDetail: WorkerDetai
                 </small>
               </div>
               <div className="queue-item-actions">
-                <button type="button" onClick={() => props.onOpenRun(entry)}>Open run</button>
+                <button type="button" onClick={() => props.onOpenRun(entry.runId, entry)}>Open run</button>
               </div>
             </div>
           ))}
@@ -329,6 +391,17 @@ export function WorkerView(props: { route: RouteState; workerDetail: WorkerDetai
       </section>
     </main>
   );
+}
+
+function formatWorkerActionLabel(action: WorkerActionKind): string {
+  switch (action) {
+    case 'test-sync':
+      return 'Test sync';
+    case 'review-sync':
+      return 'Review sync';
+    case 'real-sync':
+      return 'Real sync';
+  }
 }
 
 function QueuePagination(props: {
