@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { MutableRefObject, ReactNode } from 'react';
-import type { DashboardStatus, EntryRecord, QueueGroup } from './types.js';
+import type { ConfirmationDescriptor, DashboardStatus, EntryRecord, OperatorCommandResult, QueueGroup, WorkerPreviewResponse } from './types.js';
 
 export function getToneForBucket(bucket: string | null | undefined): string {
   switch (bucket) {
@@ -145,13 +145,67 @@ export function SelectedEntryPanel(props: {
                 <tr key={`${row.attribute}-${row.source ?? 'none'}`} className={row.changed ? 'changed' : ''}>
                   <td>{row.attribute}</td>
                   <td>{row.source ?? '-'}</td>
-                  <td>{row.before}</td>
-                  <td>{row.after}</td>
+                  <td>
+                    <span className="diff-value diff-value-remove">
+                      <span className="diff-value-prefix" aria-hidden="true">-</span>
+                      <span>{row.before}</span>
+                    </span>
+                  </td>
+                  <td>
+                    <span className="diff-value diff-value-add">
+                      <span className="diff-value-prefix" aria-hidden="true">+</span>
+                      <span>{row.after}</span>
+                    </span>
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
         )}
+      </section>
+    </div>
+  );
+}
+
+export function TriageGuidancePanel(props: {
+  entry: EntryRecord | null;
+  onOpenWorker: (workerId: string) => void;
+  onOpenReport: () => void;
+}) {
+  const { entry, onOpenWorker, onOpenReport } = props;
+  if (!entry) {
+    return <div className="selected-panel empty-state">Select an entry to see the recommended next step.</div>;
+  }
+
+  const workerLabel = entry.workerId ?? entry.samAccountName ?? 'Unknown object';
+  return (
+    <div className="selected-panel triage-panel" data-tone={getToneForBucket(entry.bucket)}>
+      <div className="selected-header">
+        <div>
+          <p className="section-kicker">Next Recommended Move</p>
+          <h3>{workerLabel}</h3>
+        </div>
+        <div className="header-actions">
+          <span className="badge" data-tone={getToneForBucket(entry.bucket)}>{entry.bucketLabel}</span>
+        </div>
+      </div>
+
+      <p className="triage-headline">{getTriageHeadline(entry)}</p>
+      <dl className="detail-list">
+        <DetailRow label="Reason" value={entry.reason ?? entry.reviewCategory ?? '-'} />
+        <DetailRow label="Review case" value={entry.reviewCaseType ?? '-'} />
+        <DetailRow label="Object state" value={entry.currentDistinguishedName ?? 'No current AD object'} />
+        <DetailRow label="Target OU" value={entry.targetOu ?? '-'} />
+      </dl>
+
+      <section className="triage-actions">
+        <button type="button" onClick={onOpenReport}>Inspect full report</button>
+        {entry.workerId ? <button type="button" onClick={() => onOpenWorker(entry.workerId!)}>Open worker page</button> : null}
+      </section>
+
+      <section className="operator-panel">
+        <h4>Why this page exists</h4>
+        <p>Dashboard is for run triage and deciding where to go next. Use Report Explorer for structured diff inspection, export, and path actions.</p>
       </section>
     </div>
   );
@@ -177,6 +231,19 @@ export function GroupPanel(props: { title: string; groups: QueueGroup[]; activeK
       </div>
     </section>
   );
+}
+
+function getTriageHeadline(entry: EntryRecord): string {
+  if (entry.bucket === 'manualReview' || entry.reviewCaseType) {
+    return `Review the decision path for ${entry.reviewCaseType ?? entry.reviewCategory ?? 'this exception'} before applying anything.`;
+  }
+  if (entry.bucket === 'creates') {
+    return 'Confirm identity, target OU, and naming before opening the full artifact details.';
+  }
+  if (entry.bucket === 'deletions' || entry.bucket === 'quarantined' || entry.bucket === 'conflicts') {
+    return 'Validate the removal or quarantine rationale, then inspect the full report before taking a write action.';
+  }
+  return 'Inspect the selected object, then move into the worker or report pages for the exact action path.';
 }
 
 export function WarningPanel({ title, warnings }: { title: string; warnings: string[] }) {
@@ -477,3 +544,158 @@ export function CopyLinkButton({ label }: { label: string }) {
 }
 
 export type FilterRef = MutableRefObject<HTMLInputElement | null>;
+
+export function ModalShell(props: { title: string; children: ReactNode; onClose: () => void }) {
+  return (
+    <div className="detail-modal-backdrop" onClick={props.onClose} role="presentation">
+      <div
+        aria-labelledby="modal-shell-title"
+        aria-modal="true"
+        className="detail-modal large"
+        onClick={(event) => event.stopPropagation()}
+        role="dialog"
+      >
+        <div className="detail-modal-header">
+          <strong id="modal-shell-title">{props.title}</strong>
+          <button className="inline-expand-button" onClick={props.onClose} type="button">
+            Close
+          </button>
+        </div>
+        <div className="detail-modal-body">
+          {props.children}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function ConfirmationDialog(props: {
+  descriptor: ConfirmationDescriptor;
+  value: string;
+  onChange: (value: string) => void;
+  onConfirm: () => void;
+  onClose: () => void;
+  extraFields?: Array<{ label: string; value: string; onChange: (value: string) => void }>;
+}) {
+  return (
+    <ModalShell title={props.descriptor.title} onClose={props.onClose}>
+      <div className="confirmation-dialog" data-risk={props.descriptor.riskLevel}>
+        <p>{props.descriptor.message}</p>
+        <p><strong>Required text:</strong> {props.descriptor.requiredText.replaceAll('\n', ' / ')}</p>
+        {props.extraFields?.map((field) => (
+          <label key={field.label} className="modal-field">
+            <span>{field.label}</span>
+            <input value={field.value} onChange={(event) => field.onChange(event.target.value)} />
+          </label>
+        ))}
+        <label className="modal-field">
+          <span>Confirmation</span>
+          <input value={props.value} onChange={(event) => props.onChange(event.target.value)} />
+        </label>
+        <div className="modal-actions">
+          <button type="button" onClick={props.onClose}>Cancel</button>
+          <button type="button" onClick={props.onConfirm}>Confirm</button>
+        </div>
+      </div>
+    </ModalShell>
+  );
+}
+
+export function CommandResultPanel(props: {
+  result: OperatorCommandResult | null;
+  onClose: () => void;
+  onCopyPath?: (value: string) => void;
+}) {
+  if (!props.result) {
+    return null;
+  }
+
+  return (
+    <ModalShell title="Command Result" onClose={props.onClose}>
+      <div className="command-result-panel">
+        <p><strong>{props.result.message}</strong></p>
+        {props.result.reportPath ? (
+          <div className="queue-item-actions">
+            <code>{props.result.reportPath}</code>
+            {props.onCopyPath ? <button type="button" onClick={() => props.onCopyPath?.(props.result.reportPath!)}>Copy path</button> : null}
+          </div>
+        ) : null}
+        {props.result.commandSummary.length > 0 ? (
+          <ul>
+            {props.result.commandSummary.map((line) => <li key={line}>{line}</li>)}
+          </ul>
+        ) : null}
+        {props.result.outputLines.length > 0 ? <pre className="detail-modal-content">{props.result.outputLines.join('\n')}</pre> : null}
+      </div>
+    </ModalShell>
+  );
+}
+
+export function WorkerPreviewPanel(props: {
+  preview: WorkerPreviewResponse | null;
+  onApply: () => void;
+  onOpenRun: () => void;
+  onClose: () => void;
+}) {
+  if (!props.preview) {
+    return null;
+  }
+
+  return (
+    <ModalShell title={`Worker Preview ${props.preview.preview.workerId}`} onClose={props.onClose}>
+      <div className="selected-panel" data-tone={getToneForBucket(props.preview.preview.buckets[0] ?? 'updates')}>
+        <div className="selected-header">
+          <div>
+            <p className="section-kicker">Preview</p>
+            <h3>{props.preview.preview.samAccountName ?? props.preview.preview.workerId}</h3>
+          </div>
+          <div className="header-actions">
+            <span className="badge">{props.preview.previewMode}</span>
+            <button type="button" onClick={props.onOpenRun} disabled={!props.preview.runId}>Open run</button>
+            <button type="button" onClick={props.onApply}>Apply</button>
+          </div>
+        </div>
+        <dl className="detail-list">
+          <DetailRow label="Reason" value={props.preview.preview.reason ?? '-'} />
+          <DetailRow label="Review category" value={props.preview.preview.reviewCategory ?? '-'} />
+          <DetailRow label="Review case" value={props.preview.preview.reviewCaseType ?? '-'} />
+          <DetailRow label="Target OU" value={props.preview.preview.targetOu ?? '-'} />
+          <DetailRow label="Current DN" value={props.preview.preview.currentDistinguishedName ?? '-'} />
+        </dl>
+        {props.preview.operationSummary ? (
+          <section className="operator-panel">
+            <h4>Operation summary</h4>
+            <p><strong>{props.preview.operationSummary.action}</strong></p>
+          </section>
+        ) : null}
+        <section className="changes-panel">
+          <div className="changes-header">
+            <h4>Structured diff</h4>
+          </div>
+          {props.preview.diffRows.length === 0 ? <p>No attribute-level differences were recorded.</p> : (
+            <table className="diff-table">
+              <thead>
+                <tr>
+                  <th>Attribute</th>
+                  <th>Source</th>
+                  <th>Current</th>
+                  <th>Proposed</th>
+                </tr>
+              </thead>
+              <tbody>
+                {props.preview.diffRows.map((row) => (
+                  <tr key={`${row.attribute}-${row.source ?? 'none'}`} className={row.changed ? 'changed' : ''}>
+                    <td>{row.attribute}</td>
+                    <td>{row.source ?? '-'}</td>
+                    <td>{row.before}</td>
+                    <td>{row.after}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </section>
+      </div>
+    </ModalShell>
+  );
+}

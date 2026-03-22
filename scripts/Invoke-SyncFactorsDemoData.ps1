@@ -309,6 +309,7 @@ $state = [pscustomobject]@{
     workers = [pscustomobject]$stateWorkers
 }
 & $saveSyncFactorsState -State $state -Path $statePath
+$state | ConvertTo-Json -Depth 30 | Set-Content -Path $statePath
 
 $runBaseTime = (Get-Date).AddHours(-5)
 $reportPaths = [System.Collections.Generic.List[string]]::new()
@@ -543,9 +544,11 @@ if ($IncludeActiveRun) {
         -CompletedAt $null `
         -ErrorMessage $null
     & $saveSyncFactorsRuntimeStatusSnapshot -Snapshot $runtimeSnapshot -StatePath $statePath | Out-Null
+    $runtimeSnapshot | ConvertTo-Json -Depth 30 | Set-Content -Path (& $getSyncFactorsRuntimeStatusPath -StatePath $statePath)
 } else {
     $idleSnapshot = & $newSyncFactorsIdleRuntimeStatus -StatePath $statePath
     & $saveSyncFactorsRuntimeStatusSnapshot -Snapshot $idleSnapshot -StatePath $statePath | Out-Null
+    $idleSnapshot | ConvertTo-Json -Depth 30 | Set-Content -Path (& $getSyncFactorsRuntimeStatusPath -StatePath $statePath)
 }
 
 $result = [pscustomobject]@{

@@ -1,5 +1,7 @@
 Set-StrictMode -Version Latest
 
+Import-Module (Join-Path $PSScriptRoot 'Persistence.psm1') -Force -DisableNameChecking
+
 function New-SyncFactorsReport {
     [CmdletBinding()]
     param(
@@ -113,16 +115,9 @@ function Save-SyncFactorsReport {
         [string]$Mode
     )
 
-    if (-not (Test-Path -Path $Directory -PathType Container)) {
-        New-Item -Path $Directory -ItemType Directory -Force | Out-Null
-    }
-
-    $timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
-    $path = Join-Path -Path $Directory -ChildPath "syncfactors-$Mode-$timestamp.json"
     $Report['completedAt'] = (Get-Date).ToString('o')
     [void]$Report.Remove('operationSequence')
-    $Report | ConvertTo-Json -Depth 20 | Set-Content -Path $path
-    return $path
+    return (Save-SyncFactorsReportToSqlite -Report $Report)
 }
 
 Export-ModuleMember -Function New-SyncFactorsReport, Add-SyncFactorsReportEntry, Add-SyncFactorsReportOperation, Save-SyncFactorsReport

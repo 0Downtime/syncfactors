@@ -7,7 +7,7 @@ Describe 'Synthetic dry-run integration' {
         $result.userCount | Should -Be 10
         $result.managerCount | Should -Be 2
         $result.reportPath | Should -Not -BeNullOrEmpty
+        $result.reportPath | Should -Match '^run:'
         $result.status | Should -Be 'Succeeded'
-        Test-Path -Path $result.reportPath | Should -BeTrue
     }
 }

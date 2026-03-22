@@ -169,8 +169,23 @@ if ($pesterResult.FailedCount -gt 0) {
 }
 
 $reportPath = (Get-Content -Path $reportPathFile -Raw).Trim()
-
-$report = Get-Content -Path $reportPath -Raw | ConvertFrom-Json -Depth 20
+$legacyReportPath = if (Test-Path -Path $reportPath -PathType Leaf) { $reportPath } else { $null }
+$report = $null
+if ($legacyReportPath) {
+    $report = Get-Content -Path $legacyReportPath -Raw | ConvertFrom-Json -Depth 30
+} else {
+$tempConfig = Get-Content -Path $tempConfigPath -Raw | ConvertFrom-Json -Depth 30
+$runId = if ($reportPath.StartsWith('run:')) { $reportPath.Substring(4) } else { $null }
+if ([string]::IsNullOrWhiteSpace($runId)) {
+    throw "Synthetic dry-run expected a SQLite run reference but received '$reportPath'."
+}
+$sqlitePath = Join-Path -Path (Split-Path -Path $tempConfig.state.path -Parent) -ChildPath 'syncfactors.db'
+$reportJson = sqlite3 $sqlitePath "SELECT report_json FROM runs WHERE run_id = '$($runId.Replace("'", "''"))' LIMIT 1;"
+if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace(($reportJson -join ''))) {
+    throw "Synthetic dry-run report '$runId' was not found in SQLite."
+}
+$report = (($reportJson -join [Environment]::NewLine) | ConvertFrom-Json -Depth 30)
+}
 $summary = [pscustomobject]@{
     userCount = $UserCount
     inactiveCount = $InactiveCount

@@ -427,6 +427,7 @@ a:focus-visible {
 .review-tabs button,
 .toggle-row button,
 .group-list button,
+.worker-action-buttons button,
 .queue-item-actions button,
 .header-actions button,
 .copy-link-button,
@@ -452,6 +453,7 @@ a:focus-visible {
 .review-tabs button:hover,
 .toggle-row button:hover,
 .group-list button:hover,
+.worker-action-buttons button:hover,
 .queue-item-actions button:hover,
 .header-actions button:hover,
 .copy-link-button:hover,
@@ -907,6 +909,110 @@ button:disabled {
   grid-column: 1 / -1;
 }
 
+.queue-workbench,
+.worker-significance {
+  display: grid;
+  gap: 0.75rem;
+  padding: 0.8rem 0.9rem;
+  border-radius: 0.25rem;
+  border: 1px solid var(--border-subtle);
+  background:
+    linear-gradient(135deg, rgba(var(--tone-default-rgb), 0.08), rgba(var(--tone-default-rgb), 0.03)),
+    var(--surface-secondary);
+}
+
+.queue-workbench-copy h3,
+.worker-significance h3 {
+  margin: 0.1rem 0 0;
+}
+
+.queue-workbench-copy p:last-child,
+.worker-significance > p:last-of-type {
+  margin: 0.2rem 0 0;
+  color: var(--text-secondary);
+}
+
+.queue-workbench-metrics {
+  margin-bottom: 0;
+}
+
+.queue-workbench-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.worker-actions-card {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.worker-action-buttons {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.operation-launchpad {
+  display: grid;
+  gap: 0.75rem;
+  padding: 0.75rem;
+  border-radius: 0.25rem;
+  border: 1px solid var(--border-subtle);
+  background:
+    linear-gradient(135deg, rgba(var(--tone-default-rgb), 0.08), rgba(var(--tone-default-rgb), 0.03)),
+    var(--surface-secondary);
+}
+
+.operation-launchpad-field,
+.operation-launchpad-mode {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.operation-launchpad-field span,
+.operation-launchpad-mode span {
+  color: var(--text-secondary);
+}
+
+.operation-launchpad-field input {
+  width: 100%;
+  border-radius: 0.45rem;
+  border: 1px solid var(--border-subtle);
+  background: var(--surface-strong);
+  color: var(--text-primary);
+  padding: 0.5rem 0.65rem;
+}
+
+.worker-action-buttons button {
+  display: grid;
+  gap: 0.15rem;
+  text-align: left;
+  padding: 0.65rem 0.75rem;
+  background: var(--surface-secondary);
+}
+
+.worker-action-buttons button strong {
+  font-size: 0.98rem;
+}
+
+.worker-action-buttons button span {
+  color: var(--text-secondary);
+  font-size: 0.92rem;
+}
+
+.worker-action-result {
+  display: grid;
+  gap: 0.35rem;
+  padding: 0.75rem;
+  border-radius: 0.25rem;
+  border: 1px solid var(--border-subtle);
+  background: linear-gradient(135deg, rgba(var(--tone-default-rgb), 0.08), rgba(var(--tone-default-rgb), 0.03));
+}
+
+.worker-action-result p {
+  margin: 0;
+}
+
 .card-header,
 .selected-header,
 .changes-header,
@@ -1074,6 +1180,29 @@ button:disabled {
   margin-bottom: 0.7rem;
 }
 
+.report-identity-strip {
+  display: grid;
+  grid-template-columns: minmax(14rem, 20rem) minmax(0, 1fr);
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.report-identity-copy {
+  padding: 0.75rem 0.85rem;
+  border-radius: 0.25rem;
+  border: 1px solid var(--border-subtle);
+  background: var(--surface-secondary);
+}
+
+.report-identity-copy p:last-child {
+  margin: 0.35rem 0 0;
+  color: var(--text-secondary);
+}
+
+.report-summary {
+  margin-bottom: 0;
+}
+
 .run-timeline {
   display: grid;
   grid-template-columns: 1fr;
@@ -1225,12 +1354,85 @@ button:disabled {
   background: rgba(var(--tone-update-rgb), 0.08);
 }
 
+.diff-value {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 100%;
+  padding: 0.22rem 0.45rem;
+  border-radius: 0.35rem;
+  border: 1px solid transparent;
+  font-weight: 600;
+  box-sizing: border-box;
+}
+
+.diff-value-prefix {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 0.95em;
+  line-height: 1;
+}
+
+.diff-value-remove {
+  color: rgb(138, 23, 23);
+  background: rgba(214, 69, 69, 0.12);
+  border-color: rgba(214, 69, 69, 0.28);
+}
+
+.diff-value-add {
+  color: rgb(18, 112, 38);
+  background: rgba(39, 174, 96, 0.12);
+  border-color: rgba(39, 174, 96, 0.28);
+}
+
+:root[data-theme='dark'] .diff-value-remove {
+  color: rgb(255, 186, 186);
+  background: rgba(239, 68, 68, 0.2);
+  border-color: rgba(248, 113, 113, 0.34);
+}
+
+:root[data-theme='dark'] .diff-value-add {
+  color: rgb(171, 247, 196);
+  background: rgba(34, 197, 94, 0.18);
+  border-color: rgba(74, 222, 128, 0.3);
+}
+
 .selected-panel[data-tone] .diff-table thead th {
   background: rgba(var(--tone-rgb, 0, 120, 212), 0.08);
 }
 
 .selected-panel[data-tone] .diff-table tbody tr.changed td {
   background: linear-gradient(90deg, rgba(var(--tone-rgb, 0, 120, 212), 0.22) 0, rgba(var(--tone-rgb, 0, 120, 212), 0.08) 100%);
+}
+
+.triage-panel {
+  display: grid;
+  align-content: start;
+}
+
+.triage-headline {
+  margin: 0 0 0.75rem;
+  color: var(--text-secondary);
+  font-size: 1rem;
+}
+
+.triage-actions {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.triage-actions button {
+  border: 1px solid var(--border-subtle);
+  border-radius: 0.25rem;
+  background: var(--surface-strong);
+  color: var(--text-primary);
+  padding: 0.4rem 0.65rem;
+  cursor: pointer;
+}
+
+.triage-actions button:hover {
+  border-color: var(--border-strong);
+  background: var(--surface-tertiary);
 }
 
 .empty-state {
@@ -1289,12 +1491,74 @@ button:disabled {
   background: linear-gradient(180deg, #f8fbff 0%, #c9ddff 100%);
 }
 
+.full-width {
+  grid-column: 1 / -1;
+}
+
+.detail-modal.large {
+  width: min(960px, calc(100vw - 2rem));
+}
+
+.detail-modal-body {
+  display: grid;
+  gap: 1rem;
+}
+
+.confirmation-dialog,
+.command-result-panel {
+  display: grid;
+  gap: 1rem;
+}
+
+.confirmation-dialog[data-risk='critical'] {
+  border-left: 4px solid #d64545;
+  padding-left: 1rem;
+}
+
+.confirmation-dialog[data-risk='high'] {
+  border-left: 4px solid #d9822b;
+  padding-left: 1rem;
+}
+
+.modal-field {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.modal-field input {
+  border: 1px solid var(--panel-border);
+  background: var(--panel-bg);
+  color: var(--text-primary);
+  border-radius: 0.75rem;
+  padding: 0.7rem 0.85rem;
+}
+
+.modal-actions {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: flex-end;
+}
+
+.view-nav button:disabled {
+  opacity: 0.45;
+}
+
+.worker-actions-card[data-tone='delete'] {
+  border-color: rgba(196, 62, 62, 0.35);
+}
+
+.worker-actions-card button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 @media (max-width: 1100px) {
   .status-grid,
   .main-grid,
   .queue-grid,
   .worker-grid,
   .detail-content,
+  .report-identity-strip,
   .detail-summary,
   .run-timeline,
   .run-timeline-combined {

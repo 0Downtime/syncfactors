@@ -1,5 +1,7 @@
 Set-StrictMode -Version Latest
 
+Import-Module (Join-Path $PSScriptRoot 'Persistence.psm1') -Force -DisableNameChecking
+
 function ConvertFrom-SyncFactorsJsonDocument {
     [CmdletBinding()]
     param(
@@ -22,14 +24,14 @@ function Get-SyncFactorsState {
         [string]$Path
     )
 
-    if (-not (Test-Path -Path $Path -PathType Leaf)) {
-        return [pscustomobject]@{
+    $state = Get-SyncFactorsStateFromSqlite -StatePath $Path
+    if (-not $state) {
+        $state = [pscustomobject]@{
             checkpoint = $null
             workers = @{}
         }
     }
 
-    $state = ConvertFrom-SyncFactorsJsonDocument -Json (Get-Content -Path $Path -Raw)
     if (-not $state.workers) {
         $state | Add-Member -MemberType NoteProperty -Name workers -Value @{} -Force
     }
@@ -81,7 +83,7 @@ function Save-SyncFactorsState {
         New-Item -Path $directory -ItemType Directory -Force | Out-Null
     }
 
-    $State | ConvertTo-Json -Depth 20 | Set-Content -Path $Path
+    Save-SyncFactorsStateToSqlite -State $State -StatePath $Path
 }
 
 function Get-SyncFactorsWorkerState {
