@@ -79,6 +79,10 @@ function Get-SyncFactorsDefaultSqlitePath {
         return 'syncfactors.db'
     }
 
+    if ($stateDirectory.StartsWith('/')) {
+        return "$stateDirectory/syncfactors.db"
+    }
+
     return Join-Path -Path $stateDirectory -ChildPath 'syncfactors.db'
 }
 

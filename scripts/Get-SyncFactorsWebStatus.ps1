@@ -14,14 +14,11 @@ $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Path $PSScriptRoot -Parent
 $moduleRoot = Join-Path -Path $projectRoot -ChildPath 'src/Modules/SyncFactors'
 $configModule = Import-Module (Join-Path $moduleRoot 'Config.psm1') -Force -DisableNameChecking -PassThru
-$stateModule = Import-Module (Join-Path $moduleRoot 'State.psm1') -Force -DisableNameChecking -PassThru
 $monitoringModule = Import-Module (Join-Path $moduleRoot 'Monitoring.psm1') -Force -DisableNameChecking -PassThru
 $persistenceModule = Import-Module (Join-Path $moduleRoot 'Persistence.psm1') -Force -DisableNameChecking -PassThru
 
 $getSyncFactorsConfig = $configModule.ExportedFunctions['Get-SyncFactorsConfig']
 $getSyncFactorsSuccessFactorsAuthSummary = $configModule.ExportedFunctions['Get-SyncFactorsSuccessFactorsAuthSummary']
-$getSyncFactorsState = $stateModule.ExportedFunctions['Get-SyncFactorsState']
-$getSyncFactorsRuntimeStatusSnapshot = $monitoringModule.ExportedFunctions['Get-SyncFactorsRuntimeStatusSnapshot']
 $newSyncFactorsIdleRuntimeStatus = $monitoringModule.ExportedFunctions['New-SyncFactorsIdleRuntimeStatus']
 $getSyncFactorsMonitorStatus = $monitoringModule.ExportedFunctions['Get-SyncFactorsMonitorStatus']
 $getSyncFactorsRuntimeStatusPath = $monitoringModule.ExportedFunctions['Get-SyncFactorsRuntimeStatusPath']
