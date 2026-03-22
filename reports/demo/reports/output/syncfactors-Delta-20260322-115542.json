@@ -1,6 +1,6 @@
 {
-  "runId": "4f9b1fd1-d55b-4ca6-99b5-3f4fe4a57191",
-  "startedAt": "2026-03-22T11:25:05.6547600-04:00",
+  "runId": "f10a4871-fef1-4e46-9957-a2a551747536",
+  "startedAt": "2026-03-22T11:44:42.4176790-04:00",
   "status": "Succeeded",
   "mode": "Delta",
   "artifactType": "WorkerSync",
@@ -9,15 +9,15 @@
   "mappingConfigPath": "/Users/chrisbrien/dev/github.com/syncfactors/config/sample.syncfactors.mapping-config.json",
   "statePath": "/Users/chrisbrien/dev/github.com/syncfactors/./reports/demo/state/demo-sync-state.json",
   "workerScope": null,
-  "completedAt": "2026-03-22T11:36:05.6547600-04:00",
+  "completedAt": "2026-03-22T11:55:42.4176790-04:00",
   "failedAt": null,
   "errorMessage": null,
   "reviewSummary": null,
   "operations": [
     {
-      "operationId": "4f9b1fd1-d55b-4ca6-99b5-3f4fe4a57191-0001",
+      "operationId": "f10a4871-fef1-4e46-9957-a2a551747536-0001",
       "sequence": 1,
-      "timestamp": "2026-03-22T15:41:05.7082060-04:00",
+      "timestamp": "2026-03-22T16:00:42.4638480-04:00",
       "operationType": "UpdateAttributes",
       "workerId": "100001",
       "bucket": "updates",
@@ -38,12 +38,10 @@
   "creates": [],
   "updates": [
     {
-      "targetOu": "OU=LabField,OU=LabUsers,DC=example,DC=com",
-      "samAccountName": "sf100001",
-      "currentEnabled": true,
-      "workerId": "100001",
       "currentDistinguishedName": "CN=Synthetic100001 User,OU=LabField,OU=LabUsers,DC=example,DC=com",
       "proposedEnable": true,
+      "workerId": "100001",
+      "samAccountName": "sf100001",
       "changedAttributeDetails": [
         {
           "sourceField": "managerEmployeeId",
@@ -52,6 +50,8 @@
           "proposedValue": "employeeId=MGR900002"
         }
       ],
+      "currentEnabled": true,
+      "targetOu": "OU=LabField,OU=LabUsers,DC=example,DC=com",
       "matchedExistingUser": true
     }
   ],
@@ -62,6 +62,8 @@
   "quarantined": [],
   "conflicts": [
     {
+      "reason": "DuplicateWorkerId",
+      "samAccountName": "sf100005",
       "operatorActions": [
         {
           "code": "ResolveIdentityConflict",
@@ -69,14 +71,14 @@
           "description": "Inspect duplicate identities and decide which source record should win."
         }
       ],
-      "occurrences": 2,
       "workerId": "100005",
-      "reason": "DuplicateWorkerId",
       "reviewCaseType": "ConflictCase",
-      "samAccountName": "sf100005",
-      "operatorActionSummary": "Duplicate worker identities were found in the source export."
+      "operatorActionSummary": "Duplicate worker identities were found in the source export.",
+      "occurrences": 2
     },
     {
+      "reason": "DuplicateAdIdentityMatch",
+      "samAccountName": "sf100002",
       "operatorActions": [
         {
           "code": "ResolveIdentityConflict",
@@ -84,12 +86,10 @@
           "description": "Inspect duplicate identities and decide which source record should win."
         }
       ],
-      "occurrences": 2,
       "workerId": "100002",
-      "reason": "DuplicateAdIdentityMatch",
       "reviewCaseType": "ConflictCase",
-      "samAccountName": "sf100002",
-      "operatorActionSummary": "Two AD records matched the worker identity and require operator review."
+      "operatorActionSummary": "Two AD records matched the worker identity and require operator review.",
+      "occurrences": 2
     }
   ],
   "guardrailFailures": [],
