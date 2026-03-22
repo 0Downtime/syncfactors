@@ -126,6 +126,34 @@ function Get-SyncFactorsSqlitePath {
     return Join-Path -Path $stateDirectory -ChildPath 'syncfactors.db'
 }
 
+function New-SyncFactorsReportReference {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string]$RunId
+    )
+
+    return "run:$RunId"
+}
+
+function Get-SyncFactorsRunIdFromReference {
+    [CmdletBinding()]
+    param(
+        [AllowNull()]
+        [string]$Reference
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Reference)) {
+        return $null
+    }
+
+    if ($Reference.StartsWith('run:')) {
+        return $Reference.Substring(4)
+    }
+
+    return $null
+}
+
 function ConvertTo-SyncFactorsSqliteLiteral {
     [CmdletBinding()]
     param($Value)
@@ -390,6 +418,33 @@ VALUES (
     [void](Invoke-SyncFactorsSqliteCommand -DatabasePath $effectiveDatabasePath -Sql ($statements -join [Environment]::NewLine))
 }
 
+function Get-SyncFactorsStateFromSqlite {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string]$StatePath,
+        [string]$DatabasePath
+    )
+
+    $effectiveDatabasePath = if (-not [string]::IsNullOrWhiteSpace($DatabasePath)) { $DatabasePath } else { Get-SyncFactorsSqlitePath -StatePath $StatePath }
+    if ([string]::IsNullOrWhiteSpace($effectiveDatabasePath) -or -not (Test-Path -Path $effectiveDatabasePath -PathType Leaf)) {
+        return $null
+    }
+
+    $query = "SELECT raw_state_json FROM sync_state WHERE state_path = $(ConvertTo-SyncFactorsSqliteLiteral -Value $StatePath) LIMIT 1;"
+    $rows = @(Invoke-SyncFactorsSqliteCommand -DatabasePath $effectiveDatabasePath -Sql $query -AsJson)
+    if (@($rows).Count -eq 0) {
+        return $null
+    }
+
+    $payload = ($rows -join [Environment]::NewLine) | ConvertFrom-Json -Depth 30
+    if (-not $payload -or @($payload).Count -eq 0 -or -not $payload[0].raw_state_json) {
+        return $null
+    }
+
+    return ($payload[0].raw_state_json | ConvertFrom-Json -Depth 40)
+}
+
 function Save-SyncFactorsRuntimeStatusToSqlite {
     [CmdletBinding()]
     param(
@@ -471,7 +526,6 @@ function Save-SyncFactorsReportToSqlite {
     param(
         [Parameter(Mandatory)]
         [object]$Report,
-        [Parameter(Mandatory)]
         [string]$ReportPath,
         [string]$DatabasePath
     )
@@ -498,6 +552,7 @@ function Save-SyncFactorsReportToSqlite {
     }
 
     $runId = Get-SyncFactorsReportFieldValue -Report $Report -FieldName 'runId'
+    $reportReference = if (-not [string]::IsNullOrWhiteSpace($ReportPath)) { $ReportPath } else { New-SyncFactorsReportReference -RunId "$runId" }
     $statement = @"
 BEGIN IMMEDIATE TRANSACTION;
 INSERT INTO runs (
@@ -532,7 +587,7 @@ INSERT INTO runs (
 VALUES (
   $(ConvertTo-SyncFactorsSqliteLiteral -Value $runId),
   $(ConvertTo-SyncFactorsSqliteLiteral -Value $statePath),
-  $(ConvertTo-SyncFactorsSqliteLiteral -Value $ReportPath),
+  $(ConvertTo-SyncFactorsSqliteLiteral -Value $reportReference),
   $(ConvertTo-SyncFactorsSqliteLiteral -Value $(if (Test-SyncFactorsReportField -Report $Report -FieldName 'artifactType') { Get-SyncFactorsReportFieldValue -Report $Report -FieldName 'artifactType' } else { 'SyncReport' })),
   $(ConvertTo-SyncFactorsSqliteJsonLiteral -Value (Get-SyncFactorsReportFieldValue -Report $Report -FieldName 'workerScope')),
   $(ConvertTo-SyncFactorsSqliteLiteral -Value (Get-SyncFactorsReportFieldValue -Report $Report -FieldName 'configPath')),
@@ -628,6 +683,7 @@ VALUES (
     $statement += "COMMIT;"
 
     [void](Invoke-SyncFactorsSqliteCommand -DatabasePath $effectiveDatabasePath -Sql $statement)
+    return $reportReference
 }
 
 function Get-SyncFactorsRuntimeStatusSnapshotFromSqlite {
@@ -838,6 +894,27 @@ function Get-SyncFactorsRunReportFromSqlite {
     return ($payload[0].report_json | ConvertFrom-Json -Depth 40)
 }
 
+function Get-SyncFactorsReportFromReference {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string]$Reference,
+        [string]$DatabasePath,
+        [string]$StatePath
+    )
+
+    $runId = Get-SyncFactorsRunIdFromReference -Reference $Reference
+    if (-not [string]::IsNullOrWhiteSpace($runId)) {
+        return Get-SyncFactorsRunReportFromSqlite -RunId $runId -DatabasePath $DatabasePath -StatePath $StatePath
+    }
+
+    if (Test-Path -Path $Reference -PathType Leaf) {
+        return Get-Content -Path $Reference -Raw | ConvertFrom-Json -Depth 40
+    }
+
+    return $null
+}
+
 function Import-SyncFactorsJsonArtifactsToSqlite {
     [CmdletBinding()]
     param(
@@ -917,4 +994,4 @@ function Import-SyncFactorsJsonArtifactsToSqlite {
     }
 }
 
-Export-ModuleMember -Function Get-SyncFactorsSqlitePath, Initialize-SyncFactorsSqliteDatabase, Save-SyncFactorsStateToSqlite, Save-SyncFactorsRuntimeStatusToSqlite, Save-SyncFactorsReportToSqlite, Get-SyncFactorsRuntimeStatusSnapshotFromSqlite, Get-SyncFactorsTrackedWorkersFromSqlite, Get-SyncFactorsStateCheckpointFromSqlite, Get-SyncFactorsRecentRunsFromSqlite, Get-SyncFactorsRunReportFromSqlite, Import-SyncFactorsJsonArtifactsToSqlite
+Export-ModuleMember -Function Get-SyncFactorsSqlitePath, New-SyncFactorsReportReference, Get-SyncFactorsRunIdFromReference, Initialize-SyncFactorsSqliteDatabase, Save-SyncFactorsStateToSqlite, Get-SyncFactorsStateFromSqlite, Save-SyncFactorsRuntimeStatusToSqlite, Save-SyncFactorsReportToSqlite, Get-SyncFactorsRuntimeStatusSnapshotFromSqlite, Get-SyncFactorsTrackedWorkersFromSqlite, Get-SyncFactorsStateCheckpointFromSqlite, Get-SyncFactorsRecentRunsFromSqlite, Get-SyncFactorsRunReportFromSqlite, Get-SyncFactorsReportFromReference, Import-SyncFactorsJsonArtifactsToSqlite

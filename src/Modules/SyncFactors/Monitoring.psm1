@@ -229,15 +229,8 @@ function Save-SyncFactorsRuntimeStatusSnapshot {
         [string]$StatePath
     )
 
-    $runtimeStatusPath = Get-SyncFactorsRuntimeStatusPath -StatePath $StatePath
-    $runtimeDirectory = Split-Path -Path $runtimeStatusPath -Parent
-    if ($runtimeDirectory -and -not (Test-Path -Path $runtimeDirectory -PathType Container)) {
-        New-Item -Path $runtimeDirectory -ItemType Directory -Force | Out-Null
-    }
-
-    $Snapshot | ConvertTo-Json -Depth 10 | Set-Content -Path $runtimeStatusPath
     Save-SyncFactorsRuntimeStatusToSqlite -Snapshot $Snapshot -StatePath $StatePath
-    return $runtimeStatusPath
+    return Get-SyncFactorsRuntimeStatusPath -StatePath $StatePath
 }
 
 function Write-SyncFactorsRuntimeStatusSnapshot {
@@ -270,21 +263,7 @@ function Get-SyncFactorsRuntimeStatusSnapshot {
         [string]$StatePath
     )
 
-    $runtimeStatusPath = Get-SyncFactorsRuntimeStatusPath -StatePath $StatePath
-    if (-not (Test-Path -Path $runtimeStatusPath -PathType Leaf)) {
-        return Get-SyncFactorsRuntimeStatusSnapshotFromSqlite -StatePath $StatePath
-    }
-
-    try {
-        return Get-Content -Path $runtimeStatusPath -Raw -ErrorAction Stop | ConvertFrom-Json -Depth 20 -ErrorAction Stop
-    } catch {
-        $sqliteSnapshot = Get-SyncFactorsRuntimeStatusSnapshotFromSqlite -StatePath $StatePath
-        if ($sqliteSnapshot) {
-            return $sqliteSnapshot
-        }
-
-        throw
-    }
+    return Get-SyncFactorsRuntimeStatusSnapshotFromSqlite -StatePath $StatePath
 }
 
 function Get-SyncFactorsWorkerEntries {

@@ -1,6 +1,7 @@
 Describe 'Reporting journal' {
     BeforeAll {
         Import-Module "$PSScriptRoot/../src/Modules/SyncFactors/Reporting.psm1" -Force
+        Import-Module "$PSScriptRoot/../src/Modules/SyncFactors/Persistence.psm1" -Force
     }
 
     It 'creates a report with run metadata and operation journal' {
@@ -32,7 +33,8 @@ Describe 'Reporting journal' {
         Add-SyncFactorsReportOperation -Report $report -OperationType 'CreateUser' -WorkerId '1001' -Bucket 'creates' -Target @{ samAccountName = 'jdoe' } -Before $null -After ([pscustomobject]@{ samAccountName = 'jdoe' }) | Out-Null
 
         $reportPath = Save-SyncFactorsReport -Report $report -Directory $reportDirectory -Mode 'Full'
-        $persisted = Get-Content -Path $reportPath -Raw | ConvertFrom-Json -Depth 20
+        $reportPath | Should -Match '^run:'
+        $persisted = Get-SyncFactorsReportFromReference -Reference $reportPath -StatePath 'state.json'
 
         $persisted.runId | Should -Not -BeNullOrEmpty
         $persisted.mode | Should -Be 'Full'
@@ -49,7 +51,8 @@ Describe 'Reporting journal' {
         Add-SyncFactorsReportOperation -Report $report -OperationType 'MoveUser' -WorkerId '2001' -Bucket 'graveyardMoves' -TargetType 'ADUser' -Target @{ objectGuid = '11111111-1111-1111-1111-111111111111' } -Before ([pscustomobject]@{ parentOu = 'OU=Employees,DC=example,DC=com' }) -After ([pscustomobject]@{ targetOu = 'OU=Graveyard,DC=example,DC=com' }) | Out-Null
 
         $reportPath = Save-SyncFactorsReport -Report $report -Directory $reportDirectory -Mode 'Delta'
-        $persisted = Get-Content -Path $reportPath -Raw | ConvertFrom-Json -Depth 20
+        $reportPath | Should -Match '^run:'
+        $persisted = Get-SyncFactorsReportFromReference -Reference $reportPath -StatePath 'state.json'
 
         $persisted.operations[0].operationType | Should -Be 'MoveUser'
         $persisted.operations[0].workerId | Should -Be '2001'

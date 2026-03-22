@@ -19,6 +19,7 @@ $moduleRoot = Join-Path -Path (Split-Path -Path $PSScriptRoot -Parent) -ChildPat
 Import-Module (Join-Path $moduleRoot 'Config.psm1') -Force
 Import-Module (Join-Path $moduleRoot 'State.psm1') -Force
 Import-Module (Join-Path $moduleRoot 'Monitoring.psm1') -Force
+Import-Module (Join-Path $moduleRoot 'Persistence.psm1') -Force
 
 function Get-OptionalResolvedPath {
     param([string]$Path)
@@ -558,8 +559,8 @@ function Invoke-SyncFactorsMonitorInlineWorkerApply {
             -WorkerId $workerId `
             -AsJson 2>&1
         $syncResult = @($json) -join [Environment]::NewLine | ConvertFrom-Json -Depth 30
-        $syncReport = if ($syncResult.reportPath -and (Test-Path -Path $syncResult.reportPath -PathType Leaf)) {
-            Get-Content -Path $syncResult.reportPath -Raw | ConvertFrom-Json -Depth 30
+        $syncReport = if ($syncResult.reportPath) {
+            Get-SyncFactorsReportFromReference -Reference $syncResult.reportPath -StatePath $context.statePath
         } else {
             $null
         }
