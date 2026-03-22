@@ -118,13 +118,24 @@ function Get-SyncFactorsSqlitePath {
         return $null
     }
 
+    if ($effectiveStatePath.StartsWith('/')) {
+        $trimmedStatePath = $effectiveStatePath.TrimEnd('/')
+        $lastSeparatorIndex = $trimmedStatePath.LastIndexOf('/')
+        if ($lastSeparatorIndex -lt 0) {
+            return 'syncfactors.db'
+        }
+
+        $stateDirectory = $trimmedStatePath.Substring(0, $lastSeparatorIndex)
+        if ([string]::IsNullOrWhiteSpace($stateDirectory)) {
+            return '/syncfactors.db'
+        }
+
+        return "$stateDirectory/syncfactors.db"
+    }
+
     $stateDirectory = Split-Path -Path $effectiveStatePath -Parent
     if ([string]::IsNullOrWhiteSpace($stateDirectory)) {
         return 'syncfactors.db'
-    }
-
-    if ($stateDirectory.StartsWith('/')) {
-        return "$stateDirectory/syncfactors.db"
     }
 
     return Join-Path -Path $stateDirectory -ChildPath 'syncfactors.db'
