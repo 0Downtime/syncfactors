@@ -522,6 +522,7 @@ describe('App', () => {
           onChangeDiffMode={() => undefined}
           onChangeReviewExplorer={() => undefined}
           onOpenWorker={() => undefined}
+          onOpenReport={() => undefined}
         />,
       );
 
@@ -553,7 +554,7 @@ describe('App', () => {
     render(<App />);
 
     await waitFor(() => expect(screen.getByText(/SyncFactors Operator UI/i)).toBeInTheDocument());
-    await waitFor(() => expect(screen.getByText(/Structured diff/i)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText(/Next Recommended Move/i)).toBeInTheDocument());
     expect(mockGetRunEntries).toHaveBeenCalledWith('run-1', expect.not.objectContaining({ bucket: expect.anything(), entryId: expect.anything() }));
     expect(screen.getByRole('button', { name: 'all (3)' })).toBeInTheDocument();
     expect(screen.getAllByText('1000').length).toBeGreaterThan(0);
@@ -563,11 +564,18 @@ describe('App', () => {
     expect(window.location.search).toMatch(/run=run-1/);
 
     fireEvent.click(screen.getByRole('button', { name: /1001UpdatesAttributeDelta1d stale/i }));
+    expect(screen.getByText(/Dashboard is for run triage and deciding where to go next./i)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /Inspect full report/i }));
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Structured diff' })).toBeInTheDocument());
     expect(screen.getAllByText((_, element) => element?.textContent === '+Sales').length).toBeGreaterThan(0);
     expect(screen.getAllByText((_, element) => element?.textContent === '-Finance').length).toBeGreaterThan(0);
 
     fireEvent.click(screen.getByRole('button', { name: 'Queues' }));
     await waitFor(() => expect(screen.getByText(/Queue Results/i)).toBeInTheDocument());
+    expect(screen.getByText(/Queue Workbench/i)).toBeInTheDocument();
+    expect(screen.getByText(/Manual Review needs operator attention/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Open recommended worker/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /RehireDetected \(1\)/ })).toBeInTheDocument();
     expect(screen.getByText(/Showing 1-25 of 30/i)).toBeInTheDocument();
     expect(window.location.search).toMatch(/view=queues/);
@@ -578,11 +586,14 @@ describe('App', () => {
     expect(window.location.search).toMatch(/pageSize=10/);
 
     fireEvent.click(screen.getByRole('button', { name: 'Next' }));
-    await waitFor(() => expect(screen.getByText(/1002/i)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getAllByRole('button', { name: 'Worker' }).length).toBeGreaterThan(1));
+    expect(screen.getByText(/^1002$/)).toBeInTheDocument();
     expect(window.location.search).toMatch(/page=2/);
 
     fireEvent.click(screen.getAllByRole('button', { name: 'Worker' })[1]);
     await waitFor(() => expect(screen.getByText(/Related Runs/i)).toBeInTheDocument());
+    expect(screen.getByText(/Current Significance/i)).toBeInTheDocument();
+    expect(screen.getByText(/Suppressed worker still needs operator judgment/i)).toBeInTheDocument();
     expect(screen.getByText(/^true$/i)).toBeInTheDocument();
     expect(screen.getAllByText(/CN=Jamie Doe/i)).toHaveLength(2);
     expect(screen.getAllByText(/ago/).length).toBeGreaterThan(0);
@@ -673,6 +684,33 @@ describe('App', () => {
     window.history.replaceState(null, '', '/?view=operations');
     render(<App />);
     await waitFor(() => expect(screen.getByRole('button', { name: /Delta dry-run/i })).not.toBeDisabled());
+
+    mockPreviewWorker.mockResolvedValueOnce({
+      reportPath: '/tmp/run-5.json',
+      runId: 'run-5',
+      mode: 'Review',
+      status: 'Succeeded',
+      artifactType: 'WorkerPreview',
+      previewMode: 'minimal',
+      workerScope: { workerId: '1002' },
+      preview: {
+        workerId: '1002',
+        buckets: ['deletions'],
+        matchedExistingUser: true,
+        reason: 'NoLongerInSource',
+        samAccountName: 'retireduser',
+      },
+      diffRows: [],
+      operationSummary: { action: 'Delete', effect: null, targetOu: null, fromOu: null, toOu: null },
+      entries: [],
+    });
+
+    fireEvent.change(screen.getByLabelText(/Operation worker id/i), { target: { value: '1002' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Minimal' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Preview worker' }));
+
+    await waitFor(() => expect(mockPreviewWorker).toHaveBeenCalledWith('1002', 'minimal'));
+    expect(screen.getByText(/Worker Preview 1002/i)).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: /Delta dry-run/i }));
 

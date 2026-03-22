@@ -1,7 +1,7 @@
 import type { DashboardStatus, EntryListResponse, EntryRecord, OperatorActionKind, OperatorCommandResult, QueueName, QueueResponse, RunDetailResponse, WorkerActionKind, WorkerActionResponse, WorkerDetailResponse } from './types.js';
 import type { RouteState } from './route-state.js';
 import { mapEntryToReportCategory, mapReviewExplorerToBucket } from './route-state.js';
-import { AbsoluteTimeLabel, CopyLinkButton, DashboardOverviewPanel, DetailRow, GroupPanel, RelativeTimeLabel, SelectedEntryPanel, SummaryMetric, WarningPanel, getToneForBucket, getToneForReviewEntry, getToneForReviewExplorer } from './triage-components.js';
+import { AbsoluteTimeLabel, CopyLinkButton, DashboardOverviewPanel, DetailRow, GroupPanel, RelativeTimeLabel, SelectedEntryPanel, SummaryMetric, TriageGuidancePanel, WarningPanel, getToneForBucket, getToneForReviewEntry, getToneForReviewExplorer } from './triage-components.js';
 import type { FilterRef } from './triage-components.js';
 
 export function DashboardView(props: {
@@ -19,6 +19,7 @@ export function DashboardView(props: {
   onChangeDiffMode: (mode: 'changed' | 'all') => void;
   onChangeReviewExplorer: (mode: 'all' | 'changed' | 'created' | 'deleted') => void;
   onOpenWorker: (workerId: string) => void;
+  onOpenReport: () => void;
 }) {
   const { status, route, runDetail, entryResponse, selectedEntry, runBuckets, filterInputRef } = props;
   const useReviewExplorerTones = runDetail?.run.mode === 'Review';
@@ -144,12 +145,10 @@ export function DashboardView(props: {
                   ))}
                 </div>
 
-                <SelectedEntryPanel
+                <TriageGuidancePanel
                   entry={selectedEntry}
-                  diffMode={route.diffMode}
-                  tone={selectedEntry && useReviewExplorerTones ? getToneForReviewEntry(selectedEntry) : undefined}
-                  onDiffModeChange={props.onChangeDiffMode}
                   onOpenWorker={props.onOpenWorker}
+                  onOpenReport={props.onOpenReport}
                 />
               </div>
             </>
@@ -187,6 +186,7 @@ export function QueueView(props: {
   const start = queueResponse ? Math.min((queueResponse.page - 1) * queueResponse.pageSize + 1, queueResponse.total) : 0;
   const end = queueResponse ? Math.min(queueResponse.page * queueResponse.pageSize, queueResponse.total) : 0;
   const totalPages = queueResponse ? Math.max(Math.ceil(queueResponse.total / queueResponse.pageSize), 1) : 1;
+  const queueInsights = getQueueInsights(queueResponse);
 
   return (
     <main className="queue-grid">
@@ -248,6 +248,31 @@ export function QueueView(props: {
           />
         </div>
         {queueResponse?.warnings?.length ? <WarningPanel title="Queue warnings" warnings={queueResponse.warnings} /> : null}
+        <section className="queue-workbench" aria-label="Queue workbench">
+          <div className="queue-workbench-copy">
+            <p className="section-kicker">Queue Workbench</p>
+            <h3>{queueInsights.headline}</h3>
+            <p>{queueInsights.summary}</p>
+          </div>
+          <div className="detail-summary queue-workbench-metrics">
+            <SummaryMetric label="Dominant reason" value={queueInsights.dominantReason} />
+            <SummaryMetric label="Stalest item" value={queueInsights.stalestLabel} />
+            <SummaryMetric label="Newest item" value={queueInsights.newestLabel} />
+            <SummaryMetric label="Next case" value={queueInsights.nextCaseLabel} />
+          </div>
+          <div className="queue-workbench-actions">
+            {queueInsights.nextEntry?.workerId ? (
+              <button type="button" onClick={() => props.onOpenWorker(queueInsights.nextEntry!.workerId!)}>
+                Open recommended worker
+              </button>
+            ) : null}
+            {queueInsights.nextEntry ? (
+              <button type="button" onClick={() => props.onOpenRun(queueInsights.nextEntry!)}>
+                Open recommended run
+              </button>
+            ) : null}
+          </div>
+        </section>
         <div className="queue-list">
           {(queueResponse?.entries ?? []).map((entry) => (
             <div className="queue-item" data-tone={getToneForBucket(entry.bucket)} key={entry.entryId}>
@@ -276,6 +301,7 @@ export function WorkerView(props: {
   onOpenRun: (runId: string | null, entry?: EntryRecord | null) => void;
 }) {
   const { route, workerDetail, workerActionState } = props;
+  const workerInsights = getWorkerInsights(workerDetail);
   return (
     <main className="worker-grid">
       <section className="card worker-summary">
@@ -296,6 +322,17 @@ export function WorkerView(props: {
         ) : (
           <p className="empty-state">No tracked state is available for this worker.</p>
         )}
+        <section className="worker-significance">
+          <p className="section-kicker">Current Significance</p>
+          <h3>{workerInsights.headline}</h3>
+          <p>{workerInsights.summary}</p>
+          <dl className="detail-list">
+            <DetailRow label="Current queue" value={workerInsights.currentQueue} />
+            <DetailRow label="Review case" value={workerInsights.reviewCase} />
+            <DetailRow label="Deletion risk" value={workerInsights.deletionRisk} />
+            <DetailRow label="Latest action" value={workerInsights.latestAction} />
+          </dl>
+        </section>
       </section>
 
       <section className="card worker-actions-card">
@@ -398,6 +435,7 @@ export function ReportExplorerView(props: {
   runDetail: RunDetailResponse | null;
   entryResponse: EntryListResponse | null;
   selectedEntry: EntryRecord | null;
+  filterInputRef: FilterRef;
   onCategoryChange: (category: 'Changed' | 'Created' | 'Deleted') => void;
   onSelectEntry: (entry: EntryRecord) => void;
   onDiffModeChange: (mode: 'changed' | 'all') => void;
@@ -405,6 +443,7 @@ export function ReportExplorerView(props: {
   onOpenPath: () => void;
   onCopyPath: () => void;
   onExport: () => void;
+  onFilterChange: (filter: string) => void;
 }) {
   const entries = props.entryResponse?.entries ?? [];
   const categoryEntries = entries.filter((entry) => mapEntryToReportCategory(entry) === props.route.reportCategory);
@@ -422,6 +461,18 @@ export function ReportExplorerView(props: {
             <button type="button" onClick={props.onExport}>Export bucket</button>
           </div>
         </div>
+        <section className="report-identity-strip">
+          <div className="report-identity-copy">
+            <p className="section-kicker">Artifact Inspection</p>
+            <p>Report Explorer is for deep structured diffs, category traversal, exports, and report path actions.</p>
+          </div>
+          <div className="detail-summary report-summary">
+            <SummaryMetric label="Mode" value={props.runDetail?.run.mode ?? '-'} />
+            <SummaryMetric label="Status" value={props.runDetail?.run.status ?? '-'} />
+            <SummaryMetric label="Entries" value={String(entries.length)} />
+            <SummaryMetric label="Warnings" value={String(props.runDetail?.warnings.length ?? 0)} />
+          </div>
+        </section>
         <div className="review-tabs">
           {(['Changed', 'Created', 'Deleted'] as const).map((category) => (
             <button
@@ -433,6 +484,15 @@ export function ReportExplorerView(props: {
               {category} ({entries.filter((entry) => mapEntryToReportCategory(entry) === category).length})
             </button>
           ))}
+        </div>
+        <div className="toolbar">
+          <input
+            ref={props.filterInputRef}
+            aria-label="Report filter"
+            placeholder="Filter by worker, reason, or review category"
+            value={props.route.filter}
+            onChange={(event) => props.onFilterChange(event.target.value)}
+          />
         </div>
         <div className="detail-content">
           <div className="entry-list">
@@ -469,10 +529,16 @@ export function OperationsView(props: {
   latestResult: OperatorCommandResult | null;
   recentResults: OperatorCommandResult[];
   streamConnected: boolean;
+  workerLauncherId: string;
+  workerLauncherMode: 'minimal' | 'full';
   onRunAction: (action: OperatorActionKind) => void;
   onRunPreflight: () => void;
   onRunFreshReset: () => void;
   onOpenLatestRun: (runId: string | null) => void;
+  onWorkerLauncherIdChange: (workerId: string) => void;
+  onWorkerLauncherModeChange: (mode: 'minimal' | 'full') => void;
+  onPreviewWorker: () => void;
+  onOpenWorker: () => void;
 }) {
   const currentRunActive = `${props.status?.currentRun?.status ?? ''}` === 'InProgress';
   const hasRecentRunContext = Boolean(props.status?.recentRuns?.some((run) => run.mappingConfigPath));
@@ -506,6 +572,45 @@ export function OperationsView(props: {
           <DetailRow label="Pending command" value={props.pendingActionLabel ?? '-'} />
         </dl>
         {disabledReason ? <WarningPanel title="Action gating" warnings={[disabledReason]} /> : null}
+      </section>
+
+      <section className="card worker-actions-card">
+        <div className="card-header">
+          <div>
+            <p className="section-kicker">Worker Launchpad</p>
+            <h2>Scoped preview from operations</h2>
+          </div>
+        </div>
+        <div className="operation-launchpad">
+          <label className="operation-launchpad-field">
+            <span>Worker ID</span>
+            <input
+              aria-label="Operation worker id"
+              placeholder={`${props.status?.currentRun?.currentWorkerId ?? props.status?.recentRuns?.[0]?.workerScope?.workerId ?? 'Enter worker id'}`}
+              value={props.workerLauncherId}
+              onChange={(event) => props.onWorkerLauncherIdChange(event.target.value)}
+            />
+          </label>
+          <div className="operation-launchpad-mode">
+            <span>Preview mode</span>
+            <div className="toggle-row">
+              <button type="button" className={props.workerLauncherMode === 'minimal' ? 'active' : ''} onClick={() => props.onWorkerLauncherModeChange('minimal')}>
+                Minimal
+              </button>
+              <button type="button" className={props.workerLauncherMode === 'full' ? 'active' : ''} onClick={() => props.onWorkerLauncherModeChange('full')}>
+                Full
+              </button>
+            </div>
+          </div>
+          <div className="queue-item-actions">
+            <button type="button" onClick={props.onPreviewWorker} disabled={Boolean(disabledReason) || !props.workerLauncherId.trim()}>
+              Preview worker
+            </button>
+            <button type="button" onClick={props.onOpenWorker} disabled={!props.workerLauncherId.trim()}>
+              Open worker page
+            </button>
+          </div>
+        </div>
       </section>
 
       <section className="card worker-actions-card">
@@ -681,4 +786,146 @@ function formatElapsed(startedAt: string | null, completedAt: string | null): st
   ].filter(Boolean);
 
   return parts.join(' ');
+}
+
+function getQueueInsights(queueResponse: QueueResponse | null): {
+  headline: string;
+  summary: string;
+  dominantReason: string;
+  stalestLabel: string;
+  newestLabel: string;
+  nextCaseLabel: string;
+  nextEntry: EntryRecord | null;
+} {
+  const entries = queueResponse?.entries ?? [];
+  if (entries.length === 0) {
+    return {
+      headline: 'No matching queue items',
+      summary: 'Adjust the current filters or switch queues to find the next case to work.',
+      dominantReason: '-',
+      stalestLabel: '-',
+      newestLabel: '-',
+      nextCaseLabel: '-',
+      nextEntry: null,
+    };
+  }
+
+  const dominantReason = getDominantLabel(entries.map((entry) => entry.reason ?? entry.reviewCaseType ?? entry.bucketLabel));
+  const stalestEntry = [...entries].sort((left, right) => (right.staleDays ?? -1) - (left.staleDays ?? -1))[0] ?? null;
+  const newestEntry = [...entries].sort((left, right) => {
+    const leftTime = left.startedAt ? new Date(left.startedAt).getTime() : 0;
+    const rightTime = right.startedAt ? new Date(right.startedAt).getTime() : 0;
+    return rightTime - leftTime;
+  })[0] ?? null;
+  const nextEntry = [...entries].sort((left, right) => {
+    const staleDelta = (right.staleDays ?? -1) - (left.staleDays ?? -1);
+    if (staleDelta !== 0) {
+      return staleDelta;
+    }
+
+    return right.changeCount - left.changeCount;
+  })[0] ?? null;
+
+  return {
+    headline: `${formatQueueName(queueResponse?.queueName ?? null)} needs operator attention`,
+    summary: nextEntry
+      ? `Start with worker ${nextEntry.workerId ?? 'unknown'} because it is the most time-sensitive case visible in this queue view.`
+      : 'Review the queue list to decide the next operator action.',
+    dominantReason,
+    stalestLabel: stalestEntry ? formatEntryAge(stalestEntry) : '-',
+    newestLabel: newestEntry ? formatNewestEntry(newestEntry) : '-',
+    nextCaseLabel: nextEntry ? `${nextEntry.workerId ?? 'Unknown'} (${nextEntry.reason ?? nextEntry.reviewCaseType ?? nextEntry.bucketLabel})` : '-',
+    nextEntry,
+  };
+}
+
+function getWorkerInsights(workerDetail: WorkerDetailResponse | null): {
+  headline: string;
+  summary: string;
+  currentQueue: string;
+  reviewCase: string;
+  deletionRisk: string;
+  latestAction: string;
+} {
+  const latestEntry = workerDetail?.latestEntry ?? workerDetail?.relatedEntries[0] ?? null;
+  const trackedWorker = workerDetail?.trackedWorker ?? null;
+  const deletionRisk = trackedWorker?.deleteAfter
+    ? `Pending deletion after ${trackedWorker.deleteAfter}`
+    : trackedWorker?.suppressed
+      ? 'Suppressed but not on a deletion timer'
+      : 'No active deletion risk recorded';
+  const currentQueue = latestEntry?.queueName ?? latestEntry?.bucketLabel ?? 'No queue placement';
+  const reviewCase = latestEntry?.reviewCaseType ?? latestEntry?.reviewCategory ?? latestEntry?.reason ?? '-';
+  const latestAction = latestEntry?.operatorActionSummary ?? latestEntry?.operationSummary?.action ?? latestEntry?.reason ?? 'No recent action summary';
+
+  if (!latestEntry && !trackedWorker) {
+    return {
+      headline: 'No current worker context',
+      summary: 'Load a worker with related report history to see why it currently matters.',
+      currentQueue,
+      reviewCase,
+      deletionRisk,
+      latestAction,
+    };
+  }
+
+  const headline = trackedWorker?.suppressed
+    ? 'Suppressed worker still needs operator judgment'
+    : latestEntry?.queueName
+      ? 'Worker is still present in an exception flow'
+      : 'Worker has recent report history';
+  const summary = trackedWorker?.suppressed
+    ? 'This worker is suppressed in tracked state, so the next decision is whether the current review result should keep, restore, or retire the identity.'
+    : latestEntry?.reviewCaseType
+      ? `The latest run still places this worker in ${latestEntry.reviewCaseType}, so the worker page should answer whether the case is ready for a targeted preview or sync.`
+      : 'Use this page to understand the worker state before launching a scoped preview or sync.';
+
+  return {
+    headline,
+    summary,
+    currentQueue,
+    reviewCase,
+    deletionRisk,
+    latestAction,
+  };
+}
+
+function getDominantLabel(values: string[]): string {
+  if (values.length === 0) {
+    return '-';
+  }
+
+  const counts = new Map<string, number>();
+  for (const value of values) {
+    counts.set(value, (counts.get(value) ?? 0) + 1);
+  }
+
+  const [label] = [...counts.entries()].sort((left, right) => {
+    if (right[1] !== left[1]) {
+      return right[1] - left[1];
+    }
+
+    return left[0].localeCompare(right[0]);
+  })[0] ?? ['-', 0];
+
+  return label;
+}
+
+function formatQueueName(queueName: QueueName | null): string {
+  if (!queueName) {
+    return 'Queue';
+  }
+
+  return queueName
+    .split('-')
+    .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
+    .join(' ');
+}
+
+function formatEntryAge(entry: EntryRecord): string {
+  return `${entry.workerId ?? 'Unknown'} (${entry.staleDays !== null ? `${entry.staleDays}d stale` : 'fresh'})`;
+}
+
+function formatNewestEntry(entry: EntryRecord): string {
+  return `${entry.workerId ?? 'Unknown'} (${entry.startedAt ? 'latest run' : 'undated'})`;
 }

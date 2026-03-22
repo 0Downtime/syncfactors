@@ -167,6 +167,50 @@ export function SelectedEntryPanel(props: {
   );
 }
 
+export function TriageGuidancePanel(props: {
+  entry: EntryRecord | null;
+  onOpenWorker: (workerId: string) => void;
+  onOpenReport: () => void;
+}) {
+  const { entry, onOpenWorker, onOpenReport } = props;
+  if (!entry) {
+    return <div className="selected-panel empty-state">Select an entry to see the recommended next step.</div>;
+  }
+
+  const workerLabel = entry.workerId ?? entry.samAccountName ?? 'Unknown object';
+  return (
+    <div className="selected-panel triage-panel" data-tone={getToneForBucket(entry.bucket)}>
+      <div className="selected-header">
+        <div>
+          <p className="section-kicker">Next Recommended Move</p>
+          <h3>{workerLabel}</h3>
+        </div>
+        <div className="header-actions">
+          <span className="badge" data-tone={getToneForBucket(entry.bucket)}>{entry.bucketLabel}</span>
+        </div>
+      </div>
+
+      <p className="triage-headline">{getTriageHeadline(entry)}</p>
+      <dl className="detail-list">
+        <DetailRow label="Reason" value={entry.reason ?? entry.reviewCategory ?? '-'} />
+        <DetailRow label="Review case" value={entry.reviewCaseType ?? '-'} />
+        <DetailRow label="Object state" value={entry.currentDistinguishedName ?? 'No current AD object'} />
+        <DetailRow label="Target OU" value={entry.targetOu ?? '-'} />
+      </dl>
+
+      <section className="triage-actions">
+        <button type="button" onClick={onOpenReport}>Inspect full report</button>
+        {entry.workerId ? <button type="button" onClick={() => onOpenWorker(entry.workerId!)}>Open worker page</button> : null}
+      </section>
+
+      <section className="operator-panel">
+        <h4>Why this page exists</h4>
+        <p>Dashboard is for run triage and deciding where to go next. Use Report Explorer for structured diff inspection, export, and path actions.</p>
+      </section>
+    </div>
+  );
+}
+
 export function GroupPanel(props: { title: string; groups: QueueGroup[]; activeKey: string; onSelect: (key: string) => void; disabled?: boolean }) {
   return (
     <section className="group-panel">
@@ -187,6 +231,19 @@ export function GroupPanel(props: { title: string; groups: QueueGroup[]; activeK
       </div>
     </section>
   );
+}
+
+function getTriageHeadline(entry: EntryRecord): string {
+  if (entry.bucket === 'manualReview' || entry.reviewCaseType) {
+    return `Review the decision path for ${entry.reviewCaseType ?? entry.reviewCategory ?? 'this exception'} before applying anything.`;
+  }
+  if (entry.bucket === 'creates') {
+    return 'Confirm identity, target OU, and naming before opening the full artifact details.';
+  }
+  if (entry.bucket === 'deletions' || entry.bucket === 'quarantined' || entry.bucket === 'conflicts') {
+    return 'Validate the removal or quarantine rationale, then inspect the full report before taking a write action.';
+  }
+  return 'Inspect the selected object, then move into the worker or report pages for the exact action path.';
 }
 
 export function WarningPanel({ title, warnings }: { title: string; warnings: string[] }) {

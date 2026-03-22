@@ -53,7 +53,7 @@ import type {
 
 type ThemeMode = 'light' | 'dark';
 type PendingConfirmation =
-  | { kind: 'worker-apply'; descriptor: ConfirmationDescriptor; confirmText: string }
+  | { kind: 'worker-apply'; descriptor: ConfirmationDescriptor; confirmText: string; workerId: string }
   | { kind: 'run-open'; descriptor: ConfirmationDescriptor; confirmText: string }
   | { kind: 'run-copy'; descriptor: ConfirmationDescriptor; confirmText: string }
   | { kind: 'run-export'; descriptor: ConfirmationDescriptor; confirmText: string }
@@ -80,6 +80,8 @@ export function App() {
   const [pendingOperatorActionLabel, setPendingOperatorActionLabel] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [streamConnected, setStreamConnected] = useState(false);
+  const [operationsWorkerId, setOperationsWorkerId] = useState('');
+  const [operationsPreviewMode, setOperationsPreviewMode] = useState<WorkerPreviewMode>('full');
   const [theme, setTheme] = useState<ThemeMode>(() => getInitialTheme());
   const filterInputRef = useRef<HTMLInputElement | null>(null);
   const reportMenuRef = useRef<HTMLDetailsElement | null>(null);
@@ -265,6 +267,25 @@ export function App() {
     };
   }, [route.view, route.workerId]);
 
+  useEffect(() => {
+    if (route.view !== 'operations' || operationsWorkerId) {
+      return;
+    }
+
+    const currentWorkerId =
+      typeof status?.currentRun?.currentWorkerId === 'string' && status.currentRun.currentWorkerId
+        ? status.currentRun.currentWorkerId
+        : null;
+    const suggestedWorkerId =
+      route.workerId
+      ?? currentWorkerId
+      ?? status?.recentRuns?.[0]?.workerScope?.workerId
+      ?? '';
+    if (suggestedWorkerId) {
+      setOperationsWorkerId(suggestedWorkerId);
+    }
+  }, [route.view, route.workerId, status, operationsWorkerId]);
+
   const visibleEntries = useMemo(
     () => getVisibleEntries(entryResponse?.entries ?? [], route),
     [entryResponse?.entries, route],
@@ -449,6 +470,7 @@ export function App() {
             navigateTo({ ...route, reviewExplorer, bucket: mapReviewExplorerToBucket(reviewExplorer), entryId: null })
           }
           onOpenWorker={(workerId) => navigateTo({ ...route, view: 'worker', workerId })}
+          onOpenReport={() => navigateTo({ ...route, view: 'report' })}
         />
       ) : null}
 
@@ -458,7 +480,9 @@ export function App() {
           runDetail={runDetail}
           entryResponse={entryResponse}
           selectedEntry={selectedEntry}
+          filterInputRef={filterInputRef}
           onCategoryChange={(reportCategory) => navigateTo({ ...route, reportCategory, entryId: null })}
+          onFilterChange={(filter) => navigateTo({ ...route, filter })}
           onSelectEntry={(entry) => navigateTo({ ...route, entryId: entry.entryId, workerId: entry.workerId ?? route.workerId }, false)}
           onDiffModeChange={(diffMode) => navigateTo({ ...route, diffMode }, false)}
           onOpenWorker={(workerId) => navigateTo({ ...route, view: 'worker', workerId })}
@@ -529,6 +553,8 @@ export function App() {
           latestResult={commandResult}
           recentResults={recentCommandResults}
           streamConnected={streamConnected}
+          workerLauncherId={operationsWorkerId}
+          workerLauncherMode={operationsPreviewMode}
           onRunAction={(action) => void handleRunOperatorAction(action)}
           onRunPreflight={() => void handleRunPreflight()}
           onRunFreshReset={() => setPendingConfirmation({
@@ -548,6 +574,10 @@ export function App() {
               navigateTo({ ...route, view: 'report', runId, entryId: null });
             }
           }}
+          onWorkerLauncherIdChange={setOperationsWorkerId}
+          onWorkerLauncherModeChange={setOperationsPreviewMode}
+          onPreviewWorker={() => void handlePreviewWorker(operationsWorkerId.trim(), operationsPreviewMode)}
+          onOpenWorker={() => navigateTo({ ...route, view: 'worker', workerId: operationsWorkerId.trim() || route.workerId })}
         />
       ) : null}
 
@@ -558,6 +588,7 @@ export function App() {
             kind: 'worker-apply',
             descriptor: { title: 'Apply worker sync', message: `Apply worker sync for ${workerPreview.preview.workerId}.`, requiredText: 'YES', riskLevel: 'high' },
             confirmText: '',
+            workerId: workerPreview.preview.workerId,
           })}
           onOpenRun={() => {
             if (workerPreview.runId) {
@@ -691,6 +722,25 @@ export function App() {
     }
   }
 
+  async function handlePreviewWorker(workerId: string, previewMode: WorkerPreviewMode) {
+    if (!workerId) {
+      return;
+    }
+
+    try {
+      setError(null);
+      setPendingOperatorActionLabel(`Worker preview ${workerId}`);
+      const preview = await previewWorker(workerId, previewMode);
+      setWorkerPreview(preview);
+      setOperationsWorkerId(workerId);
+      await refreshAfterAction(workerId);
+    } catch (previewError) {
+      setError(previewError instanceof Error ? previewError.message : 'Failed to preview worker.');
+    } finally {
+      setPendingOperatorActionLabel(null);
+    }
+  }
+
   async function confirmPendingAction() {
     if (!pendingConfirmation) {
       return;
@@ -698,12 +748,12 @@ export function App() {
 
     try {
       setError(null);
-      if (pendingConfirmation.kind === 'worker-apply' && route.workerId) {
-        const result = await applyWorker(route.workerId, pendingConfirmation.confirmText);
+      if (pendingConfirmation.kind === 'worker-apply') {
+        const result = await applyWorker(pendingConfirmation.workerId, pendingConfirmation.confirmText);
         setWorkerActionState({ pendingAction: null, result });
         setPendingConfirmation(null);
         setWorkerPreview(null);
-        await refreshAfterAction(route.workerId);
+        await refreshAfterAction(pendingConfirmation.workerId);
         return;
       }
 

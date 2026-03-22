@@ -909,6 +909,39 @@ button:disabled {
   grid-column: 1 / -1;
 }
 
+.queue-workbench,
+.worker-significance {
+  display: grid;
+  gap: 0.75rem;
+  padding: 0.8rem 0.9rem;
+  border-radius: 0.25rem;
+  border: 1px solid var(--border-subtle);
+  background:
+    linear-gradient(135deg, rgba(var(--tone-default-rgb), 0.08), rgba(var(--tone-default-rgb), 0.03)),
+    var(--surface-secondary);
+}
+
+.queue-workbench-copy h3,
+.worker-significance h3 {
+  margin: 0.1rem 0 0;
+}
+
+.queue-workbench-copy p:last-child,
+.worker-significance > p:last-of-type {
+  margin: 0.2rem 0 0;
+  color: var(--text-secondary);
+}
+
+.queue-workbench-metrics {
+  margin-bottom: 0;
+}
+
+.queue-workbench-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
 .worker-actions-card {
   display: grid;
   gap: 0.75rem;
@@ -917,6 +950,37 @@ button:disabled {
 .worker-action-buttons {
   display: grid;
   gap: 0.5rem;
+}
+
+.operation-launchpad {
+  display: grid;
+  gap: 0.75rem;
+  padding: 0.75rem;
+  border-radius: 0.25rem;
+  border: 1px solid var(--border-subtle);
+  background:
+    linear-gradient(135deg, rgba(var(--tone-default-rgb), 0.08), rgba(var(--tone-default-rgb), 0.03)),
+    var(--surface-secondary);
+}
+
+.operation-launchpad-field,
+.operation-launchpad-mode {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.operation-launchpad-field span,
+.operation-launchpad-mode span {
+  color: var(--text-secondary);
+}
+
+.operation-launchpad-field input {
+  width: 100%;
+  border-radius: 0.45rem;
+  border: 1px solid var(--border-subtle);
+  background: var(--surface-strong);
+  color: var(--text-primary);
+  padding: 0.5rem 0.65rem;
 }
 
 .worker-action-buttons button {
@@ -1114,6 +1178,29 @@ button:disabled {
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 0.55rem;
   margin-bottom: 0.7rem;
+}
+
+.report-identity-strip {
+  display: grid;
+  grid-template-columns: minmax(14rem, 20rem) minmax(0, 1fr);
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.report-identity-copy {
+  padding: 0.75rem 0.85rem;
+  border-radius: 0.25rem;
+  border: 1px solid var(--border-subtle);
+  background: var(--surface-secondary);
+}
+
+.report-identity-copy p:last-child {
+  margin: 0.35rem 0 0;
+  color: var(--text-secondary);
+}
+
+.report-summary {
+  margin-bottom: 0;
 }
 
 .run-timeline {
@@ -1317,6 +1404,37 @@ button:disabled {
   background: linear-gradient(90deg, rgba(var(--tone-rgb, 0, 120, 212), 0.22) 0, rgba(var(--tone-rgb, 0, 120, 212), 0.08) 100%);
 }
 
+.triage-panel {
+  display: grid;
+  align-content: start;
+}
+
+.triage-headline {
+  margin: 0 0 0.75rem;
+  color: var(--text-secondary);
+  font-size: 1rem;
+}
+
+.triage-actions {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.triage-actions button {
+  border: 1px solid var(--border-subtle);
+  border-radius: 0.25rem;
+  background: var(--surface-strong);
+  color: var(--text-primary);
+  padding: 0.4rem 0.65rem;
+  cursor: pointer;
+}
+
+.triage-actions button:hover {
+  border-color: var(--border-strong);
+  background: var(--surface-tertiary);
+}
+
 .empty-state {
   display: grid;
   place-items: center;
@@ -1440,6 +1558,7 @@ button:disabled {
   .queue-grid,
   .worker-grid,
   .detail-content,
+  .report-identity-strip,
   .detail-summary,
   .run-timeline,
   .run-timeline-combined {
