@@ -76,9 +76,15 @@ export function App() {
   const [pendingConfirmation, setPendingConfirmation] = useState<PendingConfirmation | null>(null);
   const [commandResult, setCommandResult] = useState<OperatorCommandResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [streamConnected, setStreamConnected] = useState(false);
   const [theme, setTheme] = useState<ThemeMode>(() => getInitialTheme());
   const filterInputRef = useRef<HTMLInputElement | null>(null);
   const reportMenuRef = useRef<HTMLDetailsElement | null>(null);
+  const streamConnectedRef = useRef(false);
+
+  useEffect(() => {
+    streamConnectedRef.current = streamConnected;
+  }, [streamConnected]);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -96,21 +102,23 @@ export function App() {
 
   useEffect(() => {
     let cancelled = false;
+    const applyStatus = (nextStatus: DashboardStatus) => {
+      setStatus(nextStatus);
+      setRoute((current) => {
+        const nextRunId = current.runId ?? nextStatus.recentRuns[0]?.runId ?? null;
+        const nextWorkerId = current.workerId ?? nextStatus.recentRuns[0]?.workerScope?.workerId ?? null;
+        const next = normalizeRoute({ ...current, runId: nextRunId, workerId: nextWorkerId }, nextStatus);
+        syncRouteState(next);
+        return next;
+      });
+    };
+
     const loadStatus = async () => {
       try {
         const nextStatus = await getStatus();
-        if (cancelled) {
-          return;
+        if (!cancelled) {
+          applyStatus(nextStatus);
         }
-
-        setStatus(nextStatus);
-        setRoute((current) => {
-          const nextRunId = current.runId ?? nextStatus.recentRuns[0]?.runId ?? null;
-          const nextWorkerId = current.workerId ?? nextStatus.recentRuns[0]?.workerScope?.workerId ?? null;
-          const next = normalizeRoute({ ...current, runId: nextRunId, workerId: nextWorkerId }, nextStatus);
-          syncRouteState(next);
-          return next;
-        });
       } catch (loadError) {
         if (!cancelled) {
           setError(loadError instanceof Error ? loadError.message : 'Failed to load dashboard status.');
@@ -119,10 +127,42 @@ export function App() {
     };
 
     void loadStatus();
-    const interval = window.setInterval(() => void loadStatus(), 10000);
+
+    let stream: EventSource | null = null;
+    if (typeof window !== 'undefined' && 'EventSource' in window) {
+      stream = new window.EventSource('/api/status/stream');
+      stream.addEventListener('status', (event) => {
+        const message = event as MessageEvent<string>;
+        try {
+          const payload = JSON.parse(message.data) as { status?: DashboardStatus };
+          if (payload.status && !cancelled) {
+            setStreamConnected(true);
+            applyStatus(payload.status);
+            setError((current) => current?.includes('Failed to load dashboard status.') ? null : current);
+          }
+        } catch {
+          if (!cancelled) {
+            setError('Failed to parse streamed dashboard status.');
+          }
+        }
+      });
+      stream.addEventListener('error', () => {
+        if (!cancelled) {
+          setStreamConnected(false);
+        }
+      });
+    }
+
+    const interval = window.setInterval(() => {
+      if (!streamConnectedRef.current) {
+        void loadStatus();
+      }
+    }, 10000);
+
     return () => {
       cancelled = true;
       window.clearInterval(interval);
+      stream?.close();
     };
   }, []);
 

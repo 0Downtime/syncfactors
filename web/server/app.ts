@@ -54,6 +54,46 @@ export function createApp(dependencies: AppDependencies): Express {
     }
   });
 
+  app.get('/api/status/stream', async (request, response) => {
+    setupSseResponse(response);
+    let closed = false;
+    let lastPayload = '';
+
+    const sendStatus = async () => {
+      if (closed) {
+        return;
+      }
+
+      try {
+        const status = await statusProvider.getStatus(dependencies.configPath, historyLimit);
+        const payload = JSON.stringify({ status });
+        if (payload !== lastPayload) {
+          response.write(`event: status\n`);
+          response.write(`data: ${payload}\n\n`);
+          lastPayload = payload;
+        }
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : 'Unknown status stream error.';
+        response.write(`event: error\n`);
+        response.write(`data: ${JSON.stringify({ error: 'Failed to load dashboard status.', detail })}\n\n`);
+      }
+    };
+
+    void sendStatus();
+    const interval = setInterval(() => {
+      void sendStatus();
+    }, 2000);
+
+    const close = () => {
+      closed = true;
+      clearInterval(interval);
+      response.end();
+    };
+
+    request.on('close', close);
+    request.on('aborted', close);
+  });
+
   app.get('/api/runs', async (request, response) => {
     try {
       const status = await statusProvider.getStatus(dependencies.configPath, historyLimit);
@@ -475,6 +515,14 @@ function respondWithError(response: Response, statusCode: number, message: strin
     error: message,
     detail: error instanceof Error ? error.message : 'Unknown error.',
   });
+}
+
+function setupSseResponse(response: Response): void {
+  response.status(200);
+  response.setHeader('Content-Type', 'text/event-stream');
+  response.setHeader('Cache-Control', 'no-cache, no-transform');
+  response.setHeader('Connection', 'keep-alive');
+  response.flushHeaders?.();
 }
 
 function asQueryString(value: unknown): string | undefined {

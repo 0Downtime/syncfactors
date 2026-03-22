@@ -65,7 +65,7 @@ export function getRouteState(): RouteState {
     queueName: parseQueueName(params.get('queue')),
     reason: params.get('reason') ?? '',
     reviewCaseType: params.get('reviewCaseType') ?? '',
-    workerId: params.get('workerId'),
+    workerId: params.get('workerId') ?? params.get('worker'),
     diffMode: params.get('diff') === 'all' ? 'all' : 'changed',
     reviewExplorer: parseReviewExplorer(params.get('reviewExplorer')),
     page: parsePositiveInt(params.get('page')) ?? DEFAULT_ROUTE.page,
