@@ -233,6 +233,64 @@ Describe 'Invoke-SyncFactorsRun' {
         }
     }
 
+    It 'queues offboarding for manual approval instead of applying high-risk actions' {
+        InModuleScope Sync {
+            $user = [pscustomobject]@{
+                ObjectGuid = [guid]'33333333-3333-3333-3333-333333333333'
+                DistinguishedName = 'CN=Alex Doe,OU=Employees,DC=example,DC=com'
+                SamAccountName = 'adoe'
+                Enabled = $true
+            }
+
+            $global:SyncTestBaseConfig | Add-Member -MemberType NoteProperty -Name approval -Value ([pscustomobject]@{
+                enabled = $true
+                requireFor = @('DisableUser', 'MoveToGraveyardOu')
+            }) -Force
+
+            Mock Get-SyncFactorsConfig { $global:SyncTestBaseConfig }
+            Mock Get-SyncFactorsMappingConfig { [pscustomobject]@{ mappings = @() } }
+            Mock Get-SyncFactorsState { [pscustomobject]@{ checkpoint = '2026-03-05T10:00:00'; workers = [pscustomobject]@{} } }
+            Mock Get-SfWorkers {
+                @(
+                    [pscustomobject]@{
+                        personIdExternal = '2101'
+                        employeeId = '2101'
+                        status = 'inactive'
+                        startDate = (Get-Date).AddDays(-30).ToString('o')
+                    }
+                )
+            }
+            Mock Get-SyncFactorsTargetUser { $user }
+            Mock Get-SyncFactorsWorkerState { $null }
+            Mock Disable-SyncFactorsUser {}
+            Mock Get-SyncFactorsUserByObjectGuid { $user }
+            Mock Move-SyncFactorsUser {}
+            Mock Set-SyncFactorsWorkerState {
+                param($State, $WorkerId, $WorkerState)
+                $State.workers | Add-Member -MemberType NoteProperty -Name $WorkerId -Value $WorkerState -Force
+            }
+            Mock Save-SyncFactorsState {}
+            Mock Save-SyncFactorsReport {
+                param($Report, $Directory, $Mode)
+                $global:CapturedReport = $Report
+                return (Join-Path $Directory "syncfactors-$Mode.json")
+            }
+            Mock Ensure-ActiveDirectoryModule {}
+
+            Invoke-SyncFactorsRun -ConfigPath $global:SyncTestConfigPath -MappingConfigPath $global:SyncTestMappingConfigPath -Mode Delta | Out-Null
+
+            $global:CapturedReport.disables.Count | Should -Be 0
+            $global:CapturedReport.graveyardMoves.Count | Should -Be 0
+            $global:CapturedReport.manualReview.Count | Should -Be 1
+            $global:CapturedReport.manualReview[0].reviewCaseType | Should -Be 'ApprovalRequired'
+            $global:CapturedReport.manualReview[0].approvalActions | Should -Be @('DisableUser', 'MoveToGraveyardOu')
+            $global:CapturedReport.manualReview[0].targetOu | Should -Be 'OU=Graveyard,DC=example,DC=com'
+            Assert-MockCalled Disable-SyncFactorsUser -Times 0 -Exactly
+            Assert-MockCalled Move-SyncFactorsUser -Times 0 -Exactly
+            Assert-MockCalled Set-SyncFactorsWorkerState -Times 0 -Exactly
+        }
+    }
+
     It 'fails the run when create threshold is exceeded' {
         InModuleScope Sync {
             $global:SyncTestBaseConfig.safety.maxCreatesPerRun = 0
@@ -866,6 +924,108 @@ Describe 'Invoke-SyncFactorsRun' {
             Assert-MockCalled Remove-SyncFactorsUser -Times 1 -Exactly -ParameterFilter {
                 $User.SamAccountName -eq 'sdoe'
             }
+        }
+    }
+
+    It 'queues pending deletions for manual approval instead of deleting immediately' {
+        InModuleScope Sync {
+            $state = [pscustomobject]@{
+                checkpoint = '2026-03-05T10:00:00'
+                workers = [pscustomobject]@{
+                    '9404' = [pscustomobject]@{
+                        suppressed = $true
+                        deleteAfter = (Get-Date).AddDays(-1).ToString('o')
+                        adObjectGuid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
+                    }
+                }
+            }
+            $user = [pscustomobject]@{
+                ObjectGuid = [guid]'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
+                DistinguishedName = 'CN=Sam Delete,OU=Graveyard,DC=example,DC=com'
+                SamAccountName = 'sdelete'
+                Enabled = $false
+            }
+
+            $global:SyncTestBaseConfig | Add-Member -MemberType NoteProperty -Name approval -Value ([pscustomobject]@{
+                enabled = $true
+                requireFor = @('DeleteUser')
+            }) -Force
+
+            Mock Get-SyncFactorsConfig { $global:SyncTestBaseConfig }
+            Mock Get-SyncFactorsMappingConfig { [pscustomobject]@{ mappings = @() } }
+            Mock Get-SyncFactorsState { $state }
+            Mock Get-SfWorkers { @() }
+            Mock Get-SyncFactorsUserByObjectGuid { $user }
+            Mock Get-SfWorkerById { $null }
+            Mock Get-SyncFactorsUserSnapshot { [pscustomobject]@{ samAccountName = 'sdelete'; objectGuid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa' } }
+            Mock Remove-SyncFactorsUser {}
+            Mock Save-SyncFactorsState {}
+            Mock Save-SyncFactorsReport {
+                param($Report, $Directory, $Mode)
+                $global:CapturedReport = $Report
+                return (Join-Path $Directory "syncfactors-$Mode.json")
+            }
+            Mock Ensure-ActiveDirectoryModule {}
+
+            Invoke-SyncFactorsRun -ConfigPath $global:SyncTestConfigPath -MappingConfigPath $global:SyncTestMappingConfigPath -Mode Delta | Out-Null
+
+            $global:CapturedReport.deletions.Count | Should -Be 0
+            $global:CapturedReport.manualReview.Count | Should -Be 1
+            $global:CapturedReport.manualReview[0].reviewCaseType | Should -Be 'ApprovalRequired'
+            $global:CapturedReport.manualReview[0].approvalActions | Should -Be @('DeleteUser')
+            Assert-MockCalled Remove-SyncFactorsUser -Times 0 -Exactly
+        }
+    }
+
+    It 'allows scoped worker sync to bypass approval mode after operator review' {
+        InModuleScope Sync {
+            $user = [pscustomobject]@{
+                ObjectGuid = [guid]'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'
+                DistinguishedName = 'CN=Alex Doe,OU=Employees,DC=example,DC=com'
+                SamAccountName = 'adoe'
+                Enabled = $true
+            }
+
+            $global:SyncTestBaseConfig | Add-Member -MemberType NoteProperty -Name approval -Value ([pscustomobject]@{
+                enabled = $true
+                requireFor = @('DisableUser', 'MoveToGraveyardOu')
+            }) -Force
+
+            Mock Get-SyncFactorsConfig { $global:SyncTestBaseConfig }
+            Mock Get-SyncFactorsMappingConfig { [pscustomobject]@{ mappings = @() } }
+            Mock Get-SyncFactorsState { [pscustomobject]@{ checkpoint = '2026-03-05T10:00:00'; workers = [pscustomobject]@{} } }
+            Mock Get-SfWorkerById {
+                [pscustomobject]@{
+                    personIdExternal = '2201'
+                    employeeId = '2201'
+                    status = 'inactive'
+                    startDate = (Get-Date).AddDays(-30).ToString('o')
+                }
+            }
+            Mock Get-SyncFactorsTargetUser { $user }
+            Mock Get-SyncFactorsWorkerState { $null }
+            Mock Disable-SyncFactorsUser {}
+            Mock Get-SyncFactorsUserByObjectGuid { $user }
+            Mock Move-SyncFactorsUser {}
+            Mock Set-SyncFactorsWorkerState {
+                param($State, $WorkerId, $WorkerState)
+                $State.workers | Add-Member -MemberType NoteProperty -Name $WorkerId -Value $WorkerState -Force
+            }
+            Mock Save-SyncFactorsState {}
+            Mock Save-SyncFactorsReport {
+                param($Report, $Directory, $Mode)
+                $global:CapturedReport = $Report
+                return (Join-Path $Directory "syncfactors-$Mode.json")
+            }
+            Mock Ensure-ActiveDirectoryModule {}
+
+            Invoke-SyncFactorsRun -ConfigPath $global:SyncTestConfigPath -MappingConfigPath $global:SyncTestMappingConfigPath -Mode Full -WorkerId '2201' -BypassApprovalMode | Out-Null
+
+            $global:CapturedReport.disables.Count | Should -Be 1
+            $global:CapturedReport.graveyardMoves.Count | Should -Be 1
+            $global:CapturedReport.manualReview.Count | Should -Be 0
+            Assert-MockCalled Disable-SyncFactorsUser -Times 1 -Exactly
+            Assert-MockCalled Move-SyncFactorsUser -Times 1 -Exactly
         }
     }
 

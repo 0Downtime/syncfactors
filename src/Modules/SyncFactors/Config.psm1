@@ -396,6 +396,21 @@ function Test-SyncFactorsConfig {
             }
         }
     }
+
+    if ((Test-SyncFactorsHasProperty -InputObject $Config -PropertyName 'approval') -and $null -ne $Config.approval) {
+        if (Test-SyncFactorsHasProperty -InputObject $Config.approval -PropertyName 'requireFor') {
+            $supportedApprovalActions = @('DisableUser', 'DeleteUser', 'MoveToGraveyardOu')
+            foreach ($action in @($Config.approval.requireFor)) {
+                if ([string]::IsNullOrWhiteSpace("$action")) {
+                    continue
+                }
+
+                if ($supportedApprovalActions -notcontains "$action") {
+                    throw "Sync config approval.requireFor contains unsupported action '$action'. Supported values: $($supportedApprovalActions -join ', ')."
+                }
+            }
+        }
+    }
 }
 
 Export-ModuleMember -Function Get-SyncFactorsResolvedSetting, Get-SyncFactorsSuccessFactorsAuthSummary, Resolve-SyncFactorsSecrets, Get-SyncFactorsConfig, Get-SyncFactorsMappingConfig, Test-SyncFactorsConfig, Test-SyncFactorsMappingConfig, Get-SyncFactorsDefaultSqlitePath

@@ -20,7 +20,7 @@ $invokePath = Join-Path -Path $projectRoot -ChildPath 'src/Invoke-SyncFactors.ps
 $resolvedConfigPath = (Resolve-Path -Path $ConfigPath).Path
 $resolvedMappingConfigPath = (Resolve-Path -Path $MappingConfigPath).Path
 
-$reportPath = & $invokePath -ConfigPath $resolvedConfigPath -MappingConfigPath $resolvedMappingConfigPath -Mode Full -WorkerId $WorkerId
+$reportPath = & $invokePath -ConfigPath $resolvedConfigPath -MappingConfigPath $resolvedMappingConfigPath -Mode Full -WorkerId $WorkerId -BypassApprovalMode
 $report = Get-SyncFactorsReportFromReference -Reference $reportPath -StatePath (Get-SyncFactorsConfig -Path $resolvedConfigPath).state.path
 
 $result = [pscustomobject]@{

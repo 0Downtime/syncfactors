@@ -378,14 +378,15 @@ INSERT INTO runs (
         Import-Module "$PSScriptRoot/../src/Modules/SyncFactors/Sync.psm1" -Force -DisableNameChecking
         Mock Invoke-SyncFactorsRun { 'report.json' }
 
-        $result = & "$PSScriptRoot/../src/Invoke-SyncFactors.ps1" -ConfigPath 'config.json' -MappingConfigPath 'mapping.json' -Mode Review -DryRun -WorkerId '1001'
+        $result = & "$PSScriptRoot/../src/Invoke-SyncFactors.ps1" -ConfigPath 'config.json' -MappingConfigPath 'mapping.json' -Mode Review -DryRun -WorkerId '1001' -BypassApprovalMode
 
         Assert-MockCalled Invoke-SyncFactorsRun -Times 1 -Exactly -ParameterFilter {
             $ConfigPath -eq 'config.json' -and
             $MappingConfigPath -eq 'mapping.json' -and
             $Mode -eq 'Review' -and
             $DryRun -and
-            $WorkerId -eq '1001'
+            $WorkerId -eq '1001' -and
+            $BypassApprovalMode
         }
         $result | Should -Be 'report.json'
     }
@@ -691,7 +692,8 @@ param(
     [string]`$ConfigPath,
     [string]`$MappingConfigPath,
     [string]`$Mode,
-    [string]`$WorkerId
+    [string]`$WorkerId,
+    [switch]`$BypassApprovalMode
 )
 
 '$reportPath'

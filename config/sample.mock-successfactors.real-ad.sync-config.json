@@ -81,6 +81,14 @@
     "maxDisablesPerRun": 50,
     "maxDeletionsPerRun": 10
   },
+  "approval": {
+    "enabled": false,
+    "requireFor": [
+      "DisableUser",
+      "DeleteUser",
+      "MoveToGraveyardOu"
+    ]
+  },
   "state": {
     "path": ".\\state\\runtime\\mock-sync-state.json"
   },

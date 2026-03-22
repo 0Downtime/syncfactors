@@ -16,6 +16,7 @@ SyncFactors is PowerShell automation for syncing SAP SuccessFactors worker data 
 - Creates and updates AD users for employees and prehires.
 - Enables prehires 7 days before start date.
 - Disables terminated users, moves them to a graveyard OU, suppresses further sync, and deletes them after retention.
+- Supports approval mode for broad-run disables, deletes, and graveyard OU moves, with per-worker operator apply after review.
 - Supports additional Core HR mappings such as job title, business unit, division, cost center, and employment class when exposed by the tenant query.
 - Supports per-field mapping toggles, dry-run mode, delta sync, and periodic full reconciliation.
 
@@ -34,7 +35,7 @@ Comparison against the Microsoft Entra SuccessFactors connector documented here:
 | Rollback of recorded AD changes | ✅ | ❌ |
 | Delta sync plus periodic full reconciliation | ✅ | ✅ |
 | Audit logs and sync run reporting | ✅ | ✅ |
-| Per-worker replay and on-demand provisioning test | 🗓️ Planned | ✅ |
+| Per-worker replay and on-demand provisioning test | ✅ | ✅ |
 | Email write-back to SuccessFactors for downstream process needs | 🗓️ Planned | ✅ |
 | Hosted admin portal for mapping management, dry-run review, run history, and approvals | 🗓️ Planned | ✅ |
 
@@ -42,10 +43,7 @@ Comparison against the Microsoft Entra SuccessFactors connector documented here:
 Planned work is ordered by delivery priority so the roadmap is easy to scan from immediate operational needs to longer-term product improvements. The planned items in the comparison table use the same names as the roadmap below.
 
 ### Near Term
-- Manual review workflow with operator actions for quarantined workers, unresolved managers, and rehire cases.
-- Approval mode for high-risk actions such as disables, deletes, and graveyard OU moves.
 - Alerting hooks for failed runs, guardrail breaches, and manual-review events.
-- Per-worker replay and on-demand provisioning test mode to inspect mapping, matching, and lifecycle decisions.
 
 ### Mid Term
 - Expanded policy engine for prehire, rehire, leave-of-absence, contractor, transfer, and termination handling.
@@ -180,6 +178,17 @@ The `-WorkerId` value must match `successFactors.query.identityField`. In the sa
 Use `-PreviewMode Minimal` to use `successFactors.previewQuery`, `-PreviewMode Full` to force the main `successFactors.query`, or omit it to preserve the configured default behavior.
 Use `-AsJson` for machine-readable output. Preview and review runs are persisted in SQLite and returned as run references such as `run:<id>`.
 If your tenant metadata is still being validated, set `successFactors.previewQuery` to the smallest confirmed-valid field list, starting with just `personIdExternal`. Single-worker preview uses `previewQuery` when present, while full and delta sync continue using `successFactors.query`.
+
+To require operator approval before broad sync runs can disable accounts, delete accounts, or move users into the graveyard OU, enable approval mode in the sync config:
+
+```json
+"approval": {
+  "enabled": true,
+  "requireFor": ["DisableUser", "DeleteUser", "MoveToGraveyardOu"]
+}
+```
+
+When approval mode is enabled, delta/full runs convert those high-risk changes into manual-review cases instead of applying them immediately. After review, use the scoped worker preview and one-worker apply flow to execute the approved change intentionally.
 
 To delete all AD user objects found recursively under the managed sync OUs and reset local sync state for a true fresh sync:
 
