@@ -1,0 +1,98 @@
+{
+  "runId": "3a439e1b-e645-4a63-ad83-b5a099a5297a",
+  "startedAt": "2026-03-21T16:42:16.4124930-04:00",
+  "status": "Succeeded",
+  "mode": "Delta",
+  "artifactType": "WorkerSync",
+  "dryRun": true,
+  "configPath": "/Users/chrisbrien/dev/github.com/syncfactors/./reports/demo/config/demo.mock-sync-config.json",
+  "mappingConfigPath": "/Users/chrisbrien/dev/github.com/syncfactors/config/sample.syncfactors.mapping-config.json",
+  "statePath": "/Users/chrisbrien/dev/github.com/syncfactors/./reports/demo/state/demo-sync-state.json",
+  "workerScope": null,
+  "completedAt": "2026-03-21T16:53:16.4124930-04:00",
+  "failedAt": null,
+  "errorMessage": null,
+  "reviewSummary": null,
+  "operations": [
+    {
+      "operationId": "3a439e1b-e645-4a63-ad83-b5a099a5297a-0001",
+      "sequence": 1,
+      "timestamp": "2026-03-21T20:58:16.4635950-04:00",
+      "operationType": "UpdateAttributes",
+      "workerId": "100001",
+      "bucket": "updates",
+      "targetType": "ADUser",
+      "target": {
+        "samAccountName": "sf100001"
+      },
+      "before": {
+        "manager": "CN=Former Manager,OU=Managers,DC=example,DC=com"
+      },
+      "after": {
+        "manager": "employeeId=MGR900002"
+      },
+      "status": "Applied",
+      "errorMessage": ""
+    }
+  ],
+  "creates": [],
+  "updates": [
+    {
+      "changedAttributeDetails": [
+        {
+          "sourceField": "managerEmployeeId",
+          "targetAttribute": "manager",
+          "currentAdValue": "CN=Former Manager,OU=Managers,DC=example,DC=com",
+          "proposedValue": "employeeId=MGR900002"
+        }
+      ],
+      "matchedExistingUser": true,
+      "proposedEnable": true,
+      "currentDistinguishedName": "CN=Synthetic100001 User,OU=LabField,OU=LabUsers,DC=example,DC=com",
+      "targetOu": "OU=LabField,OU=LabUsers,DC=example,DC=com",
+      "samAccountName": "sf100001",
+      "workerId": "100001",
+      "currentEnabled": true
+    }
+  ],
+  "enables": [],
+  "disables": [],
+  "graveyardMoves": [],
+  "deletions": [],
+  "quarantined": [],
+  "conflicts": [
+    {
+      "operatorActions": [
+        {
+          "code": "ResolveIdentityConflict",
+          "label": "Resolve identity conflict",
+          "description": "Inspect duplicate identities and decide which source record should win."
+        }
+      ],
+      "operatorActionSummary": "Duplicate worker identities were found in the source export.",
+      "occurrences": 2,
+      "reason": "DuplicateWorkerId",
+      "samAccountName": "sf100005",
+      "reviewCaseType": "ConflictCase",
+      "workerId": "100005"
+    },
+    {
+      "operatorActions": [
+        {
+          "code": "ResolveIdentityConflict",
+          "label": "Resolve identity conflict",
+          "description": "Inspect duplicate identities and decide which source record should win."
+        }
+      ],
+      "operatorActionSummary": "Two AD records matched the worker identity and require operator review.",
+      "occurrences": 2,
+      "reason": "DuplicateAdIdentityMatch",
+      "samAccountName": "sf100002",
+      "reviewCaseType": "ConflictCase",
+      "workerId": "100002"
+    }
+  ],
+  "guardrailFailures": [],
+  "manualReview": [],
+  "unchanged": []
+}

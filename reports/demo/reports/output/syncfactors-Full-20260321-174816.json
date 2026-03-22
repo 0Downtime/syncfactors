@@ -1,0 +1,136 @@
+{
+  "runId": "04129480-2c22-44a9-9805-818e2af8e6fb",
+  "startedAt": "2026-03-21T17:39:16.4124930-04:00",
+  "status": "Failed",
+  "mode": "Full",
+  "artifactType": "WorkerSync",
+  "dryRun": true,
+  "configPath": "/Users/chrisbrien/dev/github.com/syncfactors/./reports/demo/config/demo.mock-sync-config.json",
+  "mappingConfigPath": "/Users/chrisbrien/dev/github.com/syncfactors/config/sample.syncfactors.mapping-config.json",
+  "statePath": "/Users/chrisbrien/dev/github.com/syncfactors/./reports/demo/state/demo-sync-state.json",
+  "workerScope": null,
+  "completedAt": "2026-03-21T17:48:16.4124930-04:00",
+  "failedAt": "2026-03-21T17:48:16.4124930-04:00",
+  "errorMessage": "Create guardrail exceeded the configured threshold.",
+  "reviewSummary": null,
+  "operations": [],
+  "creates": [
+    {
+      "reviewCategory": "NewUser",
+      "matchedExistingUser": false,
+      "samAccountName": "sf100060",
+      "proposedEnable": true,
+      "targetOu": "OU=LabIT,OU=LabUsers,DC=example,DC=com",
+      "workerId": "100060",
+      "attributeRows": [
+        {
+          "sourceField": "firstName",
+          "targetAttribute": "GivenName",
+          "currentAdValue": null,
+          "proposedValue": "Synthetic100060",
+          "changed": true
+        },
+        {
+          "sourceField": "lastName",
+          "targetAttribute": "Surname",
+          "currentAdValue": null,
+          "proposedValue": "User",
+          "changed": true
+        }
+      ]
+    },
+    {
+      "reviewCategory": "NewUser",
+      "matchedExistingUser": false,
+      "samAccountName": "sf100061",
+      "proposedEnable": true,
+      "targetOu": "OU=LabField,OU=LabUsers,DC=example,DC=com",
+      "workerId": "100061",
+      "attributeRows": [
+        {
+          "sourceField": "firstName",
+          "targetAttribute": "GivenName",
+          "currentAdValue": null,
+          "proposedValue": "Synthetic100061",
+          "changed": true
+        },
+        {
+          "sourceField": "lastName",
+          "targetAttribute": "Surname",
+          "currentAdValue": null,
+          "proposedValue": "User",
+          "changed": true
+        }
+      ]
+    },
+    {
+      "reviewCategory": "NewUser",
+      "matchedExistingUser": false,
+      "samAccountName": "sf100062",
+      "proposedEnable": true,
+      "targetOu": "OU=LabField,OU=LabUsers,DC=example,DC=com",
+      "workerId": "100062",
+      "attributeRows": [
+        {
+          "sourceField": "firstName",
+          "targetAttribute": "GivenName",
+          "currentAdValue": null,
+          "proposedValue": "Synthetic100062",
+          "changed": true
+        },
+        {
+          "sourceField": "lastName",
+          "targetAttribute": "Surname",
+          "currentAdValue": null,
+          "proposedValue": "User",
+          "changed": true
+        }
+      ]
+    },
+    {
+      "reviewCategory": "NewUser",
+      "matchedExistingUser": false,
+      "samAccountName": "sf100063",
+      "proposedEnable": true,
+      "targetOu": "OU=LabCorp,OU=LabUsers,DC=example,DC=com",
+      "workerId": "100063",
+      "attributeRows": [
+        {
+          "sourceField": "firstName",
+          "targetAttribute": "GivenName",
+          "currentAdValue": null,
+          "proposedValue": "Synthetic100063",
+          "changed": true
+        },
+        {
+          "sourceField": "lastName",
+          "targetAttribute": "Surname",
+          "currentAdValue": null,
+          "proposedValue": "User",
+          "changed": true
+        }
+      ]
+    }
+  ],
+  "updates": [],
+  "enables": [],
+  "disables": [],
+  "graveyardMoves": [],
+  "deletions": [],
+  "quarantined": [],
+  "conflicts": [],
+  "guardrailFailures": [
+    {
+      "configuredLimit": 25,
+      "attemptedCount": 41,
+      "threshold": "maxCreatesPerRun",
+      "reason": "CreateThresholdExceeded",
+      "reviewCaseType": "GuardrailCase",
+      "operatorActionSummary": "The run stopped before creating additional accounts.",
+      "samAccountName": "sf100004",
+      "workerId": "100004"
+    }
+  ],
+  "manualReview": [],
+  "unchanged": []
+}
