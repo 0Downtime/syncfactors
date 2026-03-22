@@ -370,7 +370,7 @@ ORDER BY e.bucket ASC, e.bucket_index ASC, e.entry_id ASC;
   }
 
   private async query<T>(sqlitePath: string, sql: string): Promise<T[]> {
-    const { stdout } = await execFileAsync('sqlite3', ['-json', sqlitePath, sql], {
+    const { stdout } = await execFileAsync('sqlite3', ['-json', '-cmd', '.timeout 5000', sqlitePath, sql], {
       maxBuffer: 1024 * 1024 * 20,
     });
 
