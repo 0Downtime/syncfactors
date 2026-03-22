@@ -14,6 +14,8 @@ const mockGetRunEntries = vi.fn();
 const mockGetQueue = vi.fn();
 const mockGetWorkerDetail = vi.fn();
 const mockRunWorkerAction = vi.fn();
+const mockPreviewWorker = vi.fn();
+const mockApplyWorker = vi.fn();
 
 vi.mock('./api.js', () => ({
   getStatus: (...args: unknown[]) => mockGetStatus(...args),
@@ -23,6 +25,15 @@ vi.mock('./api.js', () => ({
   getWorkerHistory: vi.fn(async () => ({ workerId: '1001', entries: [], warnings: [] })),
   getWorkerDetail: (...args: unknown[]) => mockGetWorkerDetail(...args),
   runWorkerAction: (...args: unknown[]) => mockRunWorkerAction(...args),
+  previewWorker: (...args: unknown[]) => mockPreviewWorker(...args),
+  applyWorker: (...args: unknown[]) => mockApplyWorker(...args),
+  runOperatorAction: vi.fn(),
+  runPreflight: vi.fn(),
+  runFreshReset: vi.fn(),
+  exportRunBucket: vi.fn(),
+  openRunReport: vi.fn(),
+  copyRunReportPath: vi.fn(),
+  openLocalPath: vi.fn(),
 }));
 
 beforeEach(() => {
@@ -33,6 +44,8 @@ beforeEach(() => {
   mockGetQueue.mockReset();
   mockGetWorkerDetail.mockReset();
   mockRunWorkerAction.mockReset();
+  mockPreviewWorker.mockReset();
+  mockApplyWorker.mockReset();
 
   mockGetStatus.mockResolvedValue({
     latestRun: {
@@ -435,6 +448,31 @@ beforeEach(() => {
       workerScope: { workerId: '1001' },
     },
   });
+  mockPreviewWorker.mockResolvedValue({
+    reportPath: '/tmp/run-4.json',
+    runId: 'run-4',
+    mode: 'Review',
+    status: 'Succeeded',
+    artifactType: 'WorkerPreview',
+    previewMode: 'full',
+    workerScope: { workerId: '1001' },
+    preview: {
+      workerId: '1001',
+      buckets: ['updates'],
+      matchedExistingUser: true,
+      reviewCategory: 'ExistingUserChanges',
+      reviewCaseType: 'RehireCase',
+      reason: 'AttributeDelta',
+      samAccountName: 'jdoe',
+      targetOu: 'OU=Employees,DC=example,DC=com',
+      currentDistinguishedName: 'CN=Jamie Doe',
+      currentEnabled: true,
+      proposedEnable: true,
+    },
+    diffRows: [{ attribute: 'department', source: 'department', before: 'Finance', after: 'Sales', changed: true }],
+    operationSummary: { action: 'UpdateAttributes', effect: null, targetOu: null, fromOu: null, toOu: null },
+    entries: [],
+  });
 });
 
 describe('App', () => {
@@ -536,11 +574,11 @@ describe('App', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Review sync' }));
 
-    await waitFor(() => expect(mockRunWorkerAction).toHaveBeenCalledWith('1001', 'review-sync'));
-    expect(screen.getByText(/Preview mode: full/i)).toBeInTheDocument();
+    await waitFor(() => expect(mockPreviewWorker).toHaveBeenCalledWith('1001', 'full'));
+    expect(screen.getByText(/Worker Preview 1001/i)).toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: 'Open run' }).length).toBeGreaterThan(0);
     expect(mockGetStatus).toHaveBeenCalledTimes(2);
-    expect(mockGetWorkerDetail).toHaveBeenCalledTimes(2);
+    expect(mockGetWorkerDetail).toHaveBeenCalledTimes(3);
   });
 
   it('shows the non-Windows AD probe warning once as a subtle status note', async () => {

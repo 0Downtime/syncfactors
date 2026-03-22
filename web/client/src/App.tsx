@@ -1,14 +1,65 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { getQueue, getRun, getRunEntries, getStatus, getWorkerDetail, openLocalPath, runWorkerAction } from './api.js';
-import { BUCKET_ORDER, chooseSelectedEntry, DEFAULT_ROUTE, getRouteState, mapReviewExplorerToBucket, normalizeRoute, resolveActiveBucket, stepSelection, syncRouteState } from './route-state.js';
+import {
+  applyWorker,
+  copyRunReportPath,
+  exportRunBucket,
+  getQueue,
+  getRun,
+  getRunEntries,
+  getStatus,
+  getWorkerDetail,
+  openLocalPath,
+  openRunReport,
+  previewWorker,
+  runFreshReset,
+  runOperatorAction,
+  runPreflight,
+  runWorkerAction,
+} from './api.js';
+import {
+  BUCKET_ORDER,
+  chooseSelectedEntry,
+  getRouteState,
+  mapReviewExplorerToBucket,
+  normalizeRoute,
+  resolveActiveBucket,
+  stepSelection,
+  syncRouteState,
+} from './route-state.js';
 import type { RouteState } from './route-state.js';
-import { StatusNote, WarningPanel } from './triage-components.js';
-import { DashboardView, QueueView, WorkerView } from './triage-views.js';
-import type { DashboardStatus, EntryListResponse, EntryRecord, QueueResponse, RunDetailResponse, WorkerActionKind, WorkerActionResponse, WorkerDetailResponse } from './types.js';
+import {
+  CommandResultPanel,
+  ConfirmationDialog,
+  StatusNote,
+  WarningPanel,
+  WorkerPreviewPanel,
+} from './triage-components.js';
+import { DashboardView, OperationsView, QueueView, ReportExplorerView, WorkerView } from './triage-views.js';
+import type {
+  ConfirmationDescriptor,
+  DashboardStatus,
+  EntryListResponse,
+  OperatorActionKind,
+  OperatorCommandResult,
+  QueueResponse,
+  RunDetailResponse,
+  WorkerActionKind,
+  WorkerActionResponse,
+  WorkerDetailResponse,
+  WorkerPreviewMode,
+  WorkerPreviewResponse,
+} from './types.js';
 
 type ThemeMode = 'light' | 'dark';
+type PendingConfirmation =
+  | { kind: 'worker-apply'; descriptor: ConfirmationDescriptor; confirmText: string }
+  | { kind: 'run-open'; descriptor: ConfirmationDescriptor; confirmText: string }
+  | { kind: 'run-copy'; descriptor: ConfirmationDescriptor; confirmText: string }
+  | { kind: 'run-export'; descriptor: ConfirmationDescriptor; confirmText: string }
+  | { kind: 'fresh-reset'; descriptor: ConfirmationDescriptor; confirmText: string; countText: string; destructiveText: string };
 
 const THEME_STORAGE_KEY = 'syncfactors-theme';
+const NON_WINDOWS_AD_WARNING = 'Active Directory health probe is skipped on non-Windows hosts for the web dashboard.';
 
 export function App() {
   const [status, setStatus] = useState<DashboardStatus | null>(null);
@@ -21,6 +72,9 @@ export function App() {
     pendingAction: null,
     result: null,
   });
+  const [workerPreview, setWorkerPreview] = useState<WorkerPreviewResponse | null>(null);
+  const [pendingConfirmation, setPendingConfirmation] = useState<PendingConfirmation | null>(null);
+  const [commandResult, setCommandResult] = useState<OperatorCommandResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [theme, setTheme] = useState<ThemeMode>(() => getInitialTheme());
   const filterInputRef = useRef<HTMLInputElement | null>(null);
@@ -53,7 +107,7 @@ export function App() {
         setRoute((current) => {
           const nextRunId = current.runId ?? nextStatus.recentRuns[0]?.runId ?? null;
           const nextWorkerId = current.workerId ?? nextStatus.recentRuns[0]?.workerScope?.workerId ?? null;
-          const next = { ...current, runId: nextRunId, workerId: nextWorkerId };
+          const next = normalizeRoute({ ...current, runId: nextRunId, workerId: nextWorkerId }, nextStatus);
           syncRouteState(next);
           return next;
         });
@@ -79,14 +133,13 @@ export function App() {
       return;
     }
 
-    const runId = route.runId;
     let cancelled = false;
     void (async () => {
       try {
         const [nextRunDetail, nextEntries] = await Promise.all([
-          getRun(runId),
-          getRunEntries(runId, {
-            bucket: resolveActiveBucket(route.bucket, route.reviewExplorer),
+          getRun(route.runId!),
+          getRunEntries(route.runId!, {
+            bucket: route.view === 'report' ? mapReportCategoryToBucket(route.reportCategory) : resolveActiveBucket(route.bucket, route.reviewExplorer),
             filter: route.filter || undefined,
           }),
         ]);
@@ -98,19 +151,7 @@ export function App() {
         setEntryResponse(nextEntries);
         const resolvedEntry = chooseSelectedEntry(nextEntries.entries, route.entryId);
         if (resolvedEntry && resolvedEntry.entryId !== route.entryId) {
-          const nextRoute = {
-            ...route,
-            entryId: resolvedEntry.entryId,
-            workerId: route.view === 'worker' ? route.workerId : (resolvedEntry.workerId ?? route.workerId),
-          };
-          setRouteAndUrl(nextRoute, false);
-        } else if (!resolvedEntry && nextEntries.entries[0]) {
-          const nextRoute = {
-            ...route,
-            entryId: nextEntries.entries[0].entryId,
-            workerId: route.view === 'worker' ? route.workerId : (nextEntries.entries[0].workerId ?? route.workerId),
-          };
-          setRouteAndUrl(nextRoute, false);
+          setRouteAndUrl({ ...route, entryId: resolvedEntry.entryId, workerId: resolvedEntry.workerId ?? route.workerId }, false);
         }
       } catch (loadError) {
         if (!cancelled) {
@@ -122,7 +163,7 @@ export function App() {
     return () => {
       cancelled = true;
     };
-  }, [route.runId, route.bucket, route.filter, route.reviewExplorer]);
+  }, [route.runId, route.bucket, route.filter, route.reviewExplorer, route.view, route.reportCategory]);
 
   useEffect(() => {
     if (route.view !== 'queues') {
@@ -162,11 +203,10 @@ export function App() {
       return;
     }
 
-    const workerId = route.workerId;
     let cancelled = false;
     void (async () => {
       try {
-        const nextWorker = await getWorkerDetail(workerId);
+        const nextWorker = await getWorkerDetail(route.workerId!);
         if (!cancelled) {
           setWorkerDetail(nextWorker);
         }
@@ -181,10 +221,6 @@ export function App() {
       cancelled = true;
     };
   }, [route.view, route.workerId]);
-
-  useEffect(() => {
-    setWorkerActionState({ pendingAction: null, result: null });
-  }, [route.workerId]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -208,26 +244,21 @@ export function App() {
       } else if (event.key === 'w' && route.workerId) {
         event.preventDefault();
         navigateTo({ ...route, view: 'worker' });
-      } else if (event.key === 'j' || event.key === 'k') {
+      } else if (event.key === 'o') {
         event.preventDefault();
-        if (route.view === 'dashboard' && entryResponse?.entries?.length) {
-          const nextEntry = stepSelection(entryResponse.entries, route.entryId, event.key === 'j' ? 1 : -1);
-          if (nextEntry) {
-            navigateTo({ ...route, entryId: nextEntry.entryId, workerId: nextEntry.workerId ?? route.workerId }, false);
-          }
+        navigateTo({ ...route, view: 'operations' });
+      } else if ((event.key === 'j' || event.key === 'k') && entryResponse?.entries?.length) {
+        event.preventDefault();
+        const nextEntry = stepSelection(entryResponse.entries, route.entryId, event.key === 'j' ? 1 : -1);
+        if (nextEntry) {
+          navigateTo({ ...route, entryId: nextEntry.entryId, workerId: nextEntry.workerId ?? route.workerId }, false);
         }
-      } else if (route.view === 'queues' && event.key === 'n' && queueResponse && route.page < Math.ceil(queueResponse.total / route.pageSize)) {
-        event.preventDefault();
-        navigateTo({ ...route, page: route.page + 1 });
-      } else if (route.view === 'queues' && event.key === 'p' && route.page > 1) {
-        event.preventDefault();
-        navigateTo({ ...route, page: route.page - 1 });
       }
     };
 
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [route, entryResponse, queueResponse]);
+  }, [route, entryResponse]);
 
   const selectedEntry = useMemo(
     () => chooseSelectedEntry(entryResponse?.entries ?? [], route.entryId),
@@ -246,11 +277,10 @@ export function App() {
   }, [runDetail]);
 
   const dashboardWarnings = status?.warnings ?? [];
-  const adProbeSkipWarning = 'Active Directory health probe is skipped on non-Windows hosts for the web dashboard.';
-  const statusWarnings = dashboardWarnings.filter((warning) => warning !== adProbeSkipWarning);
-  const showAdProbeNote = dashboardWarnings.includes(adProbeSkipWarning);
+  const statusWarnings = dashboardWarnings.filter((warning) => warning !== NON_WINDOWS_AD_WARNING);
+  const showAdProbeNote = dashboardWarnings.includes(NON_WINDOWS_AD_WARNING);
   const reportLinks = useMemo(() => buildReportLinks(status), [status]);
-  const currentViewLabel = route.view === 'queues' ? 'Queues' : route.view === 'worker' ? 'Worker' : 'Dashboard';
+  const currentViewLabel = getCurrentViewLabel(route.view);
 
   return (
     <div className="app-shell">
@@ -271,7 +301,7 @@ export function App() {
             <p className="hero-context">Operator workspace</p>
           </div>
           <div className="hero-meta">
-            <span className="badge">Scoped worker actions</span>
+            <span className="badge">TUI parity</span>
             <details className="report-menu" ref={reportMenuRef}>
               <summary className="hero-path">
                 <span className="hero-path-label">Reports</span>
@@ -311,8 +341,10 @@ export function App() {
         <div className="hero-toolbar">
           <nav className="view-nav" aria-label="Primary">
             <button className={route.view === 'dashboard' ? 'active' : ''} onClick={() => navigateTo({ ...route, view: 'dashboard' })} type="button">Dashboard</button>
+            <button className={route.view === 'report' ? 'active' : ''} onClick={() => navigateTo({ ...route, view: 'report' })} type="button" disabled={!route.runId}>Report</button>
             <button className={route.view === 'queues' ? 'active' : ''} onClick={() => navigateTo({ ...route, view: 'queues' })} type="button">Queues</button>
             <button className={route.view === 'worker' ? 'active' : ''} onClick={() => navigateTo({ ...route, view: 'worker' })} type="button" disabled={!route.workerId}>Worker</button>
+            <button className={route.view === 'operations' ? 'active' : ''} onClick={() => navigateTo({ ...route, view: 'operations' })} type="button">Operations</button>
           </nav>
           <div className="portal-command-meta">
             <span>Context: {currentViewLabel}</span>
@@ -322,7 +354,6 @@ export function App() {
 
       {error ? <section className="error-banner">{error}</section> : null}
       {statusWarnings.length ? <WarningPanel title="Status warnings" warnings={statusWarnings} /> : null}
-
       {showAdProbeNote ? <StatusNote>Active Directory health is unavailable on this macOS host.</StatusNote> : null}
 
       {route.view === 'dashboard' ? (
@@ -351,6 +382,34 @@ export function App() {
         />
       ) : null}
 
+      {route.view === 'report' ? (
+        <ReportExplorerView
+          route={route}
+          runDetail={runDetail}
+          entryResponse={entryResponse}
+          selectedEntry={selectedEntry}
+          onCategoryChange={(reportCategory) => navigateTo({ ...route, reportCategory, entryId: null })}
+          onSelectEntry={(entry) => navigateTo({ ...route, entryId: entry.entryId, workerId: entry.workerId ?? route.workerId }, false)}
+          onDiffModeChange={(diffMode) => navigateTo({ ...route, diffMode }, false)}
+          onOpenWorker={(workerId) => navigateTo({ ...route, view: 'worker', workerId })}
+          onOpenPath={() => setPendingConfirmation({
+            kind: 'run-open',
+            descriptor: { title: 'Open report path', message: 'Open the selected report path in the default app.', requiredText: 'YES', riskLevel: 'low' },
+            confirmText: '',
+          })}
+          onCopyPath={() => setPendingConfirmation({
+            kind: 'run-copy',
+            descriptor: { title: 'Copy report path', message: 'Copy the selected report path to the clipboard.', requiredText: 'YES', riskLevel: 'medium' },
+            confirmText: '',
+          })}
+          onExport={() => setPendingConfirmation({
+            kind: 'run-export',
+            descriptor: { title: 'Export bucket selection', message: 'Export the selected bucket and active filter to a JSON file in the temp directory.', requiredText: 'YES', riskLevel: 'medium' },
+            confirmText: '',
+          })}
+        />
+      ) : null}
+
       {route.view === 'queues' ? (
         <QueueView
           route={route}
@@ -363,7 +422,7 @@ export function App() {
           onPageChange={(page) => navigateTo({ ...route, page })}
           onPageSizeChange={(pageSize) => navigateTo({ ...route, pageSize, page: 1 })}
           onOpenWorker={(workerId) => navigateTo({ ...route, view: 'worker', workerId })}
-          onOpenRun={(entry) => navigateTo({ ...route, view: 'dashboard', runId: entry.runId, bucket: entry.bucket, entryId: entry.entryId, workerId: entry.workerId })}
+          onOpenRun={(entry) => navigateTo({ ...route, view: 'report', runId: entry.runId, bucket: entry.bucket, entryId: entry.entryId, workerId: entry.workerId })}
         />
       ) : null}
 
@@ -375,7 +434,7 @@ export function App() {
           onRunWorkerAction={(action) => void handleRunWorkerAction(action)}
           onOpenRun={(runId, entry) => navigateTo({
             ...route,
-            view: 'dashboard',
+            view: 'report',
             runId,
             bucket: entry?.bucket ?? route.bucket,
             entryId: entry?.entryId ?? null,
@@ -383,8 +442,76 @@ export function App() {
           })}
         />
       ) : null}
+
+      {route.view === 'operations' ? (
+        <OperationsView
+          onRunAction={(action) => void handleRunOperatorAction(action)}
+          onRunPreflight={() => void handleRunPreflight()}
+          onRunFreshReset={() => setPendingConfirmation({
+            kind: 'fresh-reset',
+            descriptor: {
+              title: 'Fresh sync reset',
+              message: 'Delete managed AD user objects and reset local sync state.',
+              requiredText: 'DELETE',
+              riskLevel: 'critical',
+            },
+            confirmText: '',
+            countText: '',
+            destructiveText: '',
+          })}
+        />
+      ) : null}
+
+      {workerPreview ? (
+        <WorkerPreviewPanel
+          preview={workerPreview}
+          onApply={() => setPendingConfirmation({
+            kind: 'worker-apply',
+            descriptor: { title: 'Apply worker sync', message: `Apply worker sync for ${workerPreview.preview.workerId}.`, requiredText: 'YES', riskLevel: 'high' },
+            confirmText: '',
+          })}
+          onOpenRun={() => {
+            if (workerPreview.runId) {
+              navigateTo({ ...route, view: 'report', runId: workerPreview.runId, workerId: workerPreview.preview.workerId, entryId: null });
+              setWorkerPreview(null);
+            }
+          }}
+          onClose={() => setWorkerPreview(null)}
+        />
+      ) : null}
+
+      {pendingConfirmation ? renderConfirmationDialog(pendingConfirmation) : null}
+      <CommandResultPanel result={commandResult} onClose={() => setCommandResult(null)} onCopyPath={(value) => void navigator.clipboard?.writeText(value)} />
     </div>
   );
+
+  function renderConfirmationDialog(confirmation: PendingConfirmation) {
+    if (confirmation.kind === 'fresh-reset') {
+      return (
+        <ConfirmationDialog
+          descriptor={confirmation.descriptor}
+          value={confirmation.confirmText}
+          onChange={(confirmText) => setPendingConfirmation({ ...confirmation, confirmText })}
+          extraFields={[
+            { label: 'Object count', value: confirmation.countText, onChange: (countText) => setPendingConfirmation({ ...confirmation, countText }) },
+            { label: 'Final phrase', value: confirmation.destructiveText, onChange: (destructiveText) => setPendingConfirmation({ ...confirmation, destructiveText }) },
+          ]}
+          onConfirm={() => void confirmPendingAction()}
+          onClose={() => setPendingConfirmation(null)}
+        />
+      );
+    }
+
+    return (
+      <ConfirmationDialog
+        descriptor={confirmation.descriptor}
+        value={confirmation.confirmText}
+        onChange={(confirmText) => setPendingConfirmation({ ...confirmation, confirmText })}
+        onConfirm={() => void confirmPendingAction()}
+        onClose={() => setPendingConfirmation(null)}
+      />
+    );
+  }
 
   function navigateTo(nextRoute: RouteState, push = true) {
     setRouteAndUrl(nextRoute, push);
@@ -405,6 +532,15 @@ export function App() {
     }
   }
 
+  async function refreshAfterAction(workerId = route.workerId) {
+    const nextStatus = await getStatus();
+    setStatus(nextStatus);
+    if (workerId) {
+      const nextWorkerDetail = await getWorkerDetail(workerId);
+      setWorkerDetail(nextWorkerDetail);
+    }
+  }
+
   async function handleRunWorkerAction(action: WorkerActionKind) {
     if (!route.workerId || workerActionState.pendingAction) {
       return;
@@ -414,15 +550,86 @@ export function App() {
     setWorkerActionState({ pendingAction: action, result: null });
 
     try {
-      const result = await runWorkerAction(route.workerId, action);
-      setWorkerActionState({ pendingAction: null, result });
-      const nextStatus = await getStatus();
-      setStatus(nextStatus);
-      const nextWorkerDetail = await getWorkerDetail(route.workerId);
-      setWorkerDetail(nextWorkerDetail);
+      if (action === 'test-sync' || action === 'review-sync') {
+        const previewMode: WorkerPreviewMode = action === 'test-sync' ? 'minimal' : 'full';
+        const preview = await previewWorker(route.workerId, previewMode);
+        setWorkerPreview(preview);
+      } else {
+        const result = await runWorkerAction(route.workerId, action);
+        setWorkerActionState({ pendingAction: null, result });
+        await refreshAfterAction(route.workerId);
+        return;
+      }
+
+      setWorkerActionState({ pendingAction: null, result: null });
+      await refreshAfterAction(route.workerId);
     } catch (actionError) {
       setWorkerActionState({ pendingAction: null, result: null });
       setError(actionError instanceof Error ? actionError.message : 'Failed to run worker action.');
+    }
+  }
+
+  async function handleRunOperatorAction(action: OperatorActionKind) {
+    try {
+      setError(null);
+      const result = await runOperatorAction(action);
+      setCommandResult(result);
+      await refreshAfterAction();
+    } catch (actionError) {
+      setError(actionError instanceof Error ? actionError.message : 'Failed to run operator action.');
+    }
+  }
+
+  async function handleRunPreflight() {
+    try {
+      setError(null);
+      const result = await runPreflight();
+      setCommandResult(result);
+    } catch (actionError) {
+      setError(actionError instanceof Error ? actionError.message : 'Failed to run preflight.');
+    }
+  }
+
+  async function confirmPendingAction() {
+    if (!pendingConfirmation) {
+      return;
+    }
+
+    try {
+      setError(null);
+      if (pendingConfirmation.kind === 'worker-apply' && route.workerId) {
+        const result = await applyWorker(route.workerId, pendingConfirmation.confirmText);
+        setWorkerActionState({ pendingAction: null, result });
+        setPendingConfirmation(null);
+        setWorkerPreview(null);
+        await refreshAfterAction(route.workerId);
+        return;
+      }
+
+      if (pendingConfirmation.kind === 'run-open' && route.runId) {
+        const result = await openRunReport(route.runId, pendingConfirmation.confirmText);
+        setCommandResult(result);
+      } else if (pendingConfirmation.kind === 'run-copy' && route.runId) {
+        const result = await copyRunReportPath(route.runId, pendingConfirmation.confirmText);
+        setCommandResult(result);
+        if (result.reportPath) {
+          await navigator.clipboard?.writeText(result.reportPath);
+        }
+      } else if (pendingConfirmation.kind === 'run-export' && route.runId) {
+        const result = await exportRunBucket(route.runId, route.bucket, route.filter, pendingConfirmation.confirmText);
+        setCommandResult(result);
+      } else if (pendingConfirmation.kind === 'fresh-reset') {
+        const result = await runFreshReset(
+          pendingConfirmation.confirmText,
+          [pendingConfirmation.countText, pendingConfirmation.destructiveText],
+        );
+        setCommandResult(result);
+        await refreshAfterAction();
+      }
+
+      setPendingConfirmation(null);
+    } catch (actionError) {
+      setError(actionError instanceof Error ? actionError.message : 'Confirmation action failed.');
     }
   }
 }
@@ -480,4 +687,31 @@ function buildReportLinks(status: DashboardStatus | null): Array<{ label: string
     seen.add(candidate.path);
     return true;
   });
+}
+
+function getCurrentViewLabel(view: RouteState['view']): string {
+  switch (view) {
+    case 'queues':
+      return 'Queues';
+    case 'worker':
+      return 'Worker';
+    case 'report':
+      return 'Report Explorer';
+    case 'worker-preview':
+      return 'Worker Preview';
+    case 'operations':
+      return 'Operations';
+    default:
+      return 'Dashboard';
+  }
+}
+
+function mapReportCategoryToBucket(category: 'Changed' | 'Created' | 'Deleted'): string | undefined {
+  if (category === 'Created') {
+    return 'creates';
+  }
+  if (category === 'Deleted') {
+    return 'deletions';
+  }
+  return undefined;
 }

@@ -1,5 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import type {
   DashboardStatus,
   DiffRow,
@@ -68,6 +70,7 @@ type ScanResult = {
 };
 
 const NON_WINDOWS_AD_PROBE_WARNING = 'Active Directory health probe is skipped on non-Windows hosts for the web dashboard.';
+const execFileAsync = promisify(execFile);
 
 export class ReportService {
   private readonly reportCache = new Map<string, ReportCacheEntry>();
@@ -318,6 +321,29 @@ export class ReportService {
       relatedRuns,
       warnings: this.getContextWarnings(scan.warnings),
     };
+  }
+
+  async getFreshResetDeletionCount(configPath: string): Promise<number> {
+    const script = [
+      `$ErrorActionPreference = 'Stop'`,
+      `$config = Get-Content -Path '${escapePowerShellSingleQuoted(configPath)}' -Raw | ConvertFrom-Json -Depth 20`,
+      `Import-Module (Join-Path '${escapePowerShellSingleQuoted(process.cwd())}' 'src/Modules/SyncFactors/Config.psm1') -Force`,
+      `Import-Module (Join-Path '${escapePowerShellSingleQuoted(process.cwd())}' 'src/Modules/SyncFactors/ActiveDirectorySync.psm1') -Force`,
+      `$ous = @(Get-SyncFactorsManagedOus -Config $config)`,
+      `$users = @(Get-SyncFactorsUsersInOrganizationalUnits -Config $config -OrganizationalUnits $ous)`,
+      `[Console]::Out.Write(($users | Measure-Object).Count)`,
+    ].join('; ');
+    const { stdout } = await execFileAsync('pwsh', ['-NoLogo', '-NoProfile', '-Command', script], {
+      cwd: process.cwd(),
+      env: process.env,
+      maxBuffer: 1024 * 1024 * 5,
+    });
+    const count = Number.parseInt(stdout.trim(), 10);
+    if (!Number.isFinite(count)) {
+      throw new Error('Failed to determine the fresh reset deletion count.');
+    }
+
+    return count;
   }
 
   private getContextWarnings(warnings: string[]): string[] {
@@ -785,6 +811,10 @@ function asString(value: unknown): string | null {
 
 function asBoolean(value: unknown): boolean | null {
   return typeof value === 'boolean' ? value : null;
+}
+
+function escapePowerShellSingleQuoted(value: string): string {
+  return value.replaceAll("'", "''");
 }
 
 function asRecord(value: unknown): Record<string, unknown> {

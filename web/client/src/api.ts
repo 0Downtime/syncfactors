@@ -1,4 +1,6 @@
 import type {
+  OperatorActionKind,
+  OperatorCommandResult,
   DashboardStatus,
   EntryListResponse,
   QueueName,
@@ -8,6 +10,8 @@ import type {
   WorkerActionResponse,
   WorkerDetailResponse,
   WorkerHistoryResponse,
+  WorkerPreviewMode,
+  WorkerPreviewResponse,
 } from './types.js';
 
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
@@ -74,6 +78,85 @@ export async function runWorkerAction(workerId: string, action: WorkerActionKind
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({ action }),
+  } as RequestInit);
+}
+
+export async function previewWorker(workerId: string, previewMode: WorkerPreviewMode): Promise<WorkerPreviewResponse> {
+  return fetchJson<WorkerPreviewResponse>(`/api/workers/${encodeURIComponent(workerId)}/preview`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ previewMode }),
+  } as RequestInit);
+}
+
+export async function applyWorker(workerId: string, confirmText: string): Promise<WorkerActionResponse> {
+  return fetchJson<WorkerActionResponse>(`/api/workers/${encodeURIComponent(workerId)}/apply`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ confirmText }),
+  } as RequestInit);
+}
+
+export async function runOperatorAction(action: OperatorActionKind): Promise<OperatorCommandResult> {
+  return fetchJson<OperatorCommandResult>('/api/actions/runs', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ action }),
+  } as RequestInit);
+}
+
+export async function runPreflight(): Promise<OperatorCommandResult> {
+  return fetchJson<OperatorCommandResult>('/api/actions/preflight', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+  } as RequestInit);
+}
+
+export async function runFreshReset(confirmText: string, additionalConfirmations: string[]): Promise<OperatorCommandResult> {
+  return fetchJson<OperatorCommandResult>('/api/actions/fresh-reset', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ confirmText, additionalConfirmations }),
+  } as RequestInit);
+}
+
+export async function exportRunBucket(runId: string, bucket: string, filter: string, confirmText: string): Promise<OperatorCommandResult> {
+  return fetchJson<OperatorCommandResult>(`/api/runs/${encodeURIComponent(runId)}/export`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ scope: 'selected-bucket', bucket, filter, confirmText }),
+  } as RequestInit);
+}
+
+export async function openRunReport(runId: string, confirmText: string): Promise<OperatorCommandResult> {
+  return fetchJson<OperatorCommandResult>(`/api/runs/${encodeURIComponent(runId)}/open`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ confirmText }),
+  } as RequestInit);
+}
+
+export async function copyRunReportPath(runId: string, confirmText: string): Promise<OperatorCommandResult> {
+  return fetchJson<OperatorCommandResult>(`/api/runs/${encodeURIComponent(runId)}/copy-path`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ confirmText }),
   } as RequestInit);
 }
 

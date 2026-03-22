@@ -1373,6 +1373,58 @@ button:disabled {
   background: linear-gradient(180deg, #f8fbff 0%, #c9ddff 100%);
 }
 
+.full-width {
+  grid-column: 1 / -1;
+}
+
+.detail-modal.large {
+  width: min(960px, calc(100vw - 2rem));
+}
+
+.detail-modal-body {
+  display: grid;
+  gap: 1rem;
+}
+
+.confirmation-dialog,
+.command-result-panel {
+  display: grid;
+  gap: 1rem;
+}
+
+.confirmation-dialog[data-risk='critical'] {
+  border-left: 4px solid #d64545;
+  padding-left: 1rem;
+}
+
+.confirmation-dialog[data-risk='high'] {
+  border-left: 4px solid #d9822b;
+  padding-left: 1rem;
+}
+
+.modal-field {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.modal-field input {
+  border: 1px solid var(--panel-border);
+  background: var(--panel-bg);
+  color: var(--text-primary);
+  border-radius: 0.75rem;
+  padding: 0.7rem 0.85rem;
+}
+
+.modal-actions {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: flex-end;
+}
+
+.view-nav button:disabled {
+  opacity: 0.45;
+}
+
 @media (max-width: 1100px) {
   .status-grid,
   .main-grid,
