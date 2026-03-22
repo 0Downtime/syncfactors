@@ -108,28 +108,25 @@ export class ReportService {
   async getRun(status: DashboardStatus, runId: string): Promise<RunDetailResponse> {
     const sqlitePath = status.paths.sqlitePath;
     if (sqlitePath) {
-      try {
-        const sqliteRun = await this.sqliteStore.getRun(sqlitePath, runId);
-        if (sqliteRun) {
-          const sqliteEntries = await this.sqliteStore.getRunEntries(sqlitePath, runId, {});
-          const materialized = sqliteEntries.map((entry) => materializeSqliteEntry(entry, status.trackedWorkers));
-          const bucketCounts = Object.fromEntries(BUCKET_ORDER.map((bucket) => [bucket, materialized.filter((entry) => entry.bucket === bucket).length]));
-
-          return {
-            run: sqliteRun.run,
-            report: sqliteRun.report,
-            bucketCounts,
-            warnings: this.getContextWarnings(status.warnings ?? []),
-            reviewExplorer: {
-              created: materialized.filter((entry) => isReviewCreated(entry)).length,
-              changed: materialized.filter((entry) => isReviewChanged(entry)).length,
-              deleted: materialized.filter((entry) => isReviewDeleted(entry)).length,
-            },
-          };
-        }
-      } catch {
-        // Fall back to JSON report scanning below.
+      const sqliteRun = await this.sqliteStore.getRun(sqlitePath, runId);
+      if (!sqliteRun) {
+        throw new Error(`Run '${runId}' was not found in the SQLite operational store.`);
       }
+      const sqliteEntries = await this.sqliteStore.getRunEntries(sqlitePath, runId, {});
+      const materialized = sqliteEntries.map((entry) => materializeSqliteEntry(entry, status.trackedWorkers));
+      const bucketCounts = Object.fromEntries(BUCKET_ORDER.map((bucket) => [bucket, materialized.filter((entry) => entry.bucket === bucket).length]));
+
+      return {
+        run: sqliteRun.run,
+        report: sqliteRun.report,
+        bucketCounts,
+        warnings: this.getContextWarnings(status.warnings ?? []),
+        reviewExplorer: {
+          created: materialized.filter((entry) => isReviewCreated(entry)).length,
+          changed: materialized.filter((entry) => isReviewChanged(entry)).length,
+          deleted: materialized.filter((entry) => isReviewDeleted(entry)).length,
+        },
+      };
     }
 
     const scan = await this.scanRuns(status);
@@ -157,23 +154,20 @@ export class ReportService {
   ): Promise<EntryListResponse> {
     const sqlitePath = status.paths.sqlitePath;
     if (sqlitePath) {
-      try {
-        const sqliteRun = await this.sqliteStore.getRun(sqlitePath, runId);
-        if (sqliteRun) {
-          const sqliteEntries = await this.sqliteStore.getRunEntries(sqlitePath, runId, filters);
-          const materialized = sqliteEntries
-            .map((entry) => materializeSqliteEntry(entry, status.trackedWorkers))
-            .filter((entry) => matchesRunEntry(entry, filters));
-          return {
-            run: sqliteRun.run,
-            entries: materialized,
-            total: materialized.length,
-            warnings: this.getContextWarnings(status.warnings ?? []),
-          };
-        }
-      } catch {
-        // Fall back to JSON report scanning below.
+      const sqliteRun = await this.sqliteStore.getRun(sqlitePath, runId);
+      if (!sqliteRun) {
+        throw new Error(`Run '${runId}' was not found in the SQLite operational store.`);
       }
+      const sqliteEntries = await this.sqliteStore.getRunEntries(sqlitePath, runId, filters);
+      const materialized = sqliteEntries
+        .map((entry) => materializeSqliteEntry(entry, status.trackedWorkers))
+        .filter((entry) => matchesRunEntry(entry, filters));
+      return {
+        run: sqliteRun.run,
+        entries: materialized,
+        total: materialized.length,
+        warnings: this.getContextWarnings(status.warnings ?? []),
+      };
     }
 
     const scan = await this.scanRuns(status);
@@ -209,33 +203,27 @@ export class ReportService {
     const pageSize = Math.min(Math.max(filters.pageSize ?? 25, 1), 100);
     const sqlitePath = status.paths.sqlitePath;
     if (sqlitePath) {
-      try {
-        const sqliteEntries = await this.sqliteStore.getQueueEntries(sqlitePath, status.paths.statePath, queueName, {
-          reason: filters.reason,
-          reviewCaseType: filters.reviewCaseType,
-          workerId: filters.workerId,
-          filter: filters.filter,
-        });
-        if (sqliteEntries.length > 0) {
-          const materialized = sqliteEntries
-            .map((entry) => materializeSqliteEntry(entry, status.trackedWorkers))
-            .filter((entry) => matchesQueueEntry(entry, filters));
-          const start = (page - 1) * pageSize;
-          return {
-            queueName,
-            entries: materialized.slice(start, start + pageSize),
-            total: materialized.length,
-            page,
-            pageSize,
-            reasonGroups: buildGroups(materialized, (entry) => entry.reason ?? 'Other'),
-            reviewCaseGroups: buildGroups(materialized, (entry) => entry.reviewCaseType ?? 'Other'),
-            artifactGroups: buildGroups(materialized, (entry) => entry.artifactType),
-            warnings: this.getContextWarnings(status.warnings ?? []),
-          };
-        }
-      } catch {
-        // Fall back to JSON report scanning below.
-      }
+      const sqliteEntries = await this.sqliteStore.getQueueEntries(sqlitePath, status.paths.statePath, queueName, {
+        reason: filters.reason,
+        reviewCaseType: filters.reviewCaseType,
+        workerId: filters.workerId,
+        filter: filters.filter,
+      });
+      const materialized = sqliteEntries
+        .map((entry) => materializeSqliteEntry(entry, status.trackedWorkers))
+        .filter((entry) => matchesQueueEntry(entry, filters));
+      const start = (page - 1) * pageSize;
+      return {
+        queueName,
+        entries: materialized.slice(start, start + pageSize),
+        total: materialized.length,
+        page,
+        pageSize,
+        reasonGroups: buildGroups(materialized, (entry) => entry.reason ?? 'Other'),
+        reviewCaseGroups: buildGroups(materialized, (entry) => entry.reviewCaseType ?? 'Other'),
+        artifactGroups: buildGroups(materialized, (entry) => entry.artifactType),
+        warnings: this.getContextWarnings(status.warnings ?? []),
+      };
     }
 
     const scan = await this.scanRuns(status);
@@ -285,29 +273,23 @@ export class ReportService {
   async getWorkerDetail(status: DashboardStatus, workerId: string, limit = 100): Promise<WorkerDetailResponse> {
     const sqlitePath = status.paths.sqlitePath;
     if (sqlitePath) {
-      try {
-        const sqliteEntries = await this.sqliteStore.getWorkerEntries(sqlitePath, status.paths.statePath, workerId, limit);
-        if (sqliteEntries.length > 0) {
-          const relatedEntries = sqliteEntries.map((entry) => materializeSqliteEntry(entry, status.trackedWorkers)).slice(0, limit);
-          const seenRuns = new Map<string, RunSummary>();
-          for (const entry of sqliteEntries) {
-            if (entry.run.runId && !seenRuns.has(entry.run.runId)) {
-              seenRuns.set(entry.run.runId, entry.run);
-            }
-          }
-
-          return {
-            workerId,
-            trackedWorker: status.trackedWorkers.find((worker) => worker.workerId === workerId) ?? null,
-            latestEntry: relatedEntries[0] ?? null,
-            relatedEntries,
-            relatedRuns: [...seenRuns.values()],
-            warnings: this.getContextWarnings(status.warnings ?? []),
-          };
+      const sqliteEntries = await this.sqliteStore.getWorkerEntries(sqlitePath, status.paths.statePath, workerId, limit);
+      const relatedEntries = sqliteEntries.map((entry) => materializeSqliteEntry(entry, status.trackedWorkers)).slice(0, limit);
+      const seenRuns = new Map<string, RunSummary>();
+      for (const entry of sqliteEntries) {
+        if (entry.run.runId && !seenRuns.has(entry.run.runId)) {
+          seenRuns.set(entry.run.runId, entry.run);
         }
-      } catch {
-        // Fall back to JSON report scanning below.
       }
+
+      return {
+        workerId,
+        trackedWorker: status.trackedWorkers.find((worker) => worker.workerId === workerId) ?? null,
+        latestEntry: relatedEntries[0] ?? null,
+        relatedEntries,
+        relatedRuns: [...seenRuns.values()],
+        warnings: this.getContextWarnings(status.warnings ?? []),
+      };
     }
 
     const scan = await this.scanRuns(status);
@@ -342,14 +324,8 @@ export class ReportService {
     const warnings = [...(status.warnings ?? [])];
     const sqlitePath = status.paths.sqlitePath;
     if (sqlitePath) {
-      try {
-        const sqliteRuns = await this.sqliteStore.listRuns(sqlitePath, status.paths.statePath);
-        if (sqliteRuns.length > 0) {
-          return { runs: sqliteRuns, warnings: [...new Set(warnings)] };
-        }
-      } catch {
-        warnings.push(`SQLite read failed for '${path.basename(sqlitePath)}'. Falling back to JSON report files.`);
-      }
+      const sqliteRuns = await this.sqliteStore.listRuns(sqlitePath, status.paths.statePath);
+      return { runs: sqliteRuns, warnings: [...new Set(warnings)] };
     }
 
     const directories = status.paths.reportDirectories ?? [];

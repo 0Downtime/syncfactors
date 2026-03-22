@@ -214,6 +214,28 @@ npm run web:build
 npm run web:start -- --config ./config/local.real-successfactors.real-ad.sync-config.json
 ```
 
+### SQLite Operational Store
+The dashboards and status adapters can now use a local SQLite operational store in addition to the existing JSON artifacts.
+By default the database path is derived from `state.path` as `syncfactors.db` in the same directory, or you can set `persistence.sqlitePath` explicitly in your sync config.
+
+SQLite stores the operational read model for:
+- tracked-worker state
+- runtime status snapshots
+- run summaries
+- run entry rows used by queue, worker, and run-detail views
+
+Completed JSON reports are still written and remain the portable audit/export artifact.
+
+To backfill SQLite from an existing config that already has JSON state, runtime status, and reports:
+
+```powershell
+pwsh ./scripts/Import-SyncFactorsSqlite.ps1 `
+  -ConfigPath ./config/local.real-successfactors.real-ad.sync-config.json
+```
+
+Use `-AsJson` for machine-readable output, or `-SkipState`, `-SkipRuntimeStatus`, and `-SkipReports` to backfill only part of the dataset.
+Once the SQLite file exists, the web dashboard and terminal monitor will prefer it automatically and fall back to JSON if the database is missing or incomplete.
+
 To run the full Pester suite:
 
 ```powershell
@@ -269,6 +291,14 @@ npm run web:dev -- --config ./reports/demo/config/demo.mock-sync-config.json
 ```
 
 Both dashboards will read the generated report history, review queues, worker history, tracked-worker state, and runtime snapshot from the demo output directory.
+To populate the demo SQLite store before launching either dashboard:
+
+```powershell
+pwsh ./scripts/Import-SyncFactorsSqlite.ps1 `
+  -ConfigPath ./reports/demo/config/demo.mock-sync-config.json
+```
+
+The demo database will be created under `./reports/demo/state/syncfactors.db`.
 
 To run the real sync against a local mock SuccessFactors API instead of a tenant:
 

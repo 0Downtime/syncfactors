@@ -480,11 +480,12 @@ function Get-SyncFactorsRecentRunSummariesFromPersistence {
     )
 
     $sqlitePath = Get-SyncFactorsSqlitePath -Config $Config
-    if (-not [string]::IsNullOrWhiteSpace($sqlitePath) -and (Test-Path -Path $sqlitePath -PathType Leaf)) {
-        $recentRuns = @(Get-SyncFactorsRecentRunsFromSqlite -StatePath $Config.state.path -DatabasePath $sqlitePath -Limit $Limit)
-        if ($recentRuns.Count -gt 0) {
-            return $recentRuns
+    if (-not [string]::IsNullOrWhiteSpace($sqlitePath)) {
+        if (-not (Test-Path -Path $sqlitePath -PathType Leaf)) {
+            return @()
         }
+
+        return @(Get-SyncFactorsRecentRunsFromSqlite -StatePath $Config.state.path -DatabasePath $sqlitePath -Limit $Limit)
     }
 
     return @(Get-SyncFactorsRecentRunSummaries -Directory (Get-SyncFactorsReportDirectories -Config $Config) -Limit $Limit)
@@ -501,12 +502,13 @@ function Get-SyncFactorsMonitorStatus {
 
     $config = Get-SyncFactorsConfig -Path $ConfigPath
     $sqlitePath = Get-SyncFactorsSqlitePath -Config $config
-    $state = if ($config.state.path -and (Test-Path -Path $config.state.path -PathType Leaf)) { Get-SyncFactorsState -Path $config.state.path } else { [pscustomobject]@{ checkpoint = $null; workers = @{} } }
     $trackedWorkers = @()
-    if (-not [string]::IsNullOrWhiteSpace($sqlitePath) -and (Test-Path -Path $sqlitePath -PathType Leaf)) {
-        $trackedWorkers = @(Get-SyncFactorsTrackedWorkersFromSqlite -StatePath $config.state.path -DatabasePath $sqlitePath)
-    }
-    if ($trackedWorkers.Count -eq 0) {
+    if (-not [string]::IsNullOrWhiteSpace($sqlitePath)) {
+        if (Test-Path -Path $sqlitePath -PathType Leaf) {
+            $trackedWorkers = @(Get-SyncFactorsTrackedWorkersFromSqlite -StatePath $config.state.path -DatabasePath $sqlitePath)
+        }
+    } else {
+        $state = if ($config.state.path -and (Test-Path -Path $config.state.path -PathType Leaf)) { Get-SyncFactorsState -Path $config.state.path } else { [pscustomobject]@{ checkpoint = $null; workers = @{} } }
         $workerProperties = @(Get-SyncFactorsWorkerEntries -Workers $state.workers)
         $trackedWorkers = @(
             $workerProperties |
@@ -550,9 +552,11 @@ function Get-SyncFactorsMonitorStatus {
     $activeDirectoryConnection = Test-SyncFactorsMonitorActiveDirectoryConnection -Config $config
 
     $resolvedConfigPath = (Resolve-Path -Path $ConfigPath).Path
-    $lastCheckpoint = if ($state -and $state.PSObject.Properties.Name -contains 'checkpoint') { $state.checkpoint } else { $null }
-    if ([string]::IsNullOrWhiteSpace("$lastCheckpoint") -and -not [string]::IsNullOrWhiteSpace($sqlitePath) -and (Test-Path -Path $sqlitePath -PathType Leaf)) {
+    $lastCheckpoint = $null
+    if (-not [string]::IsNullOrWhiteSpace($sqlitePath) -and (Test-Path -Path $sqlitePath -PathType Leaf)) {
         $lastCheckpoint = Get-SyncFactorsStateCheckpointFromSqlite -StatePath $config.state.path -DatabasePath $sqlitePath
+    } elseif ($state -and $state.PSObject.Properties.Name -contains 'checkpoint') {
+        $lastCheckpoint = $state.checkpoint
     }
     return [pscustomobject]@{
         configPath = $resolvedConfigPath
@@ -762,11 +766,15 @@ function Get-SyncFactorsMonitorSelectedRunReport {
     } else {
         $null
     }
-    if (-not [string]::IsNullOrWhiteSpace($sqlitePath) -and (Test-Path -Path $sqlitePath -PathType Leaf) -and $selectedRun.PSObject.Properties.Name -contains 'runId' -and -not [string]::IsNullOrWhiteSpace("$($selectedRun.runId)")) {
+    if (-not [string]::IsNullOrWhiteSpace($sqlitePath) -and $selectedRun.PSObject.Properties.Name -contains 'runId' -and -not [string]::IsNullOrWhiteSpace("$($selectedRun.runId)")) {
+        if (-not (Test-Path -Path $sqlitePath -PathType Leaf)) {
+            return $null
+        }
         $report = Get-SyncFactorsRunReportFromSqlite -RunId "$($selectedRun.runId)" -DatabasePath $sqlitePath
         if ($report) {
             return $report
         }
+        return $null
     }
 
     if ([string]::IsNullOrWhiteSpace("$($selectedRun.path)")) {

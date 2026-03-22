@@ -191,22 +191,13 @@ $warnings = [System.Collections.Generic.List[string]]::new()
 $resolvedConfigPath = (Resolve-Path -Path $ConfigPath).Path
 $config = & $getSyncFactorsConfig -Path $resolvedConfigPath
 $sqlitePath = & $getSyncFactorsSqlitePath -Config $config
-$state = $null
-try {
-    $state = & $getSyncFactorsState -Path $config.state.path
-} catch {
-    $warnings.Add("State file unavailable: $($_.Exception.Message)")
-    $state = New-SyncFactorsWebEmptyState
+
+if ([string]::IsNullOrWhiteSpace($sqlitePath) -or -not (Test-Path -Path $sqlitePath -PathType Leaf)) {
+    $warnings.Add('SQLite operational store is unavailable. Import or generate the SQLite store before using the web dashboard.')
 }
 
 $runtimeStatus = $null
-try {
-    $runtimeStatus = & $getSyncFactorsRuntimeStatusSnapshot -StatePath $config.state.path
-} catch {
-    $warnings.Add("Runtime status unavailable: $($_.Exception.Message)")
-}
-
-if (-not $runtimeStatus) {
+if (-not [string]::IsNullOrWhiteSpace($sqlitePath) -and (Test-Path -Path $sqlitePath -PathType Leaf)) {
     try {
         $runtimeStatus = & $getSyncFactorsRuntimeStatusSnapshotFromSqlite -StatePath $config.state.path -DatabasePath $sqlitePath
     } catch {
@@ -234,10 +225,6 @@ if (-not [string]::IsNullOrWhiteSpace($sqlitePath) -and (Test-Path -Path $sqlite
     }
 }
 
-if (@($recentRuns).Count -eq 0) {
-    $recentRuns = @(Get-SyncFactorsWebRecentRunSummaries -Directories $reportDirectories -Limit $HistoryLimit -Warnings $warnings)
-}
-
 $workerEntries = @()
 if (-not [string]::IsNullOrWhiteSpace($sqlitePath) -and (Test-Path -Path $sqlitePath -PathType Leaf)) {
     try {
@@ -246,37 +233,8 @@ if (-not [string]::IsNullOrWhiteSpace($sqlitePath) -and (Test-Path -Path $sqlite
         $warnings.Add("SQLite worker state unavailable: $($_.Exception.Message)")
     }
 }
-
-if (@($workerEntries).Count -eq 0 -and $state -and $state.PSObject.Properties.Name -contains 'workers' -and $state.workers) {
-    if ($state.workers -is [System.Collections.IDictionary]) {
-        foreach ($key in $state.workers.Keys) {
-            $workerEntries += [pscustomobject]@{
-                workerId = $key
-                adObjectGuid = $state.workers[$key].adObjectGuid
-                distinguishedName = $state.workers[$key].distinguishedName
-                suppressed = [bool]$state.workers[$key].suppressed
-                firstDisabledAt = $state.workers[$key].firstDisabledAt
-                deleteAfter = $state.workers[$key].deleteAfter
-                lastSeenStatus = $state.workers[$key].lastSeenStatus
-            }
-        }
-    } else {
-        foreach ($property in @($state.workers.PSObject.Properties)) {
-            $workerEntries += [pscustomobject]@{
-                workerId = $property.Name
-                adObjectGuid = $property.Value.adObjectGuid
-                distinguishedName = $property.Value.distinguishedName
-                suppressed = [bool]$property.Value.suppressed
-                firstDisabledAt = $property.Value.firstDisabledAt
-                deleteAfter = $property.Value.deleteAfter
-                lastSeenStatus = $property.Value.lastSeenStatus
-            }
-        }
-    }
-}
-
-$lastCheckpoint = if ($state) { $state.checkpoint } else { $null }
-if ([string]::IsNullOrWhiteSpace("$lastCheckpoint") -and -not [string]::IsNullOrWhiteSpace($sqlitePath) -and (Test-Path -Path $sqlitePath -PathType Leaf)) {
+$lastCheckpoint = $null
+if (-not [string]::IsNullOrWhiteSpace($sqlitePath) -and (Test-Path -Path $sqlitePath -PathType Leaf)) {
     try {
         $lastCheckpoint = & $getSyncFactorsStateCheckpointFromSqlite -StatePath $config.state.path -DatabasePath $sqlitePath
     } catch {
