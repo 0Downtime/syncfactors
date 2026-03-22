@@ -67,6 +67,36 @@ function Set-SyncFactorsPropertyValue {
     $InputObject | Add-Member -MemberType NoteProperty -Name $PropertyName -Value $Value -Force
 }
 
+function Get-SyncFactorsDefaultSqlitePath {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string]$StatePath
+    )
+
+    if ($StatePath.StartsWith('/')) {
+        $trimmedStatePath = $StatePath.TrimEnd('/')
+        $lastSeparatorIndex = $trimmedStatePath.LastIndexOf('/')
+        if ($lastSeparatorIndex -lt 0) {
+            return 'syncfactors.db'
+        }
+
+        $stateDirectory = $trimmedStatePath.Substring(0, $lastSeparatorIndex)
+        if ([string]::IsNullOrWhiteSpace($stateDirectory)) {
+            return '/syncfactors.db'
+        }
+
+        return "$stateDirectory/syncfactors.db"
+    }
+
+    $stateDirectory = Split-Path -Path $StatePath -Parent
+    if ([string]::IsNullOrWhiteSpace($stateDirectory)) {
+        return 'syncfactors.db'
+    }
+
+    return Join-Path -Path $stateDirectory -ChildPath 'syncfactors.db'
+}
+
 function Get-SyncFactorsAuthMode {
     [CmdletBinding()]
     param(
@@ -328,6 +358,14 @@ function Test-SyncFactorsConfig {
     }
 
     Assert-SyncFactorsRequiredString -Value $Config.state.path -PropertyPath 'state.path'
+    if (-not (Test-SyncFactorsHasProperty -InputObject $Config -PropertyName 'persistence') -or $null -eq $Config.persistence) {
+        $Config | Add-Member -MemberType NoteProperty -Name 'persistence' -Value ([pscustomobject]@{}) -Force
+    }
+
+    if (-not (Test-SyncFactorsHasProperty -InputObject $Config.persistence -PropertyName 'sqlitePath') -or [string]::IsNullOrWhiteSpace("$($Config.persistence.sqlitePath)")) {
+        Set-SyncFactorsPropertyValue -InputObject $Config.persistence -PropertyName 'sqlitePath' -Value (Get-SyncFactorsDefaultSqlitePath -StatePath $Config.state.path)
+    }
+
     Assert-SyncFactorsRequiredString -Value $Config.reporting.outputDirectory -PropertyPath 'reporting.outputDirectory'
     if (-not (Test-SyncFactorsHasProperty -InputObject $Config.reporting -PropertyName 'reviewOutputDirectory') -or [string]::IsNullOrWhiteSpace("$($Config.reporting.reviewOutputDirectory)")) {
         $reviewDirectory = Join-Path -Path $Config.reporting.outputDirectory -ChildPath 'review'
@@ -360,4 +398,4 @@ function Test-SyncFactorsConfig {
     }
 }
 
-Export-ModuleMember -Function Get-SyncFactorsResolvedSetting, Get-SyncFactorsSuccessFactorsAuthSummary, Resolve-SyncFactorsSecrets, Get-SyncFactorsConfig, Get-SyncFactorsMappingConfig, Test-SyncFactorsConfig, Test-SyncFactorsMappingConfig
+Export-ModuleMember -Function Get-SyncFactorsResolvedSetting, Get-SyncFactorsSuccessFactorsAuthSummary, Resolve-SyncFactorsSecrets, Get-SyncFactorsConfig, Get-SyncFactorsMappingConfig, Test-SyncFactorsConfig, Test-SyncFactorsMappingConfig, Get-SyncFactorsDefaultSqlitePath

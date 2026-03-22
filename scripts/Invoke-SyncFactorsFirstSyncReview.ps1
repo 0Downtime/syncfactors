@@ -14,6 +14,7 @@ $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Path $PSScriptRoot -Parent
 $moduleRoot = Join-Path -Path $projectRoot -ChildPath 'src/Modules/SyncFactors'
 Import-Module (Join-Path $moduleRoot 'Config.psm1') -Force -DisableNameChecking
+Import-Module (Join-Path $moduleRoot 'Persistence.psm1') -Force -DisableNameChecking
 
 $resolvedConfigPath = (Resolve-Path -Path $ConfigPath).Path
 $resolvedMappingConfigPath = (Resolve-Path -Path $MappingConfigPath).Path
@@ -36,7 +37,7 @@ if (-not [string]::IsNullOrWhiteSpace($OutputDirectory)) {
 
 $invokePath = Join-Path -Path $projectRoot -ChildPath 'src/Invoke-SyncFactors.ps1'
 $reportPath = & $invokePath -ConfigPath $effectiveConfigPath -MappingConfigPath $resolvedMappingConfigPath -Mode Review
-$report = Get-Content -Path $reportPath -Raw | ConvertFrom-Json -Depth 30
+$report = Get-SyncFactorsReportFromReference -Reference $reportPath -StatePath (Get-SyncFactorsConfig -Path $effectiveConfigPath).state.path
 
 $result = [pscustomobject]@{
     reportPath = $reportPath

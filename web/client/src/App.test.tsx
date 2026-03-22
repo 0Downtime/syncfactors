@@ -13,6 +13,11 @@ const mockGetRun = vi.fn();
 const mockGetRunEntries = vi.fn();
 const mockGetQueue = vi.fn();
 const mockGetWorkerDetail = vi.fn();
+const mockRunWorkerAction = vi.fn();
+const mockPreviewWorker = vi.fn();
+const mockApplyWorker = vi.fn();
+const mockRunOperatorAction = vi.fn();
+const mockRunPreflight = vi.fn();
 
 vi.mock('./api.js', () => ({
   getStatus: (...args: unknown[]) => mockGetStatus(...args),
@@ -21,6 +26,16 @@ vi.mock('./api.js', () => ({
   getQueue: (...args: unknown[]) => mockGetQueue(...args),
   getWorkerHistory: vi.fn(async () => ({ workerId: '1001', entries: [], warnings: [] })),
   getWorkerDetail: (...args: unknown[]) => mockGetWorkerDetail(...args),
+  runWorkerAction: (...args: unknown[]) => mockRunWorkerAction(...args),
+  previewWorker: (...args: unknown[]) => mockPreviewWorker(...args),
+  applyWorker: (...args: unknown[]) => mockApplyWorker(...args),
+  runOperatorAction: (...args: unknown[]) => mockRunOperatorAction(...args),
+  runPreflight: (...args: unknown[]) => mockRunPreflight(...args),
+  runFreshReset: vi.fn(),
+  exportRunBucket: vi.fn(),
+  openRunReport: vi.fn(),
+  copyRunReportPath: vi.fn(),
+  openLocalPath: vi.fn(),
 }));
 
 beforeEach(() => {
@@ -30,6 +45,11 @@ beforeEach(() => {
   mockGetRunEntries.mockReset();
   mockGetQueue.mockReset();
   mockGetWorkerDetail.mockReset();
+  mockRunWorkerAction.mockReset();
+  mockPreviewWorker.mockReset();
+  mockApplyWorker.mockReset();
+  mockRunOperatorAction.mockReset();
+  mockRunPreflight.mockReset();
 
   mockGetStatus.mockResolvedValue({
     latestRun: {
@@ -418,6 +438,65 @@ beforeEach(() => {
     ],
     warnings: [],
   });
+
+  mockRunWorkerAction.mockResolvedValue({
+    action: 'review-sync',
+    workerId: '1001',
+    result: {
+      reportPath: '/tmp/run-4.json',
+      runId: 'run-4',
+      mode: 'Review',
+      status: 'Succeeded',
+      artifactType: 'WorkerPreview',
+      previewMode: 'full',
+      workerScope: { workerId: '1001' },
+    },
+  });
+  mockPreviewWorker.mockResolvedValue({
+    reportPath: '/tmp/run-4.json',
+    runId: 'run-4',
+    mode: 'Review',
+    status: 'Succeeded',
+    artifactType: 'WorkerPreview',
+    previewMode: 'full',
+    workerScope: { workerId: '1001' },
+    preview: {
+      workerId: '1001',
+      buckets: ['updates'],
+      matchedExistingUser: true,
+      reviewCategory: 'ExistingUserChanges',
+      reviewCaseType: 'RehireCase',
+      reason: 'AttributeDelta',
+      samAccountName: 'jdoe',
+      targetOu: 'OU=Employees,DC=example,DC=com',
+      currentDistinguishedName: 'CN=Jamie Doe',
+      currentEnabled: true,
+      proposedEnable: true,
+    },
+    diffRows: [{ attribute: 'department', source: 'department', before: 'Finance', after: 'Sales', changed: true }],
+    operationSummary: { action: 'UpdateAttributes', effect: null, targetOu: null, fromOu: null, toOu: null },
+    entries: [],
+  });
+  mockRunOperatorAction.mockResolvedValue({
+    status: 'accepted',
+    started: true,
+    completed: false,
+    message: 'Started delta dry-run in a new PowerShell process.',
+    commandSummary: ['Config=/tmp/config.json', 'Mapping=/tmp/mapping.json'],
+    runId: 'run-2',
+    reportPath: '/tmp/run-2.json',
+    outputLines: [],
+  });
+  mockRunPreflight.mockResolvedValue({
+    status: 'completed',
+    started: false,
+    completed: true,
+    message: 'Preflight completed.',
+    commandSummary: ['Config=/tmp/config.json', 'Mapping=/tmp/mapping.json'],
+    runId: null,
+    reportPath: null,
+    outputLines: ['ok'],
+  });
 });
 
 describe('App', () => {
@@ -443,6 +522,7 @@ describe('App', () => {
           onChangeDiffMode={() => undefined}
           onChangeReviewExplorer={() => undefined}
           onOpenWorker={() => undefined}
+          onOpenReport={() => undefined}
         />,
       );
 
@@ -474,7 +554,7 @@ describe('App', () => {
     render(<App />);
 
     await waitFor(() => expect(screen.getByText(/SyncFactors Operator UI/i)).toBeInTheDocument());
-    await waitFor(() => expect(screen.getByText(/Structured diff/i)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText(/Next Recommended Move/i)).toBeInTheDocument());
     expect(mockGetRunEntries).toHaveBeenCalledWith('run-1', expect.not.objectContaining({ bucket: expect.anything(), entryId: expect.anything() }));
     expect(screen.getByRole('button', { name: 'all (3)' })).toBeInTheDocument();
     expect(screen.getAllByText('1000').length).toBeGreaterThan(0);
@@ -483,8 +563,19 @@ describe('App', () => {
     expect(screen.getAllByText(/ago/).length).toBeGreaterThan(0);
     expect(window.location.search).toMatch(/run=run-1/);
 
+    fireEvent.click(screen.getByRole('button', { name: /1001UpdatesAttributeDelta1d stale/i }));
+    expect(screen.getByText(/Dashboard is for run triage and deciding where to go next./i)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /Inspect full report/i }));
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Structured diff' })).toBeInTheDocument());
+    expect(screen.getAllByText((_, element) => element?.textContent === '+Sales').length).toBeGreaterThan(0);
+    expect(screen.getAllByText((_, element) => element?.textContent === '-Finance').length).toBeGreaterThan(0);
+
     fireEvent.click(screen.getByRole('button', { name: 'Queues' }));
     await waitFor(() => expect(screen.getByText(/Queue Results/i)).toBeInTheDocument());
+    expect(screen.getByText(/Queue Workbench/i)).toBeInTheDocument();
+    expect(screen.getByText(/Manual Review needs operator attention/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Open recommended worker/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /RehireDetected \(1\)/ })).toBeInTheDocument();
     expect(screen.getByText(/Showing 1-25 of 30/i)).toBeInTheDocument();
     expect(window.location.search).toMatch(/view=queues/);
@@ -495,15 +586,35 @@ describe('App', () => {
     expect(window.location.search).toMatch(/pageSize=10/);
 
     fireEvent.click(screen.getByRole('button', { name: 'Next' }));
-    await waitFor(() => expect(screen.getByText(/1002/i)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getAllByRole('button', { name: 'Worker' }).length).toBeGreaterThan(1));
+    expect(screen.getByText(/^1002$/)).toBeInTheDocument();
     expect(window.location.search).toMatch(/page=2/);
 
     fireEvent.click(screen.getAllByRole('button', { name: 'Worker' })[1]);
     await waitFor(() => expect(screen.getByText(/Related Runs/i)).toBeInTheDocument());
+    expect(screen.getByText(/Current Significance/i)).toBeInTheDocument();
+    expect(screen.getByText(/Suppressed worker still needs operator judgment/i)).toBeInTheDocument();
     expect(screen.getByText(/^true$/i)).toBeInTheDocument();
     expect(screen.getAllByText(/CN=Jamie Doe/i)).toHaveLength(2);
     expect(screen.getAllByText(/ago/).length).toBeGreaterThan(0);
     expect(window.location.search).toMatch(/view=worker/);
+  });
+
+  it('runs single-worker test, review, and real sync actions from the worker view', async () => {
+    window.history.replaceState(null, '', '/?view=worker&workerId=1001');
+    render(<App />);
+
+    await waitFor(() => expect(screen.getByText(/SyncFactors Operator UI/i)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Test sync' })).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole('button', { name: 'Review sync' }));
+
+    await waitFor(() => expect(mockPreviewWorker).toHaveBeenCalled());
+    expect(mockPreviewWorker.mock.calls[0]?.[1]).toBe('full');
+    expect(screen.getByText(/Worker Preview 1001/i)).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: 'Open run' }).length).toBeGreaterThan(0);
+    expect(mockGetStatus).toHaveBeenCalledTimes(2);
+    expect(mockGetWorkerDetail).toHaveBeenCalledTimes(3);
   });
 
   it('shows the non-Windows AD probe warning once as a subtle status note', async () => {
@@ -522,5 +633,109 @@ describe('App', () => {
     expect(screen.queryByText(/Status warnings/i)).not.toBeInTheDocument();
     expect(screen.getByText('Active Directory health is unavailable on this macOS host.')).toBeInTheDocument();
     expect(screen.queryByText(NON_WINDOWS_AD_WARNING)).not.toBeInTheDocument();
+  });
+
+  it('improves the operations page with action gating and result promotion', async () => {
+    const baseStatus = await mockGetStatus();
+    mockGetStatus.mockReset();
+    mockGetStatus.mockResolvedValue({
+      ...baseStatus,
+      currentRun: {
+        status: 'InProgress',
+        stage: 'ProcessingWorkers',
+        processedWorkers: 3,
+        totalWorkers: 10,
+        currentWorkerId: '1001',
+        lastAction: 'Running delta sync.',
+      },
+    });
+
+    window.history.replaceState(null, '', '/?view=operations');
+    const rendered = render(<App />);
+
+    await waitFor(() => expect(screen.getByText(/Operator State/i)).toBeInTheDocument());
+    expect(screen.getByText(/Run in progress/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Delta dry-run/i })).toBeDisabled();
+    expect(screen.getByText(/Run at least one sync\/review with mapping metadata/i)).toBeInTheDocument();
+
+    rendered.unmount();
+
+    mockGetStatus.mockReset();
+    mockGetStatus.mockResolvedValue({
+      ...baseStatus,
+      currentRun: {
+        status: 'Idle',
+        stage: 'Completed',
+        processedWorkers: 0,
+        totalWorkers: 0,
+        currentWorkerId: null,
+        lastAction: 'No active sync run.',
+      },
+      recentRuns: [
+        {
+          ...baseStatus.recentRuns[0],
+          runId: 'run-2',
+          path: '/tmp/run-2.json',
+          mappingConfigPath: '/tmp/mapping.json',
+        },
+      ],
+    });
+
+    window.history.replaceState(null, '', '/?view=operations');
+    render(<App />);
+    await waitFor(() => expect(screen.getByRole('button', { name: /Delta dry-run/i })).not.toBeDisabled());
+
+    mockPreviewWorker.mockResolvedValueOnce({
+      reportPath: '/tmp/run-5.json',
+      runId: 'run-5',
+      mode: 'Review',
+      status: 'Succeeded',
+      artifactType: 'WorkerPreview',
+      previewMode: 'minimal',
+      workerScope: { workerId: '1002' },
+      preview: {
+        workerId: '1002',
+        buckets: ['deletions'],
+        matchedExistingUser: true,
+        reason: 'NoLongerInSource',
+        samAccountName: 'retireduser',
+      },
+      diffRows: [],
+      operationSummary: { action: 'Delete', effect: null, targetOu: null, fromOu: null, toOu: null },
+      entries: [],
+    });
+
+    fireEvent.change(screen.getByLabelText(/Operation worker id/i), { target: { value: '1002' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Minimal' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Preview worker' }));
+
+    await waitFor(() => expect(mockPreviewWorker).toHaveBeenCalledWith('1002', 'minimal'));
+    expect(screen.getByText(/Worker Preview 1002/i)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /Delta dry-run/i }));
+
+    await waitFor(() => expect(mockRunOperatorAction).toHaveBeenCalledWith('delta-dry-run'));
+    await waitFor(() => expect(window.location.search).toMatch(/view=report/));
+    expect(screen.getByText(/Started delta dry-run in a new PowerShell process./i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Report' })).toHaveClass('active');
+  });
+
+  it('keeps the report detail selection aligned to the active report category', async () => {
+    const mixedEntries = (await mockGetRunEntries('run-1')).entries;
+    mockGetRunEntries.mockImplementation(async () => ({
+      run: { runId: 'run-1' },
+      total: mixedEntries.length,
+      warnings: [],
+      entries: mixedEntries,
+    }));
+
+    window.history.replaceState(null, '', '/?view=report&run=run-1&reportCategory=Deleted');
+    render(<App />);
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Report' })).toHaveClass('active'));
+    expect(screen.queryByText('Create account newuser')).not.toBeInTheDocument();
+    await waitFor(() => expect(window.location.search).toMatch(/reportCategory=Deleted/));
+    await waitFor(() => expect(window.location.search).toMatch(/entry=run-1%3Adeletions%3A1002%3A0/));
+    expect(screen.getByText('retireduser')).toBeInTheDocument();
   });
 });

@@ -1,6 +1,7 @@
-import type { DashboardStatus, EntryRecord, QueueName } from './types.js';
+import type { DashboardStatus, EntryRecord, QueueName, WorkerPreviewMode } from './types.js';
 
-export type ViewName = 'dashboard' | 'queues' | 'worker';
+export type ViewName = 'dashboard' | 'queues' | 'worker' | 'report' | 'worker-preview' | 'operations';
+export type ReportCategory = 'Changed' | 'Created' | 'Deleted';
 
 export type RouteState = {
   view: ViewName;
@@ -16,6 +17,8 @@ export type RouteState = {
   reviewExplorer: 'all' | 'changed' | 'created' | 'deleted';
   page: number;
   pageSize: number;
+  previewMode: WorkerPreviewMode;
+  reportCategory: ReportCategory;
 };
 
 export const DEFAULT_ROUTE: RouteState = {
@@ -32,6 +35,8 @@ export const DEFAULT_ROUTE: RouteState = {
   reviewExplorer: 'all',
   page: 1,
   pageSize: 25,
+  previewMode: 'full',
+  reportCategory: 'Changed',
 };
 
 export const BUCKET_ORDER = [
@@ -61,11 +66,13 @@ export function getRouteState(): RouteState {
     queueName: parseQueueName(params.get('queue')),
     reason: params.get('reason') ?? '',
     reviewCaseType: params.get('reviewCaseType') ?? '',
-    workerId: params.get('workerId'),
+    workerId: params.get('workerId') ?? params.get('worker'),
     diffMode: params.get('diff') === 'all' ? 'all' : 'changed',
     reviewExplorer: parseReviewExplorer(params.get('reviewExplorer')),
     page: parsePositiveInt(params.get('page')) ?? DEFAULT_ROUTE.page,
     pageSize: parsePageSize(params.get('pageSize')),
+    previewMode: parsePreviewMode(params.get('previewMode')),
+    reportCategory: parseReportCategory(params.get('reportCategory')),
   });
 }
 
@@ -84,6 +91,8 @@ export function syncRouteState(route: RouteState, push = false) {
   if (route.reviewExplorer !== DEFAULT_ROUTE.reviewExplorer) params.set('reviewExplorer', route.reviewExplorer);
   if (route.page !== DEFAULT_ROUTE.page) params.set('page', String(route.page));
   if (route.pageSize !== DEFAULT_ROUTE.pageSize) params.set('pageSize', String(route.pageSize));
+  if (route.previewMode !== DEFAULT_ROUTE.previewMode) params.set('previewMode', route.previewMode);
+  if (route.reportCategory !== DEFAULT_ROUTE.reportCategory) params.set('reportCategory', route.reportCategory);
   const url = `${window.location.pathname}?${params.toString()}`;
   if (push) {
     window.history.pushState(null, '', url);
@@ -144,11 +153,32 @@ export function mapReviewExplorerToBucket(mode: 'all' | 'changed' | 'created' | 
   return 'updates';
 }
 
+export function mapEntryToReportCategory(entry: Pick<EntryRecord, 'bucket' | 'reviewCategory'>): ReportCategory {
+  if (entry.bucket === 'creates' || entry.reviewCategory === 'NewUser') {
+    return 'Created';
+  }
+  if (['updates', 'enables', 'disables', 'graveyardMoves', 'unchanged'].includes(entry.bucket)) {
+    return 'Changed';
+  }
+  return 'Deleted';
+}
+
 function parseView(value: string | null): ViewName {
-  if (value === 'queues' || value === 'worker') {
+  if (value === 'queues' || value === 'worker' || value === 'report' || value === 'worker-preview' || value === 'operations') {
     return value;
   }
   return 'dashboard';
+}
+
+function parsePreviewMode(value: string | null): WorkerPreviewMode {
+  return value === 'minimal' ? 'minimal' : 'full';
+}
+
+function parseReportCategory(value: string | null): ReportCategory {
+  if (value === 'Created' || value === 'Deleted') {
+    return value;
+  }
+  return 'Changed';
 }
 
 function parseQueueName(value: string | null): QueueName {
@@ -159,7 +189,7 @@ function parseQueueName(value: string | null): QueueName {
 }
 
 function parseReviewExplorer(value: string | null): 'all' | 'changed' | 'created' | 'deleted' {
-  if (value === 'all' || value === 'created' || value === 'deleted') {
+  if (value === 'all' || value === 'changed' || value === 'created' || value === 'deleted') {
     return value;
   }
   return DEFAULT_ROUTE.reviewExplorer;

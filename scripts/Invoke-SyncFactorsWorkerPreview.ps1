@@ -172,6 +172,7 @@ $projectRoot = Split-Path -Path $PSScriptRoot -Parent
 $moduleRoot = Join-Path -Path $projectRoot -ChildPath 'src/Modules/SyncFactors'
 Import-Module (Join-Path $moduleRoot 'Config.psm1') -Force -DisableNameChecking
 Import-Module (Join-Path $moduleRoot 'SuccessFactors.psm1') -Force -DisableNameChecking
+Import-Module (Join-Path $moduleRoot 'Persistence.psm1') -Force -DisableNameChecking
 
 $resolvedConfigPath = (Resolve-Path -Path $ConfigPath).Path
 $resolvedMappingConfigPath = (Resolve-Path -Path $MappingConfigPath).Path
@@ -275,7 +276,7 @@ if ($PreviewMode -eq 'Minimal') {
 
 $invokePath = Join-Path -Path $projectRoot -ChildPath 'src/Invoke-SyncFactors.ps1'
 $reportPath = & $invokePath -ConfigPath $effectiveConfigPath -MappingConfigPath $resolvedMappingConfigPath -Mode Review -WorkerId $WorkerId
-$report = Get-Content -Path $reportPath -Raw | ConvertFrom-Json -Depth 30
+$report = Get-SyncFactorsReportFromReference -Reference $reportPath -StatePath $config.state.path
 $entries = @(Get-SyncFactorsWorkerPreviewEntries -Report $report -WorkerId $WorkerId)
 $changedAttributes = @(Get-SyncFactorsWorkerPreviewChangedAttributes -Entries $entries)
 $operations = @($report.operations | Where-Object { "$($_.workerId)" -eq $WorkerId })
