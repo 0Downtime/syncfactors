@@ -1,0 +1,262 @@
+- generic [ref=e3]:
+  - banner [ref=e4]:
+    - generic [ref=e5]:
+      - paragraph [ref=e6]: SyncFactors Operator UI
+      - generic [ref=e7]:
+        - generic [ref=e8]: Read-only
+        - generic [ref=e9]: /Users/chrisbrien/dev/github.com/syncfactors/./reports/demo-rich/reports/output
+        - generic [ref=e10]:
+          - generic [ref=e11]: "`g`"
+          - generic [ref=e12]: "`q`"
+          - generic [ref=e13]: "`w`"
+          - generic [ref=e14]: "`/`"
+          - generic [ref=e15]: "`n`"
+          - generic [ref=e16]: "`p`"
+  - generic [ref=e56]:
+    - strong [ref=e57]: Status warnings
+    - list [ref=e58]:
+      - listitem [ref=e59]: Active Directory health probe is skipped on non-Windows hosts for the web dashboard.
+  - navigation [ref=e17]:
+    - button "Dashboard" [ref=e18] [cursor=pointer]
+    - button "Queues" [ref=e19] [cursor=pointer]
+    - button "Worker" [ref=e20] [cursor=pointer]
+  - generic [ref=e21]:
+    - generic [ref=e22]:
+      - paragraph [ref=e23]: SuccessFactors
+      - heading "ERROR" [level=2] [ref=e60]
+      - paragraph [ref=e25]: "SuccessFactors OAuth token request failed. URI: http://127.0.0.1:18080/oauth/token Exception type: System.TypeInitializationException Exception message: The type initializer for 'System.Net.CookieContainer' threw an exception. Inner exception type: System.InvalidOperationException Inner exception message: GetDomainName: -1"
+    - generic [ref=e26]:
+      - paragraph [ref=e27]: Active Directory
+      - heading "UNKNOWN" [level=2] [ref=e28]
+      - paragraph [ref=e29]: Active Directory health probe requires the Windows ActiveDirectory module.
+    - generic [ref=e30]:
+      - paragraph [ref=e31]: State Summary
+      - heading "1200 tracked workers" [level=2] [ref=e61]
+      - paragraph [ref=e33]: Suppressed 2 | Pending deletion 1
+      - paragraph [ref=e34]: Checkpoint 2026-03-21T20:30:42.7279170-04:00
+    - generic [ref=e35]:
+      - paragraph [ref=e36]: Current Run
+      - heading "InProgress / ProcessingWorkers" [level=2] [ref=e62]
+      - paragraph [ref=e38]: Evaluating worker 100003.
+      - paragraph [ref=e39]: Progress 67 / 1200 | Worker 100003
+  - main [ref=e40]:
+    - generic [ref=e41]:
+      - generic [ref=e42]:
+        - generic [ref=e43]:
+          - paragraph [ref=e44]: Run History
+          - heading "Recent runs" [level=2] [ref=e45]
+          - paragraph [ref=e46]: Scroll for older runs
+        - button "Copy run view link" [ref=e47] [cursor=pointer]
+      - generic [ref=e63]:
+        - button "Succeeded Review WorkerPreview Mar 21, 2026, 7:42:42 PM 2 hours ago C 0 / U 1 / MR 0" [ref=e64] [cursor=pointer]:
+          - strong [ref=e65]: Succeeded
+          - generic [ref=e66]: Review
+          - generic [ref=e67]: WorkerPreview
+          - generic [ref=e68]:
+            - generic [ref=e69]: Mar 21, 2026, 7:42:42 PM
+            - generic [ref=e70]: 2 hours ago
+          - generic [ref=e71]: C 0 / U 1 / MR 0
+        - button "Succeeded Review FirstSyncReview Mar 21, 2026, 6:39:42 PM 3 hours ago C 0 / U 0 / MR 2" [ref=e72] [cursor=pointer]:
+          - strong [ref=e73]: Succeeded
+          - generic [ref=e74]: Review
+          - generic [ref=e75]: FirstSyncReview
+          - generic [ref=e76]:
+            - generic [ref=e77]: Mar 21, 2026, 6:39:42 PM
+            - generic [ref=e78]: 3 hours ago
+          - generic [ref=e79]: C 0 / U 0 / MR 2
+        - button "Succeeded Delta WorkerSync Mar 21, 2026, 6:33:42 PM 3 hours ago C 0 / U 1 / MR 0" [ref=e80] [cursor=pointer]:
+          - strong [ref=e81]: Succeeded
+          - generic [ref=e82]: Delta
+          - generic [ref=e83]: WorkerSync
+          - generic [ref=e84]:
+            - generic [ref=e85]: Mar 21, 2026, 6:33:42 PM
+            - generic [ref=e86]: 3 hours ago
+          - generic [ref=e87]: C 0 / U 1 / MR 0
+        - button "Succeeded Delta WorkerSync Mar 21, 2026, 6:11:42 PM 3 hours ago C 0 / U 1 / MR 0" [ref=e88] [cursor=pointer]:
+          - strong [ref=e89]: Succeeded
+          - generic [ref=e90]: Delta
+          - generic [ref=e91]: WorkerSync
+          - generic [ref=e92]:
+            - generic [ref=e93]: Mar 21, 2026, 6:11:42 PM
+            - generic [ref=e94]: 3 hours ago
+          - generic [ref=e95]: C 0 / U 1 / MR 0
+        - button "Failed Full WorkerSync Mar 21, 2026, 5:49:42 PM 4 hours ago C 4 / U 0 / MR 0" [ref=e96] [cursor=pointer]:
+          - strong [ref=e97]: Failed
+          - generic [ref=e98]: Full
+          - generic [ref=e99]: WorkerSync
+          - generic [ref=e100]:
+            - generic [ref=e101]: Mar 21, 2026, 5:49:42 PM
+            - generic [ref=e102]: 4 hours ago
+          - generic [ref=e103]: C 4 / U 0 / MR 0
+        - button "Succeeded Delta WorkerSync Mar 21, 2026, 5:49:42 PM 4 hours ago C 0 / U 1 / MR 0" [ref=e104] [cursor=pointer]:
+          - strong [ref=e105]: Succeeded
+          - generic [ref=e106]: Delta
+          - generic [ref=e107]: WorkerSync
+          - generic [ref=e108]:
+            - generic [ref=e109]: Mar 21, 2026, 5:49:42 PM
+            - generic [ref=e110]: 4 hours ago
+          - generic [ref=e111]: C 0 / U 1 / MR 0
+        - button "Succeeded Delta WorkerSync Mar 21, 2026, 5:27:42 PM 4 hours ago C 0 / U 1 / MR 0" [ref=e112] [cursor=pointer]:
+          - strong [ref=e113]: Succeeded
+          - generic [ref=e114]: Delta
+          - generic [ref=e115]: WorkerSync
+          - generic [ref=e116]:
+            - generic [ref=e117]: Mar 21, 2026, 5:27:42 PM
+            - generic [ref=e118]: 4 hours ago
+          - generic [ref=e119]: C 0 / U 1 / MR 0
+        - button "Succeeded Delta WorkerSync Mar 21, 2026, 5:05:42 PM 4 hours ago C 0 / U 1 / MR 0" [ref=e120] [cursor=pointer]:
+          - strong [ref=e121]: Succeeded
+          - generic [ref=e122]: Delta
+          - generic [ref=e123]: WorkerSync
+          - generic [ref=e124]:
+            - generic [ref=e125]: Mar 21, 2026, 5:05:42 PM
+            - generic [ref=e126]: 4 hours ago
+          - generic [ref=e127]: C 0 / U 1 / MR 0
+        - button "Succeeded Delta WorkerSync Mar 21, 2026, 4:52:42 PM 5 hours ago C 0 / U 1 / MR 0" [ref=e128] [cursor=pointer]:
+          - strong [ref=e129]: Succeeded
+          - generic [ref=e130]: Delta
+          - generic [ref=e131]: WorkerSync
+          - generic [ref=e132]:
+            - generic [ref=e133]: Mar 21, 2026, 4:52:42 PM
+            - generic [ref=e134]: 5 hours ago
+          - generic [ref=e135]: C 0 / U 1 / MR 0
+        - button "Succeeded Delta WorkerSync Mar 21, 2026, 4:43:42 PM 5 hours ago C 0 / U 1 / MR 0" [ref=e136] [cursor=pointer]:
+          - strong [ref=e137]: Succeeded
+          - generic [ref=e138]: Delta
+          - generic [ref=e139]: WorkerSync
+          - generic [ref=e140]:
+            - generic [ref=e141]: Mar 21, 2026, 4:43:42 PM
+            - generic [ref=e142]: 5 hours ago
+          - generic [ref=e143]: C 0 / U 1 / MR 0
+        - button "Succeeded Delta WorkerSync Mar 21, 2026, 4:21:42 PM 5 hours ago C 0 / U 1 / MR 0" [ref=e144] [cursor=pointer]:
+          - strong [ref=e145]: Succeeded
+          - generic [ref=e146]: Delta
+          - generic [ref=e147]: WorkerSync
+          - generic [ref=e148]:
+            - generic [ref=e149]: Mar 21, 2026, 4:21:42 PM
+            - generic [ref=e150]: 5 hours ago
+          - generic [ref=e151]: C 0 / U 1 / MR 0
+        - button "Succeeded Full WorkerSync Mar 21, 2026, 3:50:42 PM 6 hours ago C 40 / U 10 / MR 0" [ref=e152] [cursor=pointer]:
+          - strong [ref=e153]: Succeeded
+          - generic [ref=e154]: Full
+          - generic [ref=e155]: WorkerSync
+          - generic [ref=e156]:
+            - generic [ref=e157]: Mar 21, 2026, 3:50:42 PM
+            - generic [ref=e158]: 6 hours ago
+          - generic [ref=e159]: C 40 / U 10 / MR 0
+    - generic [ref=e48]:
+      - generic [ref=e49]:
+        - generic [ref=e50]:
+          - paragraph [ref=e51]: Run Detail
+          - heading "5bc5d817-57e8-478f-966e-fd060769efd7" [level=2] [ref=e160]
+        - generic [ref=e53]:
+          - generic [ref=e161]: WorkerPreview
+          - button "Copy detail link" [ref=e54] [cursor=pointer]
+      - generic [ref=e162]:
+        - strong [ref=e163]: Run warnings
+        - list [ref=e164]:
+          - listitem [ref=e165]: Active Directory health probe is skipped on non-Windows hosts for the web dashboard.
+      - region "Run timeline" [ref=e166]:
+        - generic [ref=e167]:
+          - generic [ref=e168]:
+            - generic [ref=e169]: Started
+            - strong [ref=e170]: Mar 21, 2026, 7:42:42 PM
+            - generic [ref=e171]: 2 hours ago
+          - generic [ref=e172]:
+            - generic [ref=e173]: Completed
+            - strong [ref=e174]: Mar 21, 2026, 7:48:42 PM
+            - generic [ref=e175]: 2 hours ago
+          - generic [ref=e176]:
+            - generic [ref=e177]: Elapsed
+            - strong [ref=e178]: 6m 0s
+            - generic [ref=e179]: total run time
+      - generic [ref=e180]:
+        - generic [ref=e181]:
+          - generic [ref=e182]: Mode
+          - strong [ref=e183]: Review
+        - generic [ref=e184]:
+          - generic [ref=e185]: Status
+          - strong [ref=e186]: Succeeded
+        - generic [ref=e187]:
+          - generic [ref=e188]: Duration
+          - strong [ref=e189]: "360"
+        - generic [ref=e190]:
+          - generic [ref=e191]: Manual review
+          - strong [ref=e192]: "0"
+      - generic [ref=e193]:
+        - generic [ref=e194]:
+          - button "all (1)" [ref=e195] [cursor=pointer]
+          - button "changed (1)" [ref=e196] [cursor=pointer]
+          - button "created (0)" [ref=e197] [cursor=pointer]
+          - button "deleted (0)" [ref=e198] [cursor=pointer]
+        - paragraph [ref=e199]: Review explorer prioritizes created, changed, and deleted-style triage instead of raw bucket order.
+      - generic [ref=e200]:
+        - button "updates (1)" [ref=e202]
+        - textbox "Filter entries" [ref=e203]:
+          - /placeholder: Filter by worker, reason, or category
+      - generic [ref=e204]:
+        - button "100002 Updates ExistingUserChanges 0d stale" [ref=e206] [cursor=pointer]:
+          - strong [ref=e207]: "100002"
+          - generic [ref=e208]: Updates
+          - generic [ref=e209]: ExistingUserChanges
+          - generic [ref=e210]: 0d stale
+        - generic [ref=e211]:
+          - generic [ref=e212]:
+            - generic [ref=e213]:
+              - paragraph [ref=e214]: Selected Object
+              - heading "100002" [level=3] [ref=e215]
+            - generic [ref=e216]:
+              - generic [ref=e217]: Updates
+              - button "Worker page" [ref=e218] [cursor=pointer]
+          - generic [ref=e219]:
+            - term [ref=e220]: Reason
+            - definition [ref=e221]: "-"
+            - term [ref=e222]: Review category
+            - definition [ref=e223]: ExistingUserChanges
+            - term [ref=e224]: Review case
+            - definition [ref=e225]: RehireCase
+            - term [ref=e226]: SamAccountName
+            - definition [ref=e227]: sf100002
+            - term [ref=e228]: Target OU
+            - definition [ref=e229]: OU=LabField,OU=LabUsers,DC=example,DC=com
+            - term [ref=e230]: Current DN
+            - definition [ref=e231]: CN=Synthetic100002 User,OU=LabField,OU=LabUsers,DC=example,DC=com
+          - generic [ref=e232]:
+            - heading "Operation summary" [level=4] [ref=e233]
+            - paragraph [ref=e234]:
+              - strong [ref=e235]: Update attributes for sf100002
+            - paragraph [ref=e236]: 2 attribute changes.
+          - generic [ref=e237]:
+            - heading "Manual review workflow" [level=4] [ref=e238]
+            - paragraph [ref=e239]: Confirm how this rehire should reuse or restore the existing AD identity.
+            - list [ref=e240]:
+              - listitem [ref=e241]:
+                - strong [ref=e242]: Confirm account reuse
+                - text: ": Review the prior AD account and confirm whether it should be reused."
+              - listitem [ref=e243]:
+                - strong [ref=e244]: Restore group membership
+                - text: ": Restore the worker's previous licensing and security groups after review."
+          - generic [ref=e245]:
+            - generic [ref=e246]:
+              - heading "Structured diff" [level=4] [ref=e247]
+              - generic [ref=e248]:
+                - button "Changed only" [ref=e249] [cursor=pointer]
+                - button "All rows" [ref=e250] [cursor=pointer]
+            - table [ref=e251]:
+              - rowgroup [ref=e252]:
+                - row "Attribute Source Current Proposed" [ref=e253]:
+                  - columnheader "Attribute" [ref=e254]
+                  - columnheader "Source" [ref=e255]
+                  - columnheader "Current" [ref=e256]
+                  - columnheader "Proposed" [ref=e257]
+              - rowgroup [ref=e258]:
+                - row "Enabled status False True" [ref=e259]:
+                  - cell "Enabled" [ref=e260]
+                  - cell "status" [ref=e261]
+                  - cell "False" [ref=e262]
+                  - cell "True" [ref=e263]
+                - row "Department department Alumni Operations" [ref=e264]:
+                  - cell "Department" [ref=e265]
+                  - cell "department" [ref=e266]
+                  - cell "Alumni" [ref=e267]
+                  - cell "Operations" [ref=e268]

@@ -6,6 +6,8 @@ import { DEFAULT_ROUTE } from './route-state.js';
 import { getToneForReviewEntry } from './triage-components.js';
 import { DashboardView } from './triage-views.js';
 
+const NON_WINDOWS_AD_WARNING = 'Active Directory health probe is skipped on non-Windows hosts for the web dashboard.';
+
 const mockGetStatus = vi.fn();
 const mockGetRun = vi.fn();
 const mockGetRunEntries = vi.fn();
@@ -499,5 +501,23 @@ describe('App', () => {
     expect(screen.getAllByText(/CN=Jamie Doe/i)).toHaveLength(2);
     expect(screen.getAllByText(/ago/).length).toBeGreaterThan(0);
     expect(window.location.search).toMatch(/view=worker/);
+  });
+
+  it('shows the non-Windows AD probe warning once as a subtle status note', async () => {
+    mockGetStatus.mockResolvedValueOnce({
+      ...(await mockGetStatus()),
+      health: {
+        successFactors: { status: 'OK', detail: 'oauth' },
+        activeDirectory: { status: 'UNKNOWN', detail: 'Active Directory health probe requires the Windows ActiveDirectory module.' },
+      },
+      warnings: [NON_WINDOWS_AD_WARNING],
+    });
+
+    render(<App />);
+
+    await waitFor(() => expect(screen.getByText('Active Directory health is unavailable on this macOS host.')).toBeInTheDocument());
+    expect(screen.queryByText(/Status warnings/i)).not.toBeInTheDocument();
+    expect(screen.getByText('Active Directory health is unavailable on this macOS host.')).toBeInTheDocument();
+    expect(screen.queryByText(NON_WINDOWS_AD_WARNING)).not.toBeInTheDocument();
   });
 });

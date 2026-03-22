@@ -144,6 +144,13 @@ input {
   padding-left: 1rem;
 }
 
+.status-note {
+  margin: 0 0 0.8rem;
+  padding: 0.3rem 0.1rem;
+  color: rgba(208, 216, 228, 0.72);
+  font-size: 0.88rem;
+}
+
 .view-nav,
 .shortcut-row,
 .queue-tabs,

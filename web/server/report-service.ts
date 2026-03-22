@@ -66,6 +66,8 @@ type ScanResult = {
   warnings: string[];
 };
 
+const NON_WINDOWS_AD_PROBE_WARNING = 'Active Directory health probe is skipped on non-Windows hosts for the web dashboard.';
+
 export class ReportService {
   private readonly reportCache = new Map<string, ReportCacheEntry>();
 
@@ -111,7 +113,7 @@ export class ReportService {
       run: found.run,
       report: found.report,
       bucketCounts,
-      warnings: scan.warnings,
+      warnings: this.getContextWarnings(scan.warnings),
       reviewExplorer: {
         created: flattened.filter((entry) => isReviewCreated(entry)).length,
         changed: flattened.filter((entry) => isReviewChanged(entry)).length,
@@ -146,7 +148,7 @@ export class ReportService {
       return true;
     });
 
-    return { run: found.run, entries, total: entries.length, warnings: scan.warnings };
+    return { run: found.run, entries, total: entries.length, warnings: this.getContextWarnings(scan.warnings) };
   }
 
   async getQueue(
@@ -187,7 +189,7 @@ export class ReportService {
       reasonGroups: buildGroups(filtered, (entry) => entry.reason ?? 'Other'),
       reviewCaseGroups: buildGroups(filtered, (entry) => entry.reviewCaseType ?? 'Other'),
       artifactGroups: buildGroups(filtered, (entry) => entry.artifactType),
-      warnings: scan.warnings,
+      warnings: this.getContextWarnings(scan.warnings),
     };
   }
 
@@ -221,8 +223,12 @@ export class ReportService {
       latestEntry: relatedEntries[0] ?? null,
       relatedEntries: relatedEntries.slice(0, limit),
       relatedRuns,
-      warnings: scan.warnings,
+      warnings: this.getContextWarnings(scan.warnings),
     };
+  }
+
+  private getContextWarnings(warnings: string[]): string[] {
+    return warnings.filter((warning) => warning !== NON_WINDOWS_AD_PROBE_WARNING);
   }
 
   private async scanRuns(status: DashboardStatus): Promise<ScanResult> {

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { MutableRefObject } from 'react';
+import type { MutableRefObject, ReactNode } from 'react';
 import type { DashboardStatus, EntryRecord, QueueGroup } from './types.js';
 
 export function getToneForBucket(bucket: string | null | undefined): string {
@@ -188,6 +188,10 @@ export function WarningPanel({ title, warnings }: { title: string; warnings: str
       </ul>
     </section>
   );
+}
+
+export function StatusNote({ children }: { children: ReactNode }) {
+  return <section className="status-note">{children}</section>;
 }
 
 export function StatusPanel({ title, health }: { title: string; health?: { status: string; detail: string } }) {

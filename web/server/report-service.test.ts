@@ -6,6 +6,7 @@ import { ReportService } from './report-service.js';
 import type { DashboardStatus } from './types.js';
 
 const tempPaths: string[] = [];
+const NON_WINDOWS_AD_PROBE_WARNING = 'Active Directory health probe is skipped on non-Windows hosts for the web dashboard.';
 
 async function writeReport(directory: string, fileName: string, report: Record<string, unknown>) {
   await fs.mkdir(directory, { recursive: true });
@@ -190,5 +191,23 @@ describe('ReportService', () => {
     expect(queue.reasonGroups[0]?.label).toBe('RehireDetected');
     expect(worker.trackedWorker?.suppressed).toBe(true);
     expect(worker.latestEntry?.workerId).toBe('1001');
+  });
+
+  it('keeps the non-Windows AD probe warning out of run, queue, and worker responses', async () => {
+    const status = await createStatusFixture();
+    status.warnings = [NON_WINDOWS_AD_PROBE_WARNING];
+    const service = new ReportService();
+
+    const runs = await service.listRuns(status, {});
+    const detail = await service.getRun(status, 'run-1');
+    const entries = await service.getRunEntries(status, 'run-1', { bucket: 'updates' });
+    const queue = await service.getQueue(status, 'manual-review', {});
+    const worker = await service.getWorkerDetail(status, '1001');
+
+    expect(runs.warnings).toContain(NON_WINDOWS_AD_PROBE_WARNING);
+    expect(detail.warnings).not.toContain(NON_WINDOWS_AD_PROBE_WARNING);
+    expect(entries.warnings).not.toContain(NON_WINDOWS_AD_PROBE_WARNING);
+    expect(queue.warnings).not.toContain(NON_WINDOWS_AD_PROBE_WARNING);
+    expect(worker.warnings).not.toContain(NON_WINDOWS_AD_PROBE_WARNING);
   });
 });

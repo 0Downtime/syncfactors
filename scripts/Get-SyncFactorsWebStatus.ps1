@@ -234,7 +234,20 @@ if ($IsWindows) {
         $warnings.Add("Health probe unavailable: $($_.Exception.Message)")
     }
 } else {
-    $warnings.Add('Health probes are skipped on non-Windows hosts for the web dashboard.')
+    try {
+        $health.successFactors = & $monitoringModule {
+            param($Config)
+            Test-SyncFactorsMonitorSuccessFactorsConnection -Config $Config
+        } $config
+    } catch {
+        $warnings.Add("SuccessFactors health probe unavailable: $($_.Exception.Message)")
+    }
+
+    $health.activeDirectory = [pscustomobject]@{
+        status = 'UNKNOWN'
+        detail = 'Active Directory health probe requires the Windows ActiveDirectory module.'
+    }
+    $warnings.Add('Active Directory health probe is skipped on non-Windows hosts for the web dashboard.')
 }
 
 $suppressedWorkers = @($workerEntries | Where-Object { $_.suppressed })

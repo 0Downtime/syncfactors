@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { getQueue, getRun, getRunEntries, getStatus, getWorkerDetail } from './api.js';
 import { BUCKET_ORDER, chooseSelectedEntry, DEFAULT_ROUTE, getRouteState, mapReviewExplorerToBucket, normalizeRoute, resolveActiveBucket, stepSelection, syncRouteState } from './route-state.js';
 import type { RouteState } from './route-state.js';
-import { CurrentRunPanel, StatusPanel, SummaryPanel, WarningPanel } from './triage-components.js';
+import { CurrentRunPanel, StatusNote, StatusPanel, SummaryPanel, WarningPanel } from './triage-components.js';
 import { DashboardView, QueueView, WorkerView } from './triage-views.js';
 import type { DashboardStatus, EntryListResponse, EntryRecord, QueueResponse, RunDetailResponse, WorkerDetailResponse } from './types.js';
 
@@ -215,6 +215,11 @@ export function App() {
     }));
   }, [runDetail]);
 
+  const dashboardWarnings = status?.warnings ?? [];
+  const adProbeSkipWarning = 'Active Directory health probe is skipped on non-Windows hosts for the web dashboard.';
+  const statusWarnings = dashboardWarnings.filter((warning) => warning !== adProbeSkipWarning);
+  const showAdProbeNote = dashboardWarnings.includes(adProbeSkipWarning);
+
   return (
     <div className="app-shell">
       <header className="hero">
@@ -229,13 +234,15 @@ export function App() {
       </header>
 
       {error ? <section className="error-banner">{error}</section> : null}
-      {status?.warnings?.length ? <WarningPanel title="Status warnings" warnings={status.warnings} /> : null}
+      {statusWarnings.length ? <WarningPanel title="Status warnings" warnings={statusWarnings} /> : null}
 
       <nav className="view-nav">
         <button className={route.view === 'dashboard' ? 'active' : ''} onClick={() => navigateTo({ ...route, view: 'dashboard' })} type="button">Dashboard</button>
         <button className={route.view === 'queues' ? 'active' : ''} onClick={() => navigateTo({ ...route, view: 'queues' })} type="button">Queues</button>
         <button className={route.view === 'worker' ? 'active' : ''} onClick={() => navigateTo({ ...route, view: 'worker' })} type="button" disabled={!route.workerId}>Worker</button>
       </nav>
+
+      {showAdProbeNote ? <StatusNote>Active Directory health is unavailable on this macOS host.</StatusNote> : null}
 
       <section className="status-grid">
         <StatusPanel title="SuccessFactors" health={status?.health.successFactors} />
