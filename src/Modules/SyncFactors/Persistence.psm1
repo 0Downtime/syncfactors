@@ -238,12 +238,47 @@ function Invoke-SyncFactorsSqliteCommand {
     }
     $arguments += @($DatabasePath, $Sql)
 
-    $output = & $sqlitePath @arguments 2>&1
-    if ($LASTEXITCODE -ne 0) {
-        throw "sqlite3 command failed: $($output -join [Environment]::NewLine)"
+    $startInfo = [System.Diagnostics.ProcessStartInfo]::new()
+    $startInfo.FileName = $sqlitePath
+    $startInfo.UseShellExecute = $false
+    $startInfo.RedirectStandardOutput = $true
+    $startInfo.RedirectStandardError = $true
+    $startInfo.CreateNoWindow = $true
+
+    foreach ($argument in $arguments) {
+        [void]$startInfo.ArgumentList.Add("$argument")
     }
 
-    return $output
+    $process = [System.Diagnostics.Process]::new()
+    $process.StartInfo = $startInfo
+
+    $stdout = ''
+    $stderr = ''
+    $exitCode = -1
+
+    try {
+        [void]$process.Start()
+        $stdout = $process.StandardOutput.ReadToEnd()
+        $stderr = $process.StandardError.ReadToEnd()
+        $process.WaitForExit()
+        $exitCode = $process.ExitCode
+    } finally {
+        $process.Dispose()
+    }
+
+    if ($exitCode -ne 0) {
+        $errorText = @(@($stderr) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+        if ($errorText.Length -eq 0 -and -not [string]::IsNullOrWhiteSpace($stdout)) {
+            $errorText = @($stdout)
+        }
+        throw "sqlite3 command failed: $($errorText -join [Environment]::NewLine)"
+    }
+
+    if ([string]::IsNullOrEmpty($stdout)) {
+        return @()
+    }
+
+    return @($stdout -split "`r?`n") | Where-Object { $_ -ne '' }
 }
 
 function Initialize-SyncFactorsSqliteDatabase {
