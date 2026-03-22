@@ -1,6 +1,7 @@
 .vscode/
 .idea/
 .DS_Store
+.playwright-cli/
 
 *.log
 *.tmp
@@ -15,10 +16,14 @@ coverage.xml
 artifacts/
 .tools/gitleaks/
 .tools/gitleaks-scan/
+node_modules/
+web/dist/
+web/.vite/
 
 state/runtime/
 reports/output/
 reports/mock-output/
+reports/demo-*/
 reports/synthetic/
 reports/synthetic*/
 
