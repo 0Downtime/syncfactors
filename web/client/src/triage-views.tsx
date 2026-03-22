@@ -1,4 +1,4 @@
-import type { DashboardStatus, EntryListResponse, EntryRecord, QueueName, QueueResponse, RunDetailResponse, WorkerActionKind, WorkerActionResponse, WorkerDetailResponse } from './types.js';
+import type { DashboardStatus, EntryListResponse, EntryRecord, OperatorActionKind, QueueName, QueueResponse, RunDetailResponse, WorkerActionKind, WorkerActionResponse, WorkerDetailResponse } from './types.js';
 import type { RouteState } from './route-state.js';
 import { mapReviewExplorerToBucket } from './route-state.js';
 import { AbsoluteTimeLabel, CopyLinkButton, DashboardOverviewPanel, DetailRow, GroupPanel, RelativeTimeLabel, SelectedEntryPanel, SummaryMetric, WarningPanel, getToneForBucket, getToneForReviewEntry, getToneForReviewExplorer } from './triage-components.js';
@@ -393,6 +393,119 @@ export function WorkerView(props: {
   );
 }
 
+export function ReportExplorerView(props: {
+  route: RouteState;
+  runDetail: RunDetailResponse | null;
+  entryResponse: EntryListResponse | null;
+  selectedEntry: EntryRecord | null;
+  onCategoryChange: (category: 'Changed' | 'Created' | 'Deleted') => void;
+  onSelectEntry: (entry: EntryRecord) => void;
+  onDiffModeChange: (mode: 'changed' | 'all') => void;
+  onOpenWorker: (workerId: string) => void;
+  onOpenPath: () => void;
+  onCopyPath: () => void;
+  onExport: () => void;
+}) {
+  const entries = props.entryResponse?.entries ?? [];
+  const categoryEntries = entries.filter((entry) => mapEntryCategory(entry) === props.route.reportCategory);
+  return (
+    <main className="dashboard-layout">
+      <section className="card detail-card full-width">
+        <div className="card-header">
+          <div className="detail-heading">
+            <p className="section-kicker">Report Explorer</p>
+            <h2 className="detail-run-id" title={props.runDetail?.run.runId ?? undefined}>{props.runDetail?.run.runId ?? 'Select a run'}</h2>
+          </div>
+          <div className="header-actions">
+            <button type="button" onClick={props.onOpenPath}>Open path</button>
+            <button type="button" onClick={props.onCopyPath}>Copy path</button>
+            <button type="button" onClick={props.onExport}>Export bucket</button>
+          </div>
+        </div>
+        <div className="review-tabs">
+          {(['Changed', 'Created', 'Deleted'] as const).map((category) => (
+            <button
+              key={category}
+              type="button"
+              className={props.route.reportCategory === category ? 'active' : ''}
+              onClick={() => props.onCategoryChange(category)}
+            >
+              {category} ({entries.filter((entry) => mapEntryCategory(entry) === category).length})
+            </button>
+          ))}
+        </div>
+        <div className="detail-content">
+          <div className="entry-list">
+            {categoryEntries.map((entry) => (
+              <button
+                key={entry.entryId}
+                type="button"
+                className={`entry-row ${props.route.entryId === entry.entryId ? 'selected' : ''}`}
+                data-tone={getToneForBucket(entry.bucket)}
+                onClick={() => props.onSelectEntry(entry)}
+              >
+                <strong>{entry.workerId ?? 'Unknown worker'}</strong>
+                <span>{entry.bucketLabel}</span>
+                <span>{entry.reason ?? entry.reviewCategory ?? 'No reason provided'}</span>
+                <span>{entry.changeCount} changes</span>
+              </button>
+            ))}
+          </div>
+          <SelectedEntryPanel
+            entry={props.selectedEntry}
+            diffMode={props.route.diffMode}
+            onDiffModeChange={props.onDiffModeChange}
+            onOpenWorker={props.onOpenWorker}
+          />
+        </div>
+      </section>
+    </main>
+  );
+}
+
+export function OperationsView(props: {
+  onRunAction: (action: OperatorActionKind) => void;
+  onRunPreflight: () => void;
+  onRunFreshReset: () => void;
+}) {
+  const runActions: Array<{ action: OperatorActionKind; label: string; detail: string }> = [
+    { action: 'delta-dry-run', label: 'Delta dry-run', detail: 'Write runtime status and report files only.' },
+    { action: 'delta-sync', label: 'Delta sync', detail: 'Apply delta changes to AD and sync state.' },
+    { action: 'full-dry-run', label: 'Full dry-run', detail: 'Generate a full report without AD mutations.' },
+    { action: 'full-sync', label: 'Full sync', detail: 'Apply a full synchronization to AD.' },
+    { action: 'review-run', label: 'First-sync review', detail: 'Launch the review flow in a separate PowerShell process.' },
+  ];
+
+  return (
+    <main className="worker-grid">
+      <section className="card worker-actions-card">
+        <div className="card-header">
+          <div>
+            <p className="section-kicker">Operations</p>
+            <h2>Command launcher</h2>
+          </div>
+        </div>
+        <div className="worker-action-buttons">
+          <button type="button" onClick={props.onRunPreflight}>
+            <strong>Preflight</strong>
+            <span>Run validation against the current config and mapping files.</span>
+          </button>
+          {runActions.map(({ action, label, detail }) => (
+            <button key={action} type="button" onClick={() => props.onRunAction(action)}>
+              <strong>{label}</strong>
+              <span>{detail}</span>
+            </button>
+          ))}
+          <button type="button" onClick={props.onRunFreshReset}>
+            <strong>Fresh sync reset</strong>
+            <span>Delete managed AD user objects and reset local sync state.</span>
+          </button>
+        </div>
+      </section>
+    </main>
+  );
+}
+
 function formatWorkerActionLabel(action: WorkerActionKind): string {
   switch (action) {
     case 'test-sync':
@@ -402,6 +515,16 @@ function formatWorkerActionLabel(action: WorkerActionKind): string {
     case 'real-sync':
       return 'Real sync';
   }
+}
+
+function mapEntryCategory(entry: EntryRecord): 'Changed' | 'Created' | 'Deleted' {
+  if (entry.bucket === 'creates' || entry.reviewCategory === 'NewUser') {
+    return 'Created';
+  }
+  if (['updates', 'enables', 'disables', 'graveyardMoves', 'unchanged'].includes(entry.bucket)) {
+    return 'Changed';
+  }
+  return 'Deleted';
 }
 
 function QueuePagination(props: {

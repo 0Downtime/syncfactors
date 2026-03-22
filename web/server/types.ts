@@ -179,6 +179,61 @@ export type WorkerDetailResponse = {
 
 export type WorkerActionKind = 'test-sync' | 'review-sync' | 'real-sync';
 
+export type OperatorActionKind = 'delta-dry-run' | 'delta-sync' | 'full-dry-run' | 'full-sync' | 'review-run';
+
+export type WorkerPreviewMode = 'minimal' | 'full';
+
+export type ConfirmationDescriptor = {
+  title: string;
+  message: string;
+  requiredText: string;
+  riskLevel: 'low' | 'medium' | 'high' | 'critical';
+};
+
+export type OperatorCommandResult = {
+  status: 'accepted' | 'completed';
+  started: boolean;
+  completed: boolean;
+  message: string;
+  commandSummary: string[];
+  runId: string | null;
+  reportPath: string | null;
+  outputLines: string[];
+  confirmation?: ConfirmationDescriptor | null;
+};
+
+export type WorkerPreviewResponse = {
+  reportPath: string | null;
+  runId: string | null;
+  mode: string | null;
+  status: string | null;
+  artifactType: string | null;
+  successFactorsAuth?: string | null;
+  previewMode: WorkerPreviewMode;
+  workerScope?: { workerId?: string | null; identityField?: string | null } | null;
+  reviewSummary?: Record<string, unknown> | null;
+  preview: {
+    workerId: string;
+    buckets: string[];
+    matchedExistingUser: boolean | null;
+    reviewCategory?: string | null;
+    reviewCaseType?: string | null;
+    reason?: string | null;
+    operatorActionSummary?: string | null;
+    operatorActions?: OperatorAction[];
+    samAccountName?: string | null;
+    targetOu?: string | null;
+    currentDistinguishedName?: string | null;
+    currentEnabled?: boolean | null;
+    proposedEnable?: boolean | null;
+  };
+  diffRows: DiffRow[];
+  operationSummary: OperationSummary | null;
+  entries: Array<{ bucket: string; item: Record<string, unknown> }>;
+  rawWorker?: Record<string, unknown> | null;
+  rawPropertyNames?: string[];
+};
+
 export type WorkerActionResponse = {
   action: WorkerActionKind;
   workerId: string;
