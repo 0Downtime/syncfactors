@@ -240,11 +240,13 @@ Import-Module (Join-Path $moduleRoot 'SyntheticHarness.psm1') -Force -DisableNam
 Import-Module (Join-Path $moduleRoot 'Reporting.psm1') -Force -DisableNameChecking
 $stateModule = Import-Module (Join-Path $moduleRoot 'State.psm1') -Force -DisableNameChecking -PassThru
 $monitoringModule = Import-Module (Join-Path $moduleRoot 'Monitoring.psm1') -Force -DisableNameChecking -PassThru
+$persistenceModule = Import-Module (Join-Path $moduleRoot 'Persistence.psm1') -Force -DisableNameChecking -PassThru
 $saveSyncFactorsState = $stateModule.ExportedFunctions['Save-SyncFactorsState']
 $getSyncFactorsRuntimeStatusPath = $monitoringModule.ExportedFunctions['Get-SyncFactorsRuntimeStatusPath']
 $newSyncFactorsIdleRuntimeStatus = $monitoringModule.ExportedFunctions['New-SyncFactorsIdleRuntimeStatus']
 $newSyncFactorsRuntimeStatusSnapshot = $monitoringModule.ExportedFunctions['New-SyncFactorsRuntimeStatusSnapshot']
 $saveSyncFactorsRuntimeStatusSnapshot = $monitoringModule.ExportedFunctions['Save-SyncFactorsRuntimeStatusSnapshot']
+$importSyncFactorsJsonArtifactsToSqlite = $persistenceModule.ExportedFunctions['Import-SyncFactorsJsonArtifactsToSqlite']
 
 $resolvedConfigPath = (Resolve-Path -Path (Get-ResolvedPathOrJoin -Path $ConfigPath -BasePath $projectRoot)).Path
 $resolvedMappingConfigPath = (Resolve-Path -Path (Get-ResolvedPathOrJoin -Path $MappingConfigPath -BasePath $projectRoot)).Path
@@ -550,6 +552,8 @@ if ($IncludeActiveRun) {
     & $saveSyncFactorsRuntimeStatusSnapshot -Snapshot $idleSnapshot -StatePath $statePath | Out-Null
     $idleSnapshot | ConvertTo-Json -Depth 30 | Set-Content -Path (& $getSyncFactorsRuntimeStatusPath -StatePath $statePath)
 }
+
+[void](& $importSyncFactorsJsonArtifactsToSqlite -Config $demoConfig)
 
 $result = [pscustomobject]@{
     preset = $Preset
