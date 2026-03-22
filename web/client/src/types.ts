@@ -171,3 +171,20 @@ export type WorkerDetailResponse = {
   relatedRuns: RunSummary[];
   warnings: string[];
 };
+
+export type WorkerActionKind = 'test-sync' | 'review-sync' | 'real-sync';
+
+export type WorkerActionResponse = {
+  action: WorkerActionKind;
+  workerId: string;
+  result: {
+    reportPath: string | null;
+    runId: string | null;
+    mode: string | null;
+    status: string | null;
+    artifactType: string | null;
+    previewMode?: string | null;
+    successFactorsAuth?: string | null;
+    workerScope?: { workerId?: string | null; identityField?: string | null } | null;
+  };
+};

@@ -1,12 +1,15 @@
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { afterEach, describe, expect, it } from 'vitest';
 import { ReportService } from './report-service.js';
 import type { DashboardStatus } from './types.js';
 
 const tempPaths: string[] = [];
 const NON_WINDOWS_AD_PROBE_WARNING = 'Active Directory health probe is skipped on non-Windows hosts for the web dashboard.';
+const execFileAsync = promisify(execFile);
 
 async function writeReport(directory: string, fileName: string, report: Record<string, unknown>) {
   await fs.mkdir(directory, { recursive: true });
@@ -209,5 +212,387 @@ describe('ReportService', () => {
     expect(entries.warnings).not.toContain(NON_WINDOWS_AD_PROBE_WARNING);
     expect(queue.warnings).not.toContain(NON_WINDOWS_AD_PROBE_WARNING);
     expect(worker.warnings).not.toContain(NON_WINDOWS_AD_PROBE_WARNING);
+  });
+
+  it('prefers SQLite-backed runs when a database is available', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'syncfactors-sqlite-'));
+    tempPaths.push(root);
+    const sqlitePath = path.join(root, 'syncfactors.db');
+    const status = await createStatusFixture();
+    status.paths.sqlitePath = sqlitePath;
+    status.paths.statePath = path.join(root, 'state.json');
+    status.recentRuns = [];
+
+    const report = {
+      runId: 'run-sqlite-1',
+      artifactType: 'SyncReport',
+      mode: 'Delta',
+      dryRun: false,
+      status: 'Succeeded',
+      startedAt: '2026-03-21T10:00:00Z',
+      completedAt: '2026-03-21T10:03:00Z',
+      operations: [],
+      creates: [{ workerId: '2001', samAccountName: 'adoe', targetOu: 'OU=Employees,DC=example,DC=com' }],
+      updates: [],
+      enables: [],
+      disables: [],
+      graveyardMoves: [],
+      deletions: [],
+      quarantined: [],
+      conflicts: [],
+      guardrailFailures: [],
+      manualReview: [],
+      unchanged: [],
+    };
+
+    const sql = `
+PRAGMA journal_mode = WAL;
+CREATE TABLE IF NOT EXISTS runs (
+  run_id TEXT PRIMARY KEY,
+  state_path TEXT NULL,
+  path TEXT NULL,
+  artifact_type TEXT NOT NULL,
+  worker_scope_json TEXT NULL,
+  config_path TEXT NULL,
+  mapping_config_path TEXT NULL,
+  mode TEXT NULL,
+  dry_run INTEGER NOT NULL DEFAULT 0,
+  status TEXT NULL,
+  started_at TEXT NULL,
+  completed_at TEXT NULL,
+  duration_seconds INTEGER NULL,
+  reversible_operations INTEGER NOT NULL DEFAULT 0,
+  creates INTEGER NOT NULL DEFAULT 0,
+  updates INTEGER NOT NULL DEFAULT 0,
+  enables INTEGER NOT NULL DEFAULT 0,
+  disables INTEGER NOT NULL DEFAULT 0,
+  graveyard_moves INTEGER NOT NULL DEFAULT 0,
+  deletions INTEGER NOT NULL DEFAULT 0,
+  quarantined INTEGER NOT NULL DEFAULT 0,
+  conflicts INTEGER NOT NULL DEFAULT 0,
+  guardrail_failures INTEGER NOT NULL DEFAULT 0,
+  manual_review INTEGER NOT NULL DEFAULT 0,
+  unchanged INTEGER NOT NULL DEFAULT 0,
+  review_summary_json TEXT NULL,
+  report_json TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS run_entries (
+  entry_id TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL,
+  state_path TEXT NULL,
+  bucket TEXT NOT NULL,
+  bucket_index INTEGER NOT NULL,
+  worker_id TEXT NULL,
+  sam_account_name TEXT NULL,
+  reason TEXT NULL,
+  review_category TEXT NULL,
+  review_case_type TEXT NULL,
+  started_at TEXT NULL,
+  item_json TEXT NOT NULL
+);
+INSERT INTO runs (
+  run_id,
+  state_path,
+  path,
+  artifact_type,
+  mode,
+  dry_run,
+  status,
+  started_at,
+  completed_at,
+  duration_seconds,
+  reversible_operations,
+  creates,
+  updates,
+  enables,
+  disables,
+  graveyard_moves,
+  deletions,
+  quarantined,
+  conflicts,
+  guardrail_failures,
+  manual_review,
+  unchanged,
+  report_json
+) VALUES (
+  'run-sqlite-1',
+  '${status.paths.statePath}',
+  '/tmp/sqlite-run.json',
+  'SyncReport',
+  'Delta',
+  0,
+  'Succeeded',
+  '2026-03-21T10:00:00Z',
+  '2026-03-21T10:03:00Z',
+  180,
+  0,
+  1,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  '${JSON.stringify(report).replaceAll("'", "''")}'
+);
+INSERT INTO run_entries (
+  entry_id,
+  run_id,
+  state_path,
+  bucket,
+  bucket_index,
+  worker_id,
+  sam_account_name,
+  reason,
+  review_category,
+  review_case_type,
+  started_at,
+  item_json
+) VALUES (
+  'run-sqlite-1:creates:2001:0',
+  'run-sqlite-1',
+  '${status.paths.statePath}',
+  'creates',
+  0,
+  '2001',
+  'adoe',
+  NULL,
+  NULL,
+  NULL,
+  '2026-03-21T10:00:00Z',
+  '${JSON.stringify(report.creates[0]).replaceAll("'", "''")}'
+);
+`;
+    await execFileAsync('sqlite3', [sqlitePath, sql]);
+
+    const service = new ReportService();
+    const runs = await service.listRuns(status, {});
+    const detail = await service.getRun(status, 'run-sqlite-1');
+    const worker = await service.getWorkerDetail(status, '2001');
+
+    expect(runs.total).toBe(1);
+    expect(runs.items[0]?.runId).toBe('run-sqlite-1');
+    expect(detail.bucketCounts.creates).toBe(1);
+    expect(worker.latestEntry?.entryId).toBe('run-sqlite-1:creates:2001:0');
+    expect(worker.relatedEntries).toHaveLength(1);
+  });
+
+  it('throws when a configured SQLite operational store is missing', async () => {
+    const status = await createStatusFixture();
+    status.paths.sqlitePath = path.join(os.tmpdir(), `syncfactors-missing-${Date.now()}.db`);
+    const service = new ReportService();
+
+    await expect(service.listRuns(status, {})).rejects.toThrow(/SQLite operational store is required/);
+  });
+
+  it('prefers SQLite-backed queue queries when run entries are available', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'syncfactors-sqlite-queue-'));
+    tempPaths.push(root);
+    const sqlitePath = path.join(root, 'syncfactors.db');
+    const status = await createStatusFixture();
+    status.paths.sqlitePath = sqlitePath;
+    status.paths.statePath = path.join(root, 'state.json');
+    status.recentRuns = [];
+
+    const reviewReport = {
+      runId: 'run-review-1',
+      artifactType: 'FirstSyncReview',
+      mode: 'Review',
+      dryRun: true,
+      status: 'Succeeded',
+      startedAt: '2026-03-22T10:00:00Z',
+      completedAt: '2026-03-22T10:05:00Z',
+      operations: [],
+      creates: [],
+      updates: [],
+      enables: [],
+      disables: [],
+      graveyardMoves: [],
+      deletions: [],
+      quarantined: [],
+      conflicts: [],
+      guardrailFailures: [],
+      manualReview: [{ workerId: '3001', reason: 'RehireDetected', reviewCaseType: 'RehireCase' }],
+      unchanged: [],
+    };
+
+    const sql = `
+CREATE TABLE IF NOT EXISTS runs (
+  run_id TEXT PRIMARY KEY,
+  state_path TEXT NULL,
+  path TEXT NULL,
+  artifact_type TEXT NOT NULL,
+  worker_scope_json TEXT NULL,
+  config_path TEXT NULL,
+  mapping_config_path TEXT NULL,
+  mode TEXT NULL,
+  dry_run INTEGER NOT NULL DEFAULT 0,
+  status TEXT NULL,
+  started_at TEXT NULL,
+  completed_at TEXT NULL,
+  duration_seconds INTEGER NULL,
+  reversible_operations INTEGER NOT NULL DEFAULT 0,
+  creates INTEGER NOT NULL DEFAULT 0,
+  updates INTEGER NOT NULL DEFAULT 0,
+  enables INTEGER NOT NULL DEFAULT 0,
+  disables INTEGER NOT NULL DEFAULT 0,
+  graveyard_moves INTEGER NOT NULL DEFAULT 0,
+  deletions INTEGER NOT NULL DEFAULT 0,
+  quarantined INTEGER NOT NULL DEFAULT 0,
+  conflicts INTEGER NOT NULL DEFAULT 0,
+  guardrail_failures INTEGER NOT NULL DEFAULT 0,
+  manual_review INTEGER NOT NULL DEFAULT 0,
+  unchanged INTEGER NOT NULL DEFAULT 0,
+  review_summary_json TEXT NULL,
+  report_json TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS run_entries (
+  entry_id TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL,
+  state_path TEXT NULL,
+  bucket TEXT NOT NULL,
+  bucket_index INTEGER NOT NULL,
+  worker_id TEXT NULL,
+  sam_account_name TEXT NULL,
+  reason TEXT NULL,
+  review_category TEXT NULL,
+  review_case_type TEXT NULL,
+  started_at TEXT NULL,
+  item_json TEXT NOT NULL
+);
+INSERT INTO runs (run_id, state_path, path, artifact_type, mode, dry_run, status, started_at, completed_at, duration_seconds, manual_review, report_json)
+VALUES ('run-review-1', '${status.paths.statePath}', '/tmp/review.json', 'FirstSyncReview', 'Review', 1, 'Succeeded', '2026-03-22T10:00:00Z', '2026-03-22T10:05:00Z', 300, 1, '${JSON.stringify(reviewReport).replaceAll("'", "''")}');
+INSERT INTO run_entries (entry_id, run_id, state_path, bucket, bucket_index, worker_id, reason, review_case_type, started_at, item_json)
+VALUES ('run-review-1:manualReview:3001:0', 'run-review-1', '${status.paths.statePath}', 'manualReview', 0, '3001', 'RehireDetected', 'RehireCase', '2026-03-22T10:00:00Z', '${JSON.stringify(reviewReport.manualReview[0]).replaceAll("'", "''")}');
+`;
+    await execFileAsync('sqlite3', [sqlitePath, sql]);
+
+    const service = new ReportService();
+    const queue = await service.getQueue(status, 'manual-review', {});
+
+    expect(queue.total).toBe(1);
+    expect(queue.entries[0]?.workerId).toBe('3001');
+    expect(queue.reasonGroups[0]?.label).toBe('RehireDetected');
+  });
+
+  it('prefers SQLite-backed run detail and run entry queries when entry rows are available', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'syncfactors-sqlite-run-'));
+    tempPaths.push(root);
+    const sqlitePath = path.join(root, 'syncfactors.db');
+    const status = await createStatusFixture();
+    status.paths.sqlitePath = sqlitePath;
+    status.paths.statePath = path.join(root, 'state.json');
+    status.recentRuns = [];
+
+    const report = {
+      runId: 'run-detail-1',
+      artifactType: 'WorkerPreview',
+      mode: 'Review',
+      dryRun: true,
+      status: 'Succeeded',
+      startedAt: '2026-03-22T11:00:00Z',
+      completedAt: '2026-03-22T11:04:00Z',
+      operations: [
+        {
+          workerId: '4001',
+          bucket: 'updates',
+          operationType: 'UpdateAttributes',
+          before: { department: 'Finance' },
+          after: { department: 'Sales' },
+          target: { samAccountName: 'asmith' },
+        },
+      ],
+      creates: [],
+      updates: [
+        {
+          workerId: '4001',
+          samAccountName: 'asmith',
+          reason: 'AttributeDelta',
+          changedAttributeDetails: [
+            {
+              sourceField: 'department',
+              targetAttribute: 'department',
+              currentAdValue: 'Finance',
+              proposedValue: 'Sales',
+            },
+          ],
+        },
+      ],
+      enables: [],
+      disables: [],
+      graveyardMoves: [],
+      deletions: [],
+      quarantined: [],
+      conflicts: [],
+      guardrailFailures: [],
+      manualReview: [],
+      unchanged: [],
+    };
+
+    const sql = `
+CREATE TABLE IF NOT EXISTS runs (
+  run_id TEXT PRIMARY KEY,
+  state_path TEXT NULL,
+  path TEXT NULL,
+  artifact_type TEXT NOT NULL,
+  worker_scope_json TEXT NULL,
+  config_path TEXT NULL,
+  mapping_config_path TEXT NULL,
+  mode TEXT NULL,
+  dry_run INTEGER NOT NULL DEFAULT 0,
+  status TEXT NULL,
+  started_at TEXT NULL,
+  completed_at TEXT NULL,
+  duration_seconds INTEGER NULL,
+  reversible_operations INTEGER NOT NULL DEFAULT 0,
+  creates INTEGER NOT NULL DEFAULT 0,
+  updates INTEGER NOT NULL DEFAULT 0,
+  enables INTEGER NOT NULL DEFAULT 0,
+  disables INTEGER NOT NULL DEFAULT 0,
+  graveyard_moves INTEGER NOT NULL DEFAULT 0,
+  deletions INTEGER NOT NULL DEFAULT 0,
+  quarantined INTEGER NOT NULL DEFAULT 0,
+  conflicts INTEGER NOT NULL DEFAULT 0,
+  guardrail_failures INTEGER NOT NULL DEFAULT 0,
+  manual_review INTEGER NOT NULL DEFAULT 0,
+  unchanged INTEGER NOT NULL DEFAULT 0,
+  review_summary_json TEXT NULL,
+  report_json TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS run_entries (
+  entry_id TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL,
+  state_path TEXT NULL,
+  bucket TEXT NOT NULL,
+  bucket_index INTEGER NOT NULL,
+  worker_id TEXT NULL,
+  sam_account_name TEXT NULL,
+  reason TEXT NULL,
+  review_category TEXT NULL,
+  review_case_type TEXT NULL,
+  started_at TEXT NULL,
+  item_json TEXT NOT NULL
+);
+INSERT INTO runs (run_id, state_path, path, artifact_type, mode, dry_run, status, started_at, completed_at, duration_seconds, reversible_operations, updates, report_json)
+VALUES ('run-detail-1', '${status.paths.statePath}', '/tmp/run-detail.json', 'WorkerPreview', 'Review', 1, 'Succeeded', '2026-03-22T11:00:00Z', '2026-03-22T11:04:00Z', 240, 1, 1, '${JSON.stringify(report).replaceAll("'", "''")}');
+INSERT INTO run_entries (entry_id, run_id, state_path, bucket, bucket_index, worker_id, sam_account_name, reason, started_at, item_json)
+VALUES ('run-detail-1:updates:4001:0', 'run-detail-1', '${status.paths.statePath}', 'updates', 0, '4001', 'asmith', 'AttributeDelta', '2026-03-22T11:00:00Z', '${JSON.stringify(report.updates[0]).replaceAll("'", "''")}');
+`;
+    await execFileAsync('sqlite3', [sqlitePath, sql]);
+
+    const service = new ReportService();
+    const detail = await service.getRun(status, 'run-detail-1');
+    const entries = await service.getRunEntries(status, 'run-detail-1', { bucket: 'updates', workerId: '4001' });
+
+    expect(detail.run.runId).toBe('run-detail-1');
+    expect(detail.bucketCounts.updates).toBe(1);
+    expect(detail.reviewExplorer.changed).toBe(1);
+    expect(entries.total).toBe(1);
+    expect(entries.entries[0]?.diffRows[0]?.attribute).toBe('department');
+    expect(entries.entries[0]?.operationSummary?.action).toMatch(/Update attributes/);
   });
 });

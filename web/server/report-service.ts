@@ -15,6 +15,7 @@ import type {
   WorkerDetailResponse,
   WorkerHistoryResponse,
 } from './types.js';
+import { SqliteStore, type SqliteEntryRecord } from './sqlite-store.js';
 
 const BUCKET_LABELS: Record<string, string> = {
   creates: 'Creates',
@@ -70,6 +71,7 @@ const NON_WINDOWS_AD_PROBE_WARNING = 'Active Directory health probe is skipped o
 
 export class ReportService {
   private readonly reportCache = new Map<string, ReportCacheEntry>();
+  private readonly sqliteStore = new SqliteStore();
 
   async listRuns(
     status: DashboardStatus,
@@ -104,6 +106,30 @@ export class ReportService {
   }
 
   async getRun(status: DashboardStatus, runId: string): Promise<RunDetailResponse> {
+    const sqlitePath = status.paths.sqlitePath;
+    if (sqlitePath) {
+      await this.ensureSqliteOperationalStore(sqlitePath);
+      const sqliteRun = await this.sqliteStore.getRun(sqlitePath, runId);
+      if (!sqliteRun) {
+        throw new Error(`Run '${runId}' was not found in the SQLite operational store.`);
+      }
+      const sqliteEntries = await this.sqliteStore.getRunEntries(sqlitePath, runId, {});
+      const materialized = sqliteEntries.map((entry) => materializeSqliteEntry(entry, status.trackedWorkers));
+      const bucketCounts = Object.fromEntries(BUCKET_ORDER.map((bucket) => [bucket, materialized.filter((entry) => entry.bucket === bucket).length]));
+
+      return {
+        run: sqliteRun.run,
+        report: sqliteRun.report,
+        bucketCounts,
+        warnings: this.getContextWarnings(status.warnings ?? []),
+        reviewExplorer: {
+          created: materialized.filter((entry) => isReviewCreated(entry)).length,
+          changed: materialized.filter((entry) => isReviewChanged(entry)).length,
+          deleted: materialized.filter((entry) => isReviewDeleted(entry)).length,
+        },
+      };
+    }
+
     const scan = await this.scanRuns(status);
     const found = this.findScannedRun(scan.runs, runId);
     const bucketCounts = Object.fromEntries(BUCKET_ORDER.map((bucket) => [bucket, arrayOf(found.report[bucket]).length]));
@@ -127,6 +153,25 @@ export class ReportService {
     runId: string,
     filters: { bucket?: string; workerId?: string; reason?: string; filter?: string; entryId?: string },
   ): Promise<EntryListResponse> {
+    const sqlitePath = status.paths.sqlitePath;
+    if (sqlitePath) {
+      await this.ensureSqliteOperationalStore(sqlitePath);
+      const sqliteRun = await this.sqliteStore.getRun(sqlitePath, runId);
+      if (!sqliteRun) {
+        throw new Error(`Run '${runId}' was not found in the SQLite operational store.`);
+      }
+      const sqliteEntries = await this.sqliteStore.getRunEntries(sqlitePath, runId, filters);
+      const materialized = sqliteEntries
+        .map((entry) => materializeSqliteEntry(entry, status.trackedWorkers))
+        .filter((entry) => matchesRunEntry(entry, filters));
+      return {
+        run: sqliteRun.run,
+        entries: materialized,
+        total: materialized.length,
+        warnings: this.getContextWarnings(status.warnings ?? []),
+      };
+    }
+
     const scan = await this.scanRuns(status);
     const found = this.findScannedRun(scan.runs, runId);
     const entries = flattenEntries(found.run, found.report, status.trackedWorkers).filter((entry) => {
@@ -158,6 +203,32 @@ export class ReportService {
   ): Promise<QueueResponse> {
     const page = Math.max(filters.page ?? 1, 1);
     const pageSize = Math.min(Math.max(filters.pageSize ?? 25, 1), 100);
+    const sqlitePath = status.paths.sqlitePath;
+    if (sqlitePath) {
+      await this.ensureSqliteOperationalStore(sqlitePath);
+      const sqliteEntries = await this.sqliteStore.getQueueEntries(sqlitePath, status.paths.statePath, queueName, {
+        reason: filters.reason,
+        reviewCaseType: filters.reviewCaseType,
+        workerId: filters.workerId,
+        filter: filters.filter,
+      });
+      const materialized = sqliteEntries
+        .map((entry) => materializeSqliteEntry(entry, status.trackedWorkers))
+        .filter((entry) => matchesQueueEntry(entry, filters));
+      const start = (page - 1) * pageSize;
+      return {
+        queueName,
+        entries: materialized.slice(start, start + pageSize),
+        total: materialized.length,
+        page,
+        pageSize,
+        reasonGroups: buildGroups(materialized, (entry) => entry.reason ?? 'Other'),
+        reviewCaseGroups: buildGroups(materialized, (entry) => entry.reviewCaseType ?? 'Other'),
+        artifactGroups: buildGroups(materialized, (entry) => entry.artifactType),
+        warnings: this.getContextWarnings(status.warnings ?? []),
+      };
+    }
+
     const scan = await this.scanRuns(status);
     const buckets = new Set(QUEUE_BUCKETS[queueName]);
     const allEntries = scan.runs.flatMap(({ run, report }) =>
@@ -203,6 +274,28 @@ export class ReportService {
   }
 
   async getWorkerDetail(status: DashboardStatus, workerId: string, limit = 100): Promise<WorkerDetailResponse> {
+    const sqlitePath = status.paths.sqlitePath;
+    if (sqlitePath) {
+      await this.ensureSqliteOperationalStore(sqlitePath);
+      const sqliteEntries = await this.sqliteStore.getWorkerEntries(sqlitePath, status.paths.statePath, workerId, limit);
+      const relatedEntries = sqliteEntries.map((entry) => materializeSqliteEntry(entry, status.trackedWorkers)).slice(0, limit);
+      const seenRuns = new Map<string, RunSummary>();
+      for (const entry of sqliteEntries) {
+        if (entry.run.runId && !seenRuns.has(entry.run.runId)) {
+          seenRuns.set(entry.run.runId, entry.run);
+        }
+      }
+
+      return {
+        workerId,
+        trackedWorker: status.trackedWorkers.find((worker) => worker.workerId === workerId) ?? null,
+        latestEntry: relatedEntries[0] ?? null,
+        relatedEntries,
+        relatedRuns: [...seenRuns.values()],
+        warnings: this.getContextWarnings(status.warnings ?? []),
+      };
+    }
+
     const scan = await this.scanRuns(status);
     const relatedEntries: EntryRecord[] = [];
     const relatedRuns: RunSummary[] = [];
@@ -231,8 +324,23 @@ export class ReportService {
     return warnings.filter((warning) => warning !== NON_WINDOWS_AD_PROBE_WARNING);
   }
 
+  private async ensureSqliteOperationalStore(sqlitePath: string): Promise<void> {
+    try {
+      await fs.access(sqlitePath);
+    } catch {
+      throw new Error(`SQLite operational store is required at '${sqlitePath}'.`);
+    }
+  }
+
   private async scanRuns(status: DashboardStatus): Promise<ScanResult> {
     const warnings = [...(status.warnings ?? [])];
+    const sqlitePath = status.paths.sqlitePath;
+    if (sqlitePath) {
+      await this.ensureSqliteOperationalStore(sqlitePath);
+      const sqliteRuns = await this.sqliteStore.listRuns(sqlitePath, status.paths.statePath);
+      return { runs: sqliteRuns, warnings: [...new Set(warnings)] };
+    }
+
     const directories = status.paths.reportDirectories ?? [];
     const fileEntries = await Promise.all(
       directories.map(async (directory) => {
@@ -370,6 +478,104 @@ function flattenEntries(run: RunSummary, report: Record<string, unknown>, tracke
   }
 
   return entries.sort(compareEntriesDescending);
+}
+
+function materializeSqliteEntry(entry: SqliteEntryRecord, trackedWorkers: TrackedWorker[]): EntryRecord {
+  const operations = arrayOf(entry.report.operations).map((operation) => asRecord(operation));
+  const bucket = entry.row.bucket ?? 'unknown';
+  const item = entry.item;
+  const workerId = asString(item.workerId) ?? entry.row.worker_id ?? null;
+  const trackedWorker = trackedWorkers.find((candidate) => candidate.workerId === workerId);
+  const diffRows = getDiffRows(item, operations, workerId, bucket);
+  const operation = operations.find((candidate) => asString(candidate.workerId) === workerId && asString(candidate.bucket) === bucket);
+  const groupLabel = asString(item.reason) ?? asString(item.reviewCaseType) ?? entry.run.artifactType;
+
+  return {
+    entryId: entry.row.entry_id ?? buildEntryId(entry.run, bucket, workerId, asString(item.samAccountName), asInteger(entry.row.bucket_index) ?? 0),
+    runId: entry.run.runId,
+    reportPath: entry.run.path,
+    artifactType: entry.run.artifactType,
+    mode: entry.run.mode,
+    bucket,
+    bucketLabel: BUCKET_LABELS[bucket] ?? bucket,
+    queueName: getQueueName(bucket),
+    workerId,
+    samAccountName: asString(item.samAccountName) ?? entry.row.sam_account_name ?? null,
+    reason: asString(item.reason) ?? entry.row.reason ?? null,
+    reviewCategory: asString(item.reviewCategory) ?? entry.row.review_category ?? null,
+    reviewCaseType: asString(item.reviewCaseType) ?? entry.row.review_case_type ?? null,
+    groupKey: `${groupLabel.toLowerCase()}::${entry.run.artifactType.toLowerCase()}`,
+    groupLabel,
+    operatorActionSummary: asString(item.operatorActionSummary),
+    operatorActions: arrayOf(item.operatorActions) as EntryRecord['operatorActions'],
+    targetOu: asString(item.targetOu),
+    currentDistinguishedName:
+      asString(item.currentDistinguishedName) ??
+      asString(item.distinguishedName) ??
+      trackedWorker?.distinguishedName ??
+      null,
+    currentEnabled: asBoolean(item.currentEnabled),
+    proposedEnable: asBoolean(item.proposedEnable),
+    matchedExistingUser: asBoolean(item.matchedExistingUser),
+    changeCount: diffRows.filter((row) => row.changed).length,
+    startedAt: entry.run.startedAt,
+    staleDays: getStaleDays(entry.run.startedAt),
+    operationSummary: getOperationSummary(bucket, item, operation),
+    diffRows,
+    item,
+  };
+}
+
+function asInteger(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Number.parseInt(value, 10);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
+function matchesQueueEntry(
+  entry: EntryRecord,
+  filters: { reason?: string; reviewCaseType?: string; workerId?: string; filter?: string },
+): boolean {
+  if (filters.reason && `${entry.reason ?? ''}`.toLowerCase() !== filters.reason.toLowerCase()) {
+    return false;
+  }
+  if (filters.reviewCaseType && `${entry.reviewCaseType ?? ''}`.toLowerCase() !== filters.reviewCaseType.toLowerCase()) {
+    return false;
+  }
+  if (filters.workerId && entry.workerId !== filters.workerId) {
+    return false;
+  }
+  if (filters.filter && !matchesFilter(entry, filters.filter)) {
+    return false;
+  }
+  return true;
+}
+
+function matchesRunEntry(
+  entry: EntryRecord,
+  filters: { bucket?: string; workerId?: string; reason?: string; filter?: string; entryId?: string },
+): boolean {
+  if (filters.bucket && entry.bucket !== filters.bucket) {
+    return false;
+  }
+  if (filters.workerId && entry.workerId !== filters.workerId) {
+    return false;
+  }
+  if (filters.entryId && entry.entryId !== filters.entryId) {
+    return false;
+  }
+  if (filters.reason && `${entry.reason ?? ''}`.toLowerCase() !== filters.reason.toLowerCase()) {
+    return false;
+  }
+  if (filters.filter && !matchesFilter(entry, filters.filter)) {
+    return false;
+  }
+  return true;
 }
 
 function getQueueName(bucket: string): QueueName | null {

@@ -8,6 +8,49 @@ Describe 'Get-SyncFactorsConfig' {
         $config = Get-SyncFactorsConfig -Path $configPath
         $config.successFactors.baseUrl | Should -Not -BeNullOrEmpty
         $config.ad.graveyardOu | Should -Not -BeNullOrEmpty
+        $config.persistence.sqlitePath | Should -Not -BeNullOrEmpty
+    }
+
+    It 'defaults persistence.sqlitePath from state.path' {
+        $configPath = Join-Path $TestDrive 'sqlite-default-sync-config.json'
+        @'
+{
+  "successFactors": {
+    "baseUrl": "https://example.successfactors.com/odata/v2",
+    "oauth": {
+      "tokenUrl": "https://example.successfactors.com/oauth/token",
+      "clientId": "client-id",
+      "clientSecret": "client-secret"
+    },
+    "query": {
+      "entitySet": "PerPerson",
+      "identityField": "personIdExternal",
+      "deltaField": "lastModifiedDateTime",
+      "select": [ "personIdExternal" ],
+      "expand": [ "employmentNav" ]
+    }
+  },
+  "ad": {
+    "identityAttribute": "employeeID",
+    "defaultActiveOu": "OU=Employees,DC=example,DC=com",
+    "graveyardOu": "OU=Graveyard,DC=example,DC=com",
+    "defaultPassword": "config-password"
+  },
+  "sync": {
+    "enableBeforeStartDays": 7,
+    "deletionRetentionDays": 90
+  },
+  "state": {
+    "path": "/tmp/syncfactors/state/sync-state.json"
+  },
+  "reporting": {
+    "outputDirectory": "/tmp/syncfactors/reports"
+  }
+}
+'@ | Set-Content -Path $configPath
+
+        $config = Get-SyncFactorsConfig -Path $configPath
+        $config.persistence.sqlitePath | Should -Be '/tmp/syncfactors/state/syncfactors.db'
     }
 
     It 'prefers environment variables for secret values' {

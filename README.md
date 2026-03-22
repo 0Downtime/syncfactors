@@ -69,7 +69,7 @@ Planned work is ordered by delivery priority so the roadmap is easy to scan from
 - `src/Modules/SyncFactors`: config, state, mapping, reporting, sync orchestration, rollback, SuccessFactors, and AD modules.
 - `config`: sample tenant config and mapping config.
 - `scripts/Register-SyncFactorsScheduledTask.ps1`: scheduled task bootstrap.
-- `scripts/Get-SyncFactorsStatus.ps1`: summary view of the latest sync report and runtime state.
+- `scripts/Get-SyncFactorsStatus.ps1`: summary view of the latest sync state, runtime status, and run history from SQLite.
 - `scripts/Watch-SyncFactorsMonitor.ps1`: terminal dashboard for current sync stage and recent run history.
 - `scripts/Get-SyncFactorsWebStatus.ps1`: PowerShell adapter for the local web dashboard status API.
 - `scripts/Invoke-SyncFactorsWorkerPreview.ps1`: preview one worker and print the mapped diff against the current AD user.
@@ -156,7 +156,7 @@ pwsh ./scripts/Invoke-SyncFactorsPreflight.ps1 `
   -MappingConfigPath ./config/local.syncfactors.mapping-config.json
 ```
 
-To view the current sync status from the configured state/report files:
+To view the current sync status from the configured SQLite operational store:
 
 ```powershell
 pwsh ./scripts/Get-SyncFactorsStatus.ps1 `
@@ -178,7 +178,7 @@ pwsh ./scripts/Invoke-SyncFactorsWorkerPreview.ps1 `
 
 The `-WorkerId` value must match `successFactors.query.identityField`. In the sample configs that field is `personIdExternal`.
 Use `-PreviewMode Minimal` to use `successFactors.previewQuery`, `-PreviewMode Full` to force the main `successFactors.query`, or omit it to preserve the configured default behavior.
-Use `-AsJson` for machine-readable output or `-OutputDirectory` to write the preview report to a separate folder.
+Use `-AsJson` for machine-readable output. Preview and review runs are persisted in SQLite and returned as run references such as `run:<id>`.
 If your tenant metadata is still being validated, set `successFactors.previewQuery` to the smallest confirmed-valid field list, starting with just `personIdExternal`. Single-worker preview uses `previewQuery` when present, while full and delta sync continue using `successFactors.query`.
 
 To delete all AD user objects found recursively under the managed sync OUs and reset local sync state for a true fresh sync:
@@ -207,12 +207,46 @@ npm install --cache /tmp/syncfactors-npm-cache
 npm run web:dev -- --config ./config/local.real-successfactors.real-ad.sync-config.json
 ```
 
-The dev server binds to `127.0.0.1:4280` by default and reads the same runtime status and report directories that the TUI uses. To build the frontend bundle for a local production-style run:
+The dev server binds to `127.0.0.1:4280` by default and reads the same SQLite operational store that the TUI uses. To build the frontend bundle for a local production-style run:
 
 ```bash
 npm run web:build
 npm run web:start -- --config ./config/local.real-successfactors.real-ad.sync-config.json
 ```
+
+### SQLite Operational Store
+SQLite is now the operational source of truth for the app.
+By default the database path is derived from `state.path` as `syncfactors.db` in the same directory, or you can set `persistence.sqlitePath` explicitly in your sync config.
+
+SQLite stores the live operational model for:
+- tracked-worker state
+- runtime status snapshots
+- run summaries
+- run entry rows used by queue, worker, and run-detail views
+- stored report payloads used by review, preview, rollback, and worker drill-down flows
+
+Operational writes now go to SQLite:
+- sync state
+- runtime status
+- completed and in-progress run/report data
+
+Run-producing scripts now return SQLite run references such as `run:<id>` rather than requiring a report JSON file path.
+
+JSON is no longer used as an operational fallback by the TUI, status commands, or web dashboard.
+The remaining JSON output is fixture/export-oriented:
+- demo data generation writes sample artifact files for local browsing and test fixtures
+- fresh reset still writes an explicit preview artifact
+- the SQLite import script exists for migrating legacy JSON datasets
+
+To backfill SQLite from an existing config that already has JSON state, runtime status, and reports:
+
+```powershell
+pwsh ./scripts/Import-SyncFactorsSqlite.ps1 `
+  -ConfigPath ./config/local.real-successfactors.real-ad.sync-config.json
+```
+
+Use `-AsJson` for machine-readable output, or `-SkipState`, `-SkipRuntimeStatus`, and `-SkipReports` to backfill only part of the dataset.
+Once the SQLite file exists, the web dashboard, status commands, and terminal monitor use it as the authoritative store. If the database is missing, those operational views now fail instead of silently falling back to JSON.
 
 To run the full Pester suite:
 
@@ -250,7 +284,7 @@ pwsh ./scripts/Invoke-SyncFactorsDemoData.ps1 `
   -OutputDirectory ./reports/demo
 ```
 
-The demo generator writes a derived config under `./reports/demo/config/demo.mock-sync-config.json`, seeds multiple completed reports across the normal report and review directories, populates tracked-worker state, and writes `runtime-status.json` with an active in-progress run by default.
+The demo generator writes a derived config under `./reports/demo/config/demo.mock-sync-config.json`, seeds the SQLite operational store with tracked-worker state, runtime status, and multiple completed runs, and also emits sample JSON report artifacts across the normal report and review directories for local browsing and fixture coverage.
 Use `-Force` to replace an existing demo output tree, `-IncludeActiveRun:$false` if you want the dashboards to start idle, and `-RunCount` if you want more than the default mixed-history set.
 
 Then launch the terminal dashboard against the generated demo config:
@@ -268,7 +302,8 @@ npm install --cache /tmp/syncfactors-npm-cache
 npm run web:dev -- --config ./reports/demo/config/demo.mock-sync-config.json
 ```
 
-Both dashboards will read the generated report history, review queues, worker history, tracked-worker state, and runtime snapshot from the demo output directory.
+Both dashboards will read the generated run history, review queues, worker history, tracked-worker state, and runtime snapshot from the demo SQLite store.
+The demo database is created automatically under `./reports/demo/state/syncfactors.db`.
 
 To run the real sync against a local mock SuccessFactors API instead of a tenant:
 
@@ -306,7 +341,7 @@ The mock server exposes:
 - OData base URL: `http://127.0.0.1:18080/odata/v2`
 - Metadata endpoint: `http://127.0.0.1:18080/odata/v2/$metadata`
 
-To roll back a specific run from its report file:
+To roll back a specific run from a report JSON file:
 
 ```powershell
 pwsh ./scripts/Undo-SyncFactorsRun.ps1 `
@@ -316,6 +351,7 @@ pwsh ./scripts/Undo-SyncFactorsRun.ps1 `
 ```
 
 Remove `-DryRun` to apply the rollback.
+Rollback currently still expects a report JSON artifact, not a SQLite run reference.
 
 ## Releases
 - `main` publishes a prerelease for runtime-affecting pushes using the current `VERSION` value plus CI metadata, for example `0.1.0-dev.42+sha.a1b2c3d`.

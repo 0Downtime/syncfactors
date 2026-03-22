@@ -145,8 +145,18 @@ export function SelectedEntryPanel(props: {
                 <tr key={`${row.attribute}-${row.source ?? 'none'}`} className={row.changed ? 'changed' : ''}>
                   <td>{row.attribute}</td>
                   <td>{row.source ?? '-'}</td>
-                  <td>{row.before}</td>
-                  <td>{row.after}</td>
+                  <td>
+                    <span className="diff-value diff-value-remove">
+                      <span className="diff-value-prefix" aria-hidden="true">-</span>
+                      <span>{row.before}</span>
+                    </span>
+                  </td>
+                  <td>
+                    <span className="diff-value diff-value-add">
+                      <span className="diff-value-prefix" aria-hidden="true">+</span>
+                      <span>{row.after}</span>
+                    </span>
+                  </td>
                 </tr>
               ))}
             </tbody>

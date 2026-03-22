@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { getQueue, getRun, getRunEntries, getStatus, getWorkerDetail, openLocalPath } from './api.js';
+import { getQueue, getRun, getRunEntries, getStatus, getWorkerDetail, openLocalPath, runWorkerAction } from './api.js';
 import { BUCKET_ORDER, chooseSelectedEntry, DEFAULT_ROUTE, getRouteState, mapReviewExplorerToBucket, normalizeRoute, resolveActiveBucket, stepSelection, syncRouteState } from './route-state.js';
 import type { RouteState } from './route-state.js';
 import { StatusNote, WarningPanel } from './triage-components.js';
 import { DashboardView, QueueView, WorkerView } from './triage-views.js';
-import type { DashboardStatus, EntryListResponse, EntryRecord, QueueResponse, RunDetailResponse, WorkerDetailResponse } from './types.js';
+import type { DashboardStatus, EntryListResponse, EntryRecord, QueueResponse, RunDetailResponse, WorkerActionKind, WorkerActionResponse, WorkerDetailResponse } from './types.js';
 
 type ThemeMode = 'light' | 'dark';
 
@@ -17,6 +17,10 @@ export function App() {
   const [entryResponse, setEntryResponse] = useState<EntryListResponse | null>(null);
   const [queueResponse, setQueueResponse] = useState<QueueResponse | null>(null);
   const [workerDetail, setWorkerDetail] = useState<WorkerDetailResponse | null>(null);
+  const [workerActionState, setWorkerActionState] = useState<{ pendingAction: WorkerActionKind | null; result: WorkerActionResponse | null }>({
+    pendingAction: null,
+    result: null,
+  });
   const [error, setError] = useState<string | null>(null);
   const [theme, setTheme] = useState<ThemeMode>(() => getInitialTheme());
   const filterInputRef = useRef<HTMLInputElement | null>(null);
@@ -94,10 +98,18 @@ export function App() {
         setEntryResponse(nextEntries);
         const resolvedEntry = chooseSelectedEntry(nextEntries.entries, route.entryId);
         if (resolvedEntry && resolvedEntry.entryId !== route.entryId) {
-          const nextRoute = { ...route, entryId: resolvedEntry.entryId, workerId: resolvedEntry.workerId ?? route.workerId };
+          const nextRoute = {
+            ...route,
+            entryId: resolvedEntry.entryId,
+            workerId: route.view === 'worker' ? route.workerId : (resolvedEntry.workerId ?? route.workerId),
+          };
           setRouteAndUrl(nextRoute, false);
         } else if (!resolvedEntry && nextEntries.entries[0]) {
-          const nextRoute = { ...route, entryId: nextEntries.entries[0].entryId, workerId: nextEntries.entries[0].workerId ?? route.workerId };
+          const nextRoute = {
+            ...route,
+            entryId: nextEntries.entries[0].entryId,
+            workerId: route.view === 'worker' ? route.workerId : (nextEntries.entries[0].workerId ?? route.workerId),
+          };
           setRouteAndUrl(nextRoute, false);
         }
       } catch (loadError) {
@@ -169,6 +181,10 @@ export function App() {
       cancelled = true;
     };
   }, [route.view, route.workerId]);
+
+  useEffect(() => {
+    setWorkerActionState({ pendingAction: null, result: null });
+  }, [route.workerId]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -255,7 +271,7 @@ export function App() {
             <p className="hero-context">Operator workspace</p>
           </div>
           <div className="hero-meta">
-            <span className="badge">Read-only</span>
+            <span className="badge">Scoped worker actions</span>
             <details className="report-menu" ref={reportMenuRef}>
               <summary className="hero-path">
                 <span className="hero-path-label">Reports</span>
@@ -355,7 +371,16 @@ export function App() {
         <WorkerView
           route={route}
           workerDetail={workerDetail}
-          onOpenRun={(entry) => navigateTo({ ...route, view: 'dashboard', runId: entry.runId, bucket: entry.bucket, entryId: entry.entryId, workerId: entry.workerId })}
+          workerActionState={workerActionState}
+          onRunWorkerAction={(action) => void handleRunWorkerAction(action)}
+          onOpenRun={(runId, entry) => navigateTo({
+            ...route,
+            view: 'dashboard',
+            runId,
+            bucket: entry?.bucket ?? route.bucket,
+            entryId: entry?.entryId ?? null,
+            workerId: entry?.workerId ?? route.workerId,
+          })}
         />
       ) : null}
     </div>
@@ -377,6 +402,27 @@ export function App() {
       reportMenuRef.current?.removeAttribute('open');
     } catch (openError) {
       setError(openError instanceof Error ? openError.message : 'Failed to open the selected path.');
+    }
+  }
+
+  async function handleRunWorkerAction(action: WorkerActionKind) {
+    if (!route.workerId || workerActionState.pendingAction) {
+      return;
+    }
+
+    setError(null);
+    setWorkerActionState({ pendingAction: action, result: null });
+
+    try {
+      const result = await runWorkerAction(route.workerId, action);
+      setWorkerActionState({ pendingAction: null, result });
+      const nextStatus = await getStatus();
+      setStatus(nextStatus);
+      const nextWorkerDetail = await getWorkerDetail(route.workerId);
+      setWorkerDetail(nextWorkerDetail);
+    } catch (actionError) {
+      setWorkerActionState({ pendingAction: null, result: null });
+      setError(actionError instanceof Error ? actionError.message : 'Failed to run worker action.');
     }
   }
 }

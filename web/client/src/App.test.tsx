@@ -13,6 +13,7 @@ const mockGetRun = vi.fn();
 const mockGetRunEntries = vi.fn();
 const mockGetQueue = vi.fn();
 const mockGetWorkerDetail = vi.fn();
+const mockRunWorkerAction = vi.fn();
 
 vi.mock('./api.js', () => ({
   getStatus: (...args: unknown[]) => mockGetStatus(...args),
@@ -21,6 +22,7 @@ vi.mock('./api.js', () => ({
   getQueue: (...args: unknown[]) => mockGetQueue(...args),
   getWorkerHistory: vi.fn(async () => ({ workerId: '1001', entries: [], warnings: [] })),
   getWorkerDetail: (...args: unknown[]) => mockGetWorkerDetail(...args),
+  runWorkerAction: (...args: unknown[]) => mockRunWorkerAction(...args),
 }));
 
 beforeEach(() => {
@@ -30,6 +32,7 @@ beforeEach(() => {
   mockGetRunEntries.mockReset();
   mockGetQueue.mockReset();
   mockGetWorkerDetail.mockReset();
+  mockRunWorkerAction.mockReset();
 
   mockGetStatus.mockResolvedValue({
     latestRun: {
@@ -418,6 +421,20 @@ beforeEach(() => {
     ],
     warnings: [],
   });
+
+  mockRunWorkerAction.mockResolvedValue({
+    action: 'review-sync',
+    workerId: '1001',
+    result: {
+      reportPath: '/tmp/run-4.json',
+      runId: 'run-4',
+      mode: 'Review',
+      status: 'Succeeded',
+      artifactType: 'WorkerPreview',
+      previewMode: 'full',
+      workerScope: { workerId: '1001' },
+    },
+  });
 });
 
 describe('App', () => {
@@ -483,6 +500,10 @@ describe('App', () => {
     expect(screen.getAllByText(/ago/).length).toBeGreaterThan(0);
     expect(window.location.search).toMatch(/run=run-1/);
 
+    fireEvent.click(screen.getByRole('button', { name: /1001UpdatesAttributeDelta1d stale/i }));
+    expect(screen.getAllByText((_, element) => element?.textContent === '+Sales').length).toBeGreaterThan(0);
+    expect(screen.getAllByText((_, element) => element?.textContent === '-Finance').length).toBeGreaterThan(0);
+
     fireEvent.click(screen.getByRole('button', { name: 'Queues' }));
     await waitFor(() => expect(screen.getByText(/Queue Results/i)).toBeInTheDocument());
     expect(screen.getByRole('button', { name: /RehireDetected \(1\)/ })).toBeInTheDocument();
@@ -504,6 +525,22 @@ describe('App', () => {
     expect(screen.getAllByText(/CN=Jamie Doe/i)).toHaveLength(2);
     expect(screen.getAllByText(/ago/).length).toBeGreaterThan(0);
     expect(window.location.search).toMatch(/view=worker/);
+  });
+
+  it('runs single-worker test, review, and real sync actions from the worker view', async () => {
+    window.history.replaceState(null, '', '/?view=worker&worker=1001');
+    render(<App />);
+
+    await waitFor(() => expect(screen.getByText(/SyncFactors Operator UI/i)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Test sync' })).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole('button', { name: 'Review sync' }));
+
+    await waitFor(() => expect(mockRunWorkerAction).toHaveBeenCalledWith('1001', 'review-sync'));
+    expect(screen.getByText(/Preview mode: full/i)).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: 'Open run' }).length).toBeGreaterThan(0);
+    expect(mockGetStatus).toHaveBeenCalledTimes(2);
+    expect(mockGetWorkerDetail).toHaveBeenCalledTimes(2);
   });
 
   it('shows the non-Windows AD probe warning once as a subtle status note', async () => {
