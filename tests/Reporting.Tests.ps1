@@ -61,4 +61,64 @@ Describe 'Reporting journal' {
         $persisted.operations[0].after.targetOu | Should -Be 'OU=Graveyard,DC=example,DC=com'
         $persisted.operations[0].status | Should -Be 'Applied'
     }
+
+    It 'sends alerts for failed runs when alert triggers match' {
+        InModuleScope Reporting {
+            $configPath = Join-Path $TestDrive 'alert-config.json'
+            @'
+{
+  "successFactors": {
+    "baseUrl": "https://example.successfactors.com/odata/v2",
+    "oauth": {
+      "tokenUrl": "https://example.successfactors.com/oauth/token",
+      "clientId": "client-id",
+      "clientSecret": "client-secret"
+    },
+    "query": {
+      "entitySet": "PerPerson",
+      "identityField": "personIdExternal",
+      "deltaField": "lastModifiedDateTime",
+      "select": [ "personIdExternal" ],
+      "expand": [ "employmentNav" ]
+    }
+  },
+  "ad": {
+    "identityAttribute": "employeeID",
+    "defaultActiveOu": "OU=Employees,DC=example,DC=com",
+    "graveyardOu": "OU=Graveyard,DC=example,DC=com",
+    "defaultPassword": "config-password"
+  },
+  "alerts": {
+    "enabled": true,
+    "smtp": {
+      "host": "mail.example.com",
+      "from": "syncfactors@example.com",
+      "to": [ "ops@example.com" ]
+    }
+  },
+  "sync": {
+    "enableBeforeStartDays": 7,
+    "deletionRetentionDays": 90
+  },
+  "state": {
+    "path": "state.json"
+  },
+  "reporting": {
+    "outputDirectory": "reports"
+  }
+}
+'@ | Set-Content -Path $configPath
+
+            $report = New-SyncFactorsReport -Mode 'Delta' -ConfigPath $configPath -MappingConfigPath 'mapping.json' -StatePath 'state.json'
+            $report.status = 'Failed'
+            $report.errorMessage = 'Boom'
+
+            Mock Send-SyncFactorsRunAlert { $true }
+
+            $null = Save-SyncFactorsReport -Report $report -Directory (Join-Path $TestDrive 'reports') -Mode 'Delta'
+
+            Assert-MockCalled Send-SyncFactorsRunAlert -Times 1 -Exactly
+        }
+    }
+
 }

@@ -411,6 +411,38 @@ function Test-SyncFactorsConfig {
             }
         }
     }
+
+    if ((Test-SyncFactorsHasProperty -InputObject $Config -PropertyName 'alerts') -and $null -ne $Config.alerts) {
+        $alerts = $Config.alerts
+        $alertsEnabled = (Test-SyncFactorsHasProperty -InputObject $alerts -PropertyName 'enabled') -and [bool]$alerts.enabled
+        if ($alertsEnabled) {
+            if (-not ((Test-SyncFactorsHasProperty -InputObject $alerts -PropertyName 'smtp') -and $alerts.smtp)) {
+                throw 'Sync config must define alerts.smtp when alerts.enabled is true.'
+            }
+
+            Assert-SyncFactorsRequiredString -Value $alerts.smtp.host -PropertyPath 'alerts.smtp.host'
+            Assert-SyncFactorsRequiredString -Value $alerts.smtp.from -PropertyPath 'alerts.smtp.from'
+
+            $recipients = @($alerts.smtp.to | Where-Object { -not [string]::IsNullOrWhiteSpace("$_") })
+            if ($recipients.Count -eq 0) {
+                throw 'Sync config must define alerts.smtp.to with at least one recipient when alerts.enabled is true.'
+            }
+
+            if ((Test-SyncFactorsHasProperty -InputObject $alerts.smtp -PropertyName 'port') -and $null -ne $alerts.smtp.port -and "$($alerts.smtp.port)" -ne '') {
+                if ([int]$alerts.smtp.port -le 0) {
+                    throw 'Sync config must define alerts.smtp.port as a positive integer when provided.'
+                }
+            } else {
+                Set-SyncFactorsPropertyValue -InputObject $alerts.smtp -PropertyName 'port' -Value 25
+            }
+
+            $hasSmtpUsername = (Test-SyncFactorsHasProperty -InputObject $alerts.smtp -PropertyName 'username') -and -not [string]::IsNullOrWhiteSpace("$($alerts.smtp.username)")
+            $hasSmtpPassword = (Test-SyncFactorsHasProperty -InputObject $alerts.smtp -PropertyName 'password') -and -not [string]::IsNullOrWhiteSpace("$($alerts.smtp.password)")
+            if ($hasSmtpUsername -xor $hasSmtpPassword) {
+                throw 'Sync config must define both alerts.smtp.username and alerts.smtp.password when SMTP authentication is configured.'
+            }
+        }
+    }
 }
 
 Export-ModuleMember -Function Get-SyncFactorsResolvedSetting, Get-SyncFactorsSuccessFactorsAuthSummary, Resolve-SyncFactorsSecrets, Get-SyncFactorsConfig, Get-SyncFactorsMappingConfig, Test-SyncFactorsConfig, Test-SyncFactorsMappingConfig, Get-SyncFactorsDefaultSqlitePath
