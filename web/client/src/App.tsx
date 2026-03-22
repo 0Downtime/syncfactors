@@ -194,10 +194,6 @@ export function App() {
 
         setRunDetail(nextRunDetail);
         setEntryResponse(nextEntries);
-        const resolvedEntry = chooseSelectedEntry(getVisibleEntries(nextEntries.entries, route), route.entryId);
-        if (resolvedEntry && resolvedEntry.entryId !== route.entryId) {
-          setRouteAndUrl({ ...route, entryId: resolvedEntry.entryId, workerId: resolvedEntry.workerId ?? route.workerId }, false);
-        }
       } catch (loadError) {
         if (!cancelled) {
           setError(loadError instanceof Error ? loadError.message : 'Failed to load run detail.');
@@ -339,22 +335,24 @@ export function App() {
       return;
     }
 
-    const nextWorkerId = selectedEntry.workerId ?? route.workerId;
-    if (selectedEntry.entryId === route.entryId && nextWorkerId === route.workerId) {
-      return;
-    }
+    setRoute((current) => {
+      const nextWorkerId = selectedEntry.workerId ?? current.workerId;
+      if (selectedEntry.entryId === current.entryId && nextWorkerId === current.workerId) {
+        return current;
+      }
 
-    const normalized = normalizeRoute(
-      {
-        ...route,
-        entryId: selectedEntry.entryId,
-        workerId: nextWorkerId,
-      },
-      status,
-    );
-    setRoute(normalized);
-    syncRouteState(normalized, false);
-  }, [route, selectedEntry, status]);
+      const normalized = normalizeRoute(
+        {
+          ...current,
+          entryId: selectedEntry.entryId,
+          workerId: nextWorkerId,
+        },
+        status,
+      );
+      syncRouteState(normalized, false);
+      return normalized;
+    });
+  }, [selectedEntry, status]);
 
   const runBuckets = useMemo(() => {
     if (!runDetail) {
