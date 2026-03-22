@@ -123,6 +123,10 @@ function Get-SyncFactorsSqlitePath {
         return 'syncfactors.db'
     }
 
+    if ($stateDirectory.StartsWith('/')) {
+        return "$stateDirectory/syncfactors.db"
+    }
+
     return Join-Path -Path $stateDirectory -ChildPath 'syncfactors.db'
 }
 
@@ -938,7 +942,7 @@ function Import-SyncFactorsJsonArtifactsToSqlite {
 
     if (-not $SkipState -and $Config.state -and -not [string]::IsNullOrWhiteSpace("$($Config.state.path)") -and (Test-Path -Path $Config.state.path -PathType Leaf)) {
         $state = Get-Content -Path $Config.state.path -Raw | ConvertFrom-Json -Depth 30
-        Save-SyncFactorsStateToSqlite -State $state -StatePath $Config.state.path -DatabasePath $sqlitePath
+        Save-SyncFactorsStateToSqlite -State $state -StatePath $Config.state.path -DatabasePath $sqlitePath | Out-Null
         $stateImported = $true
     }
 
@@ -956,7 +960,7 @@ function Import-SyncFactorsJsonArtifactsToSqlite {
 
         if (-not [string]::IsNullOrWhiteSpace($runtimeStatusPath) -and (Test-Path -Path $runtimeStatusPath -PathType Leaf)) {
             $snapshot = Get-Content -Path $runtimeStatusPath -Raw | ConvertFrom-Json -Depth 30
-            Save-SyncFactorsRuntimeStatusToSqlite -Snapshot $snapshot -StatePath $Config.state.path -DatabasePath $sqlitePath
+            Save-SyncFactorsRuntimeStatusToSqlite -Snapshot $snapshot -StatePath $Config.state.path -DatabasePath $sqlitePath | Out-Null
             $runtimeImported = $true
         }
     }
@@ -977,7 +981,7 @@ function Import-SyncFactorsJsonArtifactsToSqlite {
             foreach ($file in @(Get-ChildItem -Path $directory -Filter 'syncfactors-*.json' -File)) {
                 try {
                     $report = Get-Content -Path $file.FullName -Raw | ConvertFrom-Json -Depth 40
-                    Save-SyncFactorsReportToSqlite -Report $report -ReportPath $file.FullName -DatabasePath $sqlitePath
+                    Save-SyncFactorsReportToSqlite -Report $report -ReportPath $file.FullName -DatabasePath $sqlitePath | Out-Null
                     $reportCount += 1
                 } catch {
                     Write-Warning "Skipping malformed report '$($file.FullName)': $($_.Exception.Message)"
