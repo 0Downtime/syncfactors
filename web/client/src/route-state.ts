@@ -159,7 +159,7 @@ function parseQueueName(value: string | null): QueueName {
 }
 
 function parseReviewExplorer(value: string | null): 'all' | 'changed' | 'created' | 'deleted' {
-  if (value === 'all' || value === 'created' || value === 'deleted') {
+  if (value === 'all' || value === 'changed' || value === 'created' || value === 'deleted') {
     return value;
   }
   return DEFAULT_ROUTE.reviewExplorer;
