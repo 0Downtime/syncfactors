@@ -1,6 +1,7 @@
 .vscode/
 .idea/
 .DS_Store
+.playwright-cli/
 
 *.log
 *.tmp
