@@ -6,6 +6,10 @@ import { CurrentRunPanel, StatusNote, StatusPanel, SummaryPanel, WarningPanel } 
 import { DashboardView, QueueView, WorkerView } from './triage-views.js';
 import type { DashboardStatus, EntryListResponse, EntryRecord, QueueResponse, RunDetailResponse, WorkerDetailResponse } from './types.js';
 
+type ThemeMode = 'light' | 'dark';
+
+const THEME_STORAGE_KEY = 'syncfactors-theme';
+
 export function App() {
   const [status, setStatus] = useState<DashboardStatus | null>(null);
   const [route, setRoute] = useState<RouteState>(() => getRouteState());
@@ -14,7 +18,16 @@ export function App() {
   const [queueResponse, setQueueResponse] = useState<QueueResponse | null>(null);
   const [workerDetail, setWorkerDetail] = useState<WorkerDetailResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [theme, setTheme] = useState<ThemeMode>(() => getInitialTheme());
   const filterInputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    document.documentElement.style.colorScheme = theme;
+    if (hasStorageAccess()) {
+      window.localStorage.setItem(THEME_STORAGE_KEY, theme);
+    }
+  }, [theme]);
 
   useEffect(() => {
     const onPopState = () => setRoute(getRouteState());
@@ -224,11 +237,27 @@ export function App() {
     <div className="app-shell">
       <header className="hero">
         <div className="hero-inline">
-          <p className="eyebrow">SyncFactors Operator UI</p>
+          <div className="hero-copy">
+            <p className="eyebrow">SyncFactors Operator UI</p>
+            <h1>Operations Console</h1>
+          </div>
           <div className="hero-meta">
             <span className="badge">Read-only</span>
             <span>{status?.paths.reportDirectory ?? 'Waiting for report directory...'}</span>
             <span className="shortcut-row"><span>`g`</span><span>`q`</span><span>`w`</span><span>`/`</span><span>`n`</span><span>`p`</span></span>
+            <button
+              aria-label={`Switch to ${theme === 'light' ? 'dark' : 'light'} theme`}
+              aria-pressed={theme === 'dark'}
+              className="theme-switch"
+              onClick={() => setTheme((current) => (current === 'light' ? 'dark' : 'light'))}
+              type="button"
+            >
+              <span aria-hidden="true" className="theme-switch-icon">☀</span>
+              <span className="theme-switch-track" data-enabled={theme === 'dark'}>
+                <span className="theme-switch-thumb" />
+              </span>
+              <span aria-hidden="true" className="theme-switch-icon">☾</span>
+            </button>
           </div>
         </div>
       </header>
@@ -312,4 +341,28 @@ export function App() {
     setRoute(normalized);
     syncRouteState(normalized, push);
   }
+}
+
+function getInitialTheme(): ThemeMode {
+  if (typeof window === 'undefined') {
+    return 'light';
+  }
+
+  if (!hasStorageAccess()) {
+    return 'light';
+  }
+
+  const storedTheme = window.localStorage.getItem(THEME_STORAGE_KEY);
+  if (storedTheme === 'light' || storedTheme === 'dark') {
+    return storedTheme;
+  }
+
+  return 'light';
+}
+
+function hasStorageAccess(): boolean {
+  return typeof window !== 'undefined'
+    && typeof window.localStorage !== 'undefined'
+    && typeof window.localStorage.getItem === 'function'
+    && typeof window.localStorage.setItem === 'function';
 }
