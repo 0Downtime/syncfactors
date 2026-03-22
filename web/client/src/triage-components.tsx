@@ -1,3 +1,4 @@
+import { useEffect, useMemo, useState } from 'react';
 import type { MutableRefObject } from 'react';
 import type { DashboardStatus, EntryRecord, QueueGroup } from './types.js';
 
@@ -219,6 +220,84 @@ export function CurrentRunPanel({ currentRun }: { currentRun: Record<string, unk
       <p>Progress {`${currentRun?.processedWorkers ?? 0}`} / {`${currentRun?.totalWorkers ?? 0}`} | Worker {`${currentRun?.currentWorkerId ?? '-'}`}</p>
     </section>
   );
+}
+
+export function RelativeTimeLabel(props: { timestamp: string | null; emptyLabel?: string; className?: string }) {
+  const { timestamp, emptyLabel = '-', className } = props;
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    const interval = window.setInterval(() => setNow(Date.now()), 30000);
+    return () => window.clearInterval(interval);
+  }, []);
+
+  const relativeLabel = useMemo(() => formatRelativeTime(timestamp, now), [timestamp, now]);
+  return <span className={className}>{relativeLabel ?? emptyLabel}</span>;
+}
+
+export function AbsoluteTimeLabel(props: { timestamp: string | null; emptyLabel?: string; className?: string }) {
+  const { timestamp, emptyLabel = '-', className } = props;
+  const formattedAbsolute = useMemo(() => formatRunTimestamp(timestamp), [timestamp]);
+  return <span className={className}>{formattedAbsolute ?? emptyLabel}</span>;
+}
+
+export function formatRunTimestamp(timestamp: string | null): string | null {
+  if (!timestamp) {
+    return null;
+  }
+
+  const parsed = new Date(timestamp);
+  if (Number.isNaN(parsed.getTime())) {
+    return timestamp;
+  }
+
+  return new Intl.DateTimeFormat(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    second: '2-digit',
+  }).format(parsed);
+}
+
+export function formatRelativeTime(timestamp: string | null, now: number): string | null {
+  if (!timestamp) {
+    return null;
+  }
+
+  const parsed = new Date(timestamp).getTime();
+  if (Number.isNaN(parsed)) {
+    return null;
+  }
+
+  const diffMs = now - parsed;
+  const tense = diffMs >= 0 ? 'ago' : 'from now';
+  const absoluteMs = Math.abs(diffMs);
+  const minute = 60 * 1000;
+  const hour = 60 * minute;
+  const day = 24 * hour;
+  const week = 7 * day;
+  const month = 30 * day;
+  const year = 365 * day;
+
+  if (absoluteMs < minute) {
+    return tense === 'ago' ? 'less than a minute ago' : 'in less than a minute';
+  }
+
+  const units = [
+    { label: 'year', size: year },
+    { label: 'month', size: month },
+    { label: 'week', size: week },
+    { label: 'day', size: day },
+    { label: 'hour', size: hour },
+    { label: 'minute', size: minute },
+  ];
+
+  const unit = units.find((entry) => absoluteMs >= entry.size) ?? units[units.length - 1];
+  const count = Math.floor(absoluteMs / unit.size);
+  const suffix = count === 1 ? '' : 's';
+  return tense === 'ago' ? `${count} ${unit.label}${suffix} ago` : `in ${count} ${unit.label}${suffix}`;
 }
 
 export function SummaryMetric({ label, value }: { label: string; value: string }) {

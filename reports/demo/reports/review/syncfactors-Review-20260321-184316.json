@@ -1,15 +1,15 @@
 {
-  "runId": "2b3b3ef2-2727-4c42-83ee-238f6e8d68c6",
-  "startedAt": "2026-03-21T05:03:47.4482610-04:00",
+  "runId": "c911b788-92b2-49d2-a7df-33d7d660a8d7",
+  "startedAt": "2026-03-21T18:29:16.4124930-04:00",
   "status": "Succeeded",
   "mode": "Review",
   "artifactType": "FirstSyncReview",
   "dryRun": false,
-  "configPath": "/Users/chrisbrien/dev/github.com/syncfactors/./reports/demo-smoke/config/demo.mock-sync-config.json",
+  "configPath": "/Users/chrisbrien/dev/github.com/syncfactors/./reports/demo/config/demo.mock-sync-config.json",
   "mappingConfigPath": "/Users/chrisbrien/dev/github.com/syncfactors/config/sample.syncfactors.mapping-config.json",
-  "statePath": "/Users/chrisbrien/dev/github.com/syncfactors/./reports/demo-smoke/state/demo-sync-state.json",
+  "statePath": "/Users/chrisbrien/dev/github.com/syncfactors/./reports/demo/state/demo-sync-state.json",
   "workerScope": null,
-  "completedAt": "2026-03-21T05:17:47.4482610-04:00",
+  "completedAt": "2026-03-21T18:43:16.4124930-04:00",
   "failedAt": null,
   "errorMessage": null,
   "reviewSummary": {
@@ -34,14 +34,15 @@
   "deletions": [],
   "quarantined": [
     {
+      "reviewCaseType": "QuarantineCase",
+      "operatorActionSummary": "The worker is missing required source data and must be reviewed before sync can continue.",
+      "workerId": "100003",
+      "matchedExistingUser": false,
       "fields": [
         "email",
         "managerEmployeeId"
       ],
-      "matchedExistingUser": false,
-      "operatorActionSummary": "The worker is missing required source data and must be reviewed before sync can continue.",
-      "workerId": "100003",
-      "reviewCaseType": "QuarantineCase",
+      "samAccountName": "sf100003",
       "attributeRows": [
         {
           "sourceField": "email",
@@ -51,29 +52,30 @@
           "changed": false
         }
       ],
-      "samAccountName": "sf100003",
+      "reason": "MissingRequiredData",
       "operatorActions": [
         {
           "code": "OpenCase",
           "label": "Open case",
           "description": "Review the worker record and decide how the sync should proceed."
         }
-      ],
-      "reason": "MissingRequiredData"
+      ]
     }
   ],
   "conflicts": [],
   "guardrailFailures": [],
   "manualReview": [
     {
-      "operatorActionSummary": "Confirm how this rehire should reuse or restore the existing AD identity.",
-      "targetOu": "OU=LabField,OU=LabUsers,DC=example,DC=com",
-      "matchedExistingUser": true,
-      "workerId": "100002",
-      "proposedEnable": true,
       "reviewCaseType": "RehireCase",
+      "reviewCategory": "ExistingUserChanges",
+      "workerId": "100002",
+      "matchedExistingUser": true,
+      "targetOu": "OU=LabField,OU=LabUsers,DC=example,DC=com",
       "samAccountName": "sf100002",
       "currentDistinguishedName": "CN=Synthetic100002 User,OU=LabField,OU=LabUsers,DC=example,DC=com",
+      "reason": "RehireDetected",
+      "proposedEnable": true,
+      "operatorActionSummary": "Confirm how this rehire should reuse or restore the existing AD identity.",
       "operatorActions": [
         {
           "code": "ConfirmAccountReuse",
@@ -86,12 +88,10 @@
           "description": "Restore the worker's previous licensing and security groups after review."
         }
       ],
-      "currentEnabled": false,
-      "reviewCategory": "ExistingUserChanges",
-      "reason": "RehireDetected"
+      "currentEnabled": false
     },
     {
-      "reviewCaseType": "ManagerResolutionCase",
+      "matchedExistingUser": true,
       "operatorActions": [
         {
           "code": "AssignFallbackManager",
@@ -99,12 +99,12 @@
           "description": "Route the worker to an approved fallback manager until source data is corrected."
         }
       ],
-      "operatorActionSummary": "Source manager data did not resolve to a managed AD user.",
       "reason": "ManagerNotFound",
-      "workerId": "100001",
+      "reviewCaseType": "ManagerResolutionCase",
       "reviewCategory": "ExistingUserChanges",
+      "operatorActionSummary": "Source manager data did not resolve to a managed AD user.",
       "samAccountName": "sf100001",
-      "matchedExistingUser": true
+      "workerId": "100001"
     }
   ],
   "unchanged": []

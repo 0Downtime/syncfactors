@@ -379,6 +379,16 @@ input {
   gap: 0.25rem;
 }
 
+.run-row-time {
+  display: grid;
+  gap: 0.05rem;
+}
+
+.run-row-relative {
+  color: #c7d0de;
+  font-size: 0.82rem;
+}
+
 .queue-item {
   padding: 0.85rem;
   display: flex;
@@ -470,6 +480,41 @@ input {
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 0.75rem;
   margin-bottom: 0.9rem;
+}
+
+.run-timeline {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 0.9rem;
+}
+
+.run-timeline-item {
+  padding: 0.9rem 1rem;
+  border-radius: 0.95rem;
+  background:
+    linear-gradient(135deg, rgba(244, 176, 75, 0.14), rgba(91, 156, 240, 0.08)),
+    rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(244, 176, 75, 0.18);
+  display: grid;
+  gap: 0.2rem;
+}
+
+.run-timeline-label {
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-size: 0.7rem;
+  color: #f8ca86;
+}
+
+.run-timeline-item strong {
+  font-family: "IBM Plex Serif", Georgia, serif;
+  font-size: 1.03rem;
+}
+
+.run-timeline-relative {
+  color: #c7d0de;
+  font-size: 0.88rem;
 }
 
 .metric {
@@ -591,7 +636,8 @@ input {
   .queue-grid,
   .worker-grid,
   .detail-content,
-  .detail-summary {
+  .detail-summary,
+  .run-timeline {
     grid-template-columns: 1fr;
   }
 

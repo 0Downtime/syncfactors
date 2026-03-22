@@ -82,10 +82,10 @@
     "maxDeletionsPerRun": 10
   },
   "state": {
-    "path": "/Users/chrisbrien/dev/github.com/syncfactors/./reports/demo-smoke/state/demo-sync-state.json"
+    "path": "/Users/chrisbrien/dev/github.com/syncfactors/./reports/demo/state/demo-sync-state.json"
   },
   "reporting": {
-    "outputDirectory": "/Users/chrisbrien/dev/github.com/syncfactors/./reports/demo-smoke/reports/output",
-    "reviewOutputDirectory": "/Users/chrisbrien/dev/github.com/syncfactors/./reports/demo-smoke/reports/review"
+    "outputDirectory": "/Users/chrisbrien/dev/github.com/syncfactors/./reports/demo/reports/output",
+    "reviewOutputDirectory": "/Users/chrisbrien/dev/github.com/syncfactors/./reports/demo/reports/review"
   }
 }

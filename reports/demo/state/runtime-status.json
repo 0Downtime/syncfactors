@@ -1,16 +1,16 @@
 {
-  "runId": "f57ae7ff-5ba4-45c5-843d-4db1f4e8391b",
+  "runId": "99e30cda-68b1-48b8-aa99-1f189866d5f7",
   "status": "InProgress",
   "mode": "Delta",
   "dryRun": true,
   "stage": "ProcessingWorkers",
-  "startedAt": "2026-03-21T07:24:47.4911640-04:00",
-  "lastUpdatedAt": "2026-03-21T07:32:47.4938590-04:00",
+  "startedAt": "2026-03-21T20:50:16.4765060-04:00",
+  "lastUpdatedAt": "2026-03-21T20:58:16.4796890-04:00",
   "completedAt": "",
   "currentWorkerId": "100003",
   "lastAction": "Evaluating worker 100003.",
   "processedWorkers": 67,
-  "totalWorkers": 40,
+  "totalWorkers": 250,
   "creates": 0,
   "updates": 1,
   "enables": 0,
@@ -23,5 +23,5 @@
   "manualReview": 1,
   "unchanged": 0,
   "errorMessage": "",
-  "runtimeStatusPath": "/Users/chrisbrien/dev/github.com/syncfactors/./reports/demo-smoke/state/runtime-status.json"
+  "runtimeStatusPath": "/Users/chrisbrien/dev/github.com/syncfactors/./reports/demo/state/runtime-status.json"
 }

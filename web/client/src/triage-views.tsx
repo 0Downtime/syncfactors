@@ -1,7 +1,7 @@
 import type { DashboardStatus, EntryListResponse, EntryRecord, QueueName, QueueResponse, RunDetailResponse, WorkerDetailResponse } from './types.js';
 import type { RouteState } from './route-state.js';
 import { mapReviewExplorerToBucket } from './route-state.js';
-import { CopyLinkButton, DetailRow, GroupPanel, SelectedEntryPanel, SummaryMetric, WarningPanel, getToneForBucket, getToneForReviewEntry, getToneForReviewExplorer } from './triage-components.js';
+import { AbsoluteTimeLabel, CopyLinkButton, DetailRow, GroupPanel, RelativeTimeLabel, SelectedEntryPanel, SummaryMetric, WarningPanel, getToneForBucket, getToneForReviewEntry, getToneForReviewExplorer } from './triage-components.js';
 import type { FilterRef } from './triage-components.js';
 
 export function DashboardView(props: {
@@ -43,7 +43,10 @@ export function DashboardView(props: {
               <strong>{run.status ?? 'Unknown'}</strong>
               <span>{run.mode ?? '-'}</span>
               <span>{run.artifactType}</span>
-              <span>{run.startedAt ?? '-'}</span>
+              <span className="run-row-time">
+                <AbsoluteTimeLabel timestamp={run.startedAt} />
+                <RelativeTimeLabel timestamp={run.startedAt} className="run-row-relative" />
+              </span>
               <span>C {run.creates} / U {run.updates} / MR {run.manualReview}</span>
             </button>
           ))}
@@ -66,6 +69,8 @@ export function DashboardView(props: {
 
         {runDetail?.run ? (
           <>
+            <RunTimeline startedAt={runDetail.run.startedAt} completedAt={runDetail.run.completedAt ?? null} />
+
             <div className="detail-summary">
               <SummaryMetric label="Mode" value={runDetail.run.mode ?? '-'} />
               <SummaryMetric label="Status" value={runDetail.run.status ?? '-'} />
@@ -295,7 +300,9 @@ export function WorkerView(props: { route: RouteState; workerDetail: WorkerDetai
               <div>
                 <strong>{entry.bucketLabel}</strong>
                 <p>{entry.reason ?? entry.reviewCategory ?? entry.groupLabel}</p>
-                <small>{entry.runId ?? '-'} · {entry.startedAt ?? '-'} · {entry.changeCount} changes</small>
+                <small>
+                  {entry.runId ?? '-'} · <AbsoluteTimeLabel timestamp={entry.startedAt} /> · <RelativeTimeLabel timestamp={entry.startedAt} /> · {entry.changeCount} changes
+                </small>
               </div>
               <div className="queue-item-actions">
                 <button type="button" onClick={() => props.onOpenRun(entry)}>Open run</button>
@@ -321,6 +328,28 @@ function QueuePagination(props: {
       <button type="button" onClick={() => props.onPageChange(props.page - 1)} disabled={props.disabled || props.page <= 1}>Previous</button>
       <span>Page {props.page} of {props.totalPages}</span>
       <button type="button" onClick={() => props.onPageChange(props.page + 1)} disabled={props.disabled || props.page >= props.totalPages}>Next</button>
+    </div>
+  );
+}
+
+function RunTimeline(props: { startedAt: string | null; completedAt: string | null }) {
+  const { startedAt, completedAt } = props;
+
+  return (
+    <section className="run-timeline" aria-label="Run timeline">
+      <RunTimelineItem label="Started" timestamp={startedAt} />
+      <RunTimelineItem label="Completed" timestamp={completedAt} emptyLabel="In progress" />
+    </section>
+  );
+}
+
+function RunTimelineItem(props: { label: string; timestamp: string | null; emptyLabel?: string }) {
+  const { label, timestamp, emptyLabel = '-' } = props;
+  return (
+    <div className="run-timeline-item">
+      <span className="run-timeline-label">{label}</span>
+      <strong><AbsoluteTimeLabel timestamp={timestamp} emptyLabel={emptyLabel} /></strong>
+      <RelativeTimeLabel timestamp={timestamp} emptyLabel={emptyLabel} className="run-timeline-relative" />
     </div>
   );
 }

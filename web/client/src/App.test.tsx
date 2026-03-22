@@ -1,8 +1,10 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, expect, vi } from 'vitest';
 import { App } from './App.js';
+import { DEFAULT_ROUTE } from './route-state.js';
 import { getToneForReviewEntry } from './triage-components.js';
+import { DashboardView } from './triage-views.js';
 
 const mockGetStatus = vi.fn();
 const mockGetRun = vi.fn();
@@ -110,6 +112,7 @@ beforeEach(() => {
       dryRun: true,
       status: 'Succeeded',
       startedAt: '2026-03-20T10:00:00Z',
+      completedAt: '2026-03-20T11:05:00Z',
       durationSeconds: 300,
       creates: 0,
       updates: 1,
@@ -413,6 +416,48 @@ beforeEach(() => {
 });
 
 describe('App', () => {
+  it('shows absolute and live relative timestamps in run detail', async () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date('2026-03-20T12:05:00Z'));
+      const runDetail = await mockGetRun();
+
+      render(
+        <DashboardView
+          status={null}
+          route={{ ...DEFAULT_ROUTE, runId: 'run-1' }}
+          runDetail={runDetail}
+          entryResponse={{ run: runDetail.run, entries: [], total: 0, warnings: [] }}
+          selectedEntry={null}
+          runBuckets={[]}
+          filterInputRef={{ current: null }}
+          onSelectRun={() => undefined}
+          onSelectBucket={() => undefined}
+          onFilterChange={() => undefined}
+          onSelectEntry={() => undefined}
+          onChangeDiffMode={() => undefined}
+          onChangeReviewExplorer={() => undefined}
+          onOpenWorker={() => undefined}
+        />,
+      );
+
+      expect(screen.getByLabelText(/Run timeline/i)).toBeInTheDocument();
+      expect(screen.getAllByText(/Mar 20, 2026/i).length).toBeGreaterThanOrEqual(2);
+      expect(screen.getByText('2 hours ago')).toBeInTheDocument();
+      expect(screen.getByText('1 hour ago')).toBeInTheDocument();
+
+      vi.setSystemTime(new Date('2026-03-20T13:05:00Z'));
+      await act(async () => {
+        vi.advanceTimersByTime(30000);
+      });
+
+      expect(screen.getByText('3 hours ago')).toBeInTheDocument();
+      expect(screen.getByText('2 hours ago')).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('classifies review explorer tones by operation type instead of raw bucket', () => {
     expect(getToneForReviewEntry({ bucket: 'manualReview', reviewCategory: null })).toBe('delete');
     expect(getToneForReviewEntry({ bucket: 'quarantined', reviewCategory: null })).toBe('delete');
@@ -430,6 +475,7 @@ describe('App', () => {
     expect(screen.getAllByText('1000').length).toBeGreaterThan(0);
     expect(screen.getAllByText('1001').length).toBeGreaterThan(0);
     expect(screen.getAllByText('1002').length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/ago/).length).toBeGreaterThan(0);
     expect(window.location.search).toMatch(/run=run-1/);
 
     fireEvent.click(screen.getByRole('button', { name: 'Queues' }));
@@ -451,6 +497,7 @@ describe('App', () => {
     await waitFor(() => expect(screen.getByText(/Related Runs/i)).toBeInTheDocument());
     expect(screen.getByText(/^true$/i)).toBeInTheDocument();
     expect(screen.getAllByText(/CN=Jamie Doe/i)).toHaveLength(2);
+    expect(screen.getAllByText(/ago/).length).toBeGreaterThan(0);
     expect(window.location.search).toMatch(/view=worker/);
   });
 });
