@@ -199,7 +199,7 @@ export function StatusPanel({ title, health }: { title: string; health?: { statu
     <section className="card status-card">
       <p className="section-kicker">{title}</p>
       <h2>{health?.status ?? 'UNKNOWN'}</h2>
-      <p>{health?.detail ?? 'Waiting for probe details.'}</p>
+      <ExpandableText text={health?.detail ?? 'Waiting for probe details.'} />
     </section>
   );
 }
@@ -209,8 +209,8 @@ export function SummaryPanel({ status }: { status: DashboardStatus | null }) {
     <section className="card status-card">
       <p className="section-kicker">State Summary</p>
       <h2>{status?.summary.totalTrackedWorkers ?? 0} tracked workers</h2>
-      <p>Suppressed {status?.summary.suppressedWorkers ?? 0} | Pending deletion {status?.summary.pendingDeletionWorkers ?? 0}</p>
-      <p>Checkpoint {status?.summary.lastCheckpoint ?? 'none'}</p>
+      <p className="status-inline-row">Suppressed {status?.summary.suppressedWorkers ?? 0} | Pending deletion {status?.summary.pendingDeletionWorkers ?? 0}</p>
+      <ExpandableText text={`Checkpoint ${status?.summary.lastCheckpoint ?? 'none'}`} />
     </section>
   );
 }
@@ -220,8 +220,59 @@ export function CurrentRunPanel({ currentRun }: { currentRun: Record<string, unk
     <section className="card current-run-card">
       <p className="section-kicker">Current Run</p>
       <h2>{`${currentRun?.status ?? 'Idle'} / ${currentRun?.stage ?? 'Completed'}`}</h2>
-      <p>{`${currentRun?.lastAction ?? 'No active sync run.'}`}</p>
-      <p>Progress {`${currentRun?.processedWorkers ?? 0}`} / {`${currentRun?.totalWorkers ?? 0}`} | Worker {`${currentRun?.currentWorkerId ?? '-'}`}</p>
+      <ExpandableText text={`${currentRun?.lastAction ?? 'No active sync run.'}`} />
+      <p className="status-inline-row">Progress {`${currentRun?.processedWorkers ?? 0}`} / {`${currentRun?.totalWorkers ?? 0}`} | Worker {`${currentRun?.currentWorkerId ?? '-'}`}</p>
+    </section>
+  );
+}
+
+export function DashboardOverviewPanel({ status }: { status: DashboardStatus | null }) {
+  const successFactors = status?.health.successFactors;
+  const activeDirectory = status?.health.activeDirectory;
+  const currentRun = status?.currentRun ?? null;
+  const totalWorkers = Number(currentRun?.totalWorkers ?? 0);
+  const processedWorkers = Number(currentRun?.processedWorkers ?? 0);
+  const progressPercent = totalWorkers > 0 ? Math.max(0, Math.min(100, (processedWorkers / totalWorkers) * 100)) : 0;
+
+  return (
+    <section className="card overview-card">
+      <div className="overview-header">
+        <div>
+          <p className="section-kicker">Operations Overview</p>
+          <h2>System state</h2>
+        </div>
+        <span className="overview-live-pill">Live</span>
+      </div>
+
+      <div className="overview-compact-grid">
+        <div className="overview-chip-grid">
+          <OverviewStatusChip label="SF" health={successFactors} />
+          <OverviewStatusChip label="AD" health={activeDirectory} />
+          <OverviewMetricChip label="WK" value={`${status?.summary.totalTrackedWorkers ?? 0}`} />
+          <OverviewMetricChip label="DEL" value={`${status?.summary.pendingDeletionWorkers ?? 0}`} />
+        </div>
+
+        <div className="overview-run-compact">
+          <div className="overview-run-compact-head">
+            <div className="overview-run-titleline">
+              <span className="overview-run-symbol" aria-hidden="true">◔</span>
+              <strong>{`${currentRun?.status ?? 'Idle'} / ${currentRun?.stage ?? 'Completed'}`}</strong>
+            </div>
+            <span className="overview-run-percent">{Math.round(progressPercent)}%</span>
+          </div>
+          <div className="overview-progress-track" aria-hidden="true">
+            <span className="overview-progress-fill" style={{ width: `${progressPercent}%` }} />
+          </div>
+          <div className="overview-run-meta compact">
+            <span>{processedWorkers}/{totalWorkers || 0}</span>
+            <span>W {`${currentRun?.currentWorkerId ?? '-'}`}</span>
+            <span>S {status?.summary.suppressedWorkers ?? 0}</span>
+            <span className="overview-checkpoint">
+              CP <ExpandableText text={status?.summary.lastCheckpoint ?? 'none'} maxInlineLength={18} />
+            </span>
+          </div>
+        </div>
+      </div>
     </section>
   );
 }
@@ -320,6 +371,95 @@ export function DetailRow({ label, value }: { label: string; value: string }) {
       <dd>{value}</dd>
     </>
   );
+}
+
+function ExpandableText(props: { text: string; maxInlineLength?: number }) {
+  const { text, maxInlineLength = 88 } = props;
+  const [expanded, setExpanded] = useState(false);
+  const shouldExpand = text.length > maxInlineLength || text.includes('\n');
+
+  return (
+    <>
+      <div className="compact-text-row">
+        <p className="compact-text" title={text}>{text}</p>
+        {shouldExpand ? (
+          <button className="inline-expand-button" onClick={() => setExpanded(true)} type="button">
+            Expand
+          </button>
+        ) : null}
+      </div>
+      {expanded ? (
+        <div className="detail-modal-backdrop" onClick={() => setExpanded(false)} role="presentation">
+          <div
+            aria-labelledby="detail-modal-title"
+            aria-modal="true"
+            className="detail-modal"
+            onClick={(event) => event.stopPropagation()}
+            role="dialog"
+          >
+            <div className="detail-modal-header">
+              <strong id="detail-modal-title">Full detail</strong>
+              <button className="inline-expand-button" onClick={() => setExpanded(false)} type="button">
+                Close
+              </button>
+            </div>
+            <pre className="detail-modal-content">{text}</pre>
+          </div>
+        </div>
+      ) : null}
+    </>
+  );
+}
+
+function OverviewStatusTile(props: { label: string; health?: { status: string; detail: string } }) {
+  const status = props.health?.status ?? 'UNKNOWN';
+  const tone = getHealthTone(status);
+
+  return (
+    <div className="overview-status-tile" data-health={tone}>
+      <div className="overview-status-header">
+        <span>{props.label}</span>
+        <span className="overview-status-pill">{status}</span>
+      </div>
+      <ExpandableText text={props.health?.detail ?? 'Waiting for probe details.'} maxInlineLength={56} />
+    </div>
+  );
+}
+
+function OverviewStatusChip(props: { label: string; health?: { status: string; detail: string } }) {
+  const status = props.health?.status ?? 'UNKNOWN';
+  const tone = getHealthTone(status);
+  const symbol = tone === 'good' ? '●' : tone === 'warning' ? '▲' : tone === 'critical' ? '■' : '○';
+
+  return (
+    <div className="overview-chip" data-health={tone} title={`${props.label}: ${status}`}>
+      <span className="overview-chip-label">{props.label}</span>
+      <span className="overview-chip-value">{symbol} {status}</span>
+    </div>
+  );
+}
+
+function OverviewMetricChip(props: { label: string; value: string }) {
+  return (
+    <div className="overview-chip metric">
+      <span className="overview-chip-label">{props.label}</span>
+      <span className="overview-chip-value">{props.value}</span>
+    </div>
+  );
+}
+
+function getHealthTone(status: string): 'good' | 'warning' | 'critical' | 'unknown' {
+  const normalized = status.toLowerCase();
+  if (normalized === 'ok' || normalized === 'healthy' || normalized === 'succeeded') {
+    return 'good';
+  }
+  if (normalized === 'warning' || normalized === 'degraded') {
+    return 'warning';
+  }
+  if (normalized === 'error' || normalized === 'failed' || normalized === 'down') {
+    return 'critical';
+  }
+  return 'unknown';
 }
 
 export function CopyLinkButton({ label }: { label: string }) {

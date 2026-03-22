@@ -56,8 +56,11 @@ export type DashboardStatus = {
   context: Record<string, unknown>;
   paths: {
     configPath: string;
+    statePath: string;
     reportDirectory: string;
     reviewReportDirectory: string;
+    reportDirectories: string[];
+    runtimeStatusPath: string;
   };
   warnings?: string[];
 };

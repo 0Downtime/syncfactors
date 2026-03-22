@@ -1,7 +1,7 @@
 import type { DashboardStatus, EntryListResponse, EntryRecord, QueueName, QueueResponse, RunDetailResponse, WorkerDetailResponse } from './types.js';
 import type { RouteState } from './route-state.js';
 import { mapReviewExplorerToBucket } from './route-state.js';
-import { AbsoluteTimeLabel, CopyLinkButton, DetailRow, GroupPanel, RelativeTimeLabel, SelectedEntryPanel, SummaryMetric, WarningPanel, getToneForBucket, getToneForReviewEntry, getToneForReviewExplorer } from './triage-components.js';
+import { AbsoluteTimeLabel, CopyLinkButton, DashboardOverviewPanel, DetailRow, GroupPanel, RelativeTimeLabel, SelectedEntryPanel, SummaryMetric, WarningPanel, getToneForBucket, getToneForReviewEntry, getToneForReviewExplorer } from './triage-components.js';
 import type { FilterRef } from './triage-components.js';
 
 export function DashboardView(props: {
@@ -23,134 +23,138 @@ export function DashboardView(props: {
   const { status, route, runDetail, entryResponse, selectedEntry, runBuckets, filterInputRef } = props;
   const useReviewExplorerTones = runDetail?.run.mode === 'Review';
   return (
-    <main className="main-grid">
-      <section className="card runs-card">
-        <div className="card-header">
-          <div>
-            <p className="section-kicker">Run History</p>
-            <h2>Recent runs</h2>
-            <p className="runs-hint">Scroll for older runs</p>
-          </div>
-          <CopyLinkButton label="Copy run view link" />
-        </div>
-        <div className="runs-table">
-          {status?.recentRuns.map((run) => (
-            <button
-              key={run.runId ?? run.path ?? 'run'}
-              className={`run-row ${route.runId === run.runId ? 'selected' : ''}`}
-              onClick={() => props.onSelectRun(run.runId)}
-              type="button"
-            >
-              <strong>{run.status ?? 'Unknown'}</strong>
-              <span>{run.mode ?? '-'}</span>
-              <span>{run.artifactType}</span>
-              <span className="run-row-time">
-                <AbsoluteTimeLabel timestamp={run.startedAt} />
-                <RelativeTimeLabel timestamp={run.startedAt} className="run-row-relative" />
-              </span>
-              <span>C {run.creates} / U {run.updates} / MR {run.manualReview}</span>
-            </button>
-          ))}
-        </div>
-      </section>
+    <main className="dashboard-layout">
+      <DashboardOverviewPanel status={status} />
 
-      <section className="card detail-card">
-        <div className="card-header">
-          <div className="detail-heading">
-            <p className="section-kicker">Run Detail</p>
-            <h2 className="detail-run-id">{runDetail?.run.runId ?? 'Select a run'}</h2>
-          </div>
-          <div className="header-actions">
-            {runDetail?.run ? <span className="badge ghost">{runDetail.run.artifactType}</span> : null}
-            <CopyLinkButton label="Copy detail link" />
-          </div>
-        </div>
-
-        {runDetail?.warnings?.length ? <WarningPanel title="Run warnings" warnings={runDetail.warnings} /> : null}
-
-        {runDetail?.run ? (
-          <>
-            <RunTimeline startedAt={runDetail.run.startedAt} completedAt={runDetail.run.completedAt ?? null} />
-
-            <div className="detail-summary">
-              <SummaryMetric label="Mode" value={runDetail.run.mode ?? '-'} />
-              <SummaryMetric label="Status" value={runDetail.run.status ?? '-'} />
-              <SummaryMetric label="Duration" value={runDetail.run.durationSeconds?.toString() ?? '-'} />
-              <SummaryMetric label="Manual review" value={runDetail.run.manualReview.toString()} />
+      <section className="main-grid">
+        <section className="card runs-card">
+          <div className="card-header">
+            <div>
+              <p className="section-kicker">Run History</p>
+              <h2>Recent runs</h2>
+              <p className="runs-hint">Scroll for older runs</p>
             </div>
+            <CopyLinkButton label="Copy run view link" />
+          </div>
+          <div className="runs-table">
+            {status?.recentRuns.map((run) => (
+              <button
+                key={run.runId ?? run.path ?? 'run'}
+                className={`run-row ${route.runId === run.runId ? 'selected' : ''}`}
+                onClick={() => props.onSelectRun(run.runId)}
+                type="button"
+              >
+                <strong>{run.status ?? 'Unknown'}</strong>
+                <span>{run.mode ?? '-'}</span>
+                <span>{run.artifactType}</span>
+                <span className="run-row-time">
+                  <AbsoluteTimeLabel timestamp={run.startedAt} />
+                  <RelativeTimeLabel timestamp={run.startedAt} className="run-row-relative" />
+                </span>
+                <span>C {run.creates} / U {run.updates} / MR {run.manualReview}</span>
+              </button>
+            ))}
+          </div>
+        </section>
 
-            {runDetail.run.mode === 'Review' ? (
-              <section className="review-strip">
-                <div className="review-tabs">
-                  {(['all', 'changed', 'created', 'deleted'] as const).map((mode) => (
+        <section className="card detail-card">
+          <div className="card-header">
+            <div className="detail-heading">
+              <p className="section-kicker">Run Detail</p>
+              <h2 className="detail-run-id">{runDetail?.run.runId ?? 'Select a run'}</h2>
+            </div>
+            <div className="header-actions">
+              {runDetail?.run ? <span className="badge ghost">{runDetail.run.artifactType}</span> : null}
+              <CopyLinkButton label="Copy detail link" />
+            </div>
+          </div>
+
+          {runDetail?.warnings?.length ? <WarningPanel title="Run warnings" warnings={runDetail.warnings} /> : null}
+
+          {runDetail?.run ? (
+            <>
+              <RunTimeline startedAt={runDetail.run.startedAt} completedAt={runDetail.run.completedAt ?? null} />
+
+              <div className="detail-summary">
+                <SummaryMetric label="Mode" value={runDetail.run.mode ?? '-'} />
+                <SummaryMetric label="Status" value={runDetail.run.status ?? '-'} />
+                <SummaryMetric label="Duration" value={runDetail.run.durationSeconds?.toString() ?? '-'} />
+                <SummaryMetric label="Manual review" value={runDetail.run.manualReview.toString()} />
+              </div>
+
+              {runDetail.run.mode === 'Review' ? (
+                <section className="review-strip">
+                  <div className="review-tabs">
+                    {(['all', 'changed', 'created', 'deleted'] as const).map((mode) => (
+                      <button
+                        key={mode}
+                        type="button"
+                        className={route.reviewExplorer === mode ? 'active' : ''}
+                        data-tone={getToneForReviewExplorer(mode)}
+                        onClick={() => props.onChangeReviewExplorer(mode)}
+                      >
+                        {mode} ({mode === 'all' ? runDetail.reviewExplorer.changed + runDetail.reviewExplorer.created + runDetail.reviewExplorer.deleted : runDetail.reviewExplorer[mode]})
+                      </button>
+                    ))}
+                  </div>
+                  <p>Review explorer prioritizes created, changed, and deleted-style triage instead of raw bucket order.</p>
+                </section>
+              ) : null}
+
+              <div className="toolbar">
+                <div className="bucket-tabs">
+                  {runBuckets.map(({ bucket, count }) => (
                     <button
-                      key={mode}
+                      key={bucket}
                       type="button"
-                      className={route.reviewExplorer === mode ? 'active' : ''}
-                      data-tone={getToneForReviewExplorer(mode)}
-                      onClick={() => props.onChangeReviewExplorer(mode)}
+                      className={route.bucket === bucket ? 'active' : ''}
+                      data-tone={getToneForBucket(bucket)}
+                      onClick={() => props.onSelectBucket(bucket)}
                     >
-                      {mode} ({mode === 'all' ? runDetail.reviewExplorer.changed + runDetail.reviewExplorer.created + runDetail.reviewExplorer.deleted : runDetail.reviewExplorer[mode]})
+                      {bucket} ({count})
                     </button>
                   ))}
                 </div>
-                <p>Review explorer prioritizes created, changed, and deleted-style triage instead of raw bucket order.</p>
-              </section>
-            ) : null}
-
-            <div className="toolbar">
-              <div className="bucket-tabs">
-                {runBuckets.map(({ bucket, count }) => (
-                  <button
-                    key={bucket}
-                    type="button"
-                    className={route.bucket === bucket ? 'active' : ''}
-                    data-tone={getToneForBucket(bucket)}
-                    onClick={() => props.onSelectBucket(bucket)}
-                  >
-                    {bucket} ({count})
-                  </button>
-                ))}
-              </div>
-              <input
-                ref={filterInputRef}
-                aria-label="Filter entries"
-                placeholder="Filter by worker, reason, or category"
-                value={route.filter}
-                onChange={(event) => props.onFilterChange(event.target.value)}
-              />
-            </div>
-
-            <div className="detail-content">
-              <div className="entry-list">
-                {(entryResponse?.entries ?? []).map((entry) => (
-                  <button
-                    key={entry.entryId}
-                    type="button"
-                    className={`entry-row ${route.entryId === entry.entryId ? 'selected' : ''}`}
-                    data-tone={useReviewExplorerTones ? getToneForReviewEntry(entry) : getToneForBucket(entry.bucket)}
-                    onClick={() => props.onSelectEntry(entry)}
-                  >
-                    <strong>{entry.workerId ?? 'Unknown worker'}</strong>
-                    <span>{entry.bucketLabel}</span>
-                    <span>{entry.reason ?? entry.reviewCategory ?? 'No reason provided'}</span>
-                    <span>{entry.staleDays !== null ? `${entry.staleDays}d stale` : 'fresh'}</span>
-                  </button>
-                ))}
+                <input
+                  ref={filterInputRef}
+                  aria-label="Filter entries"
+                  placeholder="Filter by worker, reason, or category"
+                  value={route.filter}
+                  onChange={(event) => props.onFilterChange(event.target.value)}
+                />
               </div>
 
-              <SelectedEntryPanel
-                entry={selectedEntry}
-                diffMode={route.diffMode}
-                tone={selectedEntry && useReviewExplorerTones ? getToneForReviewEntry(selectedEntry) : undefined}
-                onDiffModeChange={props.onChangeDiffMode}
-                onOpenWorker={props.onOpenWorker}
-              />
-            </div>
-          </>
-        ) : (
-          <p className="empty-state">Choose a run to inspect report buckets and selected-object details.</p>
-        )}
+              <div className="detail-content">
+                <div className="entry-list">
+                  {(entryResponse?.entries ?? []).map((entry) => (
+                    <button
+                      key={entry.entryId}
+                      type="button"
+                      className={`entry-row ${route.entryId === entry.entryId ? 'selected' : ''}`}
+                      data-tone={useReviewExplorerTones ? getToneForReviewEntry(entry) : getToneForBucket(entry.bucket)}
+                      onClick={() => props.onSelectEntry(entry)}
+                    >
+                      <strong>{entry.workerId ?? 'Unknown worker'}</strong>
+                      <span>{entry.bucketLabel}</span>
+                      <span>{entry.reason ?? entry.reviewCategory ?? 'No reason provided'}</span>
+                      <span>{entry.staleDays !== null ? `${entry.staleDays}d stale` : 'fresh'}</span>
+                    </button>
+                  ))}
+                </div>
+
+                <SelectedEntryPanel
+                  entry={selectedEntry}
+                  diffMode={route.diffMode}
+                  tone={selectedEntry && useReviewExplorerTones ? getToneForReviewEntry(selectedEntry) : undefined}
+                  onDiffModeChange={props.onChangeDiffMode}
+                  onOpenWorker={props.onOpenWorker}
+                />
+              </div>
+            </>
+          ) : (
+            <p className="empty-state">Choose a run to inspect report buckets and selected-object details.</p>
+          )}
+        </section>
       </section>
     </main>
   );

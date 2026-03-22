@@ -1,3 +1,7 @@
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import { spawn } from 'node:child_process';
 import express from 'express';
 import type { Express, Response } from 'express';
 import type { DashboardStatus, QueueName } from './types.js';
@@ -13,6 +17,7 @@ export type AppDependencies = {
 
 export function createApp(dependencies: AppDependencies): Express {
   const app = express();
+  app.use(express.json());
   const historyLimit = dependencies.historyLimit ?? 25;
   const statusProvider = dependencies.statusProvider ?? new PowerShellStatusProvider();
   const reportService = dependencies.reportService ?? new ReportService();
@@ -132,6 +137,24 @@ export function createApp(dependencies: AppDependencies): Express {
     }
   });
 
+  app.post('/api/open-path', async (request, response) => {
+    try {
+      const targetPath = typeof request.body?.path === 'string' ? request.body.path : '';
+      if (!targetPath.trim()) {
+        respondWithError(response, 400, 'Missing path.', new Error('Request body must include a path.'));
+        return;
+      }
+
+      const resolvedPath = path.resolve(targetPath);
+      await fs.access(resolvedPath);
+      const stats = await fs.stat(resolvedPath);
+      await openPathInDefaultApp(resolvedPath, stats.isDirectory());
+      response.json({ ok: true });
+    } catch (error) {
+      respondWithError(response, 500, 'Failed to open path.', error);
+    }
+  });
+
   return app;
 }
 
@@ -153,6 +176,34 @@ function asQueryNumber(value: unknown): number | undefined {
 
   const parsed = Number.parseInt(value, 10);
   return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+async function openPathInDefaultApp(targetPath: string, isDirectory: boolean): Promise<void> {
+  const platform = os.platform();
+  let command: string;
+  let args: string[];
+
+  if (platform === 'darwin') {
+    command = 'open';
+    args = isDirectory ? [targetPath] : ['-t', targetPath];
+  } else if (platform === 'win32') {
+    command = 'cmd';
+    args = ['/c', 'start', '', targetPath];
+  } else {
+    command = 'xdg-open';
+    args = [targetPath];
+  }
+
+  await new Promise<void>((resolve, reject) => {
+    const child = spawn(command, args, {
+      detached: true,
+      stdio: 'ignore',
+    });
+
+    child.on('error', reject);
+    child.unref();
+    resolve();
+  });
 }
 
 export function createMockStatusProvider(status: DashboardStatus): StatusProvider {

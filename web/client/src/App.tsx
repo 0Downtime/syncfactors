@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { getQueue, getRun, getRunEntries, getStatus, getWorkerDetail } from './api.js';
+import { getQueue, getRun, getRunEntries, getStatus, getWorkerDetail, openLocalPath } from './api.js';
 import { BUCKET_ORDER, chooseSelectedEntry, DEFAULT_ROUTE, getRouteState, mapReviewExplorerToBucket, normalizeRoute, resolveActiveBucket, stepSelection, syncRouteState } from './route-state.js';
 import type { RouteState } from './route-state.js';
-import { CurrentRunPanel, StatusNote, StatusPanel, SummaryPanel, WarningPanel } from './triage-components.js';
+import { StatusNote, WarningPanel } from './triage-components.js';
 import { DashboardView, QueueView, WorkerView } from './triage-views.js';
 import type { DashboardStatus, EntryListResponse, EntryRecord, QueueResponse, RunDetailResponse, WorkerDetailResponse } from './types.js';
 
@@ -20,6 +20,7 @@ export function App() {
   const [error, setError] = useState<string | null>(null);
   const [theme, setTheme] = useState<ThemeMode>(() => getInitialTheme());
   const filterInputRef = useRef<HTMLInputElement | null>(null);
+  const reportMenuRef = useRef<HTMLDetailsElement | null>(null);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -232,19 +233,43 @@ export function App() {
   const adProbeSkipWarning = 'Active Directory health probe is skipped on non-Windows hosts for the web dashboard.';
   const statusWarnings = dashboardWarnings.filter((warning) => warning !== adProbeSkipWarning);
   const showAdProbeNote = dashboardWarnings.includes(adProbeSkipWarning);
+  const reportLinks = useMemo(() => buildReportLinks(status), [status]);
 
   return (
     <div className="app-shell">
       <header className="hero">
-        <div className="hero-inline">
+        <div className="hero-topbar">
           <div className="hero-copy">
             <p className="eyebrow">SyncFactors Operator UI</p>
-            <h1>Operations Console</h1>
+            <div className="hero-title-row">
+              <h1>Operations Console</h1>
+              <span className="hero-divider" aria-hidden="true" />
+              <span className="hero-context">Operator workspace</span>
+            </div>
           </div>
           <div className="hero-meta">
             <span className="badge">Read-only</span>
-            <span>{status?.paths.reportDirectory ?? 'Waiting for report directory...'}</span>
-            <span className="shortcut-row"><span>`g`</span><span>`q`</span><span>`w`</span><span>`/`</span><span>`n`</span><span>`p`</span></span>
+            <details className="report-menu" ref={reportMenuRef}>
+              <summary className="hero-path">
+                <span className="hero-path-label">Reports</span>
+                <span aria-hidden="true" className="report-menu-caret">▾</span>
+              </summary>
+              <div className="report-menu-list">
+                {reportLinks.map((link) => (
+                  <button
+                    key={`${link.label}:${link.path}`}
+                    className="report-menu-item"
+                    onClick={() => {
+                      void handleOpenPath(link.path);
+                    }}
+                    type="button"
+                  >
+                    <span className="report-menu-item-label">{link.label}</span>
+                    <span className="report-menu-item-path" title={link.path}>{link.path}</span>
+                  </button>
+                ))}
+              </div>
+            </details>
             <button
               aria-label={`Switch to ${theme === 'light' ? 'dark' : 'light'} theme`}
               aria-pressed={theme === 'dark'}
@@ -260,25 +285,19 @@ export function App() {
             </button>
           </div>
         </div>
+        <div className="hero-toolbar">
+          <nav className="view-nav" aria-label="Primary">
+            <button className={route.view === 'dashboard' ? 'active' : ''} onClick={() => navigateTo({ ...route, view: 'dashboard' })} type="button">Dashboard</button>
+            <button className={route.view === 'queues' ? 'active' : ''} onClick={() => navigateTo({ ...route, view: 'queues' })} type="button">Queues</button>
+            <button className={route.view === 'worker' ? 'active' : ''} onClick={() => navigateTo({ ...route, view: 'worker' })} type="button" disabled={!route.workerId}>Worker</button>
+          </nav>
+        </div>
       </header>
 
       {error ? <section className="error-banner">{error}</section> : null}
       {statusWarnings.length ? <WarningPanel title="Status warnings" warnings={statusWarnings} /> : null}
 
-      <nav className="view-nav">
-        <button className={route.view === 'dashboard' ? 'active' : ''} onClick={() => navigateTo({ ...route, view: 'dashboard' })} type="button">Dashboard</button>
-        <button className={route.view === 'queues' ? 'active' : ''} onClick={() => navigateTo({ ...route, view: 'queues' })} type="button">Queues</button>
-        <button className={route.view === 'worker' ? 'active' : ''} onClick={() => navigateTo({ ...route, view: 'worker' })} type="button" disabled={!route.workerId}>Worker</button>
-      </nav>
-
       {showAdProbeNote ? <StatusNote>Active Directory health is unavailable on this macOS host.</StatusNote> : null}
-
-      <section className="status-grid">
-        <StatusPanel title="SuccessFactors" health={status?.health.successFactors} />
-        <StatusPanel title="Active Directory" health={status?.health.activeDirectory} />
-        <SummaryPanel status={status} />
-        <CurrentRunPanel currentRun={status?.currentRun ?? null} />
-      </section>
 
       {route.view === 'dashboard' ? (
         <DashboardView
@@ -341,6 +360,15 @@ export function App() {
     setRoute(normalized);
     syncRouteState(normalized, push);
   }
+
+  async function handleOpenPath(path: string) {
+    try {
+      await openLocalPath(path);
+      reportMenuRef.current?.removeAttribute('open');
+    } catch (openError) {
+      setError(openError instanceof Error ? openError.message : 'Failed to open the selected path.');
+    }
+  }
 }
 
 function getInitialTheme(): ThemeMode {
@@ -365,4 +393,35 @@ function hasStorageAccess(): boolean {
     && typeof window.localStorage !== 'undefined'
     && typeof window.localStorage.getItem === 'function'
     && typeof window.localStorage.setItem === 'function';
+}
+
+function buildReportLinks(status: DashboardStatus | null): Array<{ label: string; path: string }> {
+  if (!status) {
+    return [];
+  }
+
+  const candidates = [
+    { label: 'Output dir', path: status.paths.reportDirectory },
+    { label: 'Review dir', path: status.paths.reviewReportDirectory },
+    { label: 'Runtime', path: status.paths.runtimeStatusPath },
+    { label: 'State', path: status.paths.statePath },
+    { label: 'Config', path: status.paths.configPath },
+    ...status.recentRuns
+      .filter((run) => Boolean(run.path))
+      .slice(0, 5)
+      .map((run, index) => ({
+        label: index === 0 ? 'Latest run' : `Run ${index + 1}`,
+        path: run.path!,
+      })),
+  ];
+
+  const seen = new Set<string>();
+  return candidates.filter((candidate) => {
+    if (!candidate.path || seen.has(candidate.path)) {
+      return false;
+    }
+
+    seen.add(candidate.path);
+    return true;
+  });
 }

@@ -8,8 +8,8 @@ import type {
   WorkerHistoryResponse,
 } from './types.js';
 
-async function fetchJson<T>(url: string): Promise<T> {
-  const response = await fetch(url);
+async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(url, init);
   if (!response.ok) {
     const payload = (await response.json().catch(() => null)) as { error?: string; detail?: string } | null;
     throw new Error(payload?.detail ?? payload?.error ?? `Request failed: ${response.status}`);
@@ -63,4 +63,14 @@ export async function getWorkerHistory(workerId: string): Promise<WorkerHistoryR
 
 export async function getWorkerDetail(workerId: string): Promise<WorkerDetailResponse> {
   return fetchJson<WorkerDetailResponse>(`/api/workers/${encodeURIComponent(workerId)}`);
+}
+
+export async function openLocalPath(path: string): Promise<void> {
+  await fetchJson<{ ok: boolean }>('/api/open-path', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ path }),
+  } as RequestInit);
 }

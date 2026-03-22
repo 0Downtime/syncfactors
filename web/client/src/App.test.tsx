@@ -99,8 +99,11 @@ beforeEach(() => {
     context: {},
     paths: {
       configPath: '/tmp/config.json',
+      statePath: '/tmp/state.json',
       reportDirectory: '/tmp/reports',
       reviewReportDirectory: '/tmp/review',
+      reportDirectories: ['/tmp/reports', '/tmp/review'],
+      runtimeStatusPath: '/tmp/runtime-status.json',
     },
     warnings: [],
   });
