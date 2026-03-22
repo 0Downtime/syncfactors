@@ -16,6 +16,7 @@ $moduleRoot = Join-Path -Path $projectRoot -ChildPath 'src/Modules/SyncFactors'
 $configModule = Import-Module (Join-Path $moduleRoot 'Config.psm1') -Force -DisableNameChecking -PassThru
 $stateModule = Import-Module (Join-Path $moduleRoot 'State.psm1') -Force -DisableNameChecking -PassThru
 $monitoringModule = Import-Module (Join-Path $moduleRoot 'Monitoring.psm1') -Force -DisableNameChecking -PassThru
+$persistenceModule = Import-Module (Join-Path $moduleRoot 'Persistence.psm1') -Force -DisableNameChecking -PassThru
 
 $getSyncFactorsConfig = $configModule.ExportedFunctions['Get-SyncFactorsConfig']
 $getSyncFactorsSuccessFactorsAuthSummary = $configModule.ExportedFunctions['Get-SyncFactorsSuccessFactorsAuthSummary']
@@ -24,6 +25,11 @@ $getSyncFactorsRuntimeStatusSnapshot = $monitoringModule.ExportedFunctions['Get-
 $newSyncFactorsIdleRuntimeStatus = $monitoringModule.ExportedFunctions['New-SyncFactorsIdleRuntimeStatus']
 $getSyncFactorsMonitorStatus = $monitoringModule.ExportedFunctions['Get-SyncFactorsMonitorStatus']
 $getSyncFactorsRuntimeStatusPath = $monitoringModule.ExportedFunctions['Get-SyncFactorsRuntimeStatusPath']
+$getSyncFactorsSqlitePath = $persistenceModule.ExportedFunctions['Get-SyncFactorsSqlitePath']
+$getSyncFactorsRuntimeStatusSnapshotFromSqlite = $persistenceModule.ExportedFunctions['Get-SyncFactorsRuntimeStatusSnapshotFromSqlite']
+$getSyncFactorsTrackedWorkersFromSqlite = $persistenceModule.ExportedFunctions['Get-SyncFactorsTrackedWorkersFromSqlite']
+$getSyncFactorsStateCheckpointFromSqlite = $persistenceModule.ExportedFunctions['Get-SyncFactorsStateCheckpointFromSqlite']
+$getSyncFactorsRecentRunsFromSqlite = $persistenceModule.ExportedFunctions['Get-SyncFactorsRecentRunsFromSqlite']
 
 function New-SyncFactorsWebEmptyState {
     return [pscustomobject]@{
@@ -184,6 +190,7 @@ function Get-SyncFactorsWebRecentRunSummaries {
 $warnings = [System.Collections.Generic.List[string]]::new()
 $resolvedConfigPath = (Resolve-Path -Path $ConfigPath).Path
 $config = & $getSyncFactorsConfig -Path $resolvedConfigPath
+$sqlitePath = & $getSyncFactorsSqlitePath -Config $config
 $state = $null
 try {
     $state = & $getSyncFactorsState -Path $config.state.path
@@ -200,6 +207,14 @@ try {
 }
 
 if (-not $runtimeStatus) {
+    try {
+        $runtimeStatus = & $getSyncFactorsRuntimeStatusSnapshotFromSqlite -StatePath $config.state.path -DatabasePath $sqlitePath
+    } catch {
+        $warnings.Add("SQLite runtime status unavailable: $($_.Exception.Message)")
+    }
+}
+
+if (-not $runtimeStatus) {
     $runtimeStatus = & $newSyncFactorsIdleRuntimeStatus -StatePath $config.state.path
 }
 
@@ -210,9 +225,29 @@ foreach ($candidate in @($config.reporting.outputDirectory, $config.reporting.re
     }
 }
 
-$recentRuns = @(Get-SyncFactorsWebRecentRunSummaries -Directories $reportDirectories -Limit $HistoryLimit -Warnings $warnings)
+$recentRuns = @()
+if (-not [string]::IsNullOrWhiteSpace($sqlitePath) -and (Test-Path -Path $sqlitePath -PathType Leaf)) {
+    try {
+        $recentRuns = @(& $getSyncFactorsRecentRunsFromSqlite -StatePath $config.state.path -DatabasePath $sqlitePath -Limit $HistoryLimit)
+    } catch {
+        $warnings.Add("SQLite run history unavailable: $($_.Exception.Message)")
+    }
+}
+
+if (@($recentRuns).Count -eq 0) {
+    $recentRuns = @(Get-SyncFactorsWebRecentRunSummaries -Directories $reportDirectories -Limit $HistoryLimit -Warnings $warnings)
+}
+
 $workerEntries = @()
-if ($state -and $state.PSObject.Properties.Name -contains 'workers' -and $state.workers) {
+if (-not [string]::IsNullOrWhiteSpace($sqlitePath) -and (Test-Path -Path $sqlitePath -PathType Leaf)) {
+    try {
+        $workerEntries = @(& $getSyncFactorsTrackedWorkersFromSqlite -StatePath $config.state.path -DatabasePath $sqlitePath)
+    } catch {
+        $warnings.Add("SQLite worker state unavailable: $($_.Exception.Message)")
+    }
+}
+
+if (@($workerEntries).Count -eq 0 -and $state -and $state.PSObject.Properties.Name -contains 'workers' -and $state.workers) {
     if ($state.workers -is [System.Collections.IDictionary]) {
         foreach ($key in $state.workers.Keys) {
             $workerEntries += [pscustomobject]@{
@@ -237,6 +272,15 @@ if ($state -and $state.PSObject.Properties.Name -contains 'workers' -and $state.
                 lastSeenStatus = $property.Value.lastSeenStatus
             }
         }
+    }
+}
+
+$lastCheckpoint = if ($state) { $state.checkpoint } else { $null }
+if ([string]::IsNullOrWhiteSpace("$lastCheckpoint") -and -not [string]::IsNullOrWhiteSpace($sqlitePath) -and (Test-Path -Path $sqlitePath -PathType Leaf)) {
+    try {
+        $lastCheckpoint = & $getSyncFactorsStateCheckpointFromSqlite -StatePath $config.state.path -DatabasePath $sqlitePath
+    } catch {
+        $warnings.Add("SQLite checkpoint unavailable: $($_.Exception.Message)")
     }
 }
 
@@ -284,7 +328,7 @@ $result = [pscustomobject]@{
     currentRun = $runtimeStatus
     recentRuns = $recentRuns
     summary = [pscustomobject]@{
-        lastCheckpoint = $state.checkpoint
+        lastCheckpoint = $lastCheckpoint
         totalTrackedWorkers = @($workerEntries).Count
         suppressedWorkers = @($suppressedWorkers).Count
         pendingDeletionWorkers = @($pendingDeletionWorkers).Count
@@ -311,6 +355,7 @@ $result = [pscustomobject]@{
         reviewReportDirectory = $config.reporting.reviewOutputDirectory
         reportDirectories = $reportDirectories
         runtimeStatusPath = & $getSyncFactorsRuntimeStatusPath -StatePath $config.state.path
+        sqlitePath = $sqlitePath
     }
     warnings = @($warnings)
 }

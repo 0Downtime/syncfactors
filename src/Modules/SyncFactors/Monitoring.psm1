@@ -5,6 +5,7 @@ Import-Module (Join-Path $moduleRoot 'Config.psm1') -Force -DisableNameChecking
 Import-Module (Join-Path $moduleRoot 'State.psm1') -Force -DisableNameChecking
 Import-Module (Join-Path $moduleRoot 'SuccessFactors.psm1') -Force -DisableNameChecking
 Import-Module (Join-Path $moduleRoot 'ActiveDirectorySync.psm1') -Force -DisableNameChecking
+Import-Module (Join-Path $moduleRoot 'Persistence.psm1') -Force -DisableNameChecking
 
 function Get-SyncFactorsCollectionCount {
     [CmdletBinding()]
@@ -235,6 +236,7 @@ function Save-SyncFactorsRuntimeStatusSnapshot {
     }
 
     $Snapshot | ConvertTo-Json -Depth 10 | Set-Content -Path $runtimeStatusPath
+    Save-SyncFactorsRuntimeStatusToSqlite -Snapshot $Snapshot -StatePath $StatePath
     return $runtimeStatusPath
 }
 
@@ -270,10 +272,14 @@ function Get-SyncFactorsRuntimeStatusSnapshot {
 
     $runtimeStatusPath = Get-SyncFactorsRuntimeStatusPath -StatePath $StatePath
     if (-not (Test-Path -Path $runtimeStatusPath -PathType Leaf)) {
-        return $null
+        return Get-SyncFactorsRuntimeStatusSnapshotFromSqlite -StatePath $StatePath
     }
 
-    return Get-Content -Path $runtimeStatusPath -Raw | ConvertFrom-Json -Depth 20
+    try {
+        return Get-Content -Path $runtimeStatusPath -Raw | ConvertFrom-Json -Depth 20
+    } catch {
+        return Get-SyncFactorsRuntimeStatusSnapshotFromSqlite -StatePath $StatePath
+    }
 }
 
 function Get-SyncFactorsWorkerEntries {
@@ -464,6 +470,26 @@ function Get-SyncFactorsRecentRunSummaries {
     )
 }
 
+function Get-SyncFactorsRecentRunSummariesFromPersistence {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [pscustomobject]$Config,
+        [ValidateRange(1, 1000)]
+        [int]$Limit = 10
+    )
+
+    $sqlitePath = Get-SyncFactorsSqlitePath -Config $Config
+    if (-not [string]::IsNullOrWhiteSpace($sqlitePath) -and (Test-Path -Path $sqlitePath -PathType Leaf)) {
+        $recentRuns = @(Get-SyncFactorsRecentRunsFromSqlite -StatePath $Config.state.path -DatabasePath $sqlitePath -Limit $Limit)
+        if ($recentRuns.Count -gt 0) {
+            return $recentRuns
+        }
+    }
+
+    return @(Get-SyncFactorsRecentRunSummaries -Directory (Get-SyncFactorsReportDirectories -Config $Config) -Limit $Limit)
+}
+
 function Get-SyncFactorsMonitorStatus {
     [CmdletBinding()]
     param(
@@ -474,22 +500,37 @@ function Get-SyncFactorsMonitorStatus {
     )
 
     $config = Get-SyncFactorsConfig -Path $ConfigPath
-    $state = if ($config.state.path) { Get-SyncFactorsState -Path $config.state.path } else { [pscustomobject]@{ checkpoint = $null; workers = @{} } }
-    $workerProperties = @(Get-SyncFactorsWorkerEntries -Workers $state.workers)
-    $trackedWorkers = @(
-        $workerProperties |
-            Sort-Object Name |
-            ForEach-Object {
-                [pscustomobject]@{
-                    workerId = $_.Name
-                    adObjectGuid = if ($_.Value.PSObject.Properties.Name -contains 'adObjectGuid') { $_.Value.adObjectGuid } else { $null }
-                    distinguishedName = if ($_.Value.PSObject.Properties.Name -contains 'distinguishedName') { $_.Value.distinguishedName } else { $null }
-                    suppressed = if ($_.Value.PSObject.Properties.Name -contains 'suppressed') { [bool]$_.Value.suppressed } else { $false }
-                    firstDisabledAt = if ($_.Value.PSObject.Properties.Name -contains 'firstDisabledAt') { $_.Value.firstDisabledAt } else { $null }
-                    deleteAfter = if ($_.Value.PSObject.Properties.Name -contains 'deleteAfter') { $_.Value.deleteAfter } else { $null }
-                    lastSeenStatus = if ($_.Value.PSObject.Properties.Name -contains 'lastSeenStatus') { $_.Value.lastSeenStatus } else { $null }
+    $sqlitePath = Get-SyncFactorsSqlitePath -Config $config
+    $state = if ($config.state.path -and (Test-Path -Path $config.state.path -PathType Leaf)) { Get-SyncFactorsState -Path $config.state.path } else { [pscustomobject]@{ checkpoint = $null; workers = @{} } }
+    $trackedWorkers = @()
+    if (-not [string]::IsNullOrWhiteSpace($sqlitePath) -and (Test-Path -Path $sqlitePath -PathType Leaf)) {
+        $trackedWorkers = @(Get-SyncFactorsTrackedWorkersFromSqlite -StatePath $config.state.path -DatabasePath $sqlitePath)
+    }
+    if ($trackedWorkers.Count -eq 0) {
+        $workerProperties = @(Get-SyncFactorsWorkerEntries -Workers $state.workers)
+        $trackedWorkers = @(
+            $workerProperties |
+                Sort-Object Name |
+                ForEach-Object {
+                    [pscustomobject]@{
+                        workerId = $_.Name
+                        adObjectGuid = if ($_.Value.PSObject.Properties.Name -contains 'adObjectGuid') { $_.Value.adObjectGuid } else { $null }
+                        distinguishedName = if ($_.Value.PSObject.Properties.Name -contains 'distinguishedName') { $_.Value.distinguishedName } else { $null }
+                        suppressed = if ($_.Value.PSObject.Properties.Name -contains 'suppressed') { [bool]$_.Value.suppressed } else { $false }
+                        firstDisabledAt = if ($_.Value.PSObject.Properties.Name -contains 'firstDisabledAt') { $_.Value.firstDisabledAt } else { $null }
+                        deleteAfter = if ($_.Value.PSObject.Properties.Name -contains 'deleteAfter') { $_.Value.deleteAfter } else { $null }
+                        lastSeenStatus = if ($_.Value.PSObject.Properties.Name -contains 'lastSeenStatus') { $_.Value.lastSeenStatus } else { $null }
+                    }
                 }
+        )
+    }
+    $workerProperties = @(
+        $trackedWorkers | ForEach-Object {
+            [pscustomobject]@{
+                Name = $_.workerId
+                Value = $_
             }
+        }
     )
     $suppressedWorkers = @($workerProperties | Where-Object { $_.Value.suppressed })
     $pendingDeletionWorkers = @(
@@ -499,7 +540,7 @@ function Get-SyncFactorsMonitorStatus {
     )
 
     $reportDirectories = @(Get-SyncFactorsReportDirectories -Config $config)
-    $recentRuns = @(Get-SyncFactorsRecentRunSummaries -Directory $reportDirectories -Limit $HistoryLimit)
+    $recentRuns = @(Get-SyncFactorsRecentRunSummariesFromPersistence -Config $config -Limit $HistoryLimit)
     $latestRun = if ($recentRuns.Count -gt 0) { $recentRuns[0] } else { New-SyncFactorsEmptyRunSummary }
     $currentRun = Get-SyncFactorsRuntimeStatusSnapshot -StatePath $config.state.path
     if (-not $currentRun) {
@@ -509,9 +550,13 @@ function Get-SyncFactorsMonitorStatus {
     $activeDirectoryConnection = Test-SyncFactorsMonitorActiveDirectoryConnection -Config $config
 
     $resolvedConfigPath = (Resolve-Path -Path $ConfigPath).Path
+    $lastCheckpoint = if ($state -and $state.PSObject.Properties.Name -contains 'checkpoint') { $state.checkpoint } else { $null }
+    if ([string]::IsNullOrWhiteSpace("$lastCheckpoint") -and -not [string]::IsNullOrWhiteSpace($sqlitePath) -and (Test-Path -Path $sqlitePath -PathType Leaf)) {
+        $lastCheckpoint = Get-SyncFactorsStateCheckpointFromSqlite -StatePath $config.state.path -DatabasePath $sqlitePath
+    }
     return [pscustomobject]@{
         configPath = $resolvedConfigPath
-        lastCheckpoint = $state.checkpoint
+        lastCheckpoint = $lastCheckpoint
         totalTrackedWorkers = $workerProperties.Count
         suppressedWorkers = $suppressedWorkers.Count
         pendingDeletionWorkers = $pendingDeletionWorkers.Count
@@ -520,7 +565,7 @@ function Get-SyncFactorsMonitorStatus {
         currentRun = $currentRun
         recentRuns = $recentRuns
         summary = [pscustomobject]@{
-            lastCheckpoint = $state.checkpoint
+            lastCheckpoint = $lastCheckpoint
             totalTrackedWorkers = $workerProperties.Count
             suppressedWorkers = $suppressedWorkers.Count
             pendingDeletionWorkers = $pendingDeletionWorkers.Count
@@ -550,6 +595,7 @@ function Get-SyncFactorsMonitorStatus {
             reviewReportDirectory = $config.reporting.reviewOutputDirectory
             reportDirectories = $reportDirectories
             runtimeStatusPath = Get-SyncFactorsRuntimeStatusPath -StatePath $config.state.path
+            sqlitePath = $sqlitePath
         }
     }
 }
@@ -703,7 +749,27 @@ function Get-SyncFactorsMonitorSelectedRunReport {
     )
 
     $selectedRun = Get-SyncFactorsMonitorSelectedRun -Status $Status -UiState $UiState
-    if (-not $selectedRun -or [string]::IsNullOrWhiteSpace("$($selectedRun.path)")) {
+    if (-not $selectedRun) {
+        return $null
+    }
+
+    $sqlitePath = if (
+        $Status.PSObject.Properties.Name -contains 'paths' -and
+        $Status.paths -and
+        $Status.paths.PSObject.Properties.Name -contains 'sqlitePath'
+    ) {
+        "$($Status.paths.sqlitePath)"
+    } else {
+        $null
+    }
+    if (-not [string]::IsNullOrWhiteSpace($sqlitePath) -and (Test-Path -Path $sqlitePath -PathType Leaf) -and $selectedRun.PSObject.Properties.Name -contains 'runId' -and -not [string]::IsNullOrWhiteSpace("$($selectedRun.runId)")) {
+        $report = Get-SyncFactorsRunReportFromSqlite -RunId "$($selectedRun.runId)" -DatabasePath $sqlitePath
+        if ($report) {
+            return $report
+        }
+    }
+
+    if ([string]::IsNullOrWhiteSpace("$($selectedRun.path)")) {
         return $null
     }
 

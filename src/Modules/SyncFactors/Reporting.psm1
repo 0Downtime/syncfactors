@@ -1,5 +1,7 @@
 Set-StrictMode -Version Latest
 
+Import-Module (Join-Path $PSScriptRoot 'Persistence.psm1') -Force -DisableNameChecking
+
 function New-SyncFactorsReport {
     [CmdletBinding()]
     param(
@@ -122,6 +124,7 @@ function Save-SyncFactorsReport {
     $Report['completedAt'] = (Get-Date).ToString('o')
     [void]$Report.Remove('operationSequence')
     $Report | ConvertTo-Json -Depth 20 | Set-Content -Path $path
+    Save-SyncFactorsReportToSqlite -Report $Report -ReportPath $path
     return $path
 }
 

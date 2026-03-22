@@ -1,5 +1,7 @@
 Set-StrictMode -Version Latest
 
+Import-Module (Join-Path $PSScriptRoot 'Persistence.psm1') -Force -DisableNameChecking
+
 function ConvertFrom-SyncFactorsJsonDocument {
     [CmdletBinding()]
     param(
@@ -82,6 +84,7 @@ function Save-SyncFactorsState {
     }
 
     $State | ConvertTo-Json -Depth 20 | Set-Content -Path $Path
+    Save-SyncFactorsStateToSqlite -State $State -StatePath $Path
 }
 
 function Get-SyncFactorsWorkerState {

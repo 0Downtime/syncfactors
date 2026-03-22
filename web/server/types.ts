@@ -55,6 +55,7 @@ export type DashboardStatus = {
     reviewReportDirectory: string;
     reportDirectories: string[];
     runtimeStatusPath: string;
+    sqlitePath?: string | null;
   };
   warnings?: string[];
 };

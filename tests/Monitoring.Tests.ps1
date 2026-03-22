@@ -37,6 +37,199 @@ Describe 'Monitoring module' {
         $result[0].mappingConfigPath | Should -Be 'mapping.json'
     }
 
+    It 'prefers SQLite-backed selected run reports when available' {
+        $sqlitePath = Join-Path $TestDrive 'syncfactors.db'
+        $sql = @"
+CREATE TABLE IF NOT EXISTS runs (
+  run_id TEXT PRIMARY KEY,
+  state_path TEXT NULL,
+  path TEXT NULL,
+  artifact_type TEXT NOT NULL,
+  worker_scope_json TEXT NULL,
+  config_path TEXT NULL,
+  mapping_config_path TEXT NULL,
+  mode TEXT NULL,
+  dry_run INTEGER NOT NULL DEFAULT 0,
+  status TEXT NULL,
+  started_at TEXT NULL,
+  completed_at TEXT NULL,
+  duration_seconds INTEGER NULL,
+  reversible_operations INTEGER NOT NULL DEFAULT 0,
+  creates INTEGER NOT NULL DEFAULT 0,
+  updates INTEGER NOT NULL DEFAULT 0,
+  enables INTEGER NOT NULL DEFAULT 0,
+  disables INTEGER NOT NULL DEFAULT 0,
+  graveyard_moves INTEGER NOT NULL DEFAULT 0,
+  deletions INTEGER NOT NULL DEFAULT 0,
+  quarantined INTEGER NOT NULL DEFAULT 0,
+  conflicts INTEGER NOT NULL DEFAULT 0,
+  guardrail_failures INTEGER NOT NULL DEFAULT 0,
+  manual_review INTEGER NOT NULL DEFAULT 0,
+  unchanged INTEGER NOT NULL DEFAULT 0,
+  review_summary_json TEXT NULL,
+  report_json TEXT NOT NULL
+);
+INSERT INTO runs (run_id, state_path, path, artifact_type, mode, dry_run, status, started_at, completed_at, report_json)
+VALUES ('run-sqlite-monitor', '/tmp/state.json', '/tmp/missing.json', 'SyncReport', 'Delta', 0, 'Succeeded', '2026-03-22T12:00:00Z', '2026-03-22T12:05:00Z', '{"runId":"run-sqlite-monitor","updates":[{"workerId":"5001"}],"operations":[]}');
+"@
+        sqlite3 $sqlitePath $sql | Out-Null
+
+        $status = [pscustomobject]@{
+            paths = [pscustomobject]@{
+                sqlitePath = $sqlitePath
+            }
+            recentRuns = @(
+                [pscustomobject]@{
+                    runId = 'run-sqlite-monitor'
+                    path = '/tmp/missing.json'
+                }
+            )
+            latestRun = [pscustomobject]@{
+                runId = 'run-sqlite-monitor'
+                path = '/tmp/missing.json'
+            }
+        }
+        $uiState = New-SyncFactorsMonitorUiState
+
+        $report = Get-SyncFactorsMonitorSelectedRunReport -Status $status -UiState $uiState
+
+        $report.runId | Should -Be 'run-sqlite-monitor'
+        $report.updates[0].workerId | Should -Be '5001'
+    }
+
+    It 'returns recent runs from SQLite when available' {
+        $configPath = Join-Path $TestDrive 'config.json'
+        $statePath = Join-Path $TestDrive 'state/sync-state.json'
+        $sqlitePath = Join-Path $TestDrive 'state/syncfactors.db'
+        $reportDirectory = Join-Path $TestDrive 'reports'
+        $reviewDirectory = Join-Path $reportDirectory 'review'
+
+        New-Item -Path (Split-Path $statePath -Parent) -ItemType Directory -Force | Out-Null
+        New-Item -Path $reviewDirectory -ItemType Directory -Force | Out-Null
+        '{"checkpoint":"2026-03-22T12:00:00","workers":{}}' | Set-Content -Path $statePath
+        @"
+{
+  "successFactors": {
+    "baseUrl": "https://example.successfactors.com/odata/v2",
+    "oauth": {
+      "tokenUrl": "https://example.successfactors.com/oauth/token",
+      "clientId": "client-id",
+      "clientSecret": "client-secret"
+    },
+    "query": {
+      "entitySet": "PerPerson",
+      "identityField": "personIdExternal",
+      "deltaField": "lastModifiedDateTime",
+      "select": [ "personIdExternal" ],
+      "expand": [ "employmentNav" ]
+    }
+  },
+  "ad": {
+    "identityAttribute": "employeeID",
+    "defaultActiveOu": "OU=Employees,DC=example,DC=com",
+    "graveyardOu": "OU=Graveyard,DC=example,DC=com",
+    "defaultPassword": "config-password"
+  },
+  "sync": {
+    "enableBeforeStartDays": 7,
+    "deletionRetentionDays": 90
+  },
+  "state": {
+    "path": "$($statePath.Replace('\', '\\'))"
+  },
+  "reporting": {
+    "outputDirectory": "$($reportDirectory.Replace('\', '\\'))",
+    "reviewOutputDirectory": "$($reviewDirectory.Replace('\', '\\'))"
+  },
+  "persistence": {
+    "sqlitePath": "$($sqlitePath.Replace('\', '\\'))"
+  }
+}
+"@ | Set-Content -Path $configPath
+
+        $sql = @"
+CREATE TABLE IF NOT EXISTS sync_state (
+  state_path TEXT PRIMARY KEY,
+  checkpoint TEXT NULL,
+  raw_state_json TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS worker_state (
+  state_path TEXT NOT NULL,
+  worker_id TEXT NOT NULL,
+  ad_object_guid TEXT NULL,
+  distinguished_name TEXT NULL,
+  suppressed INTEGER NOT NULL DEFAULT 0,
+  first_disabled_at TEXT NULL,
+  delete_after TEXT NULL,
+  last_seen_status TEXT NULL,
+  raw_state_json TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (state_path, worker_id)
+);
+CREATE TABLE IF NOT EXISTS runtime_status (
+  state_path TEXT PRIMARY KEY,
+  run_id TEXT NULL,
+  status TEXT NULL,
+  stage TEXT NULL,
+  started_at TEXT NULL,
+  last_updated_at TEXT NULL,
+  completed_at TEXT NULL,
+  current_worker_id TEXT NULL,
+  last_action TEXT NULL,
+  processed_workers INTEGER NOT NULL DEFAULT 0,
+  total_workers INTEGER NOT NULL DEFAULT 0,
+  error_message TEXT NULL,
+  snapshot_json TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS runs (
+  run_id TEXT PRIMARY KEY,
+  state_path TEXT NULL,
+  path TEXT NULL,
+  artifact_type TEXT NOT NULL,
+  worker_scope_json TEXT NULL,
+  config_path TEXT NULL,
+  mapping_config_path TEXT NULL,
+  mode TEXT NULL,
+  dry_run INTEGER NOT NULL DEFAULT 0,
+  status TEXT NULL,
+  started_at TEXT NULL,
+  completed_at TEXT NULL,
+  duration_seconds INTEGER NULL,
+  reversible_operations INTEGER NOT NULL DEFAULT 0,
+  creates INTEGER NOT NULL DEFAULT 0,
+  updates INTEGER NOT NULL DEFAULT 0,
+  enables INTEGER NOT NULL DEFAULT 0,
+  disables INTEGER NOT NULL DEFAULT 0,
+  graveyard_moves INTEGER NOT NULL DEFAULT 0,
+  deletions INTEGER NOT NULL DEFAULT 0,
+  quarantined INTEGER NOT NULL DEFAULT 0,
+  conflicts INTEGER NOT NULL DEFAULT 0,
+  guardrail_failures INTEGER NOT NULL DEFAULT 0,
+  manual_review INTEGER NOT NULL DEFAULT 0,
+  unchanged INTEGER NOT NULL DEFAULT 0,
+  review_summary_json TEXT NULL,
+  report_json TEXT NOT NULL
+);
+INSERT INTO sync_state (state_path, checkpoint, raw_state_json, updated_at)
+VALUES ('$($statePath.Replace("'", "''"))', '2026-03-22T12:00:00', '{"checkpoint":"2026-03-22T12:00:00","workers":{}}', '2026-03-22T12:05:00Z');
+INSERT INTO runtime_status (state_path, run_id, status, stage, started_at, last_updated_at, completed_at, processed_workers, total_workers, snapshot_json)
+VALUES ('$($statePath.Replace("'", "''"))', 'run-monitor-1', 'Succeeded', 'Completed', '2026-03-22T12:00:00Z', '2026-03-22T12:05:00Z', '2026-03-22T12:05:00Z', 1, 1, '{"runId":"run-monitor-1","status":"Succeeded","stage":"Completed","processedWorkers":1,"totalWorkers":1}');
+INSERT INTO runs (run_id, state_path, path, artifact_type, mode, dry_run, status, started_at, completed_at, duration_seconds, report_json)
+VALUES ('run-monitor-1', '$($statePath.Replace("'", "''"))', '/tmp/run-monitor.json', 'SyncReport', 'Delta', 0, 'Succeeded', '2026-03-22T12:00:00Z', '2026-03-22T12:05:00Z', 300, '{"runId":"run-monitor-1","operations":[],"creates":[],"updates":[],"enables":[],"disables":[],"graveyardMoves":[],"deletions":[],"quarantined":[],"conflicts":[],"guardrailFailures":[],"manualReview":[],"unchanged":[]}');
+"@
+        sqlite3 $sqlitePath $sql | Out-Null
+
+        Mock Test-SyncFactorsMonitorSuccessFactorsConnection { [pscustomobject]@{ status = 'OK'; detail = 'oauth' } } -ModuleName Monitoring
+        Mock Test-SyncFactorsMonitorActiveDirectoryConnection { [pscustomobject]@{ status = 'OK'; detail = 'dc01' } } -ModuleName Monitoring
+
+        $status = Get-SyncFactorsMonitorStatus -ConfigPath $configPath -HistoryLimit 5
+
+        $status.recentRuns.Count | Should -Be 1
+        $status.latestRun.runId | Should -Be 'run-monitor-1'
+        $status.paths.sqlitePath | Should -Be $sqlitePath
+    }
+
     It 'resolves mapping config path from recent runs when no override is provided' {
         $mappingPath = Join-Path $TestDrive 'mapping.json'
         '{}' | Set-Content -Path $mappingPath
