@@ -200,9 +200,11 @@ async function openPathInDefaultApp(targetPath: string, isDirectory: boolean): P
       stdio: 'ignore',
     });
 
-    child.on('error', reject);
-    child.unref();
-    resolve();
+    child.once('error', reject);
+    child.once('spawn', () => {
+      child.unref();
+      resolve();
+    });
   });
 }
 
