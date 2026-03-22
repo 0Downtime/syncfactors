@@ -735,6 +735,7 @@ describe('App', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: 'Report' })).toHaveClass('active'));
     expect(screen.queryByText('Create account newuser')).not.toBeInTheDocument();
     await waitFor(() => expect(window.location.search).toMatch(/reportCategory=Deleted/));
+    await waitFor(() => expect(window.location.search).toMatch(/entry=run-1%3Adeletions%3A1002%3A0/));
     expect(screen.getByText('retireduser')).toBeInTheDocument();
   });
 });
