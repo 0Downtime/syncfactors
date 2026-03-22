@@ -1,6 +1,6 @@
 {
-  "runId": "fd2f45aa-802e-4fc6-a9d5-1cca1295a79b",
-  "startedAt": "2026-03-21T19:32:16.4124930-04:00",
+  "runId": "4444dcaf-9f7a-4bfe-85f9-06b1ce4d838b",
+  "startedAt": "2026-03-22T14:05:31.0245240-04:00",
   "status": "Succeeded",
   "mode": "Review",
   "artifactType": "WorkerPreview",
@@ -12,7 +12,7 @@
     "identityField": "personIdExternal",
     "workerId": "100002"
   },
-  "completedAt": "2026-03-21T19:38:16.4124930-04:00",
+  "completedAt": "2026-03-22T14:11:31.0245240-04:00",
   "failedAt": null,
   "errorMessage": null,
   "reviewSummary": {
@@ -25,9 +25,9 @@
   },
   "operations": [
     {
-      "operationId": "fd2f45aa-802e-4fc6-a9d5-1cca1295a79b-0001",
+      "operationId": "4444dcaf-9f7a-4bfe-85f9-06b1ce4d838b-0001",
       "sequence": 1,
-      "timestamp": "2026-03-21T20:58:16.4749210-04:00",
+      "timestamp": "2026-03-22T15:31:31.0930410-04:00",
       "operationType": "UpdateAttributes",
       "workerId": "100002",
       "bucket": "updates",
@@ -50,6 +50,27 @@
   "creates": [],
   "updates": [
     {
+      "proposedEnable": true,
+      "reviewCaseType": "RehireCase",
+      "operatorActionSummary": "Confirm how this rehire should reuse or restore the existing AD identity.",
+      "workerId": "100002",
+      "currentEnabled": true,
+      "matchedExistingUser": true,
+      "operatorActions": [
+        {
+          "code": "ConfirmAccountReuse",
+          "label": "Confirm account reuse",
+          "description": "Review the prior AD account and confirm whether it should be reused."
+        },
+        {
+          "code": "RestoreGroupMembership",
+          "label": "Restore group membership",
+          "description": "Restore the worker's previous licensing and security groups after review."
+        }
+      ],
+      "samAccountName": "sf100002",
+      "currentDistinguishedName": "CN=Synthetic100002 User,OU=LabField,OU=LabUsers,DC=example,DC=com",
+      "reviewCategory": "ExistingUserChanges",
       "changedAttributeDetails": [
         {
           "sourceField": "status",
@@ -64,28 +85,7 @@
           "proposedValue": "Operations"
         }
       ],
-      "matchedExistingUser": true,
-      "operatorActions": [
-        {
-          "code": "ConfirmAccountReuse",
-          "label": "Confirm account reuse",
-          "description": "Review the prior AD account and confirm whether it should be reused."
-        },
-        {
-          "code": "RestoreGroupMembership",
-          "label": "Restore group membership",
-          "description": "Restore the worker's previous licensing and security groups after review."
-        }
-      ],
-      "proposedEnable": true,
-      "operatorActionSummary": "Confirm how this rehire should reuse or restore the existing AD identity.",
-      "currentDistinguishedName": "CN=Synthetic100002 User,OU=LabField,OU=LabUsers,DC=example,DC=com",
-      "targetOu": "OU=LabField,OU=LabUsers,DC=example,DC=com",
-      "reviewCategory": "ExistingUserChanges",
-      "reviewCaseType": "RehireCase",
-      "samAccountName": "sf100002",
-      "workerId": "100002",
-      "currentEnabled": true
+      "targetOu": "OU=LabField,OU=LabUsers,DC=example,DC=com"
     }
   ],
   "enables": [],

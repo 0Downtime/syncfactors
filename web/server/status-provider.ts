@@ -35,54 +35,27 @@ export class PowerShellStatusProvider implements StatusProvider {
       XDG_CACHE_HOME: path.join(this.isolatedHome, '.cache'),
     };
 
-    if (process.platform === 'win32') {
-      await execFileAsync(
-        'pwsh',
-        [
-          '-NoLogo',
-          '-NoProfile',
-          '-File',
-          'scripts/Get-SyncFactorsWebStatus.ps1',
-          '-ConfigPath',
-          configPath,
-          '-HistoryLimit',
-          String(historyLimit),
-          '-AsJson',
-          '-OutputPath',
-          outputPath,
-        ],
-        {
-          cwd: process.cwd(),
-          env: pwshEnv,
-          maxBuffer: 1024 * 1024 * 10,
-        },
-      );
-    } else {
-      const command = [
-        'pwsh',
+    await execFileAsync(
+      'pwsh',
+      [
         '-NoLogo',
         '-NoProfile',
         '-File',
-        shellQuote('scripts/Get-SyncFactorsWebStatus.ps1'),
+        'scripts/Get-SyncFactorsWebStatus.ps1',
         '-ConfigPath',
-        shellQuote(configPath),
+        configPath,
         '-HistoryLimit',
-        shellQuote(String(historyLimit)),
+        String(historyLimit),
         '-AsJson',
         '-OutputPath',
-        shellQuote(outputPath),
-      ].join(' ');
-
-      await execFileAsync(
-        'bash',
-        ['-lc', command],
-        {
-          cwd: process.cwd(),
-          env: pwshEnv,
-          maxBuffer: 1024 * 1024 * 10,
-        },
-      );
-    }
+        outputPath,
+      ],
+      {
+        cwd: process.cwd(),
+        env: pwshEnv,
+        maxBuffer: 1024 * 1024 * 10,
+      },
+    );
 
     const value = JSON.parse(fs.readFileSync(outputPath, 'utf8')) as DashboardStatus;
     this.cache.set(cacheKey, { expiresAt: Date.now() + this.ttlMs, value });
@@ -101,8 +74,4 @@ export class PowerShellStatusProvider implements StatusProvider {
       }
     }
   }
-}
-
-function shellQuote(value: string): string {
-  return `'${value.replace(/'/g, `'\"'\"'`)}'`;
 }
