@@ -280,6 +280,112 @@ Describe 'Get-SyncFactorsConfig' {
         { Get-SyncFactorsConfig -Path $configPath } | Should -Throw "*unsupported action 'FreezeUser'*"
     }
 
+    It 'accepts alerts config with unauthenticated smtp defaults' {
+        $configPath = Join-Path $TestDrive 'sync-config-alerts.json'
+        @'
+{
+  "successFactors": {
+    "baseUrl": "https://example.successfactors.com/odata/v2",
+    "oauth": {
+      "tokenUrl": "https://example.successfactors.com/oauth/token",
+      "clientId": "client-id",
+      "clientSecret": "client-secret"
+    },
+    "query": {
+      "entitySet": "PerPerson",
+      "identityField": "personIdExternal",
+      "deltaField": "lastModifiedDateTime",
+      "select": [ "personIdExternal" ],
+      "expand": [ "employmentNav" ]
+    }
+  },
+  "ad": {
+    "identityAttribute": "employeeID",
+    "defaultActiveOu": "OU=Employees,DC=example,DC=com",
+    "graveyardOu": "OU=Graveyard,DC=example,DC=com",
+    "defaultPassword": "config-password"
+  },
+  "alerts": {
+    "enabled": true,
+    "subjectPrefix": "[SyncFactors]",
+    "triggers": {
+      "failedRuns": true,
+      "guardrailBreaches": true,
+      "manualReviewEvents": true
+    },
+    "smtp": {
+      "host": "mail.example.com",
+      "from": "syncfactors@example.com",
+      "to": [ "ops@example.com" ]
+    }
+  },
+  "sync": {
+    "enableBeforeStartDays": 7,
+    "deletionRetentionDays": 90
+  },
+  "state": {
+    "path": ".\\state\\sync-state.json"
+  },
+  "reporting": {
+    "outputDirectory": ".\\reports\\output"
+  }
+}
+'@ | Set-Content -Path $configPath
+
+        $config = Get-SyncFactorsConfig -Path $configPath
+        $config.alerts.smtp.port | Should -Be 25
+        $config.alerts.smtp.PSObject.Properties.Name | Should -Not -Contain 'username'
+    }
+
+    It 'rejects alerts config without smtp recipients when enabled' {
+        $configPath = Join-Path $TestDrive 'sync-config-alerts-invalid.json'
+        @'
+{
+  "successFactors": {
+    "baseUrl": "https://example.successfactors.com/odata/v2",
+    "oauth": {
+      "tokenUrl": "https://example.successfactors.com/oauth/token",
+      "clientId": "client-id",
+      "clientSecret": "client-secret"
+    },
+    "query": {
+      "entitySet": "PerPerson",
+      "identityField": "personIdExternal",
+      "deltaField": "lastModifiedDateTime",
+      "select": [ "personIdExternal" ],
+      "expand": [ "employmentNav" ]
+    }
+  },
+  "ad": {
+    "identityAttribute": "employeeID",
+    "defaultActiveOu": "OU=Employees,DC=example,DC=com",
+    "graveyardOu": "OU=Graveyard,DC=example,DC=com",
+    "defaultPassword": "config-password"
+  },
+  "alerts": {
+    "enabled": true,
+    "smtp": {
+      "host": "mail.example.com",
+      "from": "syncfactors@example.com",
+      "to": []
+    }
+  },
+  "sync": {
+    "enableBeforeStartDays": 7,
+    "deletionRetentionDays": 90
+  },
+  "state": {
+    "path": ".\\state\\sync-state.json"
+  },
+  "reporting": {
+    "outputDirectory": ".\\reports\\output"
+  }
+}
+'@ | Set-Content -Path $configPath
+
+        { Get-SyncFactorsConfig -Path $configPath } | Should -Throw '*alerts.smtp.to*'
+    }
+
     It 'ignores blank environment variable secrets and keeps configured values' {
         $configPath = Join-Path $TestDrive 'sync-config-blank-env.json'
         @'

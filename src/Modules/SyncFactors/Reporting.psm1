@@ -1,5 +1,7 @@
 Set-StrictMode -Version Latest
 
+Import-Module (Join-Path $PSScriptRoot 'Config.psm1') -Force -DisableNameChecking
+Import-Module (Join-Path $PSScriptRoot 'Alerting.psm1') -Force -DisableNameChecking
 Import-Module (Join-Path $PSScriptRoot 'Persistence.psm1') -Force -DisableNameChecking
 
 function New-SyncFactorsReport {
@@ -117,7 +119,19 @@ function Save-SyncFactorsReport {
 
     $Report['completedAt'] = (Get-Date).ToString('o')
     [void]$Report.Remove('operationSequence')
-    return (Save-SyncFactorsReportToSqlite -Report $Report)
+    $reportReference = Save-SyncFactorsReportToSqlite -Report $Report
+
+    $configPath = if ($Report.Contains('configPath')) { "$($Report['configPath'])" } else { $null }
+    if (-not [string]::IsNullOrWhiteSpace($configPath) -and (Test-Path -Path $configPath -PathType Leaf)) {
+        try {
+            $config = Get-SyncFactorsConfig -Path $configPath
+            [void](Send-SyncFactorsRunAlert -Config $config -Report ([pscustomobject]$Report) -ReportReference $reportReference)
+        } catch {
+            Write-Warning "SyncFactors alert delivery failed: $($_.Exception.Message)"
+        }
+    }
+
+    return $reportReference
 }
 
 Export-ModuleMember -Function New-SyncFactorsReport, Add-SyncFactorsReportEntry, Add-SyncFactorsReportOperation, Save-SyncFactorsReport
