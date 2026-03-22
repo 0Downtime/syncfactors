@@ -1,0 +1,91 @@
+{
+  "secrets": {
+    "successFactorsUsernameEnv": "SF_AD_SYNC_SF_USERNAME",
+    "successFactorsPasswordEnv": "SF_AD_SYNC_SF_PASSWORD",
+    "successFactorsClientIdEnv": "SF_AD_SYNC_SF_CLIENT_ID",
+    "successFactorsClientSecretEnv": "SF_AD_SYNC_SF_CLIENT_SECRET",
+    "adServerEnv": "SF_AD_SYNC_AD_SERVER",
+    "adUsernameEnv": "SF_AD_SYNC_AD_USERNAME",
+    "adBindPasswordEnv": "SF_AD_SYNC_AD_BIND_PASSWORD",
+    "defaultAdPasswordEnv": "SF_AD_SYNC_AD_DEFAULT_PASSWORD"
+  },
+  "successFactors": {
+    "baseUrl": "http://127.0.0.1:18080/odata/v2",
+    "auth": {
+      "mode": "oauth",
+      "basic": {
+        "username": "",
+        "password": ""
+      },
+      "oauth": {
+        "tokenUrl": "http://127.0.0.1:18080/oauth/token",
+        "clientId": "mock-client-id",
+        "clientSecret": "mock-client-secret",
+        "companyId": "MOCK"
+      }
+    },
+    "query": {
+      "entitySet": "PerPerson",
+      "identityField": "personIdExternal",
+      "deltaField": "lastModifiedDateTime",
+      "baseFilter": "employmentNav/jobInfoNav/emplStatus in 'A','U'",
+      "select": [
+        "personIdExternal",
+        "firstName",
+        "lastName",
+        "status",
+        "startDate",
+        "department",
+        "company",
+        "location",
+        "email",
+        "managerEmployeeId",
+        "employmentNav/jobInfoNav/jobTitle",
+        "employmentNav/jobInfoNav/businessUnit",
+        "employmentNav/jobInfoNav/division",
+        "employmentNav/jobInfoNav/costCenter",
+        "employmentNav/jobInfoNav/employeeClass",
+        "employmentNav/jobInfoNav/employmentType"
+      ],
+      "expand": [
+        "employmentNav",
+        "employmentNav/jobInfoNav"
+      ]
+    }
+  },
+  "ad": {
+    "server": "",
+    "username": "",
+    "bindPassword": "",
+    "identityAttribute": "employeeID",
+    "defaultActiveOu": "OU=LabUsers,DC=example,DC=com",
+    "graveyardOu": "OU=LabGraveyard,DC=example,DC=com",
+    "defaultPassword": "Replace-This-Password123!",
+    "ouRoutingRules": [
+      {
+        "match": {
+          "company": "CORP",
+          "department": "IT"
+        },
+        "targetOu": "OU=LabIT,OU=LabUsers,DC=example,DC=com"
+      }
+    ],
+    "licensingGroups": []
+  },
+  "sync": {
+    "enableBeforeStartDays": 7,
+    "deletionRetentionDays": 90
+  },
+  "safety": {
+    "maxCreatesPerRun": 1050,
+    "maxDisablesPerRun": 50,
+    "maxDeletionsPerRun": 10
+  },
+  "state": {
+    "path": "/Users/chrisbrien/dev/github.com/syncfactors/./reports/demo/state/demo-sync-state.json"
+  },
+  "reporting": {
+    "outputDirectory": "/Users/chrisbrien/dev/github.com/syncfactors/./reports/demo/reports/output",
+    "reviewOutputDirectory": "/Users/chrisbrien/dev/github.com/syncfactors/./reports/demo/reports/review"
+  }
+}

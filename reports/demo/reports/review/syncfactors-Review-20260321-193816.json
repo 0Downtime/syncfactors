@@ -1,0 +1,100 @@
+{
+  "runId": "fd2f45aa-802e-4fc6-a9d5-1cca1295a79b",
+  "startedAt": "2026-03-21T19:32:16.4124930-04:00",
+  "status": "Succeeded",
+  "mode": "Review",
+  "artifactType": "WorkerPreview",
+  "dryRun": false,
+  "configPath": "/Users/chrisbrien/dev/github.com/syncfactors/./reports/demo/config/demo.mock-sync-config.json",
+  "mappingConfigPath": "/Users/chrisbrien/dev/github.com/syncfactors/config/sample.syncfactors.mapping-config.json",
+  "statePath": "/Users/chrisbrien/dev/github.com/syncfactors/./reports/demo/state/demo-sync-state.json",
+  "workerScope": {
+    "identityField": "personIdExternal",
+    "workerId": "100002"
+  },
+  "completedAt": "2026-03-21T19:38:16.4124930-04:00",
+  "failedAt": null,
+  "errorMessage": null,
+  "reviewSummary": {
+    "existingUsersMatched": 1,
+    "existingUsersWithAttributeChanges": 1,
+    "proposedCreates": 0,
+    "proposedOffboarding": 0,
+    "quarantined": 0,
+    "conflicts": 0
+  },
+  "operations": [
+    {
+      "operationId": "fd2f45aa-802e-4fc6-a9d5-1cca1295a79b-0001",
+      "sequence": 1,
+      "timestamp": "2026-03-21T20:58:16.4749210-04:00",
+      "operationType": "UpdateAttributes",
+      "workerId": "100002",
+      "bucket": "updates",
+      "targetType": "ADUser",
+      "target": {
+        "samAccountName": "sf100002"
+      },
+      "before": {
+        "Enabled": "False",
+        "Department": "Alumni"
+      },
+      "after": {
+        "Enabled": "True",
+        "Department": "Operations"
+      },
+      "status": "Applied",
+      "errorMessage": ""
+    }
+  ],
+  "creates": [],
+  "updates": [
+    {
+      "changedAttributeDetails": [
+        {
+          "sourceField": "status",
+          "targetAttribute": "Enabled",
+          "currentAdValue": "False",
+          "proposedValue": "True"
+        },
+        {
+          "sourceField": "department",
+          "targetAttribute": "Department",
+          "currentAdValue": "Alumni",
+          "proposedValue": "Operations"
+        }
+      ],
+      "matchedExistingUser": true,
+      "operatorActions": [
+        {
+          "code": "ConfirmAccountReuse",
+          "label": "Confirm account reuse",
+          "description": "Review the prior AD account and confirm whether it should be reused."
+        },
+        {
+          "code": "RestoreGroupMembership",
+          "label": "Restore group membership",
+          "description": "Restore the worker's previous licensing and security groups after review."
+        }
+      ],
+      "proposedEnable": true,
+      "operatorActionSummary": "Confirm how this rehire should reuse or restore the existing AD identity.",
+      "currentDistinguishedName": "CN=Synthetic100002 User,OU=LabField,OU=LabUsers,DC=example,DC=com",
+      "targetOu": "OU=LabField,OU=LabUsers,DC=example,DC=com",
+      "reviewCategory": "ExistingUserChanges",
+      "reviewCaseType": "RehireCase",
+      "samAccountName": "sf100002",
+      "workerId": "100002",
+      "currentEnabled": true
+    }
+  ],
+  "enables": [],
+  "disables": [],
+  "graveyardMoves": [],
+  "deletions": [],
+  "quarantined": [],
+  "conflicts": [],
+  "guardrailFailures": [],
+  "manualReview": [],
+  "unchanged": []
+}
