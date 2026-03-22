@@ -381,6 +381,14 @@ INSERT INTO run_entries (
     expect(worker.relatedEntries).toHaveLength(1);
   });
 
+  it('throws when a configured SQLite operational store is missing', async () => {
+    const status = await createStatusFixture();
+    status.paths.sqlitePath = path.join(os.tmpdir(), `syncfactors-missing-${Date.now()}.db`);
+    const service = new ReportService();
+
+    await expect(service.listRuns(status, {})).rejects.toThrow(/SQLite operational store is required/);
+  });
+
   it('prefers SQLite-backed queue queries when run entries are available', async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'syncfactors-sqlite-queue-'));
     tempPaths.push(root);

@@ -108,6 +108,7 @@ export class ReportService {
   async getRun(status: DashboardStatus, runId: string): Promise<RunDetailResponse> {
     const sqlitePath = status.paths.sqlitePath;
     if (sqlitePath) {
+      await this.ensureSqliteOperationalStore(sqlitePath);
       const sqliteRun = await this.sqliteStore.getRun(sqlitePath, runId);
       if (!sqliteRun) {
         throw new Error(`Run '${runId}' was not found in the SQLite operational store.`);
@@ -154,6 +155,7 @@ export class ReportService {
   ): Promise<EntryListResponse> {
     const sqlitePath = status.paths.sqlitePath;
     if (sqlitePath) {
+      await this.ensureSqliteOperationalStore(sqlitePath);
       const sqliteRun = await this.sqliteStore.getRun(sqlitePath, runId);
       if (!sqliteRun) {
         throw new Error(`Run '${runId}' was not found in the SQLite operational store.`);
@@ -203,6 +205,7 @@ export class ReportService {
     const pageSize = Math.min(Math.max(filters.pageSize ?? 25, 1), 100);
     const sqlitePath = status.paths.sqlitePath;
     if (sqlitePath) {
+      await this.ensureSqliteOperationalStore(sqlitePath);
       const sqliteEntries = await this.sqliteStore.getQueueEntries(sqlitePath, status.paths.statePath, queueName, {
         reason: filters.reason,
         reviewCaseType: filters.reviewCaseType,
@@ -273,6 +276,7 @@ export class ReportService {
   async getWorkerDetail(status: DashboardStatus, workerId: string, limit = 100): Promise<WorkerDetailResponse> {
     const sqlitePath = status.paths.sqlitePath;
     if (sqlitePath) {
+      await this.ensureSqliteOperationalStore(sqlitePath);
       const sqliteEntries = await this.sqliteStore.getWorkerEntries(sqlitePath, status.paths.statePath, workerId, limit);
       const relatedEntries = sqliteEntries.map((entry) => materializeSqliteEntry(entry, status.trackedWorkers)).slice(0, limit);
       const seenRuns = new Map<string, RunSummary>();
@@ -320,10 +324,19 @@ export class ReportService {
     return warnings.filter((warning) => warning !== NON_WINDOWS_AD_PROBE_WARNING);
   }
 
+  private async ensureSqliteOperationalStore(sqlitePath: string): Promise<void> {
+    try {
+      await fs.access(sqlitePath);
+    } catch {
+      throw new Error(`SQLite operational store is required at '${sqlitePath}'.`);
+    }
+  }
+
   private async scanRuns(status: DashboardStatus): Promise<ScanResult> {
     const warnings = [...(status.warnings ?? [])];
     const sqlitePath = status.paths.sqlitePath;
     if (sqlitePath) {
+      await this.ensureSqliteOperationalStore(sqlitePath);
       const sqliteRuns = await this.sqliteStore.listRuns(sqlitePath, status.paths.statePath);
       return { runs: sqliteRuns, warnings: [...new Set(warnings)] };
     }

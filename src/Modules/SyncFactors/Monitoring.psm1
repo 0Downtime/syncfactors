@@ -276,9 +276,14 @@ function Get-SyncFactorsRuntimeStatusSnapshot {
     }
 
     try {
-        return Get-Content -Path $runtimeStatusPath -Raw | ConvertFrom-Json -Depth 20
+        return Get-Content -Path $runtimeStatusPath -Raw -ErrorAction Stop | ConvertFrom-Json -Depth 20 -ErrorAction Stop
     } catch {
-        return Get-SyncFactorsRuntimeStatusSnapshotFromSqlite -StatePath $StatePath
+        $sqliteSnapshot = Get-SyncFactorsRuntimeStatusSnapshotFromSqlite -StatePath $StatePath
+        if ($sqliteSnapshot) {
+            return $sqliteSnapshot
+        }
+
+        throw
     }
 }
 
@@ -480,15 +485,11 @@ function Get-SyncFactorsRecentRunSummariesFromPersistence {
     )
 
     $sqlitePath = Get-SyncFactorsSqlitePath -Config $Config
-    if (-not [string]::IsNullOrWhiteSpace($sqlitePath)) {
-        if (-not (Test-Path -Path $sqlitePath -PathType Leaf)) {
-            return @()
-        }
-
-        return @(Get-SyncFactorsRecentRunsFromSqlite -StatePath $Config.state.path -DatabasePath $sqlitePath -Limit $Limit)
+    if ([string]::IsNullOrWhiteSpace($sqlitePath) -or -not (Test-Path -Path $sqlitePath -PathType Leaf)) {
+        throw "SQLite operational store is required for monitor and status views. Expected database at '$sqlitePath'."
     }
 
-    return @(Get-SyncFactorsRecentRunSummaries -Directory (Get-SyncFactorsReportDirectories -Config $Config) -Limit $Limit)
+    return @(Get-SyncFactorsRecentRunsFromSqlite -StatePath $Config.state.path -DatabasePath $sqlitePath -Limit $Limit)
 }
 
 function Get-SyncFactorsMonitorStatus {
@@ -502,30 +503,10 @@ function Get-SyncFactorsMonitorStatus {
 
     $config = Get-SyncFactorsConfig -Path $ConfigPath
     $sqlitePath = Get-SyncFactorsSqlitePath -Config $config
-    $trackedWorkers = @()
-    if (-not [string]::IsNullOrWhiteSpace($sqlitePath)) {
-        if (Test-Path -Path $sqlitePath -PathType Leaf) {
-            $trackedWorkers = @(Get-SyncFactorsTrackedWorkersFromSqlite -StatePath $config.state.path -DatabasePath $sqlitePath)
-        }
-    } else {
-        $state = if ($config.state.path -and (Test-Path -Path $config.state.path -PathType Leaf)) { Get-SyncFactorsState -Path $config.state.path } else { [pscustomobject]@{ checkpoint = $null; workers = @{} } }
-        $workerProperties = @(Get-SyncFactorsWorkerEntries -Workers $state.workers)
-        $trackedWorkers = @(
-            $workerProperties |
-                Sort-Object Name |
-                ForEach-Object {
-                    [pscustomobject]@{
-                        workerId = $_.Name
-                        adObjectGuid = if ($_.Value.PSObject.Properties.Name -contains 'adObjectGuid') { $_.Value.adObjectGuid } else { $null }
-                        distinguishedName = if ($_.Value.PSObject.Properties.Name -contains 'distinguishedName') { $_.Value.distinguishedName } else { $null }
-                        suppressed = if ($_.Value.PSObject.Properties.Name -contains 'suppressed') { [bool]$_.Value.suppressed } else { $false }
-                        firstDisabledAt = if ($_.Value.PSObject.Properties.Name -contains 'firstDisabledAt') { $_.Value.firstDisabledAt } else { $null }
-                        deleteAfter = if ($_.Value.PSObject.Properties.Name -contains 'deleteAfter') { $_.Value.deleteAfter } else { $null }
-                        lastSeenStatus = if ($_.Value.PSObject.Properties.Name -contains 'lastSeenStatus') { $_.Value.lastSeenStatus } else { $null }
-                    }
-                }
-        )
+    if ([string]::IsNullOrWhiteSpace($sqlitePath) -or -not (Test-Path -Path $sqlitePath -PathType Leaf)) {
+        throw "SQLite operational store is required for monitor and status views. Expected database at '$sqlitePath'."
     }
+    $trackedWorkers = @(Get-SyncFactorsTrackedWorkersFromSqlite -StatePath $config.state.path -DatabasePath $sqlitePath)
     $workerProperties = @(
         $trackedWorkers | ForEach-Object {
             [pscustomobject]@{
@@ -544,7 +525,7 @@ function Get-SyncFactorsMonitorStatus {
     $reportDirectories = @(Get-SyncFactorsReportDirectories -Config $config)
     $recentRuns = @(Get-SyncFactorsRecentRunSummariesFromPersistence -Config $config -Limit $HistoryLimit)
     $latestRun = if ($recentRuns.Count -gt 0) { $recentRuns[0] } else { New-SyncFactorsEmptyRunSummary }
-    $currentRun = Get-SyncFactorsRuntimeStatusSnapshot -StatePath $config.state.path
+    $currentRun = Get-SyncFactorsRuntimeStatusSnapshotFromSqlite -StatePath $config.state.path -DatabasePath $sqlitePath
     if (-not $currentRun) {
         $currentRun = New-SyncFactorsIdleRuntimeStatus -StatePath $config.state.path
     }
@@ -552,12 +533,7 @@ function Get-SyncFactorsMonitorStatus {
     $activeDirectoryConnection = Test-SyncFactorsMonitorActiveDirectoryConnection -Config $config
 
     $resolvedConfigPath = (Resolve-Path -Path $ConfigPath).Path
-    $lastCheckpoint = $null
-    if (-not [string]::IsNullOrWhiteSpace($sqlitePath) -and (Test-Path -Path $sqlitePath -PathType Leaf)) {
-        $lastCheckpoint = Get-SyncFactorsStateCheckpointFromSqlite -StatePath $config.state.path -DatabasePath $sqlitePath
-    } elseif ($state -and $state.PSObject.Properties.Name -contains 'checkpoint') {
-        $lastCheckpoint = $state.checkpoint
-    }
+    $lastCheckpoint = Get-SyncFactorsStateCheckpointFromSqlite -StatePath $config.state.path -DatabasePath $sqlitePath
     return [pscustomobject]@{
         configPath = $resolvedConfigPath
         lastCheckpoint = $lastCheckpoint
@@ -768,13 +744,13 @@ function Get-SyncFactorsMonitorSelectedRunReport {
     }
     if (-not [string]::IsNullOrWhiteSpace($sqlitePath) -and $selectedRun.PSObject.Properties.Name -contains 'runId' -and -not [string]::IsNullOrWhiteSpace("$($selectedRun.runId)")) {
         if (-not (Test-Path -Path $sqlitePath -PathType Leaf)) {
-            return $null
+            throw "SQLite operational store is required for monitor report views. Expected database at '$sqlitePath'."
         }
         $report = Get-SyncFactorsRunReportFromSqlite -RunId "$($selectedRun.runId)" -DatabasePath $sqlitePath
         if ($report) {
             return $report
         }
-        return $null
+        throw "Run '$($selectedRun.runId)' was not found in the SQLite operational store."
     }
 
     if ([string]::IsNullOrWhiteSpace("$($selectedRun.path)")) {

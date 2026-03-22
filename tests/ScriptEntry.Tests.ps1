@@ -100,6 +100,278 @@ Describe 'Script entrypoints' {
                 }
             } | ConvertTo-Json -Depth 10
         }
+
+        function ConvertTo-TestSqliteLiteral {
+            param($Value)
+
+            if ($null -eq $Value) {
+                return 'NULL'
+            }
+
+            return "'$($Value.ToString().Replace("'", "''"))'"
+        }
+
+        function ConvertTo-TestSqliteJsonLiteral {
+            param($Value)
+
+            if ($null -eq $Value) {
+                return 'NULL'
+            }
+
+            return ConvertTo-TestSqliteLiteral -Value ($Value | ConvertTo-Json -Depth 20 -Compress)
+        }
+
+        function Initialize-StatusSqliteFixture {
+            param(
+                [Parameter(Mandatory)]
+                [string]$StatePath,
+                [Parameter(Mandatory)]
+                [string]$DatabasePath,
+                [AllowNull()]
+                [string]$Checkpoint,
+                [AllowNull()]
+                [object[]]$Workers = @(),
+                [AllowNull()]
+                [object]$CurrentRun = $null,
+                [AllowNull()]
+                [object[]]$Runs = @()
+            )
+
+            $databaseDirectory = Split-Path -Path $DatabasePath -Parent
+            if ($databaseDirectory -and -not (Test-Path -Path $databaseDirectory -PathType Container)) {
+                New-Item -Path $databaseDirectory -ItemType Directory -Force | Out-Null
+            }
+            foreach ($candidate in @($DatabasePath, "$DatabasePath-shm", "$DatabasePath-wal")) {
+                if (Test-Path -Path $candidate -PathType Leaf) {
+                    Remove-Item -Path $candidate -Force
+                }
+            }
+
+            $statePayload = @{
+                checkpoint = $Checkpoint
+                workers = @{}
+            }
+            foreach ($worker in @($Workers)) {
+                $workerId = "$($worker.workerId)"
+                $statePayload.workers[$workerId] = @{
+                    adObjectGuid = if ($worker.PSObject.Properties.Name -contains 'adObjectGuid') { $worker.adObjectGuid } else { $null }
+                    distinguishedName = if ($worker.PSObject.Properties.Name -contains 'distinguishedName') { $worker.distinguishedName } else { $null }
+                    suppressed = if ($worker.PSObject.Properties.Name -contains 'suppressed') { [bool]$worker.suppressed } else { $false }
+                    firstDisabledAt = if ($worker.PSObject.Properties.Name -contains 'firstDisabledAt') { $worker.firstDisabledAt } else { $null }
+                    deleteAfter = if ($worker.PSObject.Properties.Name -contains 'deleteAfter') { $worker.deleteAfter } else { $null }
+                    lastSeenStatus = if ($worker.PSObject.Properties.Name -contains 'lastSeenStatus') { $worker.lastSeenStatus } else { $null }
+                }
+            }
+
+            $sql = @"
+CREATE TABLE IF NOT EXISTS sync_state (
+  state_path TEXT PRIMARY KEY,
+  checkpoint TEXT NULL,
+  raw_state_json TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS worker_state (
+  state_path TEXT NOT NULL,
+  worker_id TEXT NOT NULL,
+  ad_object_guid TEXT NULL,
+  distinguished_name TEXT NULL,
+  suppressed INTEGER NOT NULL DEFAULT 0,
+  first_disabled_at TEXT NULL,
+  delete_after TEXT NULL,
+  last_seen_status TEXT NULL,
+  raw_state_json TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (state_path, worker_id)
+);
+CREATE TABLE IF NOT EXISTS runtime_status (
+  state_path TEXT PRIMARY KEY,
+  run_id TEXT NULL,
+  status TEXT NULL,
+  stage TEXT NULL,
+  started_at TEXT NULL,
+  last_updated_at TEXT NULL,
+  completed_at TEXT NULL,
+  current_worker_id TEXT NULL,
+  last_action TEXT NULL,
+  processed_workers INTEGER NOT NULL DEFAULT 0,
+  total_workers INTEGER NOT NULL DEFAULT 0,
+  error_message TEXT NULL,
+  snapshot_json TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS runs (
+  run_id TEXT PRIMARY KEY,
+  state_path TEXT NULL,
+  path TEXT NULL,
+  artifact_type TEXT NOT NULL,
+  worker_scope_json TEXT NULL,
+  config_path TEXT NULL,
+  mapping_config_path TEXT NULL,
+  mode TEXT NULL,
+  dry_run INTEGER NOT NULL DEFAULT 0,
+  status TEXT NULL,
+  started_at TEXT NULL,
+  completed_at TEXT NULL,
+  duration_seconds INTEGER NULL,
+  reversible_operations INTEGER NOT NULL DEFAULT 0,
+  creates INTEGER NOT NULL DEFAULT 0,
+  updates INTEGER NOT NULL DEFAULT 0,
+  enables INTEGER NOT NULL DEFAULT 0,
+  disables INTEGER NOT NULL DEFAULT 0,
+  graveyard_moves INTEGER NOT NULL DEFAULT 0,
+  deletions INTEGER NOT NULL DEFAULT 0,
+  quarantined INTEGER NOT NULL DEFAULT 0,
+  conflicts INTEGER NOT NULL DEFAULT 0,
+  guardrail_failures INTEGER NOT NULL DEFAULT 0,
+  manual_review INTEGER NOT NULL DEFAULT 0,
+  unchanged INTEGER NOT NULL DEFAULT 0,
+  review_summary_json TEXT NULL,
+  report_json TEXT NOT NULL
+);
+DELETE FROM sync_state WHERE state_path = $(ConvertTo-TestSqliteLiteral -Value $StatePath);
+INSERT INTO sync_state (state_path, checkpoint, raw_state_json, updated_at)
+VALUES (
+  $(ConvertTo-TestSqliteLiteral -Value $StatePath),
+  $(ConvertTo-TestSqliteLiteral -Value $Checkpoint),
+  $(ConvertTo-TestSqliteJsonLiteral -Value $statePayload),
+  '2026-03-22T12:05:00Z'
+);
+"@
+
+            foreach ($worker in @($Workers)) {
+                $workerPayload = @{
+                    adObjectGuid = if ($worker.PSObject.Properties.Name -contains 'adObjectGuid') { $worker.adObjectGuid } else { $null }
+                    distinguishedName = if ($worker.PSObject.Properties.Name -contains 'distinguishedName') { $worker.distinguishedName } else { $null }
+                    suppressed = if ($worker.PSObject.Properties.Name -contains 'suppressed') { [bool]$worker.suppressed } else { $false }
+                    firstDisabledAt = if ($worker.PSObject.Properties.Name -contains 'firstDisabledAt') { $worker.firstDisabledAt } else { $null }
+                    deleteAfter = if ($worker.PSObject.Properties.Name -contains 'deleteAfter') { $worker.deleteAfter } else { $null }
+                    lastSeenStatus = if ($worker.PSObject.Properties.Name -contains 'lastSeenStatus') { $worker.lastSeenStatus } else { $null }
+                }
+                $sql += @"
+INSERT INTO worker_state (
+  state_path,
+  worker_id,
+  ad_object_guid,
+  distinguished_name,
+  suppressed,
+  first_disabled_at,
+  delete_after,
+  last_seen_status,
+  raw_state_json,
+  updated_at
+) VALUES (
+  $(ConvertTo-TestSqliteLiteral -Value $StatePath),
+  $(ConvertTo-TestSqliteLiteral -Value $worker.workerId),
+  $(ConvertTo-TestSqliteLiteral -Value $(if ($worker.PSObject.Properties.Name -contains 'adObjectGuid') { $worker.adObjectGuid } else { $null })),
+  $(ConvertTo-TestSqliteLiteral -Value $(if ($worker.PSObject.Properties.Name -contains 'distinguishedName') { $worker.distinguishedName } else { $null })),
+  $(if ($worker.PSObject.Properties.Name -contains 'suppressed' -and [bool]$worker.suppressed) { 1 } else { 0 }),
+  $(ConvertTo-TestSqliteLiteral -Value $(if ($worker.PSObject.Properties.Name -contains 'firstDisabledAt') { $worker.firstDisabledAt } else { $null })),
+  $(ConvertTo-TestSqliteLiteral -Value $(if ($worker.PSObject.Properties.Name -contains 'deleteAfter') { $worker.deleteAfter } else { $null })),
+  $(ConvertTo-TestSqliteLiteral -Value $(if ($worker.PSObject.Properties.Name -contains 'lastSeenStatus') { $worker.lastSeenStatus } else { $null })),
+  $(ConvertTo-TestSqliteJsonLiteral -Value $workerPayload),
+  '2026-03-22T12:05:00Z'
+);
+"@
+            }
+
+            if ($CurrentRun) {
+                $sql += @"
+INSERT OR REPLACE INTO runtime_status (
+  state_path,
+  run_id,
+  status,
+  stage,
+  started_at,
+  last_updated_at,
+  completed_at,
+  current_worker_id,
+  last_action,
+  processed_workers,
+  total_workers,
+  error_message,
+  snapshot_json
+) VALUES (
+  $(ConvertTo-TestSqliteLiteral -Value $StatePath),
+  $(ConvertTo-TestSqliteLiteral -Value $CurrentRun.runId),
+  $(ConvertTo-TestSqliteLiteral -Value $CurrentRun.status),
+  $(ConvertTo-TestSqliteLiteral -Value $CurrentRun.stage),
+  $(ConvertTo-TestSqliteLiteral -Value $CurrentRun.startedAt),
+  $(ConvertTo-TestSqliteLiteral -Value $CurrentRun.lastUpdatedAt),
+  $(ConvertTo-TestSqliteLiteral -Value $CurrentRun.completedAt),
+  $(ConvertTo-TestSqliteLiteral -Value $CurrentRun.currentWorkerId),
+  $(ConvertTo-TestSqliteLiteral -Value $CurrentRun.lastAction),
+  $(if ($CurrentRun.PSObject.Properties.Name -contains 'processedWorkers') { [int]$CurrentRun.processedWorkers } else { 0 }),
+  $(if ($CurrentRun.PSObject.Properties.Name -contains 'totalWorkers') { [int]$CurrentRun.totalWorkers } else { 0 }),
+  $(ConvertTo-TestSqliteLiteral -Value $CurrentRun.errorMessage),
+  $(ConvertTo-TestSqliteJsonLiteral -Value $CurrentRun)
+);
+"@
+            }
+
+            foreach ($run in @($Runs)) {
+                $reportPayload = if ($run.PSObject.Properties.Name -contains 'reportJson' -and $run.reportJson) { $run.reportJson } else { $run }
+                $sql += @"
+INSERT INTO runs (
+  run_id,
+  state_path,
+  path,
+  artifact_type,
+  worker_scope_json,
+  config_path,
+  mapping_config_path,
+  mode,
+  dry_run,
+  status,
+  started_at,
+  completed_at,
+  duration_seconds,
+  reversible_operations,
+  creates,
+  updates,
+  enables,
+  disables,
+  graveyard_moves,
+  deletions,
+  quarantined,
+  conflicts,
+  guardrail_failures,
+  manual_review,
+  unchanged,
+  review_summary_json,
+  report_json
+) VALUES (
+  $(ConvertTo-TestSqliteLiteral -Value $run.runId),
+  $(ConvertTo-TestSqliteLiteral -Value $StatePath),
+  $(ConvertTo-TestSqliteLiteral -Value $run.path),
+  $(ConvertTo-TestSqliteLiteral -Value $(if ($run.PSObject.Properties.Name -contains 'artifactType') { $run.artifactType } else { 'SyncReport' })),
+  NULL,
+  $(ConvertTo-TestSqliteLiteral -Value $(if ($run.PSObject.Properties.Name -contains 'configPath') { $run.configPath } else { $null })),
+  $(ConvertTo-TestSqliteLiteral -Value $(if ($run.PSObject.Properties.Name -contains 'mappingConfigPath') { $run.mappingConfigPath } else { $null })),
+  $(ConvertTo-TestSqliteLiteral -Value $run.mode),
+  $(if ($run.PSObject.Properties.Name -contains 'dryRun' -and [bool]$run.dryRun) { 1 } else { 0 }),
+  $(ConvertTo-TestSqliteLiteral -Value $run.status),
+  $(ConvertTo-TestSqliteLiteral -Value $run.startedAt),
+  $(ConvertTo-TestSqliteLiteral -Value $run.completedAt),
+  $(if ($run.PSObject.Properties.Name -contains 'durationSeconds' -and $null -ne $run.durationSeconds) { [int]$run.durationSeconds } else { 'NULL' }),
+  $(if ($run.PSObject.Properties.Name -contains 'reversibleOperations') { [int]$run.reversibleOperations } else { 0 }),
+  $(if ($run.PSObject.Properties.Name -contains 'creates') { [int]$run.creates } else { 0 }),
+  $(if ($run.PSObject.Properties.Name -contains 'updates') { [int]$run.updates } else { 0 }),
+  $(if ($run.PSObject.Properties.Name -contains 'enables') { [int]$run.enables } else { 0 }),
+  $(if ($run.PSObject.Properties.Name -contains 'disables') { [int]$run.disables } else { 0 }),
+  $(if ($run.PSObject.Properties.Name -contains 'graveyardMoves') { [int]$run.graveyardMoves } else { 0 }),
+  $(if ($run.PSObject.Properties.Name -contains 'deletions') { [int]$run.deletions } else { 0 }),
+  $(if ($run.PSObject.Properties.Name -contains 'quarantined') { [int]$run.quarantined } else { 0 }),
+  $(if ($run.PSObject.Properties.Name -contains 'conflicts') { [int]$run.conflicts } else { 0 }),
+  $(if ($run.PSObject.Properties.Name -contains 'guardrailFailures') { [int]$run.guardrailFailures } else { 0 }),
+  $(if ($run.PSObject.Properties.Name -contains 'manualReview') { [int]$run.manualReview } else { 0 }),
+  $(if ($run.PSObject.Properties.Name -contains 'unchanged') { [int]$run.unchanged } else { 0 }),
+  NULL,
+  $(ConvertTo-TestSqliteJsonLiteral -Value $reportPayload)
+);
+"@
+            }
+
+            sqlite3 $DatabasePath $sql | Out-Null
+        }
     }
 
     It 'delegates the main sync entry script to Invoke-SyncFactorsRun' {
@@ -768,96 +1040,99 @@ param(
         }
     }
 
-    It 'returns sync status from local state and report files in json mode' {
+    It 'returns sync status from the SQLite operational store in json mode' {
         $configPath = Join-Path $TestDrive 'status-config.json'
         $statePath = Join-Path $TestDrive 'state.json'
         $reportDir = Join-Path $TestDrive 'reports'
-        $reportPath = Join-Path $reportDir 'syncfactors-Delta-20260312-220000.json'
-        $olderReportPath = Join-Path $reportDir 'syncfactors-Full-20260312-210000.json'
         $runtimeStatusPath = Join-Path $TestDrive 'runtime-status.json'
+        $sqlitePath = Join-Path $TestDrive 'syncfactors.db'
 
         New-Item -Path $reportDir -ItemType Directory -Force | Out-Null
         (New-StatusConfigContent -StatePath $statePath -ReportDirectory $reportDir) | Set-Content -Path $configPath
-
-        @{
-            checkpoint = '2026-03-12T21:00:00'
-            workers = @{
-                '1001' = @{
-                    suppressed = $true
-                    deleteAfter = (Get-Date).AddDays(-1).ToString('o')
+        Initialize-StatusSqliteFixture `
+            -StatePath $statePath `
+            -DatabasePath $sqlitePath `
+            -Checkpoint '2026-03-12T21:00:00' `
+            -Workers @(
+                [pscustomobject]@{ workerId = '1001'; suppressed = $true; deleteAfter = (Get-Date).AddDays(-1).ToString('o') },
+                [pscustomobject]@{ workerId = '1002'; suppressed = $false }
+            ) `
+            -CurrentRun ([pscustomobject]@{
+                runId = 'run-active'
+                status = 'InProgress'
+                mode = 'Delta'
+                dryRun = $true
+                stage = 'ProcessingWorkers'
+                startedAt = '2026-03-12T21:40:00'
+                lastUpdatedAt = '2026-03-12T21:41:00'
+                completedAt = $null
+                currentWorkerId = '1002'
+                lastAction = 'Updated attributes for worker 1002.'
+                processedWorkers = 3
+                totalWorkers = 5
+                creates = 1
+                updates = 1
+                enables = 0
+                disables = 0
+                graveyardMoves = 0
+                deletions = 0
+                quarantined = 0
+                conflicts = 0
+                guardrailFailures = 0
+                manualReview = 0
+                unchanged = 1
+                errorMessage = $null
+            }) `
+            -Runs @(
+                [pscustomobject]@{
+                    runId = 'run-123'
+                    path = (Join-Path $reportDir 'syncfactors-Delta-20260312-220000.json')
+                    artifactType = 'SyncReport'
+                    mode = 'Delta'
+                    dryRun = $false
+                    status = 'Succeeded'
+                    startedAt = '2026-03-12T21:30:00'
+                    completedAt = '2026-03-12T21:35:00'
+                    durationSeconds = 300
+                    reversibleOperations = 1
+                    creates = 1
+                    updates = 0
+                    enables = 0
+                    disables = 0
+                    graveyardMoves = 0
+                    deletions = 0
+                    quarantined = 0
+                    conflicts = 0
+                    guardrailFailures = 0
+                    manualReview = 0
+                    unchanged = 0
+                    reportJson = @{ runId = 'run-123'; operations = @(@{ operationType = 'CreateUser' }); creates = @(@{}); updates = @(); enables = @(); disables = @(); graveyardMoves = @(); deletions = @(); quarantined = @(); conflicts = @(); guardrailFailures = @(); manualReview = @(); unchanged = @() }
+                },
+                [pscustomobject]@{
+                    runId = 'run-122'
+                    path = (Join-Path $reportDir 'syncfactors-Full-20260312-210000.json')
+                    artifactType = 'SyncReport'
+                    mode = 'Full'
+                    dryRun = $true
+                    status = 'Failed'
+                    startedAt = '2026-03-12T20:30:00'
+                    completedAt = '2026-03-12T20:40:00'
+                    durationSeconds = 600
+                    reversibleOperations = 0
+                    creates = 0
+                    updates = 0
+                    enables = 0
+                    disables = 1
+                    graveyardMoves = 0
+                    deletions = 0
+                    quarantined = 0
+                    conflicts = 1
+                    guardrailFailures = 1
+                    manualReview = 0
+                    unchanged = 0
+                    reportJson = @{ runId = 'run-122'; operations = @(); creates = @(); updates = @(); enables = @(); disables = @(@{}); graveyardMoves = @(); deletions = @(); quarantined = @(); conflicts = @(@{}); guardrailFailures = @(@{}); manualReview = @(); unchanged = @() }
                 }
-                '1002' = @{
-                    suppressed = $false
-                }
-            }
-        } | ConvertTo-Json -Depth 10 | Set-Content -Path $statePath
-
-        @{
-            runId = 'run-123'
-            mode = 'Delta'
-            dryRun = $false
-            startedAt = '2026-03-12T21:30:00'
-            completedAt = '2026-03-12T21:35:00'
-            status = 'Succeeded'
-            operations = @(@{ operationType = 'CreateUser' })
-            creates = @(@{})
-            updates = @()
-            enables = @()
-            disables = @()
-            graveyardMoves = @()
-            deletions = @()
-            quarantined = @()
-            conflicts = @()
-            guardrailFailures = @()
-            manualReview = @()
-            unchanged = @()
-        } | ConvertTo-Json -Depth 10 | Set-Content -Path $reportPath
-        @{
-            runId = 'run-122'
-            mode = 'Full'
-            dryRun = $true
-            startedAt = '2026-03-12T20:30:00'
-            completedAt = '2026-03-12T20:40:00'
-            status = 'Failed'
-            operations = @()
-            creates = @()
-            updates = @()
-            enables = @()
-            disables = @(@{})
-            graveyardMoves = @()
-            deletions = @()
-            quarantined = @()
-            conflicts = @(@{})
-            guardrailFailures = @(@{})
-            manualReview = @()
-            unchanged = @()
-        } | ConvertTo-Json -Depth 10 | Set-Content -Path $olderReportPath
-        @{
-            runId = 'run-active'
-            status = 'InProgress'
-            mode = 'Delta'
-            dryRun = $true
-            stage = 'ProcessingWorkers'
-            startedAt = '2026-03-12T21:40:00'
-            lastUpdatedAt = '2026-03-12T21:41:00'
-            completedAt = $null
-            currentWorkerId = '1002'
-            lastAction = 'Updated attributes for worker 1002.'
-            processedWorkers = 3
-            totalWorkers = 5
-            creates = 1
-            updates = 1
-            enables = 0
-            disables = 0
-            graveyardMoves = 0
-            deletions = 0
-            quarantined = 0
-            conflicts = 0
-            guardrailFailures = 0
-            manualReview = 0
-            unchanged = 1
-            errorMessage = $null
-        } | ConvertTo-Json -Depth 10 | Set-Content -Path $runtimeStatusPath
+            )
 
         $result = & "$PSScriptRoot/../scripts/Get-SyncFactorsStatus.ps1" -ConfigPath $configPath -AsJson | ConvertFrom-Json -Depth 10
 
@@ -875,16 +1150,17 @@ param(
         $result.paths.runtimeStatusPath | Should -Be $runtimeStatusPath
     }
 
-    It 'returns zeroed latest report details when no report files exist' {
+    It 'returns zeroed latest report details when no SQLite runs exist' {
         $configPath = Join-Path $TestDrive 'status-config-empty.json'
         $emptyRoot = Join-Path $TestDrive 'empty-status'
         $statePath = Join-Path $emptyRoot 'state-empty.json'
         $reportDir = Join-Path $emptyRoot 'reports-empty'
+        $sqlitePath = Join-Path $emptyRoot 'syncfactors.db'
 
         New-Item -Path $emptyRoot -ItemType Directory -Force | Out-Null
         New-Item -Path $reportDir -ItemType Directory -Force | Out-Null
         (New-StatusConfigContent -StatePath $statePath -ReportDirectory $reportDir) | Set-Content -Path $configPath
-        @{ checkpoint = $null; workers = @{} } | ConvertTo-Json -Depth 10 | Set-Content -Path $statePath
+        Initialize-StatusSqliteFixture -StatePath $statePath -DatabasePath $sqlitePath -Checkpoint $null -Workers @() -Runs @()
 
         $result = & "$PSScriptRoot/../scripts/Get-SyncFactorsStatus.ps1" -ConfigPath $configPath -AsJson | ConvertFrom-Json -Depth 10
 
@@ -896,88 +1172,86 @@ param(
         @($result.recentRuns).Count | Should -Be 0
     }
 
-    It 'throws when the state json is corrupt' {
-        $configPath = Join-Path $TestDrive 'status-config-corrupt-state.json'
-        $statePath = Join-Path $TestDrive 'state-corrupt.json'
-        $reportDir = Join-Path $TestDrive 'reports-corrupt-state'
+    It 'throws when the SQLite operational store is missing' {
+        $root = Join-Path $TestDrive 'missing-sqlite'
+        $configPath = Join-Path $root 'status-config-missing-sqlite.json'
+        $statePath = Join-Path $root 'state-missing-sqlite.json'
+        $reportDir = Join-Path $root 'reports-missing-sqlite'
 
+        New-Item -Path $root -ItemType Directory -Force | Out-Null
         New-Item -Path $reportDir -ItemType Directory -Force | Out-Null
         (New-StatusConfigContent -StatePath $statePath -ReportDirectory $reportDir) | Set-Content -Path $configPath
-        '{bad json' | Set-Content -Path $statePath
 
-        { & "$PSScriptRoot/../scripts/Get-SyncFactorsStatus.ps1" -ConfigPath $configPath -AsJson | Out-Null } | Should -Throw
-    }
-
-    It 'throws when the latest report json is corrupt' {
-        $configPath = Join-Path $TestDrive 'status-config-corrupt-report.json'
-        $statePath = Join-Path $TestDrive 'state-valid.json'
-        $reportDir = Join-Path $TestDrive 'reports-corrupt-report'
-        $reportPath = Join-Path $reportDir 'syncfactors-Delta-corrupt.json'
-
-        New-Item -Path $reportDir -ItemType Directory -Force | Out-Null
-        (New-StatusConfigContent -StatePath $statePath -ReportDirectory $reportDir) | Set-Content -Path $configPath
-        @{ checkpoint = $null; workers = @{} } | ConvertTo-Json -Depth 10 | Set-Content -Path $statePath
-        '{bad json' | Set-Content -Path $reportPath
-
-        { & "$PSScriptRoot/../scripts/Get-SyncFactorsStatus.ps1" -ConfigPath $configPath -AsJson | Out-Null } | Should -Throw
+        { & "$PSScriptRoot/../scripts/Get-SyncFactorsStatus.ps1" -ConfigPath $configPath -AsJson | Out-Null } | Should -Throw -ExpectedMessage '*SQLite operational store is required*'
     }
 
     It 'renders the monitor view in text mode with current and recent run details' {
         $configPath = Join-Path $TestDrive 'monitor-config.json'
         $statePath = Join-Path $TestDrive 'monitor-state.json'
         $reportDir = Join-Path $TestDrive 'monitor-reports'
-        $reportPath = Join-Path $reportDir 'syncfactors-Delta-20260312-220000.json'
         $runtimeStatusPath = Join-Path $TestDrive 'runtime-status.json'
+        $sqlitePath = Join-Path $TestDrive 'syncfactors.db'
 
         New-Item -Path $reportDir -ItemType Directory -Force | Out-Null
         (New-StatusConfigContent -StatePath $statePath -ReportDirectory $reportDir) | Set-Content -Path $configPath
-        @{ checkpoint = '2026-03-12T21:00:00'; workers = @{} } | ConvertTo-Json -Depth 10 | Set-Content -Path $statePath
-        @{
-            runId = 'run-123'
-            mode = 'Delta'
-            dryRun = $false
-            startedAt = '2026-03-12T21:30:00'
-            completedAt = '2026-03-12T21:35:00'
-            status = 'Succeeded'
-            operations = @(@{ operationType = 'CreateUser' })
-            creates = @(@{})
-            updates = @()
-            enables = @()
-            disables = @()
-            graveyardMoves = @()
-            deletions = @()
-            quarantined = @()
-            conflicts = @()
-            guardrailFailures = @()
-            manualReview = @()
-            unchanged = @()
-        } | ConvertTo-Json -Depth 10 | Set-Content -Path $reportPath
-        @{
-            runId = 'run-active'
-            status = 'InProgress'
-            mode = 'Delta'
-            dryRun = $false
-            stage = 'ProcessingWorkers'
-            startedAt = '2026-03-12T21:40:00'
-            lastUpdatedAt = '2026-03-12T21:41:00'
-            completedAt = $null
-            currentWorkerId = '1002'
-            lastAction = 'Updated attributes for worker 1002.'
-            processedWorkers = 3
-            totalWorkers = 5
-            creates = 1
-            updates = 1
-            enables = 0
-            disables = 0
-            graveyardMoves = 0
-            deletions = 0
-            quarantined = 0
-            conflicts = 0
-            guardrailFailures = 0
-            manualReview = 0
-            unchanged = 1
-            errorMessage = $null
-        } | ConvertTo-Json -Depth 10 | Set-Content -Path $runtimeStatusPath
+        Initialize-StatusSqliteFixture `
+            -StatePath $statePath `
+            -DatabasePath $sqlitePath `
+            -Checkpoint '2026-03-12T21:00:00' `
+            -Workers @() `
+            -CurrentRun ([pscustomobject]@{
+                runId = 'run-active'
+                status = 'InProgress'
+                mode = 'Delta'
+                dryRun = $false
+                stage = 'ProcessingWorkers'
+                startedAt = '2026-03-12T21:40:00'
+                lastUpdatedAt = '2026-03-12T21:41:00'
+                completedAt = $null
+                currentWorkerId = '1002'
+                lastAction = 'Updated attributes for worker 1002.'
+                processedWorkers = 3
+                totalWorkers = 5
+                creates = 1
+                updates = 1
+                enables = 0
+                disables = 0
+                graveyardMoves = 0
+                deletions = 0
+                quarantined = 0
+                conflicts = 0
+                guardrailFailures = 0
+                manualReview = 0
+                unchanged = 1
+                errorMessage = $null
+            }) `
+            -Runs @(
+                [pscustomobject]@{
+                    runId = 'run-123'
+                    path = (Join-Path $reportDir 'syncfactors-Delta-20260312-220000.json')
+                    artifactType = 'SyncReport'
+                    mode = 'Delta'
+                    dryRun = $false
+                    status = 'Succeeded'
+                    startedAt = '2026-03-12T21:30:00'
+                    completedAt = '2026-03-12T21:35:00'
+                    durationSeconds = 300
+                    reversibleOperations = 1
+                    creates = 1
+                    updates = 0
+                    enables = 0
+                    disables = 0
+                    graveyardMoves = 0
+                    deletions = 0
+                    quarantined = 0
+                    conflicts = 0
+                    guardrailFailures = 0
+                    manualReview = 0
+                    unchanged = 0
+                    reportJson = @{ runId = 'run-123'; operations = @(@{ operationType = 'CreateUser' }); creates = @(@{}); updates = @(); enables = @(); disables = @(); graveyardMoves = @(); deletions = @(); quarantined = @(); conflicts = @(); guardrailFailures = @(); manualReview = @(); unchanged = @() }
+                }
+            )
+        '{bad json' | Set-Content -Path $runtimeStatusPath
 
         $result = & "$PSScriptRoot/../scripts/Watch-SyncFactorsMonitor.ps1" -ConfigPath $configPath -RunOnce -AsText
 
@@ -988,16 +1262,47 @@ param(
         $result | Should -Match 'Succeeded'
     }
 
-    It 'renders an error banner when the monitor hits corrupt runtime status json' {
+    It 'renders an error banner when the monitor hits corrupt SQLite runtime status data' {
         $configPath = Join-Path $TestDrive 'monitor-error-config.json'
         $statePath = Join-Path $TestDrive 'monitor-error-state.json'
         $reportDir = Join-Path $TestDrive 'monitor-error-reports'
-        $runtimeStatusPath = Join-Path $TestDrive 'runtime-status.json'
+        $sqlitePath = Join-Path $TestDrive 'syncfactors.db'
 
         New-Item -Path $reportDir -ItemType Directory -Force | Out-Null
         (New-StatusConfigContent -StatePath $statePath -ReportDirectory $reportDir) | Set-Content -Path $configPath
-        @{ checkpoint = $null; workers = @{} } | ConvertTo-Json -Depth 10 | Set-Content -Path $statePath
-        '{bad json' | Set-Content -Path $runtimeStatusPath
+        Initialize-StatusSqliteFixture `
+            -StatePath $statePath `
+            -DatabasePath $sqlitePath `
+            -Checkpoint $null `
+            -Workers @() `
+            -CurrentRun ([pscustomobject]@{
+                runId = 'run-bad'
+                status = 'InProgress'
+                mode = 'Delta'
+                dryRun = $false
+                stage = 'ProcessingWorkers'
+                startedAt = '2026-03-12T21:40:00'
+                lastUpdatedAt = '2026-03-12T21:41:00'
+                completedAt = $null
+                currentWorkerId = '1002'
+                lastAction = 'Broken snapshot'
+                processedWorkers = 1
+                totalWorkers = 5
+                creates = 0
+                updates = 0
+                enables = 0
+                disables = 0
+                graveyardMoves = 0
+                deletions = 0
+                quarantined = 0
+                conflicts = 0
+                guardrailFailures = 0
+                manualReview = 0
+                unchanged = 0
+                errorMessage = $null
+            }) `
+            -Runs @()
+        sqlite3 $sqlitePath "UPDATE runtime_status SET snapshot_json = '{bad json' WHERE state_path = '$($statePath.Replace("'", "''"))';" | Out-Null
 
         $result = & "$PSScriptRoot/../scripts/Watch-SyncFactorsMonitor.ps1" -ConfigPath $configPath -RunOnce -AsText
 
