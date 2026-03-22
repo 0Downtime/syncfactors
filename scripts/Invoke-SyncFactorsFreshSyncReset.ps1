@@ -14,6 +14,7 @@ Import-Module (Join-Path $moduleRoot 'Config.psm1') -Force -DisableNameChecking
 Import-Module (Join-Path $moduleRoot 'State.psm1') -Force -DisableNameChecking
 Import-Module (Join-Path $moduleRoot 'ActiveDirectorySync.psm1') -Force -DisableNameChecking
 Import-Module (Join-Path $moduleRoot 'Reporting.psm1') -Force -DisableNameChecking
+Import-Module (Join-Path $moduleRoot 'Config.psm1') -Force -DisableNameChecking
 
 function Read-SyncFactorsResetConfirmation {
     param(

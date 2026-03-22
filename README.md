@@ -17,6 +17,7 @@ SyncFactors is PowerShell automation for syncing SAP SuccessFactors worker data 
 - Enables prehires 7 days before start date.
 - Disables terminated users, moves them to a graveyard OU, suppresses further sync, and deletes them after retention.
 - Supports approval mode for broad-run disables, deletes, and graveyard OU moves, with per-worker operator apply after review.
+- Sends alert emails for failed runs, guardrail breaches, and manual-review events through SMTP.
 - Supports additional Core HR mappings such as job title, business unit, division, cost center, and employment class when exposed by the tenant query.
 - Supports per-field mapping toggles, dry-run mode, delta sync, and periodic full reconciliation.
 
@@ -41,9 +42,6 @@ Comparison against the Microsoft Entra SuccessFactors connector documented here:
 
 ## Planned Features
 Planned work is ordered by delivery priority so the roadmap is easy to scan from immediate operational needs to longer-term product improvements. The planned items in the comparison table use the same names as the roadmap below.
-
-### Near Term
-- Alerting hooks for failed runs, guardrail breaches, and manual-review events.
 
 ### Mid Term
 - Expanded policy engine for prehire, rehire, leave-of-absence, contractor, transfer, and termination handling.
@@ -189,6 +187,29 @@ To require operator approval before broad sync runs can disable accounts, delete
 ```
 
 When approval mode is enabled, delta/full runs convert those high-risk changes into manual-review cases instead of applying them immediately. After review, use the scoped worker preview and one-worker apply flow to execute the approved change intentionally.
+
+To send alert emails for failed runs, guardrail breaches, and manual-review events, enable SMTP alerts in the sync config:
+
+```json
+"alerts": {
+  "enabled": true,
+  "subjectPrefix": "[SyncFactors]",
+  "triggers": {
+    "failedRuns": true,
+    "guardrailBreaches": true,
+    "manualReviewEvents": true
+  },
+  "smtp": {
+    "host": "mail.example.com",
+    "port": 25,
+    "useSsl": false,
+    "from": "syncfactors@example.com",
+    "to": ["ops@example.com"]
+  }
+}
+```
+
+Leaving `alerts.smtp.username` and `alerts.smtp.password` unset uses unauthenticated SMTP, which is the default. If your relay requires authentication, set both fields.
 
 To delete all AD user objects found recursively under the managed sync OUs and reset local sync state for a true fresh sync:
 
