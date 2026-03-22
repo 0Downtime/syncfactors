@@ -1,6 +1,6 @@
 {
-  "runId": "5a5515a8-1abc-45b6-97d5-81b1099826d1",
-  "startedAt": "2026-03-22T10:23:05.6547600-04:00",
+  "runId": "fc302b25-4734-4171-b014-d19d9a13636d",
+  "startedAt": "2026-03-22T10:42:42.4176790-04:00",
   "status": "Succeeded",
   "mode": "Full",
   "artifactType": "WorkerSync",
@@ -9,15 +9,15 @@
   "mappingConfigPath": "/Users/chrisbrien/dev/github.com/syncfactors/config/sample.syncfactors.mapping-config.json",
   "statePath": "/Users/chrisbrien/dev/github.com/syncfactors/./reports/demo/state/demo-sync-state.json",
   "workerScope": null,
-  "completedAt": "2026-03-22T10:41:05.6547600-04:00",
+  "completedAt": "2026-03-22T11:00:42.4176790-04:00",
   "failedAt": null,
   "errorMessage": null,
   "reviewSummary": null,
   "operations": [
     {
-      "operationId": "5a5515a8-1abc-45b6-97d5-81b1099826d1-0001",
+      "operationId": "fc302b25-4734-4171-b014-d19d9a13636d-0001",
       "sequence": 1,
-      "timestamp": "2026-03-22T15:41:05.6793020-04:00",
+      "timestamp": "2026-03-22T16:00:42.4402680-04:00",
       "operationType": "CreateUser",
       "workerId": "100006",
       "bucket": "creates",
@@ -36,9 +36,9 @@
       "errorMessage": ""
     },
     {
-      "operationId": "5a5515a8-1abc-45b6-97d5-81b1099826d1-0002",
+      "operationId": "fc302b25-4734-4171-b014-d19d9a13636d-0002",
       "sequence": 2,
-      "timestamp": "2026-03-22T15:41:05.6800220-04:00",
+      "timestamp": "2026-03-22T16:00:42.4407720-04:00",
       "operationType": "CreateUser",
       "workerId": "100007",
       "bucket": "creates",
@@ -57,9 +57,9 @@
       "errorMessage": ""
     },
     {
-      "operationId": "5a5515a8-1abc-45b6-97d5-81b1099826d1-0003",
+      "operationId": "fc302b25-4734-4171-b014-d19d9a13636d-0003",
       "sequence": 3,
-      "timestamp": "2026-03-22T15:41:05.6803110-04:00",
+      "timestamp": "2026-03-22T16:00:42.4410020-04:00",
       "operationType": "CreateUser",
       "workerId": "100008",
       "bucket": "creates",
@@ -78,9 +78,9 @@
       "errorMessage": ""
     },
     {
-      "operationId": "5a5515a8-1abc-45b6-97d5-81b1099826d1-0004",
+      "operationId": "fc302b25-4734-4171-b014-d19d9a13636d-0004",
       "sequence": 4,
-      "timestamp": "2026-03-22T15:41:05.6805880-04:00",
+      "timestamp": "2026-03-22T16:00:42.4412200-04:00",
       "operationType": "CreateUser",
       "workerId": "100009",
       "bucket": "creates",
@@ -99,9 +99,9 @@
       "errorMessage": ""
     },
     {
-      "operationId": "5a5515a8-1abc-45b6-97d5-81b1099826d1-0005",
+      "operationId": "fc302b25-4734-4171-b014-d19d9a13636d-0005",
       "sequence": 5,
-      "timestamp": "2026-03-22T15:41:05.6808520-04:00",
+      "timestamp": "2026-03-22T16:00:42.4414320-04:00",
       "operationType": "CreateUser",
       "workerId": "100010",
       "bucket": "creates",
@@ -120,9 +120,9 @@
       "errorMessage": ""
     },
     {
-      "operationId": "5a5515a8-1abc-45b6-97d5-81b1099826d1-0006",
+      "operationId": "fc302b25-4734-4171-b014-d19d9a13636d-0006",
       "sequence": 6,
-      "timestamp": "2026-03-22T15:41:05.6811260-04:00",
+      "timestamp": "2026-03-22T16:00:42.4416450-04:00",
       "operationType": "CreateUser",
       "workerId": "100011",
       "bucket": "creates",
@@ -141,9 +141,9 @@
       "errorMessage": ""
     },
     {
-      "operationId": "5a5515a8-1abc-45b6-97d5-81b1099826d1-0007",
+      "operationId": "fc302b25-4734-4171-b014-d19d9a13636d-0007",
       "sequence": 7,
-      "timestamp": "2026-03-22T15:41:05.6814010-04:00",
+      "timestamp": "2026-03-22T16:00:42.4418490-04:00",
       "operationType": "CreateUser",
       "workerId": "100012",
       "bucket": "creates",
@@ -162,9 +162,9 @@
       "errorMessage": ""
     },
     {
-      "operationId": "5a5515a8-1abc-45b6-97d5-81b1099826d1-0008",
+      "operationId": "fc302b25-4734-4171-b014-d19d9a13636d-0008",
       "sequence": 8,
-      "timestamp": "2026-03-22T15:41:05.6816640-04:00",
+      "timestamp": "2026-03-22T16:00:42.4420500-04:00",
       "operationType": "CreateUser",
       "workerId": "100013",
       "bucket": "creates",
@@ -183,9 +183,9 @@
       "errorMessage": ""
     },
     {
-      "operationId": "5a5515a8-1abc-45b6-97d5-81b1099826d1-0009",
+      "operationId": "fc302b25-4734-4171-b014-d19d9a13636d-0009",
       "sequence": 9,
-      "timestamp": "2026-03-22T15:41:05.6860220-04:00",
+      "timestamp": "2026-03-22T16:00:42.4472100-04:00",
       "operationType": "UpdateAttributes",
       "workerId": "100001",
       "bucket": "updates",
@@ -205,9 +205,9 @@
       "errorMessage": ""
     },
     {
-      "operationId": "5a5515a8-1abc-45b6-97d5-81b1099826d1-0010",
+      "operationId": "fc302b25-4734-4171-b014-d19d9a13636d-0010",
       "sequence": 10,
-      "timestamp": "2026-03-22T15:41:05.6865770-04:00",
+      "timestamp": "2026-03-22T16:00:42.4476580-04:00",
       "operationType": "UpdateAttributes",
       "workerId": "100002",
       "bucket": "updates",
@@ -227,9 +227,9 @@
       "errorMessage": ""
     },
     {
-      "operationId": "5a5515a8-1abc-45b6-97d5-81b1099826d1-0011",
+      "operationId": "fc302b25-4734-4171-b014-d19d9a13636d-0011",
       "sequence": 11,
-      "timestamp": "2026-03-22T15:41:05.6871380-04:00",
+      "timestamp": "2026-03-22T16:00:42.4480690-04:00",
       "operationType": "UpdateAttributes",
       "workerId": "100046",
       "bucket": "updates",
@@ -249,9 +249,9 @@
       "errorMessage": ""
     },
     {
-      "operationId": "5a5515a8-1abc-45b6-97d5-81b1099826d1-0012",
+      "operationId": "fc302b25-4734-4171-b014-d19d9a13636d-0012",
       "sequence": 12,
-      "timestamp": "2026-03-22T15:41:05.6876930-04:00",
+      "timestamp": "2026-03-22T16:00:42.4484690-04:00",
       "operationType": "UpdateAttributes",
       "workerId": "100047",
       "bucket": "updates",
@@ -271,9 +271,9 @@
       "errorMessage": ""
     },
     {
-      "operationId": "5a5515a8-1abc-45b6-97d5-81b1099826d1-0013",
+      "operationId": "fc302b25-4734-4171-b014-d19d9a13636d-0013",
       "sequence": 13,
-      "timestamp": "2026-03-22T15:41:05.6882270-04:00",
+      "timestamp": "2026-03-22T16:00:42.4488680-04:00",
       "operationType": "UpdateAttributes",
       "workerId": "100048",
       "bucket": "updates",
@@ -293,9 +293,9 @@
       "errorMessage": ""
     },
     {
-      "operationId": "5a5515a8-1abc-45b6-97d5-81b1099826d1-0014",
+      "operationId": "fc302b25-4734-4171-b014-d19d9a13636d-0014",
       "sequence": 14,
-      "timestamp": "2026-03-22T15:41:05.6887790-04:00",
+      "timestamp": "2026-03-22T16:00:42.4492880-04:00",
       "operationType": "UpdateAttributes",
       "workerId": "100049",
       "bucket": "updates",
@@ -315,9 +315,9 @@
       "errorMessage": ""
     },
     {
-      "operationId": "5a5515a8-1abc-45b6-97d5-81b1099826d1-0015",
+      "operationId": "fc302b25-4734-4171-b014-d19d9a13636d-0015",
       "sequence": 15,
-      "timestamp": "2026-03-22T15:41:05.6893250-04:00",
+      "timestamp": "2026-03-22T16:00:42.4497240-04:00",
       "operationType": "UpdateAttributes",
       "workerId": "100050",
       "bucket": "updates",
@@ -337,9 +337,9 @@
       "errorMessage": ""
     },
     {
-      "operationId": "5a5515a8-1abc-45b6-97d5-81b1099826d1-0016",
+      "operationId": "fc302b25-4734-4171-b014-d19d9a13636d-0016",
       "sequence": 16,
-      "timestamp": "2026-03-22T15:41:05.6902020-04:00",
+      "timestamp": "2026-03-22T16:00:42.4519710-04:00",
       "operationType": "UpdateAttributes",
       "workerId": "100051",
       "bucket": "updates",
@@ -359,9 +359,9 @@
       "errorMessage": ""
     },
     {
-      "operationId": "5a5515a8-1abc-45b6-97d5-81b1099826d1-0017",
+      "operationId": "fc302b25-4734-4171-b014-d19d9a13636d-0017",
       "sequence": 17,
-      "timestamp": "2026-03-22T15:41:05.6907640-04:00",
+      "timestamp": "2026-03-22T16:00:42.4524210-04:00",
       "operationType": "UpdateAttributes",
       "workerId": "100052",
       "bucket": "updates",
@@ -381,9 +381,9 @@
       "errorMessage": ""
     },
     {
-      "operationId": "5a5515a8-1abc-45b6-97d5-81b1099826d1-0018",
+      "operationId": "fc302b25-4734-4171-b014-d19d9a13636d-0018",
       "sequence": 18,
-      "timestamp": "2026-03-22T15:41:05.6912590-04:00",
+      "timestamp": "2026-03-22T16:00:42.4528330-04:00",
       "operationType": "UpdateAttributes",
       "workerId": "100053",
       "bucket": "updates",
@@ -405,7 +405,6 @@
   ],
   "creates": [
     {
-      "reviewCategory": "NewUser",
       "attributeRows": [
         {
           "sourceField": "firstName",
@@ -422,14 +421,14 @@
           "changed": true
         }
       ],
-      "workerId": "100006",
-      "proposedEnable": true,
+      "reviewCategory": "NewUser",
       "targetOu": "OU=LabCorp,OU=LabUsers,DC=example,DC=com",
       "samAccountName": "sf100006",
+      "workerId": "100006",
+      "proposedEnable": true,
       "matchedExistingUser": false
     },
     {
-      "reviewCategory": "NewUser",
       "attributeRows": [
         {
           "sourceField": "firstName",
@@ -446,14 +445,14 @@
           "changed": true
         }
       ],
-      "workerId": "100007",
-      "proposedEnable": true,
+      "reviewCategory": "NewUser",
       "targetOu": "OU=LabField,OU=LabUsers,DC=example,DC=com",
       "samAccountName": "sf100007",
+      "workerId": "100007",
+      "proposedEnable": true,
       "matchedExistingUser": false
     },
     {
-      "reviewCategory": "NewUser",
       "attributeRows": [
         {
           "sourceField": "firstName",
@@ -470,14 +469,14 @@
           "changed": true
         }
       ],
-      "workerId": "100008",
-      "proposedEnable": true,
+      "reviewCategory": "NewUser",
       "targetOu": "OU=LabField,OU=LabUsers,DC=example,DC=com",
       "samAccountName": "sf100008",
+      "workerId": "100008",
+      "proposedEnable": true,
       "matchedExistingUser": false
     },
     {
-      "reviewCategory": "NewUser",
       "attributeRows": [
         {
           "sourceField": "firstName",
@@ -494,14 +493,14 @@
           "changed": true
         }
       ],
-      "workerId": "100009",
-      "proposedEnable": true,
+      "reviewCategory": "NewUser",
       "targetOu": "OU=LabCorp,OU=LabUsers,DC=example,DC=com",
       "samAccountName": "sf100009",
+      "workerId": "100009",
+      "proposedEnable": true,
       "matchedExistingUser": false
     },
     {
-      "reviewCategory": "NewUser",
       "attributeRows": [
         {
           "sourceField": "firstName",
@@ -518,14 +517,14 @@
           "changed": true
         }
       ],
-      "workerId": "100010",
-      "proposedEnable": true,
+      "reviewCategory": "NewUser",
       "targetOu": "OU=LabField,OU=LabUsers,DC=example,DC=com",
       "samAccountName": "sf100010",
+      "workerId": "100010",
+      "proposedEnable": true,
       "matchedExistingUser": false
     },
     {
-      "reviewCategory": "NewUser",
       "attributeRows": [
         {
           "sourceField": "firstName",
@@ -542,14 +541,14 @@
           "changed": true
         }
       ],
-      "workerId": "100011",
-      "proposedEnable": true,
+      "reviewCategory": "NewUser",
       "targetOu": "OU=LabField,OU=LabUsers,DC=example,DC=com",
       "samAccountName": "sf100011",
+      "workerId": "100011",
+      "proposedEnable": true,
       "matchedExistingUser": false
     },
     {
-      "reviewCategory": "NewUser",
       "attributeRows": [
         {
           "sourceField": "firstName",
@@ -566,14 +565,14 @@
           "changed": true
         }
       ],
-      "workerId": "100012",
-      "proposedEnable": true,
+      "reviewCategory": "NewUser",
       "targetOu": "OU=LabCorp,OU=LabUsers,DC=example,DC=com",
       "samAccountName": "sf100012",
+      "workerId": "100012",
+      "proposedEnable": true,
       "matchedExistingUser": false
     },
     {
-      "reviewCategory": "NewUser",
       "attributeRows": [
         {
           "sourceField": "firstName",
@@ -590,14 +589,14 @@
           "changed": true
         }
       ],
-      "workerId": "100013",
-      "proposedEnable": true,
+      "reviewCategory": "NewUser",
       "targetOu": "OU=LabField,OU=LabUsers,DC=example,DC=com",
       "samAccountName": "sf100013",
+      "workerId": "100013",
+      "proposedEnable": true,
       "matchedExistingUser": false
     },
     {
-      "reviewCategory": "NewUser",
       "attributeRows": [
         {
           "sourceField": "firstName",
@@ -614,14 +613,14 @@
           "changed": true
         }
       ],
-      "workerId": "100014",
-      "proposedEnable": true,
+      "reviewCategory": "NewUser",
       "targetOu": "OU=LabField,OU=LabUsers,DC=example,DC=com",
       "samAccountName": "sf100014",
+      "workerId": "100014",
+      "proposedEnable": true,
       "matchedExistingUser": false
     },
     {
-      "reviewCategory": "NewUser",
       "attributeRows": [
         {
           "sourceField": "firstName",
@@ -638,14 +637,14 @@
           "changed": true
         }
       ],
-      "workerId": "100015",
-      "proposedEnable": true,
+      "reviewCategory": "NewUser",
       "targetOu": "OU=LabIT,OU=LabUsers,DC=example,DC=com",
       "samAccountName": "sf100015",
+      "workerId": "100015",
+      "proposedEnable": true,
       "matchedExistingUser": false
     },
     {
-      "reviewCategory": "NewUser",
       "attributeRows": [
         {
           "sourceField": "firstName",
@@ -662,14 +661,14 @@
           "changed": true
         }
       ],
-      "workerId": "100016",
-      "proposedEnable": true,
+      "reviewCategory": "NewUser",
       "targetOu": "OU=LabField,OU=LabUsers,DC=example,DC=com",
       "samAccountName": "sf100016",
+      "workerId": "100016",
+      "proposedEnable": true,
       "matchedExistingUser": false
     },
     {
-      "reviewCategory": "NewUser",
       "attributeRows": [
         {
           "sourceField": "firstName",
@@ -686,14 +685,14 @@
           "changed": true
         }
       ],
-      "workerId": "100017",
-      "proposedEnable": true,
+      "reviewCategory": "NewUser",
       "targetOu": "OU=LabField,OU=LabUsers,DC=example,DC=com",
       "samAccountName": "sf100017",
+      "workerId": "100017",
+      "proposedEnable": true,
       "matchedExistingUser": false
     },
     {
-      "reviewCategory": "NewUser",
       "attributeRows": [
         {
           "sourceField": "firstName",
@@ -710,14 +709,14 @@
           "changed": true
         }
       ],
-      "workerId": "100018",
-      "proposedEnable": true,
+      "reviewCategory": "NewUser",
       "targetOu": "OU=LabCorp,OU=LabUsers,DC=example,DC=com",
       "samAccountName": "sf100018",
+      "workerId": "100018",
+      "proposedEnable": true,
       "matchedExistingUser": false
     },
     {
-      "reviewCategory": "NewUser",
       "attributeRows": [
         {
           "sourceField": "firstName",
@@ -734,14 +733,14 @@
           "changed": true
         }
       ],
-      "workerId": "100019",
-      "proposedEnable": true,
+      "reviewCategory": "NewUser",
       "targetOu": "OU=LabField,OU=LabUsers,DC=example,DC=com",
       "samAccountName": "sf100019",
+      "workerId": "100019",
+      "proposedEnable": true,
       "matchedExistingUser": false
     },
     {
-      "reviewCategory": "NewUser",
       "attributeRows": [
         {
           "sourceField": "firstName",
@@ -758,14 +757,14 @@
           "changed": true
         }
       ],
-      "workerId": "100020",
-      "proposedEnable": true,
+      "reviewCategory": "NewUser",
       "targetOu": "OU=LabField,OU=LabUsers,DC=example,DC=com",
       "samAccountName": "sf100020",
+      "workerId": "100020",
+      "proposedEnable": true,
       "matchedExistingUser": false
     },
     {
-      "reviewCategory": "NewUser",
       "attributeRows": [
         {
           "sourceField": "firstName",
@@ -782,14 +781,14 @@
           "changed": true
         }
       ],
-      "workerId": "100021",
-      "proposedEnable": true,
+      "reviewCategory": "NewUser",
       "targetOu": "OU=LabCorp,OU=LabUsers,DC=example,DC=com",
       "samAccountName": "sf100021",
+      "workerId": "100021",
+      "proposedEnable": true,
       "matchedExistingUser": false
     },
     {
-      "reviewCategory": "NewUser",
       "attributeRows": [
         {
           "sourceField": "firstName",
@@ -806,14 +805,14 @@
           "changed": true
         }
       ],
-      "workerId": "100022",
-      "proposedEnable": true,
+      "reviewCategory": "NewUser",
       "targetOu": "OU=LabField,OU=LabUsers,DC=example,DC=com",
       "samAccountName": "sf100022",
+      "workerId": "100022",
+      "proposedEnable": true,
       "matchedExistingUser": false
     },
     {
-      "reviewCategory": "NewUser",
       "attributeRows": [
         {
           "sourceField": "firstName",
@@ -830,14 +829,14 @@
           "changed": true
         }
       ],
-      "workerId": "100023",
-      "proposedEnable": true,
+      "reviewCategory": "NewUser",
       "targetOu": "OU=LabField,OU=LabUsers,DC=example,DC=com",
       "samAccountName": "sf100023",
+      "workerId": "100023",
+      "proposedEnable": true,
       "matchedExistingUser": false
     },
     {
-      "reviewCategory": "NewUser",
       "attributeRows": [
         {
           "sourceField": "firstName",
@@ -854,14 +853,14 @@
           "changed": true
         }
       ],
-      "workerId": "100024",
-      "proposedEnable": true,
+      "reviewCategory": "NewUser",
       "targetOu": "OU=LabCorp,OU=LabUsers,DC=example,DC=com",
       "samAccountName": "sf100024",
+      "workerId": "100024",
+      "proposedEnable": true,
       "matchedExistingUser": false
     },
     {
-      "reviewCategory": "NewUser",
       "attributeRows": [
         {
           "sourceField": "firstName",
@@ -878,14 +877,14 @@
           "changed": true
         }
       ],
-      "workerId": "100025",
-      "proposedEnable": true,
+      "reviewCategory": "NewUser",
       "targetOu": "OU=LabField,OU=LabUsers,DC=example,DC=com",
       "samAccountName": "sf100025",
+      "workerId": "100025",
+      "proposedEnable": true,
       "matchedExistingUser": false
     },
     {
-      "reviewCategory": "NewUser",
       "attributeRows": [
         {
           "sourceField": "firstName",
@@ -902,14 +901,14 @@
           "changed": true
         }
       ],
-      "workerId": "100026",
-      "proposedEnable": true,
+      "reviewCategory": "NewUser",
       "targetOu": "OU=LabField,OU=LabUsers,DC=example,DC=com",
       "samAccountName": "sf100026",
+      "workerId": "100026",
+      "proposedEnable": true,
       "matchedExistingUser": false
     },
     {
-      "reviewCategory": "NewUser",
       "attributeRows": [
         {
           "sourceField": "firstName",
@@ -926,14 +925,14 @@
           "changed": true
         }
       ],
-      "workerId": "100027",
-      "proposedEnable": true,
+      "reviewCategory": "NewUser",
       "targetOu": "OU=LabCorp,OU=LabUsers,DC=example,DC=com",
       "samAccountName": "sf100027",
+      "workerId": "100027",
+      "proposedEnable": true,
       "matchedExistingUser": false
     },
     {
-      "reviewCategory": "NewUser",
       "attributeRows": [
         {
           "sourceField": "firstName",
@@ -950,14 +949,14 @@
           "changed": true
         }
       ],
-      "workerId": "100028",
-      "proposedEnable": true,
+      "reviewCategory": "NewUser",
       "targetOu": "OU=LabField,OU=LabUsers,DC=example,DC=com",
       "samAccountName": "sf100028",
+      "workerId": "100028",
+      "proposedEnable": true,
       "matchedExistingUser": false
     },
     {
-      "reviewCategory": "NewUser",
       "attributeRows": [
         {
           "sourceField": "firstName",
@@ -974,14 +973,14 @@
           "changed": true
         }
       ],
-      "workerId": "100029",
-      "proposedEnable": true,
+      "reviewCategory": "NewUser",
       "targetOu": "OU=LabField,OU=LabUsers,DC=example,DC=com",
       "samAccountName": "sf100029",
+      "workerId": "100029",
+      "proposedEnable": true,
       "matchedExistingUser": false
     },
     {
-      "reviewCategory": "NewUser",
       "attributeRows": [
         {
           "sourceField": "firstName",
@@ -998,14 +997,14 @@
           "changed": true
         }
       ],
-      "workerId": "100030",
-      "proposedEnable": true,
+      "reviewCategory": "NewUser",
       "targetOu": "OU=LabIT,OU=LabUsers,DC=example,DC=com",
       "samAccountName": "sf100030",
+      "workerId": "100030",
+      "proposedEnable": true,
       "matchedExistingUser": false
     },
     {
-      "reviewCategory": "NewUser",
       "attributeRows": [
         {
           "sourceField": "firstName",
@@ -1022,14 +1021,14 @@
           "changed": true
         }
       ],
-      "workerId": "100031",
-      "proposedEnable": true,
+      "reviewCategory": "NewUser",
       "targetOu": "OU=LabField,OU=LabUsers,DC=example,DC=com",
       "samAccountName": "sf100031",
+      "workerId": "100031",
+      "proposedEnable": true,
       "matchedExistingUser": false
     },
     {
-      "reviewCategory": "NewUser",
       "attributeRows": [
         {
           "sourceField": "firstName",
@@ -1046,14 +1045,14 @@
           "changed": true
         }
       ],
-      "workerId": "100032",
-      "proposedEnable": true,
+      "reviewCategory": "NewUser",
       "targetOu": "OU=LabField,OU=LabUsers,DC=example,DC=com",
       "samAccountName": "sf100032",
+      "workerId": "100032",
+      "proposedEnable": true,
       "matchedExistingUser": false
     },
     {
-      "reviewCategory": "NewUser",
       "attributeRows": [
         {
           "sourceField": "firstName",
@@ -1070,14 +1069,14 @@
           "changed": true
         }
       ],
-      "workerId": "100033",
-      "proposedEnable": true,
+      "reviewCategory": "NewUser",
       "targetOu": "OU=LabCorp,OU=LabUsers,DC=example,DC=com",
       "samAccountName": "sf100033",
+      "workerId": "100033",
+      "proposedEnable": true,
       "matchedExistingUser": false
     },
     {
-      "reviewCategory": "NewUser",
       "attributeRows": [
         {
           "sourceField": "firstName",
@@ -1094,14 +1093,14 @@
           "changed": true
         }
       ],
-      "workerId": "100034",
-      "proposedEnable": true,
+      "reviewCategory": "NewUser",
       "targetOu": "OU=LabField,OU=LabUsers,DC=example,DC=com",
       "samAccountName": "sf100034",
+      "workerId": "100034",
+      "proposedEnable": true,
       "matchedExistingUser": false
     },
     {
-      "reviewCategory": "NewUser",
       "attributeRows": [
         {
           "sourceField": "firstName",
@@ -1118,14 +1117,14 @@
           "changed": true
         }
       ],
-      "workerId": "100035",
-      "proposedEnable": true,
+      "reviewCategory": "NewUser",
       "targetOu": "OU=LabField,OU=LabUsers,DC=example,DC=com",
       "samAccountName": "sf100035",
+      "workerId": "100035",
+      "proposedEnable": true,
       "matchedExistingUser": false
     },
     {
-      "reviewCategory": "NewUser",
       "attributeRows": [
         {
           "sourceField": "firstName",
@@ -1142,14 +1141,14 @@
           "changed": true
         }
       ],
-      "workerId": "100036",
-      "proposedEnable": true,
+      "reviewCategory": "NewUser",
       "targetOu": "OU=LabCorp,OU=LabUsers,DC=example,DC=com",
       "samAccountName": "sf100036",
+      "workerId": "100036",
+      "proposedEnable": true,
       "matchedExistingUser": false
     },
     {
-      "reviewCategory": "NewUser",
       "attributeRows": [
         {
           "sourceField": "firstName",
@@ -1166,14 +1165,14 @@
           "changed": true
         }
       ],
-      "workerId": "100037",
-      "proposedEnable": true,
+      "reviewCategory": "NewUser",
       "targetOu": "OU=LabField,OU=LabUsers,DC=example,DC=com",
       "samAccountName": "sf100037",
+      "workerId": "100037",
+      "proposedEnable": true,
       "matchedExistingUser": false
     },
     {
-      "reviewCategory": "NewUser",
       "attributeRows": [
         {
           "sourceField": "firstName",
@@ -1190,14 +1189,14 @@
           "changed": true
         }
       ],
-      "workerId": "100038",
-      "proposedEnable": true,
+      "reviewCategory": "NewUser",
       "targetOu": "OU=LabField,OU=LabUsers,DC=example,DC=com",
       "samAccountName": "sf100038",
+      "workerId": "100038",
+      "proposedEnable": true,
       "matchedExistingUser": false
     },
     {
-      "reviewCategory": "NewUser",
       "attributeRows": [
         {
           "sourceField": "firstName",
@@ -1214,14 +1213,14 @@
           "changed": true
         }
       ],
-      "workerId": "100039",
-      "proposedEnable": true,
+      "reviewCategory": "NewUser",
       "targetOu": "OU=LabCorp,OU=LabUsers,DC=example,DC=com",
       "samAccountName": "sf100039",
+      "workerId": "100039",
+      "proposedEnable": true,
       "matchedExistingUser": false
     },
     {
-      "reviewCategory": "NewUser",
       "attributeRows": [
         {
           "sourceField": "firstName",
@@ -1238,14 +1237,14 @@
           "changed": true
         }
       ],
-      "workerId": "100040",
-      "proposedEnable": true,
+      "reviewCategory": "NewUser",
       "targetOu": "OU=LabField,OU=LabUsers,DC=example,DC=com",
       "samAccountName": "sf100040",
+      "workerId": "100040",
+      "proposedEnable": true,
       "matchedExistingUser": false
     },
     {
-      "reviewCategory": "NewUser",
       "attributeRows": [
         {
           "sourceField": "firstName",
@@ -1262,14 +1261,14 @@
           "changed": true
         }
       ],
-      "workerId": "100041",
-      "proposedEnable": true,
+      "reviewCategory": "NewUser",
       "targetOu": "OU=LabField,OU=LabUsers,DC=example,DC=com",
       "samAccountName": "sf100041",
+      "workerId": "100041",
+      "proposedEnable": true,
       "matchedExistingUser": false
     },
     {
-      "reviewCategory": "NewUser",
       "attributeRows": [
         {
           "sourceField": "firstName",
@@ -1286,14 +1285,14 @@
           "changed": true
         }
       ],
-      "workerId": "100042",
-      "proposedEnable": true,
+      "reviewCategory": "NewUser",
       "targetOu": "OU=LabCorp,OU=LabUsers,DC=example,DC=com",
       "samAccountName": "sf100042",
+      "workerId": "100042",
+      "proposedEnable": true,
       "matchedExistingUser": false
     },
     {
-      "reviewCategory": "NewUser",
       "attributeRows": [
         {
           "sourceField": "firstName",
@@ -1310,14 +1309,14 @@
           "changed": true
         }
       ],
-      "workerId": "100043",
-      "proposedEnable": true,
+      "reviewCategory": "NewUser",
       "targetOu": "OU=LabField,OU=LabUsers,DC=example,DC=com",
       "samAccountName": "sf100043",
+      "workerId": "100043",
+      "proposedEnable": true,
       "matchedExistingUser": false
     },
     {
-      "reviewCategory": "NewUser",
       "attributeRows": [
         {
           "sourceField": "firstName",
@@ -1334,14 +1333,14 @@
           "changed": true
         }
       ],
-      "workerId": "100044",
-      "proposedEnable": true,
+      "reviewCategory": "NewUser",
       "targetOu": "OU=LabField,OU=LabUsers,DC=example,DC=com",
       "samAccountName": "sf100044",
+      "workerId": "100044",
+      "proposedEnable": true,
       "matchedExistingUser": false
     },
     {
-      "reviewCategory": "NewUser",
       "attributeRows": [
         {
           "sourceField": "firstName",
@@ -1358,21 +1357,20 @@
           "changed": true
         }
       ],
-      "workerId": "100045",
-      "proposedEnable": true,
+      "reviewCategory": "NewUser",
       "targetOu": "OU=LabIT,OU=LabUsers,DC=example,DC=com",
       "samAccountName": "sf100045",
+      "workerId": "100045",
+      "proposedEnable": true,
       "matchedExistingUser": false
     }
   ],
   "updates": [
     {
-      "targetOu": "OU=LabField,OU=LabUsers,DC=example,DC=com",
-      "samAccountName": "sf100001",
-      "currentEnabled": true,
-      "workerId": "100001",
       "currentDistinguishedName": "CN=Synthetic100001 User,OU=LabField,OU=LabUsers,DC=example,DC=com",
       "proposedEnable": true,
+      "workerId": "100001",
+      "samAccountName": "sf100001",
       "changedAttributeDetails": [
         {
           "sourceField": "department",
@@ -1387,15 +1385,15 @@
           "proposedValue": "Operations"
         }
       ],
+      "currentEnabled": true,
+      "targetOu": "OU=LabField,OU=LabUsers,DC=example,DC=com",
       "matchedExistingUser": true
     },
     {
-      "targetOu": "OU=LabField,OU=LabUsers,DC=example,DC=com",
-      "samAccountName": "sf100002",
-      "currentEnabled": true,
-      "workerId": "100002",
       "currentDistinguishedName": "CN=Synthetic100002 User,OU=LabField,OU=LabUsers,DC=example,DC=com",
       "proposedEnable": true,
+      "workerId": "100002",
+      "samAccountName": "sf100002",
       "changedAttributeDetails": [
         {
           "sourceField": "department",
@@ -1410,15 +1408,15 @@
           "proposedValue": "Operations"
         }
       ],
+      "currentEnabled": true,
+      "targetOu": "OU=LabField,OU=LabUsers,DC=example,DC=com",
       "matchedExistingUser": true
     },
     {
-      "targetOu": "OU=LabField,OU=LabUsers,DC=example,DC=com",
-      "samAccountName": "sf100046",
-      "currentEnabled": true,
-      "workerId": "100046",
       "currentDistinguishedName": "CN=Synthetic100046 User,OU=LabField,OU=LabUsers,DC=example,DC=com",
       "proposedEnable": true,
+      "workerId": "100046",
+      "samAccountName": "sf100046",
       "changedAttributeDetails": [
         {
           "sourceField": "department",
@@ -1433,15 +1431,15 @@
           "proposedValue": "Operations"
         }
       ],
+      "currentEnabled": true,
+      "targetOu": "OU=LabField,OU=LabUsers,DC=example,DC=com",
       "matchedExistingUser": true
     },
     {
-      "targetOu": "OU=LabField,OU=LabUsers,DC=example,DC=com",
-      "samAccountName": "sf100047",
-      "currentEnabled": true,
-      "workerId": "100047",
       "currentDistinguishedName": "CN=Synthetic100047 User,OU=LabField,OU=LabUsers,DC=example,DC=com",
       "proposedEnable": true,
+      "workerId": "100047",
+      "samAccountName": "sf100047",
       "changedAttributeDetails": [
         {
           "sourceField": "department",
@@ -1456,15 +1454,15 @@
           "proposedValue": "Operations"
         }
       ],
+      "currentEnabled": true,
+      "targetOu": "OU=LabField,OU=LabUsers,DC=example,DC=com",
       "matchedExistingUser": true
     },
     {
-      "targetOu": "OU=LabCorp,OU=LabUsers,DC=example,DC=com",
-      "samAccountName": "sf100048",
-      "currentEnabled": true,
-      "workerId": "100048",
       "currentDistinguishedName": "CN=Synthetic100048 User,OU=LabCorp,OU=LabUsers,DC=example,DC=com",
       "proposedEnable": true,
+      "workerId": "100048",
+      "samAccountName": "sf100048",
       "changedAttributeDetails": [
         {
           "sourceField": "department",
@@ -1479,15 +1477,15 @@
           "proposedValue": "Operations"
         }
       ],
+      "currentEnabled": true,
+      "targetOu": "OU=LabCorp,OU=LabUsers,DC=example,DC=com",
       "matchedExistingUser": true
     },
     {
-      "targetOu": "OU=LabField,OU=LabUsers,DC=example,DC=com",
-      "samAccountName": "sf100049",
-      "currentEnabled": true,
-      "workerId": "100049",
       "currentDistinguishedName": "CN=Synthetic100049 User,OU=LabField,OU=LabUsers,DC=example,DC=com",
       "proposedEnable": true,
+      "workerId": "100049",
+      "samAccountName": "sf100049",
       "changedAttributeDetails": [
         {
           "sourceField": "department",
@@ -1502,15 +1500,15 @@
           "proposedValue": "Operations"
         }
       ],
+      "currentEnabled": true,
+      "targetOu": "OU=LabField,OU=LabUsers,DC=example,DC=com",
       "matchedExistingUser": true
     },
     {
-      "targetOu": "OU=LabField,OU=LabUsers,DC=example,DC=com",
-      "samAccountName": "sf100050",
-      "currentEnabled": true,
-      "workerId": "100050",
       "currentDistinguishedName": "CN=Synthetic100050 User,OU=LabField,OU=LabUsers,DC=example,DC=com",
       "proposedEnable": true,
+      "workerId": "100050",
+      "samAccountName": "sf100050",
       "changedAttributeDetails": [
         {
           "sourceField": "department",
@@ -1525,15 +1523,15 @@
           "proposedValue": "Technology"
         }
       ],
+      "currentEnabled": true,
+      "targetOu": "OU=LabField,OU=LabUsers,DC=example,DC=com",
       "matchedExistingUser": true
     },
     {
-      "targetOu": "OU=LabCorp,OU=LabUsers,DC=example,DC=com",
-      "samAccountName": "sf100051",
-      "currentEnabled": true,
-      "workerId": "100051",
       "currentDistinguishedName": "CN=Synthetic100051 User,OU=LabCorp,OU=LabUsers,DC=example,DC=com",
       "proposedEnable": true,
+      "workerId": "100051",
+      "samAccountName": "sf100051",
       "changedAttributeDetails": [
         {
           "sourceField": "department",
@@ -1548,15 +1546,15 @@
           "proposedValue": "Operations"
         }
       ],
+      "currentEnabled": true,
+      "targetOu": "OU=LabCorp,OU=LabUsers,DC=example,DC=com",
       "matchedExistingUser": true
     },
     {
-      "targetOu": "OU=LabField,OU=LabUsers,DC=example,DC=com",
-      "samAccountName": "sf100052",
-      "currentEnabled": true,
-      "workerId": "100052",
       "currentDistinguishedName": "CN=Synthetic100052 User,OU=LabField,OU=LabUsers,DC=example,DC=com",
       "proposedEnable": true,
+      "workerId": "100052",
+      "samAccountName": "sf100052",
       "changedAttributeDetails": [
         {
           "sourceField": "department",
@@ -1571,15 +1569,15 @@
           "proposedValue": "Operations"
         }
       ],
+      "currentEnabled": true,
+      "targetOu": "OU=LabField,OU=LabUsers,DC=example,DC=com",
       "matchedExistingUser": true
     },
     {
-      "targetOu": "OU=LabField,OU=LabUsers,DC=example,DC=com",
-      "samAccountName": "sf100053",
-      "currentEnabled": true,
-      "workerId": "100053",
       "currentDistinguishedName": "CN=Synthetic100053 User,OU=LabField,OU=LabUsers,DC=example,DC=com",
       "proposedEnable": true,
+      "workerId": "100053",
+      "samAccountName": "sf100053",
       "changedAttributeDetails": [
         {
           "sourceField": "department",
@@ -1594,63 +1592,65 @@
           "proposedValue": "Operations"
         }
       ],
+      "currentEnabled": true,
+      "targetOu": "OU=LabField,OU=LabUsers,DC=example,DC=com",
       "matchedExistingUser": true
     }
   ],
   "enables": [
     {
-      "currentEnabled": false,
-      "samAccountName": "sf100054",
       "workerId": "100054",
       "proposedEnable": true,
       "licensingGroups": [
         "CN=Lab-M365,OU=Groups,DC=example,DC=com"
-      ]
+      ],
+      "samAccountName": "sf100054",
+      "currentEnabled": false
     },
     {
-      "currentEnabled": false,
-      "samAccountName": "sf100055",
       "workerId": "100055",
       "proposedEnable": true,
       "licensingGroups": [
         "CN=Lab-M365,OU=Groups,DC=example,DC=com"
-      ]
+      ],
+      "samAccountName": "sf100055",
+      "currentEnabled": false
     },
     {
-      "currentEnabled": false,
-      "samAccountName": "sf100056",
       "workerId": "100056",
       "proposedEnable": true,
       "licensingGroups": [
         "CN=Lab-M365,OU=Groups,DC=example,DC=com"
-      ]
+      ],
+      "samAccountName": "sf100056",
+      "currentEnabled": false
     },
     {
-      "currentEnabled": false,
-      "samAccountName": "sf100057",
       "workerId": "100057",
       "proposedEnable": true,
       "licensingGroups": [
         "CN=Lab-M365,OU=Groups,DC=example,DC=com"
-      ]
+      ],
+      "samAccountName": "sf100057",
+      "currentEnabled": false
     },
     {
-      "currentEnabled": false,
-      "samAccountName": "sf100058",
       "workerId": "100058",
       "proposedEnable": true,
       "licensingGroups": [
         "CN=Lab-M365,OU=Groups,DC=example,DC=com"
-      ]
+      ],
+      "samAccountName": "sf100058",
+      "currentEnabled": false
     },
     {
-      "currentEnabled": false,
-      "samAccountName": "sf100059",
       "workerId": "100059",
       "proposedEnable": true,
       "licensingGroups": [
         "CN=Lab-M365,OU=Groups,DC=example,DC=com"
-      ]
+      ],
+      "samAccountName": "sf100059",
+      "currentEnabled": false
     }
   ],
   "disables": [],
@@ -1663,170 +1663,170 @@
   "unchanged": [
     {
       "proposedEnable": true,
-      "currentEnabled": true,
+      "samAccountName": "sf100000",
       "workerId": "100000",
       "currentDistinguishedName": "CN=Synthetic100000 User,OU=LabIT,OU=LabUsers,DC=example,DC=com",
-      "samAccountName": "sf100000",
+      "currentEnabled": true,
       "matchedExistingUser": true
     },
     {
       "proposedEnable": true,
-      "currentEnabled": true,
+      "samAccountName": "sf100001",
       "workerId": "100001",
       "currentDistinguishedName": "CN=Synthetic100001 User,OU=LabField,OU=LabUsers,DC=example,DC=com",
-      "samAccountName": "sf100001",
+      "currentEnabled": true,
       "matchedExistingUser": true
     },
     {
       "proposedEnable": true,
-      "currentEnabled": true,
+      "samAccountName": "sf100002",
       "workerId": "100002",
       "currentDistinguishedName": "CN=Synthetic100002 User,OU=LabField,OU=LabUsers,DC=example,DC=com",
-      "samAccountName": "sf100002",
+      "currentEnabled": true,
       "matchedExistingUser": true
     },
     {
       "proposedEnable": true,
-      "currentEnabled": true,
+      "samAccountName": "sf100003",
       "workerId": "100003",
       "currentDistinguishedName": "CN=Synthetic100003 User,OU=LabCorp,OU=LabUsers,DC=example,DC=com",
-      "samAccountName": "sf100003",
+      "currentEnabled": true,
       "matchedExistingUser": true
     },
     {
       "proposedEnable": true,
-      "currentEnabled": true,
+      "samAccountName": "sf100004",
       "workerId": "100004",
       "currentDistinguishedName": "CN=Synthetic100004 User,OU=LabField,OU=LabUsers,DC=example,DC=com",
-      "samAccountName": "sf100004",
+      "currentEnabled": true,
       "matchedExistingUser": true
     },
     {
       "proposedEnable": true,
-      "currentEnabled": true,
+      "samAccountName": "sf100005",
       "workerId": "100005",
       "currentDistinguishedName": "CN=Synthetic100005 User,OU=LabField,OU=LabUsers,DC=example,DC=com",
-      "samAccountName": "sf100005",
+      "currentEnabled": true,
       "matchedExistingUser": true
     },
     {
       "proposedEnable": true,
-      "currentEnabled": true,
+      "samAccountName": "sf100006",
       "workerId": "100006",
       "currentDistinguishedName": "CN=Synthetic100006 User,OU=LabCorp,OU=LabUsers,DC=example,DC=com",
-      "samAccountName": "sf100006",
+      "currentEnabled": true,
       "matchedExistingUser": true
     },
     {
       "proposedEnable": true,
-      "currentEnabled": true,
+      "samAccountName": "sf100007",
       "workerId": "100007",
       "currentDistinguishedName": "CN=Synthetic100007 User,OU=LabField,OU=LabUsers,DC=example,DC=com",
-      "samAccountName": "sf100007",
+      "currentEnabled": true,
       "matchedExistingUser": true
     },
     {
       "proposedEnable": true,
-      "currentEnabled": true,
+      "samAccountName": "sf100008",
       "workerId": "100008",
       "currentDistinguishedName": "CN=Synthetic100008 User,OU=LabField,OU=LabUsers,DC=example,DC=com",
-      "samAccountName": "sf100008",
+      "currentEnabled": true,
       "matchedExistingUser": true
     },
     {
       "proposedEnable": true,
-      "currentEnabled": true,
+      "samAccountName": "sf100009",
       "workerId": "100009",
       "currentDistinguishedName": "CN=Synthetic100009 User,OU=LabCorp,OU=LabUsers,DC=example,DC=com",
-      "samAccountName": "sf100009",
+      "currentEnabled": true,
       "matchedExistingUser": true
     },
     {
       "proposedEnable": true,
-      "currentEnabled": true,
+      "samAccountName": "sf100010",
       "workerId": "100010",
       "currentDistinguishedName": "CN=Synthetic100010 User,OU=LabField,OU=LabUsers,DC=example,DC=com",
-      "samAccountName": "sf100010",
+      "currentEnabled": true,
       "matchedExistingUser": true
     },
     {
       "proposedEnable": true,
-      "currentEnabled": true,
+      "samAccountName": "sf100011",
       "workerId": "100011",
       "currentDistinguishedName": "CN=Synthetic100011 User,OU=LabField,OU=LabUsers,DC=example,DC=com",
-      "samAccountName": "sf100011",
+      "currentEnabled": true,
       "matchedExistingUser": true
     },
     {
       "proposedEnable": true,
-      "currentEnabled": true,
+      "samAccountName": "sf100012",
       "workerId": "100012",
       "currentDistinguishedName": "CN=Synthetic100012 User,OU=LabCorp,OU=LabUsers,DC=example,DC=com",
-      "samAccountName": "sf100012",
+      "currentEnabled": true,
       "matchedExistingUser": true
     },
     {
       "proposedEnable": true,
-      "currentEnabled": true,
+      "samAccountName": "sf100013",
       "workerId": "100013",
       "currentDistinguishedName": "CN=Synthetic100013 User,OU=LabField,OU=LabUsers,DC=example,DC=com",
-      "samAccountName": "sf100013",
+      "currentEnabled": true,
       "matchedExistingUser": true
     },
     {
       "proposedEnable": true,
-      "currentEnabled": true,
+      "samAccountName": "sf100014",
       "workerId": "100014",
       "currentDistinguishedName": "CN=Synthetic100014 User,OU=LabField,OU=LabUsers,DC=example,DC=com",
-      "samAccountName": "sf100014",
+      "currentEnabled": true,
       "matchedExistingUser": true
     },
     {
       "proposedEnable": true,
-      "currentEnabled": true,
+      "samAccountName": "sf100015",
       "workerId": "100015",
       "currentDistinguishedName": "CN=Synthetic100015 User,OU=LabIT,OU=LabUsers,DC=example,DC=com",
-      "samAccountName": "sf100015",
+      "currentEnabled": true,
       "matchedExistingUser": true
     },
     {
       "proposedEnable": true,
-      "currentEnabled": true,
+      "samAccountName": "sf100016",
       "workerId": "100016",
       "currentDistinguishedName": "CN=Synthetic100016 User,OU=LabField,OU=LabUsers,DC=example,DC=com",
-      "samAccountName": "sf100016",
+      "currentEnabled": true,
       "matchedExistingUser": true
     },
     {
       "proposedEnable": true,
-      "currentEnabled": true,
+      "samAccountName": "sf100017",
       "workerId": "100017",
       "currentDistinguishedName": "CN=Synthetic100017 User,OU=LabField,OU=LabUsers,DC=example,DC=com",
-      "samAccountName": "sf100017",
+      "currentEnabled": true,
       "matchedExistingUser": true
     },
     {
       "proposedEnable": true,
-      "currentEnabled": true,
+      "samAccountName": "sf100018",
       "workerId": "100018",
       "currentDistinguishedName": "CN=Synthetic100018 User,OU=LabCorp,OU=LabUsers,DC=example,DC=com",
-      "samAccountName": "sf100018",
+      "currentEnabled": true,
       "matchedExistingUser": true
     },
     {
       "proposedEnable": true,
-      "currentEnabled": true,
+      "samAccountName": "sf100019",
       "workerId": "100019",
       "currentDistinguishedName": "CN=Synthetic100019 User,OU=LabField,OU=LabUsers,DC=example,DC=com",
-      "samAccountName": "sf100019",
+      "currentEnabled": true,
       "matchedExistingUser": true
     },
     {
       "proposedEnable": true,
-      "currentEnabled": true,
+      "samAccountName": "sf100020",
       "workerId": "100020",
       "currentDistinguishedName": "CN=Synthetic100020 User,OU=LabField,OU=LabUsers,DC=example,DC=com",
-      "samAccountName": "sf100020",
+      "currentEnabled": true,
       "matchedExistingUser": true
     }
   ]

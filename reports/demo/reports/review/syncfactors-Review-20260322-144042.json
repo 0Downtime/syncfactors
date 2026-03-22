@@ -1,6 +1,6 @@
 {
-  "runId": "6fb4e1fe-3062-43f4-bf39-1645aa5616bd",
-  "startedAt": "2026-03-22T14:15:05.6547600-04:00",
+  "runId": "18ed722d-1a48-436d-bc9b-32226dc96085",
+  "startedAt": "2026-03-22T14:34:42.4176790-04:00",
   "status": "Succeeded",
   "mode": "Review",
   "artifactType": "WorkerPreview",
@@ -12,7 +12,7 @@
     "identityField": "personIdExternal",
     "workerId": "100002"
   },
-  "completedAt": "2026-03-22T14:21:05.6547600-04:00",
+  "completedAt": "2026-03-22T14:40:42.4176790-04:00",
   "failedAt": null,
   "errorMessage": null,
   "reviewSummary": {
@@ -25,9 +25,9 @@
   },
   "operations": [
     {
-      "operationId": "6fb4e1fe-3062-43f4-bf39-1645aa5616bd-0001",
+      "operationId": "18ed722d-1a48-436d-bc9b-32226dc96085-0001",
       "sequence": 1,
-      "timestamp": "2026-03-22T15:41:05.7171830-04:00",
+      "timestamp": "2026-03-22T16:00:42.4714660-04:00",
       "operationType": "UpdateAttributes",
       "workerId": "100002",
       "bucket": "updates",
@@ -50,6 +50,9 @@
   "creates": [],
   "updates": [
     {
+      "currentDistinguishedName": "CN=Synthetic100002 User,OU=LabField,OU=LabUsers,DC=example,DC=com",
+      "reviewCaseType": "RehireCase",
+      "proposedEnable": true,
       "operatorActions": [
         {
           "code": "ConfirmAccountReuse",
@@ -62,15 +65,8 @@
           "description": "Restore the worker's previous licensing and security groups after review."
         }
       ],
-      "operatorActionSummary": "Confirm how this rehire should reuse or restore the existing AD identity.",
-      "targetOu": "OU=LabField,OU=LabUsers,DC=example,DC=com",
-      "reviewCaseType": "RehireCase",
-      "samAccountName": "sf100002",
-      "currentEnabled": true,
       "workerId": "100002",
-      "reviewCategory": "ExistingUserChanges",
-      "currentDistinguishedName": "CN=Synthetic100002 User,OU=LabField,OU=LabUsers,DC=example,DC=com",
-      "proposedEnable": true,
+      "samAccountName": "sf100002",
       "changedAttributeDetails": [
         {
           "sourceField": "status",
@@ -85,7 +81,11 @@
           "proposedValue": "Operations"
         }
       ],
-      "matchedExistingUser": true
+      "currentEnabled": true,
+      "targetOu": "OU=LabField,OU=LabUsers,DC=example,DC=com",
+      "reviewCategory": "ExistingUserChanges",
+      "matchedExistingUser": true,
+      "operatorActionSummary": "Confirm how this rehire should reuse or restore the existing AD identity."
     }
   ],
   "enables": [],
