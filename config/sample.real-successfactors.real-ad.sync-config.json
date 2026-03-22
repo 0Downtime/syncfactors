@@ -88,6 +88,14 @@
     "maxDisablesPerRun": 25,
     "maxDeletionsPerRun": 10
   },
+  "approval": {
+    "enabled": false,
+    "requireFor": [
+      "DisableUser",
+      "DeleteUser",
+      "MoveToGraveyardOu"
+    ]
+  },
   "state": {
     "path": ".\\state\\runtime\\sync-state.json"
   },

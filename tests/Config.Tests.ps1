@@ -188,6 +188,98 @@ Describe 'Get-SyncFactorsConfig' {
         }
     }
 
+    It 'accepts approval config with supported high-risk actions' {
+        $configPath = Join-Path $TestDrive 'sync-config-approval.json'
+        @'
+{
+  "successFactors": {
+    "baseUrl": "https://example.successfactors.com/odata/v2",
+    "oauth": {
+      "tokenUrl": "https://example.successfactors.com/oauth/token",
+      "clientId": "client-id",
+      "clientSecret": "client-secret"
+    },
+    "query": {
+      "entitySet": "PerPerson",
+      "identityField": "personIdExternal",
+      "deltaField": "lastModifiedDateTime",
+      "select": [ "personIdExternal" ],
+      "expand": [ "employmentNav" ]
+    }
+  },
+  "ad": {
+    "identityAttribute": "employeeID",
+    "defaultActiveOu": "OU=Employees,DC=example,DC=com",
+    "graveyardOu": "OU=Graveyard,DC=example,DC=com",
+    "defaultPassword": "config-password"
+  },
+  "approval": {
+    "enabled": true,
+    "requireFor": [ "DisableUser", "DeleteUser", "MoveToGraveyardOu" ]
+  },
+  "sync": {
+    "enableBeforeStartDays": 7,
+    "deletionRetentionDays": 90
+  },
+  "state": {
+    "path": ".\\state\\sync-state.json"
+  },
+  "reporting": {
+    "outputDirectory": ".\\reports\\output"
+  }
+}
+'@ | Set-Content -Path $configPath
+
+        $config = Get-SyncFactorsConfig -Path $configPath
+        $config.approval.enabled | Should -BeTrue
+        $config.approval.requireFor | Should -Be @('DisableUser', 'DeleteUser', 'MoveToGraveyardOu')
+    }
+
+    It 'rejects unsupported approval actions' {
+        $configPath = Join-Path $TestDrive 'sync-config-invalid-approval.json'
+        @'
+{
+  "successFactors": {
+    "baseUrl": "https://example.successfactors.com/odata/v2",
+    "oauth": {
+      "tokenUrl": "https://example.successfactors.com/oauth/token",
+      "clientId": "client-id",
+      "clientSecret": "client-secret"
+    },
+    "query": {
+      "entitySet": "PerPerson",
+      "identityField": "personIdExternal",
+      "deltaField": "lastModifiedDateTime",
+      "select": [ "personIdExternal" ],
+      "expand": [ "employmentNav" ]
+    }
+  },
+  "ad": {
+    "identityAttribute": "employeeID",
+    "defaultActiveOu": "OU=Employees,DC=example,DC=com",
+    "graveyardOu": "OU=Graveyard,DC=example,DC=com",
+    "defaultPassword": "config-password"
+  },
+  "approval": {
+    "enabled": true,
+    "requireFor": [ "DisableUser", "FreezeUser" ]
+  },
+  "sync": {
+    "enableBeforeStartDays": 7,
+    "deletionRetentionDays": 90
+  },
+  "state": {
+    "path": ".\\state\\sync-state.json"
+  },
+  "reporting": {
+    "outputDirectory": ".\\reports\\output"
+  }
+}
+'@ | Set-Content -Path $configPath
+
+        { Get-SyncFactorsConfig -Path $configPath } | Should -Throw "*unsupported action 'FreezeUser'*"
+    }
+
     It 'ignores blank environment variable secrets and keeps configured values' {
         $configPath = Join-Path $TestDrive 'sync-config-blank-env.json'
         @'

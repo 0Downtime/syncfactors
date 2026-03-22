@@ -318,7 +318,8 @@ function Get-SyncFactorsManualReviewMetadata {
         [string]$ManagerEmployeeId,
         [AllowNull()]
         [string[]]$Fields,
-        [string]$DistinguishedName
+        [string]$DistinguishedName,
+        [string[]]$ApprovalActions
     )
 
     $actions = [System.Collections.Generic.List[object]]::new()
@@ -337,6 +338,21 @@ function Get-SyncFactorsManualReviewMetadata {
             $actions.Add((New-SyncFactorsOperatorAction -Code 'RestoreOrUnsuppress' -Label 'Restore or unsuppress account' -Description 'Restore the existing AD account from suppression or pending deletion before continuing lifecycle changes.'))
             $actions.Add((New-SyncFactorsOperatorAction -Code 'RerunWorkerSync' -Label 'Rerun worker sync' -Description 'Run the worker preview or worker sync again after the rehire decision is recorded.'))
         }
+        'ApprovalRequired' {
+            $approvalLabels = @($ApprovalActions | Where-Object { -not [string]::IsNullOrWhiteSpace("$_") } | ForEach-Object {
+                switch ("$_") {
+                    'DisableUser' { 'disable the account' }
+                    'DeleteUser' { 'delete the account' }
+                    'MoveToGraveyardOu' { 'move the account to the graveyard OU' }
+                    default { "$_" }
+                }
+            })
+            $actionSummary = if ($approvalLabels.Count -gt 0) { $approvalLabels -join ', ' } else { 'apply the pending lifecycle change' }
+            $operatorActionSummary = "Approve or reject the request to $actionSummary."
+            $actions.Add((New-SyncFactorsOperatorAction -Code 'ReviewPendingLifecycleChange' -Label 'Review pending change' -Description 'Inspect the worker history, mapped attributes, and existing AD account state before approving the pending lifecycle action.'))
+            $actions.Add((New-SyncFactorsOperatorAction -Code 'RunWorkerPreview' -Label 'Run worker preview' -Description 'Run a one-worker preview to confirm the exact lifecycle effect and supporting mapping details.'))
+            $actions.Add((New-SyncFactorsOperatorAction -Code 'RunApprovedWorkerSync' -Label 'Run approved worker sync' -Description 'After approval, run the scoped one-worker sync to apply the change outside the broad sync batch.'))
+        }
         default {
             $fieldList = @($Fields | Where-Object { -not [string]::IsNullOrWhiteSpace("$_") })
             $operatorActionSummary = 'Fix the worker data issue before allowing this record back into the normal sync flow.'
@@ -351,6 +367,95 @@ function Get-SyncFactorsManualReviewMetadata {
         operatorActionSummary = $operatorActionSummary
         operatorActions = @($actions)
     }
+}
+
+function Get-SyncFactorsRequiredApprovalActions {
+    [CmdletBinding()]
+    param(
+        [pscustomobject]$Config
+    )
+
+    $approvalProperty = $Config.PSObject.Properties['approval']
+    if (-not $approvalProperty -or $null -eq $approvalProperty.Value) {
+        return @()
+    }
+
+    $approval = $approvalProperty.Value
+    $enabledProperty = $approval.PSObject.Properties['enabled']
+    $enabled = $enabledProperty -and [bool]$enabledProperty.Value
+    if (-not $enabled) {
+        return @()
+    }
+
+    $configuredActions = @()
+    if ($approval.PSObject.Properties['requireFor']) {
+        $configuredActions = @($approval.requireFor | Where-Object { -not [string]::IsNullOrWhiteSpace("$_") } | ForEach-Object { "$_" })
+    }
+
+    if ($configuredActions.Count -eq 0) {
+        return @('DisableUser', 'DeleteUser', 'MoveToGraveyardOu')
+    }
+
+    return @($configuredActions | Select-Object -Unique)
+}
+
+function Test-SyncFactorsApprovalRequired {
+    [CmdletBinding()]
+    param(
+        [pscustomobject]$Config,
+        [Parameter(Mandatory)]
+        [string]$Action,
+        [switch]$BypassApprovalMode
+    )
+
+    if ($BypassApprovalMode) {
+        return $false
+    }
+
+    return @((Get-SyncFactorsRequiredApprovalActions -Config $Config)) -contains $Action
+}
+
+function Add-SyncFactorsApprovalManualReviewEntry {
+    [CmdletBinding()]
+    param(
+        [pscustomobject]$Config,
+        [System.Collections.IDictionary]$Report,
+        [Parameter(Mandatory)]
+        [string]$WorkerId,
+        [Parameter(Mandatory)]
+        [string[]]$ApprovalActions,
+        [AllowNull()]
+        [pscustomobject]$User,
+        [string]$Reason = 'ApprovalRequired',
+        [string]$TargetOu,
+        [bool]$MatchedExistingUser = $true
+    )
+
+    $entry = @{
+        workerId = $WorkerId
+        reason = $Reason
+        approvalActions = @($ApprovalActions | Select-Object -Unique)
+        matchedExistingUser = [bool]$MatchedExistingUser
+    }
+
+    if ($User) {
+        $entry['samAccountName'] = $User.SamAccountName
+        $entry['currentDistinguishedName'] = $User.DistinguishedName
+        $entry['currentEnabled'] = [bool]$User.Enabled
+        if ($User.DistinguishedName) {
+            $entry['distinguishedName'] = $User.DistinguishedName
+        }
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($TargetOu)) {
+        $entry['targetOu'] = $TargetOu
+    }
+
+    foreach ($property in (Get-SyncFactorsManualReviewMetadata -ReviewCaseType 'ApprovalRequired' -Reason $Reason -ApprovalActions $ApprovalActions -DistinguishedName $(if ($User) { $User.DistinguishedName } else { $null })).GetEnumerator()) {
+        $entry[$property.Key] = $property.Value
+    }
+
+    Add-SyncFactorsReportEntry -Report $Report -Bucket 'manualReview' -Entry $entry
 }
 
 function Get-SyncFactorsReportOutputDirectory {
@@ -558,11 +663,27 @@ function Invoke-SyncFactorsOffboarding {
         [pscustomobject]$State,
         [System.Collections.IDictionary]$Report,
         [switch]$DryRun,
-        [switch]$ReviewMode
+        [switch]$ReviewMode,
+        [switch]$BypassApprovalMode
     )
 
     $workerId = Get-SyncFactorsWorkerIdentityValue -Worker $Worker -Config $Config
     $userTarget = Get-SyncFactorsUserTargetDescriptor -WorkerId $workerId -User $User
+    $approvalActions = [System.Collections.Generic.List[string]]::new()
+    if (Test-SyncFactorsApprovalRequired -Config $Config -Action 'DisableUser' -BypassApprovalMode:$BypassApprovalMode) {
+        $approvalActions.Add('DisableUser')
+    }
+    if (
+        $User.DistinguishedName -notlike "*$($Config.ad.graveyardOu)" -and
+        (Test-SyncFactorsApprovalRequired -Config $Config -Action 'MoveToGraveyardOu' -BypassApprovalMode:$BypassApprovalMode)
+    ) {
+        $approvalActions.Add('MoveToGraveyardOu')
+    }
+
+    if (-not $DryRun -and -not $ReviewMode -and $approvalActions.Count -gt 0) {
+        Add-SyncFactorsApprovalManualReviewEntry -Config $Config -Report $Report -WorkerId $workerId -ApprovalActions @($approvalActions) -User $User -TargetOu $Config.ad.graveyardOu
+        return 'ApprovalQueued'
+    }
 
     Assert-SyncFactorsSafetyThreshold -Config $Config -Report $Report -ThresholdName 'maxDisablesPerRun' -CurrentCount @($Report.disables).Count -Entry @{
         workerId = $workerId
@@ -612,6 +733,8 @@ function Invoke-SyncFactorsOffboarding {
             lastSeenStatus = Get-SyncFactorsWorkerStatusValue -Worker $Worker
         })
     }
+
+    return 'Applied'
 }
 
 function Invoke-SyncFactorsDeletionPass {
@@ -621,7 +744,8 @@ function Invoke-SyncFactorsDeletionPass {
         [pscustomobject]$State,
         [System.Collections.IDictionary]$Report,
         [switch]$DryRun,
-        [switch]$ReviewMode
+        [switch]$ReviewMode,
+        [switch]$BypassApprovalMode
     )
 
     if ($ReviewMode) {
@@ -664,6 +788,11 @@ function Invoke-SyncFactorsDeletionPass {
                 $manualReviewEntry[$propertyMetadata.Key] = $propertyMetadata.Value
             }
             Add-SyncFactorsReportEntry -Report $Report -Bucket 'manualReview' -Entry $manualReviewEntry
+            continue
+        }
+
+        if (Test-SyncFactorsApprovalRequired -Config $Config -Action 'DeleteUser' -BypassApprovalMode:$BypassApprovalMode) {
+            Add-SyncFactorsApprovalManualReviewEntry -Config $Config -Report $Report -WorkerId $property.Name -ApprovalActions @('DeleteUser') -User $user
             continue
         }
 
@@ -716,7 +845,8 @@ function Invoke-SyncFactorsRun {
         [ValidateSet('Delta','Full','Review')]
         [string]$Mode = 'Delta',
         [switch]$DryRun,
-        [string]$WorkerId
+        [string]$WorkerId,
+        [switch]$BypassApprovalMode
     )
 
     if (-not [string]::IsNullOrWhiteSpace($WorkerId) -and $Mode -notin @('Full', 'Review')) {
@@ -853,8 +983,12 @@ function Invoke-SyncFactorsRun {
 
                 if (-not (Test-SyncFactorsWorkerIsActive -Worker $worker)) {
                     if ($existingUser) {
-                        Invoke-SyncFactorsOffboarding -Config $config -User $existingUser -Worker $worker -State $state -Report $report -DryRun:$effectiveDryRun -ReviewMode:$isReviewMode
-                        $lastAction = "Offboarded inactive worker $workerId."
+                        $offboardingResult = Invoke-SyncFactorsOffboarding -Config $config -User $existingUser -Worker $worker -State $state -Report $report -DryRun:$effectiveDryRun -ReviewMode:$isReviewMode -BypassApprovalMode:$BypassApprovalMode
+                        $lastAction = if ("$offboardingResult" -eq 'ApprovalQueued') {
+                            "Queued offboarding approval for $workerId."
+                        } else {
+                            "Offboarded inactive worker $workerId."
+                        }
                     } else {
                         $lastAction = "Skipped inactive worker $workerId with no matching AD user."
                     }
@@ -1077,7 +1211,7 @@ function Invoke-SyncFactorsRun {
 
         if (-not $isReviewMode) {
             Update-SyncFactorsRuntimeStatus -Report $report -StatePath $config.state.path -Stage 'DeletionPass' -ProcessedWorkers $processedWorkers -TotalWorkers $totalWorkers -LastAction 'Running deletion pass.'
-            Invoke-SyncFactorsDeletionPass -Config $config -State $state -Report $report -DryRun:$effectiveDryRun -ReviewMode:$isReviewMode
+            Invoke-SyncFactorsDeletionPass -Config $config -State $state -Report $report -DryRun:$effectiveDryRun -ReviewMode:$isReviewMode -BypassApprovalMode:$BypassApprovalMode
         }
 
         Update-SyncFactorsRuntimeStatus -Report $report -StatePath $config.state.path -Stage 'SavingState' -ProcessedWorkers $processedWorkers -TotalWorkers $totalWorkers -LastAction 'Persisting checkpoint and state.'
