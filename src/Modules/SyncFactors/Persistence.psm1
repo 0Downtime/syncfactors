@@ -236,11 +236,12 @@ function Invoke-SyncFactorsSqliteCommand {
     if ($AsJson) {
         $arguments += '-json'
     }
-    $arguments += @($DatabasePath, $Sql)
+    $arguments += $DatabasePath
 
     $startInfo = [System.Diagnostics.ProcessStartInfo]::new()
     $startInfo.FileName = $sqlitePath
     $startInfo.UseShellExecute = $false
+    $startInfo.RedirectStandardInput = $true
     $startInfo.RedirectStandardOutput = $true
     $startInfo.RedirectStandardError = $true
     $startInfo.CreateNoWindow = $true
@@ -258,6 +259,8 @@ function Invoke-SyncFactorsSqliteCommand {
 
     try {
         [void]$process.Start()
+        $process.StandardInput.WriteLine($Sql)
+        $process.StandardInput.Close()
         $stdout = $process.StandardOutput.ReadToEnd()
         $stderr = $process.StandardError.ReadToEnd()
         $process.WaitForExit()
