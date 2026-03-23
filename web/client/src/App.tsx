@@ -62,6 +62,35 @@ type PendingConfirmation =
 const THEME_STORAGE_KEY = 'syncfactors-theme';
 const NON_WINDOWS_AD_WARNING = 'Active Directory health probe is skipped on non-Windows hosts for the web dashboard.';
 
+function createPendingCurrentRun(action: OperatorActionKind, message: string): Record<string, unknown> {
+  const mode = action.startsWith('full') ? 'Full' : action.startsWith('delta') ? 'Delta' : 'Review';
+  return {
+    runId: null,
+    status: 'InProgress',
+    stage: 'Launching',
+    mode,
+    dryRun: action.endsWith('dry-run') || action === 'review-run',
+    startedAt: new Date().toISOString(),
+    completedAt: null,
+    currentWorkerId: null,
+    lastAction: message,
+    processedWorkers: 0,
+    totalWorkers: 0,
+    creates: 0,
+    updates: 0,
+    enables: 0,
+    disables: 0,
+    graveyardMoves: 0,
+    deletions: 0,
+    quarantined: 0,
+    conflicts: 0,
+    guardrailFailures: 0,
+    manualReview: 0,
+    unchanged: 0,
+    errorMessage: null,
+  };
+}
+
 export function App() {
   const [status, setStatus] = useState<DashboardStatus | null>(null);
   const [route, setRoute] = useState<RouteState>(() => getRouteState());
@@ -712,6 +741,10 @@ export function App() {
       recordCommandResult(result);
       if (result.runId) {
         navigateTo({ ...route, view: 'report', runId: result.runId, entryId: null }, false);
+      }
+      if (result.started && !result.completed) {
+        setStatus((current) => current ? { ...current, currentRun: createPendingCurrentRun(action, result.message) } : current);
+        return;
       }
       await refreshAfterAction();
     } catch (actionError) {
