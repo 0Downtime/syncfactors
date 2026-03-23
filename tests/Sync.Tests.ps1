@@ -176,6 +176,28 @@ Describe 'Invoke-SyncFactorsRun' {
         }
     }
 
+    It 'prefers employment status over top-level status when determining whether a worker is active' {
+        InModuleScope Sync {
+            $worker = [pscustomobject]@{
+                personIdExternal = '1001'
+                status = 'inactive'
+                employmentNav = @(
+                    [pscustomobject]@{
+                        startDate = (Get-Date).ToString('o')
+                        jobInfoNav = @(
+                            [pscustomobject]@{
+                                emplStatus = 'A'
+                            }
+                        )
+                    }
+                )
+            }
+
+            (Get-SyncFactorsWorkerStatusValue -Worker $worker) | Should -Be 'A'
+            (Test-SyncFactorsWorkerIsActive -Worker $worker) | Should -BeTrue
+        }
+    }
+
     It 'records disable and move operations for offboarding' {
         InModuleScope Sync {
             $user = [pscustomobject]@{
