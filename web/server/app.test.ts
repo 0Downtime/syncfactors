@@ -1,6 +1,6 @@
 import request from 'supertest';
 import { describe, expect, it, vi } from 'vitest';
-import { createApp, createMockStatusProvider, extractFirstJsonPayload } from './app.js';
+import { createApp, createMockStatusProvider, extractFirstJsonPayload, normalizeWorkerPreview } from './app.js';
 import { ReportService } from './report-service.js';
 
 const dashboardStatus = {
@@ -129,5 +129,48 @@ describe('web api', () => {
       workerId: '1001',
       mappingConfigPath: '/tmp/mapping.json',
     }));
+  });
+
+  it('uses preview entry attribute rows when changedAttributes is empty', () => {
+    const preview = normalizeWorkerPreview('full', {
+      reportPath: '/tmp/preview.json',
+      runId: 'preview-1',
+      mode: 'Review',
+      status: 'Succeeded',
+      artifactType: 'WorkerPreview',
+      changedAttributes: [],
+      operations: [],
+      preview: {
+        workerId: '1001',
+        buckets: ['disables'],
+      },
+      entries: [
+        {
+          bucket: 'disables',
+          item: {
+            workerId: '1001',
+            attributeRows: [
+              {
+                sourceField: 'status',
+                targetAttribute: 'enabled',
+                currentAdValue: 'unable',
+                proposedValue: 'disabled',
+                changed: true,
+              },
+            ],
+          },
+        },
+      ],
+    });
+
+    expect(preview.diffRows).toEqual([
+      {
+        attribute: 'enabled',
+        source: 'status',
+        before: 'unable',
+        after: 'disabled',
+        changed: true,
+      },
+    ]);
   });
 });

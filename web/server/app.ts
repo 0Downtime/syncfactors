@@ -888,9 +888,15 @@ function buildRunActionCommand(args: {
   }
 }
 
-function normalizeWorkerPreview(previewMode: WorkerPreviewMode, parsed: Record<string, unknown>): WorkerPreviewResponse {
+export function normalizeWorkerPreview(previewMode: WorkerPreviewMode, parsed: Record<string, unknown>): WorkerPreviewResponse {
   const operations = asRecordArray(parsed.operations);
   const changedAttributes = asRecordArray(parsed.changedAttributes);
+  const entries = Array.isArray(parsed.entries)
+    ? parsed.entries.map((entry) => ({
+      bucket: asNullableString(asRecord(entry).bucket) ?? 'unknown',
+      item: asRecord(asRecord(entry).item),
+    }))
+    : [];
   const diffRows = changedAttributes.length > 0
     ? changedAttributes
       .map((row) => ({
@@ -901,7 +907,7 @@ function normalizeWorkerPreview(previewMode: WorkerPreviewMode, parsed: Record<s
         changed: inlineValue(row.currentAdValue) !== inlineValue(row.proposedValue),
       }))
       .filter((row) => row.changed)
-    : getDiffRowsFromOperations(operations);
+    : getDiffRowsFromPreviewEntries(entries, operations);
 
   return {
     reportPath: asNullableString(parsed.reportPath),
@@ -936,15 +942,44 @@ function normalizeWorkerPreview(previewMode: WorkerPreviewMode, parsed: Record<s
     },
     diffRows,
     operationSummary: summarizePreviewOperation(operations),
-    entries: Array.isArray(parsed.entries)
-      ? parsed.entries.map((entry) => ({
-        bucket: asNullableString(asRecord(entry).bucket) ?? 'unknown',
-        item: asRecord(asRecord(entry).item),
-      }))
-      : [],
+    entries,
     rawWorker: parsed.rawWorker && typeof parsed.rawWorker === 'object' ? asRecord(parsed.rawWorker) : null,
     rawPropertyNames: asStringArray(parsed.rawPropertyNames),
   };
+}
+
+function getDiffRowsFromPreviewEntries(
+  entries: Array<{ bucket: string; item: Record<string, unknown> }>,
+  operations: Record<string, unknown>[],
+): DiffRow[] {
+  for (const entry of entries) {
+    const changedRows = asRecordArray(entry.item.changedAttributeDetails)
+      .map((row) => ({
+        attribute: asNullableString(row.targetAttribute) ?? 'attribute',
+        source: asNullableString(row.sourceField),
+        before: inlineValue(row.currentAdValue),
+        after: inlineValue(row.proposedValue),
+        changed: inlineValue(row.currentAdValue) !== inlineValue(row.proposedValue),
+      }))
+      .filter((row) => row.changed);
+    if (changedRows.length > 0) {
+      return changedRows;
+    }
+
+    const attributeRows = asRecordArray(entry.item.attributeRows)
+      .map((row) => ({
+        attribute: asNullableString(row.targetAttribute) ?? 'attribute',
+        source: asNullableString(row.sourceField),
+        before: inlineValue(row.currentAdValue),
+        after: inlineValue(row.proposedValue),
+        changed: Boolean(row.changed),
+      }));
+    if (attributeRows.length > 0) {
+      return attributeRows.filter((row) => row.changed);
+    }
+  }
+
+  return getDiffRowsFromOperations(operations);
 }
 
 function getDiffRowsFromOperations(operations: Record<string, unknown>[]): DiffRow[] {
