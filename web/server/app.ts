@@ -729,19 +729,74 @@ function asNullableString(value: unknown): string | null {
   return typeof value === 'string' && value.trim() ? value : null;
 }
 
+export function extractFirstJsonPayload(output: string): string {
+  const text = output.trim();
+  for (let start = 0; start < text.length; start += 1) {
+    const openingChar = text[start];
+    if (openingChar !== '{' && openingChar !== '[') {
+      continue;
+    }
+
+    let depth = 0;
+    let inString = false;
+    let escaping = false;
+
+    for (let index = start; index < text.length; index += 1) {
+      const char = text[index];
+
+      if (inString) {
+        if (escaping) {
+          escaping = false;
+          continue;
+        }
+
+        if (char === '\\') {
+          escaping = true;
+          continue;
+        }
+
+        if (char === '"') {
+          inString = false;
+        }
+
+        continue;
+      }
+
+      if (char === '"') {
+        inString = true;
+        continue;
+      }
+
+      if (char === '{' || char === '[') {
+        depth += 1;
+        continue;
+      }
+
+      if (char === '}' || char === ']') {
+        depth -= 1;
+        if (depth === 0) {
+          const candidate = text.slice(start, index + 1);
+          try {
+            JSON.parse(candidate);
+            return candidate;
+          } catch {
+            break;
+          }
+        }
+      }
+    }
+  }
+
+  throw new Error('PowerShell output did not contain a valid JSON object or array.');
+}
+
 async function runPowerShellJson(args: string[]): Promise<Record<string, unknown>> {
   const { stdout } = await execFileAsync('pwsh', args, {
     cwd: process.cwd(),
     env: process.env,
     maxBuffer: 1024 * 1024 * 10,
   });
-  const trimmed = stdout.trim();
-  const lines = trimmed.split(/\r?\n/);
-  const startLine = lines.findIndex((line) => {
-    const value = line.trimStart();
-    return value.startsWith('{') || value === '[';
-  });
-  const payload = startLine > 0 ? lines.slice(startLine).join('\n') : trimmed;
+  const payload = extractFirstJsonPayload(stdout);
   return JSON.parse(payload) as Record<string, unknown>;
 }
 
