@@ -40,6 +40,7 @@ vi.mock('./api.js', () => ({
 
 beforeEach(() => {
   window.history.replaceState(null, '', '/');
+  delete window.__SYNCFACTORS_TEST_CONFIG__;
   mockGetStatus.mockReset();
   mockGetRun.mockReset();
   mockGetRunEntries.mockReset();
@@ -729,6 +730,118 @@ describe('App', () => {
     expect(screen.getAllByText(/Started delta dry-run in a new PowerShell process./i).length).toBeGreaterThan(0);
     expect(screen.getByText(/Run in progress/i)).toBeInTheDocument();
     expect(screen.getByText(/InProgress \/ Launching/i)).toBeInTheDocument();
+  });
+
+  it('replaces the optimistic launching state when the backend runtime status appears', async () => {
+    const baseStatus = await mockGetStatus();
+    const idleStatus = {
+      ...baseStatus,
+      currentRun: {
+        status: 'Idle',
+        stage: 'Completed',
+        processedWorkers: 0,
+        totalWorkers: 0,
+        currentWorkerId: null,
+        lastAction: 'No active sync run.',
+      },
+      recentRuns: [
+        {
+          ...baseStatus.recentRuns[0],
+          mappingConfigPath: '/tmp/mapping.json',
+        },
+      ],
+    };
+    const liveStatus = {
+      ...idleStatus,
+      currentRun: {
+        status: 'InProgress',
+        stage: 'ProcessingWorkers',
+        processedWorkers: 4,
+        totalWorkers: 12,
+        currentWorkerId: '1004',
+        lastAction: 'Evaluating worker 1004.',
+      },
+    };
+
+    let statusCalls = 0;
+    mockGetStatus.mockReset();
+    mockGetStatus.mockImplementation(async () => {
+      statusCalls += 1;
+      return statusCalls >= 3 ? liveStatus : idleStatus;
+    });
+    mockRunOperatorAction.mockResolvedValueOnce({
+      status: 'accepted',
+      started: true,
+      completed: false,
+      message: 'Started delta dry-run in a new PowerShell process.',
+      commandSummary: ['Config=/tmp/config.json', 'Mapping=/tmp/mapping.json'],
+      runId: null,
+      reportPath: null,
+      outputLines: [],
+    });
+    window.__SYNCFACTORS_TEST_CONFIG__ = {
+      runLaunchMonitorTimeoutMs: 100,
+      runLaunchMonitorPollMs: 10,
+    };
+
+    window.history.replaceState(null, '', '/?view=operations');
+    render(<App />);
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /Delta dry-run/i })).not.toBeDisabled());
+    fireEvent.click(screen.getByRole('button', { name: /Delta dry-run/i }));
+
+    await waitFor(() => expect(screen.getByText(/InProgress \/ Launching/i)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText(/InProgress \/ ProcessingWorkers/i)).toBeInTheDocument());
+    expect(screen.getByText(/Current worker/i).parentElement).toHaveTextContent('1004');
+  });
+
+  it('clears the optimistic launching state if no backend runtime status ever appears', async () => {
+    const baseStatus = await mockGetStatus();
+    const idleStatus = {
+      ...baseStatus,
+      currentRun: {
+        status: 'Idle',
+        stage: 'Completed',
+        processedWorkers: 0,
+        totalWorkers: 0,
+        currentWorkerId: null,
+        lastAction: 'No active sync run.',
+      },
+      recentRuns: [
+        {
+          ...baseStatus.recentRuns[0],
+          mappingConfigPath: '/tmp/mapping.json',
+        },
+      ],
+    };
+
+    mockGetStatus.mockReset();
+    mockGetStatus.mockResolvedValue(idleStatus);
+    mockRunOperatorAction.mockResolvedValueOnce({
+      status: 'accepted',
+      started: true,
+      completed: false,
+      message: 'Started delta dry-run in a new PowerShell process.',
+      commandSummary: ['Config=/tmp/config.json', 'Mapping=/tmp/mapping.json'],
+      runId: null,
+      reportPath: null,
+      outputLines: [],
+    });
+    window.__SYNCFACTORS_TEST_CONFIG__ = {
+      runLaunchMonitorTimeoutMs: 100,
+      runLaunchMonitorPollMs: 10,
+    };
+
+    window.history.replaceState(null, '', '/?view=operations');
+    render(<App />);
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /Delta dry-run/i })).not.toBeDisabled());
+    fireEvent.click(screen.getByRole('button', { name: /Delta dry-run/i }));
+
+    await waitFor(() => expect(screen.getByText(/InProgress \/ Launching/i)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText(/Run launch did not publish runtime status within 100 ms for Delta dry-run/i)).toBeInTheDocument());
+    expect(screen.queryByText(/InProgress \/ Launching/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/Idle \/ Completed/i)).toBeInTheDocument();
   });
 
   it('keeps the report detail selection aligned to the active report category', async () => {
