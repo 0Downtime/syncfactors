@@ -14,14 +14,18 @@ $ErrorActionPreference = 'Stop'
 
 $projectRoot = Split-Path -Path $PSScriptRoot -Parent
 $moduleRoot = Join-Path -Path $projectRoot -ChildPath 'src/Modules/SyncFactors'
-Import-Module (Join-Path $moduleRoot 'Config.psm1') -Force -DisableNameChecking
-Import-Module (Join-Path $moduleRoot 'Persistence.psm1') -Force -DisableNameChecking
+$configModule = Import-Module (Join-Path $moduleRoot 'Config.psm1') -Force -DisableNameChecking -PassThru
+$persistenceModule = Import-Module (Join-Path $moduleRoot 'Persistence.psm1') -Force -DisableNameChecking -PassThru
+
+$getSyncFactorsConfig = $configModule.ExportedFunctions['Get-SyncFactorsConfig']
+$getSyncFactorsReportFromReference = $persistenceModule.ExportedFunctions['Get-SyncFactorsReportFromReference']
 $invokePath = Join-Path -Path $projectRoot -ChildPath 'src/Invoke-SyncFactors.ps1'
 $resolvedConfigPath = (Resolve-Path -Path $ConfigPath).Path
 $resolvedMappingConfigPath = (Resolve-Path -Path $MappingConfigPath).Path
 
 $reportPath = & $invokePath -ConfigPath $resolvedConfigPath -MappingConfigPath $resolvedMappingConfigPath -Mode Full -WorkerId $WorkerId -BypassApprovalMode
-$report = Get-SyncFactorsReportFromReference -Reference $reportPath -StatePath (Get-SyncFactorsConfig -Path $resolvedConfigPath).state.path
+$statePath = (& $getSyncFactorsConfig -Path $resolvedConfigPath).state.path
+$report = & $getSyncFactorsReportFromReference -Reference $reportPath -StatePath $statePath
 
 $result = [pscustomobject]@{
     reportPath = $reportPath
