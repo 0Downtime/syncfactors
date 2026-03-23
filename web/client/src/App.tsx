@@ -61,6 +61,17 @@ type PendingConfirmation =
 
 const THEME_STORAGE_KEY = 'syncfactors-theme';
 const NON_WINDOWS_AD_WARNING = 'Active Directory health probe is skipped on non-Windows hosts for the web dashboard.';
+const RUN_LAUNCH_MONITOR_TIMEOUT_MS = 30000;
+const RUN_LAUNCH_MONITOR_POLL_MS = 1000;
+
+declare global {
+  interface Window {
+    __SYNCFACTORS_TEST_CONFIG__?: {
+      runLaunchMonitorTimeoutMs?: number;
+      runLaunchMonitorPollMs?: number;
+    };
+  }
+}
 
 function createPendingCurrentRun(action: OperatorActionKind, message: string): Record<string, unknown> {
   const mode = action.startsWith('full') ? 'Full' : action.startsWith('delta') ? 'Delta' : 'Review';
@@ -91,6 +102,23 @@ function createPendingCurrentRun(action: OperatorActionKind, message: string): R
   };
 }
 
+function getRunLaunchMonitorTiming() {
+  const config = typeof window !== 'undefined' ? window.__SYNCFACTORS_TEST_CONFIG__ : undefined;
+  return {
+    timeoutMs: config?.runLaunchMonitorTimeoutMs ?? RUN_LAUNCH_MONITOR_TIMEOUT_MS,
+    pollMs: config?.runLaunchMonitorPollMs ?? RUN_LAUNCH_MONITOR_POLL_MS,
+  };
+}
+
+function formatRunLaunchTimeout(timeoutMs: number) {
+  if (timeoutMs < 1000) {
+    return `${timeoutMs} ms`;
+  }
+
+  const seconds = Math.round(timeoutMs / 1000);
+  return `${seconds} second${seconds === 1 ? '' : 's'}`;
+}
+
 export function App() {
   const [status, setStatus] = useState<DashboardStatus | null>(null);
   const [route, setRoute] = useState<RouteState>(() => getRouteState());
@@ -116,10 +144,81 @@ export function App() {
   const filterInputRef = useRef<HTMLInputElement | null>(null);
   const reportMenuRef = useRef<HTMLDetailsElement | null>(null);
   const streamConnectedRef = useRef(false);
+  const launchMonitorTokenRef = useRef(0);
+
+  function applyStatus(nextStatus: DashboardStatus) {
+    setStatus(nextStatus);
+    setRoute((current) => {
+      const nextRunId = current.runId ?? nextStatus.recentRuns[0]?.runId ?? null;
+      const nextWorkerId = current.workerId ?? nextStatus.recentRuns[0]?.workerScope?.workerId ?? null;
+      const next = normalizeRoute({ ...current, runId: nextRunId, workerId: nextWorkerId }, nextStatus);
+      syncRouteState(next);
+      return next;
+    });
+  }
+
+  function cancelLaunchMonitor() {
+    launchMonitorTokenRef.current += 1;
+  }
+
+  function isBackendRunActive(nextStatus: DashboardStatus) {
+    return `${nextStatus.currentRun?.status ?? ''}` !== 'Idle';
+  }
+
+  function monitorPendingRunLaunch(actionLabel: string) {
+    const { timeoutMs, pollMs } = getRunLaunchMonitorTiming();
+    const token = launchMonitorTokenRef.current + 1;
+    launchMonitorTokenRef.current = token;
+    const deadline = Date.now() + timeoutMs;
+    const timeoutMessage = `Run launch did not publish runtime status within ${formatRunLaunchTimeout(timeoutMs)} for ${actionLabel}. The PowerShell process may have exited before writing its first snapshot.`;
+
+    const checkStatus = async () => {
+      if (launchMonitorTokenRef.current !== token) {
+        return;
+      }
+
+      try {
+        const nextStatus = await getStatus();
+        if (launchMonitorTokenRef.current !== token) {
+          return;
+        }
+
+        if (isBackendRunActive(nextStatus)) {
+          applyStatus(nextStatus);
+          setError((current) => current?.startsWith('Run launch did not publish runtime status') ? null : current);
+          cancelLaunchMonitor();
+          return;
+        }
+
+        if (Date.now() >= deadline) {
+          applyStatus(nextStatus);
+          setError(timeoutMessage);
+          cancelLaunchMonitor();
+          return;
+        }
+      } catch {
+        if (Date.now() >= deadline) {
+          setError(timeoutMessage);
+          cancelLaunchMonitor();
+          return;
+        }
+      }
+
+      window.setTimeout(() => {
+        void checkStatus();
+      }, pollMs);
+    };
+
+    void checkStatus();
+  }
 
   useEffect(() => {
     streamConnectedRef.current = streamConnected;
   }, [streamConnected]);
+
+  useEffect(() => () => {
+    cancelLaunchMonitor();
+  }, []);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -137,16 +236,6 @@ export function App() {
 
   useEffect(() => {
     let cancelled = false;
-    const applyStatus = (nextStatus: DashboardStatus) => {
-      setStatus(nextStatus);
-      setRoute((current) => {
-        const nextRunId = current.runId ?? nextStatus.recentRuns[0]?.runId ?? null;
-        const nextWorkerId = current.workerId ?? nextStatus.recentRuns[0]?.workerScope?.workerId ?? null;
-        const next = normalizeRoute({ ...current, runId: nextRunId, workerId: nextWorkerId }, nextStatus);
-        syncRouteState(next);
-        return next;
-      });
-    };
 
     const loadStatus = async () => {
       try {
@@ -686,8 +775,9 @@ export function App() {
   }
 
   async function refreshAfterAction(workerId = route.workerId) {
+    cancelLaunchMonitor();
     const nextStatus = await getStatus();
-    setStatus(nextStatus);
+    applyStatus(nextStatus);
     if (workerId) {
       const nextWorkerDetail = await getWorkerDetail(workerId);
       setWorkerDetail(nextWorkerDetail);
@@ -744,6 +834,7 @@ export function App() {
       }
       if (result.started && !result.completed) {
         setStatus((current) => current ? { ...current, currentRun: createPendingCurrentRun(action, result.message) } : current);
+        void monitorPendingRunLaunch(getOperatorActionLabel(action));
         return;
       }
       await refreshAfterAction();
