@@ -712,12 +712,23 @@ describe('App', () => {
     await waitFor(() => expect(mockPreviewWorker).toHaveBeenCalledWith('1002', 'minimal'));
     expect(screen.getByText(/Worker Preview 1002/i)).toBeInTheDocument();
 
+    mockRunOperatorAction.mockResolvedValueOnce({
+      status: 'accepted',
+      started: true,
+      completed: false,
+      message: 'Started delta dry-run in a new PowerShell process.',
+      commandSummary: ['Config=/tmp/config.json', 'Mapping=/tmp/mapping.json'],
+      runId: null,
+      reportPath: null,
+      outputLines: [],
+    });
+
     fireEvent.click(screen.getByRole('button', { name: /Delta dry-run/i }));
 
     await waitFor(() => expect(mockRunOperatorAction).toHaveBeenCalledWith('delta-dry-run'));
-    await waitFor(() => expect(window.location.search).toMatch(/view=report/));
-    expect(screen.getByText(/Started delta dry-run in a new PowerShell process./i)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Report' })).toHaveClass('active');
+    expect(screen.getAllByText(/Started delta dry-run in a new PowerShell process./i).length).toBeGreaterThan(0);
+    expect(screen.getByText(/Run in progress/i)).toBeInTheDocument();
+    expect(screen.getByText(/InProgress \/ Launching/i)).toBeInTheDocument();
   });
 
   it('keeps the report detail selection aligned to the active report category', async () => {

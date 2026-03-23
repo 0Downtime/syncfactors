@@ -17,7 +17,7 @@ export class PowerShellStatusProvider implements StatusProvider {
   private readonly isolatedHome = path.join(os.tmpdir(), 'syncfactors-web-pwsh-home');
   private readonly outputDirectory = path.join(os.tmpdir(), 'syncfactors-web-status');
 
-  constructor(private readonly ttlMs = 5000) {}
+  constructor(private readonly ttlMs = 1000) {}
 
   async getStatus(configPath: string, historyLimit: number): Promise<DashboardStatus> {
     const cacheKey = `${configPath}:${historyLimit}`;
