@@ -88,10 +88,10 @@ function Get-SyncFactorsWorkerStatusValue {
     param([pscustomobject]$Worker)
 
     foreach ($path in @(
-            'status',
             'employmentNav[0].jobInfoNav[0].emplStatus',
             'employmentNav[0].userNav.status',
-            'userNav.status'
+            'userNav.status',
+            'status'
         )) {
         $value = Get-NestedValue -InputObject $Worker -Path $path
         if (-not [string]::IsNullOrWhiteSpace("$value")) {
