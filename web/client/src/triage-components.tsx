@@ -78,7 +78,7 @@ export function SelectedEntryPanel(props: {
         </div>
         <div className="header-actions">
           <span className="badge" data-tone={panelTone}>{entry.bucketLabel}</span>
-          {entry.workerId && !compact ? <button type="button" onClick={() => onOpenWorker(entry.workerId!)}>Worker page</button> : null}
+          {entry.workerId && !compact ? <button type="button" onClick={() => onOpenWorker(entry.workerId!)}>Worker detail</button> : null}
         </div>
       </div>
 
@@ -200,7 +200,7 @@ export function TriageGuidancePanel(props: {
 
       <section className="triage-actions">
         <button type="button" onClick={onOpenReport}>Inspect full report</button>
-        {entry.workerId ? <button type="button" onClick={() => onOpenWorker(entry.workerId!)}>Open worker page</button> : null}
+        {entry.workerId ? <button type="button" onClick={() => onOpenWorker(entry.workerId!)}>Open worker detail</button> : null}
       </section>
 
       <section className="operator-panel">

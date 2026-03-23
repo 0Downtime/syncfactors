@@ -46,6 +46,7 @@ function New-SyncFactorsWebEmptyRunSummary {
         mode = $null
         dryRun = $false
         status = $null
+        errorMessage = $null
         startedAt = $null
         completedAt = $null
         durationSeconds = $null
@@ -110,6 +111,7 @@ function ConvertTo-SyncFactorsWebRunSummary {
         mode = if ($Report.PSObject.Properties.Name -contains 'mode') { $Report.mode } else { $null }
         dryRun = if ($Report.PSObject.Properties.Name -contains 'dryRun') { [bool]$Report.dryRun } else { $false }
         status = if ($Report.PSObject.Properties.Name -contains 'status') { $Report.status } else { $null }
+        errorMessage = if ($Report.PSObject.Properties.Name -contains 'errorMessage') { $Report.errorMessage } else { $null }
         startedAt = if ($Report.PSObject.Properties.Name -contains 'startedAt') { $Report.startedAt } else { $null }
         completedAt = if ($Report.PSObject.Properties.Name -contains 'completedAt') { $Report.completedAt } else { $null }
         durationSeconds = Get-SyncFactorsWebDurationSeconds -StartedAt $(if ($Report.PSObject.Properties.Name -contains 'startedAt') { $Report.startedAt } else { $null }) -CompletedAt $(if ($Report.PSObject.Properties.Name -contains 'completedAt') { $Report.completedAt } else { $null })

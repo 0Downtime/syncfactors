@@ -414,6 +414,10 @@ function coerceBoolean(value: number | string | null | undefined): boolean {
   return value === '1' || value === 'true';
 }
 
+function coerceString(value: unknown): string | null {
+  return typeof value === 'string' ? value : null;
+}
+
 function parseJsonRecord(value: string | null | undefined): Record<string, unknown> | null {
   if (!value) {
     return null;
@@ -445,6 +449,7 @@ function mapRunRow(row: SqliteRunRow): SqliteScannedRun | null {
         mode: row.mode ?? null,
         dryRun: coerceBoolean(row.dry_run),
         status: row.status ?? null,
+        errorMessage: coerceString(report.errorMessage),
         startedAt: row.started_at ?? null,
         completedAt: row.completed_at ?? null,
         durationSeconds: coerceNumber(row.duration_seconds),

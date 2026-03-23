@@ -413,6 +413,7 @@ export class ReportService {
       mode: asString(report.mode),
       dryRun: Boolean(report.dryRun),
       status: asString(report.status),
+      errorMessage: asString(report.errorMessage),
       startedAt: asString(report.startedAt),
       completedAt: asString(report.completedAt),
       durationSeconds: getDurationSeconds(report),

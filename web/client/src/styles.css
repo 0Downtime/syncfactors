@@ -148,10 +148,11 @@ button:not(.inline-expand-button):not(.report-menu-item):hover {
   display: flex;
   align-items: center;
   gap: 0.35rem;
-  padding: 0.38rem 0.75rem;
-  background: rgba(var(--tone-default-rgb), 0.04);
+  padding: 0.44rem 0.75rem;
+  background: rgba(var(--tone-default-rgb), 0.03);
   border-bottom: 1px solid var(--border-subtle);
-  font-size: 0.74rem;
+  font-size: 0.72rem;
+  font-weight: 500;
   color: var(--text-muted);
 }
 
@@ -164,14 +165,14 @@ button:not(.inline-expand-button):not(.report-menu-item):hover {
 .hero-topbar {
   display: flex;
   justify-content: space-between;
-  gap: 0.5rem 0.8rem;
+  gap: 0.75rem 0.8rem;
   align-items: center;
-  padding: 0.65rem 0.75rem 0.4rem;
+  padding: 0.8rem 0.75rem 0.55rem;
 }
 
 .hero-copy {
   display: grid;
-  gap: 0.12rem;
+  gap: 0;
   min-width: 0;
 }
 
@@ -183,22 +184,10 @@ button:not(.inline-expand-button):not(.report-menu-item):hover {
 }
 
 .hero h1 {
-  font-size: clamp(1.3rem, 1.8vw, 1.62rem);
-  font-weight: 600;
-  letter-spacing: -0.01em;
+  font-size: clamp(1.35rem, 1.7vw, 1.72rem);
+  font-weight: 650;
+  letter-spacing: -0.02em;
   color: var(--text-primary);
-}
-
-.hero-divider {
-  width: 1px;
-  height: 1.1rem;
-  background: var(--border-strong);
-}
-
-.hero-context {
-  color: var(--text-muted);
-  font-size: 0.78rem;
-  font-weight: 400;
 }
 
 .eyebrow,
@@ -1150,6 +1139,25 @@ button:disabled {
   gap: 0.05rem;
 }
 
+.run-row-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.2rem 0.4rem;
+  align-items: center;
+}
+
+.run-row-count {
+  color: inherit;
+}
+
+.run-row-count[data-tone] {
+  color: rgba(var(--tone-rgb, 0, 120, 212), 1);
+}
+
+.run-row-count-separator {
+  color: var(--text-muted);
+}
+
 .queue-item {
   padding: 0.65rem 0.75rem;
 }
@@ -1467,8 +1475,21 @@ button:disabled {
 }
 
 .theme-switch-icon {
-  font-size: 0.84rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 0.95rem;
+  height: 0.95rem;
+  font-size: 0.9rem;
+  line-height: 1;
+  color: var(--text-muted);
+  transition: color 160ms ease, opacity 160ms ease;
+  opacity: 0.72;
+}
+
+.theme-switch-icon.active {
   color: var(--accent);
+  opacity: 1;
 }
 
 .theme-switch-track {

@@ -81,6 +81,7 @@ export function App() {
   const [error, setError] = useState<string | null>(null);
   const [streamConnected, setStreamConnected] = useState(false);
   const [operationsWorkerId, setOperationsWorkerId] = useState('');
+  const [hasEditedOperationsWorkerId, setHasEditedOperationsWorkerId] = useState(false);
   const [operationsPreviewMode, setOperationsPreviewMode] = useState<WorkerPreviewMode>('full');
   const [theme, setTheme] = useState<ThemeMode>(() => getInitialTheme());
   const filterInputRef = useRef<HTMLInputElement | null>(null);
@@ -264,7 +265,12 @@ export function App() {
   }, [route.view, route.workerId]);
 
   useEffect(() => {
-    if (route.view !== 'operations' || operationsWorkerId) {
+    if (route.view !== 'operations') {
+      setHasEditedOperationsWorkerId(false);
+      return;
+    }
+
+    if (operationsWorkerId || hasEditedOperationsWorkerId) {
       return;
     }
 
@@ -280,7 +286,7 @@ export function App() {
     if (suggestedWorkerId) {
       setOperationsWorkerId(suggestedWorkerId);
     }
-  }, [route.view, route.workerId, status, operationsWorkerId]);
+  }, [route.view, route.workerId, status, operationsWorkerId, hasEditedOperationsWorkerId]);
 
   const visibleEntries = useMemo(
     () => getVisibleEntries(entryResponse?.entries ?? [], route),
@@ -383,14 +389,11 @@ export function App() {
         </div>
         <div className="hero-topbar">
           <div className="hero-copy">
-            <p className="eyebrow">SyncFactors Operator UI</p>
             <div className="hero-title-row">
-              <h1>Operations Console</h1>
+              <h1>SyncFactors</h1>
             </div>
-            <p className="hero-context">Operator workspace</p>
           </div>
           <div className="hero-meta">
-            <span className="badge">TUI parity</span>
             <details className="report-menu" ref={reportMenuRef}>
               <summary className="hero-path">
                 <span className="hero-path-label">Reports</span>
@@ -419,11 +422,11 @@ export function App() {
               onClick={() => setTheme((current) => (current === 'light' ? 'dark' : 'light'))}
               type="button"
             >
-              <span aria-hidden="true" className="theme-switch-icon">☀</span>
+              <span aria-hidden="true" className={`theme-switch-icon ${theme === 'light' ? 'active' : ''}`}>☀</span>
               <span className="theme-switch-track" data-enabled={theme === 'dark'}>
                 <span className="theme-switch-thumb" />
               </span>
-              <span aria-hidden="true" className="theme-switch-icon">☾</span>
+              <span aria-hidden="true" className={`theme-switch-icon ${theme === 'dark' ? 'active' : ''}`}>●</span>
             </button>
           </div>
         </div>
@@ -432,7 +435,7 @@ export function App() {
             <button className={route.view === 'dashboard' ? 'active' : ''} onClick={() => navigateTo({ ...route, view: 'dashboard' })} type="button">Dashboard</button>
             <button className={route.view === 'report' ? 'active' : ''} onClick={() => navigateTo({ ...route, view: 'report' })} type="button" disabled={!route.runId}>Report</button>
             <button className={route.view === 'queues' ? 'active' : ''} onClick={() => navigateTo({ ...route, view: 'queues' })} type="button">Queues</button>
-            <button className={route.view === 'worker' ? 'active' : ''} onClick={() => navigateTo({ ...route, view: 'worker' })} type="button" disabled={!route.workerId}>Worker</button>
+            <button className={route.view === 'worker' ? 'active' : ''} onClick={() => navigateTo({ ...route, view: 'worker' })} type="button" disabled={!route.workerId}>Worker Detail</button>
             <button className={route.view === 'operations' ? 'active' : ''} onClick={() => navigateTo({ ...route, view: 'operations' })} type="button">Operations</button>
           </nav>
           <div className="portal-command-meta">
@@ -572,7 +575,10 @@ export function App() {
               navigateTo({ ...route, view: 'report', runId, entryId: null });
             }
           }}
-          onWorkerLauncherIdChange={setOperationsWorkerId}
+          onWorkerLauncherIdChange={(workerId) => {
+            setHasEditedOperationsWorkerId(true);
+            setOperationsWorkerId(workerId);
+          }}
           onWorkerLauncherModeChange={setOperationsPreviewMode}
           onPreviewWorker={() => void handlePreviewWorker(operationsWorkerId.trim(), operationsPreviewMode)}
           onOpenWorker={() => navigateTo({ ...route, view: 'worker', workerId: operationsWorkerId.trim() || route.workerId })}
@@ -671,7 +677,15 @@ export function App() {
       if (action === 'test-sync' || action === 'review-sync') {
         const previewMode: WorkerPreviewMode = action === 'test-sync' ? 'minimal' : 'full';
         const preview = await previewWorker(route.workerId, previewMode);
-        setWorkerPreview(preview);
+        if (preview.status === 'Failed') {
+          setWorkerPreview(null);
+          if (preview.runId) {
+            navigateTo({ ...route, view: 'report', runId: preview.runId, workerId: route.workerId, entryId: null });
+          }
+          setError(preview.errorMessage ?? `Worker preview failed for ${route.workerId}.`);
+        } else {
+          setWorkerPreview(preview);
+        }
       } else {
         const result = await runWorkerAction(route.workerId, action);
         setWorkerActionState({ pendingAction: null, result });
@@ -729,7 +743,15 @@ export function App() {
       setError(null);
       setPendingOperatorActionLabel(`Worker preview ${workerId}`);
       const preview = await previewWorker(workerId, previewMode);
-      setWorkerPreview(preview);
+      if (preview.status === 'Failed') {
+        setWorkerPreview(null);
+        if (preview.runId) {
+          navigateTo({ ...route, view: 'report', runId: preview.runId, workerId, entryId: null });
+        }
+        setError(preview.errorMessage ?? `Worker preview failed for ${workerId}.`);
+      } else {
+        setWorkerPreview(preview);
+      }
       setOperationsWorkerId(workerId);
       await refreshAfterAction(workerId);
     } catch (previewError) {
@@ -848,7 +870,7 @@ function getCurrentViewLabel(view: RouteState['view']): string {
     case 'queues':
       return 'Queues';
     case 'worker':
-      return 'Worker';
+      return 'Worker Detail';
     case 'report':
       return 'Report Explorer';
     case 'worker-preview':

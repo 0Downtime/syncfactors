@@ -306,6 +306,7 @@ export function createApp(dependencies: AppDependencies): Express {
       statusProvider.invalidate?.(dependencies.configPath);
       response.json(result);
     } catch (error) {
+      statusProvider.invalidate?.(dependencies.configPath);
       respondWithError(response, 500, 'Failed to preview worker.', error);
     }
   });
@@ -620,6 +621,7 @@ async function runWorkerAction(args: {
     runId: asNullableString(parsed.runId),
     mode: asNullableString(parsed.mode),
     status: asNullableString(parsed.status),
+    errorMessage: asNullableString(parsed.errorMessage),
     artifactType: asNullableString(parsed.artifactType),
     previewMode: asNullableString(parsed.previewMode),
     successFactorsAuth: asNullableString(parsed.successFactorsAuth),
@@ -739,7 +741,14 @@ async function runPowerShellJson(args: string[]): Promise<Record<string, unknown
     env: process.env,
     maxBuffer: 1024 * 1024 * 10,
   });
-  return JSON.parse(stdout) as Record<string, unknown>;
+  const trimmed = stdout.trim();
+  const lines = trimmed.split(/\r?\n/);
+  const startLine = lines.findIndex((line) => {
+    const value = line.trimStart();
+    return value.startsWith('{') || value === '[';
+  });
+  const payload = startLine > 0 ? lines.slice(startLine).join('\n') : trimmed;
+  return JSON.parse(payload) as Record<string, unknown>;
 }
 
 async function runPowerShellText(args: string[], stdin = ''): Promise<string[]> {
