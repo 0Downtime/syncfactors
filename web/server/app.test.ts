@@ -1,6 +1,6 @@
 import request from 'supertest';
 import { describe, expect, it, vi } from 'vitest';
-import { createApp, createMockStatusProvider } from './app.js';
+import { createApp, createMockStatusProvider, extractFirstJsonPayload } from './app.js';
 import { ReportService } from './report-service.js';
 
 const dashboardStatus = {
@@ -61,6 +61,27 @@ const dashboardStatus = {
 };
 
 describe('web api', () => {
+  it('extracts the first complete json payload from mixed PowerShell output', () => {
+    const payload = extractFirstJsonPayload(`
+[2026-03-23 12:00:00][INFO] Starting sync
+{
+  "status": "Succeeded",
+  "message": "Line one\\nLine two",
+  "items": [
+    1,
+    2
+  ]
+}
+[2026-03-23 12:00:02][INFO] Finished sync
+`);
+
+    expect(JSON.parse(payload)).toEqual({
+      status: 'Succeeded',
+      message: 'Line one\nLine two',
+      items: [1, 2],
+    });
+  });
+
   it('returns dashboard status and new queue/worker endpoints', async () => {
     const workerActionRunner = vi.fn(async () => ({
       reportPath: '/tmp/run-2.json',
