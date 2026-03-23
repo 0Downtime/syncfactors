@@ -1494,6 +1494,65 @@ Describe 'Invoke-SyncFactorsRun' {
         }
     }
 
+    It 'removes stale tracked worker state when the saved AD object no longer exists' {
+        InModuleScope Sync {
+            $state = [pscustomobject]@{
+                checkpoint = $null
+                workers = [pscustomobject]@{
+                    '7002' = [pscustomobject]@{
+                        adObjectGuid = '88888888-8888-8888-8888-888888888888'
+                        distinguishedName = 'CN=Deleted User,OU=Employees,DC=example,DC=com'
+                        suppressed = $false
+                    }
+                }
+            }
+
+            Mock Get-SyncFactorsConfig { $global:SyncTestBaseConfig }
+            Mock Get-SyncFactorsMappingConfig { [pscustomobject]@{ mappings = @() } }
+            Mock Get-SyncFactorsState { $state }
+            Mock Get-SfWorkerById {
+                [pscustomobject]@{
+                    personIdExternal = '7002'
+                    status = 'active'
+                    startDate = (Get-Date).ToString('o')
+                }
+            }
+            Mock Get-SfWorkers { throw 'Get-SfWorkers should not run for scoped full sync.' }
+            Mock Get-SyncFactorsTargetUser { $null }
+            Mock Get-SyncFactorsUserByObjectGuid { $null }
+            Mock Get-SyncFactorsUserBySamAccountName { $null }
+            Mock Get-SyncFactorsUserByUserPrincipalName { $null }
+            Mock Get-SyncFactorsAttributeChanges { [pscustomobject]@{ Changes = @{}; MissingRequired = @() } }
+            Mock New-SyncFactorsUser {
+                [pscustomobject]@{
+                    ObjectGuid = [guid]'99999999-9999-9999-9999-999999999999'
+                    DistinguishedName = 'CN=Jamie Doe,OU=Employees,DC=example,DC=com'
+                    SamAccountName = '7002'
+                    Enabled = $false
+                }
+            }
+            Mock Enable-SyncFactorsUser {}
+            Mock Add-SyncFactorsUserToConfiguredGroups { @() }
+            Mock Save-SyncFactorsState {}
+            Mock Save-SyncFactorsReport {
+                param($Report, $Directory, $Mode)
+                $global:CapturedReport = $Report
+                return (Join-Path $Directory "syncfactors-$Mode.json")
+            }
+            Mock Write-SyncFactorsRuntimeStatusSnapshot {}
+            Mock Ensure-ActiveDirectoryModule {}
+
+            Invoke-SyncFactorsRun -ConfigPath $global:SyncTestConfigPath -MappingConfigPath $global:SyncTestMappingConfigPath -Mode Full -WorkerId '7002' | Out-Null
+
+            $global:CapturedReport.artifactType | Should -Be 'WorkerSync'
+            @($global:CapturedReport.operations.operationType) | Should -Contain 'SetWorkerState'
+            Assert-MockCalled Get-SyncFactorsUserByObjectGuid -Times 1 -Exactly -ParameterFilter { $ObjectGuid -eq '88888888-8888-8888-8888-888888888888' }
+            $state.workers.PSObject.Properties.Name | Should -Contain '7002'
+            $state.workers.'7002'.adObjectGuid | Should -Be '99999999-9999-9999-9999-999999999999'
+            $state.workers.'7002'.distinguishedName | Should -Be 'CN=Jamie Doe,OU=Employees,DC=example,DC=com'
+        }
+    }
+
     It 'still rejects WorkerId outside full or review mode' {
         InModuleScope Sync {
             { Invoke-SyncFactorsRun -ConfigPath $global:SyncTestConfigPath -MappingConfigPath $global:SyncTestMappingConfigPath -Mode Delta -WorkerId '7001' } | Should -Throw '-WorkerId is only supported with -Mode Full or -Mode Review.'
