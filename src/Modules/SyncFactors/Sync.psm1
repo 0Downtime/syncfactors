@@ -714,6 +714,7 @@ function Invoke-SyncFactorsOffboarding {
         workerId = $workerId
         samAccountName = $User.SamAccountName
         currentEnabled = [bool]$User.Enabled
+        proposedEnable = $false
         currentDistinguishedName = $User.DistinguishedName
         reviewCategory = if ($ReviewMode) { 'ExistingUserOffboarding' } else { $null }
     }
@@ -1208,6 +1209,7 @@ function Invoke-SyncFactorsRun {
                         $enableEntry['reviewCategory'] = 'ExistingUserEnable'
                         $enableEntry['currentEnabled'] = [bool]$currentUser.Enabled
                     }
+                    $enableEntry['proposedEnable'] = $true
                     Add-SyncFactorsReportEntry -Report $report -Bucket 'enables' -Entry $enableEntry
                     Add-SyncFactorsReportOperation -Report $report -OperationType 'EnableUser' -WorkerId $workerId -Bucket 'enables' -Target (Get-SyncFactorsUserTargetDescriptor -WorkerId $workerId -User $currentUser) -Before ([pscustomobject]@{ enabled = $false }) -After ([pscustomobject]@{ enabled = $true }) | Out-Null
                     if ($licensedGroups.Count -gt 0) {
