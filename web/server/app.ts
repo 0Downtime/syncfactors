@@ -605,13 +605,7 @@ async function runWorkerAction(args: {
     );
   }
 
-  const { stdout } = await execFileAsync('pwsh', pwshArgs, {
-    cwd: process.cwd(),
-    env: process.env,
-    maxBuffer: 1024 * 1024 * 10,
-  });
-
-  const parsed = JSON.parse(stdout) as Record<string, unknown>;
+  const parsed = await runPowerShellJson(pwshArgs);
   const workerScope = parsed.workerScope && typeof parsed.workerScope === 'object'
     ? parsed.workerScope as WorkerActionResponse['result']['workerScope']
     : null;
