@@ -68,6 +68,7 @@ Planned work is ordered by delivery priority so the roadmap is easy to scan from
 - `scripts/Get-SyncFactorsStatus.ps1`: summary view of the latest sync state, runtime status, and run history from SQLite.
 - `scripts/Watch-SyncFactorsMonitor.ps1`: terminal dashboard for current sync stage and recent run history.
 - `scripts/Get-SyncFactorsWebStatus.ps1`: PowerShell adapter for the local web dashboard status API.
+- `scripts/Install-SyncFactorsWebPrerequisites.ps1`: Windows bootstrap for Node.js, npm, SQLite CLI, and local web dependencies.
 - `scripts/Invoke-SyncFactorsWorkerPreview.ps1`: preview one worker and print the mapped diff against the current AD user.
 - `scripts/Install-SyncFactorsTerminalCommand.ps1`: installs the `syncfactors` terminal command for launching the dashboard from any shell.
 - `scripts/Invoke-TestSuite.ps1`: run the Pester test suite.
@@ -151,6 +152,14 @@ pwsh ./scripts/Invoke-SyncFactorsPreflight.ps1 `
   -ConfigPath ./config/local.real-successfactors.real-ad.sync-config.json `
   -MappingConfigPath ./config/local.syncfactors.mapping-config.json
 ```
+
+On Windows hosts, bootstrap the web/dashboard prerequisites with:
+
+```powershell
+pwsh ./scripts/Install-SyncFactorsWebPrerequisites.ps1
+```
+
+The installer verifies each step with explicit status output, installs Node.js LTS if `node`/`npm` are missing, downloads the official SQLite CLI if `sqlite3` is missing, adds SQLite to `PATH`, and runs `npm install` in the repo root. Use `-Scope User` if you are not running PowerShell as Administrator, or `-SkipNpmInstall` if you only want the machine prerequisites prepared.
 
 To view the current sync status from the configured SQLite operational store:
 

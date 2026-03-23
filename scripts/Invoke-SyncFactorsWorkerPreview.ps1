@@ -168,6 +168,36 @@ function Get-SyncFactorsWorkerPreviewOperationLines {
     return @($lines)
 }
 
+function Get-SyncFactorsWorkerPreviewOperatorActionLine {
+    param($Action)
+
+    if ($null -eq $Action) {
+        return '- Action'
+    }
+
+    $label = if ($Action.PSObject.Properties.Name -contains 'label' -and -not [string]::IsNullOrWhiteSpace("$($Action.label)")) {
+        "$($Action.label)"
+    } elseif ($Action.PSObject.Properties.Name -contains 'code' -and -not [string]::IsNullOrWhiteSpace("$($Action.code)")) {
+        "$($Action.code)"
+    } elseif ($Action -is [string] -and -not [string]::IsNullOrWhiteSpace($Action)) {
+        $Action
+    } else {
+        'Action'
+    }
+
+    $description = if ($Action.PSObject.Properties.Name -contains 'description' -and -not [string]::IsNullOrWhiteSpace("$($Action.description)")) {
+        "$($Action.description)"
+    } else {
+        ''
+    }
+
+    if ([string]::IsNullOrWhiteSpace($description)) {
+        return "- $label"
+    }
+
+    return ("- {0}: {1}" -f $label, $description)
+}
+
 $projectRoot = Split-Path -Path $PSScriptRoot -Parent
 $moduleRoot = Join-Path -Path $projectRoot -ChildPath 'src/Modules/SyncFactors'
 $configModule = Import-Module (Join-Path $moduleRoot 'Config.psm1') -Force -DisableNameChecking -PassThru
@@ -410,7 +440,7 @@ if (@($result.preview.operatorActions).Count -eq 0) {
     Write-Host 'none'
 } else {
     foreach ($action in @($result.preview.operatorActions)) {
-        Write-Host ("- {0}: {1}" -f $action.label, $action.description)
+        Write-Host (Get-SyncFactorsWorkerPreviewOperatorActionLine -Action $action)
     }
 }
 
