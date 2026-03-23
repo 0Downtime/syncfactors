@@ -3,6 +3,38 @@ import type { RouteState } from './route-state.js';
 import { mapEntryToReportCategory, mapReviewExplorerToBucket } from './route-state.js';
 import { AbsoluteTimeLabel, CopyLinkButton, DashboardOverviewPanel, DetailRow, GroupPanel, RelativeTimeLabel, SelectedEntryPanel, SummaryMetric, TriageGuidancePanel, WarningPanel, getToneForBucket, getToneForReviewEntry, getToneForReviewExplorer } from './triage-components.js';
 import type { FilterRef } from './triage-components.js';
+import type { RunSummary } from './types.js';
+
+function renderRunCount(label: string, value: number, tone?: string) {
+  return (
+    <span className="run-row-count" data-tone={value > 0 ? tone : undefined}>
+      {label} {value}
+    </span>
+  );
+}
+
+function RunRowCounts(props: { run: RunSummary }) {
+  const { run } = props;
+  return (
+    <span className="run-row-counts">
+      {renderRunCount('C', run.creates, getToneForBucket('creates'))}
+      <span className="run-row-count-separator">/</span>
+      {renderRunCount('U', run.updates, getToneForBucket('updates'))}
+      <span className="run-row-count-separator">/</span>
+      {renderRunCount('D', run.disables, 'update')}
+      <span className="run-row-count-separator">/</span>
+      {renderRunCount('X', run.deletions, getToneForBucket('deletions'))}
+      <span className="run-row-count-separator">/</span>
+      {renderRunCount('Q', run.quarantined, getToneForBucket('quarantined'))}
+      <span className="run-row-count-separator">/</span>
+      {renderRunCount('F', run.conflicts, getToneForBucket('conflicts'))}
+      <span className="run-row-count-separator">/</span>
+      {renderRunCount('GF', run.guardrailFailures, getToneForBucket('guardrailFailures'))}
+      <span className="run-row-count-separator">/</span>
+      {renderRunCount('MR', run.manualReview, getToneForBucket('manualReview'))}
+    </span>
+  );
+}
 
 export function DashboardView(props: {
   status: DashboardStatus | null;
@@ -54,7 +86,7 @@ export function DashboardView(props: {
                   <AbsoluteTimeLabel timestamp={run.startedAt} />
                   <RelativeTimeLabel timestamp={run.startedAt} className="run-row-relative" />
                 </span>
-                <span>C {run.creates} / U {run.updates} / MR {run.manualReview}</span>
+                <RunRowCounts run={run} />
               </button>
             ))}
           </div>
@@ -73,6 +105,7 @@ export function DashboardView(props: {
           </div>
 
           {runDetail?.warnings?.length ? <WarningPanel title="Run warnings" warnings={runDetail.warnings} /> : null}
+          {runDetail?.run?.errorMessage ? <WarningPanel title="Run failure" warnings={[runDetail.run.errorMessage]} /> : null}
 
           {runDetail?.run ? (
             <>
@@ -282,7 +315,7 @@ export function QueueView(props: {
                 <small>{entry.artifactType} · {entry.bucketLabel} · {entry.staleDays !== null ? `${entry.staleDays}d stale` : 'fresh'}</small>
               </div>
               <div className="queue-item-actions">
-                {entry.workerId ? <button type="button" onClick={() => props.onOpenWorker(entry.workerId!)}>Worker</button> : null}
+                {entry.workerId ? <button type="button" onClick={() => props.onOpenWorker(entry.workerId!)}>Worker detail</button> : null}
                 <button type="button" onClick={() => props.onOpenRun(entry)}>Run</button>
               </div>
             </div>
@@ -307,10 +340,10 @@ export function WorkerView(props: {
       <section className="card worker-summary">
         <div className="card-header">
           <div>
-            <p className="section-kicker">Worker</p>
+            <p className="section-kicker">Worker Detail</p>
             <h2>{route.workerId ?? 'No worker selected'}</h2>
           </div>
-          <CopyLinkButton label="Copy worker link" />
+          <CopyLinkButton label="Copy worker detail link" />
         </div>
         {workerDetail?.trackedWorker ? (
           <dl className="detail-list">
@@ -607,7 +640,7 @@ export function OperationsView(props: {
               Preview worker
             </button>
             <button type="button" onClick={props.onOpenWorker} disabled={!props.workerLauncherId.trim()}>
-              Open worker page
+              Open worker detail
             </button>
           </div>
         </div>

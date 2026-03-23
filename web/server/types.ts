@@ -13,6 +13,7 @@ export type RunSummary = {
   mode: string | null;
   dryRun: boolean;
   status: string | null;
+  errorMessage?: string | null;
   startedAt: string | null;
   completedAt: string | null;
   durationSeconds: number | null;
@@ -207,6 +208,7 @@ export type WorkerPreviewResponse = {
   runId: string | null;
   mode: string | null;
   status: string | null;
+  errorMessage?: string | null;
   artifactType: string | null;
   successFactorsAuth?: string | null;
   previewMode: WorkerPreviewMode;

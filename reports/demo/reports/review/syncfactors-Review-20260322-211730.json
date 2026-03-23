@@ -1,6 +1,6 @@
 {
-  "runId": "18ed722d-1a48-436d-bc9b-32226dc96085",
-  "startedAt": "2026-03-22T14:34:42.4176790-04:00",
+  "runId": "78336388-50c2-4533-9609-faf88e611390",
+  "startedAt": "2026-03-22T21:11:30.6339450-04:00",
   "status": "Succeeded",
   "mode": "Review",
   "artifactType": "WorkerPreview",
@@ -12,7 +12,7 @@
     "identityField": "personIdExternal",
     "workerId": "100002"
   },
-  "completedAt": "2026-03-22T14:40:42.4176790-04:00",
+  "completedAt": "2026-03-22T21:17:30.6339450-04:00",
   "failedAt": null,
   "errorMessage": null,
   "reviewSummary": {
@@ -25,9 +25,9 @@
   },
   "operations": [
     {
-      "operationId": "18ed722d-1a48-436d-bc9b-32226dc96085-0001",
+      "operationId": "78336388-50c2-4533-9609-faf88e611390-0001",
       "sequence": 1,
-      "timestamp": "2026-03-22T16:00:42.4714660-04:00",
+      "timestamp": "2026-03-22T22:37:30.6903270-04:00",
       "operationType": "UpdateAttributes",
       "workerId": "100002",
       "bucket": "updates",
@@ -50,9 +50,7 @@
   "creates": [],
   "updates": [
     {
-      "currentDistinguishedName": "CN=Synthetic100002 User,OU=LabField,OU=LabUsers,DC=example,DC=com",
-      "reviewCaseType": "RehireCase",
-      "proposedEnable": true,
+      "targetOu": "OU=LabField,OU=LabUsers,DC=example,DC=com",
       "operatorActions": [
         {
           "code": "ConfirmAccountReuse",
@@ -67,6 +65,10 @@
       ],
       "workerId": "100002",
       "samAccountName": "sf100002",
+      "matchedExistingUser": true,
+      "currentDistinguishedName": "CN=Synthetic100002 User,OU=LabField,OU=LabUsers,DC=example,DC=com",
+      "currentEnabled": true,
+      "operatorActionSummary": "Confirm how this rehire should reuse or restore the existing AD identity.",
       "changedAttributeDetails": [
         {
           "sourceField": "status",
@@ -81,11 +83,9 @@
           "proposedValue": "Operations"
         }
       ],
-      "currentEnabled": true,
-      "targetOu": "OU=LabField,OU=LabUsers,DC=example,DC=com",
-      "reviewCategory": "ExistingUserChanges",
-      "matchedExistingUser": true,
-      "operatorActionSummary": "Confirm how this rehire should reuse or restore the existing AD identity."
+      "reviewCaseType": "RehireCase",
+      "proposedEnable": true,
+      "reviewCategory": "ExistingUserChanges"
     }
   ],
   "enables": [],

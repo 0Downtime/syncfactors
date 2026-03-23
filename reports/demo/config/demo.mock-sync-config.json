@@ -81,6 +81,32 @@
     "maxDisablesPerRun": 50,
     "maxDeletionsPerRun": 10
   },
+  "approval": {
+    "enabled": false,
+    "requireFor": [
+      "DisableUser",
+      "DeleteUser",
+      "MoveToGraveyardOu"
+    ]
+  },
+  "alerts": {
+    "enabled": false,
+    "subjectPrefix": "[SyncFactors]",
+    "triggers": {
+      "failedRuns": true,
+      "guardrailBreaches": true,
+      "manualReviewEvents": true
+    },
+    "smtp": {
+      "host": "mail.example.com",
+      "port": 25,
+      "useSsl": false,
+      "from": "syncfactors@example.com",
+      "to": [
+        "ops@example.com"
+      ]
+    }
+  },
   "state": {
     "path": "/Users/chrisbrien/dev/github.com/syncfactors/./reports/demo/state/demo-sync-state.json"
   },

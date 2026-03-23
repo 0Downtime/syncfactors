@@ -170,15 +170,23 @@ function Get-SyncFactorsWorkerPreviewOperationLines {
 
 $projectRoot = Split-Path -Path $PSScriptRoot -Parent
 $moduleRoot = Join-Path -Path $projectRoot -ChildPath 'src/Modules/SyncFactors'
-Import-Module (Join-Path $moduleRoot 'Config.psm1') -Force -DisableNameChecking
-Import-Module (Join-Path $moduleRoot 'SuccessFactors.psm1') -Force -DisableNameChecking
-Import-Module (Join-Path $moduleRoot 'Persistence.psm1') -Force -DisableNameChecking
+$configModule = Import-Module (Join-Path $moduleRoot 'Config.psm1') -Force -DisableNameChecking -PassThru
+$monitoringModule = Import-Module (Join-Path $moduleRoot 'Monitoring.psm1') -Force -DisableNameChecking -PassThru
+$successFactorsModule = Import-Module (Join-Path $moduleRoot 'SuccessFactors.psm1') -Force -DisableNameChecking -PassThru
+$persistenceModule = Import-Module (Join-Path $moduleRoot 'Persistence.psm1') -Force -DisableNameChecking -PassThru
+
+$getSyncFactorsConfig = $configModule.ExportedFunctions['Get-SyncFactorsConfig']
+$getSyncFactorsSuccessFactorsAuthSummary = $configModule.ExportedFunctions['Get-SyncFactorsSuccessFactorsAuthSummary']
+$getSyncFactorsRuntimeStatusSnapshot = $monitoringModule.ExportedFunctions['Get-SyncFactorsRuntimeStatusSnapshot']
+$newSyncFactorsReportReference = $persistenceModule.ExportedFunctions['New-SyncFactorsReportReference']
+$getSyncFactorsReportFromReference = $persistenceModule.ExportedFunctions['Get-SyncFactorsReportFromReference']
+$getSfWorkerById = $successFactorsModule.ExportedFunctions['Get-SfWorkerById']
 
 $resolvedConfigPath = (Resolve-Path -Path $ConfigPath).Path
 $resolvedMappingConfigPath = (Resolve-Path -Path $MappingConfigPath).Path
 $effectiveConfigPath = $resolvedConfigPath
-$resolvedConfig = Get-SyncFactorsConfig -Path $resolvedConfigPath
-$successFactorsAuth = Get-SyncFactorsSuccessFactorsAuthSummary -Config $resolvedConfig
+$resolvedConfig = & $getSyncFactorsConfig -Path $resolvedConfigPath
+$successFactorsAuth = & $getSyncFactorsSuccessFactorsAuthSummary -Config $resolvedConfig
 $config = $resolvedConfig
 
 switch ($PreviewMode) {
@@ -217,7 +225,7 @@ if ($PreviewMode -ne 'Configured' -or -not [string]::IsNullOrWhiteSpace($OutputD
 }
 
 if ($PreviewMode -eq 'Minimal') {
-    $worker = Get-SfWorkerById -Config $config -WorkerId $WorkerId
+    $worker = & $getSfWorkerById -Config $config -WorkerId $WorkerId
     if (-not $worker) {
         throw "Worker '$WorkerId' was not found in SuccessFactors using identity field '$($config.successFactors.query.identityField)'."
     }
@@ -275,11 +283,33 @@ if ($PreviewMode -eq 'Minimal') {
 }
 
 $invokePath = Join-Path -Path $projectRoot -ChildPath 'src/Invoke-SyncFactors.ps1'
-$reportPath = & $invokePath -ConfigPath $effectiveConfigPath -MappingConfigPath $resolvedMappingConfigPath -Mode Review -WorkerId $WorkerId
-$report = Get-SyncFactorsReportFromReference -Reference $reportPath -StatePath $config.state.path
-$entries = @(Get-SyncFactorsWorkerPreviewEntries -Report $report -WorkerId $WorkerId)
+$reportPath = $null
+$report = $null
+$errorMessage = $null
+
+try {
+    $reportPath = & $invokePath -ConfigPath $effectiveConfigPath -MappingConfigPath $resolvedMappingConfigPath -Mode Review -WorkerId $WorkerId
+    $report = & $getSyncFactorsReportFromReference -Reference $reportPath -StatePath $config.state.path
+} catch {
+    $errorMessage = $_.Exception.Message
+    $runtimeStatus = & $getSyncFactorsRuntimeStatusSnapshot -StatePath $config.state.path
+    if (
+        $runtimeStatus -and
+        $runtimeStatus.PSObject.Properties.Name -contains 'runId' -and
+        -not [string]::IsNullOrWhiteSpace("$($runtimeStatus.runId)")
+    ) {
+        $reportPath = & $newSyncFactorsReportReference -RunId "$($runtimeStatus.runId)"
+        $report = & $getSyncFactorsReportFromReference -Reference $reportPath -StatePath $config.state.path
+    }
+
+    if (-not $AsJson) {
+        throw
+    }
+}
+
+$entries = @(if ($report) { Get-SyncFactorsWorkerPreviewEntries -Report $report -WorkerId $WorkerId } else { @() })
 $changedAttributes = @(Get-SyncFactorsWorkerPreviewChangedAttributes -Entries $entries)
-$operations = @($report.operations | Where-Object { "$($_.workerId)" -eq $WorkerId })
+$operations = @(if ($report -and $report.PSObject.Properties.Name -contains 'operations') { $report.operations | Where-Object { "$($_.workerId)" -eq $WorkerId } } else { @() })
 $bucketNames = @($entries | ForEach-Object { $_.bucket } | Select-Object -Unique)
 $matchedExistingUser = if (@($entries | Where-Object { $_.item.PSObject.Properties.Name -contains 'matchedExistingUser' -and [bool]$_.item.matchedExistingUser }).Count -gt 0) {
     $true
@@ -293,14 +323,15 @@ $matchedExistingUser = if (@($entries | Where-Object { $_.item.PSObject.Properti
 
 $result = [pscustomobject]@{
     reportPath = $reportPath
-    runId = $report.runId
-    mode = $report.mode
-    status = $report.status
-    artifactType = $report.artifactType
+    runId = if ($report -and $report.PSObject.Properties.Name -contains 'runId') { $report.runId } else { $null }
+    mode = if ($report -and $report.PSObject.Properties.Name -contains 'mode') { $report.mode } else { 'Review' }
+    status = if ($report -and $report.PSObject.Properties.Name -contains 'status') { $report.status } else { 'Failed' }
+    errorMessage = if ($report -and $report.PSObject.Properties.Name -contains 'errorMessage' -and -not [string]::IsNullOrWhiteSpace("$($report.errorMessage)")) { $report.errorMessage } else { $errorMessage }
+    artifactType = if ($report -and $report.PSObject.Properties.Name -contains 'artifactType') { $report.artifactType } else { 'WorkerPreview' }
     successFactorsAuth = $successFactorsAuth
     previewMode = $PreviewMode.ToLowerInvariant()
-    workerScope = $report.workerScope
-    reviewSummary = $report.reviewSummary
+    workerScope = if ($report) { $report.workerScope } else { [pscustomobject]@{ identityField = $config.successFactors.query.identityField; workerId = $WorkerId } }
+    reviewSummary = if ($report) { $report.reviewSummary } else { $null }
     preview = [pscustomobject]@{
         workerId = $WorkerId
         buckets = $bucketNames
