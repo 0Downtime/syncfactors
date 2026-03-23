@@ -553,7 +553,7 @@ describe('App', () => {
   it('renders dashboard, queue, and worker triage views with url-backed state', async () => {
     render(<App />);
 
-    await waitFor(() => expect(screen.getByText(/SyncFactors Operator UI/i)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'SyncFactors' })).toBeInTheDocument());
     await waitFor(() => expect(screen.getByText(/Next Recommended Move/i)).toBeInTheDocument());
     expect(mockGetRunEntries).toHaveBeenCalledWith('run-1', expect.not.objectContaining({ bucket: expect.anything(), entryId: expect.anything() }));
     expect(screen.getByRole('button', { name: 'all (3)' })).toBeInTheDocument();
@@ -586,11 +586,11 @@ describe('App', () => {
     expect(window.location.search).toMatch(/pageSize=10/);
 
     fireEvent.click(screen.getByRole('button', { name: 'Next' }));
-    await waitFor(() => expect(screen.getAllByRole('button', { name: 'Worker' }).length).toBeGreaterThan(1));
+    await waitFor(() => expect(screen.getAllByRole('button', { name: 'Worker detail' }).length).toBeGreaterThan(0));
     expect(screen.getByText(/^1002$/)).toBeInTheDocument();
     expect(window.location.search).toMatch(/page=2/);
 
-    fireEvent.click(screen.getAllByRole('button', { name: 'Worker' })[1]);
+    fireEvent.click(screen.getAllByRole('button', { name: 'Worker detail' })[0]!);
     await waitFor(() => expect(screen.getByText(/Related Runs/i)).toBeInTheDocument());
     expect(screen.getByText(/Current Significance/i)).toBeInTheDocument();
     expect(screen.getByText(/Suppressed worker still needs operator judgment/i)).toBeInTheDocument();
@@ -604,7 +604,7 @@ describe('App', () => {
     window.history.replaceState(null, '', '/?view=worker&workerId=1001');
     render(<App />);
 
-    await waitFor(() => expect(screen.getByText(/SyncFactors Operator UI/i)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'SyncFactors' })).toBeInTheDocument());
     await waitFor(() => expect(screen.getByRole('button', { name: 'Test sync' })).toBeInTheDocument());
 
     fireEvent.click(screen.getByRole('button', { name: 'Review sync' }));

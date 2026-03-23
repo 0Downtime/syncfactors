@@ -180,7 +180,6 @@ $getSyncFactorsSuccessFactorsAuthSummary = $configModule.ExportedFunctions['Get-
 $getSyncFactorsRuntimeStatusSnapshot = $monitoringModule.ExportedFunctions['Get-SyncFactorsRuntimeStatusSnapshot']
 $newSyncFactorsReportReference = $persistenceModule.ExportedFunctions['New-SyncFactorsReportReference']
 $getSyncFactorsReportFromReference = $persistenceModule.ExportedFunctions['Get-SyncFactorsReportFromReference']
-$getSfWorkerById = $successFactorsModule.ExportedFunctions['Get-SfWorkerById']
 
 $resolvedConfigPath = (Resolve-Path -Path $ConfigPath).Path
 $resolvedMappingConfigPath = (Resolve-Path -Path $MappingConfigPath).Path
@@ -225,7 +224,7 @@ if ($PreviewMode -ne 'Configured' -or -not [string]::IsNullOrWhiteSpace($OutputD
 }
 
 if ($PreviewMode -eq 'Minimal') {
-    $worker = & $getSfWorkerById -Config $config -WorkerId $WorkerId
+    $worker = Get-SfWorkerById -Config $config -WorkerId $WorkerId
     if (-not $worker) {
         throw "Worker '$WorkerId' was not found in SuccessFactors using identity field '$($config.successFactors.query.identityField)'."
     }
