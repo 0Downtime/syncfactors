@@ -531,6 +531,23 @@ function Set-SyncFactorsTrackedWorkerState {
     Add-SyncFactorsReportOperation -Report $Report -OperationType 'SetWorkerState' -WorkerId $WorkerId -TargetType 'SyncState' -Target @{ workerId = $WorkerId } -Before $before -After $after | Out-Null
 }
 
+function Remove-SyncFactorsTrackedWorkerState {
+    [CmdletBinding()]
+    param(
+        [pscustomobject]$State,
+        [System.Collections.IDictionary]$Report,
+        [string]$WorkerId
+    )
+
+    $before = Get-SyncFactorsWorkerStateSnapshot -State $State -WorkerId $WorkerId
+    if ($null -eq $before) {
+        return
+    }
+
+    Remove-SyncFactorsWorkerState -State $State -WorkerId $WorkerId
+    Add-SyncFactorsReportOperation -Report $Report -OperationType 'SetWorkerState' -WorkerId $WorkerId -TargetType 'SyncState' -Target @{ workerId = $WorkerId } -Before $before -After $null | Out-Null
+}
+
 function Set-SyncFactorsTrackedCheckpoint {
     [CmdletBinding()]
     param(
@@ -960,8 +977,17 @@ function Invoke-SyncFactorsRun {
                     continue
                 }
 
-                $existingUser = Get-SyncFactorsSingleResult -Value $existingUserMatches
                 $workerState = Get-SyncFactorsWorkerState -State $state -WorkerId $workerId
+                $existingUser = Get-SyncFactorsSingleResult -Value $existingUserMatches
+                $workerStateLookupAttempted = $false
+                if (-not $existingUser -and $workerState -and $workerState.PSObject.Properties.Name -contains 'adObjectGuid' -and -not [string]::IsNullOrWhiteSpace("$($workerState.adObjectGuid)")) {
+                    $workerStateLookupAttempted = $true
+                    $existingUser = Get-SyncFactorsUserByObjectGuid -Config $config -ObjectGuid "$($workerState.adObjectGuid)"
+                }
+                if (-not $existingUser -and $workerStateLookupAttempted -and -not $isReviewMode) {
+                    Remove-SyncFactorsTrackedWorkerState -State $state -Report $report -WorkerId $workerId
+                    $workerState = $null
+                }
                 $workerStateIsSuppressed = $workerState -and $workerState.PSObject.Properties.Name -contains 'suppressed' -and [bool]$workerState.suppressed
 
                 if ($workerStateIsSuppressed -and (Test-SyncFactorsWorkerIsActive -Worker $worker)) {
