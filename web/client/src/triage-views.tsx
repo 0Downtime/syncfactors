@@ -427,7 +427,7 @@ export function WorkerView(props: {
       <section className="card worker-latest">
         <div className="card-header">
           <div>
-            <p className="section-kicker">Latest Selected Detail</p>
+            <p className="section-kicker">Latest Related Entry</p>
             <h2>{workerDetail?.latestEntry?.bucketLabel ?? 'No related entries'}</h2>
           </div>
         </div>

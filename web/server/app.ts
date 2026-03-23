@@ -977,9 +977,44 @@ function getDiffRowsFromPreviewEntries(
     if (attributeRows.length > 0) {
       return attributeRows.filter((row) => row.changed);
     }
+
+    const semanticRows = getSemanticPreviewDiffRows(entry.item, entry.bucket);
+    if (semanticRows.length > 0) {
+      return semanticRows;
+    }
   }
 
   return getDiffRowsFromOperations(operations);
+}
+
+function getSemanticPreviewDiffRows(item: Record<string, unknown>, bucket: string): DiffRow[] {
+  const currentEnabled = asNullableBoolean(item.currentEnabled);
+  const proposedEnable = resolvePreviewProposedEnable(item, bucket);
+  if (currentEnabled !== null && proposedEnable !== null && currentEnabled !== proposedEnable) {
+    return [{
+      attribute: 'enabled',
+      source: null,
+      before: inlineValue(currentEnabled),
+      after: inlineValue(proposedEnable),
+      changed: true,
+    }];
+  }
+
+  return [];
+}
+
+function resolvePreviewProposedEnable(item: Record<string, unknown>, bucket: string): boolean | null {
+  const explicit = asNullableBoolean(item.proposedEnable);
+  if (explicit !== null) {
+    return explicit;
+  }
+  if (bucket === 'disables') {
+    return false;
+  }
+  if (bucket === 'enables') {
+    return true;
+  }
+  return null;
 }
 
 function getDiffRowsFromOperations(operations: Record<string, unknown>[]): DiffRow[] {
