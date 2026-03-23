@@ -173,4 +173,40 @@ describe('web api', () => {
       },
     ]);
   });
+
+  it('synthesizes enabled diff rows for disable previews when lifecycle fields are present', () => {
+    const preview = normalizeWorkerPreview('full', {
+      reportPath: '/tmp/preview.json',
+      runId: 'preview-2',
+      mode: 'Review',
+      status: 'Succeeded',
+      artifactType: 'WorkerPreview',
+      changedAttributes: [],
+      operations: [],
+      preview: {
+        workerId: '40618',
+        buckets: ['disables'],
+      },
+      entries: [
+        {
+          bucket: 'disables',
+          item: {
+            workerId: '40618',
+            currentEnabled: true,
+            proposedEnable: false,
+          },
+        },
+      ],
+    });
+
+    expect(preview.diffRows).toEqual([
+      {
+        attribute: 'enabled',
+        source: null,
+        before: 'true',
+        after: 'false',
+        changed: true,
+      },
+    ]);
+  });
 });

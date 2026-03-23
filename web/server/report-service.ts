@@ -653,7 +653,7 @@ function getDiffRows(item: Record<string, unknown>, operations: Record<string, u
 
   const operation = operations.find((candidate) => asString(candidate.workerId) === workerId && asString(candidate.bucket) === bucket);
   if (!operation) {
-    return [];
+    return getSemanticDiffRows(item, bucket);
   }
 
   const before = asRecord(operation.before);
@@ -666,6 +666,36 @@ function getDiffRows(item: Record<string, unknown>, operations: Record<string, u
     after: inlineValue(after?.[key]),
     changed: inlineValue(before?.[key]) !== inlineValue(after?.[key]),
   }));
+}
+
+function getSemanticDiffRows(item: Record<string, unknown>, bucket: string): DiffRow[] {
+  const currentEnabled = asBoolean(item.currentEnabled);
+  const proposedEnable = resolveProposedEnable(item, bucket);
+  if (currentEnabled !== null && proposedEnable !== null && currentEnabled !== proposedEnable) {
+    return [{
+      attribute: 'enabled',
+      source: null,
+      before: inlineValue(currentEnabled),
+      after: inlineValue(proposedEnable),
+      changed: true,
+    }];
+  }
+
+  return [];
+}
+
+function resolveProposedEnable(item: Record<string, unknown>, bucket: string): boolean | null {
+  const explicit = asBoolean(item.proposedEnable);
+  if (explicit !== null) {
+    return explicit;
+  }
+  if (bucket === 'disables') {
+    return false;
+  }
+  if (bucket === 'enables') {
+    return true;
+  }
+  return null;
 }
 
 function getOperationSummary(

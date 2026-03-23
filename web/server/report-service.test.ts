@@ -196,6 +196,107 @@ describe('ReportService', () => {
     expect(worker.latestEntry?.workerId).toBe('1001');
   });
 
+  it('synthesizes enabled diff rows for disable entries without explicit attribute rows', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'syncfactors-web-disable-'));
+    tempPaths.push(root);
+    const reportDirectory = path.join(root, 'reports');
+    const reviewDirectory = path.join(reportDirectory, 'review');
+
+    const runPath = await writeReport(reviewDirectory, 'syncfactors-Review-20260323-170000.json', {
+      runId: 'run-disable-1',
+      artifactType: 'WorkerPreview',
+      mode: 'Review',
+      dryRun: true,
+      status: 'Succeeded',
+      startedAt: '2026-03-23T17:00:00Z',
+      completedAt: '2026-03-23T17:00:03Z',
+      operations: [],
+      updates: [],
+      manualReview: [],
+      quarantined: [],
+      conflicts: [],
+      guardrailFailures: [],
+      creates: [],
+      enables: [],
+      disables: [
+        {
+          workerId: '40618',
+          samAccountName: '40618',
+          currentEnabled: true,
+          proposedEnable: false,
+          reviewCategory: 'ExistingUserOffboarding',
+        },
+      ],
+      graveyardMoves: [],
+      deletions: [],
+      unchanged: [],
+    });
+
+    const status: DashboardStatus = {
+      configPath: path.join(root, 'config.json'),
+      latestRun: {
+        runId: 'run-disable-1',
+        path: runPath,
+        artifactType: 'WorkerPreview',
+        mode: 'Review',
+        dryRun: true,
+        status: 'Succeeded',
+        startedAt: '2026-03-23T17:00:00Z',
+        completedAt: '2026-03-23T17:00:03Z',
+        durationSeconds: 3,
+        reversibleOperations: 0,
+        creates: 0,
+        updates: 0,
+        enables: 0,
+        disables: 1,
+        graveyardMoves: 0,
+        deletions: 0,
+        quarantined: 0,
+        conflicts: 0,
+        guardrailFailures: 0,
+        manualReview: 0,
+        unchanged: 0,
+      },
+      currentRun: {},
+      recentRuns: [],
+      summary: {
+        lastCheckpoint: null,
+        totalTrackedWorkers: 1,
+        suppressedWorkers: 0,
+        pendingDeletionWorkers: 0,
+      },
+      health: {
+        successFactors: { status: 'OK', detail: 'oauth' },
+        activeDirectory: { status: 'OK', detail: 'dc01' },
+      },
+      trackedWorkers: [],
+      context: {},
+      paths: {
+        configPath: path.join(root, 'config.json'),
+        statePath: path.join(root, 'state.json'),
+        reportDirectory,
+        reviewReportDirectory: reviewDirectory,
+        reportDirectories: [reportDirectory, reviewDirectory],
+        runtimeStatusPath: path.join(root, 'runtime-status.json'),
+      },
+      warnings: [],
+    };
+
+    const service = new ReportService();
+    const entries = await service.getRunEntries(status, 'run-disable-1', { workerId: '40618' });
+
+    expect(entries.entries).toHaveLength(1);
+    expect(entries.entries[0]?.diffRows).toEqual([
+      {
+        attribute: 'enabled',
+        source: null,
+        before: 'true',
+        after: 'false',
+        changed: true,
+      },
+    ]);
+  });
+
   it('keeps the non-Windows AD probe warning out of run, queue, and worker responses', async () => {
     const status = await createStatusFixture();
     status.warnings = [NON_WINDOWS_AD_PROBE_WARNING];
