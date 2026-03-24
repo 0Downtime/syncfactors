@@ -52,7 +52,28 @@
     {
       "source": "employmentNav[0].jobInfoNav[0].jobTitle",
       "target": "title",
-      "enabled": false,
+      "enabled": true,
+      "required": false,
+      "transform": "Trim"
+    },
+    {
+      "source": "employmentNav[0].jobInfoNav[0].locationNav.officeLocationAddress",
+      "target": "streetAddress",
+      "enabled": true,
+      "required": false,
+      "transform": "Trim"
+    },
+    {
+      "source": "employmentNav[0].jobInfoNav[0].locationNav.officeLocationCity",
+      "target": "l",
+      "enabled": true,
+      "required": false,
+      "transform": "Trim"
+    },
+    {
+      "source": "employmentNav[0].jobInfoNav[0].locationNav.officeLocationZipCode",
+      "target": "postalCode",
+      "enabled": true,
       "required": false,
       "transform": "Trim"
     },

@@ -37,6 +37,9 @@
         "employmentNav/jobInfoNav/departmentNav/department",
         "employmentNav/jobInfoNav/companyNav/company",
         "employmentNav/jobInfoNav/locationNav/LocationName",
+        "employmentNav/jobInfoNav/locationNav/officeLocationAddress",
+        "employmentNav/jobInfoNav/locationNav/officeLocationCity",
+        "employmentNav/jobInfoNav/locationNav/officeLocationZipCode",
         "employmentNav/jobInfoNav/jobTitle",
         "employmentNav/jobInfoNav/businessUnitNav/businessUnit",
         "employmentNav/jobInfoNav/divisionNav/division",
@@ -63,9 +66,29 @@
       "identityField": "personIdExternal",
       "deltaField": "lastModifiedDateTime",
       "select": [
-        "personIdExternal"
+        "personIdExternal",
+        "personalInfoNav/firstName",
+        "personalInfoNav/lastName",
+        "employmentNav/startDate",
+        "emailNav/emailAddress",
+        "employmentNav/jobInfoNav/departmentNav/department",
+        "employmentNav/jobInfoNav/companyNav/company",
+        "employmentNav/jobInfoNav/locationNav/LocationName",
+        "employmentNav/jobInfoNav/locationNav/officeLocationAddress",
+        "employmentNav/jobInfoNav/locationNav/officeLocationCity",
+        "employmentNav/jobInfoNav/locationNav/officeLocationZipCode",
+        "employmentNav/jobInfoNav/jobTitle",
+        "employmentNav/jobInfoNav/managerId"
       ],
-      "expand": []
+      "expand": [
+        "employmentNav",
+        "employmentNav/jobInfoNav",
+        "personalInfoNav",
+        "emailNav",
+        "employmentNav/jobInfoNav/companyNav",
+        "employmentNav/jobInfoNav/departmentNav",
+        "employmentNav/jobInfoNav/locationNav"
+      ]
     }
   },
   "ad": {

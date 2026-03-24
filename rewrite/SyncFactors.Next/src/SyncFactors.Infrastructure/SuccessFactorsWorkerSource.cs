@@ -318,7 +318,11 @@ public sealed class SuccessFactorsWorkerSource(
             ["employmentNav[0].jobInfoNav[0].businessUnitNav.businessUnit"] = GetString(businessUnitNav, "businessUnit"),
             ["employmentNav[0].jobInfoNav[0].costCenterNav.costCenterDescription"] = GetString(costCenterNav, "costCenterDescription") ?? GetString(costCenterNav, "costCenter"),
             ["employmentNav[0].jobInfoNav[0].divisionNav.division"] = GetString(divisionNav, "division"),
-            ["employmentNav[0].jobInfoNav[0].locationNav.LocationName"] = GetString(locationNav, "LocationName")
+            ["employmentNav[0].jobInfoNav[0].locationNav.LocationName"] = GetString(locationNav, "LocationName"),
+            ["employmentNav[0].jobInfoNav[0].jobTitle"] = GetString(jobInfo, "jobTitle"),
+            ["employmentNav[0].jobInfoNav[0].locationNav.officeLocationAddress"] = GetString(locationNav, "officeLocationAddress"),
+            ["employmentNav[0].jobInfoNav[0].locationNav.officeLocationCity"] = GetString(locationNav, "officeLocationCity"),
+            ["employmentNav[0].jobInfoNav[0].locationNav.officeLocationZipCode"] = GetString(locationNav, "officeLocationZipCode")
         };
     }
 
