@@ -1,5 +1,6 @@
 using SyncFactors.Contracts;
 using SyncFactors.Domain;
+using System.Text.Json.Serialization;
 
 namespace SyncFactors.Infrastructure;
 
@@ -63,16 +64,27 @@ public sealed class SqliteRuntimeStatusStore(SqlitePathResolver pathResolver, Sq
 
     private sealed class RuntimeStatusRow
     {
+        [JsonPropertyName("run_id")]
         public string? RunId { get; init; }
+        [JsonPropertyName("status")]
         public string? Status { get; init; }
+        [JsonPropertyName("stage")]
         public string? Stage { get; init; }
+        [JsonPropertyName("started_at")]
         public string? StartedAt { get; init; }
+        [JsonPropertyName("last_updated_at")]
         public string? LastUpdatedAt { get; init; }
+        [JsonPropertyName("completed_at")]
         public string? CompletedAt { get; init; }
+        [JsonPropertyName("current_worker_id")]
         public string? CurrentWorkerId { get; init; }
+        [JsonPropertyName("last_action")]
         public string? LastAction { get; init; }
+        [JsonPropertyName("processed_workers")]
         public int ProcessedWorkers { get; init; }
+        [JsonPropertyName("total_workers")]
         public int TotalWorkers { get; init; }
+        [JsonPropertyName("error_message")]
         public string? ErrorMessage { get; init; }
     }
 }

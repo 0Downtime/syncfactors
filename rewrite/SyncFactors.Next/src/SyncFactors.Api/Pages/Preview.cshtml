@@ -1,0 +1,124 @@
+@page
+@model SyncFactors.Api.Pages.PreviewModel
+@{
+    ViewData["Title"] = "Worker Preview";
+}
+
+<section class="hero hero-compact">
+    <div>
+        <p class="eyebrow">Staging Sync</p>
+        <h1>Worker Preview</h1>
+        <p class="lede">Enter a worker ID to fetch the worker from SuccessFactors, compare it to Active Directory, and inspect the staged operations before a real sync.</p>
+    </div>
+</section>
+
+<section class="panel">
+    <form method="get" class="filters preview-form">
+        <label class="filter-search">
+            <span>Worker Id</span>
+            <input type="text" name="workerId" value="@Model.WorkerId" placeholder="1000123" />
+        </label>
+        <div class="filter-actions">
+            <button type="submit">Preview Worker</button>
+        </div>
+    </form>
+</section>
+
+@if (!string.IsNullOrWhiteSpace(Model.ErrorMessage))
+{
+    <section class="panel">
+        <p class="callout danger">@Model.ErrorMessage</p>
+    </section>
+}
+
+@if (Model.Preview is not null)
+{
+    <section class="panel-grid">
+        <article class="panel">
+            <h2>Summary</h2>
+            <dl class="kv">
+                <div><dt>Worker Id</dt><dd>@Model.Preview.WorkerId</dd></div>
+                <div><dt>SAM</dt><dd>@(Model.Preview.SamAccountName ?? "n/a")</dd></div>
+                <div><dt>Status</dt><dd>@(Model.Preview.Status ?? "Unknown")</dd></div>
+                <div><dt>Operation</dt><dd>@(Model.Preview.OperationSummary?.Action ?? "No operation")</dd></div>
+                <div><dt>Matched Existing User</dt><dd>@DisplayBool(Model.Preview.MatchedExistingUser)</dd></div>
+                <div><dt>Current DN</dt><dd>@(Model.Preview.CurrentDistinguishedName ?? "n/a")</dd></div>
+                <div><dt>Target OU</dt><dd>@(Model.Preview.TargetOu ?? "n/a")</dd></div>
+            </dl>
+            @if (!string.IsNullOrWhiteSpace(Model.Preview.OperationSummary?.Effect))
+            {
+                <p class="callout">@Model.Preview.OperationSummary.Effect</p>
+            }
+        </article>
+
+        <article class="panel">
+            <h2>Classification</h2>
+            <div class="bucket-grid">
+            @foreach (var bucket in Model.Preview.Buckets)
+            {
+                <span class="bucket-card">@bucket</span>
+            }
+            </div>
+            @if (!string.IsNullOrWhiteSpace(Model.Preview.Reason) || !string.IsNullOrWhiteSpace(Model.Preview.ReviewCaseType))
+            {
+                <dl class="kv preview-meta">
+                    <div><dt>Reason</dt><dd>@(Model.Preview.Reason ?? "n/a")</dd></div>
+                    <div><dt>Review Case</dt><dd>@(Model.Preview.ReviewCaseType ?? "n/a")</dd></div>
+                </dl>
+            }
+        </article>
+    </section>
+
+    <section class="panel">
+        <h2>Attribute Diff</h2>
+        @if (Model.Preview.DiffRows.Count == 0)
+        {
+            <p class="muted">No attribute-level differences were recorded.</p>
+        }
+        else
+        {
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Attribute</th>
+                        <th>Source</th>
+                        <th>Current</th>
+                        <th>Proposed</th>
+                    </tr>
+                </thead>
+                <tbody>
+                @foreach (var row in Model.Preview.DiffRows)
+                {
+                    <tr class="diff-row @(row.Changed ? "changed" : "same")">
+                        <td>@row.Attribute</td>
+                        <td>@(row.Source ?? "-")</td>
+                        <td class="before">@row.Before</td>
+                        <td class="after">@row.After</td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        }
+    </section>
+
+    <section class="panel">
+        <h2>Preview Entries</h2>
+        <div class="entry-list">
+        @foreach (var entry in Model.Preview.Entries)
+        {
+            <article class="entry-card">
+                <header class="entry-head">
+                    <div>
+                        <h3>@entry.Bucket</h3>
+                    </div>
+                </header>
+                <pre class="json-block">@entry.Item.GetRawText()</pre>
+            </article>
+        }
+        </div>
+    </section>
+}
+
+@functions {
+    private static string DisplayBool(bool? value) => value.HasValue ? (value.Value ? "Yes" : "No") : "Unknown";
+}

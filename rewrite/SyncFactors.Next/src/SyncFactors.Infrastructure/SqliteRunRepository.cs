@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using SyncFactors.Contracts;
 using SyncFactors.Domain;
 
@@ -590,50 +591,87 @@ public sealed class SqliteRunRepository(SqlitePathResolver pathResolver, SqliteJ
 
     private class RunRow
     {
+        [JsonPropertyName("run_id")]
         public string? RunId { get; init; }
+        [JsonPropertyName("path")]
         public string? Path { get; init; }
+        [JsonPropertyName("artifact_type")]
         public string? ArtifactType { get; init; }
+        [JsonPropertyName("config_path")]
         public string? ConfigPath { get; init; }
+        [JsonPropertyName("mapping_config_path")]
         public string? MappingConfigPath { get; init; }
+        [JsonPropertyName("mode")]
         public string? Mode { get; init; }
+        [JsonPropertyName("dry_run")]
         public int DryRun { get; init; }
+        [JsonPropertyName("status")]
         public string? Status { get; init; }
+        [JsonPropertyName("started_at")]
         public string? StartedAt { get; init; }
+        [JsonPropertyName("completed_at")]
         public string? CompletedAt { get; init; }
+        [JsonPropertyName("duration_seconds")]
         public int? DurationSeconds { get; init; }
+        [JsonPropertyName("creates")]
         public int Creates { get; init; }
+        [JsonPropertyName("updates")]
         public int Updates { get; init; }
+        [JsonPropertyName("enables")]
         public int Enables { get; init; }
+        [JsonPropertyName("disables")]
         public int Disables { get; init; }
+        [JsonPropertyName("graveyard_moves")]
         public int GraveyardMoves { get; init; }
+        [JsonPropertyName("deletions")]
         public int Deletions { get; init; }
+        [JsonPropertyName("quarantined")]
         public int Quarantined { get; init; }
+        [JsonPropertyName("conflicts")]
         public int Conflicts { get; init; }
+        [JsonPropertyName("guardrail_failures")]
         public int GuardrailFailures { get; init; }
+        [JsonPropertyName("manual_review")]
         public int ManualReview { get; init; }
+        [JsonPropertyName("unchanged")]
         public int Unchanged { get; init; }
     }
 
     private sealed class RunWithReportRow : RunRow
     {
+        [JsonPropertyName("report_json")]
         public string? ReportJson { get; init; }
     }
 
     private sealed class EntryRow
     {
+        [JsonPropertyName("entry_id")]
         public string? EntryId { get; init; }
+        [JsonPropertyName("run_id")]
         public string? RunId { get; init; }
+        [JsonPropertyName("artifact_type")]
         public string? ArtifactType { get; init; }
+        [JsonPropertyName("mode")]
         public string? Mode { get; init; }
+        [JsonPropertyName("bucket")]
         public string? Bucket { get; init; }
+        [JsonPropertyName("bucket_index")]
         public int BucketIndex { get; init; }
+        [JsonPropertyName("worker_id")]
         public string? WorkerId { get; init; }
+        [JsonPropertyName("sam_account_name")]
         public string? SamAccountName { get; init; }
+        [JsonPropertyName("reason")]
         public string? Reason { get; init; }
+        [JsonPropertyName("review_category")]
         public string? ReviewCategory { get; init; }
+        [JsonPropertyName("review_case_type")]
         public string? ReviewCaseType { get; init; }
+        [JsonPropertyName("started_at")]
         public string? StartedAt { get; init; }
+        [JsonPropertyName("item_json")]
         public string? ItemJson { get; init; }
+        [JsonPropertyName("report_json")]
         public string? ReportJson { get; init; }
     }
 }

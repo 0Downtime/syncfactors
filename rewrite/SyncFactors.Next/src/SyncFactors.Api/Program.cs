@@ -5,7 +5,11 @@ using SyncFactors.Infrastructure;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddSingleton(new SqlitePathResolver(builder.Configuration["SyncFactors:SqlitePath"]));
+builder.Services.AddSingleton(new SyncFactorsConfigPathResolver(
+    builder.Configuration["SyncFactors:ConfigPath"],
+    builder.Configuration["SyncFactors:MappingConfigPath"]));
 builder.Services.AddSingleton<SqliteJsonShell>();
+builder.Services.AddSingleton<PowerShellWorkerPreviewService>();
 builder.Services.AddSingleton<IRuntimeStatusStore, SqliteRuntimeStatusStore>();
 builder.Services.AddSingleton<IRunRepository, SqliteRunRepository>();
 builder.Services.AddRazorPages();

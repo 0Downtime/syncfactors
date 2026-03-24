@@ -79,3 +79,31 @@ public sealed record OperationSummary(
     string? TargetOu,
     string? FromOu,
     string? ToOu);
+
+public sealed record WorkerPreviewResult(
+    string? ReportPath,
+    string? RunId,
+    string? Mode,
+    string? Status,
+    string? ErrorMessage,
+    string? ArtifactType,
+    string? SuccessFactorsAuth,
+    string WorkerId,
+    IReadOnlyList<string> Buckets,
+    bool? MatchedExistingUser,
+    string? ReviewCategory,
+    string? ReviewCaseType,
+    string? Reason,
+    string? OperatorActionSummary,
+    string? SamAccountName,
+    string? TargetOu,
+    string? CurrentDistinguishedName,
+    bool? CurrentEnabled,
+    bool? ProposedEnable,
+    OperationSummary? OperationSummary,
+    IReadOnlyList<DiffRow> DiffRows,
+    IReadOnlyList<WorkerPreviewEntry> Entries);
+
+public sealed record WorkerPreviewEntry(
+    string Bucket,
+    JsonElement Item);

@@ -48,6 +48,55 @@
 </section>
 
 <section class="panel">
+    <h2>Filters</h2>
+    <form method="get" class="filters">
+        <input type="hidden" name="runId" value="@Model.Run.Run.RunId" />
+        <label>
+            <span>Bucket</span>
+            <select name="bucket">
+                <option value="">All buckets</option>
+                @foreach (var bucket in Model.AvailableBuckets)
+                {
+                    @if (string.Equals(Model.Bucket, bucket, StringComparison.Ordinal))
+                    {
+                        <option value="@bucket" selected>@bucket</option>
+                    }
+                    else
+                    {
+                        <option value="@bucket">@bucket</option>
+                    }
+                }
+            </select>
+        </label>
+        <label>
+            <span>Worker Id</span>
+            <select name="workerId">
+                <option value="">All workers</option>
+                @foreach (var workerId in Model.AvailableWorkerIds)
+                {
+                    @if (string.Equals(Model.WorkerId, workerId, StringComparison.Ordinal))
+                    {
+                        <option value="@workerId" selected>@workerId</option>
+                    }
+                    else
+                    {
+                        <option value="@workerId">@workerId</option>
+                    }
+                }
+            </select>
+        </label>
+        <label class="filter-search">
+            <span>Text search</span>
+            <input type="text" name="filter" value="@Model.Filter" placeholder="samAccountName, reason, reviewCaseType..." />
+        </label>
+        <div class="filter-actions">
+            <button type="submit">Apply</button>
+            <a class="link-button" asp-page="/Runs/Detail" asp-route-runId="@Model.Run.Run.RunId">Clear</a>
+        </div>
+    </form>
+</section>
+
+<section class="panel">
     <h2>Entries @if (!string.IsNullOrWhiteSpace(Model.Bucket)) { <text>· @Model.Bucket</text> }</h2>
     @if (Model.Entries.Count == 0)
     {
