@@ -79,7 +79,14 @@ public sealed class AttributeDiffService : IAttributeDiffService
             return directValue;
         }
 
-        return source switch
+        var normalizedSource = NormalizeSourcePath(source);
+        if (!string.Equals(normalizedSource, source, StringComparison.OrdinalIgnoreCase)
+            && worker.Attributes.TryGetValue(normalizedSource, out var normalizedValue))
+        {
+            return normalizedValue;
+        }
+
+        return normalizedSource switch
         {
             "preferredName" => worker.PreferredName,
             "firstName" => worker.PreferredName,
@@ -110,6 +117,28 @@ public sealed class AttributeDiffService : IAttributeDiffService
                 ? parsed.ToString("yyyy-MM-dd")
                 : value,
             _ => value
+        };
+    }
+
+    private static string NormalizeSourcePath(string source)
+    {
+        return source switch
+        {
+            "personalInfoNav[0].firstName" => "firstName",
+            "personalInfoNav[0].lastName" => "lastName",
+            "emailNav[0].emailAddress" => "email",
+            "employmentNav[0].startDate" => "startDate",
+            "employmentNav[0].jobInfoNav[0].department" => "department",
+            "employmentNav[0].jobInfoNav[0].company" => "company",
+            "employmentNav[0].jobInfoNav[0].location" => "location",
+            "employmentNav[0].jobInfoNav[0].jobTitle" => "jobTitle",
+            "employmentNav[0].jobInfoNav[0].businessUnit" => "businessUnit",
+            "employmentNav[0].jobInfoNav[0].division" => "division",
+            "employmentNav[0].jobInfoNav[0].costCenter" => "costCenter",
+            "employmentNav[0].jobInfoNav[0].employeeClass" => "employeeClass",
+            "employmentNav[0].jobInfoNav[0].employeeType" => "employeeType",
+            "employmentNav[0].jobInfoNav[0].managerId" => "managerId",
+            _ => source
         };
     }
 }
