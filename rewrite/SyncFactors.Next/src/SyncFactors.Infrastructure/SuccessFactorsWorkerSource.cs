@@ -277,6 +277,25 @@ public sealed class SuccessFactorsWorkerSource(
         JsonElement? employment,
         JsonElement? jobInfo)
     {
+        var companyNav = jobInfo is { ValueKind: not JsonValueKind.Undefined }
+            ? GetNavigationObject(jobInfo.Value, "companyNav")
+            : null;
+        var departmentNav = jobInfo is { ValueKind: not JsonValueKind.Undefined }
+            ? GetNavigationObject(jobInfo.Value, "departmentNav")
+            : null;
+        var businessUnitNav = jobInfo is { ValueKind: not JsonValueKind.Undefined }
+            ? GetNavigationObject(jobInfo.Value, "businessUnitNav")
+            : null;
+        var costCenterNav = jobInfo is { ValueKind: not JsonValueKind.Undefined }
+            ? GetNavigationObject(jobInfo.Value, "costCenterNav")
+            : null;
+        var divisionNav = jobInfo is { ValueKind: not JsonValueKind.Undefined }
+            ? GetNavigationObject(jobInfo.Value, "divisionNav")
+            : null;
+        var locationNav = jobInfo is { ValueKind: not JsonValueKind.Undefined }
+            ? GetNavigationObject(jobInfo.Value, "locationNav")
+            : null;
+
         return new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
         {
             ["personIdExternal"] = GetString(worker, "personIdExternal"),
@@ -284,17 +303,33 @@ public sealed class SuccessFactorsWorkerSource(
             ["lastName"] = GetString(personalInfo, "lastName") ?? GetString(worker, "lastName"),
             ["email"] = GetString(GetFirstNavigationResult(worker, "emailNav"), "emailAddress") ?? GetString(worker, "email"),
             ["department"] = GetString(jobInfo, "department") ?? GetString(employment, "department") ?? GetString(worker, "department"),
-            ["company"] = GetString(jobInfo, "company") ?? GetString(worker, "company"),
-            ["location"] = GetString(jobInfo, "location") ?? GetString(worker, "location"),
+            ["company"] = GetString(companyNav, "company") ?? GetString(jobInfo, "company") ?? GetString(worker, "company"),
+            ["location"] = GetString(locationNav, "LocationName") ?? GetString(jobInfo, "location") ?? GetString(worker, "location"),
             ["jobTitle"] = GetString(jobInfo, "jobTitle") ?? GetString(worker, "jobTitle"),
-            ["businessUnit"] = GetString(jobInfo, "businessUnit") ?? GetString(worker, "businessUnit"),
-            ["division"] = GetString(jobInfo, "division") ?? GetString(worker, "division"),
-            ["costCenter"] = GetString(jobInfo, "costCenter") ?? GetString(worker, "costCenter"),
+            ["businessUnit"] = GetString(businessUnitNav, "businessUnit") ?? GetString(jobInfo, "businessUnit") ?? GetString(worker, "businessUnit"),
+            ["division"] = GetString(divisionNav, "division") ?? GetString(jobInfo, "division") ?? GetString(worker, "division"),
+            ["costCenter"] = GetString(costCenterNav, "costCenterDescription") ?? GetString(costCenterNav, "costCenter") ?? GetString(jobInfo, "costCenter") ?? GetString(worker, "costCenter"),
             ["employeeClass"] = GetString(jobInfo, "employeeClass") ?? GetString(worker, "employeeClass"),
             ["employeeType"] = GetString(jobInfo, "employeeType") ?? GetString(worker, "employeeType"),
             ["managerId"] = GetString(jobInfo, "managerId") ?? GetString(worker, "managerId"),
-            ["startDate"] = GetString(employment, "startDate") ?? GetString(worker, "startDate")
+            ["startDate"] = GetString(employment, "startDate") ?? GetString(worker, "startDate"),
+            ["employmentNav[0].jobInfoNav[0].companyNav.company"] = GetString(companyNav, "company"),
+            ["employmentNav[0].jobInfoNav[0].departmentNav.department"] = GetString(departmentNav, "department"),
+            ["employmentNav[0].jobInfoNav[0].businessUnitNav.businessUnit"] = GetString(businessUnitNav, "businessUnit"),
+            ["employmentNav[0].jobInfoNav[0].costCenterNav.costCenterDescription"] = GetString(costCenterNav, "costCenterDescription") ?? GetString(costCenterNav, "costCenter"),
+            ["employmentNav[0].jobInfoNav[0].divisionNav.division"] = GetString(divisionNav, "division"),
+            ["employmentNav[0].jobInfoNav[0].locationNav.LocationName"] = GetString(locationNav, "LocationName")
         };
+    }
+
+    private static JsonElement? GetNavigationObject(JsonElement element, string propertyName)
+    {
+        if (element.TryGetProperty(propertyName, out var property) && property.ValueKind == JsonValueKind.Object)
+        {
+            return property.Clone();
+        }
+
+        return null;
     }
 
     private static bool IsPrehire(string? startDate, int enableBeforeStartDays)

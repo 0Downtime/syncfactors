@@ -31,25 +31,32 @@
       "baseFilter": "employmentNav/jobInfoNav/emplStatus in 'A','U'",
       "select": [
         "personIdExternal",
-        "firstName",
-        "lastName",
-        "status",
-        "startDate",
-        "department",
-        "company",
-        "location",
-        "email",
-        "managerEmployeeId",
+        "personalInfoNav/firstName",
+        "personalInfoNav/lastName",
+        "employmentNav/startDate",
+        "emailNav/emailAddress",
+        "employmentNav/jobInfoNav/departmentNav/department",
+        "employmentNav/jobInfoNav/companyNav/company",
+        "employmentNav/jobInfoNav/locationNav/LocationName",
         "employmentNav/jobInfoNav/jobTitle",
-        "employmentNav/jobInfoNav/businessUnit",
-        "employmentNav/jobInfoNav/division",
-        "employmentNav/jobInfoNav/costCenter",
+        "employmentNav/jobInfoNav/businessUnitNav/businessUnit",
+        "employmentNav/jobInfoNav/divisionNav/division",
+        "employmentNav/jobInfoNav/costCenterNav/costCenterDescription",
         "employmentNav/jobInfoNav/employeeClass",
-        "employmentNav/jobInfoNav/employmentType"
+        "employmentNav/jobInfoNav/employeeType",
+        "employmentNav/jobInfoNav/managerId"
       ],
       "expand": [
         "employmentNav",
-        "employmentNav/jobInfoNav"
+        "employmentNav/jobInfoNav",
+        "personalInfoNav",
+        "emailNav",
+        "employmentNav/jobInfoNav/companyNav",
+        "employmentNav/jobInfoNav/departmentNav",
+        "employmentNav/jobInfoNav/businessUnitNav",
+        "employmentNav/jobInfoNav/costCenterNav",
+        "employmentNav/jobInfoNav/divisionNav",
+        "employmentNav/jobInfoNav/locationNav"
       ]
     }
   },
