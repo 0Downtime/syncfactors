@@ -136,6 +136,7 @@ function ConvertTo-SyncFactorsWorkerPreviewInlineText {
 function Get-SyncFactorsWorkerPreviewOperationLines {
     param(
         [Parameter(Mandatory)]
+        [AllowEmptyCollection()]
         [object[]]$Operations
     )
 
