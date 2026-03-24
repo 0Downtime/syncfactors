@@ -1,6 +1,7 @@
 using SyncFactors.Contracts;
 using SyncFactors.Domain;
 using Microsoft.Extensions.Logging;
+using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
@@ -32,6 +33,9 @@ public sealed class SuccessFactorsWorkerSource(
 
         using var request = new HttpRequestMessage(HttpMethod.Get, requestUri);
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+        request.Headers.AcceptEncoding.Add(new StringWithQualityHeaderValue("gzip"));
+        request.Headers.AcceptEncoding.Add(new StringWithQualityHeaderValue("deflate"));
+        AddTracingHeaders(request, workerId);
         await ApplyAuthenticationAsync(request, config.SuccessFactors.Auth, cancellationToken);
 
         using var response = await httpClient.SendAsync(request, cancellationToken);
@@ -53,7 +57,7 @@ public sealed class SuccessFactorsWorkerSource(
         {
             using var document = JsonDocument.Parse(rawBody);
 
-            var worker = TryParseWorker(document.RootElement, config, workerId);
+            var worker = TryParseWorker(document.RootElement, config, query, workerId);
             if (worker is not null)
             {
                 logger.LogInformation(
@@ -109,6 +113,9 @@ public sealed class SuccessFactorsWorkerSource(
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, oauth.TokenUrl);
         request.Content = new FormUrlEncodedContent(BuildTokenForm(oauth));
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+        request.Headers.AcceptEncoding.Add(new StringWithQualityHeaderValue("gzip"));
+        request.Headers.AcceptEncoding.Add(new StringWithQualityHeaderValue("deflate"));
         logger.LogDebug("Requesting SuccessFactors OAuth token from {TokenUrl}", oauth.TokenUrl);
 
         using var response = await httpClient.SendAsync(request, cancellationToken);
@@ -171,7 +178,7 @@ public sealed class SuccessFactorsWorkerSource(
         return $"{relativePath}?{string.Join("&", parts)}";
     }
 
-    private static WorkerSnapshot? TryParseWorker(JsonElement root, SyncFactorsConfigDocument config, string workerId)
+    private static WorkerSnapshot? TryParseWorker(JsonElement root, SyncFactorsConfigDocument config, SuccessFactorsQueryConfig query, string workerId)
     {
         var worker = ExtractWorkerArray(root).FirstOrDefault();
         if (worker.ValueKind == JsonValueKind.Undefined)
@@ -185,7 +192,7 @@ public sealed class SuccessFactorsWorkerSource(
         var startDate = GetString(worker, "startDate");
 
         return new WorkerSnapshot(
-            WorkerId: GetString(worker, config.SuccessFactors.Query.IdentityField) ?? workerId,
+            WorkerId: GetString(worker, query.IdentityField) ?? workerId,
             PreferredName: preferredName,
             LastName: lastName,
             Department: department,
@@ -226,5 +233,14 @@ public sealed class SuccessFactorsWorkerSource(
         }
 
         return parsedStart > DateTimeOffset.UtcNow.AddDays(enableBeforeStartDays);
+    }
+
+    private static void AddTracingHeaders(HttpRequestMessage request, string workerId)
+    {
+        var correlationId = Guid.NewGuid().ToString("D");
+        request.Headers.TryAddWithoutValidation("x-correlation-id", correlationId);
+        request.Headers.TryAddWithoutValidation("X-SF-Correlation-Id", correlationId);
+        request.Headers.TryAddWithoutValidation("X-SF-Process-Name", "SyncFactors.Next.WorkerPreview");
+        request.Headers.TryAddWithoutValidation("X-SF-Execution-Id", workerId);
     }
 }
