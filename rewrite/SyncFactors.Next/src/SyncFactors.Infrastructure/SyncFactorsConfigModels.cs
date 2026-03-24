@@ -1,11 +1,21 @@
 namespace SyncFactors.Infrastructure;
 
 public sealed record SyncFactorsConfigDocument(
+    SecretsConfig Secrets,
     SuccessFactorsConfig SuccessFactors,
     ActiveDirectoryConfig Ad,
     SyncPolicyConfig Sync,
     SafetyConfig Safety,
     ReportingConfig Reporting);
+
+public sealed record SecretsConfig(
+    string? SuccessFactorsUsernameEnv,
+    string? SuccessFactorsPasswordEnv,
+    string? SuccessFactorsClientIdEnv,
+    string? SuccessFactorsClientSecretEnv,
+    string? AdServerEnv,
+    string? AdUsernameEnv,
+    string? AdBindPasswordEnv);
 
 public sealed record SuccessFactorsConfig(
     string BaseUrl,
