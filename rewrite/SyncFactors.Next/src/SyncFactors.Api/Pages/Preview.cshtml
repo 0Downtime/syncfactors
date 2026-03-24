@@ -31,6 +31,28 @@
     </section>
 }
 
+@if (Model.ApplyResult is not null)
+{
+    <section class="panel">
+        <p class="callout @(Model.ApplyResult.Succeeded ? "good" : "danger")">@Model.ApplyResult.Message</p>
+        <dl class="kv preview-meta">
+            <div><dt>Action</dt><dd>@Model.ApplyResult.Action</dd></div>
+            <div><dt>SAM</dt><dd>@Model.ApplyResult.SamAccountName</dd></div>
+            <div><dt>Distinguished Name</dt><dd>@(Model.ApplyResult.DistinguishedName ?? "n/a")</dd></div>
+            <div><dt>Run</dt><dd>
+                @if (!string.IsNullOrWhiteSpace(Model.ApplyResult.RunId))
+                {
+                    <a asp-page="/Runs/Detail" asp-route-runId="@Model.ApplyResult.RunId">@Model.ApplyResult.RunId</a>
+                }
+                else
+                {
+                    <text>n/a</text>
+                }
+            </dd></div>
+        </dl>
+    </section>
+}
+
 @if (Model.Preview is not null)
 {
     <section class="panel-grid">
@@ -49,6 +71,12 @@
             {
                 <p class="callout">@Model.Preview.OperationSummary.Effect</p>
             }
+            <form method="post" asp-page-handler="Apply">
+                <input type="hidden" asp-for="WorkerId" />
+                <div class="filter-actions">
+                    <button type="submit">Apply Preview</button>
+                </div>
+            </form>
         </article>
 
         <article class="panel">
