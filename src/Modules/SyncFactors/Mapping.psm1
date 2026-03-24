@@ -1,5 +1,33 @@
 Set-StrictMode -Version Latest
 
+function Resolve-SyncFactorsCollectionValue {
+    [CmdletBinding()]
+    param(
+        [AllowNull()]
+        [object]$Value
+    )
+
+    if ($null -eq $Value -or $Value -is [string]) {
+        return $Value
+    }
+
+    $resultsProperty = if ($Value -is [System.Collections.IDictionary]) {
+        if ($Value.Contains('results')) { $Value['results'] } else { $null }
+    } else {
+        $Value.PSObject.Properties['results']
+    }
+
+    if ($null -eq $resultsProperty) {
+        return $Value
+    }
+
+    if ($resultsProperty -is [System.Management.Automation.PSPropertyInfo]) {
+        return $resultsProperty.Value
+    }
+
+    return $resultsProperty
+}
+
 function Get-PathSegments {
     [CmdletBinding()]
     param(
@@ -47,6 +75,8 @@ function Get-NestedValue {
 
             $current = $property.Value
         }
+
+        $current = Resolve-SyncFactorsCollectionValue -Value $current
 
         if ($null -eq $segment.Index) {
             continue
