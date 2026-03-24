@@ -30,6 +30,9 @@ reports/synthetic*/
 config/*.local.sync-config.json
 config/*.local.mapping-config.json
 config/local.*.json
+rewrite/SyncFactors.Next/config/*.local.sync-config.json
+rewrite/SyncFactors.Next/config/*.local.mapping-config.json
+rewrite/SyncFactors.Next/config/local.*.json
 *.db
 *.db-shm
 *.db-wal
