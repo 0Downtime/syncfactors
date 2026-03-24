@@ -440,7 +440,7 @@ function Invoke-SyncFactorsMonitorInlineWorkerPreview {
         [pscustomobject]$Status,
         [Parameter(Mandatory)]
         [pscustomobject]$UiState,
-        [Parameter(Mandatory)]
+        [AllowEmptyString()]
         [string]$ResolvedMappingConfigPath
     )
 
@@ -519,7 +519,7 @@ function Invoke-SyncFactorsMonitorInlineWorkerApply {
         [pscustomobject]$Status,
         [Parameter(Mandatory)]
         [pscustomobject]$UiState,
-        [Parameter(Mandatory)]
+        [AllowEmptyString()]
         [string]$ResolvedMappingConfigPath,
         [Parameter(Mandatory)]
         [int]$HistoryDepth
@@ -623,6 +623,7 @@ function Invoke-SyncFactorsMonitorShortcut {
         [pscustomobject]$Status,
         [Parameter(Mandatory)]
         [pscustomobject]$UiState,
+        [AllowEmptyString()]
         [string]$ResolvedMappingConfigPath
     )
 
