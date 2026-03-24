@@ -1534,6 +1534,119 @@ Describe 'Invoke-SyncFactorsRun' {
         }
     }
 
+    It 'produces a create-heavy scoped review preview for an active worker with many mapped attributes' {
+        InModuleScope Sync {
+            $global:SyncTestBaseConfig.reporting | Add-Member -MemberType NoteProperty -Name reviewOutputDirectory -Value (Join-Path $TestDrive 'reviews') -Force
+            Mock Get-SyncFactorsConfig { $global:SyncTestBaseConfig }
+            Mock Get-SyncFactorsMappingConfig {
+                [pscustomobject]@{
+                    mappings = @(
+                        [pscustomobject]@{ source = 'personalInfoNav[0].firstName'; target = 'GivenName'; enabled = $true; required = $true; transform = 'Trim' },
+                        [pscustomobject]@{ source = 'personalInfoNav[0].lastName'; target = 'Surname'; enabled = $true; required = $true; transform = 'Trim' },
+                        [pscustomobject]@{ source = 'emailNav[0].emailAddress'; target = 'UserPrincipalName'; enabled = $true; required = $true; transform = 'Lower' },
+                        [pscustomobject]@{ source = 'emailNav[0].emailAddress'; target = 'mail'; enabled = $true; required = $false; transform = 'Lower' },
+                        [pscustomobject]@{ source = 'employmentNav[0].jobInfoNav[0].department'; target = 'department'; enabled = $true; required = $false; transform = 'Trim' },
+                        [pscustomobject]@{ source = 'employmentNav[0].jobInfoNav[0].company'; target = 'company'; enabled = $true; required = $false; transform = 'Trim' },
+                        [pscustomobject]@{ source = 'employmentNav[0].jobInfoNav[0].location'; target = 'physicalDeliveryOfficeName'; enabled = $true; required = $false; transform = 'Trim' },
+                        [pscustomobject]@{ source = 'employmentNav[0].jobInfoNav[0].jobTitle'; target = 'title'; enabled = $true; required = $false; transform = 'Trim' },
+                        [pscustomobject]@{ source = 'employmentNav[0].jobInfoNav[0].businessUnit'; target = 'extensionAttribute2'; enabled = $true; required = $false; transform = 'Trim' },
+                        [pscustomobject]@{ source = 'employmentNav[0].jobInfoNav[0].division'; target = 'division'; enabled = $true; required = $false; transform = 'Trim' },
+                        [pscustomobject]@{ source = 'employmentNav[0].jobInfoNav[0].costCenter'; target = 'extensionAttribute3'; enabled = $true; required = $false; transform = 'Trim' },
+                        [pscustomobject]@{ source = 'employmentNav[0].jobInfoNav[0].employeeClass'; target = 'employeeType'; enabled = $true; required = $false; transform = 'Trim' },
+                        [pscustomobject]@{ source = 'employmentNav[0].startDate'; target = 'extensionAttribute1'; enabled = $true; required = $false; transform = 'DateOnly' }
+                    )
+                }
+            }
+            Mock Get-SyncFactorsState { [pscustomobject]@{ checkpoint = '2026-03-05T10:00:00'; workers = [pscustomobject]@{} } }
+            Mock Get-SfWorkers { throw 'Get-SfWorkers should not be used for scoped preview.' }
+            Mock Get-SfWorkerById {
+                [pscustomobject]@{
+                    personIdExternal = '40618'
+                    personalInfoNav = [pscustomobject]@{
+                        results = @(
+                            [pscustomobject]@{
+                                firstName = 'Lee'
+                                lastName = 'Courington'
+                            }
+                        )
+                    }
+                    employmentNav = [pscustomobject]@{
+                        results = @(
+                            [pscustomobject]@{
+                                startDate = '2019-06-03T00:00:00Z'
+                                jobInfoNav = [pscustomobject]@{
+                                    results = @(
+                                        [pscustomobject]@{
+                                            emplStatus = 'U'
+                                            department = '110'
+                                            company = '7'
+                                            location = 'L138'
+                                            jobTitle = 'Lead Admin, Patching'
+                                            businessUnit = '8'
+                                            division = 'ITI'
+                                            costCenter = '10450'
+                                            employeeClass = '64320'
+                                        }
+                                    )
+                                }
+                            }
+                        )
+                    }
+                    emailNav = [pscustomobject]@{
+                        results = @(
+                            [pscustomobject]@{
+                                emailAddress = '40618@Exampleenergy.com'
+                            }
+                        )
+                    }
+                }
+            }
+            Mock Get-SyncFactorsTargetUser { $null }
+            Mock Get-SyncFactorsUserBySamAccountName { $null }
+            Mock Get-SyncFactorsUserByUserPrincipalName { $null }
+            Mock Get-SyncFactorsWorkerState { $null }
+            Mock New-SyncFactorsUser {
+                [pscustomobject]@{
+                    ObjectGuid = [guid]'11111111-1111-1111-1111-111111111111'
+                    DistinguishedName = 'CN=Lee Courington,OU=Employees,DC=example,DC=com'
+                    SamAccountName = '40618'
+                    Enabled = $false
+                }
+            }
+            Mock Enable-SyncFactorsUser {}
+            Mock Add-SyncFactorsUserToConfiguredGroups { @() }
+            Mock Save-SyncFactorsReport {
+                param($Report, $Directory, $Mode)
+                $global:CapturedReport = $Report
+                return (Join-Path $Directory "syncfactors-$Mode.json")
+            }
+            Mock Ensure-ActiveDirectoryModule {}
+
+            Invoke-SyncFactorsRun -ConfigPath $global:SyncTestConfigPath -MappingConfigPath $global:SyncTestMappingConfigPath -Mode Review -WorkerId '40618' | Out-Null
+
+            $global:CapturedReport.artifactType | Should -Be 'WorkerPreview'
+            $global:CapturedReport.workerScope.workerId | Should -Be '40618'
+            @($global:CapturedReport.creates).Count | Should -Be 1
+            $global:CapturedReport.reviewSummary.proposedCreates | Should -Be 1
+            $global:CapturedReport.creates[0].reviewCategory | Should -Be 'NewUser'
+            $global:CapturedReport.creates[0].proposedAttributes.GivenName | Should -Be 'Lee'
+            $global:CapturedReport.creates[0].proposedAttributes.Surname | Should -Be 'Courington'
+            $global:CapturedReport.creates[0].proposedAttributes.UserPrincipalName | Should -Be '40618@Exampleenergy.com'
+            $global:CapturedReport.creates[0].proposedAttributes.department | Should -Be '110'
+            $global:CapturedReport.creates[0].proposedAttributes.company | Should -Be '7'
+            $global:CapturedReport.creates[0].proposedAttributes.physicalDeliveryOfficeName | Should -Be 'L138'
+            $global:CapturedReport.creates[0].proposedAttributes.title | Should -Be 'Lead Admin, Patching'
+            $global:CapturedReport.creates[0].proposedAttributes.extensionAttribute1 | Should -Be '2019-06-02'
+            $global:CapturedReport.creates[0].attributeRows.Count | Should -BeGreaterThan 5
+            @($global:CapturedReport.operations.operationType) | Should -Contain 'CreateUser'
+            Assert-MockCalled New-SyncFactorsUser -Times 1 -Exactly -ParameterFilter {
+                $Attributes['GivenName'] -eq 'Lee' -and
+                $Attributes['Surname'] -eq 'Courington' -and
+                $Attributes['UserPrincipalName'] -eq '40618@Exampleenergy.com'
+            }
+        }
+    }
+
     It 'allows WorkerId for scoped full sync runs' {
         InModuleScope Sync {
             Mock Get-SyncFactorsConfig { $global:SyncTestBaseConfig }
