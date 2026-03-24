@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <ItemGroup>
+    <ProjectReference Include="..\SyncFactors.Contracts\SyncFactors.Contracts.csproj" />
+    <ProjectReference Include="..\SyncFactors.Domain\SyncFactors.Domain.csproj" />
+    <ProjectReference Include="..\SyncFactors.Infrastructure\SyncFactors.Infrastructure.csproj" />
+  </ItemGroup>
+</Project>

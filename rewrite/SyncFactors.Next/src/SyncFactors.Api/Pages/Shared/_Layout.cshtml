@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>@ViewData["Title"] - SyncFactors.Next</title>
+    <link rel="stylesheet" href="~/css/site.css" asp-append-version="true" />
+</head>
+<body>
+    <div class="shell">
+        <header class="topbar">
+            <div>
+                <a class="brand" asp-page="/Index">SyncFactors.Next</a>
+                <p class="subtitle">Local-first operator dashboard for the .NET rewrite</p>
+            </div>
+            <nav class="nav">
+                <a asp-page="/Index">Dashboard</a>
+            </nav>
+        </header>
+        <main class="content">
+            @RenderBody()
+        </main>
+    </div>
+</body>
+</html>

@@ -1,0 +1,105 @@
+@page "{runId}"
+@model SyncFactors.Api.Pages.Runs.DetailModel
+@{
+    ViewData["Title"] = "Run Detail";
+}
+
+@if (Model.Run is null)
+{
+    <p class="muted">Run not found.</p>
+    return;
+}
+
+<section class="hero hero-compact">
+    <div>
+        <p class="eyebrow">Run Detail</p>
+        <h1>@Model.Run.Run.RunId</h1>
+        <p class="lede">@Model.Run.Run.Mode · @Model.Run.Run.Status · @(Model.Run.Run.DryRun ? "Dry Run" : "Live Run")</p>
+    </div>
+    <div class="hero-actions">
+        <a class="link-button" asp-page="/Index">Back to dashboard</a>
+    </div>
+</section>
+
+<section class="panel-grid">
+    <article class="panel">
+        <h2>Summary</h2>
+        <dl class="kv">
+            <div><dt>Started</dt><dd>@Model.Run.Run.StartedAt.ToString("u")</dd></div>
+            <div><dt>Completed</dt><dd>@(Model.Run.Run.CompletedAt?.ToString("u") ?? "Unknown")</dd></div>
+            <div><dt>Artifact</dt><dd>@Model.Run.Run.ArtifactType</dd></div>
+            <div><dt>Processed</dt><dd>@Model.Run.Run.ProcessedWorkers</dd></div>
+            <div><dt>Total</dt><dd>@Model.Run.Run.TotalWorkers</dd></div>
+        </dl>
+    </article>
+
+    <article class="panel">
+        <h2>Bucket Counts</h2>
+        <div class="bucket-grid">
+        @foreach (var bucket in Model.Run.BucketCounts)
+        {
+            <a class="bucket-card" asp-page="/Runs/Detail" asp-route-runId="@Model.Run.Run.RunId" asp-route-bucket="@bucket.Key">
+                <span class="bucket-name">@bucket.Key</span>
+                <strong>@bucket.Value</strong>
+            </a>
+        }
+        </div>
+    </article>
+</section>
+
+<section class="panel">
+    <h2>Entries @if (!string.IsNullOrWhiteSpace(Model.Bucket)) { <text>· @Model.Bucket</text> }</h2>
+    @if (Model.Entries.Count == 0)
+    {
+        <p class="muted">No entries matched this run.</p>
+    }
+    else
+    {
+        <div class="entry-list">
+        @foreach (var entry in Model.Entries)
+        {
+            <article class="entry-card">
+                <header class="entry-head">
+                    <div>
+                        <h3>@entry.BucketLabel</h3>
+                        <p class="muted">@entry.WorkerId / @(entry.SamAccountName ?? "n/a")</p>
+                    </div>
+                    <div class="entry-meta">
+                        <span class="badge neutral">@entry.ChangeCount changes</span>
+                    </div>
+                </header>
+                @if (entry.OperationSummary is not null)
+                {
+                    <p><strong>@entry.OperationSummary.Action</strong>@if (!string.IsNullOrWhiteSpace(entry.OperationSummary.Effect)) { <text> · @entry.OperationSummary.Effect</text> }</p>
+                }
+                @if (entry.DiffRows.Count > 0)
+                {
+                    <table class="data-table compact">
+                        <thead>
+                            <tr>
+                                <th>Attribute</th>
+                                <th>Before</th>
+                                <th>After</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                        @foreach (var diff in entry.DiffRows)
+                        {
+                            <tr>
+                                <td>@diff.Attribute</td>
+                                <td>@diff.Before</td>
+                                <td>@diff.After</td>
+                            </tr>
+                        }
+                        </tbody>
+                    </table>
+                }
+                else
+                {
+                    <p class="muted">No detailed attribute diff was recorded for this entry.</p>
+                }
+            </article>
+        }
+        </div>
+    }
+</section>
