@@ -49,7 +49,18 @@ public interface IAttributeDiffService
     IReadOnlyList<AttributeChange> BuildDiff(WorkerSnapshot worker, DirectoryUserSnapshot? directoryUser);
 }
 
+public interface IAttributeMappingProvider
+{
+    IReadOnlyList<AttributeMapping> GetEnabledMappings();
+}
+
 public interface IDirectoryCommandGateway
 {
     Task<DirectoryCommandResult> ExecuteAsync(DirectoryMutationCommand command, CancellationToken cancellationToken);
 }
+
+public sealed record AttributeMapping(
+    string Source,
+    string Target,
+    bool Required,
+    string Transform);

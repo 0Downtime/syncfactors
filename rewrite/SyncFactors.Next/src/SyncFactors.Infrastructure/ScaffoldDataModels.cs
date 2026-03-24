@@ -20,7 +20,13 @@ public sealed record ScaffoldWorkerRecord(
         LastName,
         Department,
         TargetOu,
-        IsPrehire);
+        IsPrehire,
+        new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["firstName"] = PreferredName,
+            ["lastName"] = LastName,
+            ["department"] = Department
+        });
 }
 
 public sealed record ScaffoldDirectoryRecord(
@@ -34,5 +40,9 @@ public sealed record ScaffoldDirectoryRecord(
         SamAccountName,
         DistinguishedName,
         Enabled,
-        DisplayName);
+        DisplayName,
+        new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["displayName"] = DisplayName
+        });
 }

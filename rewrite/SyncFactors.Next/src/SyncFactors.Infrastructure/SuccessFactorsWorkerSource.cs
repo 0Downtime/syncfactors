@@ -215,7 +215,8 @@ public sealed class SuccessFactorsWorkerSource(
             LastName: lastName,
             Department: department,
             TargetOu: config.Ad.DefaultActiveOu,
-            IsPrehire: IsPrehire(startDate, config.Sync.EnableBeforeStartDays));
+            IsPrehire: IsPrehire(startDate, config.Sync.EnableBeforeStartDays),
+            Attributes: BuildAttributes(worker, personalInfo, employment, jobInfo));
     }
 
     private static IReadOnlyList<JsonElement> ExtractWorkerArray(JsonElement root)
@@ -268,6 +269,32 @@ public sealed class SuccessFactorsWorkerSource(
         }
 
         return null;
+    }
+
+    private static IReadOnlyDictionary<string, string?> BuildAttributes(
+        JsonElement worker,
+        JsonElement? personalInfo,
+        JsonElement? employment,
+        JsonElement? jobInfo)
+    {
+        return new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["personIdExternal"] = GetString(worker, "personIdExternal"),
+            ["firstName"] = GetString(personalInfo, "firstName") ?? GetString(worker, "firstName"),
+            ["lastName"] = GetString(personalInfo, "lastName") ?? GetString(worker, "lastName"),
+            ["email"] = GetString(GetFirstNavigationResult(worker, "emailNav"), "emailAddress") ?? GetString(worker, "email"),
+            ["department"] = GetString(jobInfo, "department") ?? GetString(employment, "department") ?? GetString(worker, "department"),
+            ["company"] = GetString(jobInfo, "company") ?? GetString(worker, "company"),
+            ["location"] = GetString(jobInfo, "location") ?? GetString(worker, "location"),
+            ["jobTitle"] = GetString(jobInfo, "jobTitle") ?? GetString(worker, "jobTitle"),
+            ["businessUnit"] = GetString(jobInfo, "businessUnit") ?? GetString(worker, "businessUnit"),
+            ["division"] = GetString(jobInfo, "division") ?? GetString(worker, "division"),
+            ["costCenter"] = GetString(jobInfo, "costCenter") ?? GetString(worker, "costCenter"),
+            ["employeeClass"] = GetString(jobInfo, "employeeClass") ?? GetString(worker, "employeeClass"),
+            ["employeeType"] = GetString(jobInfo, "employeeType") ?? GetString(worker, "employeeType"),
+            ["managerId"] = GetString(jobInfo, "managerId") ?? GetString(worker, "managerId"),
+            ["startDate"] = GetString(employment, "startDate") ?? GetString(worker, "startDate")
+        };
     }
 
     private static bool IsPrehire(string? startDate, int enableBeforeStartDays)
