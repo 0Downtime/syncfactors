@@ -230,6 +230,21 @@ VALUES ('run-monitor-1', '$($statePath.Replace("'", "''"))', '/tmp/run-monitor.j
         $status.paths.sqlitePath | Should -Be $sqlitePath
     }
 
+    It 'classifies missing AD module health probes as unknown instead of error' {
+        Mock Ensure-ActiveDirectoryModule { throw 'ActiveDirectory module not found. Install RSAT Active Directory tools.' } -ModuleName Monitoring
+
+        $result = & (Get-Module Monitoring) {
+            Test-SyncFactorsMonitorActiveDirectoryConnection -Config ([pscustomobject]@{
+                ad = [pscustomobject]@{
+                    server = 'dc01.example.com'
+                }
+            })
+        }
+
+        $result.status | Should -Be 'UNKNOWN'
+        $result.detail | Should -Be 'Active Directory health probe requires the Windows ActiveDirectory module.'
+    }
+
     It 'resolves mapping config path from recent runs when no override is provided' {
         $mappingPath = Join-Path $TestDrive 'mapping.json'
         '{}' | Set-Content -Path $mappingPath

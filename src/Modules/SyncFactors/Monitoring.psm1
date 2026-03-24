@@ -88,9 +88,24 @@ function Test-SyncFactorsMonitorActiveDirectoryConnection {
             detail = if (-not [string]::IsNullOrWhiteSpace($server)) { $server } else { 'default domain context' }
         }
     } catch {
+        $message = $_.Exception.Message
+        if (
+            -not [string]::IsNullOrWhiteSpace($message) -and (
+                $message -match 'ActiveDirectory module not found' -or
+                $message -match 'The specified module .+ActiveDirectory.+ was not loaded' -or
+                $message -match 'no valid module file was found' -or
+                $message -match 'Get-ADRootDSE'
+            )
+        ) {
+            return [pscustomobject]@{
+                status = 'UNKNOWN'
+                detail = 'Active Directory health probe requires the Windows ActiveDirectory module.'
+            }
+        }
+
         return [pscustomobject]@{
             status = 'ERROR'
-            detail = $_.Exception.Message
+            detail = $message
         }
     }
 }
