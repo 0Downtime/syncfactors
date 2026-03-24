@@ -8,7 +8,7 @@
     <div>
         <p class="eyebrow">Current Runtime</p>
         <h1>Operator Dashboard</h1>
-        <p class="lede">First UI slice for the rewrite. This page reads runtime status and recent runs from the new .NET read model.</p>
+        <p class="lede">This page reads runtime status and recent runs from the configured operational store for the .NET rewrite.</p>
     </div>
 </section>
 
@@ -33,7 +33,7 @@
         <h2>Recent Runs</h2>
         @if (Model.Runs.Count == 0)
         {
-            <p class="muted">No runs found in the operational store.</p>
+            <p class="muted">No run data is configured yet. Set <code>SyncFactors__SqlitePath</code> to point the rewrite UI at an operational SQLite store.</p>
         }
         else
         {

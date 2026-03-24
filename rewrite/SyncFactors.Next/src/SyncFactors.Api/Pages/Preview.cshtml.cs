@@ -1,11 +1,11 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using SyncFactors.Contracts;
-using SyncFactors.Infrastructure;
+using SyncFactors.Domain;
 
 namespace SyncFactors.Api.Pages;
 
-public sealed class PreviewModel(PowerShellWorkerPreviewService previewService) : PageModel
+public sealed class PreviewModel(IWorkerPreviewPlanner previewPlanner) : PageModel
 {
     [BindProperty(SupportsGet = true)]
     public string WorkerId { get; set; } = string.Empty;
@@ -23,7 +23,7 @@ public sealed class PreviewModel(PowerShellWorkerPreviewService previewService) 
 
         try
         {
-            Preview = await previewService.PreviewAsync(WorkerId, cancellationToken);
+            Preview = await previewPlanner.PreviewAsync(WorkerId, cancellationToken);
         }
         catch (Exception ex)
         {

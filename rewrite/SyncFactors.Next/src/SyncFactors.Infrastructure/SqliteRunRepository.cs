@@ -1,11 +1,11 @@
+using Microsoft.Data.Sqlite;
 using System.Text.Json;
-using System.Text.Json.Serialization;
 using SyncFactors.Contracts;
 using SyncFactors.Domain;
 
 namespace SyncFactors.Infrastructure;
 
-public sealed class SqliteRunRepository(SqlitePathResolver pathResolver, SqliteJsonShell sqlite) : IRunRepository
+public sealed class SqliteRunRepository(SqlitePathResolver pathResolver) : IRunRepository
 {
     private static readonly string[] BucketOrder =
     [
@@ -45,8 +45,11 @@ public sealed class SqliteRunRepository(SqlitePathResolver pathResolver, SqliteJ
             return [];
         }
 
-        var rows = await sqlite.QueryAsync<RunRow>(
-            databasePath,
+        await using var connection = OpenConnection(databasePath);
+        await connection.OpenAsync(cancellationToken);
+
+        await using var command = connection.CreateCommand();
+        command.CommandText =
             """
             SELECT
               run_id,
@@ -74,12 +77,19 @@ public sealed class SqliteRunRepository(SqlitePathResolver pathResolver, SqliteJ
             FROM runs
             ORDER BY COALESCE(started_at, '') DESC, COALESCE(path, '') DESC
             LIMIT 25;
-            """,
-            cancellationToken);
+            """;
 
-        return rows
-            .Where(row => !string.IsNullOrWhiteSpace(row.RunId))
-            .Select(row => new RunSummary(
+        var runs = new List<RunSummary>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var row = MapRunRow(reader);
+            if (string.IsNullOrWhiteSpace(row.RunId))
+            {
+                continue;
+            }
+
+            runs.Add(new RunSummary(
                 RunId: row.RunId!,
                 Path: row.Path,
                 ArtifactType: row.ArtifactType ?? "SyncReport",
@@ -103,8 +113,10 @@ public sealed class SqliteRunRepository(SqlitePathResolver pathResolver, SqliteJ
                 Conflicts: row.Conflicts,
                 GuardrailFailures: row.GuardrailFailures,
                 ManualReview: row.ManualReview,
-                Unchanged: row.Unchanged))
-            .ToArray();
+                Unchanged: row.Unchanged));
+        }
+
+        return runs;
     }
 
     public async Task<RunDetail?> GetRunAsync(string runId, CancellationToken cancellationToken)
@@ -115,9 +127,12 @@ public sealed class SqliteRunRepository(SqlitePathResolver pathResolver, SqliteJ
             return null;
         }
 
-        var rows = await sqlite.QueryAsync<RunWithReportRow>(
-            databasePath,
-            $"""
+        await using var connection = OpenConnection(databasePath);
+        await connection.OpenAsync(cancellationToken);
+
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
             SELECT
               run_id,
               path,
@@ -143,13 +158,19 @@ public sealed class SqliteRunRepository(SqlitePathResolver pathResolver, SqliteJ
               unchanged,
               report_json
             FROM runs
-            WHERE run_id = {Quote(runId)}
+            WHERE run_id = $runId
             LIMIT 1;
-            """,
-            cancellationToken);
+            """;
+        command.Parameters.AddWithValue("$runId", runId);
 
-        var row = rows.FirstOrDefault();
-        if (row is null || string.IsNullOrWhiteSpace(row.RunId) || string.IsNullOrWhiteSpace(row.ReportJson))
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return null;
+        }
+
+        var row = MapRunWithReportRow(reader);
+        if (string.IsNullOrWhiteSpace(row.RunId) || string.IsNullOrWhiteSpace(row.ReportJson))
         {
             return null;
         }
@@ -159,6 +180,168 @@ public sealed class SqliteRunRepository(SqlitePathResolver pathResolver, SqliteJ
             Run: run,
             Report: ParseJson(row.ReportJson),
             BucketCounts: BuildBucketCounts(run));
+    }
+
+    public async Task SaveRunAsync(RunRecord run, CancellationToken cancellationToken)
+    {
+        var databasePath = pathResolver.ResolveConfiguredPath() ?? pathResolver.Resolve();
+        if (string.IsNullOrWhiteSpace(databasePath))
+        {
+            return;
+        }
+
+        await using var connection = OpenWriteConnection(databasePath);
+        await connection.OpenAsync(cancellationToken);
+
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            INSERT INTO runs (
+              run_id,
+              path,
+              artifact_type,
+              config_path,
+              mapping_config_path,
+              mode,
+              dry_run,
+              status,
+              started_at,
+              completed_at,
+              duration_seconds,
+              creates,
+              updates,
+              enables,
+              disables,
+              graveyard_moves,
+              deletions,
+              quarantined,
+              conflicts,
+              guardrail_failures,
+              manual_review,
+              unchanged,
+              report_json
+            )
+            VALUES (
+              $runId,
+              $path,
+              $artifactType,
+              $configPath,
+              $mappingConfigPath,
+              $mode,
+              $dryRun,
+              $status,
+              $startedAt,
+              $completedAt,
+              $durationSeconds,
+              $creates,
+              $updates,
+              $enables,
+              $disables,
+              $graveyardMoves,
+              $deletions,
+              $quarantined,
+              $conflicts,
+              $guardrailFailures,
+              $manualReview,
+              $unchanged,
+              $reportJson
+            )
+            ON CONFLICT(run_id) DO UPDATE SET
+              path = excluded.path,
+              artifact_type = excluded.artifact_type,
+              config_path = excluded.config_path,
+              mapping_config_path = excluded.mapping_config_path,
+              mode = excluded.mode,
+              dry_run = excluded.dry_run,
+              status = excluded.status,
+              started_at = excluded.started_at,
+              completed_at = excluded.completed_at,
+              duration_seconds = excluded.duration_seconds,
+              creates = excluded.creates,
+              updates = excluded.updates,
+              enables = excluded.enables,
+              disables = excluded.disables,
+              graveyard_moves = excluded.graveyard_moves,
+              deletions = excluded.deletions,
+              quarantined = excluded.quarantined,
+              conflicts = excluded.conflicts,
+              guardrail_failures = excluded.guardrail_failures,
+              manual_review = excluded.manual_review,
+              unchanged = excluded.unchanged,
+              report_json = excluded.report_json;
+            """;
+        BindRunRecord(command, run);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    public async Task ReplaceRunEntriesAsync(string runId, IReadOnlyList<RunEntryRecord> entries, CancellationToken cancellationToken)
+    {
+        var databasePath = pathResolver.ResolveConfiguredPath() ?? pathResolver.Resolve();
+        if (string.IsNullOrWhiteSpace(databasePath))
+        {
+            return;
+        }
+
+        await using var connection = OpenWriteConnection(databasePath);
+        await connection.OpenAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+
+        await using (var deleteCommand = connection.CreateCommand())
+        {
+            deleteCommand.Transaction = (SqliteTransaction)transaction;
+            deleteCommand.CommandText = "DELETE FROM run_entries WHERE run_id = $runId;";
+            deleteCommand.Parameters.AddWithValue("$runId", runId);
+            await deleteCommand.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        foreach (var entry in entries)
+        {
+            await using var insertCommand = connection.CreateCommand();
+            insertCommand.Transaction = (SqliteTransaction)transaction;
+            insertCommand.CommandText =
+                """
+                INSERT INTO run_entries (
+                  entry_id,
+                  run_id,
+                  bucket,
+                  bucket_index,
+                  worker_id,
+                  sam_account_name,
+                  reason,
+                  review_category,
+                  review_case_type,
+                  started_at,
+                  item_json
+                )
+                VALUES (
+                  $entryId,
+                  $runId,
+                  $bucket,
+                  $bucketIndex,
+                  $workerId,
+                  $samAccountName,
+                  $reason,
+                  $reviewCategory,
+                  $reviewCaseType,
+                  $startedAt,
+                  $itemJson
+                );
+                """;
+            insertCommand.Parameters.AddWithValue("$entryId", entry.EntryId);
+            insertCommand.Parameters.AddWithValue("$runId", entry.RunId);
+            insertCommand.Parameters.AddWithValue("$bucket", entry.Bucket);
+            insertCommand.Parameters.AddWithValue("$bucketIndex", entry.BucketIndex);
+            insertCommand.Parameters.AddWithValue("$workerId", (object?)entry.WorkerId ?? DBNull.Value);
+            insertCommand.Parameters.AddWithValue("$samAccountName", (object?)entry.SamAccountName ?? DBNull.Value);
+            insertCommand.Parameters.AddWithValue("$reason", (object?)entry.Reason ?? DBNull.Value);
+            insertCommand.Parameters.AddWithValue("$reviewCategory", (object?)entry.ReviewCategory ?? DBNull.Value);
+            insertCommand.Parameters.AddWithValue("$reviewCaseType", (object?)entry.ReviewCaseType ?? DBNull.Value);
+            insertCommand.Parameters.AddWithValue("$startedAt", ToDbValue(entry.StartedAt));
+            insertCommand.Parameters.AddWithValue("$itemJson", entry.Item.GetRawText());
+            await insertCommand.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await transaction.CommitAsync(cancellationToken);
     }
 
     public async Task<IReadOnlyList<RunEntry>> GetRunEntriesAsync(
@@ -176,30 +359,40 @@ public sealed class SqliteRunRepository(SqlitePathResolver pathResolver, SqliteJ
             return [];
         }
 
-        var where = new List<string> { $"e.run_id = {Quote(runId)}" };
+        await using var connection = OpenConnection(databasePath);
+        await connection.OpenAsync(cancellationToken);
+
+        await using var command = connection.CreateCommand();
+        var where = new List<string> { "e.run_id = $runId" };
+        command.Parameters.AddWithValue("$runId", runId);
+
         if (!string.IsNullOrWhiteSpace(bucket))
         {
-            where.Add($"e.bucket = {Quote(bucket)}");
+            where.Add("e.bucket = $bucket");
+            command.Parameters.AddWithValue("$bucket", bucket);
         }
         if (!string.IsNullOrWhiteSpace(workerId))
         {
-            where.Add($"e.worker_id = {Quote(workerId)}");
+            where.Add("e.worker_id = $workerId");
+            command.Parameters.AddWithValue("$workerId", workerId);
         }
         if (!string.IsNullOrWhiteSpace(reason))
         {
-            where.Add($"LOWER(COALESCE(e.reason, '')) = LOWER({Quote(reason)})");
+            where.Add("LOWER(COALESCE(e.reason, '')) = LOWER($reason)");
+            command.Parameters.AddWithValue("$reason", reason);
         }
         if (!string.IsNullOrWhiteSpace(entryId))
         {
-            where.Add($"e.entry_id = {Quote(entryId)}");
+            where.Add("e.entry_id = $entryId");
+            command.Parameters.AddWithValue("$entryId", entryId);
         }
         if (!string.IsNullOrWhiteSpace(filter))
         {
-            where.Add($"LOWER(COALESCE(e.item_json, '')) LIKE {Quote($"%{EscapeLike(filter.ToLowerInvariant())}%")} ESCAPE '\\'");
+            where.Add("LOWER(COALESCE(e.item_json, '')) LIKE $filter ESCAPE '\\'");
+            command.Parameters.AddWithValue("$filter", $"%{EscapeLike(filter.ToLowerInvariant())}%");
         }
 
-        var rows = await sqlite.QueryAsync<EntryRow>(
-            databasePath,
+        command.CommandText =
             $"""
             SELECT
               e.entry_id,
@@ -220,10 +413,16 @@ public sealed class SqliteRunRepository(SqlitePathResolver pathResolver, SqliteJ
             JOIN runs r ON r.run_id = e.run_id
             WHERE {string.Join("\n  AND ", where)}
             ORDER BY e.bucket ASC, e.bucket_index ASC, e.entry_id ASC;
-            """,
-            cancellationToken);
+            """;
 
-        return rows.Select(MapEntry).ToArray();
+        var entries = new List<RunEntry>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            entries.Add(MapEntry(MapEntryRow(reader)));
+        }
+
+        return entries;
     }
 
     private static int Sum(params int[] values) => values.Sum();
@@ -580,8 +779,6 @@ public sealed class SqliteRunRepository(SqlitePathResolver pathResolver, SqliteJ
         return document.RootElement.Clone();
     }
 
-    private static string Quote(string value) => $"'{value.Replace("'", "''")}'";
-
     private static string EscapeLike(string value)
     {
         return value.Replace("\\", "\\\\", StringComparison.Ordinal)
@@ -589,89 +786,182 @@ public sealed class SqliteRunRepository(SqlitePathResolver pathResolver, SqliteJ
             .Replace("_", "\\_", StringComparison.Ordinal);
     }
 
+    private static SqliteConnection OpenConnection(string databasePath)
+    {
+        var connectionString = new SqliteConnectionStringBuilder
+        {
+            DataSource = databasePath,
+            Mode = SqliteOpenMode.ReadOnly,
+        }.ToString();
+        return new SqliteConnection(connectionString);
+    }
+
+    private static SqliteConnection OpenWriteConnection(string databasePath)
+    {
+        var connectionString = new SqliteConnectionStringBuilder
+        {
+            DataSource = databasePath,
+            Mode = SqliteOpenMode.ReadWriteCreate,
+        }.ToString();
+        return new SqliteConnection(connectionString);
+    }
+
+    private static void BindRunRecord(SqliteCommand command, RunRecord run)
+    {
+        command.Parameters.AddWithValue("$runId", run.RunId);
+        command.Parameters.AddWithValue("$path", (object?)run.Path ?? DBNull.Value);
+        command.Parameters.AddWithValue("$artifactType", run.ArtifactType);
+        command.Parameters.AddWithValue("$configPath", (object?)run.ConfigPath ?? DBNull.Value);
+        command.Parameters.AddWithValue("$mappingConfigPath", (object?)run.MappingConfigPath ?? DBNull.Value);
+        command.Parameters.AddWithValue("$mode", run.Mode);
+        command.Parameters.AddWithValue("$dryRun", run.DryRun ? 1 : 0);
+        command.Parameters.AddWithValue("$status", run.Status);
+        command.Parameters.AddWithValue("$startedAt", run.StartedAt.ToString("O"));
+        command.Parameters.AddWithValue("$completedAt", ToDbValue(run.CompletedAt));
+        command.Parameters.AddWithValue("$durationSeconds", (object?)run.DurationSeconds ?? DBNull.Value);
+        command.Parameters.AddWithValue("$creates", run.Creates);
+        command.Parameters.AddWithValue("$updates", run.Updates);
+        command.Parameters.AddWithValue("$enables", run.Enables);
+        command.Parameters.AddWithValue("$disables", run.Disables);
+        command.Parameters.AddWithValue("$graveyardMoves", run.GraveyardMoves);
+        command.Parameters.AddWithValue("$deletions", run.Deletions);
+        command.Parameters.AddWithValue("$quarantined", run.Quarantined);
+        command.Parameters.AddWithValue("$conflicts", run.Conflicts);
+        command.Parameters.AddWithValue("$guardrailFailures", run.GuardrailFailures);
+        command.Parameters.AddWithValue("$manualReview", run.ManualReview);
+        command.Parameters.AddWithValue("$unchanged", run.Unchanged);
+        command.Parameters.AddWithValue("$reportJson", run.Report.GetRawText());
+    }
+
+    private static object ToDbValue(DateTimeOffset? value) => value?.ToString("O") ?? (object)DBNull.Value;
+
+    private static RunRow MapRunRow(SqliteDataReader reader)
+    {
+        return new RunRow
+        {
+            RunId = reader.GetStringOrDefault("run_id"),
+            Path = reader.GetStringOrDefault("path"),
+            ArtifactType = reader.GetStringOrDefault("artifact_type"),
+            ConfigPath = reader.GetStringOrDefault("config_path"),
+            MappingConfigPath = reader.GetStringOrDefault("mapping_config_path"),
+            Mode = reader.GetStringOrDefault("mode"),
+            DryRun = reader.GetInt32OrDefault("dry_run"),
+            Status = reader.GetStringOrDefault("status"),
+            StartedAt = reader.GetStringOrDefault("started_at"),
+            CompletedAt = reader.GetStringOrDefault("completed_at"),
+            DurationSeconds = reader.GetNullableInt32("duration_seconds"),
+            Creates = reader.GetInt32OrDefault("creates"),
+            Updates = reader.GetInt32OrDefault("updates"),
+            Enables = reader.GetInt32OrDefault("enables"),
+            Disables = reader.GetInt32OrDefault("disables"),
+            GraveyardMoves = reader.GetInt32OrDefault("graveyard_moves"),
+            Deletions = reader.GetInt32OrDefault("deletions"),
+            Quarantined = reader.GetInt32OrDefault("quarantined"),
+            Conflicts = reader.GetInt32OrDefault("conflicts"),
+            GuardrailFailures = reader.GetInt32OrDefault("guardrail_failures"),
+            ManualReview = reader.GetInt32OrDefault("manual_review"),
+            Unchanged = reader.GetInt32OrDefault("unchanged"),
+        };
+    }
+
+    private static RunWithReportRow MapRunWithReportRow(SqliteDataReader reader)
+    {
+        var row = MapRunRow(reader);
+        return new RunWithReportRow
+        {
+            RunId = row.RunId,
+            Path = row.Path,
+            ArtifactType = row.ArtifactType,
+            ConfigPath = row.ConfigPath,
+            MappingConfigPath = row.MappingConfigPath,
+            Mode = row.Mode,
+            DryRun = row.DryRun,
+            Status = row.Status,
+            StartedAt = row.StartedAt,
+            CompletedAt = row.CompletedAt,
+            DurationSeconds = row.DurationSeconds,
+            Creates = row.Creates,
+            Updates = row.Updates,
+            Enables = row.Enables,
+            Disables = row.Disables,
+            GraveyardMoves = row.GraveyardMoves,
+            Deletions = row.Deletions,
+            Quarantined = row.Quarantined,
+            Conflicts = row.Conflicts,
+            GuardrailFailures = row.GuardrailFailures,
+            ManualReview = row.ManualReview,
+            Unchanged = row.Unchanged,
+            ReportJson = reader.GetStringOrDefault("report_json"),
+        };
+    }
+
+    private static EntryRow MapEntryRow(SqliteDataReader reader)
+    {
+        return new EntryRow
+        {
+            EntryId = reader.GetStringOrDefault("entry_id"),
+            RunId = reader.GetStringOrDefault("run_id"),
+            ArtifactType = reader.GetStringOrDefault("artifact_type"),
+            Mode = reader.GetStringOrDefault("mode"),
+            Bucket = reader.GetStringOrDefault("bucket"),
+            BucketIndex = reader.GetInt32OrDefault("bucket_index"),
+            WorkerId = reader.GetStringOrDefault("worker_id"),
+            SamAccountName = reader.GetStringOrDefault("sam_account_name"),
+            Reason = reader.GetStringOrDefault("reason"),
+            ReviewCategory = reader.GetStringOrDefault("review_category"),
+            ReviewCaseType = reader.GetStringOrDefault("review_case_type"),
+            StartedAt = reader.GetStringOrDefault("started_at"),
+            ItemJson = reader.GetStringOrDefault("item_json"),
+            ReportJson = reader.GetStringOrDefault("report_json"),
+        };
+    }
+
     private class RunRow
     {
-        [JsonPropertyName("run_id")]
         public string? RunId { get; init; }
-        [JsonPropertyName("path")]
         public string? Path { get; init; }
-        [JsonPropertyName("artifact_type")]
         public string? ArtifactType { get; init; }
-        [JsonPropertyName("config_path")]
         public string? ConfigPath { get; init; }
-        [JsonPropertyName("mapping_config_path")]
         public string? MappingConfigPath { get; init; }
-        [JsonPropertyName("mode")]
         public string? Mode { get; init; }
-        [JsonPropertyName("dry_run")]
         public int DryRun { get; init; }
-        [JsonPropertyName("status")]
         public string? Status { get; init; }
-        [JsonPropertyName("started_at")]
         public string? StartedAt { get; init; }
-        [JsonPropertyName("completed_at")]
         public string? CompletedAt { get; init; }
-        [JsonPropertyName("duration_seconds")]
         public int? DurationSeconds { get; init; }
-        [JsonPropertyName("creates")]
         public int Creates { get; init; }
-        [JsonPropertyName("updates")]
         public int Updates { get; init; }
-        [JsonPropertyName("enables")]
         public int Enables { get; init; }
-        [JsonPropertyName("disables")]
         public int Disables { get; init; }
-        [JsonPropertyName("graveyard_moves")]
         public int GraveyardMoves { get; init; }
-        [JsonPropertyName("deletions")]
         public int Deletions { get; init; }
-        [JsonPropertyName("quarantined")]
         public int Quarantined { get; init; }
-        [JsonPropertyName("conflicts")]
         public int Conflicts { get; init; }
-        [JsonPropertyName("guardrail_failures")]
         public int GuardrailFailures { get; init; }
-        [JsonPropertyName("manual_review")]
         public int ManualReview { get; init; }
-        [JsonPropertyName("unchanged")]
         public int Unchanged { get; init; }
     }
 
     private sealed class RunWithReportRow : RunRow
     {
-        [JsonPropertyName("report_json")]
         public string? ReportJson { get; init; }
     }
 
     private sealed class EntryRow
     {
-        [JsonPropertyName("entry_id")]
         public string? EntryId { get; init; }
-        [JsonPropertyName("run_id")]
         public string? RunId { get; init; }
-        [JsonPropertyName("artifact_type")]
         public string? ArtifactType { get; init; }
-        [JsonPropertyName("mode")]
         public string? Mode { get; init; }
-        [JsonPropertyName("bucket")]
         public string? Bucket { get; init; }
-        [JsonPropertyName("bucket_index")]
         public int BucketIndex { get; init; }
-        [JsonPropertyName("worker_id")]
         public string? WorkerId { get; init; }
-        [JsonPropertyName("sam_account_name")]
         public string? SamAccountName { get; init; }
-        [JsonPropertyName("reason")]
         public string? Reason { get; init; }
-        [JsonPropertyName("review_category")]
         public string? ReviewCategory { get; init; }
-        [JsonPropertyName("review_case_type")]
         public string? ReviewCaseType { get; init; }
-        [JsonPropertyName("started_at")]
         public string? StartedAt { get; init; }
-        [JsonPropertyName("item_json")]
         public string? ItemJson { get; init; }
-        [JsonPropertyName("report_json")]
         public string? ReportJson { get; init; }
     }
 }

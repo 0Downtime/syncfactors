@@ -1,0 +1,66 @@
+namespace SyncFactors.Infrastructure;
+
+public sealed record SyncFactorsConfigDocument(
+    SuccessFactorsConfig SuccessFactors,
+    ActiveDirectoryConfig Ad,
+    SyncPolicyConfig Sync,
+    SafetyConfig Safety,
+    ReportingConfig Reporting);
+
+public sealed record SuccessFactorsConfig(
+    string BaseUrl,
+    SuccessFactorsAuthConfig Auth,
+    SuccessFactorsQueryConfig Query,
+    SuccessFactorsQueryConfig? PreviewQuery);
+
+public sealed record SuccessFactorsAuthConfig(
+    string Mode,
+    SuccessFactorsBasicAuthConfig? Basic,
+    SuccessFactorsOAuthConfig? OAuth);
+
+public sealed record SuccessFactorsBasicAuthConfig(
+    string Username,
+    string Password);
+
+public sealed record SuccessFactorsOAuthConfig(
+    string TokenUrl,
+    string ClientId,
+    string ClientSecret,
+    string? CompanyId);
+
+public sealed record SuccessFactorsQueryConfig(
+    string EntitySet,
+    string IdentityField,
+    string DeltaField,
+    IReadOnlyList<string> Select,
+    IReadOnlyList<string> Expand);
+
+public sealed record ActiveDirectoryConfig(
+    string Server,
+    string? Username,
+    string? BindPassword,
+    string IdentityAttribute,
+    string DefaultActiveOu,
+    string GraveyardOu);
+
+public sealed record SyncPolicyConfig(
+    int EnableBeforeStartDays,
+    int DeletionRetentionDays);
+
+public sealed record SafetyConfig(
+    int MaxCreatesPerRun,
+    int MaxDisablesPerRun,
+    int MaxDeletionsPerRun);
+
+public sealed record ReportingConfig(
+    string OutputDirectory);
+
+public sealed record MappingConfigDocument(
+    IReadOnlyList<AttributeMappingConfig> Mappings);
+
+public sealed record AttributeMappingConfig(
+    string Source,
+    string Target,
+    bool Enabled,
+    bool Required,
+    string Transform);
