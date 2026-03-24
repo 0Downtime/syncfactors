@@ -198,6 +198,33 @@ Describe 'Invoke-SyncFactorsRun' {
         }
     }
 
+    It 'treats OData results-wrapped emplStatus and startDate as worker status inputs' {
+        InModuleScope Sync {
+            $worker = [pscustomobject]@{
+                personIdExternal = '40618'
+                employmentNav = [pscustomobject]@{
+                    results = @(
+                        [pscustomobject]@{
+                            startDate = (Get-Date).ToString('o')
+                            jobInfoNav = [pscustomobject]@{
+                                results = @(
+                                    [pscustomobject]@{
+                                        emplStatus = 'U'
+                                    }
+                                )
+                            }
+                        }
+                    )
+                }
+            }
+
+            (Get-SyncFactorsWorkerStatusValue -Worker $worker) | Should -Be 'U'
+            (Get-SyncFactorsWorkerStartDateValue -Worker $worker) | Should -Not -BeNullOrEmpty
+            (Test-SyncFactorsWorkerIsActive -Worker $worker) | Should -BeTrue
+            (Test-SyncFactorsWorkerIsPrehireEligible -Worker $worker -EnableBeforeDays 7) | Should -BeTrue
+        }
+    }
+
     It 'records disable and move operations for offboarding' {
         InModuleScope Sync {
             $user = [pscustomobject]@{
@@ -1451,6 +1478,59 @@ Describe 'Invoke-SyncFactorsRun' {
             Assert-MockCalled Save-SyncFactorsState -Times 0 -Exactly
             Assert-MockCalled Set-SyncFactorsWorkerState -Times 0 -Exactly
             Assert-MockCalled Set-SyncFactorsUserAttributes -Times 1 -Exactly -ParameterFilter { $DryRun }
+        }
+    }
+
+    It 'produces an empty scoped review preview when the fetched worker payload is identity-only' {
+        InModuleScope Sync {
+            $global:SyncTestBaseConfig.reporting | Add-Member -MemberType NoteProperty -Name reviewOutputDirectory -Value (Join-Path $TestDrive 'reviews') -Force
+            Mock Get-SyncFactorsConfig { $global:SyncTestBaseConfig }
+            Mock Get-SyncFactorsMappingConfig {
+                [pscustomobject]@{
+                    mappings = @(
+                        [pscustomobject]@{
+                            source = 'firstName'
+                            target = 'GivenName'
+                            enabled = $true
+                            required = $true
+                            transform = 'Trim'
+                        }
+                    )
+                }
+            }
+            Mock Get-SyncFactorsState { [pscustomobject]@{ checkpoint = '2026-03-05T10:00:00'; workers = [pscustomobject]@{} } }
+            Mock Get-SfWorkers { throw 'Get-SfWorkers should not be used for scoped preview.' }
+            Mock Get-SfWorkerById {
+                [pscustomobject]@{
+                    personIdExternal = '40618'
+                }
+            }
+            Mock Get-SyncFactorsTargetUser { $null }
+            Mock Get-SyncFactorsWorkerState { $null }
+            Mock Get-SyncFactorsAttributeChanges { throw 'Attribute changes should not be evaluated for an inactive identity-only worker.' }
+            Mock Get-SyncFactorsMappingEvaluation { throw 'Mapping evaluation should not run for an inactive identity-only worker.' }
+            Mock Invoke-SyncFactorsDeletionPass { throw 'Deletion pass should not run during review preview.' }
+            Mock Save-SyncFactorsState { throw 'state should not be saved in scoped preview mode' }
+            Mock Set-SyncFactorsWorkerState { throw 'tracked state should not be written in scoped preview mode' }
+            Mock Save-SyncFactorsReport {
+                param($Report, $Directory, $Mode)
+                $global:CapturedReport = $Report
+                return (Join-Path $Directory "syncfactors-$Mode.json")
+            }
+            Mock Ensure-ActiveDirectoryModule {}
+
+            Invoke-SyncFactorsRun -ConfigPath $global:SyncTestConfigPath -MappingConfigPath $global:SyncTestMappingConfigPath -Mode Review -WorkerId '40618' | Out-Null
+
+            $global:CapturedReport.artifactType | Should -Be 'WorkerPreview'
+            $global:CapturedReport.workerScope.workerId | Should -Be '40618'
+            @($global:CapturedReport.creates).Count | Should -Be 0
+            @($global:CapturedReport.updates).Count | Should -Be 0
+            @($global:CapturedReport.disables).Count | Should -Be 0
+            @($global:CapturedReport.manualReview).Count | Should -Be 0
+            $global:CapturedReport.reviewSummary.proposedCreates | Should -Be 0
+            Assert-MockCalled Get-SfWorkerById -Times 1 -Exactly -ParameterFilter { $WorkerId -eq '40618' }
+            Assert-MockCalled Get-SyncFactorsAttributeChanges -Times 0 -Exactly
+            Assert-MockCalled Get-SyncFactorsMappingEvaluation -Times 0 -Exactly
         }
     }
 

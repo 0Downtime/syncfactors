@@ -28,6 +28,30 @@ Describe 'Get-NestedValue' {
 
         Get-NestedValue -InputObject $worker -Path 'employmentNav[0].jobInfoNav[0].jobTitle' | Should -Be $null
     }
+
+    It 'unwraps OData results collections for indexed navigation paths' {
+        $worker = [pscustomobject]@{
+            employmentNav = [pscustomobject]@{
+                results = @(
+                    [pscustomobject]@{
+                        startDate = '2019-06-03T00:00:00Z'
+                        jobInfoNav = [pscustomobject]@{
+                            results = @(
+                                [pscustomobject]@{
+                                    emplStatus = '64300'
+                                    jobTitle = 'Lead Admin, Patching'
+                                }
+                            )
+                        }
+                    }
+                )
+            }
+        }
+
+        Get-NestedValue -InputObject $worker -Path 'employmentNav[0].startDate' | Should -Be '2019-06-03T00:00:00Z'
+        Get-NestedValue -InputObject $worker -Path 'employmentNav[0].jobInfoNav[0].emplStatus' | Should -Be '64300'
+        Get-NestedValue -InputObject $worker -Path 'employmentNav[0].jobInfoNav[0].jobTitle' | Should -Be 'Lead Admin, Patching'
+    }
 }
 
 Describe 'Get-SyncFactorsAttributeChanges' {
