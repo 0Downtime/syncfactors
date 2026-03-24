@@ -186,10 +186,28 @@ public sealed class SuccessFactorsWorkerSource(
             return null;
         }
 
-        var preferredName = GetString(worker, "firstName") ?? "Unknown";
-        var lastName = GetString(worker, "lastName") ?? "Worker";
-        var department = GetString(worker, "department") ?? "Unknown";
-        var startDate = GetString(worker, "startDate");
+        var personalInfo = GetFirstNavigationResult(worker, "personalInfoNav");
+        var employment = GetFirstNavigationResult(worker, "employmentNav");
+        var jobInfo = employment is { ValueKind: not JsonValueKind.Undefined }
+            ? GetFirstNavigationResult(employment.Value, "jobInfoNav")
+            : null;
+
+        var preferredName =
+            GetString(personalInfo, "firstName") ??
+            GetString(worker, "firstName") ??
+            "Unknown";
+        var lastName =
+            GetString(personalInfo, "lastName") ??
+            GetString(worker, "lastName") ??
+            "Worker";
+        var department =
+            GetString(jobInfo, "department") ??
+            GetString(employment, "department") ??
+            GetString(worker, "department") ??
+            "Unknown";
+        var startDate =
+            GetString(employment, "startDate") ??
+            GetString(worker, "startDate");
 
         return new WorkerSnapshot(
             WorkerId: GetString(worker, query.IdentityField) ?? workerId,
@@ -223,6 +241,33 @@ public sealed class SuccessFactorsWorkerSource(
         return element.TryGetProperty(propertyName, out var property) && property.ValueKind == JsonValueKind.String
             ? property.GetString()
             : null;
+    }
+
+    private static string? GetString(JsonElement? element, string propertyName)
+    {
+        return element is { ValueKind: not JsonValueKind.Undefined }
+            ? GetString(element.Value, propertyName)
+            : null;
+    }
+
+    private static JsonElement? GetFirstNavigationResult(JsonElement element, string propertyName)
+    {
+        if (!element.TryGetProperty(propertyName, out var navigation))
+        {
+            return null;
+        }
+
+        if (navigation.ValueKind == JsonValueKind.Object &&
+            navigation.TryGetProperty("results", out var results) &&
+            results.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var item in results.EnumerateArray())
+            {
+                return item.Clone();
+            }
+        }
+
+        return null;
     }
 
     private static bool IsPrehire(string? startDate, int enableBeforeStartDays)
