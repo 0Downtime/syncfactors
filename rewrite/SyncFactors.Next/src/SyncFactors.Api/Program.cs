@@ -1,6 +1,7 @@
 using SyncFactors.Contracts;
 using SyncFactors.Domain;
 using SyncFactors.Infrastructure;
+using System.Net;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -16,7 +17,11 @@ builder.Services.AddSingleton<ScaffoldDataStore>();
 builder.Services.AddSingleton<ScaffoldWorkerSource>();
 builder.Services.AddSingleton<ScaffoldDirectoryGateway>();
 builder.Services.AddSingleton<ScaffoldDirectoryCommandGateway>();
-builder.Services.AddHttpClient<SuccessFactorsWorkerSource>();
+builder.Services.AddHttpClient<SuccessFactorsWorkerSource>()
+    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+    {
+        AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate
+    });
 builder.Services.AddTransient<IWorkerSource>(serviceProvider => serviceProvider.GetRequiredService<SuccessFactorsWorkerSource>());
 builder.Services.AddTransient<IDirectoryGateway, ActiveDirectoryGateway>();
 builder.Services.AddTransient<IDirectoryCommandGateway, ActiveDirectoryCommandGateway>();
