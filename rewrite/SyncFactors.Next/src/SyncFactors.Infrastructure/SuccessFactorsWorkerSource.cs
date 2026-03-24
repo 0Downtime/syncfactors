@@ -31,6 +31,7 @@ public sealed class SuccessFactorsWorkerSource(
             config.SuccessFactors.Auth.Mode);
 
         using var request = new HttpRequestMessage(HttpMethod.Get, requestUri);
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
         await ApplyAuthenticationAsync(request, config.SuccessFactors.Auth, cancellationToken);
 
         using var response = await httpClient.SendAsync(request, cancellationToken);
@@ -157,6 +158,7 @@ public sealed class SuccessFactorsWorkerSource(
         var relativePath = $"{baseUrl}/{query.EntitySet}";
         var parts = new List<string>
         {
+            "$format=json",
             $"$filter={Uri.EscapeDataString($"{query.IdentityField} eq '{workerId.Replace("'", "''")}'")}",
             $"$select={Uri.EscapeDataString(string.Join(",", query.Select))}",
         };
