@@ -8,13 +8,27 @@ builder.Services.AddSingleton(new SqlitePathResolver(builder.Configuration["Sync
 builder.Services.AddSingleton(new SyncFactorsConfigPathResolver(
     builder.Configuration["SyncFactors:ConfigPath"],
     builder.Configuration["SyncFactors:MappingConfigPath"]));
-builder.Services.AddSingleton<SqliteJsonShell>();
-builder.Services.AddSingleton<PowerShellWorkerPreviewService>();
+builder.Services.AddSingleton(new ScaffoldDataPathResolver(builder.Configuration["SyncFactors:ScaffoldDataPath"]));
+builder.Services.AddSingleton<SqliteDatabaseInitializer>();
+builder.Services.AddSingleton<SyncFactorsConfigurationLoader>();
+builder.Services.AddSingleton<SyncFactorsConfigurationValidator>();
+builder.Services.AddSingleton<ScaffoldDataStore>();
+builder.Services.AddSingleton<ScaffoldWorkerSource>();
+builder.Services.AddSingleton<ScaffoldDirectoryGateway>();
+builder.Services.AddHttpClient<SuccessFactorsWorkerSource>();
+builder.Services.AddTransient<IWorkerSource>(serviceProvider => serviceProvider.GetRequiredService<SuccessFactorsWorkerSource>());
+builder.Services.AddTransient<IDirectoryGateway, ActiveDirectoryGateway>();
+builder.Services.AddSingleton<IIdentityMatcher, IdentityMatcher>();
+builder.Services.AddSingleton<IAttributeDiffService, AttributeDiffService>();
+builder.Services.AddTransient<IWorkerPreviewPlanner, WorkerPreviewPlanner>();
 builder.Services.AddSingleton<IRuntimeStatusStore, SqliteRuntimeStatusStore>();
 builder.Services.AddSingleton<IRunRepository, SqliteRunRepository>();
 builder.Services.AddRazorPages();
 
 var app = builder.Build();
+
+await app.Services.GetRequiredService<SqliteDatabaseInitializer>().InitializeAsync(CancellationToken.None);
+app.Services.GetRequiredService<SyncFactorsConfigurationValidator>().Validate();
 
 app.UseStaticFiles();
 

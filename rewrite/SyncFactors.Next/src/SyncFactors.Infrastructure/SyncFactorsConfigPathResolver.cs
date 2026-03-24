@@ -14,8 +14,7 @@ public sealed class SyncFactorsConfigPathResolver(string? configuredConfigPath, 
     {
         return Resolve(
             configuredMappingConfigPath,
-            "config/local.syncfactors.mapping-config.json",
-            "config/sample.syncfactors.mapping-config.json");
+            "config/local.syncfactors.mapping-config.json");
     }
 
     private static string? Resolve(string? configured, params string[] candidates)

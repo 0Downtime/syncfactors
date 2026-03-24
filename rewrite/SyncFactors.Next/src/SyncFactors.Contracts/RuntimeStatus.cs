@@ -17,6 +17,31 @@ public sealed record RuntimeStatus(
     DateTimeOffset? CompletedAt,
     string? ErrorMessage);
 
+public sealed record RunRecord(
+    string RunId,
+    string? Path,
+    string ArtifactType,
+    string? ConfigPath,
+    string? MappingConfigPath,
+    string Mode,
+    bool DryRun,
+    string Status,
+    DateTimeOffset StartedAt,
+    DateTimeOffset? CompletedAt,
+    int? DurationSeconds,
+    int Creates,
+    int Updates,
+    int Enables,
+    int Disables,
+    int GraveyardMoves,
+    int Deletions,
+    int Quarantined,
+    int Conflicts,
+    int GuardrailFailures,
+    int ManualReview,
+    int Unchanged,
+    JsonElement Report);
+
 public sealed record RunSummary(
     string RunId,
     string? Path,
@@ -65,6 +90,72 @@ public sealed record RunEntry(
     OperationSummary? OperationSummary,
     IReadOnlyList<DiffRow> DiffRows,
     JsonElement Item);
+
+public sealed record RunEntryRecord(
+    string EntryId,
+    string RunId,
+    string Bucket,
+    int BucketIndex,
+    string? WorkerId,
+    string? SamAccountName,
+    string? Reason,
+    string? ReviewCategory,
+    string? ReviewCaseType,
+    DateTimeOffset? StartedAt,
+    JsonElement Item);
+
+public sealed record RunPlan(
+    string RunId,
+    string ArtifactType,
+    string Mode,
+    bool DryRun,
+    int TotalWorkers,
+    string? InitialWorkerId,
+    string? InitialAction,
+    JsonElement Report,
+    IReadOnlyList<RunEntryRecord> Entries,
+    RunTally Tally);
+
+public sealed record RunTally(
+    int Creates,
+    int Updates,
+    int Enables,
+    int Disables,
+    int GraveyardMoves,
+    int Deletions,
+    int Quarantined,
+    int Conflicts,
+    int GuardrailFailures,
+    int ManualReview,
+    int Unchanged);
+
+public sealed record WorkerSnapshot(
+    string WorkerId,
+    string PreferredName,
+    string LastName,
+    string Department,
+    string TargetOu,
+    bool IsPrehire);
+
+public sealed record DirectoryUserSnapshot(
+    string? SamAccountName,
+    string? DistinguishedName,
+    bool? Enabled,
+    string? DisplayName);
+
+public sealed record IdentityMatchResult(
+    string Bucket,
+    bool MatchedExistingUser,
+    string SamAccountName,
+    string? Reason,
+    string? OperatorActionSummary);
+
+public sealed record AttributeChange(
+    string Attribute,
+    string? Source,
+    string Before,
+    string After,
+    bool Changed);
 
 public sealed record DiffRow(
     string Attribute,

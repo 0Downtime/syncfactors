@@ -13,21 +13,20 @@ public sealed class SqlitePathResolver
     {
         if (!string.IsNullOrWhiteSpace(_configuredPath))
         {
-            return Path.GetFullPath(_configuredPath);
-        }
-
-        var current = new DirectoryInfo(AppContext.BaseDirectory);
-        while (current is not null)
-        {
-            var candidate = Path.Combine(current.FullName, "syncfactors.db");
-            if (File.Exists(candidate))
-            {
-                return candidate;
-            }
-
-            current = current.Parent;
+            var fullPath = Path.GetFullPath(_configuredPath);
+            return File.Exists(fullPath) ? fullPath : null;
         }
 
         return null;
+    }
+
+    public string? ResolveConfiguredPath()
+    {
+        if (string.IsNullOrWhiteSpace(_configuredPath))
+        {
+            return null;
+        }
+
+        return Path.GetFullPath(_configuredPath);
     }
 }
