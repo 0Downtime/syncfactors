@@ -15,12 +15,15 @@ builder.Services.AddSingleton<SyncFactorsConfigurationValidator>();
 builder.Services.AddSingleton<ScaffoldDataStore>();
 builder.Services.AddSingleton<ScaffoldWorkerSource>();
 builder.Services.AddSingleton<ScaffoldDirectoryGateway>();
+builder.Services.AddSingleton<ScaffoldDirectoryCommandGateway>();
 builder.Services.AddHttpClient<SuccessFactorsWorkerSource>();
 builder.Services.AddTransient<IWorkerSource>(serviceProvider => serviceProvider.GetRequiredService<SuccessFactorsWorkerSource>());
 builder.Services.AddTransient<IDirectoryGateway, ActiveDirectoryGateway>();
+builder.Services.AddTransient<IDirectoryCommandGateway, ActiveDirectoryCommandGateway>();
 builder.Services.AddSingleton<IIdentityMatcher, IdentityMatcher>();
 builder.Services.AddSingleton<IAttributeDiffService, AttributeDiffService>();
 builder.Services.AddTransient<IWorkerPreviewPlanner, WorkerPreviewPlanner>();
+builder.Services.AddTransient<IApplyPreviewService, ApplyPreviewService>();
 builder.Services.AddSingleton<IRuntimeStatusStore, SqliteRuntimeStatusStore>();
 builder.Services.AddSingleton<IRunRepository, SqliteRunRepository>();
 builder.Services.AddRazorPages();
@@ -83,6 +86,17 @@ app.MapGet("/api/runs/{runId}/entries", async (
 
     var entries = await repository.GetRunEntriesAsync(runId, bucket, workerId, reason, filter, entryId, cancellationToken);
     return Results.Ok(new { run = run.Run, entries, total = entries.Count });
+});
+
+app.MapPost("/api/preview/{workerId}/apply", async (
+    string workerId,
+    IApplyPreviewService applyPreviewService,
+    CancellationToken cancellationToken) =>
+{
+    var result = await applyPreviewService.ApplyAsync(workerId, cancellationToken);
+    return result.Succeeded
+        ? Results.Ok(result)
+        : Results.BadRequest(result);
 });
 
 app.MapRazorPages();

@@ -157,6 +157,22 @@ public sealed record AttributeChange(
     string After,
     bool Changed);
 
+public sealed record DirectoryMutationCommand(
+    string Action,
+    string WorkerId,
+    string SamAccountName,
+    string TargetOu,
+    string DisplayName,
+    bool EnableAccount);
+
+public sealed record DirectoryCommandResult(
+    bool Succeeded,
+    string Action,
+    string SamAccountName,
+    string? DistinguishedName,
+    string Message,
+    string? RunId);
+
 public sealed record DiffRow(
     string Attribute,
     string? Source,

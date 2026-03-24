@@ -48,3 +48,8 @@ public interface IAttributeDiffService
 {
     IReadOnlyList<AttributeChange> BuildDiff(WorkerSnapshot worker, DirectoryUserSnapshot? directoryUser);
 }
+
+public interface IDirectoryCommandGateway
+{
+    Task<DirectoryCommandResult> ExecuteAsync(DirectoryMutationCommand command, CancellationToken cancellationToken);
+}
