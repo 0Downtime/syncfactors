@@ -67,6 +67,52 @@ function Set-SyncFactorsPropertyValue {
     $InputObject | Add-Member -MemberType NoteProperty -Name $PropertyName -Value $Value -Force
 }
 
+function Resolve-SyncFactorsPathFromConfigBase {
+    [CmdletBinding()]
+    param(
+        [AllowNull()]
+        [object]$Path,
+        [Parameter(Mandatory)]
+        [string]$ConfigDirectory
+    )
+
+    $pathValue = "$Path"
+    if ([string]::IsNullOrWhiteSpace($pathValue)) {
+        return $Path
+    }
+
+    if ([System.IO.Path]::IsPathRooted($pathValue)) {
+        return $pathValue
+    }
+
+    return [System.IO.Path]::GetFullPath((Join-Path -Path $ConfigDirectory -ChildPath $pathValue))
+}
+
+function Resolve-SyncFactorsConfigPaths {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [pscustomobject]$Config,
+        [Parameter(Mandatory)]
+        [string]$ConfigPath
+    )
+
+    $configDirectory = Split-Path -Path ([System.IO.Path]::GetFullPath($ConfigPath)) -Parent
+    $Config.state.path = Resolve-SyncFactorsPathFromConfigBase -Path $Config.state.path -ConfigDirectory $configDirectory
+
+    if ((Test-SyncFactorsHasProperty -InputObject $Config -PropertyName 'persistence') -and $Config.persistence -and (Test-SyncFactorsHasProperty -InputObject $Config.persistence -PropertyName 'sqlitePath')) {
+        Set-SyncFactorsPropertyValue -InputObject $Config.persistence -PropertyName 'sqlitePath' -Value (Resolve-SyncFactorsPathFromConfigBase -Path $Config.persistence.sqlitePath -ConfigDirectory $configDirectory)
+    }
+
+    $Config.reporting.outputDirectory = Resolve-SyncFactorsPathFromConfigBase -Path $Config.reporting.outputDirectory -ConfigDirectory $configDirectory
+
+    if ((Test-SyncFactorsHasProperty -InputObject $Config.reporting -PropertyName 'reviewOutputDirectory') -and -not [string]::IsNullOrWhiteSpace("$($Config.reporting.reviewOutputDirectory)")) {
+        Set-SyncFactorsPropertyValue -InputObject $Config.reporting -PropertyName 'reviewOutputDirectory' -Value (Resolve-SyncFactorsPathFromConfigBase -Path $Config.reporting.reviewOutputDirectory -ConfigDirectory $configDirectory)
+    }
+
+    return $Config
+}
+
 function Get-SyncFactorsDefaultSqlitePath {
     [CmdletBinding()]
     param(
@@ -250,6 +296,7 @@ function Get-SyncFactorsConfig {
 
     $config = Get-Content -Path $Path -Raw | ConvertFrom-Json -Depth 20
     $config = Resolve-SyncFactorsSecrets -Config $config
+    $config = Resolve-SyncFactorsConfigPaths -Config $config -ConfigPath $Path
     Test-SyncFactorsConfig -Config $config
     return $config
 }

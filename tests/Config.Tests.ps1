@@ -53,6 +53,58 @@ Describe 'Get-SyncFactorsConfig' {
         $config.persistence.sqlitePath | Should -Be '/tmp/syncfactors/state/syncfactors.db'
     }
 
+    It 'resolves relative filesystem paths from the config file directory' {
+        $configDirectory = Join-Path $TestDrive 'tenant-config'
+        $configPath = Join-Path $configDirectory 'sync-config.json'
+        New-Item -Path $configDirectory -ItemType Directory -Force | Out-Null
+        @'
+{
+  "successFactors": {
+    "baseUrl": "https://example.successfactors.com/odata/v2",
+    "oauth": {
+      "tokenUrl": "https://example.successfactors.com/oauth/token",
+      "clientId": "client-id",
+      "clientSecret": "client-secret"
+    },
+    "query": {
+      "entitySet": "PerPerson",
+      "identityField": "personIdExternal",
+      "deltaField": "lastModifiedDateTime",
+      "select": [ "personIdExternal" ],
+      "expand": [ "employmentNav" ]
+    }
+  },
+  "ad": {
+    "identityAttribute": "employeeID",
+    "defaultActiveOu": "OU=Employees,DC=example,DC=com",
+    "graveyardOu": "OU=Graveyard,DC=example,DC=com",
+    "defaultPassword": "config-password"
+  },
+  "sync": {
+    "enableBeforeStartDays": 7,
+    "deletionRetentionDays": 90
+  },
+  "state": {
+    "path": ".\\state\\runtime\\sync-state.json"
+  },
+  "persistence": {
+    "sqlitePath": ".\\state\\runtime\\syncfactors.db"
+  },
+  "reporting": {
+    "outputDirectory": ".\\reports\\output",
+    "reviewOutputDirectory": ".\\reports\\review"
+  }
+}
+'@ | Set-Content -Path $configPath
+
+        $config = Get-SyncFactorsConfig -Path $configPath
+
+        $config.state.path | Should -Be ([System.IO.Path]::GetFullPath((Join-Path $configDirectory '.\state\runtime\sync-state.json')))
+        $config.persistence.sqlitePath | Should -Be ([System.IO.Path]::GetFullPath((Join-Path $configDirectory '.\state\runtime\syncfactors.db')))
+        $config.reporting.outputDirectory | Should -Be ([System.IO.Path]::GetFullPath((Join-Path $configDirectory '.\reports\output')))
+        $config.reporting.reviewOutputDirectory | Should -Be ([System.IO.Path]::GetFullPath((Join-Path $configDirectory '.\reports\review')))
+    }
+
     It 'prefers environment variables for secret values' {
         $configPath = Join-Path $TestDrive 'sync-config.json'
         @'
