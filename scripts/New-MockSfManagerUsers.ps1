@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string]$ConfigPath = './config/local.mock-successfactors.real-ad.sync-config.json',
+    [string]$ConfigPath = './rewrite/SyncFactors.Next/config/local.mock-successfactors.real-ad.sync-config.json',
     [ValidateRange(1, 5000)]
     [int]$ManagerCount = 50,
     [string]$TargetOu,

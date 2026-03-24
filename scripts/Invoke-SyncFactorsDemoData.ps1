@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
-    [string]$ConfigPath = './config/sample.mock-successfactors.real-ad.sync-config.json',
-    [string]$MappingConfigPath = './config/sample.syncfactors.mapping-config.json',
+    [string]$ConfigPath = './rewrite/SyncFactors.Next/config/sample.mock-successfactors.real-ad.sync-config.json',
+    [string]$MappingConfigPath = './rewrite/SyncFactors.Next/config/sample.syncfactors.mapping-config.json',
     [string]$OutputDirectory = './reports/demo',
     [ValidateSet('MixedHistory')]
     [string]$Preset = 'MixedHistory',

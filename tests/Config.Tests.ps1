@@ -4,7 +4,7 @@ Describe 'Get-SyncFactorsConfig' {
     }
 
     It 'loads the sample config successfully' {
-        $configPath = Join-Path $PSScriptRoot '../config/sample.real-successfactors.real-ad.sync-config.json'
+        $configPath = Join-Path $PSScriptRoot '../rewrite/SyncFactors.Next/config/sample.real-successfactors.real-ad.sync-config.json'
         $config = Get-SyncFactorsConfig -Path $configPath
         $config.successFactors.baseUrl | Should -Not -BeNullOrEmpty
         $config.ad.graveyardOu | Should -Not -BeNullOrEmpty

@@ -31,6 +31,7 @@ This folder is intentionally separate from the current PowerShell + Node impleme
 - `tests/*`: unit and integration test projects
 - `docs/architecture.md`: target architecture
 - `docs/migration-plan.md`: phased migration plan from the current repo
+- `config/*`: rewrite-local sync, mapping, and scaffold configuration
 
 ## Suggested First Milestones
 
@@ -43,3 +44,7 @@ This folder is intentionally separate from the current PowerShell + Node impleme
 ## Status
 
 This folder now builds against the locally installed .NET 10 SDK. The implementation is still intentionally minimal and only covers the first read-model scaffold.
+
+## Local Config
+
+The rewrite now keeps its tracked and local config files under [`config`]( /Users/chrisbrien/dev/github.com/syncfactors/rewrite/SyncFactors.Next/config ). Use the `sample.*.json` files there as templates and keep machine-specific values in the ignored `local.*.json` files in the same folder.

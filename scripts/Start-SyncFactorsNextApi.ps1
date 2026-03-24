@@ -36,14 +36,14 @@ function Resolve-OptionalPath {
 $projectRoot = Resolve-ProjectRoot
 $apiProjectPath = Join-Path $projectRoot 'rewrite/SyncFactors.Next/src/SyncFactors.Api/SyncFactors.Api.csproj'
 
-$resolvedConfigPath = Resolve-OptionalPath -Path $ConfigPath -Fallback 'config/local.real-successfactors.real-ad.sync-config.json'
+$resolvedConfigPath = Resolve-OptionalPath -Path $ConfigPath -Fallback 'rewrite/SyncFactors.Next/config/local.real-successfactors.real-ad.sync-config.json'
 if ($null -eq $resolvedConfigPath) {
-    throw "Sync config path could not be resolved. Pass -ConfigPath or create 'config/local.real-successfactors.real-ad.sync-config.json'."
+    throw "Sync config path could not be resolved. Pass -ConfigPath or create 'rewrite/SyncFactors.Next/config/local.real-successfactors.real-ad.sync-config.json'."
 }
 
-$resolvedMappingConfigPath = Resolve-OptionalPath -Path $MappingConfigPath -Fallback 'config/local.syncfactors.mapping-config.json'
+$resolvedMappingConfigPath = Resolve-OptionalPath -Path $MappingConfigPath -Fallback 'rewrite/SyncFactors.Next/config/local.syncfactors.mapping-config.json'
 if ($null -eq $resolvedMappingConfigPath) {
-    throw "Mapping config path could not be resolved. Pass -MappingConfigPath or create 'config/local.syncfactors.mapping-config.json'."
+    throw "Mapping config path could not be resolved. Pass -MappingConfigPath or create 'rewrite/SyncFactors.Next/config/local.syncfactors.mapping-config.json'."
 }
 
 $env:ASPNETCORE_URLS = $Urls

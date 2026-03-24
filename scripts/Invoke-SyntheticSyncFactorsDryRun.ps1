@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
-    [string]$ConfigPath = './config/sample.real-successfactors.real-ad.sync-config.json',
-    [string]$MappingConfigPath = './config/sample.syncfactors.mapping-config.json',
+    [string]$ConfigPath = './rewrite/SyncFactors.Next/config/sample.real-successfactors.real-ad.sync-config.json',
+    [string]$MappingConfigPath = './rewrite/SyncFactors.Next/config/sample.syncfactors.mapping-config.json',
     [ValidateRange(1, 50000)]
     [int]$UserCount = 1000,
     [ValidateRange(0, 5000)]
