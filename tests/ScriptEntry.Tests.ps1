@@ -1311,6 +1311,53 @@ param(
         $result | Should -Match 'Monitor error'
     }
 
+    It 'supports the legacy watch monitor entry script name' {
+        $configPath = Join-Path $TestDrive 'legacy-monitor-config.json'
+        $statePath = Join-Path $TestDrive 'legacy-monitor-state.json'
+        $reportDir = Join-Path $TestDrive 'legacy-monitor-reports'
+        $sqlitePath = Join-Path $TestDrive 'syncfactors.db'
+
+        New-Item -Path $reportDir -ItemType Directory -Force | Out-Null
+        (New-StatusConfigContent -StatePath $statePath -ReportDirectory $reportDir) | Set-Content -Path $configPath
+        Initialize-StatusSqliteFixture `
+            -StatePath $statePath `
+            -DatabasePath $sqlitePath `
+            -Checkpoint $null `
+            -Workers @() `
+            -CurrentRun ([pscustomobject]@{
+                runId = 'run-legacy'
+                status = 'InProgress'
+                mode = 'Delta'
+                dryRun = $false
+                stage = 'ProcessingWorkers'
+                startedAt = '2026-03-12T21:40:00'
+                lastUpdatedAt = '2026-03-12T21:41:00'
+                completedAt = $null
+                currentWorkerId = '1002'
+                lastAction = 'Legacy launcher path'
+                processedWorkers = 1
+                totalWorkers = 5
+                creates = 0
+                updates = 0
+                enables = 0
+                disables = 0
+                graveyardMoves = 0
+                deletions = 0
+                quarantined = 0
+                conflicts = 0
+                guardrailFailures = 0
+                manualReview = 0
+                unchanged = 0
+                errorMessage = $null
+            }) `
+            -Runs @()
+
+        $result = & "$PSScriptRoot/../scripts/Watch-SfAdSyncMonitor.ps1" -ConfigPath $configPath -RunOnce -AsText
+
+        $result | Should -Match 'SuccessFactors AD Sync Monitor'
+        $result | Should -Match 'Legacy launcher path'
+    }
+
     It 'installs syncfactors shims that point at the dashboard with explicit config paths' {
         $projectRoot = Join-Path $TestDrive 'install-project'
         $configDirectory = Join-Path $projectRoot 'config'
