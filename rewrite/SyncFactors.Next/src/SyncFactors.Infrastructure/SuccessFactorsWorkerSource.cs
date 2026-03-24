@@ -1,5 +1,6 @@
 using SyncFactors.Contracts;
 using SyncFactors.Domain;
+using Microsoft.Extensions.Logging;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
@@ -9,7 +10,8 @@ namespace SyncFactors.Infrastructure;
 public sealed class SuccessFactorsWorkerSource(
     HttpClient httpClient,
     SyncFactorsConfigurationLoader configLoader,
-    ScaffoldWorkerSource fallbackSource) : IWorkerSource
+    ScaffoldWorkerSource fallbackSource,
+    ILogger<SuccessFactorsWorkerSource> logger) : IWorkerSource
 {
     public async Task<WorkerSnapshot?> GetWorkerAsync(string workerId, CancellationToken cancellationToken)
     {
@@ -20,24 +22,63 @@ public sealed class SuccessFactorsWorkerSource(
 
         var config = configLoader.GetSyncConfig();
         var query = config.SuccessFactors.PreviewQuery ?? config.SuccessFactors.Query;
+        var requestUri = BuildRequestUri(config, query, workerId);
 
-        using var request = new HttpRequestMessage(HttpMethod.Get, BuildRequestUri(config, query, workerId));
+        logger.LogInformation(
+            "Fetching worker preview data from SuccessFactors. WorkerId={WorkerId} EntitySet={EntitySet} AuthMode={AuthMode}",
+            workerId,
+            query.EntitySet,
+            config.SuccessFactors.Auth.Mode);
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, requestUri);
         await ApplyAuthenticationAsync(request, config.SuccessFactors.Auth, cancellationToken);
 
         using var response = await httpClient.SendAsync(request, cancellationToken);
         if (!response.IsSuccessStatusCode)
         {
+            var body = await response.Content.ReadAsStringAsync(cancellationToken);
+            logger.LogError(
+                "SuccessFactors request failed. WorkerId={WorkerId} StatusCode={StatusCode} ContentType={ContentType} Uri={Uri} BodyPreview={BodyPreview}",
+                workerId,
+                (int)response.StatusCode,
+                response.Content.Headers.ContentType?.MediaType ?? "(none)",
+                requestUri,
+                TrimForLog(body));
             response.EnsureSuccessStatusCode();
         }
 
-        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
-        using var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
-
-        var worker = TryParseWorker(document.RootElement, config, workerId);
-        if (worker is not null)
+        var rawBody = await response.Content.ReadAsStringAsync(cancellationToken);
+        try
         {
-            return worker;
+            using var document = JsonDocument.Parse(rawBody);
+
+            var worker = TryParseWorker(document.RootElement, config, workerId);
+            if (worker is not null)
+            {
+                logger.LogInformation(
+                    "Resolved worker from SuccessFactors. RequestedWorkerId={RequestedWorkerId} ResolvedWorkerId={ResolvedWorkerId}",
+                    workerId,
+                    worker.WorkerId);
+                return worker;
+            }
         }
+        catch (JsonException ex)
+        {
+            logger.LogError(
+                ex,
+                "SuccessFactors returned non-JSON or invalid JSON. WorkerId={WorkerId} ContentType={ContentType} Uri={Uri} BodyPreview={BodyPreview}",
+                workerId,
+                response.Content.Headers.ContentType?.MediaType ?? "(none)",
+                requestUri,
+                TrimForLog(rawBody));
+            throw new InvalidOperationException(
+                $"SuccessFactors returned invalid JSON. Status={(int)response.StatusCode}, ContentType={response.Content.Headers.ContentType?.MediaType ?? "(none)"}, BodyPreview={TrimForLog(rawBody)}",
+                ex);
+        }
+
+        logger.LogWarning(
+            "No worker was returned from SuccessFactors. Falling back to scaffold worker source. WorkerId={WorkerId}",
+            workerId);
 
         return await fallbackSource.GetWorkerAsync(workerId, cancellationToken);
     }
@@ -52,11 +93,13 @@ public sealed class SuccessFactorsWorkerSource(
             case "basic" when auth.Basic is not null:
                 var basicToken = Convert.ToBase64String(Encoding.UTF8.GetBytes($"{auth.Basic.Username}:{auth.Basic.Password}"));
                 request.Headers.Authorization = new AuthenticationHeaderValue("Basic", basicToken);
+                logger.LogDebug("Using basic authentication for SuccessFactors request.");
                 break;
 
             case "oauth" when auth.OAuth is not null:
                 var accessToken = await GetOAuthTokenAsync(auth.OAuth, cancellationToken);
                 request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+                logger.LogDebug("Using OAuth bearer authentication for SuccessFactors request.");
                 break;
         }
     }
@@ -65,6 +108,7 @@ public sealed class SuccessFactorsWorkerSource(
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, oauth.TokenUrl);
         request.Content = new FormUrlEncodedContent(BuildTokenForm(oauth));
+        logger.LogDebug("Requesting SuccessFactors OAuth token from {TokenUrl}", oauth.TokenUrl);
 
         using var response = await httpClient.SendAsync(request, cancellationToken);
         response.EnsureSuccessStatusCode();
@@ -77,6 +121,17 @@ public sealed class SuccessFactorsWorkerSource(
         }
 
         throw new InvalidOperationException("SuccessFactors OAuth response did not contain access_token.");
+    }
+
+    private static string TrimForLog(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return "(empty)";
+        }
+
+        var flattened = value.ReplaceLineEndings(" ").Trim();
+        return flattened.Length <= 240 ? flattened : flattened[..240];
     }
 
     private static IEnumerable<KeyValuePair<string, string>> BuildTokenForm(SuccessFactorsOAuthConfig oauth)

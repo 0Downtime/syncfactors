@@ -1,5 +1,6 @@
 using SyncFactors.Contracts;
 using SyncFactors.Domain;
+using Microsoft.Extensions.Logging;
 using System.DirectoryServices.Protocols;
 using System.Net;
 
@@ -7,26 +8,33 @@ namespace SyncFactors.Infrastructure;
 
 public sealed class ActiveDirectoryCommandGateway(
     SyncFactorsConfigurationLoader configLoader,
-    ScaffoldDirectoryCommandGateway fallbackGateway) : IDirectoryCommandGateway
+    ScaffoldDirectoryCommandGateway fallbackGateway,
+    ILogger<ActiveDirectoryCommandGateway> logger) : IDirectoryCommandGateway
 {
     public async Task<DirectoryCommandResult> ExecuteAsync(DirectoryMutationCommand command, CancellationToken cancellationToken)
     {
         var config = configLoader.GetSyncConfig().Ad;
         if (string.IsNullOrWhiteSpace(config.Server))
         {
+            logger.LogWarning("AD command gateway server was not configured. Falling back to scaffold command gateway. Action={Action} WorkerId={WorkerId}", command.Action, command.WorkerId);
             return await fallbackGateway.ExecuteAsync(command, cancellationToken);
         }
 
         try
         {
-            return await Task.Run(() => ExecuteCommand(command, config), cancellationToken);
+            logger.LogInformation("Executing AD command. Action={Action} WorkerId={WorkerId} SamAccountName={SamAccountName}", command.Action, command.WorkerId, command.SamAccountName);
+            var result = await Task.Run(() => ExecuteCommand(command, config), cancellationToken);
+            logger.LogInformation("AD command completed. Action={Action} WorkerId={WorkerId} Succeeded={Succeeded} Message={Message}", command.Action, command.WorkerId, result.Succeeded, result.Message);
+            return result;
         }
-        catch (LdapException)
+        catch (LdapException ex)
         {
+            logger.LogError(ex, "AD command failed with LDAP exception. Falling back to scaffold command gateway. Action={Action} WorkerId={WorkerId} Server={Server}", command.Action, command.WorkerId, config.Server);
             return await fallbackGateway.ExecuteAsync(command, cancellationToken);
         }
-        catch (DirectoryOperationException)
+        catch (DirectoryOperationException ex)
         {
+            logger.LogError(ex, "AD command failed with directory operation exception. Falling back to scaffold command gateway. Action={Action} WorkerId={WorkerId} Server={Server}", command.Action, command.WorkerId, config.Server);
             return await fallbackGateway.ExecuteAsync(command, cancellationToken);
         }
     }

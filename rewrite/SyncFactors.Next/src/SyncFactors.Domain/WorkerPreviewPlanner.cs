@@ -1,4 +1,5 @@
 using SyncFactors.Contracts;
+using Microsoft.Extensions.Logging;
 using System.Text.Json;
 
 namespace SyncFactors.Domain;
@@ -7,13 +8,16 @@ public sealed class WorkerPreviewPlanner(
     IWorkerSource workerSource,
     IDirectoryGateway directoryGateway,
     IIdentityMatcher identityMatcher,
-    IAttributeDiffService attributeDiffService) : IWorkerPreviewPlanner
+    IAttributeDiffService attributeDiffService,
+    ILogger<WorkerPreviewPlanner> logger) : IWorkerPreviewPlanner
 {
     public async Task<WorkerPreviewResult> PreviewAsync(string workerId, CancellationToken cancellationToken)
     {
+        logger.LogInformation("Starting worker preview. WorkerId={WorkerId}", workerId);
         var worker = await workerSource.GetWorkerAsync(workerId, cancellationToken);
         if (worker is null)
         {
+            logger.LogWarning("Worker preview could not resolve worker. WorkerId={WorkerId}", workerId);
             throw new InvalidOperationException($"Worker {workerId} could not be resolved.");
         }
 
@@ -26,6 +30,12 @@ public sealed class WorkerPreviewPlanner(
 
         var identity = identityMatcher.Match(worker, directoryUser);
         var attributeChanges = attributeDiffService.BuildDiff(worker, directoryUser);
+        logger.LogInformation(
+            "Worker preview completed planning. WorkerId={WorkerId} Bucket={Bucket} MatchedExistingUser={MatchedExistingUser} DiffCount={DiffCount}",
+            worker.WorkerId,
+            identity.Bucket,
+            identity.MatchedExistingUser,
+            attributeChanges.Count(change => change.Changed));
         return BuildPreview(worker, directoryUser, identity, attributeChanges);
     }
 
