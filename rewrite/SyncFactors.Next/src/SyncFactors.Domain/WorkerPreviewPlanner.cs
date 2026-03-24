@@ -30,6 +30,7 @@ public sealed class WorkerPreviewPlanner(
                 Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase));
 
         var identity = identityMatcher.Match(worker, directoryUser);
+
         var attributeChanges = attributeDiffService.BuildDiff(worker, directoryUser);
         logger.LogInformation(
             "Worker preview completed planning. WorkerId={WorkerId} Bucket={Bucket} MatchedExistingUser={MatchedExistingUser} DiffCount={DiffCount}",

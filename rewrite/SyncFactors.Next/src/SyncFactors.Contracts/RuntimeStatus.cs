@@ -163,6 +163,8 @@ public sealed record DirectoryMutationCommand(
     string Action,
     string WorkerId,
     string SamAccountName,
+    string UserPrincipalName,
+    string Mail,
     string TargetOu,
     string DisplayName,
     bool EnableAccount);

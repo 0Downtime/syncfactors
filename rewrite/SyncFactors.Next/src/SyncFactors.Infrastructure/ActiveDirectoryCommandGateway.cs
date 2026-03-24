@@ -60,7 +60,8 @@ public sealed class ActiveDirectoryCommandGateway(
             new DirectoryAttribute("cn", command.DisplayName),
             new DirectoryAttribute("displayName", command.DisplayName),
             new DirectoryAttribute("sAMAccountName", command.SamAccountName),
-            new DirectoryAttribute("userPrincipalName", $"{command.SamAccountName}@example.com"));
+            new DirectoryAttribute("userPrincipalName", command.UserPrincipalName),
+            new DirectoryAttribute("mail", command.Mail));
 
         connection.SendRequest(request);
         return new DirectoryCommandResult(
@@ -92,14 +93,10 @@ public sealed class ActiveDirectoryCommandGateway(
             return new DirectoryCommandResult(false, command.Action, command.SamAccountName, null, "Existing AD user did not include a distinguished name.", null);
         }
 
-        var request = new ModifyRequest(
-            distinguishedName,
-            new DirectoryAttributeModification
-            {
-                Name = "displayName",
-                Operation = DirectoryAttributeOperation.Replace
-            });
-        ((DirectoryAttributeModification)request.Modifications[0]).Add(command.DisplayName);
+        var request = new ModifyRequest(distinguishedName);
+        request.Modifications.Add(BuildReplaceModification("displayName", command.DisplayName));
+        request.Modifications.Add(BuildReplaceModification("userPrincipalName", command.UserPrincipalName));
+        request.Modifications.Add(BuildReplaceModification("mail", command.Mail));
 
         connection.SendRequest(request);
         return new DirectoryCommandResult(
@@ -186,5 +183,16 @@ public sealed class ActiveDirectoryCommandGateway(
             .Replace("<", "\\<", StringComparison.Ordinal)
             .Replace(">", "\\>", StringComparison.Ordinal)
             .Replace(";", "\\;", StringComparison.Ordinal);
+    }
+
+    private static DirectoryAttributeModification BuildReplaceModification(string attributeName, string value)
+    {
+        var modification = new DirectoryAttributeModification
+        {
+            Name = attributeName,
+            Operation = DirectoryAttributeOperation.Replace
+        };
+        modification.Add(value);
+        return modification;
     }
 }
