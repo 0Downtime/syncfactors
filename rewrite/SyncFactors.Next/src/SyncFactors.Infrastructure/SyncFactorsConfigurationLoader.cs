@@ -29,11 +29,13 @@ public sealed class SyncFactorsConfigurationLoader
 
         var json = File.ReadAllText(path);
         var document = JsonDocument.Parse(json).RootElement;
+        var secrets = LoadSecrets(document);
 
         return new SyncFactorsConfigDocument(
+            Secrets: secrets,
             SuccessFactors: new SuccessFactorsConfig(
                 BaseUrl: document.GetRequiredObject("successFactors").GetRequiredString("baseUrl"),
-                Auth: LoadSuccessFactorsAuth(document.GetRequiredObject("successFactors").GetRequiredObject("auth")),
+                Auth: LoadSuccessFactorsAuth(document.GetRequiredObject("successFactors").GetRequiredObject("auth"), secrets),
                 Query: new SuccessFactorsQueryConfig(
                     EntitySet: document.GetRequiredObject("successFactors").GetRequiredObject("query").GetRequiredString("entitySet"),
                     IdentityField: document.GetRequiredObject("successFactors").GetRequiredObject("query").GetRequiredString("identityField"),
@@ -49,9 +51,9 @@ public sealed class SyncFactorsConfigurationLoader
                         Expand: previewQuery.TryGetStringArray("expand") ?? [])
                     : null),
             Ad: new ActiveDirectoryConfig(
-                Server: document.GetRequiredObject("ad").GetRequiredString("server"),
-                Username: document.GetRequiredObject("ad").TryGetString("username"),
-                BindPassword: document.GetRequiredObject("ad").TryGetString("bindPassword"),
+                Server: GetRequiredEnvironmentValue(secrets.AdServerEnv, "secrets.adServerEnv"),
+                Username: GetOptionalEnvironmentValue(secrets.AdUsernameEnv),
+                BindPassword: GetOptionalEnvironmentValue(secrets.AdBindPasswordEnv),
                 IdentityAttribute: document.GetRequiredObject("ad").GetRequiredString("identityAttribute"),
                 DefaultActiveOu: document.GetRequiredObject("ad").GetRequiredString("defaultActiveOu"),
                 GraveyardOu: document.GetRequiredObject("ad").GetRequiredString("graveyardOu")),
@@ -88,22 +90,62 @@ public sealed class SyncFactorsConfigurationLoader
         return new MappingConfigDocument(mappings);
     }
 
-    private static SuccessFactorsAuthConfig LoadSuccessFactorsAuth(JsonElement auth)
+    private static SecretsConfig LoadSecrets(JsonElement document)
+    {
+        var secrets = document.GetRequiredObject("secrets");
+        return new SecretsConfig(
+            SuccessFactorsUsernameEnv: secrets.TryGetString("successFactorsUsernameEnv"),
+            SuccessFactorsPasswordEnv: secrets.TryGetString("successFactorsPasswordEnv"),
+            SuccessFactorsClientIdEnv: secrets.TryGetString("successFactorsClientIdEnv"),
+            SuccessFactorsClientSecretEnv: secrets.TryGetString("successFactorsClientSecretEnv"),
+            AdServerEnv: secrets.TryGetString("adServerEnv"),
+            AdUsernameEnv: secrets.TryGetString("adUsernameEnv"),
+            AdBindPasswordEnv: secrets.TryGetString("adBindPasswordEnv"));
+    }
+
+    private static SuccessFactorsAuthConfig LoadSuccessFactorsAuth(JsonElement auth, SecretsConfig secrets)
     {
         var mode = auth.GetRequiredString("mode");
         return new SuccessFactorsAuthConfig(
             Mode: mode,
-            Basic: auth.TryGetObject("basic", out var basic)
+            Basic: auth.TryGetObject("basic", out var basic) && string.Equals(mode, "basic", StringComparison.OrdinalIgnoreCase)
                 ? new SuccessFactorsBasicAuthConfig(
-                    Username: basic.TryGetString("username") ?? string.Empty,
-                    Password: basic.TryGetString("password") ?? string.Empty)
+                    Username: GetRequiredEnvironmentValue(secrets.SuccessFactorsUsernameEnv, "secrets.successFactorsUsernameEnv"),
+                    Password: GetRequiredEnvironmentValue(secrets.SuccessFactorsPasswordEnv, "secrets.successFactorsPasswordEnv"))
                 : null,
-            OAuth: auth.TryGetObject("oauth", out var oauth)
+            OAuth: auth.TryGetObject("oauth", out var oauth) && string.Equals(mode, "oauth", StringComparison.OrdinalIgnoreCase)
                 ? new SuccessFactorsOAuthConfig(
                     TokenUrl: oauth.GetRequiredString("tokenUrl"),
-                    ClientId: oauth.GetRequiredString("clientId"),
-                    ClientSecret: oauth.GetRequiredString("clientSecret"),
+                    ClientId: GetRequiredEnvironmentValue(secrets.SuccessFactorsClientIdEnv, "secrets.successFactorsClientIdEnv"),
+                    ClientSecret: GetRequiredEnvironmentValue(secrets.SuccessFactorsClientSecretEnv, "secrets.successFactorsClientSecretEnv"),
                     CompanyId: oauth.TryGetString("companyId"))
                 : null);
+    }
+
+    private static string GetRequiredEnvironmentValue(string? environmentVariableName, string configPath)
+    {
+        if (string.IsNullOrWhiteSpace(environmentVariableName))
+        {
+            throw new InvalidOperationException($"Required environment variable mapping '{configPath}' was not configured.");
+        }
+
+        var value = Environment.GetEnvironmentVariable(environmentVariableName);
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            throw new InvalidOperationException($"Environment variable '{environmentVariableName}' was not set.");
+        }
+
+        return value;
+    }
+
+    private static string? GetOptionalEnvironmentValue(string? environmentVariableName)
+    {
+        if (string.IsNullOrWhiteSpace(environmentVariableName))
+        {
+            return null;
+        }
+
+        var value = Environment.GetEnvironmentVariable(environmentVariableName);
+        return string.IsNullOrWhiteSpace(value) ? null : value;
     }
 }
