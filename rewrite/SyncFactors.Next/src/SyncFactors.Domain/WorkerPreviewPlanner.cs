@@ -26,7 +26,8 @@ public sealed class WorkerPreviewPlanner(
                 SamAccountName: null,
                 DistinguishedName: null,
                 Enabled: null,
-                DisplayName: null);
+                DisplayName: null,
+                Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase));
 
         var identity = identityMatcher.Match(worker, directoryUser);
         var attributeChanges = attributeDiffService.BuildDiff(worker, directoryUser);
@@ -56,12 +57,14 @@ public sealed class WorkerPreviewPlanner(
             + $"\"targetOu\":\"{Escape(worker.TargetOu)}\","
             + $"\"matchedExistingUser\":{ToJsonBoolean(identity.MatchedExistingUser)},"
             + "\"changedAttributeDetails\":["
-            + "{"
-            + "\"targetAttribute\":\"displayName\","
-            + "\"sourceField\":\"preferredName\","
-            + $"\"currentAdValue\":{ToJsonString(directoryUser.DisplayName)},"
-            + $"\"proposedValue\":\"{Escape($"{worker.PreferredName} {worker.LastName}")}\""
-            + "}"
+            + string.Join(",", diffRows
+                .Where(row => row.Changed)
+                .Select(row => "{"
+                    + $"\"targetAttribute\":\"{Escape(row.Attribute)}\","
+                    + $"\"sourceField\":{ToJsonString(row.Source)},"
+                    + $"\"currentAdValue\":{ToJsonString(row.Before == "(unset)" ? null : row.Before)},"
+                    + $"\"proposedValue\":{ToJsonString(row.After)}"
+                    + "}"))
             + "]"
             + "}");
 

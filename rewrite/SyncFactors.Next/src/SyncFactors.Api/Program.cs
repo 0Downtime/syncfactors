@@ -25,6 +25,7 @@ builder.Services.AddHttpClient<SuccessFactorsWorkerSource>()
 builder.Services.AddTransient<IWorkerSource>(serviceProvider => serviceProvider.GetRequiredService<SuccessFactorsWorkerSource>());
 builder.Services.AddTransient<IDirectoryGateway, ActiveDirectoryGateway>();
 builder.Services.AddTransient<IDirectoryCommandGateway, ActiveDirectoryCommandGateway>();
+builder.Services.AddSingleton<IAttributeMappingProvider, AttributeMappingProvider>();
 builder.Services.AddSingleton<IIdentityMatcher, IdentityMatcher>();
 builder.Services.AddSingleton<IAttributeDiffService, AttributeDiffService>();
 builder.Services.AddTransient<IWorkerPreviewPlanner, WorkerPreviewPlanner>();

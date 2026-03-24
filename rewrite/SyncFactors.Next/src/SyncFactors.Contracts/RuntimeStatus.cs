@@ -135,13 +135,15 @@ public sealed record WorkerSnapshot(
     string LastName,
     string Department,
     string TargetOu,
-    bool IsPrehire);
+    bool IsPrehire,
+    IReadOnlyDictionary<string, string?> Attributes);
 
 public sealed record DirectoryUserSnapshot(
     string? SamAccountName,
     string? DistinguishedName,
     bool? Enabled,
-    string? DisplayName);
+    string? DisplayName,
+    IReadOnlyDictionary<string, string?> Attributes);
 
 public sealed record IdentityMatchResult(
     string Bucket,

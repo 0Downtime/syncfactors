@@ -132,7 +132,11 @@ public sealed class ActiveDirectoryCommandGateway(
             SamAccountName: GetAttribute(entry, "sAMAccountName"),
             DistinguishedName: GetAttribute(entry, "distinguishedName"),
             Enabled: null,
-            DisplayName: GetAttribute(entry, "displayName"));
+            DisplayName: GetAttribute(entry, "displayName"),
+            Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["displayName"] = GetAttribute(entry, "displayName")
+            });
     }
 
     private static LdapConnection CreateConnection(ActiveDirectoryConfig config)

@@ -54,7 +54,21 @@ public sealed class ActiveDirectoryGateway(
             "sAMAccountName",
             "distinguishedName",
             "displayName",
-            "userAccountControl");
+            "userAccountControl",
+            "givenName",
+            "sn",
+            "userPrincipalName",
+            "mail",
+            "department",
+            "company",
+            "physicalDeliveryOfficeName",
+            "title",
+            "division",
+            "employeeType",
+            "extensionAttribute1",
+            "extensionAttribute2",
+            "extensionAttribute3",
+            "extensionAttribute4");
 
         var response = (SearchResponse)connection.SendRequest(request);
         var entry = response.Entries.Cast<SearchResultEntry>().FirstOrDefault();
@@ -72,7 +86,8 @@ public sealed class ActiveDirectoryGateway(
             SamAccountName: samAccountName,
             DistinguishedName: distinguishedName,
             Enabled: ParseEnabled(userAccountControl),
-            DisplayName: displayName);
+            DisplayName: displayName,
+            Attributes: BuildAttributes(entry, displayName));
     }
 
     private static LdapConnection CreateConnection(ActiveDirectoryConfig config)
@@ -112,6 +127,28 @@ public sealed class ActiveDirectoryGateway(
 
         const int AccountDisabledFlag = 0x0002;
         return (value & AccountDisabledFlag) == 0;
+    }
+
+    private static IReadOnlyDictionary<string, string?> BuildAttributes(SearchResultEntry entry, string? displayName)
+    {
+        return new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["displayName"] = displayName,
+            ["GivenName"] = GetAttribute(entry, "givenName"),
+            ["Surname"] = GetAttribute(entry, "sn"),
+            ["UserPrincipalName"] = GetAttribute(entry, "userPrincipalName"),
+            ["mail"] = GetAttribute(entry, "mail"),
+            ["department"] = GetAttribute(entry, "department"),
+            ["company"] = GetAttribute(entry, "company"),
+            ["physicalDeliveryOfficeName"] = GetAttribute(entry, "physicalDeliveryOfficeName"),
+            ["title"] = GetAttribute(entry, "title"),
+            ["division"] = GetAttribute(entry, "division"),
+            ["employeeType"] = GetAttribute(entry, "employeeType"),
+            ["extensionAttribute1"] = GetAttribute(entry, "extensionAttribute1"),
+            ["extensionAttribute2"] = GetAttribute(entry, "extensionAttribute2"),
+            ["extensionAttribute3"] = GetAttribute(entry, "extensionAttribute3"),
+            ["extensionAttribute4"] = GetAttribute(entry, "extensionAttribute4")
+        };
     }
 
     private static string EscapeLdapFilter(string value)
