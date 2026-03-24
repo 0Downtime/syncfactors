@@ -12,6 +12,7 @@ public interface IApplyPreviewService
 public sealed class ApplyPreviewService(
     IWorkerSource workerSource,
     IWorkerPreviewPlanner previewPlanner,
+    IDirectoryGateway directoryGateway,
     IDirectoryCommandGateway directoryCommandGateway,
     IRunRepository runRepository,
     IRuntimeStatusStore runtimeStatusStore,
@@ -28,12 +29,17 @@ public sealed class ApplyPreviewService(
         }
 
         var preview = await previewPlanner.PreviewAsync(workerId, cancellationToken);
-        var displayName = $"{worker.PreferredName} {worker.LastName}";
+        var samAccountName = preview.SamAccountName ?? throw new InvalidOperationException("Preview did not produce a SAM account name.");
+        var displayName = DirectoryIdentityFormatter.BuildDisplayName(worker.PreferredName, worker.LastName);
+        var emailLocalPart = await directoryGateway.ResolveAvailableEmailLocalPartAsync(worker, cancellationToken);
+        var emailAddress = DirectoryIdentityFormatter.BuildEmailAddress(emailLocalPart);
         var action = preview.Buckets.Contains("creates", StringComparer.OrdinalIgnoreCase) ? "CreateUser" : "UpdateUser";
         var command = new DirectoryMutationCommand(
             Action: action,
             WorkerId: worker.WorkerId,
-            SamAccountName: preview.SamAccountName ?? throw new InvalidOperationException("Preview did not produce a SAM account name."),
+            SamAccountName: samAccountName,
+            UserPrincipalName: emailAddress,
+            Mail: emailAddress,
             TargetOu: preview.TargetOu ?? worker.TargetOu,
             DisplayName: displayName,
             EnableAccount: preview.ProposedEnable ?? true);

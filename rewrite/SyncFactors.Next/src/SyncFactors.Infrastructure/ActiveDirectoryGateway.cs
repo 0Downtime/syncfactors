@@ -44,6 +44,32 @@ public sealed class ActiveDirectoryGateway(
         }
     }
 
+    public async Task<string> ResolveAvailableEmailLocalPartAsync(WorkerSnapshot worker, CancellationToken cancellationToken)
+    {
+        var baseLocalPart = DirectoryIdentityFormatter.BuildBaseEmailLocalPart(worker.PreferredName, worker.LastName);
+        var config = configLoader.GetSyncConfig().Ad;
+        if (string.IsNullOrWhiteSpace(config.Server))
+        {
+            logger.LogWarning("AD server was not configured while resolving email local part. Returning base value. WorkerId={WorkerId}", worker.WorkerId);
+            return baseLocalPart;
+        }
+
+        try
+        {
+            return await Task.Run(() => ResolveAvailableEmailLocalPart(worker, config, baseLocalPart), cancellationToken);
+        }
+        catch (LdapException ex)
+        {
+            logger.LogError(ex, "AD email local part lookup failed with LDAP exception. Returning base value. WorkerId={WorkerId} Server={Server}", worker.WorkerId, config.Server);
+            return baseLocalPart;
+        }
+        catch (DirectoryOperationException ex)
+        {
+            logger.LogError(ex, "AD email local part lookup failed with directory operation exception. Returning base value. WorkerId={WorkerId} Server={Server}", worker.WorkerId, config.Server);
+            return baseLocalPart;
+        }
+    }
+
     private static DirectoryUserSnapshot? QueryDirectory(WorkerSnapshot worker, ActiveDirectoryConfig config)
     {
         using var connection = CreateConnection(config);
@@ -88,6 +114,35 @@ public sealed class ActiveDirectoryGateway(
             Enabled: ParseEnabled(userAccountControl),
             DisplayName: displayName,
             Attributes: BuildAttributes(entry, displayName));
+    }
+
+    private static string ResolveAvailableEmailLocalPart(WorkerSnapshot worker, ActiveDirectoryConfig config, string baseLocalPart)
+    {
+        using var connection = CreateConnection(config);
+
+        for (var suffix = 0; suffix < 1000; suffix++)
+        {
+            var candidate = suffix == 0 ? baseLocalPart : $"{baseLocalPart}{suffix + 1}";
+            if (!EmailLocalPartExists(connection, config, candidate))
+            {
+                return candidate;
+            }
+        }
+
+        throw new InvalidOperationException($"Could not find an available email local part for worker {worker.WorkerId}.");
+    }
+
+    private static bool EmailLocalPartExists(LdapConnection connection, ActiveDirectoryConfig config, string localPart)
+    {
+        var userPrincipalName = DirectoryIdentityFormatter.BuildEmailAddress(localPart);
+        var request = new SearchRequest(
+            config.DefaultActiveOu,
+            $"(userPrincipalName={EscapeLdapFilter(userPrincipalName)})",
+            SearchScope.Subtree,
+            "sAMAccountName");
+
+        var response = (SearchResponse)connection.SendRequest(request);
+        return response.Entries.Count > 0;
     }
 
     private static LdapConnection CreateConnection(ActiveDirectoryConfig config)

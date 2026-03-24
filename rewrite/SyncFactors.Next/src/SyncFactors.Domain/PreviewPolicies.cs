@@ -19,7 +19,7 @@ public sealed class IdentityMatcher : IIdentityMatcher
         return new IdentityMatchResult(
             Bucket: "creates",
             MatchedExistingUser: false,
-            SamAccountName: $"{worker.PreferredName}.{worker.LastName}".ToLowerInvariant(),
+            SamAccountName: worker.WorkerId,
             Reason: "Native preview planned a new directory account.",
             OperatorActionSummary: "Create account preview");
     }
@@ -42,7 +42,7 @@ public sealed class AttributeDiffService : IAttributeDiffService
         var changes = _mappingProvider.GetEnabledMappings()
             .Select(mapping =>
             {
-                var proposedValue = Transform(GetSourceValue(worker, mapping.Source), mapping.Transform);
+                var proposedValue = Transform(GetSourceValue(worker, mapping.Source, mapping.Target), mapping.Transform);
                 var currentValue = GetDirectoryValue(currentAttributes, mapping.Target);
                 var before = string.IsNullOrWhiteSpace(currentValue) ? "(unset)" : currentValue!;
                 var after = string.IsNullOrWhiteSpace(proposedValue) ? "(unset)" : proposedValue!;
@@ -57,7 +57,7 @@ public sealed class AttributeDiffService : IAttributeDiffService
             .Where(change => change.Changed)
             .ToList();
 
-        var proposedDisplayName = $"{worker.PreferredName} {worker.LastName}";
+        var proposedDisplayName = DirectoryIdentityFormatter.BuildDisplayName(worker.PreferredName, worker.LastName);
         var currentDisplayName = GetDirectoryValue(currentAttributes, "displayName");
         if (!string.Equals(currentDisplayName, proposedDisplayName, StringComparison.Ordinal))
         {
@@ -72,8 +72,14 @@ public sealed class AttributeDiffService : IAttributeDiffService
         return changes;
     }
 
-    private static string? GetSourceValue(WorkerSnapshot worker, string source)
+    private static string? GetSourceValue(WorkerSnapshot worker, string source, string target)
     {
+        if (target is "UserPrincipalName" or "mail")
+        {
+            return DirectoryIdentityFormatter.BuildEmailAddress(
+                DirectoryIdentityFormatter.BuildBaseEmailLocalPart(worker.PreferredName, worker.LastName));
+        }
+
         if (worker.Attributes.TryGetValue(source, out var directValue))
         {
             return directValue;

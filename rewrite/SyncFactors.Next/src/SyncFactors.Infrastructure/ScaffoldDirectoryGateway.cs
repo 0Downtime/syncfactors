@@ -14,4 +14,10 @@ public sealed class ScaffoldDirectoryGateway(ScaffoldDataStore dataStore) : IDir
 
         return Task.FromResult(directoryUser?.ToSnapshot());
     }
+
+    public Task<string> ResolveAvailableEmailLocalPartAsync(WorkerSnapshot worker, CancellationToken cancellationToken)
+    {
+        _ = cancellationToken;
+        return Task.FromResult(DirectoryIdentityFormatter.BuildBaseEmailLocalPart(worker.PreferredName, worker.LastName));
+    }
 }
