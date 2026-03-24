@@ -1,0 +1,78 @@
+@page
+@model SyncFactors.Api.Pages.IndexModel
+@{
+    ViewData["Title"] = "Dashboard";
+}
+
+<section class="hero">
+    <div>
+        <p class="eyebrow">Current Runtime</p>
+        <h1>Operator Dashboard</h1>
+        <p class="lede">First UI slice for the rewrite. This page reads runtime status and recent runs from the new .NET read model.</p>
+    </div>
+</section>
+
+<section class="panel-grid">
+    <article class="panel">
+        <h2>Status</h2>
+        <dl class="kv">
+            <div><dt>Status</dt><dd>@Model.Status.Status</dd></div>
+            <div><dt>Stage</dt><dd>@Model.Status.Stage</dd></div>
+            <div><dt>Run Id</dt><dd>@(Model.Status.RunId ?? "None")</dd></div>
+            <div><dt>Worker</dt><dd>@(Model.Status.CurrentWorkerId ?? "None")</dd></div>
+            <div><dt>Progress</dt><dd>@Model.Status.ProcessedWorkers / @Model.Status.TotalWorkers</dd></div>
+            <div><dt>Last Updated</dt><dd>@(Model.Status.LastUpdatedAt?.ToString("u") ?? "Unknown")</dd></div>
+        </dl>
+        @if (!string.IsNullOrWhiteSpace(Model.Status.ErrorMessage))
+        {
+            <p class="callout danger">@Model.Status.ErrorMessage</p>
+        }
+    </article>
+
+    <article class="panel">
+        <h2>Recent Runs</h2>
+        @if (Model.Runs.Count == 0)
+        {
+            <p class="muted">No runs found in the operational store.</p>
+        }
+        else
+        {
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Started</th>
+                        <th>Mode</th>
+                        <th>Status</th>
+                        <th>Dry Run</th>
+                        <th>Workers</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                @foreach (var run in Model.Runs)
+                {
+                    <tr>
+                        <td>@run.StartedAt.ToString("u")</td>
+                        <td>@run.Mode</td>
+                        <td><span class="badge @StatusClass(run.Status)">@run.Status</span></td>
+                        <td>@(run.DryRun ? "Yes" : "No")</td>
+                        <td>@run.TotalWorkers</td>
+                        <td><a asp-page="/Runs/Detail" asp-route-runId="@run.RunId">Open</a></td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        }
+    </article>
+</section>
+
+@functions {
+    private static string StatusClass(string status) =>
+        status.ToLowerInvariant() switch
+        {
+            "succeeded" => "good",
+            "failed" => "bad",
+            "inprogress" => "warn",
+            _ => "neutral",
+        };
+}
