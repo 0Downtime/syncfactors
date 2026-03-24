@@ -1,4 +1,5 @@
 using SyncFactors.Contracts;
+using Microsoft.Extensions.Logging;
 using System.Text.Json;
 
 namespace SyncFactors.Domain;
@@ -13,13 +14,16 @@ public sealed class ApplyPreviewService(
     IWorkerPreviewPlanner previewPlanner,
     IDirectoryCommandGateway directoryCommandGateway,
     IRunRepository runRepository,
-    IRuntimeStatusStore runtimeStatusStore) : IApplyPreviewService
+    IRuntimeStatusStore runtimeStatusStore,
+    ILogger<ApplyPreviewService> logger) : IApplyPreviewService
 {
     public async Task<DirectoryCommandResult> ApplyAsync(string workerId, CancellationToken cancellationToken)
     {
+        logger.LogInformation("Starting preview apply flow. WorkerId={WorkerId}", workerId);
         var worker = await workerSource.GetWorkerAsync(workerId, cancellationToken);
         if (worker is null)
         {
+            logger.LogWarning("Apply preview could not resolve worker. WorkerId={WorkerId}", workerId);
             throw new InvalidOperationException($"Worker {workerId} could not be resolved.");
         }
 
@@ -33,6 +37,7 @@ public sealed class ApplyPreviewService(
             TargetOu: preview.TargetOu ?? worker.TargetOu,
             DisplayName: displayName,
             EnableAccount: preview.ProposedEnable ?? true);
+        logger.LogInformation("Prepared directory mutation command. WorkerId={WorkerId} Action={Action} SamAccountName={SamAccountName}", worker.WorkerId, action, command.SamAccountName);
 
         var startedAt = DateTimeOffset.UtcNow;
         var runId = $"apply-{worker.WorkerId}-{startedAt:yyyyMMddHHmmss}";
@@ -56,6 +61,7 @@ public sealed class ApplyPreviewService(
 
         var result = await directoryCommandGateway.ExecuteAsync(command, cancellationToken);
         var completedAt = DateTimeOffset.UtcNow;
+        logger.LogInformation("Directory mutation command finished. WorkerId={WorkerId} Action={Action} Succeeded={Succeeded} Message={Message}", worker.WorkerId, result.Action, result.Succeeded, result.Message);
 
         var report = ParseJson(
             "{"
@@ -129,6 +135,7 @@ public sealed class ApplyPreviewService(
                 ErrorMessage: result.Succeeded ? null : result.Message),
             cancellationToken);
 
+        logger.LogInformation("Preview apply flow completed. WorkerId={WorkerId} RunId={RunId} Succeeded={Succeeded}", worker.WorkerId, runId, result.Succeeded);
         return result with { RunId = runId };
     }
 

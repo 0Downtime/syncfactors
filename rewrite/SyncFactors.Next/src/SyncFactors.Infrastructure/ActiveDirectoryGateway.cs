@@ -1,5 +1,6 @@
 using SyncFactors.Contracts;
 using SyncFactors.Domain;
+using Microsoft.Extensions.Logging;
 using System.DirectoryServices.Protocols;
 using System.Net;
 
@@ -7,27 +8,38 @@ namespace SyncFactors.Infrastructure;
 
 public sealed class ActiveDirectoryGateway(
     SyncFactorsConfigurationLoader configLoader,
-    ScaffoldDirectoryGateway fallbackGateway) : IDirectoryGateway
+    ScaffoldDirectoryGateway fallbackGateway,
+    ILogger<ActiveDirectoryGateway> logger) : IDirectoryGateway
 {
     public async Task<DirectoryUserSnapshot?> FindByWorkerAsync(WorkerSnapshot worker, CancellationToken cancellationToken)
     {
         var config = configLoader.GetSyncConfig().Ad;
         if (string.IsNullOrWhiteSpace(config.Server))
         {
+            logger.LogWarning("AD server was not configured. Falling back to scaffold directory gateway. WorkerId={WorkerId}", worker.WorkerId);
             return await fallbackGateway.FindByWorkerAsync(worker, cancellationToken);
         }
 
         try
         {
             var directoryUser = await Task.Run(() => QueryDirectory(worker, config), cancellationToken);
-            return directoryUser ?? await fallbackGateway.FindByWorkerAsync(worker, cancellationToken);
-        }
-        catch (LdapException)
-        {
+            if (directoryUser is not null)
+            {
+                logger.LogInformation("Resolved directory user from AD. WorkerId={WorkerId} SamAccountName={SamAccountName}", worker.WorkerId, directoryUser.SamAccountName);
+                return directoryUser;
+            }
+
+            logger.LogWarning("No AD user matched worker. Falling back to scaffold directory gateway. WorkerId={WorkerId}", worker.WorkerId);
             return await fallbackGateway.FindByWorkerAsync(worker, cancellationToken);
         }
-        catch (DirectoryOperationException)
+        catch (LdapException ex)
         {
+            logger.LogError(ex, "AD lookup failed with LDAP exception. Falling back to scaffold directory gateway. WorkerId={WorkerId} Server={Server}", worker.WorkerId, config.Server);
+            return await fallbackGateway.FindByWorkerAsync(worker, cancellationToken);
+        }
+        catch (DirectoryOperationException ex)
+        {
+            logger.LogError(ex, "AD lookup failed with directory operation exception. Falling back to scaffold directory gateway. WorkerId={WorkerId} Server={Server}", worker.WorkerId, config.Server);
             return await fallbackGateway.FindByWorkerAsync(worker, cancellationToken);
         }
     }
