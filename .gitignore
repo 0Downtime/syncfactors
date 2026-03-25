@@ -19,6 +19,8 @@ artifacts/
 node_modules/
 web/dist/
 web/.vite/
+**/bin/
+**/obj/
 
 state/runtime/
 reports/output/
