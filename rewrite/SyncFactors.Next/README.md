@@ -48,3 +48,29 @@ This folder now builds against the locally installed .NET 10 SDK. The implementa
 ## Local Config
 
 The rewrite now keeps its tracked and local config files under [`config`]( /Users/chrisbrien/dev/github.com/syncfactors/rewrite/SyncFactors.Next/config ). Use the `sample.*.json` files there as templates and keep machine-specific values in the ignored `local.*.json` files in the same folder.
+
+## Mock SuccessFactors
+
+Use [`src/SyncFactors.MockSuccessFactors`]( /Users/chrisbrien/dev/github.com/syncfactors/rewrite/SyncFactors.Next/src/SyncFactors.MockSuccessFactors ) to run a local SuccessFactors-like API for development.
+
+- Start the mock server with `DOTNET_CLI_HOME=/tmp dotnet run --project src/SyncFactors.MockSuccessFactors`
+- Point the sync config at `http://127.0.0.1:18080/odata/v2` using [`config/sample.mock-successfactors.real-ad.sync-config.json`]( /Users/chrisbrien/dev/github.com/syncfactors/rewrite/SyncFactors.Next/config/sample.mock-successfactors.real-ad.sync-config.json )
+- Baseline fixture data lives in [`config/mock-successfactors/baseline-fixtures.json`]( /Users/chrisbrien/dev/github.com/syncfactors/rewrite/SyncFactors.Next/config/mock-successfactors/baseline-fixtures.json )
+- Sample import data for sanitization lives in [`config/mock-successfactors/sample-export.json`]( /Users/chrisbrien/dev/github.com/syncfactors/rewrite/SyncFactors.Next/config/mock-successfactors/sample-export.json )
+
+Generate sanitized fixtures from exported OData payloads with:
+
+```bash
+DOTNET_CLI_HOME=/tmp dotnet run --project src/SyncFactors.MockSuccessFactors -- \
+  generate-fixtures \
+  --input config/mock-successfactors/sample-export.json \
+  --output /tmp/sanitized-fixtures.json \
+  --manifest /tmp/sanitized-fixtures.manifest.json
+```
+
+The mock intentionally supports only the current SyncFactors query shape: OAuth or Basic auth, `PerPerson`, `$format=json`, `$filter` on `personIdExternal`, plus the existing `$select` and `$expand` paths used by the client.
+
+If you need to capture a real `PerPerson` payload before sanitizing it, use:
+
+- [`scripts/Export-SfPerPerson.ps1`](/Users/chrisbrien/dev/github.com/syncfactors/rewrite/SyncFactors.Next/scripts/Export-SfPerPerson.ps1) for OAuth client-credentials auth
+- [`scripts/Export-SfPerPerson-Basic.ps1`](/Users/chrisbrien/dev/github.com/syncfactors/rewrite/SyncFactors.Next/scripts/Export-SfPerPerson-Basic.ps1) for Basic auth

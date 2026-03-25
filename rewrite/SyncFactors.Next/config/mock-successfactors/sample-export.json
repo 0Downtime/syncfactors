@@ -1,0 +1,64 @@
+{
+  "d": {
+    "results": [
+      {
+        "personIdExternal": "123456",
+        "username": "jane.doe",
+        "lastModifiedDateTime": "2026-03-20T10:15:00Z",
+        "personalInfoNav": {
+          "results": [
+            {
+              "firstName": "Jane",
+              "lastName": "Doe"
+            }
+          ]
+        },
+        "emailNav": {
+          "results": [
+            {
+              "emailAddress": "jane.doe@example.com"
+            }
+          ]
+        },
+        "employmentNav": {
+          "results": [
+            {
+              "startDate": "2026-04-01T00:00:00Z",
+              "jobInfoNav": {
+                "results": [
+                  {
+                    "jobTitle": "Engineer",
+                    "managerId": "654321",
+                    "employeeClass": "Employee",
+                    "employeeType": "Regular",
+                    "departmentNav": {
+                      "department": "IT"
+                    },
+                    "companyNav": {
+                      "company": "CORP"
+                    },
+                    "businessUnitNav": {
+                      "businessUnit": "Infrastructure"
+                    },
+                    "divisionNav": {
+                      "division": "Operations"
+                    },
+                    "costCenterNav": {
+                      "costCenterDescription": "Engineering"
+                    },
+                    "locationNav": {
+                      "LocationName": "New York HQ",
+                      "officeLocationAddress": "1 Main St",
+                      "officeLocationCity": "New York",
+                      "officeLocationZipCode": "10001"
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      }
+    ]
+  }
+}
