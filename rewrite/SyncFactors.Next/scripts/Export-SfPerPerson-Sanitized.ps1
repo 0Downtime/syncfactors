@@ -543,9 +543,12 @@ if ($null -eq $results -or $results.GetType().Name -ne "JsonArray") {
     throw "Expected SuccessFactors-style JSON at d.results."
 }
 
-foreach ($item in $results) {
+$resultsArray = [System.Text.Json.Nodes.JsonArray]$results
+for ($index = 0; $index -lt $resultsArray.Count; $index++) {
+    $item = $resultsArray[$index]
     if ($null -ne $item -and $item.GetType().Name -eq "JsonObject") {
-        Sanitize-Worker -Worker $item -AliasOrgValues:$AliasOrgValues -KeepPersonIdExternal:$KeepPersonIdExternal
+        $workerObject = [System.Text.Json.Nodes.JsonObject]$item
+        Sanitize-Worker -Worker $workerObject -AliasOrgValues:$AliasOrgValues -KeepPersonIdExternal:$KeepPersonIdExternal
     }
 }
 
