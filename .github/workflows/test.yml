@@ -28,12 +28,12 @@ jobs:
         shell: pwsh
         run: |
           Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
-          Install-Module Pester -Scope CurrentUser -Force -SkipPublisherCheck
+          Install-Module Pester -RequiredVersion 5.7.1 -Scope CurrentUser -Force -SkipPublisherCheck
 
       - name: Install SQLite CLI
         shell: pwsh
         run: |
-          choco install sqlite --no-progress -y
+          choco install sqlite --version=3.52.0 --no-progress -y
           "$env:ChocolateyInstall\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
           sqlite3 --version
 

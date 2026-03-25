@@ -1,0 +1,11 @@
+{
+  "version": 2,
+  "dgSpecHash": "8Wb0w1/kEC4=",
+  "success": true,
+  "projectFilePath": "/Users/chrisbrien/dev/github.com/syncfactors/rewrite/SyncFactors.Next/tests/SyncFactors.Domain.Tests/SyncFactors.Domain.Tests.csproj",
+  "expectedPackageFiles": [
+    "/tmp/.nuget/packages/microsoft.extensions.dependencyinjection.abstractions/10.0.0/microsoft.extensions.dependencyinjection.abstractions.10.0.0.nupkg.sha512",
+    "/tmp/.nuget/packages/microsoft.extensions.logging.abstractions/10.0.0/microsoft.extensions.logging.abstractions.10.0.0.nupkg.sha512"
+  ],
+  "logs": []
+}

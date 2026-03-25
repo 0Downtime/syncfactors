@@ -1,0 +1,97 @@
+{
+  "secrets": {
+    "successFactorsClientIdEnv": "SF_AD_SYNC_SF_CLIENT_ID",
+    "successFactorsClientSecretEnv": "SF_AD_SYNC_SF_CLIENT_SECRET",
+    "adServerEnv": "10.",
+    "adUsernameEnv": "SF_AD_SYNC_AD_USERNAME",
+    "adBindPasswordEnv": "SF_AD_SYNC_AD_BIND_PASSWORD",
+    "defaultAdPasswordEnv": "SF_AD_SYNC_AD_DEFAULT_PASSWORD"
+  },
+  "successFactors": {
+    "baseUrl": "http://127.0.0.1:18080/odata/v2",
+    "auth": {
+      "mode": "oauth",
+      "basic": {
+        "username": "",
+        "password": ""
+      },
+      "oauth": {
+        "tokenUrl": "http://127.0.0.1:18080/oauth/token",
+        "clientId": "mock-client-id",
+        "clientSecret": "mock-client-secret",
+        "companyId": "MOCK"
+      }
+    },
+    "query": {
+      "entitySet": "PerPerson",
+      "identityField": "personIdExternal",
+      "deltaField": "lastModifiedDateTime",
+      "baseFilter": "employmentNav/jobInfoNav/emplStatus in 'A','U'",
+      "select": [
+        "personIdExternal",
+        "personalInfoNav/firstName",
+        "personalInfoNav/lastName",
+        "employmentNav/startDate",
+        "emailNav/emailAddress",
+        "employmentNav/jobInfoNav/departmentNav/department",
+        "employmentNav/jobInfoNav/companyNav/company",
+        "employmentNav/jobInfoNav/locationNav/LocationName",
+        "employmentNav/jobInfoNav/jobTitle",
+        "employmentNav/jobInfoNav/businessUnitNav/businessUnit",
+        "employmentNav/jobInfoNav/divisionNav/division",
+        "employmentNav/jobInfoNav/costCenterNav/costCenterDescription",
+        "employmentNav/jobInfoNav/employeeClass",
+        "employmentNav/jobInfoNav/employeeType",
+        "employmentNav/jobInfoNav/managerId"
+      ],
+      "expand": [
+        "employmentNav",
+        "employmentNav/jobInfoNav",
+        "personalInfoNav",
+        "emailNav",
+        "employmentNav/jobInfoNav/companyNav",
+        "employmentNav/jobInfoNav/departmentNav",
+        "employmentNav/jobInfoNav/businessUnitNav",
+        "employmentNav/jobInfoNav/costCenterNav",
+        "employmentNav/jobInfoNav/divisionNav",
+        "employmentNav/jobInfoNav/locationNav"
+      ]
+    }
+  },
+  "ad": {
+    "server": "192.0.2.20",
+    "username": "svc_ad",
+    "bindPassword": "example-password!!",
+    "identityAttribute": "employeeID",
+    "defaultActiveOu": "OU=POWERSHELL,OU=Departments,DC=z,DC=local",
+    "graveyardOu": "OU=GRAVEYARD,OU=Departments,DC=z,DC=local",
+    "defaultPassword": "Replace-This-Password123!",
+    "ouRoutingRules": [
+      {
+        "match": {
+          "company": "CORP",
+          "department": "IT"
+        },
+        "targetOu": "OU=IT,OU=Employees,DC=example,DC=com"
+      }
+    ],
+    "licensingGroups": [
+      "CN=M365-E3-Prestage,OU=Groups,DC=example,DC=com"
+    ]
+  },
+  "sync": {
+    "enableBeforeStartDays": 7,
+    "deletionRetentionDays": 90
+  },
+  "safety": {
+    "maxCreatesPerRun": 25,
+    "maxDisablesPerRun": 25,
+    "maxDeletionsPerRun": 10
+  },
+  "state": {
+    "path": ".\\state\\runtime\\mock-sync-state.json"
+  },
+  "reporting": {
+    "outputDirectory": ".\\reports\\mock-output"
+  }
+}
