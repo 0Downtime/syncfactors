@@ -108,6 +108,7 @@ jobs:
         run: |
           $requiredContexts = @(
               'pester',
+              'Semgrep Security SAST',
               'PowerShell Static Analysis',
               'Gitleaks Secret Scan',
               'Trivy Repository Scan'

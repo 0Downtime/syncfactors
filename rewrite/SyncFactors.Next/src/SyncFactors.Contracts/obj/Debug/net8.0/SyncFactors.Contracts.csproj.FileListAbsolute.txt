@@ -1,0 +1,12 @@
+/Users/chrisbrien/dev/github.com/syncfactors/rewrite/SyncFactors.Next/src/SyncFactors.Contracts/bin/Debug/net8.0/SyncFactors.Contracts.deps.json
+/Users/chrisbrien/dev/github.com/syncfactors/rewrite/SyncFactors.Next/src/SyncFactors.Contracts/bin/Debug/net8.0/SyncFactors.Contracts.dll
+/Users/chrisbrien/dev/github.com/syncfactors/rewrite/SyncFactors.Next/src/SyncFactors.Contracts/bin/Debug/net8.0/SyncFactors.Contracts.pdb
+/Users/chrisbrien/dev/github.com/syncfactors/rewrite/SyncFactors.Next/src/SyncFactors.Contracts/obj/Debug/net8.0/SyncFactors.Contracts.GeneratedMSBuildEditorConfig.editorconfig
+/Users/chrisbrien/dev/github.com/syncfactors/rewrite/SyncFactors.Next/src/SyncFactors.Contracts/obj/Debug/net8.0/SyncFactors.Contracts.AssemblyInfoInputs.cache
+/Users/chrisbrien/dev/github.com/syncfactors/rewrite/SyncFactors.Next/src/SyncFactors.Contracts/obj/Debug/net8.0/SyncFactors.Contracts.AssemblyInfo.cs
+/Users/chrisbrien/dev/github.com/syncfactors/rewrite/SyncFactors.Next/src/SyncFactors.Contracts/obj/Debug/net8.0/SyncFactors.Contracts.csproj.CoreCompileInputs.cache
+/Users/chrisbrien/dev/github.com/syncfactors/rewrite/SyncFactors.Next/src/SyncFactors.Contracts/obj/Debug/net8.0/SyncFactors.Contracts.sourcelink.json
+/Users/chrisbrien/dev/github.com/syncfactors/rewrite/SyncFactors.Next/src/SyncFactors.Contracts/obj/Debug/net8.0/SyncFactors.Contracts.dll
+/Users/chrisbrien/dev/github.com/syncfactors/rewrite/SyncFactors.Next/src/SyncFactors.Contracts/obj/Debug/net8.0/refint/SyncFactors.Contracts.dll
+/Users/chrisbrien/dev/github.com/syncfactors/rewrite/SyncFactors.Next/src/SyncFactors.Contracts/obj/Debug/net8.0/SyncFactors.Contracts.pdb
+/Users/chrisbrien/dev/github.com/syncfactors/rewrite/SyncFactors.Next/src/SyncFactors.Contracts/obj/Debug/net8.0/ref/SyncFactors.Contracts.dll
