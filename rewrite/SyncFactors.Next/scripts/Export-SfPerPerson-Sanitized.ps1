@@ -243,6 +243,50 @@ function Get-ExpandPathForPropertyPath {
     return ($segments[0..($segments.Length - 2)] -join "/")
 }
 
+function Resolve-QueryPathFromInvalidProperty {
+    param(
+        [string]$InvalidPropertyPath,
+        [string[]]$CurrentSelectValues
+    )
+
+    if ([string]::IsNullOrWhiteSpace($InvalidPropertyPath)) {
+        return $null
+    }
+
+    $directMatch = $CurrentSelectValues | Where-Object { $_ -eq $InvalidPropertyPath } | Select-Object -First 1
+    if (-not [string]::IsNullOrWhiteSpace($directMatch)) {
+        return $directMatch
+    }
+
+    $parts = $InvalidPropertyPath.Split("/")
+    $propertyName = $parts[-1]
+    $entityName = if ($parts.Length -gt 1) { $parts[0] } else { "" }
+
+    $entityToNav = @{
+        "FOBusinessUnit" = "businessUnitNav"
+        "FOCostCenter" = "costCenterNav"
+        "FODivision" = "divisionNav"
+        "FODepartment" = "departmentNav"
+        "FOCompany" = "companyNav"
+        "FOLocation" = "locationNav"
+    }
+
+    if ($entityToNav.ContainsKey($entityName)) {
+        $navName = $entityToNav[$entityName]
+        $mapped = $CurrentSelectValues |
+            Where-Object { $_ -like "*$navName/$propertyName" } |
+            Select-Object -First 1
+        if (-not [string]::IsNullOrWhiteSpace($mapped)) {
+            return $mapped
+        }
+    }
+
+    $fallback = $CurrentSelectValues |
+        Where-Object { $_ -like "*/$propertyName" } |
+        Select-Object -First 1
+    return $fallback
+}
+
 function Get-InvalidPropertyPathFromErrorJson {
     param(
         [string]$ErrorJson
@@ -332,14 +376,19 @@ function Invoke-PerPersonRequestWithAutoRetry {
                 throw
             }
 
+            $queryPropertyPath = Resolve-QueryPathFromInvalidProperty -InvalidPropertyPath $invalidPropertyPath -CurrentSelectValues $selectValues
+            if ([string]::IsNullOrWhiteSpace($queryPropertyPath)) {
+                throw
+            }
+
             $removed = $false
-            $newSelectValues = @($selectValues | Where-Object { $_ -ne $invalidPropertyPath })
+            $newSelectValues = @($selectValues | Where-Object { $_ -ne $queryPropertyPath })
             if ($newSelectValues.Count -ne $selectValues.Count) {
                 $selectValues = $newSelectValues
                 $removed = $true
             }
 
-            $expandPath = Get-ExpandPathForPropertyPath -PropertyPath $invalidPropertyPath
+            $expandPath = Get-ExpandPathForPropertyPath -PropertyPath $queryPropertyPath
             if (-not [string]::IsNullOrWhiteSpace($expandPath)) {
                 $newExpandValues = @($expandValues | Where-Object { $_ -ne $expandPath })
                 if ($newExpandValues.Count -ne $expandValues.Count) {
@@ -354,7 +403,7 @@ function Invoke-PerPersonRequestWithAutoRetry {
 
             Write-Host "Attempt $attempt failed because tenant metadata does not expose '$invalidPropertyPath'."
             Write-Host "Retrying after removing:"
-            Write-Host "- select: $invalidPropertyPath"
+            Write-Host "- select: $queryPropertyPath"
             if (-not [string]::IsNullOrWhiteSpace($expandPath)) {
                 Write-Host "- expand: $expandPath"
             }
