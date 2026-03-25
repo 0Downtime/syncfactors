@@ -74,3 +74,5 @@ If you need to capture a real `PerPerson` payload before sanitizing it, use:
 
 - [`scripts/Export-SfPerPerson.ps1`](/Users/chrisbrien/dev/github.com/syncfactors/rewrite/SyncFactors.Next/scripts/Export-SfPerPerson.ps1) for OAuth client-credentials auth
 - [`scripts/Export-SfPerPerson-Basic.ps1`](/Users/chrisbrien/dev/github.com/syncfactors/rewrite/SyncFactors.Next/scripts/Export-SfPerPerson-Basic.ps1) for Basic auth
+
+If you need an admin-safe handoff file, use [`scripts/Export-SfPerPerson-Sanitized.ps1`](/Users/chrisbrien/dev/github.com/syncfactors/rewrite/SyncFactors.Next/scripts/Export-SfPerPerson-Sanitized.ps1). It fetches the response, sanitizes it in memory, and writes only the sanitized JSON to disk. Add `-AliasOrgValues` if company/department/location labels should also be anonymized, and `-KeepPersonIdExternal` if you need to preserve the source worker ID.
