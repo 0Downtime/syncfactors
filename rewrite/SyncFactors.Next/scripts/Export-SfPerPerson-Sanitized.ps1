@@ -88,6 +88,24 @@ function Set-StringPropertyIfPresent {
     }
 }
 
+function Remove-PropertyIfPresent {
+    param(
+        [Parameter(Mandatory = $true)]
+        $Object,
+
+        [Parameter(Mandatory = $true)]
+        [string]$PropertyName
+    )
+
+    if ($null -eq $Object -or $Object.GetType().Name -ne "JsonObject") {
+        return
+    }
+
+    if ($Object.ContainsKey($PropertyName)) {
+        [void]$Object.Remove($PropertyName)
+    }
+}
+
 function Get-FirstNavigationObject {
     param(
         $Object,
@@ -111,6 +129,95 @@ function Get-FirstNavigationObject {
     return $results[0]
 }
 
+function Sanitize-NodeRecursively {
+    param(
+        [Parameter(Mandatory = $true)]
+        $Node,
+
+        [Parameter(Mandatory = $true)]
+        [hashtable]$ReplacementMap,
+
+        [switch]$AliasOrgValues
+    )
+
+    if ($null -eq $Node) {
+        return
+    }
+
+    if ($Node.GetType().Name -eq "JsonArray") {
+        $array = [System.Text.Json.Nodes.JsonArray]$Node
+        for ($i = 0; $i -lt $array.Count; $i++) {
+            Sanitize-NodeRecursively -Node $array[$i] -ReplacementMap $ReplacementMap -AliasOrgValues:$AliasOrgValues
+        }
+        return
+    }
+
+    if ($Node.GetType().Name -ne "JsonObject") {
+        return
+    }
+
+    $object = $Node
+
+    Remove-PropertyIfPresent -Object $object -PropertyName "__metadata"
+    Remove-PropertyIfPresent -Object $object -PropertyName "__deferred"
+
+    if ($ReplacementMap["personIdExternal"]) {
+        Set-StringPropertyIfPresent -Object $object -PropertyName "personIdExternal" -Value $ReplacementMap["personIdExternal"]
+    }
+    Set-StringPropertyIfPresent -Object $object -PropertyName "firstName" -Value $ReplacementMap["firstName"]
+    Set-StringPropertyIfPresent -Object $object -PropertyName "lastName" -Value $ReplacementMap["lastName"]
+    Set-StringPropertyIfPresent -Object $object -PropertyName "username" -Value $ReplacementMap["username"]
+    Set-StringPropertyIfPresent -Object $object -PropertyName "userName" -Value $ReplacementMap["userName"]
+    Set-StringPropertyIfPresent -Object $object -PropertyName "email" -Value $ReplacementMap["email"]
+    Set-StringPropertyIfPresent -Object $object -PropertyName "emailAddress" -Value $ReplacementMap["emailAddress"]
+    Set-StringPropertyIfPresent -Object $object -PropertyName "managerId" -Value $ReplacementMap["managerId"]
+    Set-StringPropertyIfPresent -Object $object -PropertyName "officeLocationAddress" -Value $ReplacementMap["officeLocationAddress"]
+    Set-StringPropertyIfPresent -Object $object -PropertyName "officeLocationCity" -Value $ReplacementMap["officeLocationCity"]
+    Set-StringPropertyIfPresent -Object $object -PropertyName "officeLocationZipCode" -Value $ReplacementMap["officeLocationZipCode"]
+
+    $currentJobTitle = [string]$object["jobTitle"]
+    if (-not [string]::IsNullOrWhiteSpace($currentJobTitle)) {
+        Set-StringPropertyIfPresent -Object $object -PropertyName "jobTitle" -Value (Get-AliasValue -Prefix "Job" -Value $currentJobTitle)
+    }
+
+    foreach ($propertyName in @(
+        "phone",
+        "phoneNumber",
+        "businessPhone",
+        "cellPhone",
+        "mobilePhone"
+    )) {
+        if ($ReplacementMap.ContainsKey($propertyName)) {
+            Set-StringPropertyIfPresent -Object $object -PropertyName $propertyName -Value $ReplacementMap[$propertyName]
+        }
+    }
+
+    if ($AliasOrgValues) {
+        foreach ($orgProp in @(
+            @{ Property = "department"; Prefix = "Department" },
+            @{ Property = "company"; Prefix = "Company" },
+            @{ Property = "businessUnit"; Prefix = "BusinessUnit" },
+            @{ Property = "division"; Prefix = "Division" },
+            @{ Property = "costCenter"; Prefix = "CostCenter" },
+            @{ Property = "costCenterDescription"; Prefix = "CostCenter" },
+            @{ Property = "location"; Prefix = "Location" },
+            @{ Property = "LocationName"; Prefix = "Location" }
+        )) {
+            $currentValue = [string]$object[$orgProp.Property]
+            if (-not [string]::IsNullOrWhiteSpace($currentValue)) {
+                Set-StringPropertyIfPresent -Object $object -PropertyName $orgProp.Property -Value (Get-AliasValue -Prefix $orgProp.Prefix -Value $currentValue)
+            }
+        }
+    }
+
+    foreach ($childProperty in @($object | Get-Member -MemberType Properties | Select-Object -ExpandProperty Name)) {
+        $child = $object[$childProperty]
+        if ($null -ne $child) {
+            Sanitize-NodeRecursively -Node $child -ReplacementMap $ReplacementMap -AliasOrgValues:$AliasOrgValues
+        }
+    }
+}
+
 function Sanitize-Worker {
     param(
         [Parameter(Mandatory = $true)]
@@ -132,86 +239,25 @@ function Sanitize-Worker {
     $sanitizedLastName = "Sample{0:D3}" -f (Get-StableNumber -Input "$originalPersonId`:ln" -Min 10 -Max 999)
     $sanitizedEmail = "{0}@example.test" -f $sanitizedUserName
 
-    if (-not $KeepPersonIdExternal) {
-        Set-StringPropertyIfPresent -Object $Worker -PropertyName "personIdExternal" -Value $sanitizedPersonId
-    }
-
-    Set-StringPropertyIfPresent -Object $Worker -PropertyName "username" -Value $sanitizedUserName
-    Set-StringPropertyIfPresent -Object $Worker -PropertyName "userName" -Value $sanitizedUserName
-    Set-StringPropertyIfPresent -Object $Worker -PropertyName "email" -Value $sanitizedEmail
-    Set-StringPropertyIfPresent -Object $Worker -PropertyName "managerId" -Value ("mgr-{0:D5}" -f (Get-StableNumber -Input "$originalPersonId`:mgr" -Min 10000 -Max 99999))
-
-    $personalInfo = Get-FirstNavigationObject -Object $Worker -NavigationName "personalInfoNav"
-    if ($null -ne $personalInfo) {
-        Set-StringPropertyIfPresent -Object $personalInfo -PropertyName "firstName" -Value $sanitizedFirstName
-        Set-StringPropertyIfPresent -Object $personalInfo -PropertyName "lastName" -Value $sanitizedLastName
-    }
-
-    Set-StringPropertyIfPresent -Object $Worker -PropertyName "firstName" -Value $sanitizedFirstName
-    Set-StringPropertyIfPresent -Object $Worker -PropertyName "lastName" -Value $sanitizedLastName
-
-    $emailNav = Get-FirstNavigationObject -Object $Worker -NavigationName "emailNav"
-    if ($null -ne $emailNav) {
-        Set-StringPropertyIfPresent -Object $emailNav -PropertyName "emailAddress" -Value $sanitizedEmail
-    }
-
-    $employment = Get-FirstNavigationObject -Object $Worker -NavigationName "employmentNav"
-    if ($null -eq $employment) {
-        return
-    }
-
-    $jobInfo = Get-FirstNavigationObject -Object $employment -NavigationName "jobInfoNav"
-    if ($null -eq $jobInfo) {
-        return
-    }
-
-    Set-StringPropertyIfPresent -Object $jobInfo -PropertyName "managerId" -Value ("mgr-{0:D5}" -f (Get-StableNumber -Input "$originalPersonId`:mgr" -Min 10000 -Max 99999))
-    Set-StringPropertyIfPresent -Object $jobInfo -PropertyName "jobTitle" -Value (Get-AliasValue -Prefix "Job" -Value ([string]$jobInfo["jobTitle"]))
-
-    $locationNav = $jobInfo["locationNav"]
-    if ($null -ne $locationNav -and $locationNav.GetType().Name -eq "JsonObject") {
-        Set-StringPropertyIfPresent -Object $locationNav -PropertyName "LocationName" -Value (
-            if ($AliasOrgValues) { Get-AliasValue -Prefix "Location" -Value ([string]$locationNav["LocationName"]) } else { [string]$locationNav["LocationName"] }
-        )
-        Set-StringPropertyIfPresent -Object $locationNav -PropertyName "officeLocationAddress" -Value ("Suite {0} Example Way" -f (Get-StableNumber -Input "$originalPersonId`:addr" -Min 100 -Max 999))
-        Set-StringPropertyIfPresent -Object $locationNav -PropertyName "officeLocationCity" -Value ("City{0:D2}" -f (Get-StableNumber -Input "$originalPersonId`:city" -Min 10 -Max 99))
-        Set-StringPropertyIfPresent -Object $locationNav -PropertyName "officeLocationZipCode" -Value ("{0:D5}" -f (Get-StableNumber -Input "$originalPersonId`:zip" -Min 10000 -Max 99999))
-    }
-
-    foreach ($navSpec in @(
-        @{ Name = "departmentNav"; Property = "department"; Prefix = "Department" },
-        @{ Name = "companyNav"; Property = "company"; Prefix = "Company" },
-        @{ Name = "businessUnitNav"; Property = "businessUnit"; Prefix = "BusinessUnit" },
-        @{ Name = "divisionNav"; Property = "division"; Prefix = "Division" },
-        @{ Name = "costCenterNav"; Property = "costCenterDescription"; Prefix = "CostCenter" }
-    )) {
-        $nav = $jobInfo[$navSpec.Name]
-        if ($null -ne $nav -and $nav.GetType().Name -eq "JsonObject" -and $AliasOrgValues) {
-            Set-StringPropertyIfPresent -Object $nav -PropertyName $navSpec.Property -Value (
-                Get-AliasValue -Prefix $navSpec.Prefix -Value ([string]$nav[$navSpec.Property])
-            )
-        }
-    }
-
-    if ($AliasOrgValues) {
-        foreach ($propSpec in @(
-            @{ Property = "department"; Prefix = "Department" },
-            @{ Property = "company"; Prefix = "Company" },
-            @{ Property = "businessUnit"; Prefix = "BusinessUnit" },
-            @{ Property = "division"; Prefix = "Division" },
-            @{ Property = "costCenter"; Prefix = "CostCenter" },
-            @{ Property = "location"; Prefix = "Location" }
-        )) {
-            Set-StringPropertyIfPresent -Object $jobInfo -PropertyName $propSpec.Property -Value (
-                Get-AliasValue -Prefix $propSpec.Prefix -Value ([string]$jobInfo[$propSpec.Property])
-            )
-        }
+    $replacementMap = @{
+        "personIdExternal" = if ($KeepPersonIdExternal) { $null } else { $sanitizedPersonId }
+        "firstName" = $sanitizedFirstName
+        "lastName" = $sanitizedLastName
+        "username" = $sanitizedUserName
+        "userName" = $sanitizedUserName
+        "email" = $sanitizedEmail
+        "emailAddress" = $sanitizedEmail
+        "managerId" = ("mgr-{0:D5}" -f (Get-StableNumber -Input "$originalPersonId`:mgr" -Min 10000 -Max 99999))
+        "officeLocationAddress" = ("Suite {0} Example Way" -f (Get-StableNumber -Input "$originalPersonId`:addr" -Min 100 -Max 999))
+        "officeLocationCity" = ("City{0:D2}" -f (Get-StableNumber -Input "$originalPersonId`:city" -Min 10 -Max 99))
+        "officeLocationZipCode" = ("{0:D5}" -f (Get-StableNumber -Input "$originalPersonId`:zip" -Min 10000 -Max 99999))
     }
 
     foreach ($phoneProp in @("phone", "phoneNumber", "businessPhone", "cellPhone", "mobilePhone")) {
-        Set-StringPropertyIfPresent -Object $Worker -PropertyName $phoneProp -Value ("555-{0:D3}-{1:D4}" -f (Get-StableNumber -Input "$originalPersonId`:$phoneProp:a" -Min 100 -Max 999), (Get-StableNumber -Input "$originalPersonId`:$phoneProp:b" -Min 1000 -Max 9999))
-        Set-StringPropertyIfPresent -Object $jobInfo -PropertyName $phoneProp -Value ("555-{0:D3}-{1:D4}" -f (Get-StableNumber -Input "$originalPersonId`:$phoneProp:c" -Min 100 -Max 999), (Get-StableNumber -Input "$originalPersonId`:$phoneProp:d" -Min 1000 -Max 9999))
+        $replacementMap[$phoneProp] = ("555-{0:D3}-{1:D4}" -f (Get-StableNumber -Input "$originalPersonId`:$phoneProp:a" -Min 100 -Max 999), (Get-StableNumber -Input "$originalPersonId`:$phoneProp:b" -Min 1000 -Max 9999))
     }
+
+    Sanitize-NodeRecursively -Node $Worker -ReplacementMap $replacementMap -AliasOrgValues:$AliasOrgValues
 }
 
 function Remove-ExcludedPaths {
