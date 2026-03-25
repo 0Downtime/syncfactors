@@ -70,7 +70,7 @@ function Get-AliasValue {
 function Set-StringPropertyIfPresent {
     param(
         [Parameter(Mandatory = $true)]
-        [System.Text.Json.Nodes.JsonObject]$Object,
+        $Object,
 
         [Parameter(Mandatory = $true)]
         [string]$PropertyName,
@@ -79,6 +79,10 @@ function Set-StringPropertyIfPresent {
         [string]$Value
     )
 
+    if ($null -eq $Object -or $Object.GetType().Name -ne "JsonObject") {
+        return
+    }
+
     if ($Object.ContainsKey($PropertyName)) {
         $Object[$PropertyName] = $Value
     }
@@ -86,11 +90,11 @@ function Set-StringPropertyIfPresent {
 
 function Get-FirstNavigationObject {
     param(
-        [System.Text.Json.Nodes.JsonObject]$Object,
+        $Object,
         [string]$NavigationName
     )
 
-    if ($null -eq $Object -or -not $Object.ContainsKey($NavigationName)) {
+    if ($null -eq $Object -or $Object.GetType().Name -ne "JsonObject" -or -not $Object.ContainsKey($NavigationName)) {
         return $null
     }
 
@@ -110,11 +114,15 @@ function Get-FirstNavigationObject {
 function Sanitize-Worker {
     param(
         [Parameter(Mandatory = $true)]
-        [System.Text.Json.Nodes.JsonObject]$Worker,
+        $Worker,
 
         [switch]$AliasOrgValues,
         [switch]$KeepPersonIdExternal
     )
+
+    if ($null -eq $Worker -or $Worker.GetType().Name -ne "JsonObject") {
+        return
+    }
 
     $originalPersonId = [string]$Worker["personIdExternal"]
     $personNumber = Get-StableNumber -Input $originalPersonId -Min 10000 -Max 99999
@@ -547,8 +555,7 @@ $resultsArray = [System.Text.Json.Nodes.JsonArray]$results
 for ($index = 0; $index -lt $resultsArray.Count; $index++) {
     $item = $resultsArray[$index]
     if ($null -ne $item -and $item.GetType().Name -eq "JsonObject") {
-        $workerObject = [System.Text.Json.Nodes.JsonObject]$item
-        Sanitize-Worker -Worker $workerObject -AliasOrgValues:$AliasOrgValues -KeepPersonIdExternal:$KeepPersonIdExternal
+        Sanitize-Worker -Worker $item -AliasOrgValues:$AliasOrgValues -KeepPersonIdExternal:$KeepPersonIdExternal
     }
 }
 
