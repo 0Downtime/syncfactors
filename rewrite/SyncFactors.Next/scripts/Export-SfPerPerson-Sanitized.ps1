@@ -226,6 +226,142 @@ function Remove-ExcludedPaths {
     return @($Values | Where-Object { -not $excludedSet.Contains($_) })
 }
 
+function Get-ExpandPathForPropertyPath {
+    param(
+        [string]$PropertyPath
+    )
+
+    if ([string]::IsNullOrWhiteSpace($PropertyPath)) {
+        return $null
+    }
+
+    $segments = $PropertyPath.Split("/")
+    if ($segments.Length -le 1) {
+        return $null
+    }
+
+    return ($segments[0..($segments.Length - 2)] -join "/")
+}
+
+function Get-InvalidPropertyPathFromErrorJson {
+    param(
+        [string]$ErrorJson
+    )
+
+    if ([string]::IsNullOrWhiteSpace($ErrorJson)) {
+        return $null
+    }
+
+    try {
+        $parsed = $ErrorJson | ConvertFrom-Json -ErrorAction Stop
+        $code = $parsed.error.code
+        $message = [string]$parsed.error.message.value
+        if ($code -ne "COE_PROPERTY_NOT_FOUND") {
+            return $null
+        }
+
+        $match = [regex]::Match($message, "Invalid property names:\s+([A-Za-z0-9_/]+)")
+        if (-not $match.Success) {
+            return $null
+        }
+
+        return $match.Groups[1].Value
+    }
+    catch {
+        return $null
+    }
+}
+
+function Invoke-PerPersonRequestWithAutoRetry {
+    param(
+        [string]$BaseUrl,
+        [string]$Filter,
+        [string[]]$InitialSelectValues,
+        [string[]]$InitialExpandValues,
+        [hashtable]$Headers
+    )
+
+    $selectValues = @($InitialSelectValues)
+    $expandValues = @($InitialExpandValues)
+    $attempt = 0
+
+    while ($true) {
+        $attempt += 1
+
+        $queryParams = @{
+            '$format' = 'json'
+            '$filter' = $Filter
+            '$select' = ($selectValues -join ",")
+            '$expand' = ($expandValues -join ",")
+        }
+
+        $queryString = ($queryParams.GetEnumerator() | ForEach-Object {
+            "{0}={1}" -f [System.Uri]::EscapeDataString($_.Key), [System.Uri]::EscapeDataString([string]$_.Value)
+        }) -join "&"
+
+        $requestUri = "{0}/PerPerson?{1}" -f $BaseUrl.TrimEnd("/"), $queryString
+
+        try {
+            $response = Invoke-WebRequest `
+                -Method Get `
+                -Uri $requestUri `
+                -Headers $Headers
+
+            return @{
+                Response = $response
+                RequestUri = $requestUri
+                SelectValues = $selectValues
+                ExpandValues = $expandValues
+            }
+        }
+        catch {
+            $exception = $_.Exception
+            $responseBody = $null
+
+            if ($exception.PSObject.Properties.Name -contains "Response" -and $null -ne $exception.Response) {
+                try {
+                    $responseBody = $exception.Response.Content.ReadAsStringAsync().GetAwaiter().GetResult()
+                }
+                catch {
+                    $responseBody = $null
+                }
+            }
+
+            $invalidPropertyPath = Get-InvalidPropertyPathFromErrorJson -ErrorJson $responseBody
+            if ([string]::IsNullOrWhiteSpace($invalidPropertyPath)) {
+                throw
+            }
+
+            $removed = $false
+            $newSelectValues = @($selectValues | Where-Object { $_ -ne $invalidPropertyPath })
+            if ($newSelectValues.Count -ne $selectValues.Count) {
+                $selectValues = $newSelectValues
+                $removed = $true
+            }
+
+            $expandPath = Get-ExpandPathForPropertyPath -PropertyPath $invalidPropertyPath
+            if (-not [string]::IsNullOrWhiteSpace($expandPath)) {
+                $newExpandValues = @($expandValues | Where-Object { $_ -ne $expandPath })
+                if ($newExpandValues.Count -ne $expandValues.Count) {
+                    $expandValues = $newExpandValues
+                    $removed = $true
+                }
+            }
+
+            if (-not $removed) {
+                throw
+            }
+
+            Write-Host "Attempt $attempt failed because tenant metadata does not expose '$invalidPropertyPath'."
+            Write-Host "Retrying after removing:"
+            Write-Host "- select: $invalidPropertyPath"
+            if (-not [string]::IsNullOrWhiteSpace($expandPath)) {
+                Write-Host "- expand: $expandPath"
+            }
+        }
+    }
+}
+
 if ($PSCmdlet.ParameterSetName -eq "OAuth" -and [string]::IsNullOrWhiteSpace($TokenUrl)) {
     $root = $BaseUrl.TrimEnd("/")
     if ($root -match "/odata/v2$") {
@@ -271,24 +407,8 @@ $expandValues = @(
 $selectValues = Remove-ExcludedPaths -Values $selectValues -Excluded $ExcludeSelectPath
 $expandValues = Remove-ExcludedPaths -Values $expandValues -Excluded $ExcludeExpandPath
 
-$select = $selectValues -join ","
-$expand = $expandValues -join ","
-
 $escapedWorkerId = $PersonIdExternal.Replace("'", "''")
 $filter = "personIdExternal eq '$escapedWorkerId'"
-
-$queryParams = @{
-    '$format' = 'json'
-    '$filter' = $filter
-    '$select' = $select
-    '$expand' = $expand
-}
-
-$queryString = ($queryParams.GetEnumerator() | ForEach-Object {
-    "{0}={1}" -f [System.Uri]::EscapeDataString($_.Key), [System.Uri]::EscapeDataString([string]$_.Value)
-}) -join "&"
-
-$requestUri = "{0}/PerPerson?{1}" -f $BaseUrl.TrimEnd("/"), $queryString
 
 if ($PSCmdlet.ParameterSetName -eq "OAuth") {
     $tokenBody = @{
@@ -333,10 +453,15 @@ else {
     }
 }
 
-$response = Invoke-WebRequest `
-    -Method Get `
-    -Uri $requestUri `
+$requestResult = Invoke-PerPersonRequestWithAutoRetry `
+    -BaseUrl $BaseUrl `
+    -Filter $filter `
+    -InitialSelectValues $selectValues `
+    -InitialExpandValues $expandValues `
     -Headers $headers
+
+$response = $requestResult.Response
+$requestUri = $requestResult.RequestUri
 
 $document = [System.Text.Json.Nodes.JsonNode]::Parse($response.Content)
 if ($null -eq $document) {
