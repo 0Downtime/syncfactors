@@ -26,6 +26,10 @@ param(
     [string]$OutputPath = ".\perperson-export-sanitized.json",
     [string[]]$ExcludeSelectPath = @(),
     [string[]]$ExcludeExpandPath = @(),
+    [string[]]$AdditionalSelectPath = @(),
+    [string[]]$AdditionalExpandPath = @(),
+    [switch]$IncludeHeaderProfile,
+    [switch]$SkipSanitization,
     [switch]$AliasOrgValues,
     [switch]$KeepPersonIdExternal
 )
@@ -156,7 +160,7 @@ function Sanitize-NodeRecursively {
         return
     }
 
-    $object = $Node
+    $object = [System.Text.Json.Nodes.JsonObject]$Node
 
     Remove-PropertyIfPresent -Object $object -PropertyName "__metadata"
     Remove-PropertyIfPresent -Object $object -PropertyName "__deferred"
@@ -210,7 +214,12 @@ function Sanitize-NodeRecursively {
         }
     }
 
-    foreach ($childProperty in @($object | Get-Member -MemberType Properties | Select-Object -ExpandProperty Name)) {
+    $childPropertyNames = @()
+    foreach ($entry in $object) {
+        $childPropertyNames += $entry.Key
+    }
+
+    foreach ($childProperty in $childPropertyNames) {
         $child = $object[$childProperty]
         if ($null -ne $child) {
             Sanitize-NodeRecursively -Node $child -ReplacementMap $ReplacementMap -AliasOrgValues:$AliasOrgValues
@@ -277,6 +286,26 @@ function Remove-ExcludedPaths {
     }
 
     return @($Values | Where-Object { -not $excludedSet.Contains($_) })
+}
+
+function Get-UniquePaths {
+    param(
+        [string[]]$Values
+    )
+
+    $seen = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)
+    $ordered = @()
+    foreach ($value in $Values) {
+        if ([string]::IsNullOrWhiteSpace($value)) {
+            continue
+        }
+
+        if ($seen.Add($value)) {
+            $ordered += $value
+        }
+    }
+
+    return $ordered
 }
 
 function Get-ExpandPathForPropertyPath {
@@ -495,6 +524,7 @@ if ($PSCmdlet.ParameterSetName -eq "OAuth" -and [string]::IsNullOrWhiteSpace($To
 
 $selectValues = @(
     "personIdExternal",
+    "userId",
     "personalInfoNav/firstName",
     "personalInfoNav/lastName",
     "employmentNav/startDate",
@@ -526,6 +556,47 @@ $expandValues = @(
     "employmentNav/jobInfoNav/divisionNav",
     "employmentNav/jobInfoNav/locationNav"
 )
+
+if ($IncludeHeaderProfile) {
+    $selectValues += @(
+        "personalInfoNav/middleName",
+        "employmentNav/originalStartDate",
+        "employmentNav/jobInfoNav/emplStatus",
+        "employmentNav/jobInfoNav/jobCode",
+        "employmentNav/jobInfoNav/position",
+        "employmentNav/jobInfoNav/positionEntryDate",
+        "employmentNav/jobInfoNav/positionTitle",
+        "employmentNav/jobInfoNav/bargainingUnit",
+        "employmentNav/jobInfoNav/unionCode",
+        "employmentNav/jobInfoNav/company",
+        "employmentNav/jobInfoNav/businessUnit",
+        "employmentNav/jobInfoNav/location",
+        "employmentNav/jobInfoNav/costCenter",
+        "employmentNav/jobInfoNav/department",
+        "employmentNav/jobInfoNav/division",
+        "employmentNav/jobInfoNav/customString1",
+        "employmentNav/jobInfoNav/customString2",
+        "employmentNav/jobInfoNav/customString3",
+        "employmentNav/jobInfoNav/customString4",
+        "employmentNav/jobInfoNav/customString5",
+        "employmentNav/jobInfoNav/customString6",
+        "employmentNav/jobInfoNav/customString7",
+        "employmentNav/jobInfoNav/customString8",
+        "employmentNav/jobInfoNav/customString9",
+        "employmentNav/jobInfoNav/customString10",
+        "employmentNav/jobInfoNav/customString11",
+        "employmentNav/jobInfoNav/customString12",
+        "employmentNav/jobInfoNav/customString13",
+        "employmentNav/jobInfoNav/customString14",
+        "employmentNav/jobInfoNav/customString15"
+    )
+}
+
+$selectValues += $AdditionalSelectPath
+$expandValues += $AdditionalExpandPath
+
+$selectValues = Get-UniquePaths -Values $selectValues
+$expandValues = Get-UniquePaths -Values $expandValues
 
 $selectValues = Remove-ExcludedPaths -Values $selectValues -Excluded $ExcludeSelectPath
 $expandValues = Remove-ExcludedPaths -Values $expandValues -Excluded $ExcludeExpandPath
@@ -597,10 +668,12 @@ if ($null -eq $results -or $results.GetType().Name -ne "JsonArray") {
 }
 
 $resultsArray = [System.Text.Json.Nodes.JsonArray]$results
-for ($index = 0; $index -lt $resultsArray.Count; $index++) {
-    $item = $resultsArray[$index]
-    if ($null -ne $item -and $item.GetType().Name -eq "JsonObject") {
-        Sanitize-Worker -Worker $item -AliasOrgValues:$AliasOrgValues -KeepPersonIdExternal:$KeepPersonIdExternal
+if (-not $SkipSanitization) {
+    for ($index = 0; $index -lt $resultsArray.Count; $index++) {
+        $item = $resultsArray[$index]
+        if ($null -ne $item -and $item.GetType().Name -eq "JsonObject") {
+            Sanitize-Worker -Worker $item -AliasOrgValues:$AliasOrgValues -KeepPersonIdExternal:$KeepPersonIdExternal
+        }
     }
 }
 
@@ -612,16 +685,26 @@ $sanitizedJson = $document.ToJsonString($jsonOptions)
 Write-Host "Saved sanitized export to $OutputPath"
 Write-Host "Query URI:"
 Write-Host $requestUri
-Write-Host "Sanitization applied:"
-Write-Host "- names"
-Write-Host "- usernames"
-Write-Host "- emails"
-Write-Host "- addresses/city/zip"
-Write-Host "- phone-like fields when present"
-Write-Host "- manager identifiers"
-if ($AliasOrgValues) {
-    Write-Host "- org labels (company/department/location/businessUnit/division/costCenter)"
+Write-Host "Final select paths ($($requestResult.SelectValues.Count)):"
+Write-Host ($requestResult.SelectValues -join ", ")
+Write-Host "Final expand paths ($($requestResult.ExpandValues.Count)):"
+Write-Host ($requestResult.ExpandValues -join ", ")
+
+if ($SkipSanitization) {
+    Write-Host "Sanitization skipped."
 }
-if (-not $KeepPersonIdExternal) {
-    Write-Host "- personIdExternal"
+else {
+    Write-Host "Sanitization applied:"
+    Write-Host "- names"
+    Write-Host "- usernames"
+    Write-Host "- emails"
+    Write-Host "- addresses/city/zip"
+    Write-Host "- phone-like fields when present"
+    Write-Host "- manager identifiers"
+    if ($AliasOrgValues) {
+        Write-Host "- org labels (company/department/location/businessUnit/division/costCenter)"
+    }
+    if (-not $KeepPersonIdExternal) {
+        Write-Host "- personIdExternal"
+    }
 }

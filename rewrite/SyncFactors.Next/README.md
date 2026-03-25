@@ -83,3 +83,7 @@ If your tenant rejects one of the optional fields in the hard-coded query, all t
 -ExcludeSelectPath "employmentNav/jobInfoNav/businessUnitNav/businessUnit" `
 -ExcludeExpandPath "employmentNav/jobInfoNav/businessUnitNav"
 ```
+
+If you want to probe the broader employee header set for one worker without sanitizing the output, use [`scripts/Export-SfEmployeeHeaderProfile.ps1`](/Users/chrisbrien/dev/github.com/syncfactors/rewrite/SyncFactors.Next/scripts/Export-SfEmployeeHeaderProfile.ps1). It wraps the same auto-retrying query logic with `-IncludeHeaderProfile -SkipSanitization` already enabled so you can see which fields your tenant actually exposes.
+
+If you want to discover likely field mappings from tenant metadata before querying a worker, use [`scripts/Get-SfMetadataFieldCandidates.ps1`](/Users/chrisbrien/dev/github.com/syncfactors/rewrite/SyncFactors.Next/scripts/Get-SfMetadataFieldCandidates.ps1). It downloads `/$metadata`, searches for the employee headers we discussed, and writes candidate entities and OData paths to JSON.
