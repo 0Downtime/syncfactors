@@ -239,19 +239,18 @@ function Sanitize-Worker {
     $sanitizedLastName = "Sample{0:D3}" -f (Get-StableNumber -Input "$originalPersonId`:ln" -Min 10 -Max 999)
     $sanitizedEmail = "{0}@example.test" -f $sanitizedUserName
 
-    $replacementMap = @{
-        "personIdExternal" = if ($KeepPersonIdExternal) { $null } else { $sanitizedPersonId }
-        "firstName" = $sanitizedFirstName
-        "lastName" = $sanitizedLastName
-        "username" = $sanitizedUserName
-        "userName" = $sanitizedUserName
-        "email" = $sanitizedEmail
-        "emailAddress" = $sanitizedEmail
-        "managerId" = ("mgr-{0:D5}" -f (Get-StableNumber -Input "$originalPersonId`:mgr" -Min 10000 -Max 99999))
-        "officeLocationAddress" = ("Suite {0} Example Way" -f (Get-StableNumber -Input "$originalPersonId`:addr" -Min 100 -Max 999))
-        "officeLocationCity" = ("City{0:D2}" -f (Get-StableNumber -Input "$originalPersonId`:city" -Min 10 -Max 99))
-        "officeLocationZipCode" = ("{0:D5}" -f (Get-StableNumber -Input "$originalPersonId`:zip" -Min 10000 -Max 99999))
-    }
+    $replacementMap = @{}
+    $replacementMap["personIdExternal"] = if ($KeepPersonIdExternal) { $null } else { $sanitizedPersonId }
+    $replacementMap["firstName"] = $sanitizedFirstName
+    $replacementMap["lastName"] = $sanitizedLastName
+    $replacementMap["username"] = $sanitizedUserName
+    $replacementMap["userName"] = $sanitizedUserName
+    $replacementMap["email"] = $sanitizedEmail
+    $replacementMap["emailAddress"] = $sanitizedEmail
+    $replacementMap["managerId"] = ("mgr-{0:D5}" -f (Get-StableNumber -Input "$originalPersonId`:mgr" -Min 10000 -Max 99999))
+    $replacementMap["officeLocationAddress"] = ("Suite {0} Example Way" -f (Get-StableNumber -Input "$originalPersonId`:addr" -Min 100 -Max 999))
+    $replacementMap["officeLocationCity"] = ("City{0:D2}" -f (Get-StableNumber -Input "$originalPersonId`:city" -Min 10 -Max 99))
+    $replacementMap["officeLocationZipCode"] = ("{0:D5}" -f (Get-StableNumber -Input "$originalPersonId`:zip" -Min 10000 -Max 99999))
 
     foreach ($phoneProp in @("phone", "phoneNumber", "businessPhone", "cellPhone", "mobilePhone")) {
         $replacementMap[$phoneProp] = ("555-{0:D3}-{1:D4}" -f (Get-StableNumber -Input "$originalPersonId`:$phoneProp:a" -Min 100 -Max 999), (Get-StableNumber -Input "$originalPersonId`:$phoneProp:b" -Min 1000 -Max 9999))
