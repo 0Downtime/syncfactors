@@ -202,7 +202,6 @@ $projectRoot = Split-Path -Path $PSScriptRoot -Parent
 $moduleRoot = Join-Path -Path $projectRoot -ChildPath 'src/Modules/SyncFactors'
 $configModule = Import-Module (Join-Path $moduleRoot 'Config.psm1') -Force -DisableNameChecking -PassThru
 $monitoringModule = Import-Module (Join-Path $moduleRoot 'Monitoring.psm1') -Force -DisableNameChecking -PassThru
-$successFactorsModule = Import-Module (Join-Path $moduleRoot 'SuccessFactors.psm1') -Force -DisableNameChecking -PassThru
 $persistenceModule = Import-Module (Join-Path $moduleRoot 'Persistence.psm1') -Force -DisableNameChecking -PassThru
 
 $getSyncFactorsConfig = $configModule.ExportedFunctions['Get-SyncFactorsConfig']

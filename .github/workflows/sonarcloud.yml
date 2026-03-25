@@ -56,7 +56,7 @@ jobs:
             -TestResultFormat JUnitXml
 
       - name: Run SonarCloud scan
-        uses: SonarSource/sonarqube-scan-action@fd88b7d7ccbaefd23d8f36f73b59db7a3d246602 # v6
+        uses: SonarSource/sonarqube-scan-action@fd88b7d7ccbaefd23d8f36f73b59db7a3d246602 # v6 nosemgrep: false positive on pinned action SHA
         with:
           args: >
             "-Dsonar.organization=${{ secrets.SONAR_ORGANIZATION }}"
