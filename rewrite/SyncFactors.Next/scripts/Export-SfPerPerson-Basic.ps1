@@ -11,12 +11,34 @@ param(
     [Parameter(Mandatory = $true)]
     [string]$PersonIdExternal,
 
-    [string]$OutputPath = ".\perperson-export.json"
+    [string]$OutputPath = ".\perperson-export.json",
+    [string[]]$ExcludeSelectPath = @(),
+    [string[]]$ExcludeExpandPath = @()
 )
 
 $ErrorActionPreference = "Stop"
 
-$select = @(
+function Remove-ExcludedPaths {
+    param(
+        [string[]]$Values,
+        [string[]]$Excluded
+    )
+
+    if ($null -eq $Excluded -or $Excluded.Count -eq 0) {
+        return $Values
+    }
+
+    $excludedSet = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)
+    foreach ($item in $Excluded) {
+        if (-not [string]::IsNullOrWhiteSpace($item)) {
+            [void]$excludedSet.Add($item)
+        }
+    }
+
+    return @($Values | Where-Object { -not $excludedSet.Contains($_) })
+}
+
+$selectValues = @(
     "personIdExternal",
     "personalInfoNav/firstName",
     "personalInfoNav/lastName",
@@ -35,9 +57,9 @@ $select = @(
     "employmentNav/jobInfoNav/employeeClass",
     "employmentNav/jobInfoNav/employeeType",
     "employmentNav/jobInfoNav/managerId"
-) -join ","
+)
 
-$expand = @(
+$expandValues = @(
     "employmentNav",
     "employmentNav/jobInfoNav",
     "personalInfoNav",
@@ -48,7 +70,13 @@ $expand = @(
     "employmentNav/jobInfoNav/costCenterNav",
     "employmentNav/jobInfoNav/divisionNav",
     "employmentNav/jobInfoNav/locationNav"
-) -join ","
+)
+
+$selectValues = Remove-ExcludedPaths -Values $selectValues -Excluded $ExcludeSelectPath
+$expandValues = Remove-ExcludedPaths -Values $expandValues -Excluded $ExcludeExpandPath
+
+$select = $selectValues -join ","
+$expand = $expandValues -join ","
 
 $escapedWorkerId = $PersonIdExternal.Replace("'", "''")
 $filter = "personIdExternal eq '$escapedWorkerId'"

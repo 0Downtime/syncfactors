@@ -24,6 +24,8 @@ param(
     [string]$Password,
 
     [string]$OutputPath = ".\perperson-export-sanitized.json",
+    [string[]]$ExcludeSelectPath = @(),
+    [string[]]$ExcludeExpandPath = @(),
     [switch]$AliasOrgValues,
     [switch]$KeepPersonIdExternal
 )
@@ -204,6 +206,26 @@ function Sanitize-Worker {
     }
 }
 
+function Remove-ExcludedPaths {
+    param(
+        [string[]]$Values,
+        [string[]]$Excluded
+    )
+
+    if ($null -eq $Excluded -or $Excluded.Count -eq 0) {
+        return $Values
+    }
+
+    $excludedSet = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)
+    foreach ($item in $Excluded) {
+        if (-not [string]::IsNullOrWhiteSpace($item)) {
+            [void]$excludedSet.Add($item)
+        }
+    }
+
+    return @($Values | Where-Object { -not $excludedSet.Contains($_) })
+}
+
 if ($PSCmdlet.ParameterSetName -eq "OAuth" -and [string]::IsNullOrWhiteSpace($TokenUrl)) {
     $root = $BaseUrl.TrimEnd("/")
     if ($root -match "/odata/v2$") {
@@ -212,7 +234,7 @@ if ($PSCmdlet.ParameterSetName -eq "OAuth" -and [string]::IsNullOrWhiteSpace($To
     $TokenUrl = "$root/oauth/token"
 }
 
-$select = @(
+$selectValues = @(
     "personIdExternal",
     "personalInfoNav/firstName",
     "personalInfoNav/lastName",
@@ -231,9 +253,9 @@ $select = @(
     "employmentNav/jobInfoNav/employeeClass",
     "employmentNav/jobInfoNav/employeeType",
     "employmentNav/jobInfoNav/managerId"
-) -join ","
+) 
 
-$expand = @(
+$expandValues = @(
     "employmentNav",
     "employmentNav/jobInfoNav",
     "personalInfoNav",
@@ -244,7 +266,13 @@ $expand = @(
     "employmentNav/jobInfoNav/costCenterNav",
     "employmentNav/jobInfoNav/divisionNav",
     "employmentNav/jobInfoNav/locationNav"
-) -join ","
+)
+
+$selectValues = Remove-ExcludedPaths -Values $selectValues -Excluded $ExcludeSelectPath
+$expandValues = Remove-ExcludedPaths -Values $expandValues -Excluded $ExcludeExpandPath
+
+$select = $selectValues -join ","
+$expand = $expandValues -join ","
 
 $escapedWorkerId = $PersonIdExternal.Replace("'", "''")
 $filter = "personIdExternal eq '$escapedWorkerId'"
