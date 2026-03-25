@@ -362,12 +362,33 @@ function Invoke-PerPersonRequestWithAutoRetry {
             $exception = $_.Exception
             $responseBody = $null
 
+            if ($_.ErrorDetails -and -not [string]::IsNullOrWhiteSpace($_.ErrorDetails.Message)) {
+                $responseBody = $_.ErrorDetails.Message
+            }
+
             if ($exception.PSObject.Properties.Name -contains "Response" -and $null -ne $exception.Response) {
                 try {
-                    $responseBody = $exception.Response.Content.ReadAsStringAsync().GetAwaiter().GetResult()
+                    if ($exception.Response.PSObject.Properties.Name -contains "Content" -and $null -ne $exception.Response.Content) {
+                        $responseBody = $exception.Response.Content.ReadAsStringAsync().GetAwaiter().GetResult()
+                    }
+                    elseif ($exception.Response.PSObject.Methods.Name -contains "GetResponseStream") {
+                        $stream = $exception.Response.GetResponseStream()
+                        if ($null -ne $stream) {
+                            $reader = New-Object System.IO.StreamReader($stream)
+                            try {
+                                $responseBody = $reader.ReadToEnd()
+                            }
+                            finally {
+                                $reader.Dispose()
+                                $stream.Dispose()
+                            }
+                        }
+                    }
                 }
                 catch {
-                    $responseBody = $null
+                    if ([string]::IsNullOrWhiteSpace($responseBody)) {
+                        $responseBody = $null
+                    }
                 }
             }
 
