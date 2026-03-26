@@ -58,6 +58,13 @@
 
 @if (Model.Preview is not null)
 {
+    var resolvedAttributes = Model.Preview.SourceAttributes
+        .Where(attribute => !IsPathLikeAttribute(attribute.Attribute))
+        .ToArray();
+    var sourcePathAttributes = Model.Preview.SourceAttributes
+        .Where(attribute => IsPathLikeAttribute(attribute.Attribute))
+        .ToArray();
+
     <section class="panel-grid">
         <article class="panel">
             <h2>Summary</h2>
@@ -137,6 +144,66 @@
         }
     </section>
 
+    <section class="panel-grid">
+        <article class="panel">
+            <h2>Resolved SF Attributes</h2>
+            @if (resolvedAttributes.Length == 0)
+            {
+                <p class="muted">No populated SuccessFactors attributes were captured.</p>
+            }
+            else
+            {
+                <p class="muted">Showing @resolvedAttributes.Length populated values parsed from SuccessFactors.</p>
+                <table class="data-table compact">
+                    <thead>
+                        <tr>
+                            <th>Attribute</th>
+                            <th>Value</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    @foreach (var attribute in resolvedAttributes)
+                    {
+                        <tr>
+                            <td>@attribute.Attribute</td>
+                            <td>@attribute.Value</td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            }
+        </article>
+
+        <article class="panel">
+            <h2>Raw Source Paths</h2>
+            @if (sourcePathAttributes.Length == 0)
+            {
+                <p class="muted">No raw source-path aliases were captured.</p>
+            }
+            else
+            {
+                <p class="muted">These rows expose the concrete source paths available for mapping and query work.</p>
+                <table class="data-table compact">
+                    <thead>
+                        <tr>
+                            <th>Source Path</th>
+                            <th>Value</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    @foreach (var attribute in sourcePathAttributes)
+                    {
+                        <tr>
+                            <td>@attribute.Attribute</td>
+                            <td>@attribute.Value</td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            }
+        </article>
+    </section>
+
     <section class="panel">
         <h2>Preview Entries</h2>
         <div class="entry-list">
@@ -191,4 +258,7 @@
 
 @functions {
     private static string DisplayBool(bool? value) => value.HasValue ? (value.Value ? "Yes" : "No") : "Unknown";
+
+    private static bool IsPathLikeAttribute(string attribute) =>
+        attribute.Contains('[') || attribute.Contains('.');
 }
