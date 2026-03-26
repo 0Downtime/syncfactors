@@ -30,50 +30,88 @@ public sealed class AttributeDiffService : IAttributeDiffService
 {
     private readonly IAttributeMappingProvider _mappingProvider;
     private readonly ILogger<AttributeDiffService> _logger;
+    private readonly IWorkerPreviewLogWriter _logWriter;
 
     public AttributeDiffService(
         IAttributeMappingProvider mappingProvider,
+        IWorkerPreviewLogWriter logWriter,
         ILogger<AttributeDiffService> logger)
     {
         _mappingProvider = mappingProvider;
+        _logWriter = logWriter;
         _logger = logger;
     }
 
-    public IReadOnlyList<AttributeChange> BuildDiff(WorkerSnapshot worker, DirectoryUserSnapshot? directoryUser)
+    public async Task<IReadOnlyList<AttributeChange>> BuildDiffAsync(
+        WorkerSnapshot worker,
+        DirectoryUserSnapshot? directoryUser,
+        string? logPath,
+        CancellationToken cancellationToken)
     {
         var currentAttributes = directoryUser?.Attributes
             ?? new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
 
         var enabledMappings = _mappingProvider.GetEnabledMappings();
-        var changes = enabledMappings
-            .Select(mapping =>
+        if (!string.IsNullOrWhiteSpace(logPath))
+        {
+            await _logWriter.AppendAsync(logPath, new WorkerPreviewLogEntry(
+                Event: "preview.diff.start",
+                WorkerId: worker.WorkerId,
+                Timestamp: DateTimeOffset.UtcNow,
+                Target: null,
+                Source: null,
+                SourceValue: null,
+                CurrentValue: null,
+                ProposedValue: null,
+                Changed: null,
+                Message: $"Evaluating {enabledMappings.Count} enabled mappings."), cancellationToken);
+        }
+
+        var changes = new List<AttributeChange>();
+        foreach (var mapping in enabledMappings)
+        {
+            var sourceValue = GetSourceValue(worker, mapping.Source, mapping.Target);
+            var proposedValue = Transform(sourceValue, mapping.Transform);
+            var currentValue = GetDirectoryValue(currentAttributes, mapping.Target);
+            var before = string.IsNullOrWhiteSpace(currentValue) ? "(unset)" : currentValue!;
+            var after = string.IsNullOrWhiteSpace(proposedValue) ? "(unset)" : proposedValue!;
+            var changed = !string.Equals(before, after, StringComparison.Ordinal);
+
+            _logger.LogDebug(
+                "Evaluated attribute mapping. WorkerId={WorkerId} Target={Target} Source={Source} SourceValue={SourceValue} CurrentValue={CurrentValue} ProposedValue={ProposedValue} Changed={Changed}",
+                worker.WorkerId,
+                mapping.Target,
+                mapping.Source,
+                string.IsNullOrWhiteSpace(sourceValue) ? "(unset)" : sourceValue,
+                string.IsNullOrWhiteSpace(currentValue) ? "(unset)" : currentValue,
+                string.IsNullOrWhiteSpace(proposedValue) ? "(unset)" : proposedValue,
+                changed);
+
+            if (!string.IsNullOrWhiteSpace(logPath))
             {
-                var sourceValue = GetSourceValue(worker, mapping.Source, mapping.Target);
-                var proposedValue = Transform(sourceValue, mapping.Transform);
-                var currentValue = GetDirectoryValue(currentAttributes, mapping.Target);
-                var before = string.IsNullOrWhiteSpace(currentValue) ? "(unset)" : currentValue!;
-                var after = string.IsNullOrWhiteSpace(proposedValue) ? "(unset)" : proposedValue!;
-                var changed = !string.Equals(before, after, StringComparison.Ordinal);
+                await _logWriter.AppendAsync(logPath, new WorkerPreviewLogEntry(
+                    Event: "preview.diff.mapping",
+                    WorkerId: worker.WorkerId,
+                    Timestamp: DateTimeOffset.UtcNow,
+                    Target: mapping.Target,
+                    Source: mapping.Source,
+                    SourceValue: sourceValue,
+                    CurrentValue: currentValue,
+                    ProposedValue: proposedValue,
+                    Changed: changed,
+                    Message: changed ? "Changed" : "Unchanged or filtered"), cancellationToken);
+            }
 
-                _logger.LogDebug(
-                    "Evaluated attribute mapping. WorkerId={WorkerId} Target={Target} Source={Source} SourceValue={SourceValue} CurrentValue={CurrentValue} ProposedValue={ProposedValue} Changed={Changed}",
-                    worker.WorkerId,
-                    mapping.Target,
-                    mapping.Source,
-                    string.IsNullOrWhiteSpace(sourceValue) ? "(unset)" : sourceValue,
-                    string.IsNullOrWhiteSpace(currentValue) ? "(unset)" : currentValue,
-                    string.IsNullOrWhiteSpace(proposedValue) ? "(unset)" : proposedValue,
-                    changed);
-
-                return new AttributeChange(
+            if (changed)
+            {
+                changes.Add(new AttributeChange(
                     Attribute: mapping.Target,
                     Source: mapping.Source,
                     Before: before,
                     After: after,
-                    Changed: changed);
-            })
-            .Where(change => change.Changed)
-            .ToList();
+                    Changed: true));
+            }
+        }
 
         var proposedDisplayName = DirectoryIdentityFormatter.BuildDisplayName(worker.PreferredName, worker.LastName);
         var currentDisplayName = GetDirectoryValue(currentAttributes, "displayName");
@@ -92,6 +130,21 @@ public sealed class AttributeDiffService : IAttributeDiffService
             worker.WorkerId,
             enabledMappings.Count,
             changes.Count);
+
+        if (!string.IsNullOrWhiteSpace(logPath))
+        {
+            await _logWriter.AppendAsync(logPath, new WorkerPreviewLogEntry(
+                Event: "preview.diff.complete",
+                WorkerId: worker.WorkerId,
+                Timestamp: DateTimeOffset.UtcNow,
+                Target: null,
+                Source: null,
+                SourceValue: null,
+                CurrentValue: null,
+                ProposedValue: null,
+                Changed: null,
+                Message: $"Completed with {changes.Count} changed mappings."), cancellationToken);
+        }
 
         return changes;
     }

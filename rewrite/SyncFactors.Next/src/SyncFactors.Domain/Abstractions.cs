@@ -47,12 +47,22 @@ public interface IIdentityMatcher
 
 public interface IAttributeDiffService
 {
-    IReadOnlyList<AttributeChange> BuildDiff(WorkerSnapshot worker, DirectoryUserSnapshot? directoryUser);
+    Task<IReadOnlyList<AttributeChange>> BuildDiffAsync(
+        WorkerSnapshot worker,
+        DirectoryUserSnapshot? directoryUser,
+        string? logPath,
+        CancellationToken cancellationToken);
 }
 
 public interface IAttributeMappingProvider
 {
     IReadOnlyList<AttributeMapping> GetEnabledMappings();
+}
+
+public interface IWorkerPreviewLogWriter
+{
+    string CreateLogPath(string workerId, DateTimeOffset startedAt);
+    Task AppendAsync(string logPath, WorkerPreviewLogEntry entry, CancellationToken cancellationToken);
 }
 
 public interface IDirectoryCommandGateway

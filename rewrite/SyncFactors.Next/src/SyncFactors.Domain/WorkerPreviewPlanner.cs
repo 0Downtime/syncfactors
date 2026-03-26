@@ -9,17 +9,21 @@ public sealed class WorkerPreviewPlanner(
     IDirectoryGateway directoryGateway,
     IIdentityMatcher identityMatcher,
     IAttributeDiffService attributeDiffService,
+    IWorkerPreviewLogWriter previewLogWriter,
     ILogger<WorkerPreviewPlanner> logger) : IWorkerPreviewPlanner
 {
     public async Task<WorkerPreviewResult> PreviewAsync(string workerId, CancellationToken cancellationToken)
     {
         logger.LogInformation("Starting worker preview. WorkerId={WorkerId}", workerId);
+        var startedAt = DateTimeOffset.UtcNow;
         var worker = await workerSource.GetWorkerAsync(workerId, cancellationToken);
         if (worker is null)
         {
             logger.LogWarning("Worker preview could not resolve worker. WorkerId={WorkerId}", workerId);
             throw new InvalidOperationException($"Worker {workerId} could not be resolved.");
         }
+
+        var logPath = previewLogWriter.CreateLogPath(workerId, startedAt);
 
         var directoryUser = await directoryGateway.FindByWorkerAsync(worker, cancellationToken)
             ?? new DirectoryUserSnapshot(
@@ -31,21 +35,22 @@ public sealed class WorkerPreviewPlanner(
 
         var identity = identityMatcher.Match(worker, directoryUser);
 
-        var attributeChanges = attributeDiffService.BuildDiff(worker, directoryUser);
+        var attributeChanges = await attributeDiffService.BuildDiffAsync(worker, directoryUser, logPath, cancellationToken);
         logger.LogInformation(
             "Worker preview completed planning. WorkerId={WorkerId} Bucket={Bucket} MatchedExistingUser={MatchedExistingUser} DiffCount={DiffCount}",
             worker.WorkerId,
             identity.Bucket,
             identity.MatchedExistingUser,
             attributeChanges.Count(change => change.Changed));
-        return BuildPreview(worker, directoryUser, identity, attributeChanges);
+        return BuildPreview(worker, directoryUser, identity, attributeChanges, logPath);
     }
 
     private static WorkerPreviewResult BuildPreview(
         WorkerSnapshot worker,
         DirectoryUserSnapshot directoryUser,
         IdentityMatchResult identity,
-        IReadOnlyList<AttributeChange> attributeChanges)
+        IReadOnlyList<AttributeChange> attributeChanges,
+        string? logPath)
     {
         var diffRows = attributeChanges
             .Select(change => new DiffRow(change.Attribute, change.Source, change.Before, change.After, change.Changed))
@@ -70,7 +75,7 @@ public sealed class WorkerPreviewPlanner(
             + "}");
 
         return new WorkerPreviewResult(
-            ReportPath: null,
+            ReportPath: logPath,
             RunId: null,
             Mode: "Preview",
             Status: "Planned",
