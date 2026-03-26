@@ -1,4 +1,5 @@
 using SyncFactors.Contracts;
+using Microsoft.Extensions.Logging;
 
 namespace SyncFactors.Domain;
 
@@ -28,10 +29,14 @@ public sealed class IdentityMatcher : IIdentityMatcher
 public sealed class AttributeDiffService : IAttributeDiffService
 {
     private readonly IAttributeMappingProvider _mappingProvider;
+    private readonly ILogger<AttributeDiffService> _logger;
 
-    public AttributeDiffService(IAttributeMappingProvider mappingProvider)
+    public AttributeDiffService(
+        IAttributeMappingProvider mappingProvider,
+        ILogger<AttributeDiffService> logger)
     {
         _mappingProvider = mappingProvider;
+        _logger = logger;
     }
 
     public IReadOnlyList<AttributeChange> BuildDiff(WorkerSnapshot worker, DirectoryUserSnapshot? directoryUser)
@@ -39,20 +44,33 @@ public sealed class AttributeDiffService : IAttributeDiffService
         var currentAttributes = directoryUser?.Attributes
             ?? new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
 
-        var changes = _mappingProvider.GetEnabledMappings()
+        var enabledMappings = _mappingProvider.GetEnabledMappings();
+        var changes = enabledMappings
             .Select(mapping =>
             {
-                var proposedValue = Transform(GetSourceValue(worker, mapping.Source, mapping.Target), mapping.Transform);
+                var sourceValue = GetSourceValue(worker, mapping.Source, mapping.Target);
+                var proposedValue = Transform(sourceValue, mapping.Transform);
                 var currentValue = GetDirectoryValue(currentAttributes, mapping.Target);
                 var before = string.IsNullOrWhiteSpace(currentValue) ? "(unset)" : currentValue!;
                 var after = string.IsNullOrWhiteSpace(proposedValue) ? "(unset)" : proposedValue!;
+                var changed = !string.Equals(before, after, StringComparison.Ordinal);
+
+                _logger.LogDebug(
+                    "Evaluated attribute mapping. WorkerId={WorkerId} Target={Target} Source={Source} SourceValue={SourceValue} CurrentValue={CurrentValue} ProposedValue={ProposedValue} Changed={Changed}",
+                    worker.WorkerId,
+                    mapping.Target,
+                    mapping.Source,
+                    string.IsNullOrWhiteSpace(sourceValue) ? "(unset)" : sourceValue,
+                    string.IsNullOrWhiteSpace(currentValue) ? "(unset)" : currentValue,
+                    string.IsNullOrWhiteSpace(proposedValue) ? "(unset)" : proposedValue,
+                    changed);
 
                 return new AttributeChange(
                     Attribute: mapping.Target,
                     Source: mapping.Source,
                     Before: before,
                     After: after,
-                    Changed: !string.Equals(before, after, StringComparison.Ordinal));
+                    Changed: changed);
             })
             .Where(change => change.Changed)
             .ToList();
@@ -68,6 +86,12 @@ public sealed class AttributeDiffService : IAttributeDiffService
                 After: proposedDisplayName,
                 Changed: true));
         }
+
+        _logger.LogDebug(
+            "Attribute diff completed. WorkerId={WorkerId} EnabledMappings={EnabledMappings} ChangedMappings={ChangedMappings}",
+            worker.WorkerId,
+            enabledMappings.Count,
+            changes.Count);
 
         return changes;
     }
