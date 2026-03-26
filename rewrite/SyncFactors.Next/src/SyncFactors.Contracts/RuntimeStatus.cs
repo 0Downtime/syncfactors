@@ -218,3 +218,15 @@ public sealed record WorkerPreviewResult(
 public sealed record WorkerPreviewEntry(
     string Bucket,
     JsonElement Item);
+
+public sealed record WorkerPreviewLogEntry(
+    string Event,
+    string WorkerId,
+    DateTimeOffset Timestamp,
+    string? Target,
+    string? Source,
+    string? SourceValue,
+    string? CurrentValue,
+    string? ProposedValue,
+    bool? Changed,
+    string? Message);

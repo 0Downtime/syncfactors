@@ -17,6 +17,7 @@ builder.Services.AddSingleton<ScaffoldDataStore>();
 builder.Services.AddSingleton<ScaffoldWorkerSource>();
 builder.Services.AddSingleton<ScaffoldDirectoryGateway>();
 builder.Services.AddSingleton<ScaffoldDirectoryCommandGateway>();
+builder.Services.AddSingleton<IWorkerPreviewLogWriter, FileWorkerPreviewLogWriter>();
 builder.Services.AddHttpClient<SuccessFactorsWorkerSource>()
     .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
     {
