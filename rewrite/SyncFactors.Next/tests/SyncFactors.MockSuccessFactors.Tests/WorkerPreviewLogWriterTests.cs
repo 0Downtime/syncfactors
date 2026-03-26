@@ -62,7 +62,7 @@ public sealed class WorkerPreviewLogWriterTests
           }
         }
         """);
-        File.Copy(Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "config", "sample.syncfactors.mapping-config.json")), mappingConfigPath);
+        File.Copy(Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "config", "sample.empjob-confirmed.mapping-config.json")), mappingConfigPath);
         await File.WriteAllTextAsync(scaffoldDataPath, """
         {
           "workers": [
