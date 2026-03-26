@@ -31,7 +31,8 @@ param(
     [switch]$IncludeHeaderProfile,
     [switch]$SkipSanitization,
     [switch]$AliasOrgValues,
-    [switch]$KeepPersonIdExternal
+    [switch]$KeepPersonIdExternal,
+    [switch]$ShowDiagnostics
 )
 
 $ErrorActionPreference = "Stop"
@@ -398,6 +399,122 @@ function Get-InvalidPropertyPathFromErrorJson {
     }
 }
 
+function Get-ResponseBodyFromErrorRecord {
+    param(
+        [Parameter(Mandatory = $true)]
+        $ErrorRecord
+    )
+
+    $exception = $ErrorRecord.Exception
+    $responseBody = $null
+
+    if ($ErrorRecord.ErrorDetails -and -not [string]::IsNullOrWhiteSpace($ErrorRecord.ErrorDetails.Message)) {
+        $responseBody = $ErrorRecord.ErrorDetails.Message
+    }
+
+    if ($exception.PSObject.Properties.Name -contains "Response" -and $null -ne $exception.Response) {
+        try {
+            if ($exception.Response.PSObject.Properties.Name -contains "Content" -and $null -ne $exception.Response.Content) {
+                $responseBody = $exception.Response.Content.ReadAsStringAsync().GetAwaiter().GetResult()
+            }
+            elseif ($exception.Response.PSObject.Methods.Name -contains "GetResponseStream") {
+                $stream = $exception.Response.GetResponseStream()
+                if ($null -ne $stream) {
+                    $reader = New-Object System.IO.StreamReader($stream)
+                    try {
+                        $responseBody = $reader.ReadToEnd()
+                    }
+                    finally {
+                        $reader.Dispose()
+                        $stream.Dispose()
+                    }
+                }
+            }
+        }
+        catch {
+            if ([string]::IsNullOrWhiteSpace($responseBody)) {
+                $responseBody = $null
+            }
+        }
+    }
+
+    return $responseBody
+}
+
+function Get-StatusCodeFromErrorRecord {
+    param(
+        [Parameter(Mandatory = $true)]
+        $ErrorRecord
+    )
+
+    $exception = $ErrorRecord.Exception
+    if ($exception.PSObject.Properties.Name -contains "Response" -and $null -ne $exception.Response) {
+        $response = $exception.Response
+
+        if ($response.PSObject.Properties.Name -contains "StatusCode" -and $null -ne $response.StatusCode) {
+            return [int]$response.StatusCode
+        }
+
+        if ($response.PSObject.Properties.Name -contains "Status" -and $null -ne $response.Status) {
+            return [int]$response.Status
+        }
+    }
+
+    return $null
+}
+
+function Throw-DetailedRequestFailure {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$MessagePrefix,
+
+        [Parameter(Mandatory = $true)]
+        [string]$RequestUri,
+
+        [Parameter(Mandatory = $true)]
+        [string[]]$SelectValues,
+
+        [Parameter(Mandatory = $true)]
+        [string[]]$ExpandValues,
+
+        [Parameter(Mandatory = $true)]
+        $ErrorRecord
+    )
+
+    $statusCode = Get-StatusCodeFromErrorRecord -ErrorRecord $ErrorRecord
+    $responseBody = Get-ResponseBodyFromErrorRecord -ErrorRecord $ErrorRecord
+
+    if ($ShowDiagnostics) {
+        Write-Host "$MessagePrefix"
+        if ($null -ne $statusCode) {
+            Write-Host "HTTP status: $statusCode"
+        }
+        Write-Host "Request URI:"
+        Write-Host $RequestUri
+        Write-Host "Select paths ($($SelectValues.Count)):"
+        Write-Host ($SelectValues -join ", ")
+        Write-Host "Expand paths ($($ExpandValues.Count)):"
+        Write-Host ($ExpandValues -join ", ")
+        if (-not [string]::IsNullOrWhiteSpace($responseBody)) {
+            Write-Host "Response body:"
+            Write-Host $responseBody
+        }
+    }
+
+    $details = @($MessagePrefix)
+    if ($null -ne $statusCode) {
+        $details += "HTTP status: $statusCode"
+    }
+    $details += "Request URI: $RequestUri"
+    $details += "Select paths ($($SelectValues.Count)): $($SelectValues -join ', ')"
+    $details += "Expand paths ($($ExpandValues.Count)): $($ExpandValues -join ', ')"
+    if (-not [string]::IsNullOrWhiteSpace($responseBody)) {
+        $details += "Response body: $responseBody"
+    }
+
+    throw ($details -join [Environment]::NewLine)
+}
+
 function Invoke-PerPersonRequestWithAutoRetry {
     param(
         [string]$BaseUrl,
@@ -441,47 +558,26 @@ function Invoke-PerPersonRequestWithAutoRetry {
             }
         }
         catch {
-            $exception = $_.Exception
-            $responseBody = $null
-
-            if ($_.ErrorDetails -and -not [string]::IsNullOrWhiteSpace($_.ErrorDetails.Message)) {
-                $responseBody = $_.ErrorDetails.Message
-            }
-
-            if ($exception.PSObject.Properties.Name -contains "Response" -and $null -ne $exception.Response) {
-                try {
-                    if ($exception.Response.PSObject.Properties.Name -contains "Content" -and $null -ne $exception.Response.Content) {
-                        $responseBody = $exception.Response.Content.ReadAsStringAsync().GetAwaiter().GetResult()
-                    }
-                    elseif ($exception.Response.PSObject.Methods.Name -contains "GetResponseStream") {
-                        $stream = $exception.Response.GetResponseStream()
-                        if ($null -ne $stream) {
-                            $reader = New-Object System.IO.StreamReader($stream)
-                            try {
-                                $responseBody = $reader.ReadToEnd()
-                            }
-                            finally {
-                                $reader.Dispose()
-                                $stream.Dispose()
-                            }
-                        }
-                    }
-                }
-                catch {
-                    if ([string]::IsNullOrWhiteSpace($responseBody)) {
-                        $responseBody = $null
-                    }
-                }
-            }
+            $responseBody = Get-ResponseBodyFromErrorRecord -ErrorRecord $_
 
             $invalidPropertyPath = Get-InvalidPropertyPathFromErrorJson -ErrorJson $responseBody
             if ([string]::IsNullOrWhiteSpace($invalidPropertyPath)) {
-                throw
+                Throw-DetailedRequestFailure `
+                    -MessagePrefix "SuccessFactors PerPerson request failed." `
+                    -RequestUri $requestUri `
+                    -SelectValues $selectValues `
+                    -ExpandValues $expandValues `
+                    -ErrorRecord $_
             }
 
             $queryPropertyPath = Resolve-QueryPathFromInvalidProperty -InvalidPropertyPath $invalidPropertyPath -CurrentSelectValues $selectValues
             if ([string]::IsNullOrWhiteSpace($queryPropertyPath)) {
-                throw
+                Throw-DetailedRequestFailure `
+                    -MessagePrefix "SuccessFactors rejected a property path and the script could not map it back to the outgoing query." `
+                    -RequestUri $requestUri `
+                    -SelectValues $selectValues `
+                    -ExpandValues $expandValues `
+                    -ErrorRecord $_
             }
 
             $removed = $false
@@ -501,7 +597,12 @@ function Invoke-PerPersonRequestWithAutoRetry {
             }
 
             if (-not $removed) {
-                throw
+                Throw-DetailedRequestFailure `
+                    -MessagePrefix "SuccessFactors rejected a property path, but the script could not remove it from the outgoing query." `
+                    -RequestUri $requestUri `
+                    -SelectValues $selectValues `
+                    -ExpandValues $expandValues `
+                    -ErrorRecord $_
             }
 
             Write-Host "Attempt $attempt failed because tenant metadata does not expose '$invalidPropertyPath'."
@@ -612,14 +713,44 @@ if ($PSCmdlet.ParameterSetName -eq "OAuth") {
         company_id    = $CompanyId
     }
 
-    $tokenResponse = Invoke-RestMethod `
-        -Method Post `
-        -Uri $TokenUrl `
-        -ContentType "application/x-www-form-urlencoded" `
-        -Body $tokenBody `
-        -Headers @{
-            Accept = "application/json"
+    try {
+        $tokenResponse = Invoke-RestMethod `
+            -Method Post `
+            -Uri $TokenUrl `
+            -ContentType "application/x-www-form-urlencoded" `
+            -Body $tokenBody `
+            -Headers @{
+                Accept = "application/json"
+            }
+    }
+    catch {
+        $statusCode = Get-StatusCodeFromErrorRecord -ErrorRecord $_
+        $responseBody = Get-ResponseBodyFromErrorRecord -ErrorRecord $_
+
+        if ($ShowDiagnostics) {
+            Write-Host "SuccessFactors OAuth token request failed."
+            if ($null -ne $statusCode) {
+                Write-Host "HTTP status: $statusCode"
+            }
+            Write-Host "Token URL:"
+            Write-Host $TokenUrl
+            if (-not [string]::IsNullOrWhiteSpace($responseBody)) {
+                Write-Host "Response body:"
+                Write-Host $responseBody
+            }
         }
+
+        $message = @("SuccessFactors OAuth token request failed.")
+        if ($null -ne $statusCode) {
+            $message += "HTTP status: $statusCode"
+        }
+        $message += "Token URL: $TokenUrl"
+        if (-not [string]::IsNullOrWhiteSpace($responseBody)) {
+            $message += "Response body: $responseBody"
+        }
+
+        throw ($message -join [Environment]::NewLine)
+    }
 
     if (-not $tokenResponse.access_token) {
         throw "OAuth response did not include access_token."

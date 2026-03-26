@@ -49,7 +49,13 @@ public sealed class SuccessFactorsWorkerSource(
                 response.Content.Headers.ContentType?.MediaType ?? "(none)",
                 requestUri,
                 TrimForLog(body));
-            response.EnsureSuccessStatusCode();
+
+            throw CreateDetailedSuccessFactorsException(
+                messagePrefix: "SuccessFactors request failed.",
+                response: response,
+                requestUri: requestUri,
+                body: body,
+                query: query);
         }
 
         var rawBody = await response.Content.ReadAsStringAsync(cancellationToken);
@@ -119,7 +125,23 @@ public sealed class SuccessFactorsWorkerSource(
         logger.LogDebug("Requesting SuccessFactors OAuth token from {TokenUrl}", oauth.TokenUrl);
 
         using var response = await httpClient.SendAsync(request, cancellationToken);
-        response.EnsureSuccessStatusCode();
+        if (!response.IsSuccessStatusCode)
+        {
+            var body = await response.Content.ReadAsStringAsync(cancellationToken);
+            logger.LogError(
+                "SuccessFactors OAuth token request failed. StatusCode={StatusCode} ContentType={ContentType} TokenUrl={TokenUrl} BodyPreview={BodyPreview}",
+                (int)response.StatusCode,
+                response.Content.Headers.ContentType?.MediaType ?? "(none)",
+                oauth.TokenUrl,
+                TrimForLog(body));
+
+            throw CreateDetailedSuccessFactorsException(
+                messagePrefix: "SuccessFactors OAuth token request failed.",
+                response: response,
+                requestUri: oauth.TokenUrl,
+                body: body,
+                query: null);
+        }
 
         await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
         using var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
@@ -140,6 +162,35 @@ public sealed class SuccessFactorsWorkerSource(
 
         var flattened = value.ReplaceLineEndings(" ").Trim();
         return flattened.Length <= 240 ? flattened : flattened[..240];
+    }
+
+    private static InvalidOperationException CreateDetailedSuccessFactorsException(
+        string messagePrefix,
+        HttpResponseMessage response,
+        string requestUri,
+        string? body,
+        SuccessFactorsQueryConfig? query)
+    {
+        var parts = new List<string>
+        {
+            messagePrefix,
+            $"Status={(int)response.StatusCode}",
+            $"ContentType={response.Content.Headers.ContentType?.MediaType ?? "(none)"}",
+            $"RequestUri={requestUri}"
+        };
+
+        if (query is not null)
+        {
+            parts.Add($"Select={string.Join(",", query.Select)}");
+            parts.Add($"Expand={string.Join(",", query.Expand)}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(body))
+        {
+            parts.Add($"BodyPreview={TrimForLog(body)}");
+        }
+
+        return new InvalidOperationException(string.Join(Environment.NewLine, parts));
     }
 
     private static IEnumerable<KeyValuePair<string, string>> BuildTokenForm(SuccessFactorsOAuthConfig oauth)
