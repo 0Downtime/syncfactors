@@ -25,9 +25,22 @@ public sealed class FixtureGenerationCommandTests
         using var fixtureDocument = JsonDocument.Parse(await File.ReadAllTextAsync(outputPath));
         var worker = fixtureDocument.RootElement.GetProperty("workers")[0];
         Assert.StartsWith("mock-", worker.GetProperty("personIdExternal").GetString());
+        Assert.Matches("^\\d{5}$", worker.GetProperty("personId").GetString()!);
+        Assert.StartsWith("uuid-", worker.GetProperty("perPersonUuid").GetString());
         Assert.EndsWith("@example.test", worker.GetProperty("email").GetString());
+        Assert.Equal("B", worker.GetProperty("emailType").GetString());
         Assert.DoesNotContain("Jane", worker.GetProperty("firstName").GetString(), StringComparison.OrdinalIgnoreCase);
+        Assert.StartsWith("Preferred", worker.GetProperty("preferredName").GetString());
         Assert.StartsWith("Department-", worker.GetProperty("department").GetString());
+        Assert.StartsWith("DepartmentName-", worker.GetProperty("departmentName").GetString());
+        Assert.StartsWith("COMP-", worker.GetProperty("companyId").GetString());
+        Assert.StartsWith("BU-", worker.GetProperty("businessUnitId").GetString());
+        Assert.StartsWith("CC-", worker.GetProperty("costCenterId").GetString());
+        Assert.Equal("US", worker.GetProperty("twoCharCountryCode").GetString());
+        Assert.Equal("1", worker.GetProperty("activeEmploymentsCount").GetString());
+        Assert.NotNull(worker.GetProperty("businessPhoneNumber").GetString());
+        Assert.NotNull(worker.GetProperty("cellPhoneNumber").GetString());
+        Assert.StartsWith("Floor ", worker.GetProperty("location").GetProperty("customString4").GetString());
 
         using var manifestDocument = JsonDocument.Parse(await File.ReadAllTextAsync(manifestPath));
         Assert.Equal(1, manifestDocument.RootElement.GetProperty("workerCount").GetInt32());

@@ -137,6 +137,136 @@ public sealed class SuccessFactorsWorkerSourceIntegrationTests
     }
 
     [Fact]
+    public async Task WorkerSource_CanResolveWorker_FromMockApi_WithExportStyleQuery()
+    {
+        var fixturePath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "config", "mock-successfactors", "baseline-fixtures.json"));
+        var fixtureStore = new MockFixtureStore(Options.Create(new MockSuccessFactorsOptions
+        {
+            FixturePath = fixturePath
+        }));
+        var responseBuilder = new ODataResponseBuilder();
+        using var client = new HttpClient(new MockSuccessFactorsHttpHandler(fixtureStore, responseBuilder))
+        {
+            BaseAddress = new Uri("http://mock-successfactors.local")
+        };
+
+        var tempDirectory = Path.Combine(Path.GetTempPath(), "syncfactors-worker-source", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDirectory);
+
+        var syncConfigPath = Path.Combine(tempDirectory, "sync-config.json");
+        var mappingConfigPath = Path.Combine(tempDirectory, "mapping-config.json");
+        var scaffoldDataPath = Path.Combine(tempDirectory, "scaffold-data.json");
+
+        await File.WriteAllTextAsync(syncConfigPath, """
+        {
+          "secrets": {
+            "adServerEnv": null,
+            "adUsernameEnv": null,
+            "adBindPasswordEnv": null
+          },
+          "successFactors": {
+            "baseUrl": "http://mock-successfactors.local/odata/v2",
+            "auth": {
+              "mode": "oauth",
+              "oauth": {
+                "tokenUrl": "http://mock-successfactors.local/oauth/token",
+                "clientId": "mock-client-id",
+                "clientSecret": "mock-client-secret",
+                "companyId": "MOCK"
+              }
+            },
+            "query": {
+              "entitySet": "PerPerson",
+              "identityField": "personIdExternal",
+              "deltaField": "lastModifiedDateTime",
+              "select": [
+                "personIdExternal",
+                "personalInfoNav/firstName",
+                "personalInfoNav/lastName",
+                "emailNav/emailAddress",
+                "emailNav/isPrimary",
+                "employmentNav/startDate",
+                "employmentNav/jobInfoNav/jobTitle",
+                "employmentNav/jobInfoNav/companyNav/name_localized",
+                "employmentNav/jobInfoNav/departmentNav/name_localized",
+                "employmentNav/jobInfoNav/divisionNav/name_localized",
+                "employmentNav/jobInfoNav/businessUnitNav/name_localized",
+                "employmentNav/jobInfoNav/locationNav/name",
+                "employmentNav/jobInfoNav/locationNav/addressNavDEFLT/address1",
+                "employmentNav/jobInfoNav/locationNav/addressNavDEFLT/city",
+                "employmentNav/jobInfoNav/locationNav/addressNavDEFLT/zipCode",
+                "employmentNav/userNav/manager/empInfo/personIdExternal",
+                "employmentNav/jobInfoNav/customString3",
+                "employmentNav/jobInfoNav/customString20",
+                "employmentNav/jobInfoNav/customString87",
+                "employmentNav/jobInfoNav/customString110",
+                "employmentNav/jobInfoNav/customString111",
+                "employmentNav/jobInfoNav/customString91"
+              ],
+              "expand": [
+                "employmentNav",
+                "employmentNav/jobInfoNav",
+                "personalInfoNav",
+                "emailNav",
+                "employmentNav/jobInfoNav/companyNav",
+                "employmentNav/jobInfoNav/departmentNav",
+                "employmentNav/jobInfoNav/divisionNav",
+                "employmentNav/jobInfoNav/businessUnitNav",
+                "employmentNav/jobInfoNav/locationNav",
+                "employmentNav/jobInfoNav/locationNav/addressNavDEFLT",
+                "employmentNav/userNav",
+                "employmentNav/userNav/manager",
+                "employmentNav/userNav/manager/empInfo"
+              ]
+            }
+          },
+          "ad": {
+            "server": "ldap.example.test",
+            "username": "",
+            "bindPassword": "",
+            "identityAttribute": "employeeID",
+            "defaultActiveOu": "OU=LabUsers,DC=example,DC=com",
+            "graveyardOu": "OU=LabGraveyard,DC=example,DC=com"
+          },
+          "sync": {
+            "enableBeforeStartDays": 7,
+            "deletionRetentionDays": 90
+          },
+          "safety": {
+            "maxCreatesPerRun": 10,
+            "maxDisablesPerRun": 10,
+            "maxDeletionsPerRun": 10
+          },
+          "reporting": {
+            "outputDirectory": "reports"
+          }
+        }
+        """);
+        File.Copy(Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "config", "sample.empjob-confirmed.mapping-config.json")), mappingConfigPath);
+        await File.WriteAllTextAsync(scaffoldDataPath, """{"workers":[],"directoryUsers":[]}""");
+
+        var configLoader = new SyncFactorsConfigurationLoader(new SyncFactorsConfigPathResolver(syncConfigPath, mappingConfigPath));
+        var scaffoldStore = new ScaffoldDataStore(new ScaffoldDataPathResolver(scaffoldDataPath));
+        var fallbackSource = new ScaffoldWorkerSource(scaffoldStore);
+        var workerSource = new SuccessFactorsWorkerSource(client, configLoader, fallbackSource, NullLogger<SuccessFactorsWorkerSource>.Instance);
+
+        var worker = await workerSource.GetWorkerAsync("mock-10001", CancellationToken.None);
+
+        Assert.NotNull(worker);
+        Assert.Equal("mock-10001", worker!.WorkerId);
+        Assert.Equal("CORP", worker.Attributes["company"]);
+        Assert.Equal("IT", worker.Attributes["department"]);
+        Assert.Equal("Operations", worker.Attributes["division"]);
+        Assert.Equal("Infrastructure", worker.Attributes["businessUnit"]);
+        Assert.Equal("HQ North", worker.Attributes["location"]);
+        Assert.Equal("101 Example Way", worker.Attributes["officeLocationAddress"]);
+        Assert.Equal("Exampletown", worker.Attributes["officeLocationCity"]);
+        Assert.Equal("10001", worker.Attributes["officeLocationZipCode"]);
+        Assert.Equal("mock-90001", worker.Attributes["managerId"]);
+        Assert.Equal("Field Ops", worker.Attributes["peopleGroup"]);
+    }
+
+    [Fact]
     public async Task WorkerSource_CanResolveWorker_FromExportStylePayload()
     {
         using var client = new HttpClient(new ExportStyleSuccessFactorsHttpHandler())
