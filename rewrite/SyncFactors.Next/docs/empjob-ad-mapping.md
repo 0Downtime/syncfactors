@@ -5,17 +5,17 @@ This table reflects the tenant-confirmed `EmpJob` field labels from API Center a
 | Business field | Confirmed SuccessFactors field | Current source key | Recommended AD target | Default |
 | --- | --- | --- | --- | --- |
 | Employee ID | `PerPerson.personIdExternal` | `personIdExternal` | `employeeID` | Enabled |
-| Legal First Name | `PerPersonal.firstName` | `firstName` | `GivenName` | Enabled |
-| Legal Last Name | `PerPersonal.lastName` | `lastName` | `Surname` | Enabled |
-| Business Email | `PerEmail.emailAddress` | `email` | `UserPrincipalName`, `mail` | Enabled |
+| Legal First Name | `PerPersonal.firstName` | `personalInfoNav[0].firstName` | `GivenName` | Enabled |
+| Legal Last Name | `PerPersonal.lastName` | `personalInfoNav[0].lastName` | `Surname` | Enabled |
+| Business Email | `PerEmail.emailAddress` | `emailNav[?(@.isPrimary == true)].emailAddress` | `UserPrincipalName`, `mail` | Enabled |
 | Job Title | `EmpJob.jobTitle` | `employmentNav[0].jobInfoNav[0].jobTitle` | `title` | Enabled |
-| Company Name | `EmpJob.company` / `companyNav` | `employmentNav[0].jobInfoNav[0].companyNav.company` | `company` | Enabled |
-| Function | `EmpJob.division` | `employmentNav[0].jobInfoNav[0].divisionNav.division` | `division` | Enabled |
-| Sub Function | `EmpJob.department` | `employmentNav[0].jobInfoNav[0].departmentNav.department` | `department` | Enabled |
-| Location Name | `EmpJob.location` / `locationNav` | `employmentNav[0].jobInfoNav[0].locationNav.LocationName` | `physicalDeliveryOfficeName` | Enabled |
-| Employee Type | `EmpJob.employeeType` | `employeeType` | `employeeType` | Enabled |
-| Business Unit Name | `EmpJob.businessUnit` / `businessUnitNav` | `businessUnit` | `extensionAttribute2` | Disabled |
-| Cost Center | `EmpJob.costCenter` / `costCenterNav` | `costCenter` | `extensionAttribute3` | Disabled |
+| Company Name | `FOCompany.name_localized` | `employmentNav[0].jobInfoNav[0].companyNav.name_localized` | `company` | Enabled |
+| Function | `FODivision.name_localized` | `employmentNav[0].jobInfoNav[0].divisionNav.name_localized` | `division` | Enabled |
+| Sub Function | `FODepartment.name_localized` | `employmentNav[0].jobInfoNav[0].departmentNav.name_localized` | `department` | Enabled |
+| Location Name | `FOLocation.name` | `employmentNav[0].jobInfoNav[0].locationNav.name` | `physicalDeliveryOfficeName` | Enabled |
+| Employee Type | `EmpJob.employeeType` | `employmentNav[0].jobInfoNav[0].employeeType` | `employeeType` | Enabled |
+| Business Unit Name | `FOBusinessUnit.name_localized` | `employmentNav[0].jobInfoNav[0].businessUnitNav.name_localized` | `extensionAttribute2` | Disabled |
+| Cost Center Code | `FOCostCenter.externalCode` | `employmentNav[0].jobInfoNav[0].costCenterNav.externalCode` | `extensionAttribute3` | Disabled |
 | Employee Class | `EmpJob.employeeClass` | `employeeClass` | `extensionAttribute4` | Disabled |
 | Region | `EmpJob.customString87` | `region` | `extensionAttribute5` | Disabled |
 | Geozone | `EmpJob.customString110` | `geozone` | `extensionAttribute6` | Disabled |
@@ -24,13 +24,13 @@ This table reflects the tenant-confirmed `EmpJob` field labels from API Center a
 | Bargaining Unit | `EmpJob.customString111` | `bargainingUnit` | `extensionAttribute9` | Disabled |
 | Union Job Code | `EmpJob.customString91` | `unionJobCode` | `extensionAttribute10` | Disabled |
 | Most Recent Hire Date | `EmpEmployment.startDate` | `startDate` | `extensionAttribute1` | Disabled |
-| Office Street | `locationNav.officeLocationAddress` | `employmentNav[0].jobInfoNav[0].locationNav.officeLocationAddress` | `streetAddress` | Disabled |
-| Office City | `locationNav.officeLocationCity` | `employmentNav[0].jobInfoNav[0].locationNav.officeLocationCity` | `l` | Disabled |
-| Office Postal Code | `locationNav.officeLocationZipCode` | `employmentNav[0].jobInfoNav[0].locationNav.officeLocationZipCode` | `postalCode` | Disabled |
+| Office Street | `FOLocation.addressNavDEFLT.address1` | `employmentNav[0].jobInfoNav[0].locationNav.addressNavDEFLT.address1` | `streetAddress` | Disabled |
+| Office City | `FOLocation.addressNavDEFLT.city` | `employmentNav[0].jobInfoNav[0].locationNav.addressNavDEFLT.city` | `l` | Disabled |
+| Office Postal Code | `FOLocation.addressNavDEFLT.zipCode` | `employmentNav[0].jobInfoNav[0].locationNav.addressNavDEFLT.zipCode` | `postalCode` | Disabled |
 
 ## Notes
 
-- `Function` and `Sub Function` are tenant labels on standard `EmpJob` fields: `division` and `department`.
+- `Function` and `Sub Function` now resolve through `divisionNav.name_localized` and `departmentNav.name_localized`, which matches the tenant export more closely than the older direct `EmpJob` string fields.
 - `Supervisor` should not be mapped directly from `managerId` into AD. AD `manager` requires resolving the manager to an AD distinguished name first.
 - `Direct Reports` should not be synced as an attribute; AD derives it from `manager`.
 - The worker parser now exposes the tenant-confirmed custom `EmpJob` fields used above.
