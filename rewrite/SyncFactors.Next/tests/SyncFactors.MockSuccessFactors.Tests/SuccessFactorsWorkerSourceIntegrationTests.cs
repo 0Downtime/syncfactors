@@ -136,6 +136,87 @@ public sealed class SuccessFactorsWorkerSourceIntegrationTests
         Assert.Equal("IC-3", worker.Attributes["leadershipLevel"]);
     }
 
+    [Fact]
+    public async Task WorkerSource_IncludesResponseBody_WhenSuccessFactorsReturnsBadRequest()
+    {
+        using var client = new HttpClient(new ErroringSuccessFactorsHttpHandler())
+        {
+            BaseAddress = new Uri("http://mock-successfactors.local")
+        };
+
+        var tempDirectory = Path.Combine(Path.GetTempPath(), "syncfactors-worker-source", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDirectory);
+
+        var syncConfigPath = Path.Combine(tempDirectory, "sync-config.json");
+        var mappingConfigPath = Path.Combine(tempDirectory, "mapping-config.json");
+        var scaffoldDataPath = Path.Combine(tempDirectory, "scaffold-data.json");
+
+        await File.WriteAllTextAsync(syncConfigPath, """
+        {
+          "secrets": {
+            "adServerEnv": null,
+            "adUsernameEnv": null,
+            "adBindPasswordEnv": null
+          },
+          "successFactors": {
+            "baseUrl": "http://mock-successfactors.local/odata/v2",
+            "auth": {
+              "mode": "basic",
+              "basic": {
+                "username": "mock-user",
+                "password": "mock-password"
+              }
+            },
+            "query": {
+              "entitySet": "PerPerson",
+              "identityField": "personIdExternal",
+              "deltaField": "lastModifiedDateTime",
+              "select": [
+                "personIdExternal",
+                "personalInfoNav/firstName"
+              ],
+              "expand": [
+                "personalInfoNav"
+              ]
+            }
+          },
+          "ad": {
+            "server": "ldap.example.test",
+            "username": "",
+            "bindPassword": "",
+            "identityAttribute": "employeeID",
+            "defaultActiveOu": "OU=LabUsers,DC=example,DC=com",
+            "graveyardOu": "OU=LabGraveyard,DC=example,DC=com"
+          },
+          "sync": {
+            "enableBeforeStartDays": 7,
+            "deletionRetentionDays": 90
+          },
+          "safety": {
+            "maxCreatesPerRun": 10,
+            "maxDisablesPerRun": 10,
+            "maxDeletionsPerRun": 10
+          },
+          "reporting": {
+            "outputDirectory": "reports"
+          }
+        }
+        """);
+        File.Copy(Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "config", "sample.syncfactors.mapping-config.json")), mappingConfigPath);
+        await File.WriteAllTextAsync(scaffoldDataPath, """{"workers":[],"directoryUsers":[]}""");
+
+        var configLoader = new SyncFactorsConfigurationLoader(new SyncFactorsConfigPathResolver(syncConfigPath, mappingConfigPath));
+        var scaffoldStore = new ScaffoldDataStore(new ScaffoldDataPathResolver(scaffoldDataPath));
+        var fallbackSource = new ScaffoldWorkerSource(scaffoldStore);
+        var workerSource = new SuccessFactorsWorkerSource(client, configLoader, fallbackSource, NullLogger<SuccessFactorsWorkerSource>.Instance);
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => workerSource.GetWorkerAsync("mock-10001", CancellationToken.None));
+        Assert.Contains("SuccessFactors request failed.", ex.Message);
+        Assert.Contains("Status=400", ex.Message);
+        Assert.Contains("COE_PROPERTY_NOT_FOUND", ex.Message);
+        Assert.Contains("RequestUri=http://mock-successfactors.local/odata/v2/PerPerson", ex.Message);
+    }
+
     private sealed class MockSuccessFactorsHttpHandler(MockFixtureStore fixtureStore, ODataResponseBuilder responseBuilder) : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
@@ -178,6 +259,31 @@ public sealed class SuccessFactorsWorkerSourceIntegrationTests
             }
 
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound));
+        }
+    }
+
+    private sealed class ErroringSuccessFactorsHttpHandler : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            _ = cancellationToken;
+
+            var errorJson = """
+            {
+              "error": {
+                "code": "COE_PROPERTY_NOT_FOUND",
+                "message": {
+                  "lang": "en-US",
+                  "value": "[COE0021]Invalid property names: FOBusinessUnit/businessUnit."
+                }
+              }
+            }
+            """;
+
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.BadRequest)
+            {
+                Content = new StringContent(errorJson, Encoding.UTF8, "application/json")
+            });
         }
     }
 }

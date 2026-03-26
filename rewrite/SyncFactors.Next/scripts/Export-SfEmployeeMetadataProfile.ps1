@@ -27,7 +27,8 @@ param(
     [string[]]$ExcludeSelectPath = @(),
     [string[]]$ExcludeExpandPath = @(),
     [string[]]$AdditionalSelectPath = @(),
-    [string[]]$AdditionalExpandPath = @()
+    [string[]]$AdditionalExpandPath = @(),
+    [switch]$ShowDiagnostics
 )
 
 $ErrorActionPreference = "Stop"
@@ -84,6 +85,7 @@ $commonParameters = @{
     ExcludeExpandPath = $ExcludeExpandPath
     AdditionalSelectPath = @($selectPaths + $AdditionalSelectPath)
     AdditionalExpandPath = @($expandPaths + $AdditionalExpandPath)
+    ShowDiagnostics = $ShowDiagnostics
 }
 
 if ($PSCmdlet.ParameterSetName -eq "OAuth") {
