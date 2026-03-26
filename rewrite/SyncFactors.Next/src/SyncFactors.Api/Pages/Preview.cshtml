@@ -13,13 +13,16 @@
 </section>
 
 <section class="panel">
-    <form method="get" class="filters preview-form">
+    <form method="get" class="filters preview-form" data-worker-lookup-form>
         <label class="filter-search">
             <span>Worker Id</span>
             <input type="text" name="workerId" value="@Model.WorkerId" placeholder="1000123" />
         </label>
         <div class="filter-actions">
-            <button type="submit">Preview Worker</button>
+            <button type="submit" data-worker-lookup-button>
+                <span class="button-label">Preview Worker</span>
+                <span class="button-spinner" aria-hidden="true"></span>
+            </button>
         </div>
     </form>
 </section>
@@ -72,10 +75,13 @@
             {
                 <p class="callout">@Model.Preview.OperationSummary.Effect</p>
             }
-            <form method="post" asp-page-handler="Apply">
+            <form method="post" asp-page-handler="Apply" data-worker-apply-form>
                 <input type="hidden" asp-for="WorkerId" />
                 <div class="filter-actions">
-                    <button type="submit">Apply Preview</button>
+                    <button type="submit" data-worker-apply-button>
+                        <span class="button-label">Apply Preview</span>
+                        <span class="button-spinner" aria-hidden="true"></span>
+                    </button>
                 </div>
             </form>
         </article>
@@ -147,6 +153,40 @@
         </div>
     </section>
 }
+
+<script>
+    (function () {
+        var states = [
+            {
+                form: document.querySelector("[data-worker-lookup-form]"),
+                button: document.querySelector("[data-worker-lookup-button]"),
+                label: "Looking up..."
+            },
+            {
+                form: document.querySelector("[data-worker-apply-form]"),
+                button: document.querySelector("[data-worker-apply-button]"),
+                label: "Applying..."
+            }
+        ];
+
+        states.forEach(function (state) {
+            if (!state.form || !state.button) {
+                return;
+            }
+
+            state.form.addEventListener("submit", function () {
+                state.button.disabled = true;
+                state.button.classList.add("is-loading");
+                state.button.setAttribute("aria-busy", "true");
+
+                var label = state.button.querySelector(".button-label");
+                if (label) {
+                    label.textContent = state.label;
+                }
+            });
+        });
+    })();
+</script>
 
 @functions {
     private static string DisplayBool(bool? value) => value.HasValue ? (value.Value ? "Yes" : "No") : "Unknown";

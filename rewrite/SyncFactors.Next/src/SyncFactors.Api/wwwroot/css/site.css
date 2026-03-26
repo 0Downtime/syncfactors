@@ -218,6 +218,29 @@ a:focus-visible {
   transform: translateY(-1px);
 }
 
+.filters button {
+  gap: 10px;
+}
+
+.button-spinner {
+  display: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  animation: spin 0.75s linear infinite;
+}
+
+.filters button.is-loading {
+  cursor: progress;
+  opacity: 0.92;
+}
+
+.filters button.is-loading .button-spinner {
+  display: inline-block;
+}
+
 .theme-toggle {
   display: inline-flex;
   align-items: center;
@@ -273,6 +296,12 @@ a:focus-visible {
 :root[data-theme="dark"] .theme-toggle-thumb {
   transform: translateX(20px);
   background: linear-gradient(180deg, #dbeafe 0%, #94c2ff 100%);
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 :root[data-theme="light"] .theme-toggle-option-light,
