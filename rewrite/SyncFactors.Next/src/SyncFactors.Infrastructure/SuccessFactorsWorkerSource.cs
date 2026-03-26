@@ -368,6 +368,9 @@ public sealed class SuccessFactorsWorkerSource(
 
         var personalInfo = GetFirstNavigationResult(worker, "personalInfoNav");
         var employment = GetFirstNavigationResult(worker, "employmentNav");
+        var userNav = employment is { ValueKind: not JsonValueKind.Undefined }
+            ? GetNavigationObject(employment.Value, "userNav")
+            : null;
         JsonElement? jobInfo = GetFirstNavigationResult(worker, "jobInfoNav")
             ?? (worker.TryGetProperty("jobTitle", out _)
                 || worker.TryGetProperty("company", out _)
@@ -379,7 +382,9 @@ public sealed class SuccessFactorsWorkerSource(
                 : null);
 
         var preferredName =
+            GetString(personalInfo, "preferredName") ??
             GetString(personalInfo, "firstName") ??
+            GetString(worker, "preferredName") ??
             GetString(worker, "firstName") ??
             "Unknown";
         var lastName =
@@ -387,6 +392,8 @@ public sealed class SuccessFactorsWorkerSource(
             GetString(worker, "lastName") ??
             "Worker";
         var department =
+            GetNavigationProperty(jobInfo, "departmentNav", "name_localized") ??
+            GetNavigationProperty(jobInfo, "departmentNav", "name") ??
             GetString(jobInfo, "department") ??
             GetNavigationProperty(jobInfo, "departmentNav", "department") ??
             GetString(employment, "department") ??
@@ -398,7 +405,10 @@ public sealed class SuccessFactorsWorkerSource(
             GetString(worker, "startDate");
 
         return new WorkerSnapshot(
-            WorkerId: GetString(worker, query.IdentityField) ?? workerId,
+            WorkerId: GetString(worker, query.IdentityField)
+                ?? GetString(employment, query.IdentityField)
+                ?? GetString(userNav, query.IdentityField)
+                ?? workerId,
             PreferredName: preferredName,
             LastName: lastName,
             Department: department,
@@ -427,9 +437,19 @@ public sealed class SuccessFactorsWorkerSource(
 
     private static string? GetString(JsonElement element, string propertyName)
     {
-        return element.TryGetProperty(propertyName, out var property) && property.ValueKind == JsonValueKind.String
-            ? property.GetString()
-            : null;
+        if (!element.TryGetProperty(propertyName, out var property))
+        {
+            return null;
+        }
+
+        return property.ValueKind switch
+        {
+            JsonValueKind.String => property.GetString(),
+            JsonValueKind.Number => property.ToString(),
+            JsonValueKind.True => bool.TrueString.ToLowerInvariant(),
+            JsonValueKind.False => bool.FalseString.ToLowerInvariant(),
+            _ => null
+        };
     }
 
     private static string? GetString(JsonElement? element, string propertyName)
@@ -478,6 +498,12 @@ public sealed class SuccessFactorsWorkerSource(
         JsonElement? employment,
         JsonElement? jobInfo)
     {
+        var primaryEmail = GetPreferredNavigationResult(worker, "emailNav", static email => IsTrue(email, "isPrimary"))
+            ?? GetFirstNavigationResult(worker, "emailNav");
+        var primaryPhone = GetPreferredNavigationResult(worker, "phoneNav", static phone => IsTrue(phone, "isPrimary"))
+            ?? GetFirstNavigationResult(worker, "phoneNav");
+        var businessPhone = GetPreferredNavigationResult(worker, "phoneNav", static phone => PropertyEquals(phone, "phoneType", "10605"));
+        var cellPhone = GetPreferredNavigationResult(worker, "phoneNav", static phone => PropertyEquals(phone, "phoneType", "10606"));
         var companyNav = jobInfo is { ValueKind: not JsonValueKind.Undefined }
             ? GetNavigationObject(jobInfo.Value, "companyNav")
             : null;
@@ -496,23 +522,93 @@ public sealed class SuccessFactorsWorkerSource(
         var locationNav = jobInfo is { ValueKind: not JsonValueKind.Undefined }
             ? GetNavigationObject(jobInfo.Value, "locationNav")
             : null;
+        var addressNavDefault = locationNav is { ValueKind: not JsonValueKind.Undefined }
+            ? GetNavigationObject(locationNav.Value, "addressNavDEFLT")
+            : null;
+        var companyCountryNav = companyNav is { ValueKind: not JsonValueKind.Undefined }
+            ? GetNavigationObject(companyNav.Value, "countryOfRegistrationNav")
+            : null;
+        var userNav = employment is { ValueKind: not JsonValueKind.Undefined }
+            ? GetNavigationObject(employment.Value, "userNav")
+            : null;
+        var managerNav = userNav is { ValueKind: not JsonValueKind.Undefined }
+            ? GetNavigationObject(userNav.Value, "manager")
+            : null;
+        var managerEmpInfo = managerNav is { ValueKind: not JsonValueKind.Undefined }
+            ? GetNavigationObject(managerNav.Value, "empInfo")
+            : null;
+        var payGradeNav = jobInfo is { ValueKind: not JsonValueKind.Undefined }
+            ? GetNavigationObject(jobInfo.Value, "payGradeNav")
+            : null;
+        var jobCodeNav = jobInfo is { ValueKind: not JsonValueKind.Undefined }
+            ? GetNavigationObject(jobInfo.Value, "jobCodeNav")
+            : null;
+        var personEmpTerminationInfoNav = GetNavigationObject(worker, "personEmpTerminationInfoNav");
 
-        return new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+        var firstName = GetString(personalInfo, "firstName") ?? GetString(worker, "firstName");
+        var lastName = GetString(personalInfo, "lastName") ?? GetString(worker, "lastName");
+        var preferredName = GetString(personalInfo, "preferredName") ?? firstName ?? GetString(worker, "preferredName");
+        var displayName = GetString(personalInfo, "displayName") ?? GetString(worker, "displayName");
+        var primaryEmailAddress = GetString(primaryEmail, "emailAddress") ?? GetString(worker, "email");
+        var primaryEmailType = GetString(primaryEmail, "emailType");
+        var primaryEmailIsPrimary = GetString(primaryEmail, "isPrimary");
+        var companyName = GetString(companyNav, "name_localized") ?? GetString(companyNav, "name") ?? GetString(companyNav, "company") ?? GetString(jobInfo, "company") ?? GetString(worker, "company");
+        var departmentName = GetString(departmentNav, "name_localized") ?? GetString(departmentNav, "name") ?? GetString(departmentNav, "department") ?? GetString(jobInfo, "department") ?? GetString(employment, "department") ?? GetString(worker, "department");
+        var businessUnitName = GetString(businessUnitNav, "name_localized") ?? GetString(businessUnitNav, "name") ?? GetString(businessUnitNav, "businessUnit") ?? GetString(jobInfo, "businessUnit") ?? GetString(worker, "businessUnit");
+        var divisionName = GetString(divisionNav, "name_localized") ?? GetString(divisionNav, "name") ?? GetString(divisionNav, "division") ?? GetString(jobInfo, "division") ?? GetString(worker, "division");
+        var locationName = GetString(locationNav, "name") ?? GetString(locationNav, "LocationName") ?? GetString(jobInfo, "location") ?? GetString(worker, "location");
+        var officeLocationAddress = GetString(addressNavDefault, "address1") ?? GetString(locationNav, "officeLocationAddress");
+        var officeLocationCity = GetString(addressNavDefault, "city") ?? GetString(locationNav, "officeLocationCity");
+        var officeLocationZipCode = GetString(addressNavDefault, "zipCode") ?? GetString(locationNav, "officeLocationZipCode");
+        var officeLocationCustomString4 = GetString(addressNavDefault, "customString4");
+        var costCenterName = GetString(costCenterNav, "name_localized") ?? GetString(costCenterNav, "costCenter") ?? GetString(jobInfo, "costCenter") ?? GetString(worker, "costCenter");
+        var costCenterDescription = GetString(costCenterNav, "description_localized") ?? GetString(costCenterNav, "costCenterDescription") ?? costCenterName;
+        var costCenterId = GetString(costCenterNav, "externalCode");
+        var managerId = GetString(managerEmpInfo, "personIdExternal") ?? GetString(jobInfo, "managerId") ?? GetString(worker, "managerId");
+
+        var attributes = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
         {
             ["personIdExternal"] = GetString(worker, "personIdExternal"),
-            ["firstName"] = GetString(personalInfo, "firstName") ?? GetString(worker, "firstName"),
-            ["lastName"] = GetString(personalInfo, "lastName") ?? GetString(worker, "lastName"),
-            ["email"] = GetString(GetFirstNavigationResult(worker, "emailNav"), "emailAddress") ?? GetString(worker, "email"),
-            ["department"] = GetString(jobInfo, "department") ?? GetString(employment, "department") ?? GetString(worker, "department"),
-            ["company"] = GetString(companyNav, "company") ?? GetString(jobInfo, "company") ?? GetString(worker, "company"),
-            ["location"] = GetString(locationNav, "LocationName") ?? GetString(jobInfo, "location") ?? GetString(worker, "location"),
+            ["personId"] = GetString(worker, "personId"),
+            ["perPersonUuid"] = GetString(worker, "perPersonUuid"),
+            ["displayName"] = displayName,
+            ["firstName"] = firstName,
+            ["lastName"] = lastName,
+            ["middleName"] = GetString(personalInfo, "middleName") ?? GetString(worker, "middleName"),
+            ["preferredName"] = preferredName,
+            ["gender"] = GetString(personalInfo, "gender") ?? GetString(worker, "gender"),
+            ["email"] = primaryEmailAddress,
+            ["emailType"] = primaryEmailType,
+            ["emailIsPrimary"] = primaryEmailIsPrimary,
+            ["department"] = departmentName,
+            ["departmentnew"] = GetString(departmentNav, "name") ?? departmentName,
+            ["departmentcode"] = GetString(departmentNav, "costCenter"),
+            ["company"] = companyName,
+            ["companyId"] = GetString(companyNav, "externalCode"),
+            ["countryOfCompany"] = GetString(jobInfo, "countryOfCompany"),
+            ["twoCharCountryCode"] = GetString(companyCountryNav, "twoCharCountryCode"),
+            ["location"] = locationName,
+            ["officeLocationAddress"] = officeLocationAddress,
+            ["officeLocationCity"] = officeLocationCity,
+            ["officeLocationZipCode"] = officeLocationZipCode,
+            ["officeLocationCustomString4"] = officeLocationCustomString4,
             ["jobTitle"] = GetString(jobInfo, "jobTitle") ?? GetString(worker, "jobTitle"),
-            ["businessUnit"] = GetString(businessUnitNav, "businessUnit") ?? GetString(jobInfo, "businessUnit") ?? GetString(worker, "businessUnit"),
-            ["division"] = GetString(divisionNav, "division") ?? GetString(jobInfo, "division") ?? GetString(worker, "division"),
-            ["costCenter"] = GetString(costCenterNav, "costCenterDescription") ?? GetString(costCenterNav, "costCenter") ?? GetString(jobInfo, "costCenter") ?? GetString(worker, "costCenter"),
+            ["jobCode"] = GetString(jobCodeNav, "name_localized") ?? GetString(jobInfo, "jobCode"),
+            ["jobCodeId"] = GetString(jobCodeNav, "externalCode"),
+            ["position"] = GetString(jobInfo, "position"),
+            ["payGrade"] = GetString(payGradeNav, "name"),
+            ["businessUnit"] = businessUnitName,
+            ["businessUnitId"] = GetString(businessUnitNav, "externalCode"),
+            ["division"] = divisionName,
+            ["divisionId"] = GetString(divisionNav, "externalCode"),
+            ["costCenter"] = costCenterName,
+            ["costCenterDescription"] = costCenterDescription,
+            ["costCenterId"] = costCenterId,
             ["employeeClass"] = GetString(jobInfo, "employeeClass") ?? GetString(worker, "employeeClass"),
             ["employeeType"] = GetString(jobInfo, "employeeType") ?? GetString(worker, "employeeType"),
-            ["managerId"] = GetString(jobInfo, "managerId") ?? GetString(worker, "managerId"),
+            ["emplStatus"] = GetString(jobInfo, "emplStatus"),
+            ["managerId"] = managerId,
+            ["manager"] = managerId,
             ["peopleGroup"] = GetString(jobInfo, "customString3") ?? GetString(worker, "customString3"),
             ["leadershipLevel"] = GetString(jobInfo, "customString20") ?? GetString(worker, "customString20"),
             ["region"] = GetString(jobInfo, "customString87") ?? GetString(worker, "customString87"),
@@ -521,14 +617,80 @@ public sealed class SuccessFactorsWorkerSource(
             ["unionJobCode"] = GetString(jobInfo, "customString91") ?? GetString(worker, "customString91"),
             ["cintasUniformCategory"] = GetString(jobInfo, "customString112") ?? GetString(worker, "customString112"),
             ["cintasUniformAllotment"] = GetString(jobInfo, "customString113") ?? GetString(worker, "customString113"),
+            ["activeEmploymentsCount"] = GetString(personEmpTerminationInfoNav, "activeEmploymentsCount"),
+            ["latestTerminationDate"] = GetString(personEmpTerminationInfoNav, "latestTerminationDate"),
             ["startDate"] = GetString(employment, "startDate") ?? GetString(worker, "startDate"),
-            ["employmentNav[0].jobInfoNav[0].companyNav.company"] = GetString(companyNav, "company"),
-            ["employmentNav[0].jobInfoNav[0].departmentNav.department"] = GetString(departmentNav, "department"),
-            ["employmentNav[0].jobInfoNav[0].businessUnitNav.businessUnit"] = GetString(businessUnitNav, "businessUnit"),
-            ["employmentNav[0].jobInfoNav[0].costCenterNav.costCenterDescription"] = GetString(costCenterNav, "costCenterDescription") ?? GetString(costCenterNav, "costCenter"),
-            ["employmentNav[0].jobInfoNav[0].divisionNav.division"] = GetString(divisionNav, "division"),
-            ["employmentNav[0].jobInfoNav[0].locationNav.LocationName"] = GetString(locationNav, "LocationName"),
+            ["endDate"] = GetString(employment, "endDate"),
+            ["firstDateWorked"] = GetString(employment, "firstDateWorked"),
+            ["lastDateWorked"] = GetString(employment, "lastDateWorked"),
+            ["isContingentWorker"] = GetString(employment, "isContingentWorker"),
+            ["userId"] = GetString(employment, "userId") ?? GetString(worker, "userId"),
+            ["addressLine1"] = GetString(userNav, "addressLine1"),
+            ["addressLine2"] = GetString(userNav, "addressLine2"),
+            ["addressLine3"] = GetString(userNav, "addressLine3"),
+            ["businessPhone"] = GetString(userNav, "businessPhone"),
+            ["cellPhone"] = GetString(userNav, "cellPhone"),
+            ["city"] = GetString(userNav, "city"),
+            ["country"] = GetString(userNav, "country"),
+            ["empId"] = GetString(userNav, "empId"),
+            ["homePhone"] = GetString(userNav, "homePhone"),
+            ["jobFamily"] = GetString(userNav, "jobFamily"),
+            ["loginMethod"] = GetString(userNav, "loginMethod"),
+            ["nickname"] = GetString(userNav, "nickname"),
+            ["state"] = GetString(userNav, "state"),
+            ["timeZone"] = GetString(userNav, "timeZone"),
+            ["username"] = GetString(userNav, "username"),
+            ["zipCode"] = GetString(userNav, "zipCode"),
+            ["areaCode"] = GetString(primaryPhone, "areaCode"),
+            ["countryCode"] = GetString(primaryPhone, "countryCode"),
+            ["extension"] = GetString(primaryPhone, "extension"),
+            ["phoneNumber"] = GetString(primaryPhone, "phoneNumber"),
+            ["phoneType"] = GetString(primaryPhone, "phoneType"),
+            ["businessPhoneAreaCode"] = GetString(businessPhone, "areaCode"),
+            ["businessPhoneCountryCode"] = GetString(businessPhone, "countryCode"),
+            ["businessPhoneExtension"] = GetString(businessPhone, "extension"),
+            ["businessPhoneIsPrimary"] = GetString(businessPhone, "isPrimary"),
+            ["businessPhoneNumber"] = GetString(businessPhone, "phoneNumber"),
+            ["businessPhoneType"] = GetString(businessPhone, "phoneType"),
+            ["cellPhoneAreaCode"] = GetString(cellPhone, "areaCode"),
+            ["cellPhoneCountryCode"] = GetString(cellPhone, "countryCode"),
+            ["cellPhoneIsPrimary"] = GetString(cellPhone, "isPrimary"),
+            ["cellPhoneNumber"] = GetString(cellPhone, "phoneNumber"),
+            ["cellPhoneType"] = GetString(cellPhone, "phoneType"),
+            ["employmentNav[0].jobInfoNav[0].companyNav.company"] = companyName,
+            ["employmentNav[0].jobInfoNav[0].companyNav.name_localized"] = companyName,
+            ["employmentNav[0].jobInfoNav[0].companyNav.externalCode"] = GetString(companyNav, "externalCode"),
+            ["employmentNav[0].jobInfoNav[0].companyNav.countryOfRegistrationNav.twoCharCountryCode"] = GetString(companyCountryNav, "twoCharCountryCode"),
+            ["employmentNav[0].jobInfoNav[0].departmentNav.department"] = departmentName,
+            ["employmentNav[0].jobInfoNav[0].departmentNav.name_localized"] = departmentName,
+            ["employmentNav[0].jobInfoNav[0].departmentNav.name"] = GetString(departmentNav, "name") ?? departmentName,
+            ["employmentNav[0].jobInfoNav[0].departmentNav.externalCode"] = GetString(departmentNav, "externalCode"),
+            ["employmentNav[0].jobInfoNav[0].departmentNav.costCenter"] = GetString(departmentNav, "costCenter"),
+            ["employmentNav[0].jobInfoNav[0].businessUnitNav.businessUnit"] = businessUnitName,
+            ["employmentNav[0].jobInfoNav[0].businessUnitNav.name_localized"] = businessUnitName,
+            ["employmentNav[0].jobInfoNav[0].businessUnitNav.externalCode"] = GetString(businessUnitNav, "externalCode"),
+            ["employmentNav[0].jobInfoNav[0].costCenterNav.costCenterDescription"] = costCenterDescription,
+            ["employmentNav[0].jobInfoNav[0].costCenterNav.name_localized"] = costCenterName,
+            ["employmentNav[0].jobInfoNav[0].costCenterNav.description_localized"] = costCenterDescription,
+            ["employmentNav[0].jobInfoNav[0].costCenterNav.externalCode"] = costCenterId,
+            ["employmentNav[0].jobInfoNav[0].divisionNav.division"] = divisionName,
+            ["employmentNav[0].jobInfoNav[0].divisionNav.name_localized"] = divisionName,
+            ["employmentNav[0].jobInfoNav[0].divisionNav.externalCode"] = GetString(divisionNav, "externalCode"),
+            ["employmentNav[0].jobInfoNav[0].locationNav.LocationName"] = locationName,
+            ["employmentNav[0].jobInfoNav[0].locationNav.name"] = locationName,
+            ["employmentNav[0].jobInfoNav[0].locationNav.addressNavDEFLT.address1"] = officeLocationAddress,
+            ["employmentNav[0].jobInfoNav[0].locationNav.addressNavDEFLT.city"] = officeLocationCity,
+            ["employmentNav[0].jobInfoNav[0].locationNav.addressNavDEFLT.customString4"] = officeLocationCustomString4,
+            ["employmentNav[0].jobInfoNav[0].locationNav.addressNavDEFLT.zipCode"] = officeLocationZipCode,
+            ["employmentNav[0].jobInfoNav[0].locationNav.officeLocationAddress"] = officeLocationAddress,
+            ["employmentNav[0].jobInfoNav[0].locationNav.officeLocationCity"] = officeLocationCity,
+            ["employmentNav[0].jobInfoNav[0].locationNav.officeLocationZipCode"] = officeLocationZipCode,
             ["employmentNav[0].jobInfoNav[0].jobTitle"] = GetString(jobInfo, "jobTitle"),
+            ["employmentNav[0].jobInfoNav[0].jobCodeNav.name_localized"] = GetString(jobCodeNav, "name_localized"),
+            ["employmentNav[0].jobInfoNav[0].jobCodeNav.externalCode"] = GetString(jobCodeNav, "externalCode"),
+            ["employmentNav[0].jobInfoNav[0].position"] = GetString(jobInfo, "position"),
+            ["employmentNav[0].jobInfoNav[0].payGradeNav.name"] = GetString(payGradeNav, "name"),
+            ["employmentNav[0].jobInfoNav[0].emplStatus"] = GetString(jobInfo, "emplStatus"),
             ["employmentNav[0].jobInfoNav[0].customString3"] = GetString(jobInfo, "customString3"),
             ["employmentNav[0].jobInfoNav[0].customString20"] = GetString(jobInfo, "customString20"),
             ["employmentNav[0].jobInfoNav[0].customString87"] = GetString(jobInfo, "customString87"),
@@ -537,9 +699,87 @@ public sealed class SuccessFactorsWorkerSource(
             ["employmentNav[0].jobInfoNav[0].customString91"] = GetString(jobInfo, "customString91"),
             ["employmentNav[0].jobInfoNav[0].customString112"] = GetString(jobInfo, "customString112"),
             ["employmentNav[0].jobInfoNav[0].customString113"] = GetString(jobInfo, "customString113"),
-            ["employmentNav[0].jobInfoNav[0].locationNav.officeLocationAddress"] = GetString(locationNav, "officeLocationAddress"),
-            ["employmentNav[0].jobInfoNav[0].locationNav.officeLocationCity"] = GetString(locationNav, "officeLocationCity"),
-            ["employmentNav[0].jobInfoNav[0].locationNav.officeLocationZipCode"] = GetString(locationNav, "officeLocationZipCode")
+            ["employmentNav[0].userNav.manager.empInfo.personIdExternal"] = managerId,
+            ["emailNav[?(@.isPrimary == true)].emailAddress"] = primaryEmailAddress,
+            ["emailNav[?(@.isPrimary == true)].emailType"] = primaryEmailType,
+            ["emailNav[?(@.isPrimary == true)].isPrimary"] = primaryEmailIsPrimary,
+            ["phoneNav[?(@.isPrimary == true)].areaCode"] = GetString(primaryPhone, "areaCode"),
+            ["phoneNav[?(@.isPrimary == true)].countryCode"] = GetString(primaryPhone, "countryCode"),
+            ["phoneNav[?(@.isPrimary == true)].extension"] = GetString(primaryPhone, "extension"),
+            ["phoneNav[?(@.isPrimary == true)].phoneNumber"] = GetString(primaryPhone, "phoneNumber"),
+            ["phoneNav[?(@.isPrimary == true)].phoneType"] = GetString(primaryPhone, "phoneType"),
+            ["phoneNav[?(@.phoneType == '10605')].areaCode"] = GetString(businessPhone, "areaCode"),
+            ["phoneNav[?(@.phoneType == '10605')].countryCode"] = GetString(businessPhone, "countryCode"),
+            ["phoneNav[?(@.phoneType == '10605')].extension"] = GetString(businessPhone, "extension"),
+            ["phoneNav[?(@.phoneType == '10605')].isPrimary"] = GetString(businessPhone, "isPrimary"),
+            ["phoneNav[?(@.phoneType == '10605')].phoneNumber"] = GetString(businessPhone, "phoneNumber"),
+            ["phoneNav[?(@.phoneType == '10605')].phoneType"] = GetString(businessPhone, "phoneType"),
+            ["phoneNav[?(@.phoneType == '10606')].areaCode"] = GetString(cellPhone, "areaCode"),
+            ["phoneNav[?(@.phoneType == '10606')].countryCode"] = GetString(cellPhone, "countryCode"),
+            ["phoneNav[?(@.phoneType == '10606')].isPrimary"] = GetString(cellPhone, "isPrimary"),
+            ["phoneNav[?(@.phoneType == '10606')].phoneNumber"] = GetString(cellPhone, "phoneNumber"),
+            ["phoneNav[?(@.phoneType == '10606')].phoneType"] = GetString(cellPhone, "phoneType")
+        };
+
+        for (var index = 1; index <= 15; index++)
+        {
+            var propertyName = $"customString{index}";
+            var jobValue = GetString(jobInfo, propertyName);
+            var employmentValue = GetString(employment, propertyName);
+            var userValue = GetString(userNav, $"custom{index:00}");
+
+            attributes[$"empJobNavCustomString{index}"] = jobValue;
+            attributes[$"employmentNav[0].jobInfoNav[0].{propertyName}"] = jobValue;
+            attributes[$"empNavCustomString{index}"] = employmentValue;
+            attributes[$"employmentNav[0].{propertyName}"] = employmentValue;
+            attributes[$"custom{index:00}"] = userValue;
+            attributes[$"employmentNav[0].userNav.custom{index:00}"] = userValue;
+        }
+
+        return attributes;
+    }
+
+    private static JsonElement? GetPreferredNavigationResult(
+        JsonElement element,
+        string propertyName,
+        Func<JsonElement, bool> predicate)
+    {
+        if (!element.TryGetProperty(propertyName, out var navigation) ||
+            navigation.ValueKind != JsonValueKind.Object ||
+            !navigation.TryGetProperty("results", out var results) ||
+            results.ValueKind != JsonValueKind.Array)
+        {
+            return null;
+        }
+
+        foreach (var item in results.EnumerateArray())
+        {
+            if (predicate(item))
+            {
+                return item.Clone();
+            }
+        }
+
+        return null;
+    }
+
+    private static bool PropertyEquals(JsonElement element, string propertyName, string expectedValue)
+    {
+        return string.Equals(GetString(element, propertyName), expectedValue, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsTrue(JsonElement element, string propertyName)
+    {
+        if (!element.TryGetProperty(propertyName, out var property))
+        {
+            return false;
+        }
+
+        return property.ValueKind switch
+        {
+            JsonValueKind.True => true,
+            JsonValueKind.String => bool.TryParse(property.GetString(), out var parsed) && parsed,
+            _ => false
         };
     }
 

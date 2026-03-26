@@ -628,21 +628,30 @@ $selectValues = @(
     "userId",
     "personalInfoNav/firstName",
     "personalInfoNav/lastName",
+    "personalInfoNav/preferredName",
+    "personalInfoNav/displayName",
     "employmentNav/startDate",
     "emailNav/emailAddress",
-    "employmentNav/jobInfoNav/departmentNav/department",
-    "employmentNav/jobInfoNav/companyNav/company",
-    "employmentNav/jobInfoNav/locationNav/LocationName",
-    "employmentNav/jobInfoNav/locationNav/officeLocationAddress",
-    "employmentNav/jobInfoNav/locationNav/officeLocationCity",
-    "employmentNav/jobInfoNav/locationNav/officeLocationZipCode",
+    "emailNav/isPrimary",
+    "emailNav/emailType",
+    "employmentNav/jobInfoNav/departmentNav/name_localized",
+    "employmentNav/jobInfoNav/departmentNav/name",
+    "employmentNav/jobInfoNav/companyNav/name_localized",
+    "employmentNav/jobInfoNav/companyNav/externalCode",
+    "employmentNav/jobInfoNav/locationNav/name",
+    "employmentNav/jobInfoNav/locationNav/addressNavDEFLT/address1",
+    "employmentNav/jobInfoNav/locationNav/addressNavDEFLT/city",
+    "employmentNav/jobInfoNav/locationNav/addressNavDEFLT/zipCode",
     "employmentNav/jobInfoNav/jobTitle",
-    "employmentNav/jobInfoNav/businessUnitNav/businessUnit",
-    "employmentNav/jobInfoNav/divisionNav/division",
-    "employmentNav/jobInfoNav/costCenterNav/costCenterDescription",
+    "employmentNav/jobInfoNav/businessUnitNav/name_localized",
+    "employmentNav/jobInfoNav/businessUnitNav/externalCode",
+    "employmentNav/jobInfoNav/divisionNav/name_localized",
+    "employmentNav/jobInfoNav/costCenterNav/name_localized",
+    "employmentNav/jobInfoNav/costCenterNav/description_localized",
+    "employmentNav/jobInfoNav/costCenterNav/externalCode",
     "employmentNav/jobInfoNav/employeeClass",
     "employmentNav/jobInfoNav/employeeType",
-    "employmentNav/jobInfoNav/managerId"
+    "employmentNav/userNav/manager/empInfo/personIdExternal"
 ) 
 
 $expandValues = @(
@@ -655,7 +664,11 @@ $expandValues = @(
     "employmentNav/jobInfoNav/businessUnitNav",
     "employmentNav/jobInfoNav/costCenterNav",
     "employmentNav/jobInfoNav/divisionNav",
-    "employmentNav/jobInfoNav/locationNav"
+    "employmentNav/jobInfoNav/locationNav",
+    "employmentNav/jobInfoNav/locationNav/addressNavDEFLT",
+    "employmentNav/userNav",
+    "employmentNav/userNav/manager",
+    "employmentNav/userNav/manager/empInfo"
 )
 
 if ($IncludeHeaderProfile) {
