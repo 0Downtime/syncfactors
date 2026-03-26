@@ -67,6 +67,7 @@
                 <div><dt>Status</dt><dd>@(Model.Preview.Status ?? "Unknown")</dd></div>
                 <div><dt>Operation</dt><dd>@(Model.Preview.OperationSummary?.Action ?? "No operation")</dd></div>
                 <div><dt>Matched Existing User</dt><dd>@DisplayBool(Model.Preview.MatchedExistingUser)</dd></div>
+                <div><dt>Manager DN</dt><dd>@(Model.Preview.ManagerDistinguishedName ?? "n/a")</dd></div>
                 <div><dt>Current DN</dt><dd>@(Model.Preview.CurrentDistinguishedName ?? "n/a")</dd></div>
                 <div><dt>Target OU</dt><dd>@(Model.Preview.TargetOu ?? "n/a")</dd></div>
                 <div><dt>Preview Log</dt><dd>@(Model.Preview.ReportPath ?? "n/a")</dd></div>

@@ -37,6 +37,7 @@ public sealed class ApplyPreviewService(
         var command = new DirectoryMutationCommand(
             Action: action,
             WorkerId: worker.WorkerId,
+            ManagerId: worker.Attributes.TryGetValue("managerId", out var managerId) ? managerId : null,
             SamAccountName: samAccountName,
             UserPrincipalName: emailAddress,
             Mail: emailAddress,

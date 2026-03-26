@@ -45,13 +45,13 @@ public sealed class ActiveDirectoryCommandGateway(
 
         return command.Action switch
         {
-            "CreateUser" => CreateUser(connection, command),
+            "CreateUser" => CreateUser(connection, command, config),
             "UpdateUser" => UpdateUser(connection, command, config),
             _ => new DirectoryCommandResult(false, command.Action, command.SamAccountName, null, $"Unsupported action {command.Action}.", null)
         };
     }
 
-    private static DirectoryCommandResult CreateUser(LdapConnection connection, DirectoryMutationCommand command)
+    private static DirectoryCommandResult CreateUser(LdapConnection connection, DirectoryMutationCommand command, ActiveDirectoryConfig config)
     {
         var dn = $"CN={EscapeDnComponent(command.DisplayName)},{command.TargetOu}";
         var request = new AddRequest(
@@ -64,6 +64,12 @@ public sealed class ActiveDirectoryCommandGateway(
             new DirectoryAttribute("mail", command.Mail));
 
         connection.SendRequest(request);
+        var managerDn = ResolveManagerDistinguishedName(connection, command.ManagerId, config);
+        if (!string.IsNullOrWhiteSpace(managerDn))
+        {
+            SetManager(connection, dn, managerDn);
+        }
+
         return new DirectoryCommandResult(
             Succeeded: true,
             Action: command.Action,
@@ -97,6 +103,11 @@ public sealed class ActiveDirectoryCommandGateway(
         request.Modifications.Add(BuildReplaceModification("displayName", command.DisplayName));
         request.Modifications.Add(BuildReplaceModification("userPrincipalName", command.UserPrincipalName));
         request.Modifications.Add(BuildReplaceModification("mail", command.Mail));
+        var managerDn = ResolveManagerDistinguishedName(connection, command.ManagerId, config);
+        if (!string.IsNullOrWhiteSpace(managerDn))
+        {
+            request.Modifications.Add(BuildReplaceModification("manager", managerDn));
+        }
 
         connection.SendRequest(request);
         return new DirectoryCommandResult(
@@ -134,6 +145,31 @@ public sealed class ActiveDirectoryCommandGateway(
             {
                 ["displayName"] = GetAttribute(entry, "displayName")
             });
+    }
+
+    private static string? ResolveManagerDistinguishedName(LdapConnection connection, string? managerId, ActiveDirectoryConfig config)
+    {
+        if (string.IsNullOrWhiteSpace(managerId))
+        {
+            return null;
+        }
+
+        var request = new SearchRequest(
+            config.DefaultActiveOu,
+            $"({EscapeLdapFilter(config.IdentityAttribute)}={EscapeLdapFilter(managerId)})",
+            SearchScope.Subtree,
+            "distinguishedName");
+
+        var response = (SearchResponse)connection.SendRequest(request);
+        var entry = response.Entries.Cast<SearchResultEntry>().FirstOrDefault();
+        return entry is null ? null : GetAttribute(entry, "distinguishedName");
+    }
+
+    private static void SetManager(LdapConnection connection, string distinguishedName, string managerDn)
+    {
+        var request = new ModifyRequest(distinguishedName);
+        request.Modifications.Add(BuildReplaceModification("manager", managerDn));
+        connection.SendRequest(request);
     }
 
     private static LdapConnection CreateConnection(ActiveDirectoryConfig config)

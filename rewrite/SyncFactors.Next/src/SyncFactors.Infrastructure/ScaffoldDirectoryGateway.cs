@@ -20,4 +20,11 @@ public sealed class ScaffoldDirectoryGateway(ScaffoldDataStore dataStore) : IDir
         _ = cancellationToken;
         return Task.FromResult(DirectoryIdentityFormatter.BuildBaseEmailLocalPart(worker.PreferredName, worker.LastName));
     }
+
+    public Task<string?> ResolveManagerDistinguishedNameAsync(string managerId, CancellationToken cancellationToken)
+    {
+        _ = cancellationToken;
+        _ = managerId;
+        return Task.FromResult<string?>(null);
+    }
 }

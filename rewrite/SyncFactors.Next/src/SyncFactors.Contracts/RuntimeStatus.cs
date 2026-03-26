@@ -162,6 +162,7 @@ public sealed record AttributeChange(
 public sealed record DirectoryMutationCommand(
     string Action,
     string WorkerId,
+    string? ManagerId,
     string SamAccountName,
     string UserPrincipalName,
     string Mail,
@@ -207,6 +208,7 @@ public sealed record WorkerPreviewResult(
     string? Reason,
     string? OperatorActionSummary,
     string? SamAccountName,
+    string? ManagerDistinguishedName,
     string? TargetOu,
     string? CurrentDistinguishedName,
     bool? CurrentEnabled,
