@@ -60,6 +60,12 @@ public sealed class WorkerPreviewPlanner(
         var diffRows = attributeChanges
             .Select(change => new DiffRow(change.Attribute, change.Source, change.Before, change.After, change.Changed))
             .ToArray();
+        var sourceAttributes = worker.Attributes
+            .Where(attribute => !string.IsNullOrWhiteSpace(attribute.Value))
+            .Select(attribute => new SourceAttributeRow(attribute.Key, attribute.Value!))
+            .OrderBy(attribute => IsPathLikeAttribute(attribute.Attribute) ? 1 : 0)
+            .ThenBy(attribute => attribute.Attribute, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
 
         var item = ParseJson(
             "{"
@@ -107,6 +113,7 @@ public sealed class WorkerPreviewPlanner(
                 FromOu: null,
                 ToOu: worker.TargetOu),
             DiffRows: diffRows,
+            SourceAttributes: sourceAttributes,
             Entries:
             [
                 new WorkerPreviewEntry(
@@ -130,4 +137,9 @@ public sealed class WorkerPreviewPlanner(
     private static string ToJsonString(string? value) => value is null ? "null" : $"\"{Escape(value)}\"";
 
     private static string ToJsonBoolean(bool value) => value ? "true" : "false";
+
+    private static bool IsPathLikeAttribute(string attribute)
+    {
+        return attribute.Contains('[', StringComparison.Ordinal) || attribute.Contains('.', StringComparison.Ordinal);
+    }
 }

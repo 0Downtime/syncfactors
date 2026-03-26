@@ -109,6 +109,7 @@ public sealed class PowerShellWorkerPreviewService(SyncFactorsConfigPathResolver
             ProposedEnable: GetBoolean(preview, "proposedEnable"),
             OperationSummary: SummarizePreviewOperation(operations),
             DiffRows: diffRows,
+            SourceAttributes: [],
             Entries: entries);
     }
 

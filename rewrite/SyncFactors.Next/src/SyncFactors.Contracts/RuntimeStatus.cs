@@ -185,6 +185,10 @@ public sealed record DiffRow(
     string After,
     bool Changed);
 
+public sealed record SourceAttributeRow(
+    string Attribute,
+    string Value);
+
 public sealed record OperationSummary(
     string Action,
     string? Effect,
@@ -215,6 +219,7 @@ public sealed record WorkerPreviewResult(
     bool? ProposedEnable,
     OperationSummary? OperationSummary,
     IReadOnlyList<DiffRow> DiffRows,
+    IReadOnlyList<SourceAttributeRow> SourceAttributes,
     IReadOnlyList<WorkerPreviewEntry> Entries);
 
 public sealed record WorkerPreviewEntry(
