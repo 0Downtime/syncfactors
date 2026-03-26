@@ -85,6 +85,14 @@ public sealed class ODataResponseBuilder
             AddIfSelected(jobInfo, "employmentNav/jobInfoNav/employeeClass", worker.EmployeeClass, query, "employeeClass");
             AddIfSelected(jobInfo, "employmentNav/jobInfoNav/employeeType", worker.EmployeeType, query, "employeeType");
             AddIfSelected(jobInfo, "employmentNav/jobInfoNav/managerId", worker.ManagerId, query, "managerId");
+            AddIfSelected(jobInfo, "employmentNav/jobInfoNav/customString3", worker.PeopleGroup, query, "customString3");
+            AddIfSelected(jobInfo, "employmentNav/jobInfoNav/customString20", worker.LeadershipLevel, query, "customString20");
+            AddIfSelected(jobInfo, "employmentNav/jobInfoNav/customString87", worker.Region, query, "customString87");
+            AddIfSelected(jobInfo, "employmentNav/jobInfoNav/customString110", worker.Geozone, query, "customString110");
+            AddIfSelected(jobInfo, "employmentNav/jobInfoNav/customString111", worker.BargainingUnit, query, "customString111");
+            AddIfSelected(jobInfo, "employmentNav/jobInfoNav/customString91", worker.UnionJobCode, query, "customString91");
+            AddIfSelected(jobInfo, "employmentNav/jobInfoNav/customString112", worker.CintasUniformCategory, query, "customString112");
+            AddIfSelected(jobInfo, "employmentNav/jobInfoNav/customString113", worker.CintasUniformAllotment, query, "customString113");
             AddIfSelected(jobInfo, "employmentNav/jobInfoNav/department", worker.Department, query, "department");
             AddIfSelected(jobInfo, "employmentNav/jobInfoNav/company", worker.Company, query, "company");
             AddIfSelected(jobInfo, "employmentNav/jobInfoNav/businessUnit", worker.BusinessUnit, query, "businessUnit");
