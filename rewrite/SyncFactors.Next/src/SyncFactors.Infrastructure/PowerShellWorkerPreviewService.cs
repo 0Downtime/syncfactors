@@ -102,6 +102,7 @@ public sealed class PowerShellWorkerPreviewService(SyncFactorsConfigPathResolver
             Reason: GetString(preview, "reason"),
             OperatorActionSummary: GetString(preview, "operatorActionSummary"),
             SamAccountName: GetString(preview, "samAccountName"),
+            ManagerDistinguishedName: GetString(preview, "managerDistinguishedName"),
             TargetOu: GetString(preview, "targetOu"),
             CurrentDistinguishedName: GetString(preview, "currentDistinguishedName"),
             CurrentEnabled: GetBoolean(preview, "currentEnabled"),

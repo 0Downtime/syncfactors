@@ -368,9 +368,15 @@ public sealed class SuccessFactorsWorkerSource(
 
         var personalInfo = GetFirstNavigationResult(worker, "personalInfoNav");
         var employment = GetFirstNavigationResult(worker, "employmentNav");
-        var jobInfo = employment is { ValueKind: not JsonValueKind.Undefined }
-            ? GetFirstNavigationResult(employment.Value, "jobInfoNav")
-            : null;
+        JsonElement? jobInfo = GetFirstNavigationResult(worker, "jobInfoNav")
+            ?? (worker.TryGetProperty("jobTitle", out _)
+                || worker.TryGetProperty("company", out _)
+                || worker.TryGetProperty("department", out _)
+                ? (JsonElement?)worker.Clone()
+                : null)
+            ?? (employment is { ValueKind: not JsonValueKind.Undefined }
+                ? GetFirstNavigationResult(employment.Value, "jobInfoNav")
+                : null);
 
         var preferredName =
             GetString(personalInfo, "firstName") ??
@@ -382,10 +388,12 @@ public sealed class SuccessFactorsWorkerSource(
             "Worker";
         var department =
             GetString(jobInfo, "department") ??
+            GetNavigationProperty(jobInfo, "departmentNav", "department") ??
             GetString(employment, "department") ??
             GetString(worker, "department") ??
             "Unknown";
         var startDate =
+            GetString(jobInfo, "startDate") ??
             GetString(employment, "startDate") ??
             GetString(worker, "startDate");
 
@@ -428,6 +436,19 @@ public sealed class SuccessFactorsWorkerSource(
     {
         return element is { ValueKind: not JsonValueKind.Undefined }
             ? GetString(element.Value, propertyName)
+            : null;
+    }
+
+    private static string? GetNavigationProperty(JsonElement? element, string navigationPropertyName, string propertyName)
+    {
+        if (element is not { ValueKind: not JsonValueKind.Undefined })
+        {
+            return null;
+        }
+
+        var navigation = GetNavigationObject(element.Value, navigationPropertyName);
+        return navigation is { ValueKind: not JsonValueKind.Undefined }
+            ? GetString(navigation.Value, propertyName)
             : null;
     }
 
@@ -524,7 +545,22 @@ public sealed class SuccessFactorsWorkerSource(
 
     private static JsonElement? GetNavigationObject(JsonElement element, string propertyName)
     {
-        if (element.TryGetProperty(propertyName, out var property) && property.ValueKind == JsonValueKind.Object)
+        if (!element.TryGetProperty(propertyName, out var property))
+        {
+            return null;
+        }
+
+        if (property.ValueKind == JsonValueKind.Object &&
+            property.TryGetProperty("results", out var results) &&
+            results.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var item in results.EnumerateArray())
+            {
+                return item.Clone();
+            }
+        }
+
+        if (property.ValueKind == JsonValueKind.Object)
         {
             return property.Clone();
         }

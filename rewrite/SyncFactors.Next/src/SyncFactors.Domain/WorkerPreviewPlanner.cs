@@ -32,6 +32,10 @@ public sealed class WorkerPreviewPlanner(
                 Enabled: null,
                 DisplayName: null,
                 Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase));
+        var managerId = worker.Attributes.TryGetValue("managerId", out var resolvedManagerId) ? resolvedManagerId : null;
+        var managerDistinguishedName = managerId is null
+            ? null
+            : await directoryGateway.ResolveManagerDistinguishedNameAsync(managerId, cancellationToken);
 
         var identity = identityMatcher.Match(worker, directoryUser);
 
@@ -42,7 +46,7 @@ public sealed class WorkerPreviewPlanner(
             identity.Bucket,
             identity.MatchedExistingUser,
             attributeChanges.Count(change => change.Changed));
-        return BuildPreview(worker, directoryUser, identity, attributeChanges, logPath);
+        return BuildPreview(worker, directoryUser, identity, attributeChanges, managerDistinguishedName, logPath);
     }
 
     private static WorkerPreviewResult BuildPreview(
@@ -50,6 +54,7 @@ public sealed class WorkerPreviewPlanner(
         DirectoryUserSnapshot directoryUser,
         IdentityMatchResult identity,
         IReadOnlyList<AttributeChange> attributeChanges,
+        string? managerDistinguishedName,
         string? logPath)
     {
         var diffRows = attributeChanges
@@ -90,6 +95,7 @@ public sealed class WorkerPreviewPlanner(
             Reason: identity.Reason,
             OperatorActionSummary: identity.OperatorActionSummary,
             SamAccountName: identity.SamAccountName,
+            ManagerDistinguishedName: managerDistinguishedName,
             TargetOu: worker.TargetOu,
             CurrentDistinguishedName: directoryUser.DistinguishedName,
             CurrentEnabled: directoryUser.Enabled,

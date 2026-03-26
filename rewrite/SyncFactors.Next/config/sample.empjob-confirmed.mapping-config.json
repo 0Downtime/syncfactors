@@ -36,35 +36,35 @@
       "transform": "Lower"
     },
     {
-      "source": "employmentNav[0].jobInfoNav[0].departmentNav.department",
+      "source": "department",
       "target": "department",
       "enabled": true,
       "required": false,
       "transform": "Trim"
     },
     {
-      "source": "employmentNav[0].jobInfoNav[0].divisionNav.division",
+      "source": "division",
       "target": "division",
       "enabled": true,
       "required": false,
       "transform": "Trim"
     },
     {
-      "source": "employmentNav[0].jobInfoNav[0].companyNav.company",
+      "source": "company",
       "target": "company",
       "enabled": true,
       "required": false,
       "transform": "Trim"
     },
     {
-      "source": "employmentNav[0].jobInfoNav[0].locationNav.LocationName",
+      "source": "location",
       "target": "physicalDeliveryOfficeName",
       "enabled": true,
       "required": false,
       "transform": "Trim"
     },
     {
-      "source": "employmentNav[0].jobInfoNav[0].jobTitle",
+      "source": "jobTitle",
       "target": "title",
       "enabled": true,
       "required": false,

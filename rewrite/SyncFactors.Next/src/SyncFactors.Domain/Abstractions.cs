@@ -37,6 +37,7 @@ public interface IWorkerSource
 public interface IDirectoryGateway
 {
     Task<DirectoryUserSnapshot?> FindByWorkerAsync(WorkerSnapshot worker, CancellationToken cancellationToken);
+    Task<string?> ResolveManagerDistinguishedNameAsync(string managerId, CancellationToken cancellationToken);
     Task<string> ResolveAvailableEmailLocalPartAsync(WorkerSnapshot worker, CancellationToken cancellationToken);
 }
 

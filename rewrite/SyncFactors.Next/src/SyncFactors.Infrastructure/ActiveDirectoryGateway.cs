@@ -70,6 +70,36 @@ public sealed class ActiveDirectoryGateway(
         }
     }
 
+    public async Task<string?> ResolveManagerDistinguishedNameAsync(string managerId, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(managerId))
+        {
+            return null;
+        }
+
+        var config = configLoader.GetSyncConfig().Ad;
+        if (string.IsNullOrWhiteSpace(config.Server))
+        {
+            logger.LogWarning("AD server was not configured while resolving manager DN. ManagerId={ManagerId}", managerId);
+            return null;
+        }
+
+        try
+        {
+            return await Task.Run(() => ResolveDistinguishedName(managerId, config), cancellationToken);
+        }
+        catch (LdapException ex)
+        {
+            logger.LogError(ex, "AD manager DN lookup failed with LDAP exception. ManagerId={ManagerId} Server={Server}", managerId, config.Server);
+            return null;
+        }
+        catch (DirectoryOperationException ex)
+        {
+            logger.LogError(ex, "AD manager DN lookup failed with directory operation exception. ManagerId={ManagerId} Server={Server}", managerId, config.Server);
+            return null;
+        }
+    }
+
     private static DirectoryUserSnapshot? QueryDirectory(WorkerSnapshot worker, ActiveDirectoryConfig config)
     {
         using var connection = CreateConnection(config);
@@ -114,6 +144,20 @@ public sealed class ActiveDirectoryGateway(
             Enabled: ParseEnabled(userAccountControl),
             DisplayName: displayName,
             Attributes: BuildAttributes(entry, displayName));
+    }
+
+    private static string? ResolveDistinguishedName(string workerId, ActiveDirectoryConfig config)
+    {
+        using var connection = CreateConnection(config);
+        var request = new SearchRequest(
+            config.DefaultActiveOu,
+            $"({EscapeLdapFilter(config.IdentityAttribute)}={EscapeLdapFilter(workerId)})",
+            SearchScope.Subtree,
+            "distinguishedName");
+
+        var response = (SearchResponse)connection.SendRequest(request);
+        var entry = response.Entries.Cast<SearchResultEntry>().FirstOrDefault();
+        return entry is null ? null : GetAttribute(entry, "distinguishedName");
     }
 
     private static string ResolveAvailableEmailLocalPart(WorkerSnapshot worker, ActiveDirectoryConfig config, string baseLocalPart)
