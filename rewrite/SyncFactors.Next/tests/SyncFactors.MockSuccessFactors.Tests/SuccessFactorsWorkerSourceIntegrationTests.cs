@@ -217,6 +217,92 @@ public sealed class SuccessFactorsWorkerSourceIntegrationTests
         Assert.Contains("RequestUri=http://mock-successfactors.local/odata/v2/PerPerson", ex.Message);
     }
 
+    [Fact]
+    public async Task WorkerSource_RetriesWithoutInvalidConfiguredProperty_WhenSuccessFactorsRejectsSelectPath()
+    {
+        using var client = new HttpClient(new RetryOnInvalidPropertyHttpHandler())
+        {
+            BaseAddress = new Uri("http://mock-successfactors.local")
+        };
+
+        var tempDirectory = Path.Combine(Path.GetTempPath(), "syncfactors-worker-source", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDirectory);
+
+        var syncConfigPath = Path.Combine(tempDirectory, "sync-config.json");
+        var mappingConfigPath = Path.Combine(tempDirectory, "mapping-config.json");
+        var scaffoldDataPath = Path.Combine(tempDirectory, "scaffold-data.json");
+
+        await File.WriteAllTextAsync(syncConfigPath, """
+        {
+          "secrets": {
+            "adServerEnv": null,
+            "adUsernameEnv": null,
+            "adBindPasswordEnv": null
+          },
+          "successFactors": {
+            "baseUrl": "http://mock-successfactors.local/odata/v2",
+            "auth": {
+              "mode": "basic",
+              "basic": {
+                "username": "mock-user",
+                "password": "mock-password"
+              }
+            },
+            "query": {
+              "entitySet": "PerPerson",
+              "identityField": "personIdExternal",
+              "deltaField": "lastModifiedDateTime",
+              "select": [
+                "personIdExternal",
+                "personalInfoNav/firstName",
+                "employmentNav/jobInfoNav/departmentNav/department",
+                "employmentNav/jobInfoNav/customString91"
+              ],
+              "expand": [
+                "personalInfoNav",
+                "employmentNav",
+                "employmentNav/jobInfoNav",
+                "employmentNav/jobInfoNav/departmentNav"
+              ]
+            }
+          },
+          "ad": {
+            "server": "ldap.example.test",
+            "username": "",
+            "bindPassword": "",
+            "identityAttribute": "employeeID",
+            "defaultActiveOu": "OU=LabUsers,DC=example,DC=com",
+            "graveyardOu": "OU=LabGraveyard,DC=example,DC=com"
+          },
+          "sync": {
+            "enableBeforeStartDays": 7,
+            "deletionRetentionDays": 90
+          },
+          "safety": {
+            "maxCreatesPerRun": 10,
+            "maxDisablesPerRun": 10,
+            "maxDeletionsPerRun": 10
+          },
+          "reporting": {
+            "outputDirectory": "reports"
+          }
+        }
+        """);
+        File.Copy(Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "config", "sample.syncfactors.mapping-config.json")), mappingConfigPath);
+        await File.WriteAllTextAsync(scaffoldDataPath, """{"workers":[],"directoryUsers":[]}""");
+
+        var configLoader = new SyncFactorsConfigurationLoader(new SyncFactorsConfigPathResolver(syncConfigPath, mappingConfigPath));
+        var scaffoldStore = new ScaffoldDataStore(new ScaffoldDataPathResolver(scaffoldDataPath));
+        var fallbackSource = new ScaffoldWorkerSource(scaffoldStore);
+        var workerSource = new SuccessFactorsWorkerSource(client, configLoader, fallbackSource, NullLogger<SuccessFactorsWorkerSource>.Instance);
+
+        var worker = await workerSource.GetWorkerAsync("mock-10001", CancellationToken.None);
+
+        Assert.NotNull(worker);
+        Assert.Equal("mock-10001", worker!.WorkerId);
+        Assert.Equal("Union-17", worker.Attributes["unionJobCode"]);
+    }
+
     private sealed class MockSuccessFactorsHttpHandler(MockFixtureStore fixtureStore, ODataResponseBuilder responseBuilder) : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
@@ -283,6 +369,76 @@ public sealed class SuccessFactorsWorkerSourceIntegrationTests
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.BadRequest)
             {
                 Content = new StringContent(errorJson, Encoding.UTF8, "application/json")
+            });
+        }
+    }
+
+    private sealed class RetryOnInvalidPropertyHttpHandler : HttpMessageHandler
+    {
+        private int _requestCount;
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            _ = cancellationToken;
+            _requestCount++;
+
+            var queryCollection = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(request.RequestUri!.Query);
+            var select = queryCollection["$select"].ToString();
+            if (_requestCount == 1 && select.Contains("employmentNav/jobInfoNav/departmentNav/department", StringComparison.Ordinal))
+            {
+                var errorJson = """
+                {
+                  "error": {
+                    "code": "COE_PROPERTY_NOT_FOUND",
+                    "message": {
+                      "lang": "en-US",
+                      "value": "[COE0021]Invalid property names: FODepartment/department."
+                    }
+                  }
+                }
+                """;
+
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.BadRequest)
+                {
+                    Content = new StringContent(errorJson, Encoding.UTF8, "application/json")
+                });
+            }
+
+            var successJson = """
+            {
+              "d": {
+                "results": [
+                  {
+                    "personIdExternal": "mock-10001",
+                    "personalInfoNav": {
+                      "results": [
+                        {
+                          "firstName": "Worker101"
+                        }
+                      ]
+                    },
+                    "employmentNav": {
+                      "results": [
+                        {
+                          "jobInfoNav": {
+                            "results": [
+                              {
+                                "customString91": "Union-17"
+                              }
+                            ]
+                          }
+                        }
+                      ]
+                    }
+                  }
+                ]
+              }
+            }
+            """;
+
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(successJson, Encoding.UTF8, "application/json")
             });
         }
     }

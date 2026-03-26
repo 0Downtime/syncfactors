@@ -14,6 +14,17 @@ public sealed class SuccessFactorsWorkerSource(
     ScaffoldWorkerSource fallbackSource,
     ILogger<SuccessFactorsWorkerSource> logger) : IWorkerSource
 {
+    private static readonly IReadOnlyDictionary<string, string> EntityNavigationAliases =
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["FOBusinessUnit"] = "businessUnitNav",
+            ["FOCostCenter"] = "costCenterNav",
+            ["FOCompany"] = "companyNav",
+            ["FODepartment"] = "departmentNav",
+            ["FODivision"] = "divisionNav",
+            ["FOLocation"] = "locationNav"
+        };
+
     public async Task<WorkerSnapshot?> GetWorkerAsync(string workerId, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(workerId))
@@ -23,42 +34,9 @@ public sealed class SuccessFactorsWorkerSource(
 
         var config = configLoader.GetSyncConfig();
         var query = config.SuccessFactors.PreviewQuery ?? config.SuccessFactors.Query;
-        var requestUri = BuildRequestUri(config, query, workerId);
-
-        logger.LogInformation(
-            "Fetching worker preview data from SuccessFactors. WorkerId={WorkerId} EntitySet={EntitySet} AuthMode={AuthMode}",
-            workerId,
-            query.EntitySet,
-            config.SuccessFactors.Auth.Mode);
-
-        using var request = new HttpRequestMessage(HttpMethod.Get, requestUri);
-        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
-        request.Headers.AcceptEncoding.Add(new StringWithQualityHeaderValue("gzip"));
-        request.Headers.AcceptEncoding.Add(new StringWithQualityHeaderValue("deflate"));
-        AddTracingHeaders(request, workerId);
-        await ApplyAuthenticationAsync(request, config.SuccessFactors.Auth, cancellationToken);
-
-        using var response = await httpClient.SendAsync(request, cancellationToken);
-        if (!response.IsSuccessStatusCode)
-        {
-            var body = await response.Content.ReadAsStringAsync(cancellationToken);
-            logger.LogError(
-                "SuccessFactors request failed. WorkerId={WorkerId} StatusCode={StatusCode} ContentType={ContentType} Uri={Uri} BodyPreview={BodyPreview}",
-                workerId,
-                (int)response.StatusCode,
-                response.Content.Headers.ContentType?.MediaType ?? "(none)",
-                requestUri,
-                TrimForLog(body));
-
-            throw CreateDetailedSuccessFactorsException(
-                messagePrefix: "SuccessFactors request failed.",
-                response: response,
-                requestUri: requestUri,
-                body: body,
-                query: query);
-        }
-
-        var rawBody = await response.Content.ReadAsStringAsync(cancellationToken);
+        var responsePayload = await ExecuteWorkerRequestAsync(config, query, workerId, cancellationToken);
+        var requestUri = responsePayload.RequestUri;
+        var rawBody = responsePayload.Body;
         try
         {
             using var document = JsonDocument.Parse(rawBody);
@@ -79,11 +57,11 @@ public sealed class SuccessFactorsWorkerSource(
                 ex,
                 "SuccessFactors returned non-JSON or invalid JSON. WorkerId={WorkerId} ContentType={ContentType} Uri={Uri} BodyPreview={BodyPreview}",
                 workerId,
-                response.Content.Headers.ContentType?.MediaType ?? "(none)",
+                responsePayload.ContentType,
                 requestUri,
                 TrimForLog(rawBody));
             throw new InvalidOperationException(
-                $"SuccessFactors returned invalid JSON. Status={(int)response.StatusCode}, ContentType={response.Content.Headers.ContentType?.MediaType ?? "(none)"}, BodyPreview={TrimForLog(rawBody)}",
+                $"SuccessFactors returned invalid JSON. Status={responsePayload.StatusCode}, ContentType={responsePayload.ContentType}, BodyPreview={TrimForLog(rawBody)}",
                 ex);
         }
 
@@ -191,6 +169,157 @@ public sealed class SuccessFactorsWorkerSource(
         }
 
         return new InvalidOperationException(string.Join(Environment.NewLine, parts));
+    }
+
+    private async Task<SuccessFactorsResponsePayload> ExecuteWorkerRequestAsync(
+        SyncFactorsConfigDocument config,
+        SuccessFactorsQueryConfig query,
+        string workerId,
+        CancellationToken cancellationToken)
+    {
+        var activeSelect = query.Select.ToList();
+
+        while (true)
+        {
+            var activeQuery = query with { Select = activeSelect };
+            var requestUri = BuildRequestUri(config, activeQuery, workerId);
+
+            logger.LogInformation(
+                "Fetching worker preview data from SuccessFactors. WorkerId={WorkerId} EntitySet={EntitySet} AuthMode={AuthMode} SelectedFieldCount={SelectedFieldCount}",
+                workerId,
+                query.EntitySet,
+                config.SuccessFactors.Auth.Mode,
+                activeQuery.Select.Count);
+
+            using var request = new HttpRequestMessage(HttpMethod.Get, requestUri);
+            request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+            request.Headers.AcceptEncoding.Add(new StringWithQualityHeaderValue("gzip"));
+            request.Headers.AcceptEncoding.Add(new StringWithQualityHeaderValue("deflate"));
+            AddTracingHeaders(request, workerId);
+            await ApplyAuthenticationAsync(request, config.SuccessFactors.Auth, cancellationToken);
+
+            using var response = await httpClient.SendAsync(request, cancellationToken);
+            var body = await response.Content.ReadAsStringAsync(cancellationToken);
+            if (response.IsSuccessStatusCode)
+            {
+                return new SuccessFactorsResponsePayload(
+                    RequestUri: requestUri,
+                    Body: body,
+                    StatusCode: (int)response.StatusCode,
+                    ContentType: response.Content.Headers.ContentType?.MediaType ?? "(none)");
+            }
+
+            var invalidPropertyPath = TryExtractInvalidPropertyPath(body);
+            var queryPath = ResolveQueryPathFromInvalidProperty(invalidPropertyPath, activeSelect);
+            if (response.StatusCode == HttpStatusCode.BadRequest &&
+                !string.IsNullOrWhiteSpace(queryPath) &&
+                activeSelect.Remove(queryPath))
+            {
+                logger.LogWarning(
+                    "SuccessFactors rejected configured property path. WorkerId={WorkerId} InvalidProperty={InvalidProperty} QueryPath={QueryPath}. Retrying without it.",
+                    workerId,
+                    invalidPropertyPath,
+                    queryPath);
+                continue;
+            }
+
+            logger.LogError(
+                "SuccessFactors request failed. WorkerId={WorkerId} StatusCode={StatusCode} ContentType={ContentType} Uri={Uri} BodyPreview={BodyPreview}",
+                workerId,
+                (int)response.StatusCode,
+                response.Content.Headers.ContentType?.MediaType ?? "(none)",
+                requestUri,
+                TrimForLog(body));
+
+            throw CreateDetailedSuccessFactorsException(
+                messagePrefix: "SuccessFactors request failed.",
+                response: response,
+                requestUri: requestUri,
+                body: body,
+                query: activeQuery);
+        }
+    }
+
+    private static string? TryExtractInvalidPropertyPath(string? body)
+    {
+        if (string.IsNullOrWhiteSpace(body))
+        {
+            return null;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(body);
+            if (!document.RootElement.TryGetProperty("error", out var error) ||
+                !error.TryGetProperty("code", out var code) ||
+                !string.Equals(code.GetString(), "COE_PROPERTY_NOT_FOUND", StringComparison.Ordinal))
+            {
+                return null;
+            }
+
+            if (!error.TryGetProperty("message", out var message) ||
+                !message.TryGetProperty("value", out var value))
+            {
+                return null;
+            }
+
+            var rawMessage = value.GetString();
+            if (string.IsNullOrWhiteSpace(rawMessage))
+            {
+                return null;
+            }
+
+            const string marker = "Invalid property names:";
+            var markerIndex = rawMessage.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
+            if (markerIndex < 0)
+            {
+                return null;
+            }
+
+            var candidate = rawMessage[(markerIndex + marker.Length)..].Trim();
+            var terminalPunctuationIndex = candidate.IndexOfAny(['.', ' ', ',']);
+            return terminalPunctuationIndex >= 0
+                ? candidate[..terminalPunctuationIndex]
+                : candidate;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    private static string? ResolveQueryPathFromInvalidProperty(string? invalidPropertyPath, IReadOnlyList<string> currentSelectValues)
+    {
+        if (string.IsNullOrWhiteSpace(invalidPropertyPath))
+        {
+            return null;
+        }
+
+        var directMatch = currentSelectValues.FirstOrDefault(value => string.Equals(value, invalidPropertyPath, StringComparison.Ordinal));
+        if (!string.IsNullOrWhiteSpace(directMatch))
+        {
+            return directMatch;
+        }
+
+        var parts = invalidPropertyPath.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length == 0)
+        {
+            return null;
+        }
+
+        var propertyName = parts[^1];
+        var entityName = parts.Length > 1 ? parts[0] : string.Empty;
+        if (EntityNavigationAliases.TryGetValue(entityName, out var navigationName))
+        {
+            var aliasedMatch = currentSelectValues.FirstOrDefault(value =>
+                value.EndsWith($"{navigationName}/{propertyName}", StringComparison.Ordinal));
+            if (!string.IsNullOrWhiteSpace(aliasedMatch))
+            {
+                return aliasedMatch;
+            }
+        }
+
+        return currentSelectValues.FirstOrDefault(value => value.EndsWith($"/{propertyName}", StringComparison.Ordinal));
     }
 
     private static IEnumerable<KeyValuePair<string, string>> BuildTokenForm(SuccessFactorsOAuthConfig oauth)
@@ -421,4 +550,6 @@ public sealed class SuccessFactorsWorkerSource(
         request.Headers.TryAddWithoutValidation("X-SF-Process-Name", "SyncFactors.Next.WorkerPreview");
         request.Headers.TryAddWithoutValidation("X-SF-Execution-Id", workerId);
     }
+
+    private sealed record SuccessFactorsResponsePayload(string RequestUri, string Body, int StatusCode, string ContentType);
 }
