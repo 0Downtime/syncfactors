@@ -162,11 +162,11 @@
                         </tr>
                     </thead>
                     <tbody>
-                    @foreach (var attribute in resolvedAttributes)
+                    @foreach (var row in resolvedAttributes)
                     {
                         <tr>
-                            <td>@attribute.Attribute</td>
-                            <td>@attribute.Value</td>
+                            <td>@row.Attribute</td>
+                            <td>@row.Value</td>
                         </tr>
                     }
                     </tbody>
@@ -191,11 +191,11 @@
                         </tr>
                     </thead>
                     <tbody>
-                    @foreach (var attribute in sourcePathAttributes)
+                    @foreach (var row in sourcePathAttributes)
                     {
                         <tr>
-                            <td>@attribute.Attribute</td>
-                            <td>@attribute.Value</td>
+                            <td>@row.Attribute</td>
+                            <td>@row.Value</td>
                         </tr>
                     }
                     </tbody>
