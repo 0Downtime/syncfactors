@@ -49,11 +49,14 @@ if ($null -eq $resolvedMappingConfigPath) {
 $env:ASPNETCORE_URLS = $Urls
 $env:SyncFactors__ConfigPath = $resolvedConfigPath
 $env:SyncFactors__MappingConfigPath = $resolvedMappingConfigPath
+$env:Logging__LogLevel__Default = 'Information'
+$env:Logging__LogLevel__SyncFactors = 'Debug'
 
 Write-Host "Starting SyncFactors.Next API" -ForegroundColor Cyan
 Write-Host "URL: $Urls"
 Write-Host "Config: $resolvedConfigPath"
 Write-Host "Mapping Config: $resolvedMappingConfigPath"
+Write-Host "Logging: SyncFactors=Debug" -ForegroundColor Cyan
 
 Push-Location $projectRoot
 try {
