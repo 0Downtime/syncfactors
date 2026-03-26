@@ -37,7 +37,7 @@ public sealed class MockApiTests
         {
             ["$format"] = "json",
             ["$filter"] = "personIdExternal eq 'mock-10001'",
-            ["$select"] = "personIdExternal,personalInfoNav/firstName,personalInfoNav/lastName,employmentNav/startDate,emailNav/emailAddress,employmentNav/jobInfoNav/departmentNav/department,employmentNav/jobInfoNav/companyNav/company,employmentNav/jobInfoNav/locationNav/LocationName,employmentNav/jobInfoNav/jobTitle,employmentNav/jobInfoNav/businessUnitNav/businessUnit,employmentNav/jobInfoNav/divisionNav/division,employmentNav/jobInfoNav/costCenterNav/costCenterDescription,employmentNav/jobInfoNav/employeeClass,employmentNav/jobInfoNav/employeeType,employmentNav/jobInfoNav/managerId",
+            ["$select"] = "personIdExternal,personalInfoNav/firstName,personalInfoNav/lastName,employmentNav/startDate,emailNav/emailAddress,employmentNav/jobInfoNav/departmentNav/department,employmentNav/jobInfoNav/companyNav/company,employmentNav/jobInfoNav/locationNav/LocationName,employmentNav/jobInfoNav/jobTitle,employmentNav/jobInfoNav/businessUnitNav/businessUnit,employmentNav/jobInfoNav/divisionNav/division,employmentNav/jobInfoNav/costCenterNav/costCenterDescription,employmentNav/jobInfoNav/employeeClass,employmentNav/jobInfoNav/employeeType,employmentNav/jobInfoNav/managerId,employmentNav/jobInfoNav/customString3,employmentNav/jobInfoNav/customString20,employmentNav/jobInfoNav/customString87,employmentNav/jobInfoNav/customString110,employmentNav/jobInfoNav/customString111,employmentNav/jobInfoNav/customString91",
             ["$expand"] = "employmentNav,employmentNav/jobInfoNav,personalInfoNav,emailNav,employmentNav/jobInfoNav/companyNav,employmentNav/jobInfoNav/departmentNav,employmentNav/jobInfoNav/businessUnitNav,employmentNav/jobInfoNav/costCenterNav,employmentNav/jobInfoNav/divisionNav,employmentNav/jobInfoNav/locationNav"
         }));
 
@@ -48,6 +48,7 @@ public sealed class MockApiTests
         Assert.Equal("mock-10001", worker.GetProperty("personIdExternal").GetString());
         Assert.Equal("Worker101", worker.GetProperty("personalInfoNav").GetProperty("results")[0].GetProperty("firstName").GetString());
         Assert.Equal("CORP", worker.GetProperty("employmentNav").GetProperty("results")[0].GetProperty("jobInfoNav").GetProperty("results")[0].GetProperty("companyNav").GetProperty("company").GetString());
+        Assert.Equal("Central", worker.GetProperty("employmentNav").GetProperty("results")[0].GetProperty("jobInfoNav").GetProperty("results")[0].GetProperty("customString87").GetString());
     }
 
     [Fact]

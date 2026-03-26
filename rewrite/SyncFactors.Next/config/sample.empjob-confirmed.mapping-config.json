@@ -1,0 +1,172 @@
+{
+  "mappings": [
+    {
+      "source": "personIdExternal",
+      "target": "employeeID",
+      "enabled": true,
+      "required": true,
+      "transform": "Trim"
+    },
+    {
+      "source": "firstName",
+      "target": "GivenName",
+      "enabled": true,
+      "required": true,
+      "transform": "Trim"
+    },
+    {
+      "source": "lastName",
+      "target": "Surname",
+      "enabled": true,
+      "required": true,
+      "transform": "Trim"
+    },
+    {
+      "source": "email",
+      "target": "UserPrincipalName",
+      "enabled": true,
+      "required": true,
+      "transform": "Lower"
+    },
+    {
+      "source": "email",
+      "target": "mail",
+      "enabled": true,
+      "required": false,
+      "transform": "Lower"
+    },
+    {
+      "source": "employmentNav[0].jobInfoNav[0].departmentNav.department",
+      "target": "department",
+      "enabled": true,
+      "required": false,
+      "transform": "Trim"
+    },
+    {
+      "source": "employmentNav[0].jobInfoNav[0].divisionNav.division",
+      "target": "division",
+      "enabled": true,
+      "required": false,
+      "transform": "Trim"
+    },
+    {
+      "source": "employmentNav[0].jobInfoNav[0].companyNav.company",
+      "target": "company",
+      "enabled": true,
+      "required": false,
+      "transform": "Trim"
+    },
+    {
+      "source": "employmentNav[0].jobInfoNav[0].locationNav.LocationName",
+      "target": "physicalDeliveryOfficeName",
+      "enabled": true,
+      "required": false,
+      "transform": "Trim"
+    },
+    {
+      "source": "employmentNav[0].jobInfoNav[0].jobTitle",
+      "target": "title",
+      "enabled": true,
+      "required": false,
+      "transform": "Trim"
+    },
+    {
+      "source": "employeeType",
+      "target": "employeeType",
+      "enabled": true,
+      "required": false,
+      "transform": "Trim"
+    },
+    {
+      "source": "businessUnit",
+      "target": "extensionAttribute2",
+      "enabled": false,
+      "required": false,
+      "transform": "Trim"
+    },
+    {
+      "source": "costCenter",
+      "target": "extensionAttribute3",
+      "enabled": false,
+      "required": false,
+      "transform": "Trim"
+    },
+    {
+      "source": "employeeClass",
+      "target": "extensionAttribute4",
+      "enabled": false,
+      "required": false,
+      "transform": "Trim"
+    },
+    {
+      "source": "region",
+      "target": "extensionAttribute5",
+      "enabled": false,
+      "required": false,
+      "transform": "Trim"
+    },
+    {
+      "source": "geozone",
+      "target": "extensionAttribute6",
+      "enabled": false,
+      "required": false,
+      "transform": "Trim"
+    },
+    {
+      "source": "peopleGroup",
+      "target": "extensionAttribute7",
+      "enabled": false,
+      "required": false,
+      "transform": "Trim"
+    },
+    {
+      "source": "leadershipLevel",
+      "target": "extensionAttribute8",
+      "enabled": false,
+      "required": false,
+      "transform": "Trim"
+    },
+    {
+      "source": "bargainingUnit",
+      "target": "extensionAttribute9",
+      "enabled": false,
+      "required": false,
+      "transform": "Trim"
+    },
+    {
+      "source": "unionJobCode",
+      "target": "extensionAttribute10",
+      "enabled": false,
+      "required": false,
+      "transform": "Trim"
+    },
+    {
+      "source": "startDate",
+      "target": "extensionAttribute1",
+      "enabled": false,
+      "required": false,
+      "transform": "DateOnly"
+    },
+    {
+      "source": "employmentNav[0].jobInfoNav[0].locationNav.officeLocationAddress",
+      "target": "streetAddress",
+      "enabled": false,
+      "required": false,
+      "transform": "Trim"
+    },
+    {
+      "source": "employmentNav[0].jobInfoNav[0].locationNav.officeLocationCity",
+      "target": "l",
+      "enabled": false,
+      "required": false,
+      "transform": "Trim"
+    },
+    {
+      "source": "employmentNav[0].jobInfoNav[0].locationNav.officeLocationZipCode",
+      "target": "postalCode",
+      "enabled": false,
+      "required": false,
+      "transform": "Trim"
+    }
+  ]
+}

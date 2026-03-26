@@ -150,6 +150,14 @@ public sealed class AttributeDiffService : IAttributeDiffService
             "employmentNav[0].jobInfoNav[0].employeeClass" => "employeeClass",
             "employmentNav[0].jobInfoNav[0].employeeType" => "employeeType",
             "employmentNav[0].jobInfoNav[0].managerId" => "managerId",
+            "employmentNav[0].jobInfoNav[0].customString3" => "peopleGroup",
+            "employmentNav[0].jobInfoNav[0].customString20" => "leadershipLevel",
+            "employmentNav[0].jobInfoNav[0].customString87" => "region",
+            "employmentNav[0].jobInfoNav[0].customString110" => "geozone",
+            "employmentNav[0].jobInfoNav[0].customString111" => "bargainingUnit",
+            "employmentNav[0].jobInfoNav[0].customString91" => "unionJobCode",
+            "employmentNav[0].jobInfoNav[0].customString112" => "cintasUniformCategory",
+            "employmentNav[0].jobInfoNav[0].customString113" => "cintasUniformAllotment",
             _ => source
         };
     }

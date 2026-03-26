@@ -44,7 +44,13 @@
         "employmentNav/jobInfoNav/costCenterNav/costCenterDescription",
         "employmentNav/jobInfoNav/employeeClass",
         "employmentNav/jobInfoNav/employeeType",
-        "employmentNav/jobInfoNav/managerId"
+        "employmentNav/jobInfoNav/managerId",
+        "employmentNav/jobInfoNav/customString3",
+        "employmentNav/jobInfoNav/customString20",
+        "employmentNav/jobInfoNav/customString87",
+        "employmentNav/jobInfoNav/customString110",
+        "employmentNav/jobInfoNav/customString111",
+        "employmentNav/jobInfoNav/customString91"
       ],
       "expand": [
         "employmentNav",

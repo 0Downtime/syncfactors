@@ -71,7 +71,13 @@ public sealed class SuccessFactorsWorkerSourceIntegrationTests
                 "employmentNav/jobInfoNav/costCenterNav/costCenterDescription",
                 "employmentNav/jobInfoNav/employeeClass",
                 "employmentNav/jobInfoNav/employeeType",
-                "employmentNav/jobInfoNav/managerId"
+                "employmentNav/jobInfoNav/managerId",
+                "employmentNav/jobInfoNav/customString3",
+                "employmentNav/jobInfoNav/customString20",
+                "employmentNav/jobInfoNav/customString87",
+                "employmentNav/jobInfoNav/customString110",
+                "employmentNav/jobInfoNav/customString111",
+                "employmentNav/jobInfoNav/customString91"
               ],
               "expand": [
                 "employmentNav",
@@ -124,6 +130,10 @@ public sealed class SuccessFactorsWorkerSourceIntegrationTests
         Assert.Equal("Worker101", worker.PreferredName);
         Assert.Equal("CORP", worker.Attributes["company"]);
         Assert.Equal("HQ North", worker.Attributes["location"]);
+        Assert.Equal("Field Ops", worker.Attributes["peopleGroup"]);
+        Assert.Equal("Central", worker.Attributes["region"]);
+        Assert.Equal("North Metro", worker.Attributes["geozone"]);
+        Assert.Equal("IC-3", worker.Attributes["leadershipLevel"]);
     }
 
     private sealed class MockSuccessFactorsHttpHandler(MockFixtureStore fixtureStore, ODataResponseBuilder responseBuilder) : HttpMessageHandler
