@@ -118,19 +118,36 @@ public static class FixtureGenerationCommand
         var jobInfo = employment is { ValueKind: not JsonValueKind.Undefined }
             ? GetFirstResult(employment.Value, "jobInfoNav")
             : null;
-        var email = GetFirstResult(worker, "emailNav");
+        var email = GetPreferredResult(worker, "emailNav", static item => IsTrue(item, "isPrimary"))
+            ?? GetFirstResult(worker, "emailNav");
+        var primaryPhone = GetPreferredResult(worker, "phoneNav", static item => IsTrue(item, "isPrimary"))
+            ?? GetFirstResult(worker, "phoneNav");
+        var businessPhone = GetPreferredResult(worker, "phoneNav", static item => PropertyEquals(item, "phoneType", "10605"));
+        var cellPhone = GetPreferredResult(worker, "phoneNav", static item => PropertyEquals(item, "phoneType", "10606"));
         var location = jobInfo is { ValueKind: not JsonValueKind.Undefined } ? GetObject(jobInfo.Value, "locationNav") : null;
+        var address = location is { ValueKind: not JsonValueKind.Undefined } ? GetObject(location.Value, "addressNavDEFLT") : null;
+        var companyNav = GetObject(jobInfo, "companyNav");
+        var departmentNav = GetObject(jobInfo, "departmentNav");
+        var businessUnitNav = GetObject(jobInfo, "businessUnitNav");
+        var divisionNav = GetObject(jobInfo, "divisionNav");
+        var costCenterNav = GetObject(jobInfo, "costCenterNav");
+        var companyCountryNav = GetObject(companyNav, "countryOfRegistrationNav");
+        var userNav = GetObject(employment, "userNav");
+        var managerNav = GetObject(userNav, "manager");
+        var managerEmpInfo = GetObject(managerNav, "empInfo");
+        var payGradeNav = GetObject(jobInfo, "payGradeNav");
+        var personEmpTerminationInfoNav = GetObject(worker, "personEmpTerminationInfoNav");
 
         var startDate = GetString(employment, "startDate") ?? GetString(worker, "startDate") ?? DateTimeOffset.UtcNow.ToString("O");
-        var department = GetString(GetObject(jobInfo, "departmentNav"), "department") ?? GetString(jobInfo, "department");
-        var company = GetString(GetObject(jobInfo, "companyNav"), "company") ?? GetString(jobInfo, "company");
-        var locationName = GetString(location, "LocationName") ?? GetString(jobInfo, "location");
-        var managerId = GetString(jobInfo, "managerId") ?? GetString(worker, "managerId");
+        var department = GetString(departmentNav, "name_localized") ?? GetString(departmentNav, "department") ?? GetString(jobInfo, "department");
+        var company = GetString(companyNav, "name_localized") ?? GetString(companyNav, "company") ?? GetString(jobInfo, "company");
+        var locationName = GetString(location, "name") ?? GetString(location, "LocationName") ?? GetString(jobInfo, "location");
+        var managerId = GetString(managerEmpInfo, "personIdExternal") ?? GetString(jobInfo, "managerId") ?? GetString(worker, "managerId");
 
         var tags = InferScenarioTags(startDate, department, managerId);
         return new MockWorkerFixture(
             PersonIdExternal: GetString(worker, "personIdExternal") ?? Guid.NewGuid().ToString("N"),
-            UserName: GetString(worker, "username") ?? GetString(worker, "userName") ?? "user",
+            UserName: GetString(userNav, "username") ?? GetString(worker, "username") ?? GetString(worker, "userName") ?? "user",
             Email: GetString(email, "emailAddress") ?? GetString(worker, "email") ?? "user@example.com",
             FirstName: GetString(personalInfo, "firstName") ?? GetString(worker, "firstName") ?? "Unknown",
             LastName: GetString(personalInfo, "lastName") ?? GetString(worker, "lastName") ?? "Worker",
@@ -139,13 +156,14 @@ public static class FixtureGenerationCommand
             Company: company,
             Location: new MockLocationFixture(
                 Name: locationName,
-                Address: GetString(location, "officeLocationAddress"),
-                City: GetString(location, "officeLocationCity"),
-                ZipCode: GetString(location, "officeLocationZipCode")),
+                Address: GetString(address, "address1") ?? GetString(location, "officeLocationAddress"),
+                City: GetString(address, "city") ?? GetString(location, "officeLocationCity"),
+                ZipCode: GetString(address, "zipCode") ?? GetString(location, "officeLocationZipCode"),
+                CustomString4: GetString(address, "customString4")),
             JobTitle: GetString(jobInfo, "jobTitle"),
-            BusinessUnit: GetString(GetObject(jobInfo, "businessUnitNav"), "businessUnit") ?? GetString(jobInfo, "businessUnit"),
-            Division: GetString(GetObject(jobInfo, "divisionNav"), "division") ?? GetString(jobInfo, "division"),
-            CostCenter: GetString(GetObject(jobInfo, "costCenterNav"), "costCenterDescription") ?? GetString(jobInfo, "costCenter"),
+            BusinessUnit: GetString(businessUnitNav, "name_localized") ?? GetString(businessUnitNav, "businessUnit") ?? GetString(jobInfo, "businessUnit"),
+            Division: GetString(divisionNav, "name_localized") ?? GetString(divisionNav, "division") ?? GetString(jobInfo, "division"),
+            CostCenter: GetString(costCenterNav, "name_localized") ?? GetString(costCenterNav, "costCenterDescription") ?? GetString(jobInfo, "costCenter"),
             EmployeeClass: GetString(jobInfo, "employeeClass"),
             EmployeeType: GetString(jobInfo, "employeeType"),
             ManagerId: managerId,
@@ -160,7 +178,33 @@ public static class FixtureGenerationCommand
             EmploymentStatus: GetString(jobInfo, "emplStatus"),
             LastModifiedDateTime: GetString(worker, "lastModifiedDateTime"),
             ScenarioTags: tags,
-            Response: null);
+            Response: null,
+            PersonId: GetString(worker, "personId"),
+            PerPersonUuid: GetString(worker, "perPersonUuid"),
+            PreferredName: GetString(personalInfo, "preferredName"),
+            DisplayName: GetString(personalInfo, "displayName"),
+            UserId: GetString(employment, "userId") ?? GetString(worker, "userId"),
+            EmailType: GetString(email, "emailType"),
+            DepartmentName: GetString(departmentNav, "name") ?? department,
+            DepartmentId: GetString(departmentNav, "externalCode"),
+            DepartmentCostCenter: GetString(departmentNav, "costCenter"),
+            CompanyId: GetString(companyNav, "externalCode"),
+            BusinessUnitId: GetString(businessUnitNav, "externalCode"),
+            DivisionId: GetString(divisionNav, "externalCode"),
+            CostCenterDescription: GetString(costCenterNav, "description_localized") ?? GetString(costCenterNav, "costCenterDescription"),
+            CostCenterId: GetString(costCenterNav, "externalCode"),
+            TwoCharCountryCode: GetString(companyCountryNav, "twoCharCountryCode"),
+            Position: GetString(jobInfo, "position"),
+            PayGrade: GetString(payGradeNav, "name"),
+            BusinessPhoneNumber: GetString(businessPhone, "phoneNumber"),
+            BusinessPhoneAreaCode: GetString(businessPhone, "areaCode"),
+            BusinessPhoneCountryCode: GetString(businessPhone, "countryCode"),
+            BusinessPhoneExtension: GetString(businessPhone, "extension"),
+            CellPhoneNumber: GetString(cellPhone, "phoneNumber"),
+            CellPhoneAreaCode: GetString(cellPhone, "areaCode"),
+            CellPhoneCountryCode: GetString(cellPhone, "countryCode"),
+            ActiveEmploymentsCount: GetString(personEmpTerminationInfoNav, "activeEmploymentsCount"),
+            LatestTerminationDate: GetString(personEmpTerminationInfoNav, "latestTerminationDate"));
     }
 
     private static MockWorkerFixture SanitizeFixture(MockWorkerFixture worker, int index)
@@ -179,16 +223,30 @@ public static class FixtureGenerationCommand
         return worker with
         {
             PersonIdExternal = sanitizedId,
+            PersonId = personNumber,
+            PerPersonUuid = $"uuid-{personNumber}",
             UserName = userName,
             Email = email,
             FirstName = firstName,
             LastName = lastName,
+            PreferredName = worker.PreferredName is null ? null : $"Preferred{StableNumber(key + ":pn", 10, 999):D3}",
+            DisplayName = worker.DisplayName is null ? null : $"Preferred{StableNumber(key + ":pn", 10, 999):D3} {lastName}",
+            UserId = string.IsNullOrWhiteSpace(worker.UserId) ? userName : userName,
+            EmailType = worker.EmailType is null ? null : "B",
             ManagerId = managerId,
             Department = AliasDimension("Department", worker.Department),
+            DepartmentName = AliasDimension("DepartmentName", worker.DepartmentName ?? worker.Department),
+            DepartmentId = BuildCode("DEPT", worker.DepartmentId ?? worker.Department),
+            DepartmentCostCenter = BuildCode("DCC", worker.DepartmentCostCenter ?? worker.CostCenter),
             Company = AliasDimension("Company", worker.Company),
+            CompanyId = BuildCode("COMP", worker.CompanyId ?? worker.Company),
             BusinessUnit = AliasDimension("BusinessUnit", worker.BusinessUnit),
+            BusinessUnitId = BuildCode("BU", worker.BusinessUnitId ?? worker.BusinessUnit),
             Division = AliasDimension("Division", worker.Division),
+            DivisionId = BuildCode("DIV", worker.DivisionId ?? worker.Division),
             CostCenter = AliasDimension("CostCenter", worker.CostCenter),
+            CostCenterDescription = AliasDimension("CostCenterDescription", worker.CostCenterDescription ?? worker.CostCenter),
+            CostCenterId = BuildCode("CC", worker.CostCenterId ?? worker.CostCenter),
             JobTitle = AliasDimension("Job", worker.JobTitle),
             PeopleGroup = AliasDimension("PeopleGroup", worker.PeopleGroup),
             LeadershipLevel = AliasDimension("LeadershipLevel", worker.LeadershipLevel),
@@ -198,13 +256,26 @@ public static class FixtureGenerationCommand
             UnionJobCode = AliasDimension("UnionJobCode", worker.UnionJobCode),
             CintasUniformCategory = AliasDimension("UniformCategory", worker.CintasUniformCategory),
             CintasUniformAllotment = AliasDimension("UniformAllotment", worker.CintasUniformAllotment),
+            TwoCharCountryCode = string.IsNullOrWhiteSpace(worker.TwoCharCountryCode) ? null : "US",
+            Position = AliasDimension("Position", worker.Position),
+            PayGrade = AliasDimension("PayGrade", worker.PayGrade),
+            BusinessPhoneNumber = worker.BusinessPhoneNumber is null ? null : $"{StableNumber(key + ":bpn", 5550000, 5559999):D7}",
+            BusinessPhoneAreaCode = worker.BusinessPhoneAreaCode is null ? null : $"{StableNumber(key + ":bpa", 200, 999):D3}",
+            BusinessPhoneCountryCode = worker.BusinessPhoneCountryCode is null ? null : "1",
+            BusinessPhoneExtension = worker.BusinessPhoneExtension is null ? null : $"{StableNumber(key + ":bpe", 100, 999):D3}",
+            CellPhoneNumber = worker.CellPhoneNumber is null ? null : $"{StableNumber(key + ":cpn", 5550000, 5559999):D7}",
+            CellPhoneAreaCode = worker.CellPhoneAreaCode is null ? null : $"{StableNumber(key + ":cpa", 200, 999):D3}",
+            CellPhoneCountryCode = worker.CellPhoneCountryCode is null ? null : "1",
+            ActiveEmploymentsCount = string.IsNullOrWhiteSpace(worker.ActiveEmploymentsCount) ? null : worker.ActiveEmploymentsCount,
+            LatestTerminationDate = string.IsNullOrWhiteSpace(worker.LatestTerminationDate) ? null : worker.LatestTerminationDate,
             Location = worker.Location is null
                 ? null
                 : new MockLocationFixture(
                     Name: AliasDimension("Location", worker.Location.Name),
                     Address: worker.Location.Address is null ? null : $"Suite {StableNumber(key + ":addr", 100, 999)} Example Way",
                     City: worker.Location.City is null ? null : $"City{StableNumber(key + ":city", 10, 99)}",
-                    ZipCode: worker.Location.ZipCode is null ? null : $"{StableNumber(key + ":zip", 10_000, 99_999):D5}"),
+                    ZipCode: worker.Location.ZipCode is null ? null : $"{StableNumber(key + ":zip", 10_000, 99_999):D5}",
+                    CustomString4: worker.Location.CustomString4 is null ? null : $"Floor {StableNumber(key + ":floor", 1, 20)}"),
             ScenarioTags = worker.ScenarioTags.Count > 0 ? worker.ScenarioTags : InferDefaultScenarioTags(index, worker.StartDate)
         };
     }
@@ -258,6 +329,16 @@ public static class FixtureGenerationCommand
         return $"{dimension}-{StableNumber($"{dimension}:{value}", 1, 99):D2}";
     }
 
+    private static string? BuildCode(string prefix, string? seed)
+    {
+        if (string.IsNullOrWhiteSpace(seed))
+        {
+            return null;
+        }
+
+        return $"{prefix}-{StableNumber($"{prefix}:{seed}", 100, 999)}";
+    }
+
     private static JsonElement? GetFirstResult(JsonElement element, string propertyName)
     {
         if (element.TryGetProperty(propertyName, out var navigation) &&
@@ -279,6 +360,25 @@ public static class FixtureGenerationCommand
         return element is { ValueKind: not JsonValueKind.Undefined } ? GetFirstResult(element.Value, propertyName) : null;
     }
 
+    private static JsonElement? GetPreferredResult(JsonElement element, string propertyName, Func<JsonElement, bool> predicate)
+    {
+        if (element.TryGetProperty(propertyName, out var navigation) &&
+            navigation.ValueKind == JsonValueKind.Object &&
+            navigation.TryGetProperty("results", out var results) &&
+            results.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var item in results.EnumerateArray())
+            {
+                if (predicate(item))
+                {
+                    return item.Clone();
+                }
+            }
+        }
+
+        return null;
+    }
+
     private static JsonElement? GetObject(JsonElement element, string propertyName)
     {
         return element.TryGetProperty(propertyName, out var property) && property.ValueKind == JsonValueKind.Object
@@ -293,13 +393,43 @@ public static class FixtureGenerationCommand
 
     private static string? GetString(JsonElement element, string propertyName)
     {
-        return element.TryGetProperty(propertyName, out var property) && property.ValueKind == JsonValueKind.String
-            ? property.GetString()
-            : null;
+        if (!element.TryGetProperty(propertyName, out var property))
+        {
+            return null;
+        }
+
+        return property.ValueKind switch
+        {
+            JsonValueKind.String => property.GetString(),
+            JsonValueKind.Number => property.ToString(),
+            JsonValueKind.True => bool.TrueString.ToLowerInvariant(),
+            JsonValueKind.False => bool.FalseString.ToLowerInvariant(),
+            _ => null
+        };
     }
 
     private static string? GetString(JsonElement? element, string propertyName)
     {
         return element is { ValueKind: not JsonValueKind.Undefined } ? GetString(element.Value, propertyName) : null;
+    }
+
+    private static bool IsTrue(JsonElement element, string propertyName)
+    {
+        if (!element.TryGetProperty(propertyName, out var property))
+        {
+            return false;
+        }
+
+        return property.ValueKind switch
+        {
+            JsonValueKind.True => true,
+            JsonValueKind.String => bool.TryParse(property.GetString(), out var parsed) && parsed,
+            _ => false
+        };
+    }
+
+    private static bool PropertyEquals(JsonElement element, string propertyName, string expectedValue)
+    {
+        return string.Equals(GetString(element, propertyName), expectedValue, StringComparison.OrdinalIgnoreCase);
     }
 }

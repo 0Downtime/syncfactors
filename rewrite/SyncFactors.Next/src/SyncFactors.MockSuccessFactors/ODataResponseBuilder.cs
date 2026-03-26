@@ -21,9 +21,13 @@ public sealed class ODataResponseBuilder
         {
             ["personIdExternal"] = worker.PersonIdExternal
         };
+        AddIfSelected(workerNode, "personId", worker.PersonId, query);
+        AddIfSelected(workerNode, "perPersonUuid", worker.PerPersonUuid, query);
 
         AddPersonalInfo(workerNode, worker, query);
         AddEmail(workerNode, worker, query);
+        AddPhone(workerNode, worker, query);
+        AddTermination(workerNode, worker, query);
         AddEmployment(workerNode, worker, query);
 
         return new JsonObject
@@ -45,6 +49,8 @@ public sealed class ODataResponseBuilder
         var personalInfo = new JsonObject();
         AddIfSelected(personalInfo, "personalInfoNav/firstName", worker.FirstName, query);
         AddIfSelected(personalInfo, "personalInfoNav/lastName", worker.LastName, query);
+        AddIfSelected(personalInfo, "personalInfoNav/preferredName", worker.PreferredName, query, "preferredName");
+        AddIfSelected(personalInfo, "personalInfoNav/displayName", worker.DisplayName, query, "displayName");
 
         if (personalInfo.Count > 0)
         {
@@ -61,10 +67,66 @@ public sealed class ODataResponseBuilder
 
         var email = new JsonObject();
         AddIfSelected(email, "emailNav/emailAddress", worker.Email, query, "emailAddress");
+        AddIfSelected(email, "emailNav/emailType", worker.EmailType, query, "emailType");
+        AddIfSelected(email, "emailNav/isPrimary", "true", query, "isPrimary");
 
         if (email.Count > 0)
         {
             workerNode["emailNav"] = ToResultsArray(email);
+        }
+    }
+
+    private static void AddPhone(JsonObject workerNode, MockWorkerFixture worker, ODataQuery query)
+    {
+        if (!ShouldIncludeNavigation("phoneNav", query))
+        {
+            return;
+        }
+
+        var phones = new JsonArray();
+        AddPhoneIfSelected(
+            phones,
+            worker.BusinessPhoneAreaCode,
+            worker.BusinessPhoneCountryCode,
+            worker.BusinessPhoneExtension,
+            worker.BusinessPhoneNumber,
+            "10605",
+            "false",
+            query);
+        AddPhoneIfSelected(
+            phones,
+            worker.CellPhoneAreaCode,
+            worker.CellPhoneCountryCode,
+            null,
+            worker.CellPhoneNumber,
+            "10606",
+            "true",
+            query);
+
+        if (phones.Count > 0)
+        {
+            workerNode["phoneNav"] = new JsonObject
+            {
+                ["results"] = phones
+            };
+        }
+    }
+
+    private static void AddTermination(JsonObject workerNode, MockWorkerFixture worker, ODataQuery query)
+    {
+        var hasRequestedPath = query.Select.Any(select => select.StartsWith("personEmpTerminationInfoNav/", StringComparison.OrdinalIgnoreCase));
+        if (!hasRequestedPath)
+        {
+            return;
+        }
+
+        var termination = new JsonObject();
+        AddIfSelected(termination, "personEmpTerminationInfoNav/activeEmploymentsCount", worker.ActiveEmploymentsCount, query, "activeEmploymentsCount");
+        AddIfSelected(termination, "personEmpTerminationInfoNav/latestTerminationDate", worker.LatestTerminationDate, query, "latestTerminationDate");
+
+        if (termination.Count > 0)
+        {
+            workerNode["personEmpTerminationInfoNav"] = termination;
         }
     }
 
@@ -77,6 +139,7 @@ public sealed class ODataResponseBuilder
 
         var employment = new JsonObject();
         AddIfSelected(employment, "employmentNav/startDate", worker.StartDate, query, "startDate");
+        AddIfSelected(employment, "employmentNav/userId", worker.UserId ?? worker.UserName, query, "userId");
 
         if (ShouldIncludeNavigation("employmentNav/jobInfoNav", query))
         {
@@ -85,6 +148,8 @@ public sealed class ODataResponseBuilder
             AddIfSelected(jobInfo, "employmentNav/jobInfoNav/employeeClass", worker.EmployeeClass, query, "employeeClass");
             AddIfSelected(jobInfo, "employmentNav/jobInfoNav/employeeType", worker.EmployeeType, query, "employeeType");
             AddIfSelected(jobInfo, "employmentNav/jobInfoNav/managerId", worker.ManagerId, query, "managerId");
+            AddIfSelected(jobInfo, "employmentNav/jobInfoNav/emplStatus", worker.EmploymentStatus, query, "emplStatus");
+            AddIfSelected(jobInfo, "employmentNav/jobInfoNav/position", worker.Position, query, "position");
             AddIfSelected(jobInfo, "employmentNav/jobInfoNav/customString3", worker.PeopleGroup, query, "customString3");
             AddIfSelected(jobInfo, "employmentNav/jobInfoNav/customString20", worker.LeadershipLevel, query, "customString20");
             AddIfSelected(jobInfo, "employmentNav/jobInfoNav/customString87", worker.Region, query, "customString87");
@@ -99,12 +164,12 @@ public sealed class ODataResponseBuilder
             AddIfSelected(jobInfo, "employmentNav/jobInfoNav/division", worker.Division, query, "division");
             AddIfSelected(jobInfo, "employmentNav/jobInfoNav/costCenter", worker.CostCenter, query, "costCenter");
             AddIfSelected(jobInfo, "employmentNav/jobInfoNav/location", worker.Location?.Name, query, "location");
-
-            AddIfSelectedNavigation(jobInfo, "employmentNav/jobInfoNav/companyNav", "company", worker.Company, query);
-            AddIfSelectedNavigation(jobInfo, "employmentNav/jobInfoNav/departmentNav", "department", worker.Department, query);
-            AddIfSelectedNavigation(jobInfo, "employmentNav/jobInfoNav/businessUnitNav", "businessUnit", worker.BusinessUnit, query);
-            AddIfSelectedNavigation(jobInfo, "employmentNav/jobInfoNav/divisionNav", "division", worker.Division, query);
-            AddIfSelectedNavigation(jobInfo, "employmentNav/jobInfoNav/costCenterNav", "costCenterDescription", worker.CostCenter, query);
+            AddPayGradeNavigation(jobInfo, worker, query);
+            AddCompanyNavigation(jobInfo, worker, query);
+            AddDepartmentNavigation(jobInfo, worker, query);
+            AddBusinessUnitNavigation(jobInfo, worker, query);
+            AddDivisionNavigation(jobInfo, worker, query);
+            AddCostCenterNavigation(jobInfo, worker, query);
             AddLocationNavigation(jobInfo, worker.Location, query);
 
             if (jobInfo.Count > 0)
@@ -113,9 +178,48 @@ public sealed class ODataResponseBuilder
             }
         }
 
+        AddUserNavigation(employment, worker, query);
+
         if (employment.Count > 0)
         {
             workerNode["employmentNav"] = ToResultsArray(employment);
+        }
+    }
+
+    private static void AddUserNavigation(JsonObject employment, MockWorkerFixture worker, ODataQuery query)
+    {
+        if (!ShouldIncludeNavigation("employmentNav/userNav", query))
+        {
+            return;
+        }
+
+        var userNav = new JsonObject();
+        AddIfSelected(userNav, "employmentNav/userNav/username", worker.UserName, query, "username");
+        AddIfSelected(userNav, "employmentNav/userNav/businessPhone", worker.BusinessPhoneNumber, query, "businessPhone");
+        AddIfSelected(userNav, "employmentNav/userNav/cellPhone", worker.CellPhoneNumber, query, "cellPhone");
+
+        if (ShouldIncludeNavigation("employmentNav/userNav/manager", query) || query.Select.Contains("employmentNav/userNav/manager/empInfo/personIdExternal"))
+        {
+            var manager = new JsonObject();
+            if (ShouldIncludeNavigation("employmentNav/userNav/manager/empInfo", query) || query.Select.Contains("employmentNav/userNav/manager/empInfo/personIdExternal"))
+            {
+                var empInfo = new JsonObject();
+                AddIfSelected(empInfo, "employmentNav/userNav/manager/empInfo/personIdExternal", worker.ManagerId, query, "personIdExternal");
+                if (empInfo.Count > 0)
+                {
+                    manager["empInfo"] = empInfo;
+                }
+            }
+
+            if (manager.Count > 0)
+            {
+                userNav["manager"] = manager;
+            }
+        }
+
+        if (userNav.Count > 0)
+        {
+            employment["userNav"] = userNav;
         }
     }
 
@@ -127,10 +231,23 @@ public sealed class ODataResponseBuilder
         }
 
         var locationNode = new JsonObject();
+        AddIfSelected(locationNode, "employmentNav/jobInfoNav/locationNav/name", location.Name, query, "name");
         AddIfSelected(locationNode, "employmentNav/jobInfoNav/locationNav/LocationName", location.Name, query, "LocationName");
         AddIfSelected(locationNode, "employmentNav/jobInfoNav/locationNav/officeLocationAddress", location.Address, query, "officeLocationAddress");
         AddIfSelected(locationNode, "employmentNav/jobInfoNav/locationNav/officeLocationCity", location.City, query, "officeLocationCity");
         AddIfSelected(locationNode, "employmentNav/jobInfoNav/locationNav/officeLocationZipCode", location.ZipCode, query, "officeLocationZipCode");
+        if (ShouldIncludeNavigation("employmentNav/jobInfoNav/locationNav/addressNavDEFLT", query))
+        {
+            var address = new JsonObject();
+            AddIfSelected(address, "employmentNav/jobInfoNav/locationNav/addressNavDEFLT/address1", location.Address, query, "address1");
+            AddIfSelected(address, "employmentNav/jobInfoNav/locationNav/addressNavDEFLT/city", location.City, query, "city");
+            AddIfSelected(address, "employmentNav/jobInfoNav/locationNav/addressNavDEFLT/zipCode", location.ZipCode, query, "zipCode");
+            AddIfSelected(address, "employmentNav/jobInfoNav/locationNav/addressNavDEFLT/customString4", location.CustomString4, query, "customString4");
+            if (address.Count > 0)
+            {
+                locationNode["addressNavDEFLT"] = address;
+            }
+        }
 
         if (locationNode.Count > 0)
         {
@@ -138,22 +255,141 @@ public sealed class ODataResponseBuilder
         }
     }
 
-    private static void AddIfSelectedNavigation(
-        JsonObject container,
-        string navigationPath,
-        string propertyName,
-        string? value,
-        ODataQuery query)
+    private static void AddCompanyNavigation(JsonObject jobInfo, MockWorkerFixture worker, ODataQuery query)
     {
-        if (!ShouldIncludeNavigation(navigationPath, query) || string.IsNullOrWhiteSpace(value))
+        if (!ShouldIncludeNavigation("employmentNav/jobInfoNav/companyNav", query))
         {
             return;
         }
 
-        container[navigationPath.Split('/').Last()] = new JsonObject
+        var companyNav = new JsonObject();
+        AddIfSelected(companyNav, "employmentNav/jobInfoNav/companyNav/company", worker.Company, query, "company");
+        AddIfSelected(companyNav, "employmentNav/jobInfoNav/companyNav/name_localized", worker.Company, query, "name_localized");
+        AddIfSelected(companyNav, "employmentNav/jobInfoNav/companyNav/externalCode", worker.CompanyId, query, "externalCode");
+        if (ShouldIncludeNavigation("employmentNav/jobInfoNav/companyNav/countryOfRegistrationNav", query))
         {
-            [propertyName] = value
-        };
+            var country = new JsonObject();
+            AddIfSelected(country, "employmentNav/jobInfoNav/companyNav/countryOfRegistrationNav/twoCharCountryCode", worker.TwoCharCountryCode, query, "twoCharCountryCode");
+            if (country.Count > 0)
+            {
+                companyNav["countryOfRegistrationNav"] = country;
+            }
+        }
+
+        if (companyNav.Count > 0)
+        {
+            jobInfo["companyNav"] = companyNav;
+        }
+    }
+
+    private static void AddDepartmentNavigation(JsonObject jobInfo, MockWorkerFixture worker, ODataQuery query)
+    {
+        AddFlatNavigation(
+            jobInfo,
+            "employmentNav/jobInfoNav/departmentNav",
+            query,
+            ("department", worker.Department),
+            ("name_localized", worker.Department),
+            ("name", worker.DepartmentName ?? worker.Department),
+            ("externalCode", worker.DepartmentId),
+            ("costCenter", worker.DepartmentCostCenter));
+    }
+
+    private static void AddBusinessUnitNavigation(JsonObject jobInfo, MockWorkerFixture worker, ODataQuery query)
+    {
+        AddFlatNavigation(
+            jobInfo,
+            "employmentNav/jobInfoNav/businessUnitNav",
+            query,
+            ("businessUnit", worker.BusinessUnit),
+            ("name_localized", worker.BusinessUnit),
+            ("externalCode", worker.BusinessUnitId));
+    }
+
+    private static void AddDivisionNavigation(JsonObject jobInfo, MockWorkerFixture worker, ODataQuery query)
+    {
+        AddFlatNavigation(
+            jobInfo,
+            "employmentNav/jobInfoNav/divisionNav",
+            query,
+            ("division", worker.Division),
+            ("name_localized", worker.Division),
+            ("externalCode", worker.DivisionId));
+    }
+
+    private static void AddCostCenterNavigation(JsonObject jobInfo, MockWorkerFixture worker, ODataQuery query)
+    {
+        AddFlatNavigation(
+            jobInfo,
+            "employmentNav/jobInfoNav/costCenterNav",
+            query,
+            ("costCenterDescription", worker.CostCenterDescription ?? worker.CostCenter),
+            ("name_localized", worker.CostCenter),
+            ("description_localized", worker.CostCenterDescription ?? worker.CostCenter),
+            ("externalCode", worker.CostCenterId));
+    }
+
+    private static void AddPayGradeNavigation(JsonObject jobInfo, MockWorkerFixture worker, ODataQuery query)
+    {
+        AddFlatNavigation(
+            jobInfo,
+            "employmentNav/jobInfoNav/payGradeNav",
+            query,
+            ("name", worker.PayGrade));
+    }
+
+    private static void AddFlatNavigation(
+        JsonObject container,
+        string navigationPath,
+        ODataQuery query,
+        params (string PropertyName, string? Value)[] properties)
+    {
+        if (!ShouldIncludeNavigation(navigationPath, query))
+        {
+            return;
+        }
+
+        var navigation = new JsonObject();
+        foreach (var (propertyName, value) in properties)
+        {
+            AddIfSelected(navigation, $"{navigationPath}/{propertyName}", value, query, propertyName);
+        }
+
+        if (navigation.Count > 0)
+        {
+            container[navigationPath.Split('/').Last()] = navigation;
+        }
+    }
+
+    private static void AddPhoneIfSelected(
+        JsonArray phones,
+        string? areaCode,
+        string? countryCode,
+        string? extension,
+        string? phoneNumber,
+        string phoneType,
+        string isPrimary,
+        ODataQuery query)
+    {
+        if (string.IsNullOrWhiteSpace(areaCode) &&
+            string.IsNullOrWhiteSpace(countryCode) &&
+            string.IsNullOrWhiteSpace(extension) &&
+            string.IsNullOrWhiteSpace(phoneNumber))
+        {
+            return;
+        }
+
+        var phone = new JsonObject();
+        AddIfSelected(phone, "phoneNav/areaCode", areaCode, query, "areaCode");
+        AddIfSelected(phone, "phoneNav/countryCode", countryCode, query, "countryCode");
+        AddIfSelected(phone, "phoneNav/extension", extension, query, "extension");
+        AddIfSelected(phone, "phoneNav/phoneNumber", phoneNumber, query, "phoneNumber");
+        AddIfSelected(phone, "phoneNav/phoneType", phoneType, query, "phoneType");
+        AddIfSelected(phone, "phoneNav/isPrimary", isPrimary, query, "isPrimary");
+        if (phone.Count > 0)
+        {
+            phones.Add(phone);
+        }
     }
 
     private static void AddIfSelected(
