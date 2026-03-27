@@ -6,6 +6,8 @@ TestResults/
 
 # Local generated artifacts
 package-lock.json
+local/
+config/local*/
 config/local*.json
 config/local.variables
 config/Untitled-*.ps1
