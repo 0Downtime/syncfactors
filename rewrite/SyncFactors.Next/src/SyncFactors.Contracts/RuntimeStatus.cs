@@ -168,7 +168,8 @@ public sealed record DirectoryMutationCommand(
     string Mail,
     string TargetOu,
     string DisplayName,
-    bool EnableAccount);
+    bool EnableAccount,
+    IReadOnlyDictionary<string, string?> Attributes);
 
 public sealed record DirectoryCommandResult(
     bool Succeeded,
