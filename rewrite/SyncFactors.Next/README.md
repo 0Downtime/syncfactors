@@ -55,6 +55,7 @@ For Active Directory binds, the current .NET LDAP integration uses simple bind s
 
 Use [`src/SyncFactors.MockSuccessFactors`]( /Users/chrisbrien/dev/github.com/syncfactors/rewrite/SyncFactors.Next/src/SyncFactors.MockSuccessFactors ) to run a local SuccessFactors-like API for development.
 
+- Preferred local launcher: [`scripts/Start-SyncFactorsMockSuccessFactors.ps1`]( /Users/chrisbrien/dev/github.com/syncfactors/rewrite/SyncFactors.Next/scripts/Start-SyncFactorsMockSuccessFactors.ps1 )
 - Start the mock server with `DOTNET_CLI_HOME=/tmp dotnet run --project src/SyncFactors.MockSuccessFactors`
 - Point the sync config at `http://127.0.0.1:18080/odata/v2` using [`config/sample.mock-successfactors.real-ad.sync-config.json`]( /Users/chrisbrien/dev/github.com/syncfactors/rewrite/SyncFactors.Next/config/sample.mock-successfactors.real-ad.sync-config.json )
 - Baseline fixture data lives in [`config/mock-successfactors/baseline-fixtures.json`]( /Users/chrisbrien/dev/github.com/syncfactors/rewrite/SyncFactors.Next/config/mock-successfactors/baseline-fixtures.json )
