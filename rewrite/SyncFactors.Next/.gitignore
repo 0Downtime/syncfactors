@@ -3,3 +3,8 @@ obj/
 .vs/
 .idea/
 TestResults/
+config/local*.json
+config/local.variables
+reports/
+state/
+src/SyncFactors.Api/.\\reports\\mock-output/
