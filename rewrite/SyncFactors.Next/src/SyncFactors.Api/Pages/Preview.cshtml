@@ -65,19 +65,19 @@
         .Where(attribute => IsPathLikeAttribute(attribute.Attribute))
         .ToArray();
 
-    <section class="panel-grid">
+    <section class="panel-grid preview-summary-grid">
         <article class="panel">
             <h2>Summary</h2>
             <dl class="kv">
-                <div><dt>Worker Id</dt><dd>@Model.Preview.WorkerId</dd></div>
-                <div><dt>SAM</dt><dd>@(Model.Preview.SamAccountName ?? "n/a")</dd></div>
-                <div><dt>Status</dt><dd>@(Model.Preview.Status ?? "Unknown")</dd></div>
-                <div><dt>Operation</dt><dd>@(Model.Preview.OperationSummary?.Action ?? "No operation")</dd></div>
-                <div><dt>Matched Existing User</dt><dd>@DisplayBool(Model.Preview.MatchedExistingUser)</dd></div>
-                <div><dt>Manager DN</dt><dd>@(Model.Preview.ManagerDistinguishedName ?? "n/a")</dd></div>
-                <div><dt>Current DN</dt><dd>@(Model.Preview.CurrentDistinguishedName ?? "n/a")</dd></div>
-                <div><dt>Target OU</dt><dd>@(Model.Preview.TargetOu ?? "n/a")</dd></div>
-                <div><dt>Preview Log</dt><dd>@(Model.Preview.ReportPath ?? "n/a")</dd></div>
+                <div><dt>Worker Id</dt><dd><span class="summary-value" title="@Model.Preview.WorkerId" tabindex="0">@Model.Preview.WorkerId</span></dd></div>
+                <div><dt>SAM</dt><dd><span class="summary-value" title="@(Model.Preview.SamAccountName ?? "n/a")" tabindex="0">@(Model.Preview.SamAccountName ?? "n/a")</span></dd></div>
+                <div><dt>Status</dt><dd><span class="summary-value" title="@(Model.Preview.Status ?? "Unknown")" tabindex="0">@(Model.Preview.Status ?? "Unknown")</span></dd></div>
+                <div><dt>Operation</dt><dd><span class="summary-value" title="@(Model.Preview.OperationSummary?.Action ?? "No operation")" tabindex="0">@(Model.Preview.OperationSummary?.Action ?? "No operation")</span></dd></div>
+                <div><dt>Matched Existing User</dt><dd><span class="summary-value" title="@DisplayBool(Model.Preview.MatchedExistingUser)" tabindex="0">@DisplayBool(Model.Preview.MatchedExistingUser)</span></dd></div>
+                <div><dt>Manager DN</dt><dd><span class="summary-value" title="@(Model.Preview.ManagerDistinguishedName ?? "n/a")" tabindex="0">@(Model.Preview.ManagerDistinguishedName ?? "n/a")</span></dd></div>
+                <div><dt>Current DN</dt><dd><span class="summary-value" title="@(Model.Preview.CurrentDistinguishedName ?? "n/a")" tabindex="0">@(Model.Preview.CurrentDistinguishedName ?? "n/a")</span></dd></div>
+                <div><dt>Target OU</dt><dd><span class="summary-value" title="@(Model.Preview.TargetOu ?? "n/a")" tabindex="0">@(Model.Preview.TargetOu ?? "n/a")</span></dd></div>
+                <div><dt>Preview Log</dt><dd><span class="summary-value" title="@(Model.Preview.ReportPath ?? "n/a")" tabindex="0">@(Model.Preview.ReportPath ?? "n/a")</span></dd></div>
             </dl>
             @if (!string.IsNullOrWhiteSpace(Model.Preview.OperationSummary?.Effect))
             {
@@ -116,15 +116,24 @@
         <h2>Attribute Diff</h2>
         @if (Model.Preview.DiffRows.Count == 0)
         {
-            <p class="muted">No attribute-level differences were recorded.</p>
+            <p class="muted">No synced attributes were recorded for this preview.</p>
         }
         else
         {
-            <table class="data-table">
+            <p class="muted">Showing every synced attribute with the current directory value and the proposed incoming value.</p>
+            <table class="data-table preview-diff-table">
+                <colgroup>
+                    <col class="col-attribute" />
+                    <col class="col-source" />
+                    <col class="col-status" />
+                    <col class="col-current" />
+                    <col class="col-proposed" />
+                </colgroup>
                 <thead>
                     <tr>
                         <th>Attribute</th>
                         <th>Source</th>
+                        <th>Status</th>
                         <th>Current</th>
                         <th>Proposed</th>
                     </tr>
@@ -134,9 +143,16 @@
                 {
                     <tr class="diff-row @(row.Changed ? "changed" : "same")">
                         <td>@row.Attribute</td>
-                        <td>@(row.Source ?? "-")</td>
-                        <td class="before">@row.Before</td>
-                        <td class="after">@row.After</td>
+                        <td class="source-cell">
+                            <span class="source-path" title="@(row.Source ?? "-")" tabindex="0">@(row.Source ?? "-")</span>
+                        </td>
+                        <td>
+                            <span class="diff-status @(row.Changed ? "changed" : "same")">
+                                @(row.Changed ? "Changed" : "Unchanged")
+                            </span>
+                        </td>
+                        <td class="before"><span>@row.Before</span></td>
+                        <td class="after"><span>@row.After</span></td>
                     </tr>
                 }
                 </tbody>
@@ -183,7 +199,11 @@
             else
             {
                 <p class="muted">These rows expose the concrete source paths available for mapping and query work.</p>
-                <table class="data-table compact">
+                <table class="data-table compact preview-source-table">
+                    <colgroup>
+                        <col class="col-source-path" />
+                        <col class="col-source-value" />
+                    </colgroup>
                     <thead>
                         <tr>
                             <th>Source Path</th>
@@ -194,8 +214,8 @@
                     @foreach (var row in sourcePathAttributes)
                     {
                         <tr>
-                            <td>@row.Attribute</td>
-                            <td>@row.Value</td>
+                            <td><span class="source-path" title="@row.Attribute" tabindex="0">@row.Attribute</span></td>
+                            <td><span class="source-value" title="@row.Value" tabindex="0">@row.Value</span></td>
                         </tr>
                     }
                     </tbody>

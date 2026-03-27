@@ -128,6 +128,7 @@ public sealed class ActiveDirectoryGateway(
             "distinguishedName",
             "displayName",
             "userAccountControl",
+            config.IdentityAttribute,
             "givenName",
             "sn",
             "userPrincipalName",
@@ -170,7 +171,7 @@ public sealed class ActiveDirectoryGateway(
             DistinguishedName: distinguishedName,
             Enabled: ParseEnabled(userAccountControl),
             DisplayName: displayName,
-            Attributes: BuildAttributes(entry, displayName));
+            Attributes: BuildAttributes(entry, displayName, config.IdentityAttribute));
     }
 
     private static string? ResolveDistinguishedName(string workerId, ActiveDirectoryConfig config, ILogger logger)
@@ -299,9 +300,12 @@ public sealed class ActiveDirectoryGateway(
         return (value & AccountDisabledFlag) == 0;
     }
 
-    private static IReadOnlyDictionary<string, string?> BuildAttributes(SearchResultEntry entry, string? displayName)
+    private static IReadOnlyDictionary<string, string?> BuildAttributes(
+        SearchResultEntry entry,
+        string? displayName,
+        string identityAttribute)
     {
-        return new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+        var attributes = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
         {
             ["displayName"] = displayName,
             ["GivenName"] = GetAttribute(entry, "givenName"),
@@ -322,6 +326,13 @@ public sealed class ActiveDirectoryGateway(
             ["extensionAttribute3"] = GetAttribute(entry, "extensionAttribute3"),
             ["extensionAttribute4"] = GetAttribute(entry, "extensionAttribute4")
         };
+
+        if (!string.IsNullOrWhiteSpace(identityAttribute))
+        {
+            attributes[identityAttribute] = GetAttribute(entry, identityAttribute);
+        }
+
+        return attributes;
     }
 
     private static async Task<T> ExecuteWithTimeoutAsync<T>(

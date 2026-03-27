@@ -116,7 +116,30 @@ public sealed class AttributeDiffServiceTests
             logPath: null,
             CancellationToken.None);
 
-        Assert.DoesNotContain(changes, change => change.Attribute is "UserPrincipalName" or "mail");
+        Assert.Collection(
+            changes.Where(change => change.Attribute is "displayName" or "UserPrincipalName" or "mail")
+                .OrderBy(change => change.Attribute, StringComparer.Ordinal),
+            change =>
+            {
+                Assert.Equal("UserPrincipalName", change.Attribute);
+                Assert.Equal("winnie.sample1012@spireenergy.com", change.Before);
+                Assert.Equal("winnie.sample1012@spireenergy.com", change.After);
+                Assert.False(change.Changed);
+            },
+            change =>
+            {
+                Assert.Equal("displayName", change.Attribute);
+                Assert.Equal("Sample101, Winnie", change.Before);
+                Assert.Equal("Sample101, Winnie", change.After);
+                Assert.False(change.Changed);
+            },
+            change =>
+            {
+                Assert.Equal("mail", change.Attribute);
+                Assert.Equal("winnie.sample1012@spireenergy.com", change.Before);
+                Assert.Equal("winnie.sample1012@spireenergy.com", change.After);
+                Assert.False(change.Changed);
+            });
     }
 
     [Fact]
@@ -243,21 +266,31 @@ public sealed class AttributeDiffServiceTests
             changes.OrderBy(change => change.Attribute, StringComparer.Ordinal),
             change =>
             {
+                Assert.Equal("displayName", change.Attribute);
+                Assert.Equal("Sample101, Winnie", change.Before);
+                Assert.Equal("Sample101, Winnie", change.After);
+                Assert.False(change.Changed);
+            },
+            change =>
+            {
                 Assert.Equal("l", change.Attribute);
                 Assert.Equal("Old City", change.Before);
                 Assert.Equal("New York", change.After);
+                Assert.True(change.Changed);
             },
             change =>
             {
                 Assert.Equal("postalCode", change.Attribute);
                 Assert.Equal("99999", change.Before);
                 Assert.Equal("10001", change.After);
+                Assert.True(change.Changed);
             },
             change =>
             {
                 Assert.Equal("streetAddress", change.Attribute);
                 Assert.Equal("Old Office", change.Before);
                 Assert.Equal("1 Main St", change.After);
+                Assert.True(change.Changed);
             });
     }
 
