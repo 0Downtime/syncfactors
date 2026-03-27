@@ -33,12 +33,37 @@ function Resolve-OptionalPath {
     return $null
 }
 
+function Resolve-OptionalPathFromCandidates {
+    param(
+        [AllowNull()]
+        [string]$Path,
+        [Parameter(Mandatory)]
+        [string[]]$Fallbacks
+    )
+
+    if (-not [string]::IsNullOrWhiteSpace($Path)) {
+        return (Resolve-Path $Path).ProviderPath
+    }
+
+    foreach ($fallback in $Fallbacks) {
+        $candidate = Join-Path (Resolve-ProjectRoot) $fallback
+        if (Test-Path $candidate) {
+            return (Resolve-Path $candidate).ProviderPath
+        }
+    }
+
+    return $null
+}
+
 $projectRoot = Resolve-ProjectRoot
 $apiProjectPath = Join-Path $projectRoot 'src/SyncFactors.Api/SyncFactors.Api.csproj'
 
-$resolvedConfigPath = Resolve-OptionalPath -Path $ConfigPath -Fallback 'config/local.real-successfactors.real-ad.sync-config.json'
+$resolvedConfigPath = Resolve-OptionalPathFromCandidates -Path $ConfigPath -Fallbacks @(
+    'config/local.real-successfactors.real-ad.sync-config.json',
+    'config/local.mock-successfactors.real-ad.sync-config.json'
+)
 if ($null -eq $resolvedConfigPath) {
-    throw "Sync config path could not be resolved. Pass -ConfigPath or create 'config/local.real-successfactors.real-ad.sync-config.json'."
+    throw "Sync config path could not be resolved. Pass -ConfigPath or create 'config/local.real-successfactors.real-ad.sync-config.json' or 'config/local.mock-successfactors.real-ad.sync-config.json'."
 }
 
 $resolvedMappingConfigPath = Resolve-OptionalPath -Path $MappingConfigPath -Fallback 'config/local.syncfactors.mapping-config.json'
