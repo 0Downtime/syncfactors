@@ -103,28 +103,22 @@ public sealed class AttributeDiffService : IAttributeDiffService
                     Message: changed ? "Changed" : "Unchanged or filtered"), cancellationToken);
             }
 
-            if (changed)
-            {
-                changes.Add(new AttributeChange(
-                    Attribute: mapping.Target,
-                    Source: mapping.Source,
-                    Before: before,
-                    After: after,
-                    Changed: true));
-            }
+            changes.Add(new AttributeChange(
+                Attribute: mapping.Target,
+                Source: mapping.Source,
+                Before: before,
+                After: after,
+                Changed: changed));
         }
 
         var proposedDisplayName = DirectoryIdentityFormatter.BuildDisplayName(worker.PreferredName, worker.LastName);
         var currentDisplayName = GetDirectoryValue(currentAttributes, "displayName");
-        if (!string.Equals(currentDisplayName, proposedDisplayName, StringComparison.Ordinal))
-        {
-            changes.Insert(0, new AttributeChange(
-                Attribute: "displayName",
-                Source: "firstName,lastName",
-                Before: string.IsNullOrWhiteSpace(currentDisplayName) ? "(unset)" : currentDisplayName!,
-                After: proposedDisplayName,
-                Changed: true));
-        }
+        changes.Insert(0, new AttributeChange(
+            Attribute: "displayName",
+            Source: "firstName,lastName",
+            Before: string.IsNullOrWhiteSpace(currentDisplayName) ? "(unset)" : currentDisplayName!,
+            After: proposedDisplayName,
+            Changed: !string.Equals(currentDisplayName, proposedDisplayName, StringComparison.Ordinal)));
 
         _logger.LogDebug(
             "Attribute diff completed. WorkerId={WorkerId} EnabledMappings={EnabledMappings} ChangedMappings={ChangedMappings}",
