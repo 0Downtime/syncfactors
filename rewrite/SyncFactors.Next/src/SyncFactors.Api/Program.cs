@@ -39,6 +39,7 @@ var app = builder.Build();
 
 await app.Services.GetRequiredService<SqliteDatabaseInitializer>().InitializeAsync(CancellationToken.None);
 app.Services.GetRequiredService<SyncFactorsConfigurationValidator>().Validate();
+LogConfiguredEndpoints(app);
 
 app.UseStaticFiles();
 
@@ -109,3 +110,12 @@ app.MapPost("/api/preview/{workerId}/apply", async (
 app.MapRazorPages();
 
 app.Run();
+
+static void LogConfiguredEndpoints(WebApplication app)
+{
+    var config = app.Services.GetRequiredService<SyncFactorsConfigurationLoader>().GetSyncConfig();
+    app.Logger.LogInformation(
+        "Configured external endpoints. ActiveDirectoryServer={ActiveDirectoryServer} SuccessFactorsBaseUrl={SuccessFactorsBaseUrl}",
+        config.Ad.Server,
+        config.SuccessFactors.BaseUrl);
+}
