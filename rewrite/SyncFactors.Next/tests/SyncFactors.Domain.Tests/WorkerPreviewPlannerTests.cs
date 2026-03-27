@@ -42,6 +42,32 @@ public sealed class WorkerPreviewPlannerTests
         Assert.DoesNotContain(preview.SourceAttributes, attribute => attribute.Attribute == "emptyValue");
     }
 
+    [Fact]
+    public async Task PreviewAsync_PassesResolvedEmailAddressIntoAttributeDiffService()
+    {
+        var worker = new WorkerSnapshot(
+            WorkerId: "44522",
+            PreferredName: "Christopher",
+            LastName: "Brien",
+            Department: "Infrastructure & Security",
+            TargetOu: "OU=Employees,DC=example,DC=com",
+            IsPrehire: false,
+            Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase));
+
+        var diffService = new CapturingAttributeDiffService();
+        var planner = new WorkerPreviewPlanner(
+            new StubWorkerSource(worker),
+            new StubDirectoryGateway(),
+            new StubIdentityMatcher(),
+            diffService,
+            new StubWorkerPreviewLogWriter(),
+            NullLogger<WorkerPreviewPlanner>.Instance);
+
+        await planner.PreviewAsync("44522", CancellationToken.None);
+
+        Assert.Equal("christopher.brien@spireenergy.com", diffService.LastProposedEmailAddress);
+    }
+
     private sealed class StubWorkerSource(WorkerSnapshot worker) : IWorkerSource
     {
         public Task<WorkerSnapshot?> GetWorkerAsync(string workerId, CancellationToken cancellationToken)
@@ -96,6 +122,27 @@ public sealed class WorkerPreviewPlannerTests
         public Task<IReadOnlyList<AttributeChange>> BuildDiffAsync(
             WorkerSnapshot worker,
             DirectoryUserSnapshot? directoryUser,
+            string? proposedEmailAddress,
+            string? logPath,
+            CancellationToken cancellationToken)
+        {
+            _ = worker;
+            _ = directoryUser;
+            _ = proposedEmailAddress;
+            _ = logPath;
+            _ = cancellationToken;
+            return Task.FromResult<IReadOnlyList<AttributeChange>>([]);
+        }
+    }
+
+    private sealed class CapturingAttributeDiffService : IAttributeDiffService
+    {
+        public string? LastProposedEmailAddress { get; private set; }
+
+        public Task<IReadOnlyList<AttributeChange>> BuildDiffAsync(
+            WorkerSnapshot worker,
+            DirectoryUserSnapshot? directoryUser,
+            string? proposedEmailAddress,
             string? logPath,
             CancellationToken cancellationToken)
         {
@@ -103,6 +150,7 @@ public sealed class WorkerPreviewPlannerTests
             _ = directoryUser;
             _ = logPath;
             _ = cancellationToken;
+            LastProposedEmailAddress = proposedEmailAddress;
             return Task.FromResult<IReadOnlyList<AttributeChange>>([]);
         }
     }

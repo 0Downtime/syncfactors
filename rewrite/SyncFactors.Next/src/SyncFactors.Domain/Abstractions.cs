@@ -51,6 +51,7 @@ public interface IAttributeDiffService
     Task<IReadOnlyList<AttributeChange>> BuildDiffAsync(
         WorkerSnapshot worker,
         DirectoryUserSnapshot? directoryUser,
+        string? proposedEmailAddress,
         string? logPath,
         CancellationToken cancellationToken);
 }

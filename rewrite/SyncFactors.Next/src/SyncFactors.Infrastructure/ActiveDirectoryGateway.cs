@@ -60,8 +60,14 @@ public sealed class ActiveDirectoryGateway(
 
         try
         {
+            var existingDirectoryUser = await ExecuteWithTimeoutAsync(
+                operation: () => QueryDirectory(worker, config, logger),
+                operationName: "existing worker lookup for email local-part resolution",
+                server: config.Server,
+                cancellationToken: cancellationToken);
+
             return await ExecuteWithTimeoutAsync(
-                operation: () => ResolveAvailableEmailLocalPart(worker, config, baseLocalPart, logger),
+                operation: () => ResolveAvailableEmailLocalPart(worker, config, baseLocalPart, existingDirectoryUser?.SamAccountName, logger),
                 operationName: "email local-part lookup",
                 server: config.Server,
                 cancellationToken: cancellationToken);
@@ -188,14 +194,19 @@ public sealed class ActiveDirectoryGateway(
         return entry is null ? null : GetAttribute(entry, "distinguishedName");
     }
 
-    private static string ResolveAvailableEmailLocalPart(WorkerSnapshot worker, ActiveDirectoryConfig config, string baseLocalPart, ILogger logger)
+    private static string ResolveAvailableEmailLocalPart(
+        WorkerSnapshot worker,
+        ActiveDirectoryConfig config,
+        string baseLocalPart,
+        string? existingSamAccountName,
+        ILogger logger)
     {
         using var connection = CreateConnection(config, logger, $"resolve email local-part for worker {worker.WorkerId}");
 
         for (var suffix = 0; suffix < 1000; suffix++)
         {
             var candidate = suffix == 0 ? baseLocalPart : $"{baseLocalPart}{suffix + 1}";
-            if (!EmailLocalPartExists(connection, config, candidate, logger, worker.WorkerId))
+            if (!EmailLocalPartExists(connection, config, candidate, existingSamAccountName, logger, worker.WorkerId))
             {
                 return candidate;
             }
@@ -204,7 +215,13 @@ public sealed class ActiveDirectoryGateway(
         throw new InvalidOperationException($"Could not find an available email local part for worker {worker.WorkerId}.");
     }
 
-    private static bool EmailLocalPartExists(LdapConnection connection, ActiveDirectoryConfig config, string localPart, ILogger logger, string workerId)
+    private static bool EmailLocalPartExists(
+        LdapConnection connection,
+        ActiveDirectoryConfig config,
+        string localPart,
+        string? existingSamAccountName,
+        ILogger logger,
+        string workerId)
     {
         var userPrincipalName = DirectoryIdentityFormatter.BuildEmailAddress(localPart);
         var request = new SearchRequest(
@@ -221,7 +238,14 @@ public sealed class ActiveDirectoryGateway(
             ("WorkerId", workerId),
             ("CandidateUserPrincipalName", userPrincipalName),
             ("SearchBase", config.DefaultActiveOu));
-        return response.Entries.Count > 0;
+
+        if (response.Entries.Count == 0)
+        {
+            return false;
+        }
+
+        var matchedSamAccountName = GetAttribute(response.Entries[0], "sAMAccountName");
+        return !string.Equals(matchedSamAccountName, existingSamAccountName, StringComparison.OrdinalIgnoreCase);
     }
 
     private static LdapConnection CreateConnection(ActiveDirectoryConfig config, ILogger logger, string purpose)

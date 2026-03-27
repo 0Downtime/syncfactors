@@ -45,6 +45,7 @@ public sealed class AttributeDiffService : IAttributeDiffService
     public async Task<IReadOnlyList<AttributeChange>> BuildDiffAsync(
         WorkerSnapshot worker,
         DirectoryUserSnapshot? directoryUser,
+        string? proposedEmailAddress,
         string? logPath,
         CancellationToken cancellationToken)
     {
@@ -70,7 +71,7 @@ public sealed class AttributeDiffService : IAttributeDiffService
         var changes = new List<AttributeChange>();
         foreach (var mapping in enabledMappings)
         {
-            var sourceValue = GetSourceValue(worker, mapping.Source, mapping.Target);
+            var sourceValue = GetSourceValue(worker, mapping.Source, mapping.Target, proposedEmailAddress);
             var proposedValue = Transform(sourceValue, mapping.Transform);
             var currentValue = GetDirectoryValue(currentAttributes, mapping.Target);
             var before = string.IsNullOrWhiteSpace(currentValue) ? "(unset)" : currentValue!;
@@ -149,11 +150,11 @@ public sealed class AttributeDiffService : IAttributeDiffService
         return changes;
     }
 
-    private static string? GetSourceValue(WorkerSnapshot worker, string source, string target)
+    private static string? GetSourceValue(WorkerSnapshot worker, string source, string target, string? proposedEmailAddress)
     {
         if (target is "UserPrincipalName" or "mail")
         {
-            return DirectoryIdentityFormatter.BuildEmailAddress(
+            return proposedEmailAddress ?? DirectoryIdentityFormatter.BuildEmailAddress(
                 DirectoryIdentityFormatter.BuildBaseEmailLocalPart(worker.PreferredName, worker.LastName));
         }
 

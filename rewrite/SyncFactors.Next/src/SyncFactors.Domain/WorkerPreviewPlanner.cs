@@ -38,8 +38,10 @@ public sealed class WorkerPreviewPlanner(
             : await directoryGateway.ResolveManagerDistinguishedNameAsync(managerId, cancellationToken);
 
         var identity = identityMatcher.Match(worker, directoryUser);
+        var proposedEmailLocalPart = await directoryGateway.ResolveAvailableEmailLocalPartAsync(worker, cancellationToken);
+        var proposedEmailAddress = DirectoryIdentityFormatter.BuildEmailAddress(proposedEmailLocalPart);
 
-        var attributeChanges = await attributeDiffService.BuildDiffAsync(worker, directoryUser, logPath, cancellationToken);
+        var attributeChanges = await attributeDiffService.BuildDiffAsync(worker, directoryUser, proposedEmailAddress, logPath, cancellationToken);
         logger.LogInformation(
             "Worker preview completed planning. WorkerId={WorkerId} Bucket={Bucket} MatchedExistingUser={MatchedExistingUser} DiffCount={DiffCount}",
             worker.WorkerId,
