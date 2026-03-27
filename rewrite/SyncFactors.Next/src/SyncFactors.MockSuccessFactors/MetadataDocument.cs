@@ -17,8 +17,26 @@ public static class MetadataDocument
                 <NavigationProperty Name="employmentNav" Relationship="SFOData.PerPerson_Employment" ToRole="Employment" FromRole="PerPerson" />
                 <NavigationProperty Name="emailNav" Relationship="SFOData.PerPerson_Email" ToRole="Email" FromRole="PerPerson" />
               </EntityType>
+              <EntityType Name="EmpJob">
+                <Key>
+                  <PropertyRef Name="userId" />
+                </Key>
+                <Property Name="userId" Type="Edm.String" Nullable="false" />
+                <Property Name="personIdExternal" Type="Edm.String" Nullable="true" />
+                <Property Name="jobTitle" Type="Edm.String" Nullable="true" />
+                <Property Name="company" Type="Edm.String" Nullable="true" />
+                <Property Name="department" Type="Edm.String" Nullable="true" />
+                <Property Name="division" Type="Edm.String" Nullable="true" />
+                <Property Name="location" Type="Edm.String" Nullable="true" />
+                <Property Name="businessUnit" Type="Edm.String" Nullable="true" />
+                <Property Name="costCenter" Type="Edm.String" Nullable="true" />
+                <Property Name="employeeClass" Type="Edm.String" Nullable="true" />
+                <Property Name="employeeType" Type="Edm.String" Nullable="true" />
+                <Property Name="managerId" Type="Edm.String" Nullable="true" />
+              </EntityType>
               <EntityContainer Name="SFODataContainer" m:IsDefaultEntityContainer="true">
                 <EntitySet Name="PerPerson" EntityType="SFOData.PerPerson" />
+                <EntitySet Name="EmpJob" EntityType="SFOData.EmpJob" />
               </EntityContainer>
               <Annotations Target="SFOData.SFODataContainer">
                 <Annotation Term="Org.OData.Core.V1.Description" String="Mock SuccessFactors metadata for SyncFactors.Next" />

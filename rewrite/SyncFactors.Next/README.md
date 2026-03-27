@@ -68,7 +68,7 @@ DOTNET_CLI_HOME=/tmp dotnet run --project src/SyncFactors.MockSuccessFactors -- 
   --manifest /tmp/sanitized-fixtures.manifest.json
 ```
 
-The mock intentionally supports only the current SyncFactors query shape: OAuth or Basic auth, `PerPerson`, `$format=json`, `$filter` on `personIdExternal`, plus the existing `$select` and `$expand` paths used by the client.
+The mock intentionally supports only the current SyncFactors query shapes: OAuth or Basic auth, `PerPerson` for preview, `EmpJob` for the main worker query, `$format=json`, `$filter` on `personIdExternal` or `userId`, plus the existing `$select` and `$expand` paths used by the client.
 
 If you need to capture a real `PerPerson` payload before sanitizing it, use:
 
