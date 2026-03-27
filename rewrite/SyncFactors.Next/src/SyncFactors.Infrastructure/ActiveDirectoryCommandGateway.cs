@@ -10,6 +10,15 @@ public sealed class ActiveDirectoryCommandGateway(
     SyncFactorsConfigurationLoader configLoader,
     ILogger<ActiveDirectoryCommandGateway> logger) : IDirectoryCommandGateway
 {
+    private static readonly IReadOnlyDictionary<string, string> AttributeAliases =
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["GivenName"] = "givenName",
+            ["Surname"] = "sn",
+            ["UserPrincipalName"] = "userPrincipalName",
+            ["Office"] = "physicalDeliveryOfficeName"
+        };
+
     public async Task<DirectoryCommandResult> ExecuteAsync(DirectoryMutationCommand command, CancellationToken cancellationToken)
     {
         var config = configLoader.GetSyncConfig().Ad;
@@ -21,7 +30,7 @@ public sealed class ActiveDirectoryCommandGateway(
         try
         {
             logger.LogInformation("Executing AD command. Action={Action} WorkerId={WorkerId} SamAccountName={SamAccountName}", command.Action, command.WorkerId, command.SamAccountName);
-            var result = await Task.Run(() => ExecuteCommand(command, config), cancellationToken);
+            var result = await Task.Run(() => ExecuteCommand(command, config, logger), cancellationToken);
             logger.LogInformation("AD command completed. Action={Action} WorkerId={WorkerId} Succeeded={Succeeded} Message={Message}", command.Action, command.WorkerId, result.Succeeded, result.Message);
             return result;
         }
@@ -37,19 +46,19 @@ public sealed class ActiveDirectoryCommandGateway(
         }
     }
 
-    private static DirectoryCommandResult ExecuteCommand(DirectoryMutationCommand command, ActiveDirectoryConfig config)
+    private static DirectoryCommandResult ExecuteCommand(DirectoryMutationCommand command, ActiveDirectoryConfig config, ILogger logger)
     {
         using var connection = CreateConnection(config);
 
         return command.Action switch
         {
-            "CreateUser" => CreateUser(connection, command, config),
-            "UpdateUser" => UpdateUser(connection, command, config),
+            "CreateUser" => CreateUser(connection, command, config, logger),
+            "UpdateUser" => UpdateUser(connection, command, config, logger),
             _ => new DirectoryCommandResult(false, command.Action, command.SamAccountName, null, $"Unsupported action {command.Action}.", null)
         };
     }
 
-    private static DirectoryCommandResult CreateUser(LdapConnection connection, DirectoryMutationCommand command, ActiveDirectoryConfig config)
+    private static DirectoryCommandResult CreateUser(LdapConnection connection, DirectoryMutationCommand command, ActiveDirectoryConfig config, ILogger logger)
     {
         var dn = $"CN={EscapeDnComponent(command.DisplayName)},{command.TargetOu}";
         var attributes = new List<DirectoryAttribute>
@@ -65,15 +74,17 @@ public sealed class ActiveDirectoryCommandGateway(
 
         foreach (var attribute in command.Attributes)
         {
-            if (string.IsNullOrWhiteSpace(attribute.Value) || IsReservedAttribute(attribute.Key, config.IdentityAttribute))
+            var attributeName = NormalizeAttributeName(attribute.Key);
+            if (string.IsNullOrWhiteSpace(attribute.Value) || IsReservedAttribute(attributeName, config.IdentityAttribute))
             {
                 continue;
             }
 
-            attributes.Add(new DirectoryAttribute(attribute.Key, attribute.Value));
+            attributes.Add(new DirectoryAttribute(attributeName, attribute.Value));
         }
 
         var request = new AddRequest(dn, [.. attributes]);
+        LogRequestAttributes("CreateUser", command.WorkerId, attributes, logger);
 
         connection.SendRequest(request);
         var managerDn = ResolveManagerDistinguishedName(connection, command.ManagerId, config);
@@ -91,7 +102,7 @@ public sealed class ActiveDirectoryCommandGateway(
             RunId: null);
     }
 
-    private static DirectoryCommandResult UpdateUser(LdapConnection connection, DirectoryMutationCommand command, ActiveDirectoryConfig config)
+    private static DirectoryCommandResult UpdateUser(LdapConnection connection, DirectoryMutationCommand command, ActiveDirectoryConfig config, ILogger logger)
     {
         var existing = FindExistingUser(connection, command.WorkerId, config);
         if (existing is null)
@@ -119,15 +130,16 @@ public sealed class ActiveDirectoryCommandGateway(
 
         foreach (var attribute in command.Attributes)
         {
-            if (IsReservedAttribute(attribute.Key, config.IdentityAttribute))
+            var attributeName = NormalizeAttributeName(attribute.Key);
+            if (IsReservedAttribute(attributeName, config.IdentityAttribute))
             {
                 continue;
             }
 
             request.Modifications.Add(
                 string.IsNullOrWhiteSpace(attribute.Value)
-                    ? BuildDeleteModification(attribute.Key)
-                    : BuildReplaceModification(attribute.Key, attribute.Value));
+                    ? BuildDeleteModification(attributeName)
+                    : BuildReplaceModification(attributeName, attribute.Value));
         }
 
         var managerDn = ResolveManagerDistinguishedName(connection, command.ManagerId, config);
@@ -136,6 +148,7 @@ public sealed class ActiveDirectoryCommandGateway(
             request.Modifications.Add(BuildReplaceModification("manager", managerDn));
         }
 
+        LogRequestModifications("UpdateUser", command.WorkerId, request.Modifications, logger);
         connection.SendRequest(request);
         return new DirectoryCommandResult(
             Succeeded: true,
@@ -278,5 +291,30 @@ public sealed class ActiveDirectoryCommandGateway(
             || string.Equals(attributeName, "mail", StringComparison.OrdinalIgnoreCase)
             || string.Equals(attributeName, "manager", StringComparison.OrdinalIgnoreCase)
             || string.Equals(attributeName, identityAttribute, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string NormalizeAttributeName(string attributeName)
+    {
+        return AttributeAliases.TryGetValue(attributeName, out var normalized)
+            ? normalized
+            : attributeName;
+    }
+
+    private static void LogRequestAttributes(string action, string workerId, IEnumerable<DirectoryAttribute> attributes, ILogger logger)
+    {
+        logger.LogInformation(
+            "Prepared AD {Action} attribute payload. WorkerId={WorkerId} Attributes={Attributes}",
+            action,
+            workerId,
+            string.Join(", ", attributes.Select(attribute => attribute.Name)));
+    }
+
+    private static void LogRequestModifications(string action, string workerId, DirectoryAttributeModificationCollection modifications, ILogger logger)
+    {
+        logger.LogInformation(
+            "Prepared AD {Action} modification payload. WorkerId={WorkerId} Attributes={Attributes}",
+            action,
+            workerId,
+            string.Join(", ", modifications.Cast<DirectoryAttributeModification>().Select(modification => modification.Name)));
     }
 }
