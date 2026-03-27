@@ -49,6 +49,8 @@ This folder now builds against the locally installed .NET 10 SDK. The implementa
 
 The rewrite now keeps its tracked and local config files under [`config`]( /Users/chrisbrien/dev/github.com/syncfactors/rewrite/SyncFactors.Next/config ). Use the `sample.*.json` files there as templates and keep machine-specific values in the ignored `local.*.json` files in the same folder.
 
+For Active Directory binds, the current .NET LDAP integration uses simple bind semantics. Set `SF_AD_SYNC_AD_USERNAME` to a UPN such as `svc_successfactors@example.local`, not a down-level logon name such as `EXAMPLE\svc_successfactors`, or AD may reject the credentials even when the password is correct.
+
 ## Mock SuccessFactors
 
 Use [`src/SyncFactors.MockSuccessFactors`]( /Users/chrisbrien/dev/github.com/syncfactors/rewrite/SyncFactors.Next/src/SyncFactors.MockSuccessFactors ) to run a local SuccessFactors-like API for development.

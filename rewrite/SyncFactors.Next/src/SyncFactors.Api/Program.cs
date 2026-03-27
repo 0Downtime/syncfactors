@@ -115,7 +115,42 @@ static void LogConfiguredEndpoints(WebApplication app)
 {
     var config = app.Services.GetRequiredService<SyncFactorsConfigurationLoader>().GetSyncConfig();
     app.Logger.LogInformation(
-        "Configured external endpoints. ActiveDirectoryServer={ActiveDirectoryServer} SuccessFactorsBaseUrl={SuccessFactorsBaseUrl}",
+        "Configured external endpoints. ActiveDirectoryServer={ActiveDirectoryServer} ActiveDirectoryAccount={ActiveDirectoryAccount} SuccessFactorsBaseUrl={SuccessFactorsBaseUrl} SuccessFactorsAccount={SuccessFactorsAccount}",
         config.Ad.Server,
-        config.SuccessFactors.BaseUrl);
+        string.IsNullOrWhiteSpace(config.Ad.Username) ? "anonymous" : config.Ad.Username,
+        config.SuccessFactors.BaseUrl,
+        DescribeSuccessFactorsAccount(config.SuccessFactors.Auth));
+
+    if (!string.IsNullOrWhiteSpace(config.Ad.Username) &&
+        config.Ad.Username.Contains('\\', StringComparison.Ordinal))
+    {
+        app.Logger.LogWarning(
+            "Active Directory is using LDAP simple bind with username '{ActiveDirectoryAccount}' in domain\\user format. If binds fail, prefer a UPN such as 'user@domain.example' for simple LDAP authentication.",
+            config.Ad.Username);
+    }
+
+    if (!string.IsNullOrWhiteSpace(config.Ad.Username) &&
+        config.Ad.Server.EndsWith(":389", StringComparison.Ordinal))
+    {
+        app.Logger.LogWarning(
+            "Active Directory is configured for authenticated LDAP on port 389 at '{ActiveDirectoryServer}'. If the directory requires LDAPS or LDAP signing, binds may fail until the connection settings are updated.",
+            config.Ad.Server);
+    }
+}
+
+static string DescribeSuccessFactorsAccount(SuccessFactorsAuthConfig auth)
+{
+    if (string.Equals(auth.Mode, "basic", StringComparison.OrdinalIgnoreCase) && auth.Basic is not null)
+    {
+        return auth.Basic.Username;
+    }
+
+    if (string.Equals(auth.Mode, "oauth", StringComparison.OrdinalIgnoreCase) && auth.OAuth is not null)
+    {
+        return string.IsNullOrWhiteSpace(auth.OAuth.CompanyId)
+            ? $"oauth-client:{auth.OAuth.ClientId}"
+            : $"oauth-client:{auth.OAuth.ClientId} company:{auth.OAuth.CompanyId}";
+    }
+
+    return $"mode:{auth.Mode}";
 }
