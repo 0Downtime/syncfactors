@@ -150,21 +150,21 @@
     {
       "source": "employmentNav[0].jobInfoNav[0].locationNav.addressNavDEFLT.address1",
       "target": "streetAddress",
-      "enabled": false,
+      "enabled": true,
       "required": false,
       "transform": "Trim"
     },
     {
       "source": "employmentNav[0].jobInfoNav[0].locationNav.addressNavDEFLT.city",
       "target": "l",
-      "enabled": false,
+      "enabled": true,
       "required": false,
       "transform": "Trim"
     },
     {
       "source": "employmentNav[0].jobInfoNav[0].locationNav.addressNavDEFLT.zipCode",
       "target": "postalCode",
-      "enabled": false,
+      "enabled": true,
       "required": false,
       "transform": "Trim"
     }

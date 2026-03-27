@@ -18,6 +18,13 @@ internal static class ExternalSystemExceptionFactory
             exception);
     }
 
+    public static InvalidOperationException CreateActiveDirectoryTimeoutException(string operation, string server, TimeSpan timeout, Exception? innerException = null)
+    {
+        return new InvalidOperationException(
+            $"Active Directory {operation} timed out against LDAP server '{server}' after {timeout.TotalSeconds:0} seconds.",
+            innerException);
+    }
+
     public static InvalidOperationException CreateSuccessFactorsException(string operation, string endpoint, string summary, Exception? innerException = null)
     {
         return new InvalidOperationException(
