@@ -4,27 +4,9 @@ public sealed class ScaffoldDataPathResolver(string? configuredPath)
 {
     public string Resolve()
     {
-        return Resolve(
+        return PathResolution.ResolvePreferredPath(
             configuredPath,
+            "config/scaffold-data.json",
             "rewrite/SyncFactors.Next/config/scaffold-data.json");
-    }
-
-    private static string Resolve(string? configured, params string[] candidates)
-    {
-        if (!string.IsNullOrWhiteSpace(configured))
-        {
-            return Path.GetFullPath(configured);
-        }
-
-        foreach (var candidate in candidates)
-        {
-            var full = Path.GetFullPath(candidate);
-            if (File.Exists(full))
-            {
-                return full;
-            }
-        }
-
-        return Path.GetFullPath(candidates[0]);
     }
 }

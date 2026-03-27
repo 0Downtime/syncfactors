@@ -13,8 +13,7 @@ public sealed class SqlitePathResolver
     {
         if (!string.IsNullOrWhiteSpace(_configuredPath))
         {
-            var fullPath = Path.GetFullPath(_configuredPath);
-            return File.Exists(fullPath) ? fullPath : null;
+            return PathResolution.ResolveExistingFile(_configuredPath);
         }
 
         return null;
@@ -27,6 +26,6 @@ public sealed class SqlitePathResolver
             return null;
         }
 
-        return Path.GetFullPath(_configuredPath);
+        return PathResolution.ResolveConfiguredPath(_configuredPath);
     }
 }
