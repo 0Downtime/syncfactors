@@ -8,7 +8,6 @@ namespace SyncFactors.Infrastructure;
 
 public sealed class ActiveDirectoryGateway(
     SyncFactorsConfigurationLoader configLoader,
-    ScaffoldDirectoryGateway fallbackGateway,
     ILogger<ActiveDirectoryGateway> logger) : IDirectoryGateway
 {
     public async Task<DirectoryUserSnapshot?> FindByWorkerAsync(WorkerSnapshot worker, CancellationToken cancellationToken)
@@ -16,8 +15,7 @@ public sealed class ActiveDirectoryGateway(
         var config = configLoader.GetSyncConfig().Ad;
         if (string.IsNullOrWhiteSpace(config.Server))
         {
-            logger.LogWarning("AD server was not configured. Falling back to scaffold directory gateway. WorkerId={WorkerId}", worker.WorkerId);
-            return await fallbackGateway.FindByWorkerAsync(worker, cancellationToken);
+            throw new InvalidOperationException("AD server was not configured.");
         }
 
         try
@@ -29,18 +27,18 @@ public sealed class ActiveDirectoryGateway(
                 return directoryUser;
             }
 
-            logger.LogWarning("No AD user matched worker. Falling back to scaffold directory gateway. WorkerId={WorkerId}", worker.WorkerId);
-            return await fallbackGateway.FindByWorkerAsync(worker, cancellationToken);
+            logger.LogInformation("No AD user matched worker. WorkerId={WorkerId}", worker.WorkerId);
+            return null;
         }
         catch (LdapException ex)
         {
-            logger.LogError(ex, "AD lookup failed with LDAP exception. Falling back to scaffold directory gateway. WorkerId={WorkerId} Server={Server}", worker.WorkerId, config.Server);
-            return await fallbackGateway.FindByWorkerAsync(worker, cancellationToken);
+            logger.LogError(ex, "AD lookup failed with LDAP exception. WorkerId={WorkerId} Server={Server}", worker.WorkerId, config.Server);
+            throw;
         }
         catch (DirectoryOperationException ex)
         {
-            logger.LogError(ex, "AD lookup failed with directory operation exception. Falling back to scaffold directory gateway. WorkerId={WorkerId} Server={Server}", worker.WorkerId, config.Server);
-            return await fallbackGateway.FindByWorkerAsync(worker, cancellationToken);
+            logger.LogError(ex, "AD lookup failed with directory operation exception. WorkerId={WorkerId} Server={Server}", worker.WorkerId, config.Server);
+            throw;
         }
     }
 
@@ -50,8 +48,7 @@ public sealed class ActiveDirectoryGateway(
         var config = configLoader.GetSyncConfig().Ad;
         if (string.IsNullOrWhiteSpace(config.Server))
         {
-            logger.LogWarning("AD server was not configured while resolving email local part. Returning base value. WorkerId={WorkerId}", worker.WorkerId);
-            return baseLocalPart;
+            throw new InvalidOperationException("AD server was not configured.");
         }
 
         try
@@ -60,13 +57,13 @@ public sealed class ActiveDirectoryGateway(
         }
         catch (LdapException ex)
         {
-            logger.LogError(ex, "AD email local part lookup failed with LDAP exception. Returning base value. WorkerId={WorkerId} Server={Server}", worker.WorkerId, config.Server);
-            return baseLocalPart;
+            logger.LogError(ex, "AD email local part lookup failed with LDAP exception. WorkerId={WorkerId} Server={Server}", worker.WorkerId, config.Server);
+            throw;
         }
         catch (DirectoryOperationException ex)
         {
-            logger.LogError(ex, "AD email local part lookup failed with directory operation exception. Returning base value. WorkerId={WorkerId} Server={Server}", worker.WorkerId, config.Server);
-            return baseLocalPart;
+            logger.LogError(ex, "AD email local part lookup failed with directory operation exception. WorkerId={WorkerId} Server={Server}", worker.WorkerId, config.Server);
+            throw;
         }
     }
 
@@ -80,8 +77,7 @@ public sealed class ActiveDirectoryGateway(
         var config = configLoader.GetSyncConfig().Ad;
         if (string.IsNullOrWhiteSpace(config.Server))
         {
-            logger.LogWarning("AD server was not configured while resolving manager DN. ManagerId={ManagerId}", managerId);
-            return null;
+            throw new InvalidOperationException("AD server was not configured.");
         }
 
         try
@@ -91,12 +87,12 @@ public sealed class ActiveDirectoryGateway(
         catch (LdapException ex)
         {
             logger.LogError(ex, "AD manager DN lookup failed with LDAP exception. ManagerId={ManagerId} Server={Server}", managerId, config.Server);
-            return null;
+            throw;
         }
         catch (DirectoryOperationException ex)
         {
             logger.LogError(ex, "AD manager DN lookup failed with directory operation exception. ManagerId={ManagerId} Server={Server}", managerId, config.Server);
-            return null;
+            throw;
         }
     }
 

@@ -43,7 +43,8 @@ public sealed class ApplyPreviewService(
             Mail: emailAddress,
             TargetOu: preview.TargetOu ?? worker.TargetOu,
             DisplayName: displayName,
-            EnableAccount: preview.ProposedEnable ?? true);
+            EnableAccount: preview.ProposedEnable ?? true,
+            Attributes: BuildProposedAttributes(preview, displayName, emailAddress));
         logger.LogInformation("Prepared directory mutation command. WorkerId={WorkerId} Action={Action} SamAccountName={SamAccountName}", worker.WorkerId, action, command.SamAccountName);
 
         var startedAt = DateTimeOffset.UtcNow;
@@ -150,6 +151,26 @@ public sealed class ApplyPreviewService(
     {
         using var document = JsonDocument.Parse(json);
         return document.RootElement.Clone();
+    }
+
+    private static IReadOnlyDictionary<string, string?> BuildProposedAttributes(
+        WorkerPreviewResult preview,
+        string displayName,
+        string emailAddress)
+    {
+        var attributes = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var row in preview.DiffRows.Where(row => row.Changed))
+        {
+            attributes[row.Attribute] = string.Equals(row.After, "(unset)", StringComparison.Ordinal)
+                ? null
+                : row.After;
+        }
+
+        attributes["displayName"] = displayName;
+        attributes["userPrincipalName"] = emailAddress;
+        attributes["mail"] = emailAddress;
+        return attributes;
     }
 
     private static string Escape(string value)
