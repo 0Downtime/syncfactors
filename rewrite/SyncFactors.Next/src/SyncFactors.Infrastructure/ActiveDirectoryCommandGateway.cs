@@ -1,8 +1,10 @@
 using SyncFactors.Contracts;
 using SyncFactors.Domain;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using System.DirectoryServices.Protocols;
 using System.Net;
+using System.Diagnostics;
 
 namespace SyncFactors.Infrastructure;
 
@@ -10,6 +12,8 @@ public sealed class ActiveDirectoryCommandGateway(
     SyncFactorsConfigurationLoader configLoader,
     ILogger<ActiveDirectoryCommandGateway> logger) : IDirectoryCommandGateway
 {
+    private static readonly TimeSpan LdapOperationTimeout = TimeSpan.FromSeconds(10);
+
     private static readonly IReadOnlyDictionary<string, string> AttributeAliases =
         new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
@@ -30,7 +34,11 @@ public sealed class ActiveDirectoryCommandGateway(
         try
         {
             logger.LogInformation("Executing AD command. Action={Action} WorkerId={WorkerId} SamAccountName={SamAccountName}", command.Action, command.WorkerId, command.SamAccountName);
-            var result = await Task.Run(() => ExecuteCommand(command, config, logger), cancellationToken);
+            var result = await ExecuteWithTimeoutAsync(
+                operation: () => ExecuteCommand(command, config, logger),
+                operationName: $"command '{command.Action}'",
+                server: config.Server,
+                cancellationToken: cancellationToken);
             logger.LogInformation("AD command completed. Action={Action} WorkerId={WorkerId} Succeeded={Succeeded} Message={Message}", command.Action, command.WorkerId, result.Succeeded, result.Message);
             return result;
         }
@@ -48,7 +56,7 @@ public sealed class ActiveDirectoryCommandGateway(
 
     private static DirectoryCommandResult ExecuteCommand(DirectoryMutationCommand command, ActiveDirectoryConfig config, ILogger logger)
     {
-        using var connection = CreateConnection(config);
+        using var connection = CreateConnection(config, logger, $"command {command.Action} for worker {command.WorkerId}");
 
         return command.Action switch
         {
@@ -86,11 +94,11 @@ public sealed class ActiveDirectoryCommandGateway(
         var request = new AddRequest(dn, [.. attributes]);
         LogRequestAttributes("CreateUser", command.WorkerId, attributes, logger);
 
-        connection.SendRequest(request);
+        ExecuteModify(connection, request, logger, "create user add request", ("WorkerId", command.WorkerId), ("SamAccountName", command.SamAccountName));
         var managerDn = ResolveManagerDistinguishedName(connection, command.ManagerId, config);
         if (!string.IsNullOrWhiteSpace(managerDn))
         {
-            SetManager(connection, dn, managerDn);
+            SetManager(connection, dn, managerDn, logger, command.WorkerId);
         }
 
         return new DirectoryCommandResult(
@@ -149,7 +157,7 @@ public sealed class ActiveDirectoryCommandGateway(
         }
 
         LogRequestModifications("UpdateUser", command.WorkerId, request.Modifications, logger);
-        connection.SendRequest(request);
+        ExecuteModify(connection, request, logger, "update user modify request", ("WorkerId", command.WorkerId), ("SamAccountName", command.SamAccountName));
         return new DirectoryCommandResult(
             Succeeded: true,
             Action: command.Action,
@@ -169,7 +177,14 @@ public sealed class ActiveDirectoryCommandGateway(
             "distinguishedName",
             "displayName");
 
-        var response = (SearchResponse)connection.SendRequest(request);
+        var response = ExecuteSearch(
+            connection,
+            request,
+            logger: NullLogger<ActiveDirectoryCommandGateway>.Instance,
+            operation: "find existing user search",
+            ("WorkerId", workerId),
+            ("IdentityAttribute", config.IdentityAttribute),
+            ("SearchBase", config.DefaultActiveOu));
         var entry = response.Entries.Cast<SearchResultEntry>().FirstOrDefault();
         if (entry is null)
         {
@@ -187,7 +202,7 @@ public sealed class ActiveDirectoryCommandGateway(
             });
     }
 
-    private static string? ResolveManagerDistinguishedName(LdapConnection connection, string? managerId, ActiveDirectoryConfig config)
+    private static string? ResolveManagerDistinguishedName(LdapConnection connection, string? managerId, ActiveDirectoryConfig config, ILogger? logger = null)
     {
         if (string.IsNullOrWhiteSpace(managerId))
         {
@@ -200,24 +215,32 @@ public sealed class ActiveDirectoryCommandGateway(
             SearchScope.Subtree,
             "distinguishedName");
 
-        var response = (SearchResponse)connection.SendRequest(request);
+        var response = ExecuteSearch(
+            connection,
+            request,
+            logger ?? NullLogger<ActiveDirectoryCommandGateway>.Instance,
+            "command manager DN search",
+            ("ManagerId", managerId),
+            ("IdentityAttribute", config.IdentityAttribute),
+            ("SearchBase", config.DefaultActiveOu));
         var entry = response.Entries.Cast<SearchResultEntry>().FirstOrDefault();
         return entry is null ? null : GetAttribute(entry, "distinguishedName");
     }
 
-    private static void SetManager(LdapConnection connection, string distinguishedName, string managerDn)
+    private static void SetManager(LdapConnection connection, string distinguishedName, string managerDn, ILogger logger, string workerId)
     {
         var request = new ModifyRequest(distinguishedName);
         request.Modifications.Add(BuildReplaceModification("manager", managerDn));
-        connection.SendRequest(request);
+        ExecuteModify(connection, request, logger, "set manager modify request", ("WorkerId", workerId), ("DistinguishedName", distinguishedName));
     }
 
-    private static LdapConnection CreateConnection(ActiveDirectoryConfig config)
+    private static LdapConnection CreateConnection(ActiveDirectoryConfig config, ILogger logger, string purpose)
     {
         var identifier = new LdapDirectoryIdentifier(config.Server);
         var connection = new LdapConnection(identifier)
         {
             AuthType = string.IsNullOrWhiteSpace(config.Username) ? AuthType.Anonymous : AuthType.Basic,
+            Timeout = LdapOperationTimeout
         };
 
         if (!string.IsNullOrWhiteSpace(config.Username))
@@ -226,8 +249,76 @@ public sealed class ActiveDirectoryCommandGateway(
         }
 
         connection.SessionOptions.ProtocolVersion = 3;
+        var stopwatch = Stopwatch.StartNew();
+        logger.LogInformation(
+            "Starting AD bind. Purpose={Purpose} Server={Server} Username={Username}",
+            purpose,
+            config.Server,
+            string.IsNullOrWhiteSpace(config.Username) ? "anonymous" : config.Username);
         connection.Bind();
+        logger.LogInformation(
+            "Completed AD bind. Purpose={Purpose} Server={Server} DurationMs={DurationMs}",
+            purpose,
+            config.Server,
+            stopwatch.ElapsedMilliseconds);
         return connection;
+    }
+
+    private static async Task<T> ExecuteWithTimeoutAsync<T>(
+        Func<T> operation,
+        string operationName,
+        string server,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await Task.Run(operation, cancellationToken).WaitAsync(LdapOperationTimeout, cancellationToken);
+        }
+        catch (TimeoutException ex)
+        {
+            throw ExternalSystemExceptionFactory.CreateActiveDirectoryTimeoutException(operationName, server, LdapOperationTimeout, ex);
+        }
+    }
+
+    private static SearchResponse ExecuteSearch(
+        LdapConnection connection,
+        SearchRequest request,
+        ILogger logger,
+        string operation,
+        params (string Key, object? Value)[] context)
+    {
+        var stopwatch = Stopwatch.StartNew();
+        logger.LogInformation("Starting AD search. Operation={Operation} Context={Context}", operation, FormatContext(context));
+        var response = (SearchResponse)connection.SendRequest(request);
+        logger.LogInformation(
+            "Completed AD search. Operation={Operation} DurationMs={DurationMs} Entries={Entries} Context={Context}",
+            operation,
+            stopwatch.ElapsedMilliseconds,
+            response.Entries.Count,
+            FormatContext(context));
+        return response;
+    }
+
+    private static void ExecuteModify(
+        LdapConnection connection,
+        DirectoryRequest request,
+        ILogger logger,
+        string operation,
+        params (string Key, object? Value)[] context)
+    {
+        var stopwatch = Stopwatch.StartNew();
+        logger.LogInformation("Starting AD modify. Operation={Operation} Context={Context}", operation, FormatContext(context));
+        connection.SendRequest(request);
+        logger.LogInformation(
+            "Completed AD modify. Operation={Operation} DurationMs={DurationMs} Context={Context}",
+            operation,
+            stopwatch.ElapsedMilliseconds,
+            FormatContext(context));
+    }
+
+    private static string FormatContext((string Key, object? Value)[] context)
+    {
+        return string.Join(", ", context.Select(item => $"{item.Key}={item.Value ?? "(null)"}"));
     }
 
     private static string? GetAttribute(SearchResultEntry entry, string attributeName)

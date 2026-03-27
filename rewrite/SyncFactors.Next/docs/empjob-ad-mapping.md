@@ -24,13 +24,14 @@ This table reflects the tenant-confirmed `EmpJob` field labels from API Center a
 | Bargaining Unit | `EmpJob.customString111` | `bargainingUnit` | `extensionAttribute9` | Disabled |
 | Union Job Code | `EmpJob.customString91` | `unionJobCode` | `extensionAttribute10` | Disabled |
 | Most Recent Hire Date | `EmpEmployment.startDate` | `startDate` | `extensionAttribute1` | Disabled |
-| Office Street | `FOLocation.addressNavDEFLT.address1` | `employmentNav[0].jobInfoNav[0].locationNav.addressNavDEFLT.address1` | `streetAddress` | Disabled |
-| Office City | `FOLocation.addressNavDEFLT.city` | `employmentNav[0].jobInfoNav[0].locationNav.addressNavDEFLT.city` | `l` | Disabled |
-| Office Postal Code | `FOLocation.addressNavDEFLT.zipCode` | `employmentNav[0].jobInfoNav[0].locationNav.addressNavDEFLT.zipCode` | `postalCode` | Disabled |
+| Office Street | `FOLocation.addressNavDEFLT.address1` | `employmentNav[0].jobInfoNav[0].locationNav.addressNavDEFLT.address1` | `streetAddress` | Enabled |
+| Office City | `FOLocation.addressNavDEFLT.city` | `employmentNav[0].jobInfoNav[0].locationNav.addressNavDEFLT.city` | `l` | Enabled |
+| Office Postal Code | `FOLocation.addressNavDEFLT.zipCode` | `employmentNav[0].jobInfoNav[0].locationNav.addressNavDEFLT.zipCode` | `postalCode` | Enabled |
 
 ## Notes
 
 - `Function` and `Sub Function` now resolve through `divisionNav.name_localized` and `departmentNav.name_localized`, which matches the tenant export more closely than the older direct `EmpJob` string fields.
+- The standard AD Address tab is intentionally fed from office location data only: `streetAddress`, `l`, and `postalCode`. Personal `userNav` address fields remain unmapped in this pass.
 - `Supervisor` should not be mapped directly from `managerId` into AD. AD `manager` requires resolving the manager to an AD distinguished name first.
 - `Direct Reports` should not be synced as an attribute; AD derives it from `manager`.
 - The worker parser now exposes the tenant-confirmed custom `EmpJob` fields used above.
