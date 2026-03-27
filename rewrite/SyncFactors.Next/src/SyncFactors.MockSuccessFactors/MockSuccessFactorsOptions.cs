@@ -32,7 +32,27 @@ public sealed class MockSuccessFactorsOptionsSetup : IConfigureOptions<MockSucce
     {
         if (string.IsNullOrWhiteSpace(options.FixturePath))
         {
-            options.FixturePath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "config", "mock-successfactors", "baseline-fixtures.json"));
+            var outputContentPath = Path.GetFullPath(Path.Combine(
+                AppContext.BaseDirectory,
+                "config",
+                "mock-successfactors",
+                "baseline-fixtures.json"));
+            if (File.Exists(outputContentPath))
+            {
+                options.FixturePath = outputContentPath;
+                return;
+            }
+
+            options.FixturePath = Path.GetFullPath(Path.Combine(
+                AppContext.BaseDirectory,
+                "..",
+                "..",
+                "..",
+                "..",
+                "..",
+                "config",
+                "mock-successfactors",
+                "baseline-fixtures.json"));
         }
     }
 }
