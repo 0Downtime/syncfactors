@@ -28,12 +28,12 @@ public sealed class ActiveDirectoryCommandGateway(
         catch (LdapException ex)
         {
             logger.LogError(ex, "AD command failed with LDAP exception. Action={Action} WorkerId={WorkerId} Server={Server}", command.Action, command.WorkerId, config.Server);
-            throw;
+            throw ExternalSystemExceptionFactory.CreateActiveDirectoryException($"command '{command.Action}'", config.Server, ex);
         }
         catch (DirectoryOperationException ex)
         {
             logger.LogError(ex, "AD command failed with directory operation exception. Action={Action} WorkerId={WorkerId} Server={Server}", command.Action, command.WorkerId, config.Server);
-            throw;
+            throw ExternalSystemExceptionFactory.CreateActiveDirectoryException($"command '{command.Action}'", config.Server, ex);
         }
     }
 

@@ -60,9 +60,11 @@ public sealed class SuccessFactorsWorkerSource(
                 responsePayload.ContentType,
                 requestUri,
                 TrimForLog(rawBody));
-            throw new InvalidOperationException(
-                $"SuccessFactors returned invalid JSON. Status={responsePayload.StatusCode}, ContentType={responsePayload.ContentType}, BodyPreview={TrimForLog(rawBody)}",
-                ex);
+            throw ExternalSystemExceptionFactory.CreateSuccessFactorsException(
+                operation: "response parsing",
+                endpoint: requestUri,
+                summary: $"The API returned invalid JSON. Status={responsePayload.StatusCode}, ContentType={responsePayload.ContentType}, BodyPreview={TrimForLog(rawBody)}",
+                innerException: ex);
         }
 
         logger.LogWarning(
@@ -128,7 +130,10 @@ public sealed class SuccessFactorsWorkerSource(
             return accessToken.GetString()!;
         }
 
-        throw new InvalidOperationException("SuccessFactors OAuth response did not contain access_token.");
+        throw ExternalSystemExceptionFactory.CreateSuccessFactorsException(
+            operation: "OAuth token request",
+            endpoint: oauth.TokenUrl,
+            summary: "The OAuth response did not contain an access_token.");
     }
 
     private static string TrimForLog(string? value)
@@ -168,7 +173,10 @@ public sealed class SuccessFactorsWorkerSource(
             parts.Add($"BodyPreview={TrimForLog(body)}");
         }
 
-        return new InvalidOperationException(string.Join(Environment.NewLine, parts));
+        return ExternalSystemExceptionFactory.CreateSuccessFactorsException(
+            operation: messagePrefix.TrimEnd('.'),
+            endpoint: requestUri,
+            summary: string.Join(Environment.NewLine, parts));
     }
 
     private async Task<SuccessFactorsResponsePayload> ExecuteWorkerRequestAsync(
