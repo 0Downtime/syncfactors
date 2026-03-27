@@ -70,6 +70,30 @@ public sealed class MockApiTests
     }
 
     [Fact]
+    public void EmpJobProjection_ReturnsProjectedWorker_ForTrackedRealQueryShape()
+    {
+        var store = new MockFixtureStore(Options.Create(new MockSuccessFactorsOptions { FixturePath = FixturePath }));
+        var builder = new ODataResponseBuilder();
+        var query = ODataQueryParser.Parse(new Microsoft.AspNetCore.Http.QueryCollection(new Dictionary<string, Microsoft.Extensions.Primitives.StringValues>
+        {
+            ["$format"] = "json",
+            ["$filter"] = "userId eq 'user.10001'",
+            ["$select"] = "userId,personIdExternal,jobTitle,company,department,division,location,businessUnit,costCenter,employeeClass,employeeType,managerId,customString3,customString20,customString87,customString110,customString111,customString91,startDate",
+            ["$expand"] = "companyNav,departmentNav,divisionNav,locationNav,businessUnitNav,costCenterNav"
+        }));
+
+        var payload = builder.Build(store.FindByIdentity(query.IdentityField, query.WorkerId), query, "EmpJob");
+        using var document = JsonDocument.Parse(JsonSerializer.Serialize(payload));
+        var job = document.RootElement.GetProperty("d").GetProperty("results")[0];
+
+        Assert.Equal("user.10001", job.GetProperty("userId").GetString());
+        Assert.Equal("mock-10001", job.GetProperty("personIdExternal").GetString());
+        Assert.Equal("CORP", job.GetProperty("company").GetString());
+        Assert.Equal("CORP", job.GetProperty("companyNav").GetProperty("company").GetString());
+        Assert.Equal("Central", job.GetProperty("customString87").GetString());
+    }
+
+    [Fact]
     public void AuthenticationValidator_AcceptsBearerAndBasicCredentials()
     {
         var bearerRequest = new Microsoft.AspNetCore.Http.DefaultHttpContext().Request;

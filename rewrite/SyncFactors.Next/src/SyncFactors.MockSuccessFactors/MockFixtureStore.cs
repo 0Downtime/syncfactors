@@ -11,14 +11,19 @@ public sealed class MockFixtureStore(IOptions<MockSuccessFactorsOptions> options
 
     public MockWorkerFixture? FindByIdentity(string identityField, string? workerId)
     {
-        if (!string.Equals(identityField, "personIdExternal", StringComparison.OrdinalIgnoreCase) ||
-            string.IsNullOrWhiteSpace(workerId))
+        if (string.IsNullOrWhiteSpace(workerId))
         {
             return null;
         }
 
         return GetDocument().Workers.FirstOrDefault(worker =>
-            string.Equals(worker.PersonIdExternal, workerId, StringComparison.OrdinalIgnoreCase));
+            string.Equals(identityField, "personIdExternal", StringComparison.OrdinalIgnoreCase)
+                ? string.Equals(worker.PersonIdExternal, workerId, StringComparison.OrdinalIgnoreCase)
+                : string.Equals(identityField, "userId", StringComparison.OrdinalIgnoreCase)
+                    ? string.Equals(worker.UserId ?? worker.UserName, workerId, StringComparison.OrdinalIgnoreCase)
+                    : string.Equals(identityField, "username", StringComparison.OrdinalIgnoreCase)
+                        ? string.Equals(worker.UserName, workerId, StringComparison.OrdinalIgnoreCase)
+                        : false);
     }
 
     private static MockFixtureDocument Load(string path)

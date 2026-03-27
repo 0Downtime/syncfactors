@@ -92,6 +92,43 @@ app.MapGet("/odata/v2/PerPerson", (
     return Results.Json(payload);
 });
 
+app.MapGet("/odata/v2/EmpJob", (
+    HttpContext httpContext,
+    MockFixtureStore store,
+    ODataResponseBuilder responseBuilder,
+    IOptions<MockSuccessFactorsOptions> options) =>
+{
+    if (!AuthenticationValidator.IsAuthorized(httpContext.Request, options.Value.Authentication))
+    {
+        return Results.Unauthorized();
+    }
+
+    var query = ODataQueryParser.Parse(httpContext.Request.Query);
+    if (!query.IsSupported)
+    {
+        return Results.BadRequest(new { error = query.ErrorMessage });
+    }
+
+    var worker = store.FindByIdentity(query.IdentityField, query.WorkerId);
+    if (worker?.Response?.ForceUnauthorized == true)
+    {
+        return Results.Unauthorized();
+    }
+
+    if (worker?.Response?.ForceMalformedPayload == true)
+    {
+        return Results.Content("not-json", "application/json");
+    }
+
+    if (worker?.Response?.ForceNotFound == true)
+    {
+        return Results.NotFound();
+    }
+
+    var payload = responseBuilder.Build(worker, query, "EmpJob");
+    return Results.Json(payload);
+});
+
 app.Run();
 
 public partial class Program

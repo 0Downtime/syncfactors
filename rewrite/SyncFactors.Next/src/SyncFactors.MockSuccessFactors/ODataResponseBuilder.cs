@@ -5,16 +5,23 @@ namespace SyncFactors.MockSuccessFactors;
 public sealed class ODataResponseBuilder
 {
     public object Build(MockWorkerFixture? worker, ODataQuery query)
+        => Build(worker, query, "PerPerson");
+
+    public object Build(MockWorkerFixture? worker, ODataQuery query, string entitySet)
+    {
+        if (string.Equals(entitySet, "EmpJob", StringComparison.OrdinalIgnoreCase))
+        {
+            return BuildEmpJob(worker, query);
+        }
+
+        return BuildPerPerson(worker, query);
+    }
+
+    private static object BuildPerPerson(MockWorkerFixture? worker, ODataQuery query)
     {
         if (worker is null || worker.Response?.ForceEmptyResults == true)
         {
-            return new
-            {
-                d = new
-                {
-                    results = Array.Empty<object>()
-                }
-            };
+            return EmptyResults();
         }
 
         var workerNode = new JsonObject
@@ -35,6 +42,96 @@ public sealed class ODataResponseBuilder
             ["d"] = new JsonObject
             {
                 ["results"] = new JsonArray(workerNode)
+            }
+        };
+    }
+
+    private static object BuildEmpJob(MockWorkerFixture? worker, ODataQuery query)
+    {
+        if (worker is null || worker.Response?.ForceEmptyResults == true)
+        {
+            return EmptyResults();
+        }
+
+        var jobNode = new JsonObject();
+        AddIfSelected(jobNode, "userId", worker.UserId ?? worker.UserName, query);
+        AddIfSelected(jobNode, "personIdExternal", worker.PersonIdExternal, query);
+        AddIfSelected(jobNode, "jobTitle", worker.JobTitle, query);
+        AddIfSelected(jobNode, "company", worker.Company, query);
+        AddIfSelected(jobNode, "department", worker.Department, query);
+        AddIfSelected(jobNode, "division", worker.Division, query);
+        AddIfSelected(jobNode, "location", worker.Location?.Name, query);
+        AddIfSelected(jobNode, "businessUnit", worker.BusinessUnit, query);
+        AddIfSelected(jobNode, "costCenter", worker.CostCenter, query);
+        AddIfSelected(jobNode, "employeeClass", worker.EmployeeClass, query);
+        AddIfSelected(jobNode, "employeeType", worker.EmployeeType, query);
+        AddIfSelected(jobNode, "managerId", worker.ManagerId, query);
+        AddIfSelected(jobNode, "customString3", worker.PeopleGroup, query);
+        AddIfSelected(jobNode, "customString20", worker.LeadershipLevel, query);
+        AddIfSelected(jobNode, "customString87", worker.Region, query);
+        AddIfSelected(jobNode, "customString110", worker.Geozone, query);
+        AddIfSelected(jobNode, "customString111", worker.BargainingUnit, query);
+        AddIfSelected(jobNode, "customString91", worker.UnionJobCode, query);
+        AddIfSelected(jobNode, "startDate", worker.StartDate, query);
+
+        AddFlatNavigation(
+            jobNode,
+            "companyNav",
+            query,
+            ("company", worker.Company),
+            ("name_localized", worker.Company),
+            ("externalCode", worker.CompanyId));
+        AddFlatNavigation(
+            jobNode,
+            "departmentNav",
+            query,
+            ("department", worker.Department),
+            ("name_localized", worker.Department),
+            ("name", worker.DepartmentName ?? worker.Department),
+            ("externalCode", worker.DepartmentId),
+            ("costCenter", worker.DepartmentCostCenter));
+        AddFlatNavigation(
+            jobNode,
+            "divisionNav",
+            query,
+            ("division", worker.Division),
+            ("name_localized", worker.Division),
+            ("externalCode", worker.DivisionId));
+        AddFlatNavigation(
+            jobNode,
+            "businessUnitNav",
+            query,
+            ("businessUnit", worker.BusinessUnit),
+            ("name_localized", worker.BusinessUnit),
+            ("externalCode", worker.BusinessUnitId));
+        AddFlatNavigation(
+            jobNode,
+            "costCenterNav",
+            query,
+            ("costCenterDescription", worker.CostCenterDescription ?? worker.CostCenter),
+            ("name_localized", worker.CostCenter),
+            ("description_localized", worker.CostCenterDescription ?? worker.CostCenter),
+            ("externalCode", worker.CostCenterId));
+
+        if (ShouldIncludeNavigation("locationNav", query) && worker.Location is not null)
+        {
+            var locationNav = new JsonObject();
+            AddExpandedNavigationProperty(locationNav, "locationNav", "name", worker.Location.Name, query);
+            AddExpandedNavigationProperty(locationNav, "locationNav", "LocationName", worker.Location.Name, query);
+            AddExpandedNavigationProperty(locationNav, "locationNav", "officeLocationAddress", worker.Location.Address, query);
+            AddExpandedNavigationProperty(locationNav, "locationNav", "officeLocationCity", worker.Location.City, query);
+            AddExpandedNavigationProperty(locationNav, "locationNav", "officeLocationZipCode", worker.Location.ZipCode, query);
+            if (locationNav.Count > 0)
+            {
+                jobNode["locationNav"] = locationNav;
+            }
+        }
+
+        return new JsonObject
+        {
+            ["d"] = new JsonObject
+            {
+                ["results"] = new JsonArray(jobNode)
             }
         };
     }
@@ -352,13 +449,24 @@ public sealed class ODataResponseBuilder
         var navigation = new JsonObject();
         foreach (var (propertyName, value) in properties)
         {
-            AddIfSelected(navigation, $"{navigationPath}/{propertyName}", value, query, propertyName);
+            AddExpandedNavigationProperty(navigation, navigationPath, propertyName, value, query);
         }
 
         if (navigation.Count > 0)
         {
             container[navigationPath.Split('/').Last()] = navigation;
         }
+    }
+
+    private static object EmptyResults()
+    {
+        return new
+        {
+            d = new
+            {
+                results = Array.Empty<object>()
+            }
+        };
     }
 
     private static void AddPhoneIfSelected(
@@ -390,6 +498,28 @@ public sealed class ODataResponseBuilder
         {
             phones.Add(phone);
         }
+    }
+
+    private static void AddExpandedNavigationProperty(
+        JsonObject container,
+        string navigationPath,
+        string propertyName,
+        string? value,
+        ODataQuery query)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return;
+        }
+
+        if (query.Select.Count > 0 &&
+            !query.Select.Contains($"{navigationPath}/{propertyName}") &&
+            !query.Expand.Contains(navigationPath))
+        {
+            return;
+        }
+
+        container[propertyName] = value;
     }
 
     private static void AddIfSelected(
