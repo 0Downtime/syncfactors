@@ -9,6 +9,8 @@ public sealed class PathResolverTests
     {
         var configPath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "config", "local.mock-successfactors.real-ad.sync-config.json"));
         var mappingPath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "config", "local.syncfactors.mapping-config.json"));
+        var originalConfigContents = File.Exists(configPath) ? File.ReadAllText(configPath) : null;
+        var originalMappingContents = File.Exists(mappingPath) ? File.ReadAllText(mappingPath) : null;
 
         Directory.CreateDirectory(Path.GetDirectoryName(configPath)!);
         File.WriteAllText(configPath, "{}");
@@ -23,8 +25,23 @@ public sealed class PathResolverTests
         }
         finally
         {
-            File.Delete(configPath);
-            File.Delete(mappingPath);
+            if (originalConfigContents is null)
+            {
+                File.Delete(configPath);
+            }
+            else
+            {
+                File.WriteAllText(configPath, originalConfigContents);
+            }
+
+            if (originalMappingContents is null)
+            {
+                File.Delete(mappingPath);
+            }
+            else
+            {
+                File.WriteAllText(mappingPath, originalMappingContents);
+            }
         }
     }
 
