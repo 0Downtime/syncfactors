@@ -332,12 +332,16 @@ a:focus-visible {
 
 .hero h1,
 .panel h2,
-.entry-head h3 {
+.entry-head h3,
+.section-heading h3,
+.connection-head h4 {
   margin: 0;
 }
 
 .hero-compact,
-.entry-head {
+.entry-head,
+.section-heading,
+.connection-head {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
@@ -375,6 +379,139 @@ a:focus-visible {
 
 .panel > h2 + * {
   margin-top: 18px;
+}
+
+.connection-section {
+  margin-top: 22px;
+}
+
+.connection-overview {
+  display: grid;
+  justify-items: end;
+  gap: 6px;
+  text-align: right;
+}
+
+.connection-bar {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.connection-segment {
+  height: 10px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--panel-strong);
+}
+
+.connection-segment.good {
+  background: var(--good);
+  border-color: color-mix(in srgb, var(--good) 55%, white 45%);
+}
+
+.connection-segment.warn {
+  background: var(--warn);
+  border-color: color-mix(in srgb, var(--warn) 55%, white 45%);
+}
+
+.connection-segment.bad {
+  background: var(--bad);
+  border-color: color-mix(in srgb, var(--bad) 55%, white 45%);
+}
+
+.connection-list {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.connection-card {
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background:
+    linear-gradient(180deg, rgba(0, 120, 212, 0.04), rgba(0, 120, 212, 0.01)),
+    var(--panel-alt);
+}
+
+.connection-summary,
+.connection-detail {
+  margin: 10px 0 0;
+}
+
+.dashboard-grid {
+  align-items: start;
+}
+
+.run-health-stack,
+.source-confidence-stack,
+.risk-list {
+  display: grid;
+  gap: 14px;
+}
+
+.run-health-card {
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--panel-alt);
+}
+
+.dashboard-refresh-note,
+.confirmation-line {
+  margin: 0 0 14px;
+}
+
+.decision-badges,
+.bucket-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.bucket-chip-row {
+  margin-top: 16px;
+}
+
+.bucket-card.active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.entry-summary {
+  margin: 0 0 12px;
+  font-weight: 600;
+}
+
+.plain-list {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.filter-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.filter-check input {
+  width: 18px;
+  height: 18px;
+}
+
+.apply-preview-form {
+  display: grid;
+  gap: 12px;
+}
+
+.diff-toggle {
+  text-align: right;
+}
+
+.is-hidden {
+  display: none !important;
 }
 
 .kv {
@@ -723,7 +860,9 @@ a:focus-visible {
 @media (max-width: 780px) {
   .topbar,
   .hero-compact,
-  .entry-head {
+  .entry-head,
+  .section-heading,
+  .connection-head {
     flex-direction: column;
     align-items: flex-start;
   }
@@ -747,5 +886,23 @@ a:focus-visible {
 
   .shell {
     padding: 14px;
+  }
+
+  .connection-overview {
+    justify-items: start;
+    text-align: left;
+  }
+
+  .connection-bar {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .decision-badges,
+  .bucket-chip-row {
+    width: 100%;
+  }
+
+  .diff-toggle {
+    text-align: left;
   }
 }

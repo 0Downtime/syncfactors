@@ -89,6 +89,8 @@ public sealed class PowerShellWorkerPreviewService(SyncFactorsConfigPathResolver
         return new WorkerPreviewResult(
             ReportPath: GetString(parsed, "reportPath"),
             RunId: GetString(parsed, "runId"),
+            PreviousRunId: null,
+            Fingerprint: string.Empty,
             Mode: GetString(parsed, "mode"),
             Status: GetString(parsed, "status"),
             ErrorMessage: GetString(parsed, "errorMessage"),
@@ -110,6 +112,9 @@ public sealed class PowerShellWorkerPreviewService(SyncFactorsConfigPathResolver
             OperationSummary: SummarizePreviewOperation(operations),
             DiffRows: diffRows,
             SourceAttributes: [],
+            UsedSourceAttributes: [],
+            UnusedSourceAttributes: [],
+            MissingSourceAttributes: [],
             Entries: entries);
     }
 

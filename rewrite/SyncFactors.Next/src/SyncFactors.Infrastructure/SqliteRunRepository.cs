@@ -182,6 +182,83 @@ public sealed class SqliteRunRepository(SqlitePathResolver pathResolver) : IRunR
             BucketCounts: BuildBucketCounts(run));
     }
 
+    public async Task<WorkerPreviewResult?> GetWorkerPreviewAsync(string runId, CancellationToken cancellationToken)
+    {
+        var run = await GetRunAsync(runId, cancellationToken);
+        if (run is null || !string.Equals(run.Run.ArtifactType, "WorkerPreview", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        if (run.Report.ValueKind != JsonValueKind.Object || !run.Report.TryGetProperty("preview", out var previewJson))
+        {
+            return null;
+        }
+
+        return JsonSerializer.Deserialize<WorkerPreviewResult>(previewJson.GetRawText());
+    }
+
+    public async Task<IReadOnlyList<WorkerPreviewHistoryItem>> ListWorkerPreviewHistoryAsync(string workerId, int take, CancellationToken cancellationToken)
+    {
+        var databasePath = pathResolver.Resolve();
+        if (string.IsNullOrWhiteSpace(databasePath))
+        {
+            return [];
+        }
+
+        await using var connection = OpenConnection(databasePath);
+        await connection.OpenAsync(cancellationToken);
+
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT
+              r.run_id,
+              r.status,
+              r.started_at,
+              r.report_json,
+              e.worker_id,
+              e.sam_account_name,
+              e.bucket,
+              e.reason,
+              e.item_json
+            FROM runs r
+            JOIN run_entries e ON e.run_id = r.run_id
+            WHERE r.artifact_type = 'WorkerPreview'
+              AND e.worker_id = $workerId
+            ORDER BY COALESCE(r.started_at, '') DESC
+            LIMIT $take;
+            """;
+        command.Parameters.AddWithValue("$workerId", workerId);
+        command.Parameters.AddWithValue("$take", Math.Max(1, take));
+
+        var history = new List<WorkerPreviewHistoryItem>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var report = reader.GetStringOrDefault("report_json");
+            var item = reader.GetStringOrDefault("item_json");
+            var preview = !string.IsNullOrWhiteSpace(report)
+                ? JsonSerializer.Deserialize<WorkerPreviewResult>(GetProperty(ParseJson(report), "preview")?.GetRawText() ?? "null")
+                : null;
+            var entryItem = string.IsNullOrWhiteSpace(item) ? EmptyObject() : ParseJson(item);
+            var diffRows = GetDiffRows(entryItem, null, reader.GetStringOrDefault("worker_id"), reader.GetStringOrDefault("bucket") ?? "updates");
+            history.Add(new WorkerPreviewHistoryItem(
+                RunId: reader.GetStringOrDefault("run_id") ?? string.Empty,
+                WorkerId: reader.GetStringOrDefault("worker_id") ?? workerId,
+                SamAccountName: reader.GetStringOrDefault("sam_account_name"),
+                Bucket: reader.GetStringOrDefault("bucket") ?? "updates",
+                Status: reader.GetStringOrDefault("status"),
+                StartedAt: ParseDate(reader.GetStringOrDefault("started_at")) ?? DateTimeOffset.MinValue,
+                ChangeCount: diffRows.Count(row => row.Changed),
+                Action: preview?.OperationSummary?.Action,
+                Reason: reader.GetStringOrDefault("reason"),
+                Fingerprint: preview?.Fingerprint ?? string.Empty));
+        }
+
+        return history;
+    }
+
     public async Task SaveRunAsync(RunRecord run, CancellationToken cancellationToken)
     {
         var databasePath = pathResolver.ResolveConfiguredPath() ?? pathResolver.Resolve();
@@ -373,8 +450,8 @@ public sealed class SqliteRunRepository(SqlitePathResolver pathResolver) : IRunR
         }
         if (!string.IsNullOrWhiteSpace(workerId))
         {
-            where.Add("e.worker_id = $workerId");
-            command.Parameters.AddWithValue("$workerId", workerId);
+            where.Add("(LOWER(COALESCE(e.worker_id, '')) LIKE $workerId ESCAPE '\\' OR LOWER(COALESCE(e.sam_account_name, '')) LIKE $workerId ESCAPE '\\')");
+            command.Parameters.AddWithValue("$workerId", $"%{EscapeLike(workerId.ToLowerInvariant())}%");
         }
         if (!string.IsNullOrWhiteSpace(reason))
         {
@@ -388,7 +465,7 @@ public sealed class SqliteRunRepository(SqlitePathResolver pathResolver) : IRunR
         }
         if (!string.IsNullOrWhiteSpace(filter))
         {
-            where.Add("LOWER(COALESCE(e.item_json, '')) LIKE $filter ESCAPE '\\'");
+            where.Add("(LOWER(COALESCE(e.item_json, '')) LIKE $filter ESCAPE '\\' OR LOWER(COALESCE(e.reason, '')) LIKE $filter ESCAPE '\\' OR LOWER(COALESCE(e.review_case_type, '')) LIKE $filter ESCAPE '\\')");
             command.Parameters.AddWithValue("$filter", $"%{EscapeLike(filter.ToLowerInvariant())}%");
         }
 
@@ -492,6 +569,14 @@ public sealed class SqliteRunRepository(SqlitePathResolver pathResolver) : IRunR
         var operations = GetOperations(report);
         var operation = FindOperation(operations, row.WorkerId, row.Bucket);
         var diffRows = GetDiffRows(item, operation, row.WorkerId, row.Bucket ?? "unknown");
+        var topChangedAttributes = diffRows
+            .Where(diff => diff.Changed)
+            .Select(diff => diff.Attribute)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Take(4)
+            .ToArray();
+        var primarySummary = GetPrimarySummary(row.Bucket ?? "unknown", row.Reason, row.ReviewCaseType, diffRows, item, operation);
+        var failureSummary = GetFailureSummary(row.Bucket ?? "unknown", row.Reason, row.ReviewCaseType, item);
         return new RunEntry(
             EntryId: row.EntryId ?? $"{row.RunId}:{row.Bucket}:{row.WorkerId ?? row.SamAccountName ?? "unknown"}:{row.BucketIndex}",
             RunId: row.RunId ?? string.Empty,
@@ -507,6 +592,9 @@ public sealed class SqliteRunRepository(SqlitePathResolver pathResolver) : IRunR
             StartedAt: ParseDate(row.StartedAt),
             ChangeCount: diffRows.Count(row => row.Changed),
             OperationSummary: GetOperationSummary(row.Bucket ?? "unknown", item, operation),
+            FailureSummary: failureSummary,
+            PrimarySummary: primarySummary,
+            TopChangedAttributes: topChangedAttributes,
             DiffRows: diffRows,
             Item: item);
     }
@@ -669,6 +757,49 @@ public sealed class SqliteRunRepository(SqlitePathResolver pathResolver) : IRunR
                     null),
             _ => null,
         };
+    }
+
+    private static string? GetPrimarySummary(
+        string bucket,
+        string? reason,
+        string? reviewCaseType,
+        IReadOnlyList<DiffRow> diffRows,
+        JsonElement item,
+        JsonElement? operation)
+    {
+        if (!string.IsNullOrWhiteSpace(reason))
+        {
+            return reason;
+        }
+
+        if (!string.IsNullOrWhiteSpace(reviewCaseType))
+        {
+            return reviewCaseType;
+        }
+
+        var operationSummary = GetOperationSummary(bucket, item, operation);
+        if (!string.IsNullOrWhiteSpace(operationSummary?.Effect))
+        {
+            return operationSummary.Effect;
+        }
+
+        var changed = diffRows.Count(row => row.Changed);
+        return changed > 0 ? $"{changed} changed attributes." : null;
+    }
+
+    private static string? GetFailureSummary(string bucket, string? reason, string? reviewCaseType, JsonElement item)
+    {
+        if (bucket is "conflicts" or "manualReview" or "guardrailFailures" or "quarantined")
+        {
+            return reason ?? reviewCaseType ?? GetString(item, "message");
+        }
+
+        if (item.ValueKind == JsonValueKind.Object && item.TryGetProperty("succeeded", out var succeeded) && succeeded.ValueKind == JsonValueKind.False)
+        {
+            return reason ?? GetString(item, "message") ?? "The operation failed.";
+        }
+
+        return null;
     }
 
     private static JsonElement? GetObject(JsonElement? element, string propertyName)

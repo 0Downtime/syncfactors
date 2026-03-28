@@ -17,8 +17,14 @@ builder.Services.AddSingleton<ScaffoldDataStore>();
 builder.Services.AddSingleton<ScaffoldWorkerSource>();
 builder.Services.AddSingleton<ScaffoldDirectoryGateway>();
 builder.Services.AddSingleton<ScaffoldDirectoryCommandGateway>();
+builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<IWorkerPreviewLogWriter, FileWorkerPreviewLogWriter>();
 builder.Services.AddHttpClient<SuccessFactorsWorkerSource>()
+    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+    {
+        AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate
+    });
+builder.Services.AddHttpClient<IDependencyHealthService, DependencyHealthService>()
     .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
     {
         AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate
@@ -29,8 +35,10 @@ builder.Services.AddTransient<IDirectoryCommandGateway, ActiveDirectoryCommandGa
 builder.Services.AddSingleton<IAttributeMappingProvider, AttributeMappingProvider>();
 builder.Services.AddSingleton<IIdentityMatcher, IdentityMatcher>();
 builder.Services.AddSingleton<IAttributeDiffService, AttributeDiffService>();
+builder.Services.AddSingleton<IWorkerHeartbeatStore, SqliteWorkerHeartbeatStore>();
 builder.Services.AddTransient<IWorkerPreviewPlanner, WorkerPreviewPlanner>();
 builder.Services.AddTransient<IApplyPreviewService, ApplyPreviewService>();
+builder.Services.AddSingleton<IDashboardSnapshotService, DashboardSnapshotService>();
 builder.Services.AddSingleton<IRuntimeStatusStore, SqliteRuntimeStatusStore>();
 builder.Services.AddSingleton<IRunRepository, SqliteRunRepository>();
 builder.Services.AddRazorPages();
@@ -64,6 +72,18 @@ app.MapGet("/api/status", async (IRuntimeStatusStore store, CancellationToken ca
     return Results.Ok(new { status });
 });
 
+app.MapGet("/api/dashboard", async (IDashboardSnapshotService dashboardSnapshotService, CancellationToken cancellationToken) =>
+{
+    var snapshot = await dashboardSnapshotService.GetSnapshotAsync(cancellationToken);
+    return Results.Ok(snapshot);
+});
+
+app.MapGet("/api/health", async (IDependencyHealthService healthService, CancellationToken cancellationToken) =>
+{
+    var snapshot = await healthService.GetSnapshotAsync(cancellationToken);
+    return Results.Ok(snapshot);
+});
+
 app.MapGet("/api/runs", async (IRunRepository repository, CancellationToken cancellationToken) =>
 {
     var runs = await repository.ListRunsAsync(cancellationToken);
@@ -74,6 +94,18 @@ app.MapGet("/api/runs/{runId}", async (string runId, IRunRepository repository, 
 {
     var run = await repository.GetRunAsync(runId, cancellationToken);
     return run is null ? Results.NotFound() : Results.Ok(run);
+});
+
+app.MapGet("/api/previews/{runId}", async (string runId, IRunRepository repository, CancellationToken cancellationToken) =>
+{
+    var preview = await repository.GetWorkerPreviewAsync(runId, cancellationToken);
+    return preview is null ? Results.NotFound() : Results.Ok(preview);
+});
+
+app.MapGet("/api/workers/{workerId}/previews", async (string workerId, int? take, IRunRepository repository, CancellationToken cancellationToken) =>
+{
+    var history = await repository.ListWorkerPreviewHistoryAsync(workerId, take ?? 6, cancellationToken);
+    return Results.Ok(new { workerId, previews = history });
 });
 
 app.MapGet("/api/runs/{runId}/entries", async (
@@ -98,10 +130,16 @@ app.MapGet("/api/runs/{runId}/entries", async (
 
 app.MapPost("/api/preview/{workerId}/apply", async (
     string workerId,
+    ApplyPreviewRequest request,
     IApplyPreviewService applyPreviewService,
     CancellationToken cancellationToken) =>
 {
-    var result = await applyPreviewService.ApplyAsync(workerId, cancellationToken);
+    if (!string.Equals(workerId, request.WorkerId, StringComparison.Ordinal))
+    {
+        return Results.BadRequest(new { error = "Route worker id does not match the apply request." });
+    }
+
+    var result = await applyPreviewService.ApplyAsync(request, cancellationToken);
     return result.Succeeded
         ? Results.Ok(result)
         : Results.BadRequest(result);

@@ -9,7 +9,9 @@ public sealed class WorkerPreviewPlanner(
     IDirectoryGateway directoryGateway,
     IIdentityMatcher identityMatcher,
     IAttributeDiffService attributeDiffService,
+    IAttributeMappingProvider attributeMappingProvider,
     IWorkerPreviewLogWriter previewLogWriter,
+    IRunRepository runRepository,
     ILogger<WorkerPreviewPlanner> logger) : IWorkerPreviewPlanner
 {
     public async Task<WorkerPreviewResult> PreviewAsync(string workerId, CancellationToken cancellationToken)
@@ -48,7 +50,110 @@ public sealed class WorkerPreviewPlanner(
             identity.Bucket,
             identity.MatchedExistingUser,
             attributeChanges.Count(change => change.Changed));
-        return BuildPreview(worker, directoryUser, identity, attributeChanges, managerDistinguishedName, logPath);
+        var preview = BuildPreview(
+            worker,
+            directoryUser,
+            identity,
+            attributeChanges,
+            managerDistinguishedName,
+            logPath,
+            attributeMappingProvider.GetEnabledMappings());
+        var history = await runRepository.ListWorkerPreviewHistoryAsync(worker.WorkerId, 1, cancellationToken);
+        var previewWithHistory = preview with { PreviousRunId = history.FirstOrDefault()?.RunId };
+        var fingerprint = WorkerPreviewFingerprint.Compute(previewWithHistory);
+        var previewRunId = $"preview-{worker.WorkerId}-{startedAt:yyyyMMddHHmmssfff}";
+        var finalizedPreview = previewWithHistory with
+        {
+            RunId = previewRunId,
+            Fingerprint = fingerprint
+        };
+
+        await PersistPreviewAsync(finalizedPreview, startedAt, cancellationToken);
+        return finalizedPreview;
+    }
+
+    private async Task PersistPreviewAsync(
+        WorkerPreviewResult preview,
+        DateTimeOffset startedAt,
+        CancellationToken cancellationToken)
+    {
+        var report = ParseJson(
+            "{"
+            + "\"kind\":\"workerPreview\","
+            + $"\"fingerprint\":\"{Escape(preview.Fingerprint)}\","
+            + $"\"workerId\":\"{Escape(preview.WorkerId)}\","
+            + $"\"samAccountName\":{ToJsonString(preview.SamAccountName)},"
+            + $"\"previousRunId\":{ToJsonString(preview.PreviousRunId)},"
+            + $"\"preview\":{SerializePreview(preview)}"
+            + "}");
+
+        var bucket = preview.Buckets.FirstOrDefault() ?? "updates";
+        var runRecord = new RunRecord(
+            RunId: preview.RunId ?? throw new InvalidOperationException("Preview run id is required."),
+            Path: preview.ReportPath,
+            ArtifactType: "WorkerPreview",
+            ConfigPath: null,
+            MappingConfigPath: null,
+            Mode: "Preview",
+            DryRun: true,
+            Status: preview.Status ?? "Planned",
+            StartedAt: startedAt,
+            CompletedAt: startedAt,
+            DurationSeconds: 0,
+            Creates: bucket == "creates" ? 1 : 0,
+            Updates: bucket == "updates" ? 1 : 0,
+            Enables: bucket == "enables" ? 1 : 0,
+            Disables: bucket == "disables" ? 1 : 0,
+            GraveyardMoves: bucket == "graveyardMoves" ? 1 : 0,
+            Deletions: bucket == "deletions" ? 1 : 0,
+            Quarantined: bucket == "quarantined" ? 1 : 0,
+            Conflicts: bucket == "conflicts" ? 1 : 0,
+            GuardrailFailures: bucket == "guardrailFailures" ? 1 : 0,
+            ManualReview: bucket == "manualReview" ? 1 : 0,
+            Unchanged: preview.DiffRows.All(row => !row.Changed) ? 1 : 0,
+            Report: report);
+
+        var entryItem = ParseJson(
+            "{"
+            + $"\"workerId\":\"{Escape(preview.WorkerId)}\","
+            + $"\"samAccountName\":{ToJsonString(preview.SamAccountName)},"
+            + $"\"targetOu\":{ToJsonString(preview.TargetOu)},"
+            + $"\"managerDistinguishedName\":{ToJsonString(preview.ManagerDistinguishedName)},"
+            + $"\"reviewCaseType\":{ToJsonString(preview.ReviewCaseType)},"
+            + $"\"reason\":{ToJsonString(preview.Reason)},"
+            + $"\"matchedExistingUser\":{ToJsonBoolean(preview.MatchedExistingUser ?? false)},"
+            + $"\"proposedEnable\":{ToJsonNullableBoolean(preview.ProposedEnable)},"
+            + $"\"currentEnabled\":{ToJsonNullableBoolean(preview.CurrentEnabled)},"
+            + "\"changedAttributeDetails\":["
+            + string.Join(",", preview.DiffRows
+                .Where(row => row.Changed)
+                .Select(row => "{"
+                    + $"\"targetAttribute\":\"{Escape(row.Attribute)}\","
+                    + $"\"sourceField\":{ToJsonString(row.Source)},"
+                    + $"\"currentAdValue\":{ToJsonString(row.Before == "(unset)" ? null : row.Before)},"
+                    + $"\"proposedValue\":{ToJsonString(row.After == "(unset)" ? null : row.After)}"
+                    + "}"))
+            + "]"
+            + "}");
+
+        await runRepository.SaveRunAsync(runRecord, cancellationToken);
+        await runRepository.ReplaceRunEntriesAsync(
+            preview.RunId!,
+            [
+                new RunEntryRecord(
+                    EntryId: $"{preview.RunId}:{preview.WorkerId}:0",
+                    RunId: preview.RunId,
+                    Bucket: bucket,
+                    BucketIndex: 0,
+                    WorkerId: preview.WorkerId,
+                    SamAccountName: preview.SamAccountName,
+                    Reason: preview.Reason,
+                    ReviewCategory: preview.ReviewCategory,
+                    ReviewCaseType: preview.ReviewCaseType,
+                    StartedAt: startedAt,
+                    Item: entryItem)
+            ],
+            cancellationToken);
     }
 
     private static WorkerPreviewResult BuildPreview(
@@ -57,7 +162,8 @@ public sealed class WorkerPreviewPlanner(
         IdentityMatchResult identity,
         IReadOnlyList<AttributeChange> attributeChanges,
         string? managerDistinguishedName,
-        string? logPath)
+        string? logPath,
+        IReadOnlyList<AttributeMapping> mappings)
     {
         var diffRows = attributeChanges
             .Select(change => new DiffRow(change.Attribute, change.Source, change.Before, change.After, change.Changed))
@@ -68,6 +174,11 @@ public sealed class WorkerPreviewPlanner(
             .OrderBy(attribute => IsPathLikeAttribute(attribute.Attribute) ? 1 : 0)
             .ThenBy(attribute => attribute.Attribute, StringComparer.OrdinalIgnoreCase)
             .ToArray();
+        var usedSources = BuildUsedSourceAttributes(sourceAttributes, diffRows);
+        var unusedSources = sourceAttributes
+            .Where(attribute => usedSources.All(used => !string.Equals(used.Attribute, attribute.Attribute, StringComparison.OrdinalIgnoreCase)))
+            .ToArray();
+        var missingSources = BuildMissingSourceAttributes(worker.Attributes, mappings);
 
         var item = ParseJson(
             "{"
@@ -90,6 +201,8 @@ public sealed class WorkerPreviewPlanner(
         return new WorkerPreviewResult(
             ReportPath: logPath,
             RunId: null,
+            PreviousRunId: null,
+            Fingerprint: string.Empty,
             Mode: "Preview",
             Status: "Planned",
             ErrorMessage: null,
@@ -116,6 +229,9 @@ public sealed class WorkerPreviewPlanner(
                 ToOu: worker.TargetOu),
             DiffRows: diffRows,
             SourceAttributes: sourceAttributes,
+            UsedSourceAttributes: usedSources,
+            UnusedSourceAttributes: unusedSources,
+            MissingSourceAttributes: missingSources,
             Entries:
             [
                 new WorkerPreviewEntry(
@@ -139,6 +255,76 @@ public sealed class WorkerPreviewPlanner(
     private static string ToJsonString(string? value) => value is null ? "null" : $"\"{Escape(value)}\"";
 
     private static string ToJsonBoolean(bool value) => value ? "true" : "false";
+
+    private static string ToJsonNullableBoolean(bool? value) => value.HasValue ? ToJsonBoolean(value.Value) : "null";
+
+    private static string SerializePreview(WorkerPreviewResult preview)
+    {
+        return JsonSerializer.Serialize(preview);
+    }
+
+    private static IReadOnlyList<SourceAttributeRow> BuildUsedSourceAttributes(
+        IReadOnlyList<SourceAttributeRow> sourceAttributes,
+        IReadOnlyList<DiffRow> diffRows)
+    {
+        var usedKeys = diffRows
+            .SelectMany(row => SplitSourceKeys(row.Source))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        return sourceAttributes
+            .Where(attribute => usedKeys.Contains(attribute.Attribute))
+            .ToArray();
+    }
+
+    private static IReadOnlyList<MissingSourceAttributeRow> BuildMissingSourceAttributes(
+        IReadOnlyDictionary<string, string?> attributes,
+        IReadOnlyList<AttributeMapping> mappings)
+    {
+        var missing = new List<MissingSourceAttributeRow>();
+        foreach (var mapping in mappings.Where(mapping => mapping.Required))
+        {
+            if (TryResolveAttribute(attributes, mapping.Source, out var value) &&
+                !string.IsNullOrWhiteSpace(value))
+            {
+                continue;
+            }
+
+            missing.Add(new MissingSourceAttributeRow(mapping.Source, $"Required mapping for {mapping.Target} has no value."));
+        }
+
+        return missing
+            .DistinctBy(row => row.Attribute, StringComparer.OrdinalIgnoreCase)
+            .OrderBy(row => row.Attribute, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
+    private static bool TryResolveAttribute(
+        IReadOnlyDictionary<string, string?> attributes,
+        string source,
+        out string? value)
+    {
+        foreach (var key in SplitSourceKeys(source))
+        {
+            if (attributes.TryGetValue(key, out value))
+            {
+                return true;
+            }
+        }
+
+        value = null;
+        return false;
+    }
+
+    private static IEnumerable<string> SplitSourceKeys(string? source)
+    {
+        if (string.IsNullOrWhiteSpace(source))
+        {
+            return [];
+        }
+
+        return source.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+    }
 
     private static bool IsPathLikeAttribute(string attribute)
     {

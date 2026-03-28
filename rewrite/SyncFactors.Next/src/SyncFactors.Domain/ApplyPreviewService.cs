@@ -6,45 +6,72 @@ namespace SyncFactors.Domain;
 
 public interface IApplyPreviewService
 {
-    Task<DirectoryCommandResult> ApplyAsync(string workerId, CancellationToken cancellationToken);
+    Task<DirectoryCommandResult> ApplyAsync(ApplyPreviewRequest request, CancellationToken cancellationToken);
 }
 
 public sealed class ApplyPreviewService(
     IWorkerSource workerSource,
-    IWorkerPreviewPlanner previewPlanner,
-    IDirectoryGateway directoryGateway,
     IDirectoryCommandGateway directoryCommandGateway,
     IRunRepository runRepository,
     IRuntimeStatusStore runtimeStatusStore,
     ILogger<ApplyPreviewService> logger) : IApplyPreviewService
 {
-    public async Task<DirectoryCommandResult> ApplyAsync(string workerId, CancellationToken cancellationToken)
+    public async Task<DirectoryCommandResult> ApplyAsync(ApplyPreviewRequest request, CancellationToken cancellationToken)
     {
-        logger.LogInformation("Starting preview apply flow. WorkerId={WorkerId}", workerId);
-        var worker = await workerSource.GetWorkerAsync(workerId, cancellationToken);
-        if (worker is null)
+        logger.LogInformation("Starting preview apply flow. WorkerId={WorkerId} PreviewRunId={PreviewRunId}", request.WorkerId, request.PreviewRunId);
+        var preview = await runRepository.GetWorkerPreviewAsync(request.PreviewRunId, cancellationToken);
+        if (preview is null)
         {
-            logger.LogWarning("Apply preview could not resolve worker. WorkerId={WorkerId}", workerId);
-            throw new InvalidOperationException($"Worker {workerId} could not be resolved.");
+            throw new InvalidOperationException($"Preview run {request.PreviewRunId} could not be resolved.");
         }
 
-        var preview = await previewPlanner.PreviewAsync(workerId, cancellationToken);
+        if (!string.Equals(preview.WorkerId, request.WorkerId, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("The saved preview does not match the requested worker.");
+        }
+
+        if (!string.Equals(preview.Fingerprint, request.PreviewFingerprint, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("The saved preview no longer matches the reviewed preview snapshot. Refresh preview before applying.");
+        }
+
+        var requiredConfirmation = BuildConfirmationText(preview);
+        if (!string.Equals(requiredConfirmation, request.ConfirmationText?.Trim(), StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException($"Confirmation text must exactly match '{requiredConfirmation}'.");
+        }
+
+        ValidatePreviewIsSafeToApply(preview);
+
+        var worker = await workerSource.GetWorkerAsync(request.WorkerId, cancellationToken);
+        if (worker is null)
+        {
+            logger.LogWarning("Apply preview could not resolve worker. WorkerId={WorkerId}", request.WorkerId);
+            throw new InvalidOperationException($"Worker {request.WorkerId} could not be resolved.");
+        }
+
         var samAccountName = preview.SamAccountName ?? throw new InvalidOperationException("Preview did not produce a SAM account name.");
-        var displayName = DirectoryIdentityFormatter.BuildDisplayName(worker.PreferredName, worker.LastName);
-        var emailLocalPart = await directoryGateway.ResolveAvailableEmailLocalPartAsync(worker, cancellationToken);
-        var emailAddress = DirectoryIdentityFormatter.BuildEmailAddress(emailLocalPart);
+        var displayName = GetPreviewAttributeValue(preview, "displayName")
+            ?? DirectoryIdentityFormatter.BuildDisplayName(worker.PreferredName, worker.LastName);
+        var emailAddress = GetPreviewAttributeValue(preview, "UserPrincipalName")
+            ?? GetPreviewAttributeValue(preview, "userPrincipalName")
+            ?? GetPreviewAttributeValue(preview, "mail")
+            ?? DirectoryIdentityFormatter.BuildEmailAddress(
+                DirectoryIdentityFormatter.BuildBaseEmailLocalPart(worker.PreferredName, worker.LastName));
+        var mailAddress = GetPreviewAttributeValue(preview, "mail") ?? emailAddress;
         var action = preview.Buckets.Contains("creates", StringComparer.OrdinalIgnoreCase) ? "CreateUser" : "UpdateUser";
         var command = new DirectoryMutationCommand(
             Action: action,
             WorkerId: worker.WorkerId,
             ManagerId: worker.Attributes.TryGetValue("managerId", out var managerId) ? managerId : null,
+            ManagerDistinguishedName: preview.ManagerDistinguishedName,
             SamAccountName: samAccountName,
             UserPrincipalName: emailAddress,
-            Mail: emailAddress,
+            Mail: mailAddress,
             TargetOu: preview.TargetOu ?? worker.TargetOu,
             DisplayName: displayName,
             EnableAccount: preview.ProposedEnable ?? true,
-            Attributes: BuildProposedAttributes(preview, displayName, emailAddress));
+            Attributes: BuildProposedAttributes(preview));
         logger.LogInformation("Prepared directory mutation command. WorkerId={WorkerId} Action={Action} SamAccountName={SamAccountName}", worker.WorkerId, action, command.SamAccountName);
 
         var startedAt = DateTimeOffset.UtcNow;
@@ -60,7 +87,7 @@ public sealed class ApplyPreviewService(
                 ProcessedWorkers: 0,
                 TotalWorkers: 1,
                 CurrentWorkerId: worker.WorkerId,
-                LastAction: $"{action} for {command.SamAccountName}",
+                LastAction: $"{action} for {command.SamAccountName} from preview {preview.RunId}",
                 StartedAt: startedAt,
                 LastUpdatedAt: startedAt,
                 CompletedAt: null,
@@ -78,7 +105,9 @@ public sealed class ApplyPreviewService(
             + $"\"action\":\"{Escape(result.Action)}\","
             + $"\"samAccountName\":\"{Escape(result.SamAccountName)}\","
             + $"\"succeeded\":{(result.Succeeded ? "true" : "false")},"
-            + $"\"message\":\"{Escape(result.Message)}\""
+            + $"\"message\":\"{Escape(result.Message)}\","
+            + $"\"sourcePreviewRunId\":\"{Escape(preview.RunId ?? request.PreviewRunId)}\","
+            + $"\"sourcePreviewFingerprint\":\"{Escape(preview.Fingerprint)}\""
             + "}");
 
         await runRepository.SaveRunAsync(
@@ -147,16 +176,19 @@ public sealed class ApplyPreviewService(
         return result with { RunId = runId };
     }
 
+    public static string BuildConfirmationText(WorkerPreviewResult preview)
+    {
+        var action = preview.Buckets.Contains("creates", StringComparer.OrdinalIgnoreCase) ? "CreateUser" : "UpdateUser";
+        return $"APPLY {action} {preview.SamAccountName} FOR {preview.WorkerId}";
+    }
+
     private static JsonElement ParseJson(string json)
     {
         using var document = JsonDocument.Parse(json);
         return document.RootElement.Clone();
     }
 
-    private static IReadOnlyDictionary<string, string?> BuildProposedAttributes(
-        WorkerPreviewResult preview,
-        string displayName,
-        string emailAddress)
+    private static IReadOnlyDictionary<string, string?> BuildProposedAttributes(WorkerPreviewResult preview)
     {
         var attributes = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
 
@@ -167,15 +199,56 @@ public sealed class ApplyPreviewService(
                 : row.After;
         }
 
-        attributes["displayName"] = displayName;
-        attributes["userPrincipalName"] = emailAddress;
-        attributes["mail"] = emailAddress;
         return attributes;
+    }
+
+    private static string? GetPreviewAttributeValue(WorkerPreviewResult preview, string attributeName)
+    {
+        var row = preview.DiffRows.FirstOrDefault(diffRow =>
+            string.Equals(diffRow.Attribute, attributeName, StringComparison.OrdinalIgnoreCase));
+        if (row is null)
+        {
+            return null;
+        }
+
+        return string.Equals(row.After, "(unset)", StringComparison.Ordinal)
+            ? null
+            : row.After;
     }
 
     private static string Escape(string value)
     {
         return value.Replace("\\", "\\\\", StringComparison.Ordinal)
             .Replace("\"", "\\\"", StringComparison.Ordinal);
+    }
+
+    private static void ValidatePreviewIsSafeToApply(WorkerPreviewResult preview)
+    {
+        if (!string.IsNullOrWhiteSpace(preview.ReviewCaseType))
+        {
+            throw new InvalidOperationException($"Preview requires review before apply. Review case: {preview.ReviewCaseType}.");
+        }
+
+        if (string.IsNullOrWhiteSpace(preview.SamAccountName))
+        {
+            throw new InvalidOperationException("Preview cannot be applied because the SAM account name is missing.");
+        }
+
+        var userPrincipalName = GetPreviewAttributeValue(preview, "UserPrincipalName")
+            ?? GetPreviewAttributeValue(preview, "userPrincipalName")
+            ?? GetPreviewAttributeValue(preview, "mail");
+        if (string.IsNullOrWhiteSpace(userPrincipalName))
+        {
+            throw new InvalidOperationException("Preview cannot be applied because the planned email or user principal name is missing.");
+        }
+
+        var managerIdRequired = preview.Entries.Any(entry =>
+            entry.Item.ValueKind == JsonValueKind.Object &&
+            entry.Item.TryGetProperty("managerRequired", out var managerRequired) &&
+            managerRequired.ValueKind == JsonValueKind.True);
+        if (managerIdRequired && string.IsNullOrWhiteSpace(preview.ManagerDistinguishedName))
+        {
+            throw new InvalidOperationException("Preview cannot be applied because the manager could not be resolved in Active Directory.");
+        }
     }
 }
