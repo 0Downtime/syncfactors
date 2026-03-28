@@ -5,7 +5,8 @@ Describe 'Reporting journal' {
     }
 
     It 'creates a report with run metadata and operation journal' {
-        $report = New-SyncFactorsReport -Mode 'Delta' -DryRun -ConfigPath 'config.json' -MappingConfigPath 'mapping.json' -StatePath 'state.json'
+        $statePath = Join-Path $TestDrive 'state.json'
+        $report = New-SyncFactorsReport -Mode 'Delta' -DryRun -ConfigPath 'config.json' -MappingConfigPath 'mapping.json' -StatePath $statePath
 
         $report.runId | Should -Not -BeNullOrEmpty
         $report.mode | Should -Be 'Delta'
@@ -17,7 +18,8 @@ Describe 'Reporting journal' {
     }
 
     It 'appends ordered operations' {
-        $report = New-SyncFactorsReport
+        $statePath = Join-Path $TestDrive 'state.json'
+        $report = New-SyncFactorsReport -StatePath $statePath
         $entry = Add-SyncFactorsReportOperation -Report $report -OperationType 'UpdateAttributes' -WorkerId '1001' -Bucket 'updates' -Target @{ samAccountName = 'jdoe' } -Before ([pscustomobject]@{ title = 'Old' }) -After ([pscustomobject]@{ title = 'New' })
 
         $entry.sequence | Should -Be 1
@@ -28,13 +30,14 @@ Describe 'Reporting journal' {
 
     It 'writes a persisted report with the expected top-level shape' {
         $reportDirectory = Join-Path $TestDrive 'reports'
-        $report = New-SyncFactorsReport -Mode 'Full' -DryRun -ConfigPath 'config.json' -MappingConfigPath 'mapping.json' -StatePath 'state.json'
+        $statePath = Join-Path $TestDrive 'state.json'
+        $report = New-SyncFactorsReport -Mode 'Full' -DryRun -ConfigPath 'config.json' -MappingConfigPath 'mapping.json' -StatePath $statePath
         Add-SyncFactorsReportEntry -Report $report -Bucket 'creates' -Entry @{ workerId = '1001'; samAccountName = 'jdoe' }
         Add-SyncFactorsReportOperation -Report $report -OperationType 'CreateUser' -WorkerId '1001' -Bucket 'creates' -Target @{ samAccountName = 'jdoe' } -Before $null -After ([pscustomobject]@{ samAccountName = 'jdoe' }) | Out-Null
 
         $reportPath = Save-SyncFactorsReport -Report $report -Directory $reportDirectory -Mode 'Full'
         $reportPath | Should -Match '^run:'
-        $persisted = Get-SyncFactorsReportFromReference -Reference $reportPath -StatePath 'state.json'
+        $persisted = Get-SyncFactorsReportFromReference -Reference $reportPath -StatePath $statePath
 
         $persisted.runId | Should -Not -BeNullOrEmpty
         $persisted.mode | Should -Be 'Full'
@@ -47,12 +50,13 @@ Describe 'Reporting journal' {
 
     It 'persists operation entries with rollback-relevant fields intact' {
         $reportDirectory = Join-Path $TestDrive 'reports'
-        $report = New-SyncFactorsReport -Mode 'Delta' -ConfigPath 'config.json' -MappingConfigPath 'mapping.json' -StatePath 'state.json'
+        $statePath = Join-Path $TestDrive 'state.json'
+        $report = New-SyncFactorsReport -Mode 'Delta' -ConfigPath 'config.json' -MappingConfigPath 'mapping.json' -StatePath $statePath
         Add-SyncFactorsReportOperation -Report $report -OperationType 'MoveUser' -WorkerId '2001' -Bucket 'graveyardMoves' -TargetType 'ADUser' -Target @{ objectGuid = '11111111-1111-1111-1111-111111111111' } -Before ([pscustomobject]@{ parentOu = 'OU=Employees,DC=example,DC=com' }) -After ([pscustomobject]@{ targetOu = 'OU=Graveyard,DC=example,DC=com' }) | Out-Null
 
         $reportPath = Save-SyncFactorsReport -Report $report -Directory $reportDirectory -Mode 'Delta'
         $reportPath | Should -Match '^run:'
-        $persisted = Get-SyncFactorsReportFromReference -Reference $reportPath -StatePath 'state.json'
+        $persisted = Get-SyncFactorsReportFromReference -Reference $reportPath -StatePath $statePath
 
         $persisted.operations[0].operationType | Should -Be 'MoveUser'
         $persisted.operations[0].workerId | Should -Be '2001'
