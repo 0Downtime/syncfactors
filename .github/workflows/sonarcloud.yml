@@ -1,4 +1,4 @@
-name: Legacy SonarCloud
+name: '[old] SonarCloud'
 
 on:
   push:
@@ -21,7 +21,7 @@ concurrency:
 
 jobs:
   scan:
-    name: Quality and Coverage
+    name: '[old] Quality and Coverage'
     runs-on: windows-latest
     permissions:
       contents: read

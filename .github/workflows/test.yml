@@ -44,7 +44,7 @@ jobs:
           path: artifacts/test-results/*.trx
 
   pester:
-    name: pester
+    name: '[old] pester'
     runs-on: windows-latest
     permissions:
       contents: read
