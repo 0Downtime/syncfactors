@@ -25,8 +25,6 @@ public sealed class DetailModel(IRunRepository runRepository) : PageModel
 
     public IReadOnlyList<string> AvailableBuckets { get; private set; } = [];
 
-    public IReadOnlyList<string> AvailableWorkerIds { get; private set; } = [];
-
     public async Task<IActionResult> OnGetAsync(CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(RunId))
@@ -43,15 +41,6 @@ public sealed class DetailModel(IRunRepository runRepository) : PageModel
         AvailableBuckets = Run.BucketCounts
             .Where(pair => pair.Value > 0)
             .Select(pair => pair.Key)
-            .ToArray();
-
-        var allEntries = await runRepository.GetRunEntriesAsync(RunId, null, null, null, null, null, cancellationToken);
-        AvailableWorkerIds = allEntries
-            .Select(entry => entry.WorkerId)
-            .Where(workerId => !string.IsNullOrWhiteSpace(workerId))
-            .Distinct(StringComparer.Ordinal)
-            .OrderBy(workerId => workerId, StringComparer.Ordinal)
-            .Cast<string>()
             .ToArray();
 
         Entries = await runRepository.GetRunEntriesAsync(RunId, Bucket, WorkerId, null, Filter, null, cancellationToken);

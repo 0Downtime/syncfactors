@@ -17,6 +17,15 @@ public sealed record RuntimeStatus(
     DateTimeOffset? CompletedAt,
     string? ErrorMessage);
 
+public sealed record DashboardSnapshot(
+    RuntimeStatus Status,
+    IReadOnlyList<RunSummary> Runs,
+    RunSummary? ActiveRun,
+    RunSummary? LastCompletedRun,
+    bool RequiresAttention,
+    string? AttentionMessage,
+    DateTimeOffset CheckedAt);
+
 public sealed record RunRecord(
     string RunId,
     string? Path,
@@ -73,6 +82,18 @@ public sealed record RunDetail(
     JsonElement Report,
     IReadOnlyDictionary<string, int> BucketCounts);
 
+public sealed record WorkerPreviewHistoryItem(
+    string RunId,
+    string WorkerId,
+    string? SamAccountName,
+    string Bucket,
+    string? Status,
+    DateTimeOffset StartedAt,
+    int ChangeCount,
+    string? Action,
+    string? Reason,
+    string Fingerprint);
+
 public sealed record RunEntry(
     string EntryId,
     string RunId,
@@ -88,6 +109,9 @@ public sealed record RunEntry(
     DateTimeOffset? StartedAt,
     int ChangeCount,
     OperationSummary? OperationSummary,
+    string? FailureSummary,
+    string? PrimarySummary,
+    IReadOnlyList<string> TopChangedAttributes,
     IReadOnlyList<DiffRow> DiffRows,
     JsonElement Item);
 
@@ -163,6 +187,7 @@ public sealed record DirectoryMutationCommand(
     string Action,
     string WorkerId,
     string? ManagerId,
+    string? ManagerDistinguishedName,
     string SamAccountName,
     string UserPrincipalName,
     string Mail,
@@ -190,6 +215,10 @@ public sealed record SourceAttributeRow(
     string Attribute,
     string Value);
 
+public sealed record MissingSourceAttributeRow(
+    string Attribute,
+    string Reason);
+
 public sealed record OperationSummary(
     string Action,
     string? Effect,
@@ -197,9 +226,17 @@ public sealed record OperationSummary(
     string? FromOu,
     string? ToOu);
 
+public sealed record ApplyPreviewRequest(
+    string WorkerId,
+    string PreviewRunId,
+    string PreviewFingerprint,
+    string ConfirmationText);
+
 public sealed record WorkerPreviewResult(
     string? ReportPath,
     string? RunId,
+    string? PreviousRunId,
+    string Fingerprint,
     string? Mode,
     string? Status,
     string? ErrorMessage,
@@ -221,6 +258,9 @@ public sealed record WorkerPreviewResult(
     OperationSummary? OperationSummary,
     IReadOnlyList<DiffRow> DiffRows,
     IReadOnlyList<SourceAttributeRow> SourceAttributes,
+    IReadOnlyList<SourceAttributeRow> UsedSourceAttributes,
+    IReadOnlyList<SourceAttributeRow> UnusedSourceAttributes,
+    IReadOnlyList<MissingSourceAttributeRow> MissingSourceAttributes,
     IReadOnlyList<WorkerPreviewEntry> Entries);
 
 public sealed record WorkerPreviewEntry(

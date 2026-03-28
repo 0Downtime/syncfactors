@@ -112,13 +112,27 @@ public sealed class AttributeDiffService : IAttributeDiffService
         }
 
         var proposedDisplayName = DirectoryIdentityFormatter.BuildDisplayName(worker.PreferredName, worker.LastName);
-        var currentDisplayName = GetDirectoryValue(currentAttributes, "displayName");
-        changes.Insert(0, new AttributeChange(
-            Attribute: "displayName",
-            Source: "firstName,lastName",
-            Before: string.IsNullOrWhiteSpace(currentDisplayName) ? "(unset)" : currentDisplayName!,
-            After: proposedDisplayName,
-            Changed: !string.Equals(currentDisplayName, proposedDisplayName, StringComparison.Ordinal)));
+        UpsertSystemAttributeChange(
+            changes,
+            attribute: "displayName",
+            source: "firstName,lastName",
+            before: FormatValue(GetDirectoryValue(currentAttributes, "displayName")),
+            after: proposedDisplayName,
+            changed: !string.Equals(GetDirectoryValue(currentAttributes, "displayName"), proposedDisplayName, StringComparison.Ordinal));
+        UpsertSystemAttributeChange(
+            changes,
+            attribute: "UserPrincipalName",
+            source: "resolved email local-part",
+            before: FormatValue(GetDirectoryValue(currentAttributes, "UserPrincipalName")),
+            after: FormatValue(proposedEmailAddress),
+            changed: !string.Equals(GetDirectoryValue(currentAttributes, "UserPrincipalName"), proposedEmailAddress, StringComparison.Ordinal));
+        UpsertSystemAttributeChange(
+            changes,
+            attribute: "mail",
+            source: "resolved email local-part",
+            before: FormatValue(GetDirectoryValue(currentAttributes, "mail")),
+            after: FormatValue(proposedEmailAddress),
+            changed: !string.Equals(GetDirectoryValue(currentAttributes, "mail"), proposedEmailAddress, StringComparison.Ordinal));
 
         _logger.LogDebug(
             "Attribute diff completed. WorkerId={WorkerId} EnabledMappings={EnabledMappings} ChangedMappings={ChangedMappings}",
@@ -260,4 +274,34 @@ public sealed class AttributeDiffService : IAttributeDiffService
             _ => source
         };
     }
+
+    private static void UpsertSystemAttributeChange(
+        IList<AttributeChange> changes,
+        string attribute,
+        string source,
+        string before,
+        string after,
+        bool changed)
+    {
+        var replacement = new AttributeChange(attribute, source, before, after, changed);
+        var existingIndex = -1;
+        for (var index = 0; index < changes.Count; index++)
+        {
+            if (string.Equals(changes[index].Attribute, attribute, StringComparison.OrdinalIgnoreCase))
+            {
+                existingIndex = index;
+                break;
+            }
+        }
+
+        if (existingIndex >= 0)
+        {
+            changes[existingIndex] = replacement;
+            return;
+        }
+
+        changes.Insert(0, replacement);
+    }
+
+    private static string FormatValue(string? value) => string.IsNullOrWhiteSpace(value) ? "(unset)" : value!;
 }

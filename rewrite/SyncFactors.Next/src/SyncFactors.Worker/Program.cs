@@ -11,7 +11,9 @@ builder.Services.AddSingleton(new SyncFactorsConfigPathResolver(
 builder.Services.AddSingleton<SqliteDatabaseInitializer>();
 builder.Services.AddSingleton<SyncFactorsConfigurationLoader>();
 builder.Services.AddSingleton<SyncFactorsConfigurationValidator>();
+builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<IRuntimeStatusStore, SqliteRuntimeStatusStore>();
+builder.Services.AddSingleton<IWorkerHeartbeatStore, SqliteWorkerHeartbeatStore>();
 builder.Services.AddSingleton<IRunRepository, SqliteRunRepository>();
 builder.Services.AddSingleton<IScaffoldRunPlanner, ScaffoldRunPlanner>();
 builder.Services.AddSingleton<IRunLifecycleService, RunLifecycleService>();

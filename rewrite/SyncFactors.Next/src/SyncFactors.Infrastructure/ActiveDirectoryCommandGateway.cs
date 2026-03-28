@@ -95,7 +95,8 @@ public sealed class ActiveDirectoryCommandGateway(
         LogRequestAttributes("CreateUser", command.WorkerId, attributes, logger);
 
         ExecuteModify(connection, request, logger, "create user add request", ("WorkerId", command.WorkerId), ("SamAccountName", command.SamAccountName));
-        var managerDn = ResolveManagerDistinguishedName(connection, command.ManagerId, config);
+        var managerDn = command.ManagerDistinguishedName
+            ?? ResolveManagerDistinguishedName(connection, command.ManagerId, config);
         if (!string.IsNullOrWhiteSpace(managerDn))
         {
             SetManager(connection, dn, managerDn, logger, command.WorkerId);
@@ -150,7 +151,8 @@ public sealed class ActiveDirectoryCommandGateway(
                     : BuildReplaceModification(attributeName, attribute.Value));
         }
 
-        var managerDn = ResolveManagerDistinguishedName(connection, command.ManagerId, config);
+        var managerDn = command.ManagerDistinguishedName
+            ?? ResolveManagerDistinguishedName(connection, command.ManagerId, config);
         if (!string.IsNullOrWhiteSpace(managerDn))
         {
             request.Modifications.Add(BuildReplaceModification("manager", managerDn));

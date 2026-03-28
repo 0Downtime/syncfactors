@@ -1,10 +1,24 @@
+# Build and test artifacts
 bin/
 obj/
-.vs/
-.idea/
 TestResults/
 
-# Local generated artifacts
+# Visual Studio and editor local state
+.vs/
+.idea/
+*.user
+*.suo
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+!.vscode/*.code-snippets
+
+# Local workspace tooling state
+.codex/
+
+# Local generated artifacts and configuration
 package-lock.json
 local/
 config/local*/
@@ -15,7 +29,7 @@ reports/
 state/
 src/SyncFactors.Api/.\\reports\\mock-output/
 
-# Root-level export/debug files produced during local exploration
+# Root-level export and debug files produced during local exploration
 /sf-*.json
 /sf-*.xml
 /perperson-*.json
