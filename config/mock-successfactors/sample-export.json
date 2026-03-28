@@ -1,0 +1,137 @@
+{
+  "d": {
+    "results": [
+      {
+        "personIdExternal": "123456",
+        "personId": "123456",
+        "perPersonUuid": "95d0f1f2-1234-4f9c-8f0f-123456789abc",
+        "lastModifiedDateTime": "2026-03-20T10:15:00Z",
+        "personEmpTerminationInfoNav": {
+          "activeEmploymentsCount": 1,
+          "latestTerminationDate": "2025-12-31T00:00:00Z"
+        },
+        "personalInfoNav": {
+          "results": [
+            {
+              "firstName": "Jane",
+              "lastName": "Doe",
+              "preferredName": "Janie",
+              "displayName": "Janie Doe"
+            }
+          ]
+        },
+        "emailNav": {
+          "results": [
+            {
+              "emailAddress": "jane.secondary@example.com",
+              "emailType": "P",
+              "isPrimary": false
+            },
+            {
+              "emailAddress": "jane.doe@example.com",
+              "emailType": "B",
+              "isPrimary": true
+            }
+          ]
+        },
+        "phoneNav": {
+          "results": [
+            {
+              "areaCode": "212",
+              "countryCode": "1",
+              "extension": "123",
+              "phoneNumber": "5550101",
+              "phoneType": "10605",
+              "isPrimary": false
+            },
+            {
+              "areaCode": "917",
+              "countryCode": "1",
+              "phoneNumber": "5550102",
+              "phoneType": "10606",
+              "isPrimary": true
+            }
+          ]
+        },
+        "employmentNav": {
+          "results": [
+            {
+              "userId": "jane.doe",
+              "startDate": "2026-04-01T00:00:00Z",
+              "userNav": {
+                "username": "jane.doe",
+                "businessPhone": "2125550101",
+                "cellPhone": "9175550102",
+                "manager": {
+                  "empInfo": {
+                    "personIdExternal": "654321"
+                  }
+                }
+              },
+              "jobInfoNav": {
+                "results": [
+                  {
+                    "jobTitle": "Engineer",
+                    "position": "POS-100",
+                    "employeeClass": "Employee",
+                    "employeeType": "Regular",
+                    "emplStatus": "A",
+                    "customString3": "Field Ops",
+                    "customString20": "IC-3",
+                    "customString87": "Central",
+                    "customString110": "North Metro",
+                    "customString111": "Non-Union",
+                    "customString91": "UJ-100",
+                    "companyNav": {
+                      "name_localized": "CORP",
+                      "externalCode": "COMP-001",
+                      "countryOfRegistrationNav": {
+                        "twoCharCountryCode": "US"
+                      }
+                    },
+                    "departmentNav": {
+                      "department": "IT",
+                      "name_localized": "Information Technology",
+                      "name": "Information Technology",
+                      "externalCode": "DEPT-001",
+                      "costCenter": "CC-100"
+                    },
+                    "businessUnitNav": {
+                      "businessUnit": "Infrastructure",
+                      "name_localized": "Infrastructure",
+                      "externalCode": "BU-001"
+                    },
+                    "divisionNav": {
+                      "division": "Operations",
+                      "name_localized": "Operations",
+                      "externalCode": "DIV-001"
+                    },
+                    "costCenterNav": {
+                      "costCenterDescription": "Engineering",
+                      "name_localized": "CC-100",
+                      "description_localized": "Engineering",
+                      "externalCode": "CC100"
+                    },
+                    "payGradeNav": {
+                      "name": "PG-07"
+                    },
+                    "locationNav": {
+                      "name": "New York HQ",
+                      "LocationName": "New York HQ",
+                      "addressNavDEFLT": {
+                        "address1": "1 Main St",
+                        "city": "New York",
+                        "zipCode": "10001",
+                        "customString4": "Floor 5"
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      }
+    ]
+  }
+}
