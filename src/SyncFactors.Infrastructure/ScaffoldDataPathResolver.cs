@@ -6,7 +6,6 @@ public sealed class ScaffoldDataPathResolver(string? configuredPath)
     {
         return PathResolution.ResolvePreferredPath(
             configuredPath,
-            "config/scaffold-data.json",
-            "rewrite/SyncFactors.Next/config/scaffold-data.json");
+            "config/scaffold-data.json");
     }
 }

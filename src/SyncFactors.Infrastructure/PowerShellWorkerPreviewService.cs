@@ -12,7 +12,7 @@ public sealed class PowerShellWorkerPreviewService(SyncFactorsConfigPathResolver
         var mappingConfigPath = configResolver.ResolveMappingConfigPath();
         if (string.IsNullOrWhiteSpace(configPath) || string.IsNullOrWhiteSpace(mappingConfigPath))
         {
-            throw new InvalidOperationException("SyncFactors preview config could not be resolved. Set SyncFactors__ConfigPath and SyncFactors__MappingConfigPath or create the local config files under rewrite/SyncFactors.Next/config.");
+            throw new InvalidOperationException("SyncFactors preview config could not be resolved. Set SyncFactors__ConfigPath and SyncFactors__MappingConfigPath or create the local config files under config/.");
         }
 
         var startInfo = new ProcessStartInfo

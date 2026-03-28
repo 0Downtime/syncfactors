@@ -1,10 +1,13 @@
-name: SonarCloud
+name: Legacy SonarCloud
 
 on:
   push:
     branches:
       - main
       - master
+    paths:
+      - 'SyncFactors.Old/**'
+      - '.github/workflows/sonarcloud.yml'
   pull_request:
   workflow_dispatch:
 
@@ -44,20 +47,22 @@ jobs:
           "$env:ChocolateyInstall\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
           sqlite3 --version
 
-      - name: Run tests with coverage for SonarCloud
+      - name: Run legacy tests with coverage for SonarCloud
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path ./artifacts | Out-Null
+          Set-Location ./SyncFactors.Old
           ./scripts/Invoke-TestSuite.ps1 `
             -Coverage `
-            -CoverageReportPath ./artifacts/coverage.xml `
+            -CoverageReportPath ../artifacts/coverage.xml `
             -CoverageReportFormat JaCoCo `
-            -TestResultPath ./artifacts/test-results.xml `
+            -TestResultPath ../artifacts/test-results.xml `
             -TestResultFormat JUnitXml
 
-      - name: Run SonarCloud scan
+      - name: Run legacy SonarCloud scan
         uses: SonarSource/sonarqube-scan-action@fd88b7d7ccbaefd23d8f36f73b59db7a3d246602 # v6
         with:
           args: >
+            "-Dsonar.projectBaseDir=SyncFactors.Old"
             "-Dsonar.organization=${{ secrets.SONAR_ORGANIZATION }}"
             "-Dsonar.projectKey=${{ secrets.SONAR_PROJECT_KEY }}"
