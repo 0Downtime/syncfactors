@@ -59,6 +59,10 @@ Describe 'Get-SyncFactorsAttributeChanges' {
         Import-Module "$PSScriptRoot/../src/Modules/SyncFactors/Mapping.psm1" -Force
     }
 
+    It 'preserves the source calendar date for DateOnly transforms' {
+        Convert-SyncFactorsMappedValue -Value '2019-06-03T00:00:00Z' -Transform 'DateOnly' | Should -Be '2019-06-03'
+    }
+
     It 'ignores disabled mappings and preserves required validation' {
         $worker = [pscustomobject]@{
             firstName = 'Chris'

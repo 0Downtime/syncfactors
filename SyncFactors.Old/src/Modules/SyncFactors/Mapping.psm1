@@ -111,6 +111,11 @@ function Convert-SyncFactorsMappedValue {
         'Lower' { return "$Value".ToLowerInvariant() }
         'DateOnly' {
             if ($null -eq $Value -or [string]::IsNullOrWhiteSpace("$Value")) { return $null }
+            $stringValue = "$Value".Trim()
+            if ($stringValue -match '^(?<date>\d{4}-\d{2}-\d{2})(?:$|[T\s])') {
+                return $Matches.date
+            }
+
             return (Get-Date $Value).ToString('yyyy-MM-dd')
         }
         default { return $Value }

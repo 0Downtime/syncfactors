@@ -440,37 +440,23 @@ public sealed class SqliteRunRepository(SqlitePathResolver pathResolver) : IRunR
         await connection.OpenAsync(cancellationToken);
 
         await using var command = connection.CreateCommand();
-        var where = new List<string> { "e.run_id = $runId" };
         command.Parameters.AddWithValue("$runId", runId);
-
-        if (!string.IsNullOrWhiteSpace(bucket))
-        {
-            where.Add("e.bucket = $bucket");
-            command.Parameters.AddWithValue("$bucket", bucket);
-        }
-        if (!string.IsNullOrWhiteSpace(workerId))
-        {
-            where.Add("(LOWER(COALESCE(e.worker_id, '')) LIKE $workerId ESCAPE '\\' OR LOWER(COALESCE(e.sam_account_name, '')) LIKE $workerId ESCAPE '\\')");
-            command.Parameters.AddWithValue("$workerId", $"%{EscapeLike(workerId.ToLowerInvariant())}%");
-        }
-        if (!string.IsNullOrWhiteSpace(reason))
-        {
-            where.Add("LOWER(COALESCE(e.reason, '')) = LOWER($reason)");
-            command.Parameters.AddWithValue("$reason", reason);
-        }
-        if (!string.IsNullOrWhiteSpace(entryId))
-        {
-            where.Add("e.entry_id = $entryId");
-            command.Parameters.AddWithValue("$entryId", entryId);
-        }
-        if (!string.IsNullOrWhiteSpace(filter))
-        {
-            where.Add("(LOWER(COALESCE(e.item_json, '')) LIKE $filter ESCAPE '\\' OR LOWER(COALESCE(e.reason, '')) LIKE $filter ESCAPE '\\' OR LOWER(COALESCE(e.review_case_type, '')) LIKE $filter ESCAPE '\\')");
-            command.Parameters.AddWithValue("$filter", $"%{EscapeLike(filter.ToLowerInvariant())}%");
-        }
+        command.Parameters.AddWithValue("$bucket", string.IsNullOrWhiteSpace(bucket) ? DBNull.Value : bucket);
+        command.Parameters.AddWithValue(
+            "$workerId",
+            string.IsNullOrWhiteSpace(workerId)
+                ? DBNull.Value
+                : $"%{EscapeLike(workerId.ToLowerInvariant())}%");
+        command.Parameters.AddWithValue("$reason", string.IsNullOrWhiteSpace(reason) ? DBNull.Value : reason);
+        command.Parameters.AddWithValue("$entryId", string.IsNullOrWhiteSpace(entryId) ? DBNull.Value : entryId);
+        command.Parameters.AddWithValue(
+            "$filter",
+            string.IsNullOrWhiteSpace(filter)
+                ? DBNull.Value
+                : $"%{EscapeLike(filter.ToLowerInvariant())}%");
 
         command.CommandText =
-            $"""
+            """
             SELECT
               e.entry_id,
               e.bucket,
@@ -488,7 +474,21 @@ public sealed class SqliteRunRepository(SqlitePathResolver pathResolver) : IRunR
               r.report_json
             FROM run_entries e
             JOIN runs r ON r.run_id = e.run_id
-            WHERE {string.Join("\n  AND ", where)}
+            WHERE e.run_id = $runId
+              AND ($bucket IS NULL OR e.bucket = $bucket)
+              AND (
+                $workerId IS NULL
+                OR LOWER(COALESCE(e.worker_id, '')) LIKE $workerId ESCAPE '\'
+                OR LOWER(COALESCE(e.sam_account_name, '')) LIKE $workerId ESCAPE '\'
+              )
+              AND ($reason IS NULL OR LOWER(COALESCE(e.reason, '')) = LOWER($reason))
+              AND ($entryId IS NULL OR e.entry_id = $entryId)
+              AND (
+                $filter IS NULL
+                OR LOWER(COALESCE(e.item_json, '')) LIKE $filter ESCAPE '\'
+                OR LOWER(COALESCE(e.reason, '')) LIKE $filter ESCAPE '\'
+                OR LOWER(COALESCE(e.review_case_type, '')) LIKE $filter ESCAPE '\'
+              )
             ORDER BY e.bucket ASC, e.bucket_index ASC, e.entry_id ASC;
             """;
 
