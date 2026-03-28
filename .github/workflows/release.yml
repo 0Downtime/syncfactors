@@ -103,7 +103,10 @@ jobs:
         shell: pwsh
         run: |
           $requiredContexts = @(
+              'dotnet',
+              'pester',
               'Legacy PowerShell Static Analysis',
+              'Semgrep Security SAST',
               'Gitleaks Secret Scan',
               'Trivy Repository Scan'
           )

@@ -1,4 +1,4 @@
-name: Security
+name: Security Scans
 
 on:
   push:
@@ -18,6 +18,39 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  semgrep:
+    name: Semgrep Security SAST
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    container:
+      image: semgrep/semgrep
+    if: github.actor != 'dependabot[bot]'
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        with:
+          persist-credentials: false
+
+      - name: Run Semgrep
+        shell: sh
+        run: |
+          semgrep scan \
+            --config auto \
+            --config .semgrep/powershell-security.yml \
+            --sarif \
+            --output semgrep.sarif \
+            --error \
+            .
+
+      - name: Upload Semgrep SARIF
+        if: always() && hashFiles('semgrep.sarif') != ''
+        uses: github/codeql-action/upload-sarif@38697555549f1db7851b81482ff19f1fa5c4fedc # v4
+        with:
+          sarif_file: semgrep.sarif
+          category: /semgrep
+
   powershell-static-analysis:
     name: Legacy PowerShell Static Analysis
     runs-on: windows-latest
@@ -122,22 +155,7 @@ jobs:
             --output trivy-results.sarif \
             --severity HIGH,CRITICAL \
             --ignore-unfixed \
-            --scanners vuln,secret,misconfig \
-            .
-
-      - name: Generate Trivy JSON report
-        if: always()
-        shell: bash
-        env:
-          TRIVY_DEBUG: true
-        run: |
-          trivy fs \
-            --quiet \
-            --format json \
-            --output trivy-results.json \
-            --severity HIGH,CRITICAL \
-            --ignore-unfixed \
-            --scanners vuln,secret,misconfig \
+            --scanners vuln,misconfig \
             .
 
       - name: Upload Trivy results
@@ -161,16 +179,15 @@ jobs:
             --exit-code 1 \
             --severity HIGH,CRITICAL \
             --ignore-unfixed \
-            --scanners vuln,secret,misconfig \
+            --scanners vuln,misconfig \
             .
 
       - name: Upload Trivy diagnostic artifacts
-        if: always() && (hashFiles('trivy-results.json') != '' || hashFiles('trivy-results.txt') != '' || hashFiles('trivy-results.sarif') != '')
+        if: always() && (hashFiles('trivy-results.txt') != '' || hashFiles('trivy-results.sarif') != '')
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: trivy-diagnostics
           path: |
-            trivy-results.json
             trivy-results.txt
             trivy-results.sarif
           if-no-files-found: ignore

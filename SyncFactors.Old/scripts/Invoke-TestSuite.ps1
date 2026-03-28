@@ -15,9 +15,14 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$repoRoot = Split-Path -Path $PSScriptRoot -Parent
-$coverageBaselinePath = Join-Path $repoRoot 'tests/coverage-baseline.json'
-$bundledPesterManifest = Join-Path $repoRoot '.tools/Pester/5.7.1/Pester.psd1'
+$projectRoot = Split-Path -Path $PSScriptRoot -Parent
+$resolvedTestPath = if ([System.IO.Path]::IsPathRooted($Path)) {
+    $Path
+} else {
+    Join-Path $projectRoot $Path
+}
+$coverageBaselinePath = Join-Path $projectRoot 'tests/coverage-baseline.json'
+$bundledPesterManifest = Join-Path $projectRoot '.tools/Pester/5.7.1/Pester.psd1'
 if (Test-Path -Path $bundledPesterManifest -PathType Leaf) {
     Import-Module $bundledPesterManifest -Force
 } else {
@@ -34,7 +39,7 @@ $moduleVersion = if ($invokePester.Version) { [version]$invokePester.Version } e
 
 if ($moduleVersion.Major -ge 5 -and (Get-Command New-PesterConfiguration -ErrorAction SilentlyContinue)) {
     $configuration = New-PesterConfiguration
-    $configuration.Run.Path = $Path
+    $configuration.Run.Path = $resolvedTestPath
     $configuration.Run.PassThru = $true
     $configuration.Output.Verbosity = if ($Detailed) { 'Detailed' } else { 'Normal' }
     $configuration.TestRegistry.Enabled = $false
@@ -43,9 +48,9 @@ if ($moduleVersion.Major -ge 5 -and (Get-Command New-PesterConfiguration -ErrorA
         $configuration.CodeCoverage.Enabled = $true
         $configuration.CodeCoverage.CoveragePercentTarget = 0
         $configuration.CodeCoverage.Path = @(
-            (Join-Path $repoRoot 'src/Modules/SyncFactors'),
-            (Join-Path $repoRoot 'src'),
-            (Join-Path $repoRoot 'scripts')
+            (Join-Path $projectRoot 'src/Modules/SyncFactors'),
+            (Join-Path $projectRoot 'src'),
+            (Join-Path $projectRoot 'scripts')
         )
 
         if ($CoverageReportPath) {
@@ -63,7 +68,7 @@ if ($moduleVersion.Major -ge 5 -and (Get-Command New-PesterConfiguration -ErrorA
     $result = Invoke-Pester -Configuration $configuration
 } else {
     $parameters = @{
-        Path = $Path
+        Path = $resolvedTestPath
     }
 
     if ($invokePester.Parameters.ContainsKey('PassThru')) {
@@ -80,9 +85,9 @@ if ($moduleVersion.Major -ge 5 -and (Get-Command New-PesterConfiguration -ErrorA
 
     if ($Coverage -and $invokePester.Parameters.ContainsKey('CodeCoverage')) {
         $parameters['CodeCoverage'] = @(
-            Join-Path $repoRoot 'src/Modules/SyncFactors/*.psm1',
-            Join-Path $repoRoot 'src/*.ps1',
-            Join-Path $repoRoot 'scripts/*.ps1'
+            Join-Path $projectRoot 'src/Modules/SyncFactors/*.psm1',
+            Join-Path $projectRoot 'src/*.ps1',
+            Join-Path $projectRoot 'scripts/*.ps1'
         )
     }
 
