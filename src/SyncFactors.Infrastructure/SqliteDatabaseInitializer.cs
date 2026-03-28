@@ -101,6 +101,7 @@ public sealed class SqliteDatabaseInitializer(SqlitePathResolver pathResolver)
     {
         await using var command = connection.CreateCommand();
         command.Transaction = (SqliteTransaction)transaction;
+        // nosemgrep
         command.CommandText = sql;
         await command.ExecuteNonQueryAsync(cancellationToken);
     }

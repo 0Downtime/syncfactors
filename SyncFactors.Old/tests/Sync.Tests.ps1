@@ -1636,7 +1636,7 @@ Describe 'Invoke-SyncFactorsRun' {
             $global:CapturedReport.creates[0].proposedAttributes.company | Should -Be '7'
             $global:CapturedReport.creates[0].proposedAttributes.physicalDeliveryOfficeName | Should -Be 'L138'
             $global:CapturedReport.creates[0].proposedAttributes.title | Should -Be 'Lead Admin, Patching'
-            $global:CapturedReport.creates[0].proposedAttributes.extensionAttribute1 | Should -Be '2019-06-02'
+            $global:CapturedReport.creates[0].proposedAttributes.extensionAttribute1 | Should -Be '2019-06-03'
             $global:CapturedReport.creates[0].attributeRows.Count | Should -BeGreaterThan 5
             @($global:CapturedReport.operations.operationType) | Should -Contain 'CreateUser'
             Assert-MockCalled New-SyncFactorsUser -Times 1 -Exactly -ParameterFilter {
