@@ -11,22 +11,28 @@ Thanks for contributing to `syncfactors`.
 ## Development Workflow
 1. Create a branch from `main`.
 2. Make your changes.
-3. Run the local test suite:
+3. Run the primary .NET test suite:
 
 ```powershell
-pwsh ./scripts/Invoke-TestSuite.ps1 -Detailed -Coverage
+dotnet test ./SyncFactors.Next.sln
 ```
 
-4. If you changed PowerShell modules or scripts, run static analysis:
+4. If you changed files under `SyncFactors.Old/`, run the legacy PowerShell test suite:
 
 ```powershell
-$paths = @('./src', './scripts')
+pwsh ./SyncFactors.Old/scripts/Invoke-TestSuite.ps1 -Detailed -Coverage
+```
+
+5. If you changed legacy PowerShell modules or scripts, run static analysis:
+
+```powershell
+$paths = @('./SyncFactors.Old/src', './SyncFactors.Old/scripts')
 foreach ($path in $paths) {
-  Invoke-ScriptAnalyzer -Path $path -Recurse -Settings ./PSScriptAnalyzerSettings.psd1 -Severity Error,Warning
+  Invoke-ScriptAnalyzer -Path $path -Recurse -Settings ./SyncFactors.Old/PSScriptAnalyzerSettings.psd1 -Severity Error,Warning
 }
 ```
 
-5. If your change affects security scanning behavior, run the local repository scan:
+6. If your change affects security scanning behavior, run the local repository scan:
 
 ```bash
 trivy fs --severity HIGH,CRITICAL --ignore-unfixed --scanners vuln,secret,misconfig .
