@@ -2,6 +2,18 @@
 bin/
 obj/
 TestResults/
+testResults.xml
+coverage.xml
+*.coverage
+*.trx
+artifacts/
+.tools/gitleaks/
+.tools/gitleaks-scan/
+node_modules/
+web/dist/
+web/.vite/
+**/bin/
+**/obj/
 
 # Visual Studio and editor local state
 .vs/

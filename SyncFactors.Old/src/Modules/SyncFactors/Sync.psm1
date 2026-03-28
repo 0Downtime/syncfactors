@@ -127,7 +127,12 @@ function Get-SyncFactorsWorkerIdentityValue {
     )
 
     $identityField = $Config.successFactors.query.identityField
-    return "$($Worker.PSObject.Properties[$identityField].Value)"
+    $property = $Worker.PSObject.Properties[$identityField]
+    if ($null -eq $property) {
+        return $null
+    }
+
+    return "$($property.Value)"
 }
 
 function Test-SyncFactorsWorkerIsPrehireEligible {
