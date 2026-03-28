@@ -15,7 +15,36 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  dotnet:
+    name: dotnet
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+
+      - name: Set up .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore solution
+        run: dotnet restore ./SyncFactors.Next.sln
+
+      - name: Run .NET test suite
+        run: dotnet test ./SyncFactors.Next.sln --configuration Release --no-restore --logger "trx;LogFileName=test-results.trx" --results-directory ./artifacts/test-results
+
+      - name: Upload .NET test results
+        if: always() && hashFiles('artifacts/test-results/*.trx') != ''
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: dotnet-test-results
+          path: artifacts/test-results/*.trx
+
   pester:
+    name: '[old] pester'
     runs-on: windows-latest
     permissions:
       contents: read
@@ -41,7 +70,7 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path ./artifacts | Out-Null
-          ./scripts/Invoke-TestSuite.ps1 -Detailed -Coverage -CoverageSummaryPath ./artifacts/test-coverage-summary.json 2>&1 |
+          ./SyncFactors.Old/scripts/Invoke-TestSuite.ps1 -Detailed -Coverage -CoverageSummaryPath ./artifacts/test-coverage-summary.json 2>&1 |
             Tee-Object -FilePath ./artifacts/pester-output.txt
 
       - name: Upload coverage summary
