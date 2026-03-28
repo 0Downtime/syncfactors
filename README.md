@@ -7,8 +7,14 @@
 SyncFactors is PowerShell automation for syncing SAP SuccessFactors worker data into on-premises Active Directory.
 
 > [!WARNING]
-> Alpha status only. This application has a high chance of being broken, is still in active development, and is not ready for production use.
-> No stable builds are available yet.
+> [Alpha] This software is in active development, has a high risk of failure, and is not ready for production use.
+> Expect breaking changes, incomplete workflows, and operational defects. No stable builds are available yet.
+
+## Current State
+- Alpha-only PowerShell sync engine for SAP SuccessFactors to on-premises Active Directory.
+- SQLite-backed operational state for runtime status, tracked workers, and run history.
+- Local operator surfaces include the terminal dashboard and a localhost-only read-only web dashboard.
+- Real environment validation, tenant-specific schema alignment, and rollback safety still require careful operator review.
 
 ## What It Does
 - Pulls workers from SAP SuccessFactors OData v2 using configurable basic auth or OAuth2 client credentials.
@@ -77,7 +83,7 @@ Planned work is ordered by delivery priority so the roadmap is easy to scan from
 - `tests`: Pester tests for config and mapping behavior.
 
 ## Setup
-1. Start from `config/local.real-successfactors.real-ad.sync-config.json` and `config/local.syncfactors.mapping-config.json` for your real environment. Those `local.*` files are ignored by git so you can store tenant-specific AD and SuccessFactors settings safely outside version control.
+1. Create your local config files from the tracked samples in `config/`. For a real environment, copy `config/sample.real-successfactors.real-ad.sync-config.json` to `config/local.real-successfactors.real-ad.sync-config.json` and copy `config/sample.syncfactors.mapping-config.json` to `config/local.syncfactors.mapping-config.json`. If you want to test against the mock API later, also copy `config/sample.mock-successfactors.real-ad.sync-config.json` to `config/local.mock-successfactors.real-ad.sync-config.json`. The `config/local.*.json` files are ignored by git so tenant-specific values stay out of version control.
 2. Fill in the SuccessFactors auth block, tenant query fields, OU routing, and licensing groups. The real sample config defaults to basic auth, while the mock sample uses OAuth. Only fill in the AD server and bind credentials if you are running from a non-domain-joined host or need to target a specific DC.
    If your SuccessFactors OAuth token endpoint requires HTTP Basic client authentication, set `successFactors.auth.oauth.clientAuthentication` to `basic`; leave it as `body` when the endpoint expects `client_id` and `client_secret` in the form body.
 3. Confirm the immutable SuccessFactors identity field and the AD attribute that stores it.
@@ -100,7 +106,7 @@ The installer writes `syncfactors`, `syncfactors.cmd`, and `syncfactors.ps1` shi
 syncfactors
 ```
 
-The command supports the dashboard's normal monitor flags from [`scripts/Watch-SyncFactorsMonitor.ps1`](/Users/chrisbrien/dev/github.com/syncfactors/scripts/Watch-SyncFactorsMonitor.ps1), for example `syncfactors -RunOnce -AsText`.
+The command supports the dashboard's normal monitor flags from `scripts/Watch-SyncFactorsMonitor.ps1`, for example `syncfactors -RunOnce -AsText`.
 
 To repoint the installed TUI at a different config later, use the companion helper command:
 
@@ -239,7 +245,7 @@ pwsh ./scripts/Watch-SyncFactorsMonitor.ps1 `
 
 Press `q` to quit, `r` to refresh immediately, or `t` to pause/resume auto-refresh. Start paused with `-PauseAutoRefresh` if you want to browse the dashboard without timed redraws. The dashboard shortcuts now cover the full run set: `d` delta dry-run, `s` delta sync, `f` full dry-run, `a` full sync, `v` review, `w` single-worker preview, and `z` fresh reset. The `w` shortcut now asks whether to run a `minimal` or `full` worker preview before it launches. The `z` shortcut launches the fresh sync reset script, which still requires three typed confirmations before any deletion happens. Any shortcut that can write anything, including reports, temp exports, or the clipboard, now requires typing `YES` before it proceeds.
 
-To launch the new localhost-only read-only web dashboard:
+To launch the current localhost-only read-only web dashboard:
 
 ```bash
 npm install --cache /tmp/syncfactors-npm-cache
@@ -402,10 +408,11 @@ Rollback currently still expects a report JSON artifact, not a SQLite run refere
 - Import the repository into SonarCloud before running the workflow.
 - In GitHub, set `Settings -> Secrets and variables -> Actions` with secret `SONAR_TOKEN` and variables `SONAR_ORGANIZATION` plus `SONAR_PROJECT_KEY`.
 - Semgrep is the primary security-focused SAST workflow. SonarCloud is used here for code quality and test coverage reporting.
-- The quality workflow is [`.github/workflows/sonarcloud.yml`](/Users/chrisbrien/dev/github.com/syncfactors/.github/workflows/sonarcloud.yml) and reads stable project settings from [`sonar-project.properties`](/Users/chrisbrien/dev/github.com/syncfactors/sonar-project.properties).
+- The quality workflow is `.github/workflows/sonarcloud.yml` and reads stable project settings from `sonar-project.properties`.
 
 ## Notes
 - This software is provided as-is and is used at your own risk. You are responsible for validating configuration, testing changes safely, and assessing operational impact before using it in any environment. The maintainers are not responsible for data loss, directory damage, outages, or other issues caused by use or misuse of this project.
+- This is alpha software with a high risk of failure. Do not treat the current implementation, scripts, or dashboard flows as production-ready.
 - Secret values can be supplied through environment variables referenced by `config.secrets`; those values override plaintext config settings.
 - The tracked `config/sample.*.json` files are reference templates. Put real tenant values in the ignored `config/local.*.json` files instead.
 - On a domain-joined host, leave `ad.server`, `ad.username`, and `ad.bindPassword` empty and the script will use the machine and user domain context.
