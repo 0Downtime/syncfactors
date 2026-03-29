@@ -2,11 +2,13 @@
 .idea/
 .DS_Store
 .playwright-cli/
+.npm-cache/
 
 *.log
 *.tmp
 *.bak
 *.swp
+.env.worktree
 
 TestResults/
 testResults.xml
