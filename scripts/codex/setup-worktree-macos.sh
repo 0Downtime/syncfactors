@@ -28,9 +28,16 @@ require_command "pwsh" "Install PowerShell 7 before creating a Codex worktree fo
 
 cd "${repo_root}"
 
-echo "Installing Node dependencies"
+echo "Installing legacy web dependencies"
 mkdir -p "${repo_root}/.npm-cache"
-npm ci --cache "${repo_root}/.npm-cache"
+(
+  cd "${repo_root}/SyncFactors.Old"
+  if [[ -f "package-lock.json" || -f "npm-shrinkwrap.json" ]]; then
+    npm ci --cache "${repo_root}/.npm-cache"
+  else
+    npm install --cache "${repo_root}/.npm-cache"
+  fi
+)
 
 mkdir -p \
   "${repo_root}/state/runtime" \

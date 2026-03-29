@@ -22,5 +22,20 @@ export SYNCFACTORS_CONFIG_PATH="${SYNCFACTORS_CONFIG_PATH:-./config/local.mock-s
 export SYNCFACTORS_MAPPING_CONFIG_PATH="${SYNCFACTORS_MAPPING_CONFIG_PATH:-./config/local.syncfactors.mapping-config.json}"
 export PORT="${PORT:-4280}"
 export MOCK_SF_PORT="${MOCK_SF_PORT:-18080}"
+export REPO_ROOT="${repo_root}"
+
+resolve_repo_path() {
+  local path="$1"
+  if [[ "${path}" = /* ]]; then
+    printf '%s\n' "${path}"
+    return
+  fi
+
+  printf '%s/%s\n' "${repo_root}" "${path#./}"
+}
+
+export SYNCFACTORS_CONFIG_PATH_ABS="$(resolve_repo_path "${SYNCFACTORS_CONFIG_PATH}")"
+export SYNCFACTORS_MAPPING_CONFIG_PATH_ABS="$(resolve_repo_path "${SYNCFACTORS_MAPPING_CONFIG_PATH}")"
+export SYNCFACTORS_REAL_CONFIG_PATH_ABS="${repo_root}/config/local.real-successfactors.real-ad.sync-config.json"
 
 cd "${repo_root}"

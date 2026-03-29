@@ -52,7 +52,7 @@ jobs:
           category: /semgrep
 
   powershell-static-analysis:
-    name: PowerShell Static Analysis
+    name: '[old] PowerShell Static Analysis'
     runs-on: windows-latest
     permissions:
       contents: read
@@ -63,26 +63,26 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Run PSScriptAnalyzer on src
+      - name: Run PSScriptAnalyzer on legacy src
         id: pssa_src
         continue-on-error: true
         uses: microsoft/psscriptanalyzer-action@2044ae068e37d0161fa2127de04c19633882f061 # v1.0
         with:
-          path: .\src
+          path: .\SyncFactors.Old\src
           recurse: true
-          settings: .\PSScriptAnalyzerSettings.psd1
+          settings: .\SyncFactors.Old\PSScriptAnalyzerSettings.psd1
           severity: '"Error", "Warning"'
           enableExit: true
           output: results-src.sarif
 
-      - name: Run PSScriptAnalyzer on scripts
+      - name: Run PSScriptAnalyzer on legacy scripts
         id: pssa_scripts
         continue-on-error: true
         uses: microsoft/psscriptanalyzer-action@2044ae068e37d0161fa2127de04c19633882f061 # v1.0
         with:
-          path: .\scripts
+          path: .\SyncFactors.Old\scripts
           recurse: true
-          settings: .\PSScriptAnalyzerSettings.psd1
+          settings: .\SyncFactors.Old\PSScriptAnalyzerSettings.psd1
           severity: '"Error", "Warning"'
           enableExit: true
           output: results-scripts.sarif
