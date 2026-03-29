@@ -2,6 +2,8 @@
 @model SyncFactors.Api.Pages.PreviewModel
 @{
     ViewData["Title"] = "Worker Preview";
+    var preview = Model.Preview;
+    var riskCallouts = preview is null ? [] : BuildRiskCallouts(preview);
 }
 
 <section class="hero hero-compact">
@@ -17,6 +19,10 @@
         <label class="filter-search">
             <span>Worker Id</span>
             <input type="text" name="workerId" value="@Model.WorkerId" placeholder="1000123" />
+        </label>
+        <label class="filter-check">
+            <span>Show all attributes</span>
+            <input type="checkbox" name="showAllAttributes" value="true" @(Model.ShowAllAttributes ? "checked" : null) />
         </label>
         <div class="filter-actions">
             <button type="submit" data-worker-lookup-button>
@@ -56,35 +62,81 @@
     </section>
 }
 
-@if (Model.Preview is not null)
+@if (preview is not null)
 {
-    var resolvedAttributes = Model.Preview.SourceAttributes
-        .Where(attribute => !IsPathLikeAttribute(attribute.Attribute))
-        .ToArray();
-    var sourcePathAttributes = Model.Preview.SourceAttributes
+    var changedCount = preview.DiffRows.Count(row => row.Changed);
+    var sourcePathAttributes = preview.SourceAttributes
         .Where(attribute => IsPathLikeAttribute(attribute.Attribute))
         .ToArray();
 
     <section class="panel-grid preview-summary-grid">
         <article class="panel">
-            <h2>Summary</h2>
+            <div class="section-heading">
+                <div>
+                    <h2>Decision Summary</h2>
+                    <p class="muted">This preview was persisted as <a asp-page="/Runs/Detail" asp-route-runId="@preview.RunId">@preview.RunId</a>.</p>
+                </div>
+                <div class="decision-badges">
+                    @foreach (var bucket in preview.Buckets)
+                    {
+                        <span class="bucket-card">@bucket</span>
+                    }
+                </div>
+            </div>
+
             <dl class="kv">
-                <div><dt>Worker Id</dt><dd><span class="summary-value" title="@Model.Preview.WorkerId" tabindex="0">@Model.Preview.WorkerId</span></dd></div>
-                <div><dt>SAM</dt><dd><span class="summary-value" title="@(Model.Preview.SamAccountName ?? "n/a")" tabindex="0">@(Model.Preview.SamAccountName ?? "n/a")</span></dd></div>
-                <div><dt>Status</dt><dd><span class="summary-value" title="@(Model.Preview.Status ?? "Unknown")" tabindex="0">@(Model.Preview.Status ?? "Unknown")</span></dd></div>
-                <div><dt>Operation</dt><dd><span class="summary-value" title="@(Model.Preview.OperationSummary?.Action ?? "No operation")" tabindex="0">@(Model.Preview.OperationSummary?.Action ?? "No operation")</span></dd></div>
-                <div><dt>Matched Existing User</dt><dd><span class="summary-value" title="@DisplayBool(Model.Preview.MatchedExistingUser)" tabindex="0">@DisplayBool(Model.Preview.MatchedExistingUser)</span></dd></div>
-                <div><dt>Manager DN</dt><dd><span class="summary-value" title="@(Model.Preview.ManagerDistinguishedName ?? "n/a")" tabindex="0">@(Model.Preview.ManagerDistinguishedName ?? "n/a")</span></dd></div>
-                <div><dt>Current DN</dt><dd><span class="summary-value" title="@(Model.Preview.CurrentDistinguishedName ?? "n/a")" tabindex="0">@(Model.Preview.CurrentDistinguishedName ?? "n/a")</span></dd></div>
-                <div><dt>Target OU</dt><dd><span class="summary-value" title="@(Model.Preview.TargetOu ?? "n/a")" tabindex="0">@(Model.Preview.TargetOu ?? "n/a")</span></dd></div>
-                <div><dt>Preview Log</dt><dd><span class="summary-value" title="@(Model.Preview.ReportPath ?? "n/a")" tabindex="0">@(Model.Preview.ReportPath ?? "n/a")</span></dd></div>
+                <div><dt>Action</dt><dd>@(preview.OperationSummary?.Action ?? "No operation")</dd></div>
+                <div><dt>Changed Attributes</dt><dd>@changedCount</dd></div>
+                <div><dt>Target OU</dt><dd><span class="summary-value" title="@(preview.TargetOu ?? "n/a")" tabindex="0">@(preview.TargetOu ?? "n/a")</span></dd></div>
+                <div><dt>Manager</dt><dd><span class="summary-value" title="@(preview.ManagerDistinguishedName ?? "Unresolved")" tabindex="0">@(preview.ManagerDistinguishedName ?? "Unresolved")</span></dd></div>
+                <div><dt>Enable State</dt><dd>@EnableTransition(preview.CurrentEnabled, preview.ProposedEnable)</dd></div>
+                <div><dt>Matched Existing User</dt><dd>@DisplayBool(preview.MatchedExistingUser)</dd></div>
+                <div><dt>SAM</dt><dd>@(preview.SamAccountName ?? "n/a")</dd></div>
+                <div><dt>Current DN</dt><dd><span class="summary-value" title="@(preview.CurrentDistinguishedName ?? "n/a")" tabindex="0">@(preview.CurrentDistinguishedName ?? "n/a")</span></dd></div>
             </dl>
-            @if (!string.IsNullOrWhiteSpace(Model.Preview.OperationSummary?.Effect))
+
+            @if (!string.IsNullOrWhiteSpace(preview.OperationSummary?.Effect))
             {
-                <p class="callout">@Model.Preview.OperationSummary.Effect</p>
+                <p class="callout">@preview.OperationSummary.Effect</p>
             }
-            <form method="post" asp-page-handler="Apply" data-worker-apply-form>
+
+            @if (!string.IsNullOrWhiteSpace(preview.Reason) || !string.IsNullOrWhiteSpace(preview.ReviewCaseType))
+            {
+                <dl class="kv preview-meta">
+                    <div><dt>Reason</dt><dd>@(preview.Reason ?? "n/a")</dd></div>
+                    <div><dt>Review Case</dt><dd>@(preview.ReviewCaseType ?? "n/a")</dd></div>
+                </dl>
+            }
+        </article>
+
+        <article class="panel">
+            <h2>Apply Guardrail</h2>
+            <p class="muted">Applying uses the saved preview snapshot, not a silent re-run. Confirm the exact action before continuing.</p>
+
+            @if (riskCallouts.Count == 0)
+            {
+                <p class="callout good">No high-risk fields changed in this preview.</p>
+            }
+            else
+            {
+                <div class="risk-list">
+                    @foreach (var callout in riskCallouts)
+                    {
+                        <p class="callout warn">@callout</p>
+                    }
+                </div>
+            }
+
+            <form method="post" asp-page-handler="Apply" data-worker-apply-form class="apply-preview-form">
                 <input type="hidden" asp-for="WorkerId" />
+                <input type="hidden" asp-for="ShowAllAttributes" />
+                <input type="hidden" asp-for="PreviewRunId" />
+                <input type="hidden" asp-for="PreviewFingerprint" />
+                <label class="filter-search">
+                    <span>Type confirmation text exactly</span>
+                    <input type="text" asp-for="ConfirmationText" autocomplete="off" placeholder="@Model.RequiredConfirmationText" />
+                </label>
+                <p class="muted confirmation-line"><code>@Model.RequiredConfirmationText</code></p>
                 <div class="filter-actions">
                     <button type="submit" data-worker-apply-button>
                         <span class="button-label">Apply Preview</span>
@@ -93,34 +145,81 @@
                 </div>
             </form>
         </article>
-
-        <article class="panel">
-            <h2>Classification</h2>
-            <div class="bucket-grid">
-            @foreach (var bucket in Model.Preview.Buckets)
-            {
-                <span class="bucket-card">@bucket</span>
-            }
-            </div>
-            @if (!string.IsNullOrWhiteSpace(Model.Preview.Reason) || !string.IsNullOrWhiteSpace(Model.Preview.ReviewCaseType))
-            {
-                <dl class="kv preview-meta">
-                    <div><dt>Reason</dt><dd>@(Model.Preview.Reason ?? "n/a")</dd></div>
-                    <div><dt>Review Case</dt><dd>@(Model.Preview.ReviewCaseType ?? "n/a")</dd></div>
-                </dl>
-            }
-        </article>
     </section>
 
+    @if (Model.PreviousPreview is not null)
+    {
+        <section class="panel">
+            <h2>Previous Preview Comparison</h2>
+            <p class="muted">Comparing this saved preview to <a asp-page="/Runs/Detail" asp-route-runId="@Model.PreviousPreview.RunId">@Model.PreviousPreview.RunId</a>.</p>
+            <dl class="kv preview-meta">
+                <div><dt>Previous Action</dt><dd>@(Model.PreviousPreview.OperationSummary?.Action ?? "Unknown")</dd></div>
+                <div><dt>Previous Changes</dt><dd>@Model.PreviousPreview.DiffRows.Count(row => row.Changed)</dd></div>
+                <div><dt>Plan Changed</dt><dd>@(preview.Fingerprint == Model.PreviousPreview.Fingerprint ? "No" : "Yes")</dd></div>
+            </dl>
+            @if (preview.Fingerprint != Model.PreviousPreview.Fingerprint)
+            {
+                <p class="callout warn">The planned action or changed attributes differ from the previous saved preview for this worker.</p>
+            }
+        </section>
+    }
+
+    @if (Model.PreviewHistory.Count > 1)
+    {
+        <section class="panel">
+            <h2>Preview History</h2>
+            <table class="data-table compact">
+                <thead>
+                    <tr>
+                        <th>Started</th>
+                        <th>Run</th>
+                        <th>Action</th>
+                        <th>Status</th>
+                        <th>Changes</th>
+                        <th>Reason</th>
+                    </tr>
+                </thead>
+                <tbody>
+                @foreach (var item in Model.PreviewHistory)
+                {
+                    <tr>
+                        <td>@item.StartedAt.ToString("u")</td>
+                        <td><a asp-page="/Runs/Detail" asp-route-runId="@item.RunId">@item.RunId</a></td>
+                        <td>@(item.Action ?? item.Bucket)</td>
+                        <td>@(item.Status ?? "Unknown")</td>
+                        <td>@item.ChangeCount</td>
+                        <td>@(item.Reason ?? "n/a")</td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </section>
+    }
+
     <section class="panel">
-        <h2>Attribute Diff</h2>
-        @if (Model.Preview.DiffRows.Count == 0)
+        <div class="section-heading">
+            <div>
+                <h2>Attribute Diff</h2>
+                <p class="muted">@((Model.ShowAllAttributes ? "Showing every synced attribute." : "Showing changed attributes only."))</p>
+            </div>
+            <div class="diff-toggle">
+                @if (Model.ShowAllAttributes)
+                {
+                    <a asp-page="/Preview" asp-route-workerId="@Model.WorkerId">Show changed only</a>
+                }
+                else
+                {
+                    <a asp-page="/Preview" asp-route-workerId="@Model.WorkerId" asp-route-showAllAttributes="true">Show all attributes</a>
+                }
+            </div>
+        </div>
+
+        @if (Model.VisibleDiffRows.Count == 0)
         {
             <p class="muted">No synced attributes were recorded for this preview.</p>
         }
         else
         {
-            <p class="muted">Showing every synced attribute with the current directory value and the proposed incoming value.</p>
             <table class="data-table preview-diff-table">
                 <colgroup>
                     <col class="col-attribute" />
@@ -139,7 +238,7 @@
                     </tr>
                 </thead>
                 <tbody>
-                @foreach (var row in Model.Preview.DiffRows)
+                @foreach (var row in Model.VisibleDiffRows)
                 {
                     <tr class="diff-row @(row.Changed ? "changed" : "same")">
                         <td>@row.Attribute</td>
@@ -162,32 +261,65 @@
 
     <section class="panel-grid">
         <article class="panel">
-            <h2>Resolved SF Attributes</h2>
-            @if (resolvedAttributes.Length == 0)
-            {
-                <p class="muted">No populated SuccessFactors attributes were captured.</p>
-            }
-            else
-            {
-                <p class="muted">Showing @resolvedAttributes.Length populated values parsed from SuccessFactors.</p>
-                <table class="data-table compact">
-                    <thead>
-                        <tr>
-                            <th>Attribute</th>
-                            <th>Value</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                    @foreach (var row in resolvedAttributes)
+            <h2>Source Confidence</h2>
+            <div class="source-confidence-stack">
+                <div>
+                    <h3>Used In Sync</h3>
+                    @if (preview.UsedSourceAttributes.Count == 0)
                     {
-                        <tr>
-                            <td>@row.Attribute</td>
-                            <td>@row.Value</td>
-                        </tr>
+                        <p class="muted">No populated source attributes were referenced by the current diff.</p>
                     }
-                    </tbody>
-                </table>
-            }
+                    else
+                    {
+                        <table class="data-table compact">
+                            <thead><tr><th>Attribute</th><th>Value</th></tr></thead>
+                            <tbody>
+                            @foreach (var row in preview.UsedSourceAttributes)
+                            {
+                                <tr><td>@row.Attribute</td><td>@row.Value</td></tr>
+                            }
+                            </tbody>
+                        </table>
+                    }
+                </div>
+
+                <div>
+                    <h3>Available But Unused</h3>
+                    @if (preview.UnusedSourceAttributes.Count == 0)
+                    {
+                        <p class="muted">No additional populated source values were captured.</p>
+                    }
+                    else
+                    {
+                        <table class="data-table compact">
+                            <thead><tr><th>Attribute</th><th>Value</th></tr></thead>
+                            <tbody>
+                            @foreach (var row in preview.UnusedSourceAttributes.Take(20))
+                            {
+                                <tr><td>@row.Attribute</td><td>@row.Value</td></tr>
+                            }
+                            </tbody>
+                        </table>
+                    }
+                </div>
+
+                <div>
+                    <h3>Missing Expected Fields</h3>
+                    @if (preview.MissingSourceAttributes.Count == 0)
+                    {
+                        <p class="muted">No required mapped source fields are currently missing.</p>
+                    }
+                    else
+                    {
+                        <ul class="plain-list">
+                        @foreach (var row in preview.MissingSourceAttributes)
+                        {
+                            <li><code>@row.Attribute</code> · @row.Reason</li>
+                        }
+                        </ul>
+                    }
+                </div>
+            </div>
         </article>
 
         <article class="panel">
@@ -198,7 +330,6 @@
             }
             else
             {
-                <p class="muted">These rows expose the concrete source paths available for mapping and query work.</p>
                 <table class="data-table compact preview-source-table">
                     <colgroup>
                         <col class="col-source-path" />
@@ -227,7 +358,7 @@
     <section class="panel">
         <h2>Preview Entries</h2>
         <div class="entry-list">
-        @foreach (var entry in Model.Preview.Entries)
+        @foreach (var entry in preview.Entries)
         {
             <article class="entry-card">
                 <header class="entry-head">
@@ -281,4 +412,57 @@
 
     private static bool IsPathLikeAttribute(string attribute) =>
         attribute.Contains('[') || attribute.Contains('.');
+
+    private static string EnableTransition(bool? current, bool? proposed)
+    {
+        if (!current.HasValue && proposed.HasValue)
+        {
+            return proposed.Value ? "Enabled on create" : "Disabled on create";
+        }
+
+        if (current.HasValue && proposed.HasValue)
+        {
+            return $"{(current.Value ? "Enabled" : "Disabled")} -> {(proposed.Value ? "Enabled" : "Disabled")}";
+        }
+
+        return "Unknown";
+    }
+
+    private static IReadOnlyList<string> BuildRiskCallouts(SyncFactors.Contracts.WorkerPreviewResult preview)
+    {
+        var callouts = new List<string>();
+        foreach (var row in preview.DiffRows.Where(diff => diff.Changed))
+        {
+            if (string.Equals(row.Attribute, "userPrincipalName", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(row.Attribute, "mail", StringComparison.OrdinalIgnoreCase))
+            {
+                callouts.Add($"{row.Attribute} will change from '{row.Before}' to '{row.After}'.");
+            }
+
+            if (string.Equals(row.Attribute, "manager", StringComparison.OrdinalIgnoreCase))
+            {
+                callouts.Add($"Manager assignment will change to '{row.After}'.");
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(preview.OperationSummary?.FromOu) &&
+            !string.IsNullOrWhiteSpace(preview.OperationSummary?.ToOu) &&
+            !string.Equals(preview.OperationSummary.FromOu, preview.OperationSummary.ToOu, StringComparison.OrdinalIgnoreCase))
+        {
+            callouts.Add($"The account will move from '{preview.OperationSummary.FromOu}' to '{preview.OperationSummary.ToOu}'.");
+        }
+
+        if (preview.CurrentEnabled != preview.ProposedEnable && preview.ProposedEnable.HasValue)
+        {
+            callouts.Add(preview.ProposedEnable.Value ? "The account will be enabled." : "The account will be disabled.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(preview.ManagerDistinguishedName) == false &&
+            preview.DiffRows.Any(diff => string.Equals(diff.Source, "managerId", StringComparison.OrdinalIgnoreCase)))
+        {
+            callouts.Add("Manager resolution is still blank for a manager-linked preview.");
+        }
+
+        return callouts.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+    }
 }

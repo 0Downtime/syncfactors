@@ -28,6 +28,7 @@
             <div><dt>Started</dt><dd>@Model.Run.Run.StartedAt.ToString("u")</dd></div>
             <div><dt>Completed</dt><dd>@(Model.Run.Run.CompletedAt?.ToString("u") ?? "Unknown")</dd></div>
             <div><dt>Artifact</dt><dd>@Model.Run.Run.ArtifactType</dd></div>
+            <div><dt>Status</dt><dd><span class="badge @StatusClass(Model.Run.Run.Status)">@Model.Run.Run.Status</span></dd></div>
             <div><dt>Processed</dt><dd>@Model.Run.Run.ProcessedWorkers</dd></div>
             <div><dt>Total</dt><dd>@Model.Run.Run.TotalWorkers</dd></div>
         </dl>
@@ -52,48 +53,28 @@
     <form method="get" class="filters">
         <input type="hidden" name="runId" value="@Model.Run.Run.RunId" />
         <label>
-            <span>Bucket</span>
-            <select name="bucket">
-                <option value="">All buckets</option>
-                @foreach (var bucket in Model.AvailableBuckets)
-                {
-                    @if (string.Equals(Model.Bucket, bucket, StringComparison.Ordinal))
-                    {
-                        <option value="@bucket" selected>@bucket</option>
-                    }
-                    else
-                    {
-                        <option value="@bucket">@bucket</option>
-                    }
-                }
-            </select>
-        </label>
-        <label>
-            <span>Worker Id</span>
-            <select name="workerId">
-                <option value="">All workers</option>
-                @foreach (var workerId in Model.AvailableWorkerIds)
-                {
-                    @if (string.Equals(Model.WorkerId, workerId, StringComparison.Ordinal))
-                    {
-                        <option value="@workerId" selected>@workerId</option>
-                    }
-                    else
-                    {
-                        <option value="@workerId">@workerId</option>
-                    }
-                }
-            </select>
+            <span>Worker search</span>
+            <input type="text" name="workerId" value="@Model.WorkerId" placeholder="worker id or samAccountName" />
         </label>
         <label class="filter-search">
             <span>Text search</span>
-            <input type="text" name="filter" value="@Model.Filter" placeholder="samAccountName, reason, reviewCaseType..." />
+            <input type="text" name="filter" value="@Model.Filter" placeholder="reason, reviewCaseType, raw entry text..." />
         </label>
         <div class="filter-actions">
             <button type="submit">Apply</button>
             <a class="link-button" asp-page="/Runs/Detail" asp-route-runId="@Model.Run.Run.RunId">Clear</a>
         </div>
     </form>
+    <div class="bucket-chip-row">
+        <a class="bucket-card @(string.IsNullOrWhiteSpace(Model.Bucket) ? "active" : null)" asp-page="/Runs/Detail" asp-route-runId="@Model.Run.Run.RunId" asp-route-workerId="@Model.WorkerId" asp-route-filter="@Model.Filter">All buckets</a>
+        @foreach (var bucket in Model.AvailableBuckets)
+        {
+            <a class="bucket-card @(string.Equals(Model.Bucket, bucket, StringComparison.Ordinal) ? "active" : null)" asp-page="/Runs/Detail" asp-route-runId="@Model.Run.Run.RunId" asp-route-bucket="@bucket" asp-route-workerId="@Model.WorkerId" asp-route-filter="@Model.Filter">
+                <span class="bucket-name">@bucket</span>
+                <strong>@Model.Run.BucketCounts[bucket]</strong>
+            </a>
+        }
+    </div>
 </section>
 
 <section class="panel">
@@ -117,9 +98,32 @@
                         <span class="badge neutral">@entry.ChangeCount changes</span>
                     </div>
                 </header>
+                @if (!string.IsNullOrWhiteSpace(entry.PrimarySummary))
+                {
+                    <p class="entry-summary">@entry.PrimarySummary</p>
+                }
+                @if (!string.IsNullOrWhiteSpace(entry.FailureSummary))
+                {
+                    <p class="callout warn">@entry.FailureSummary</p>
+                }
+                @if (!string.IsNullOrWhiteSpace(entry.ReviewCaseType) || !string.IsNullOrWhiteSpace(entry.Reason))
+                {
+                    <dl class="kv preview-meta">
+                        <div><dt>Reason</dt><dd>@(entry.Reason ?? "n/a")</dd></div>
+                        <div><dt>Review Case</dt><dd>@(entry.ReviewCaseType ?? "n/a")</dd></div>
+                    </dl>
+                }
                 @if (entry.OperationSummary is not null)
                 {
                     <p><strong>@entry.OperationSummary.Action</strong>@if (!string.IsNullOrWhiteSpace(entry.OperationSummary.Effect)) { <text> · @entry.OperationSummary.Effect</text> }</p>
+                }
+                @if (entry.TopChangedAttributes.Count > 0)
+                {
+                    <p class="muted">Top changes: @string.Join(", ", entry.TopChangedAttributes)</p>
+                }
+                @if (!string.IsNullOrWhiteSpace(entry.WorkerId))
+                {
+                    <p><a asp-page="/Preview" asp-route-workerId="@entry.WorkerId">Open worker preview</a></p>
                 }
                 @if (entry.DiffRows.Count > 0)
                 {
@@ -152,3 +156,14 @@
         </div>
     }
 </section>
+
+@functions {
+    private static string StatusClass(string status) =>
+        status.ToLowerInvariant() switch
+        {
+            "succeeded" => "good",
+            "failed" => "bad",
+            "inprogress" => "warn",
+            _ => "neutral",
+        };
+}

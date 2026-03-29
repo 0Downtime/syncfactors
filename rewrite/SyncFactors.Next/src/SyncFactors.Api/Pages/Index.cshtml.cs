@@ -4,7 +4,7 @@ using SyncFactors.Domain;
 
 namespace SyncFactors.Api.Pages;
 
-public sealed class IndexModel(IRuntimeStatusStore runtimeStatusStore, IRunRepository runRepository) : PageModel
+public sealed class IndexModel(IDashboardSnapshotService dashboardSnapshotService) : PageModel
 {
     public RuntimeStatus Status { get; private set; } = new(
         Status: "Idle",
@@ -23,9 +23,22 @@ public sealed class IndexModel(IRuntimeStatusStore runtimeStatusStore, IRunRepos
 
     public IReadOnlyList<RunSummary> Runs { get; private set; } = [];
 
+    public RunSummary? ActiveRun { get; private set; }
+
+    public RunSummary? LastCompletedRun { get; private set; }
+
+    public bool RequiresAttention { get; private set; }
+
+    public string? AttentionMessage { get; private set; }
+
     public async Task OnGetAsync(CancellationToken cancellationToken)
     {
-        Status = await runtimeStatusStore.GetCurrentAsync(cancellationToken) ?? Status;
-        Runs = await runRepository.ListRunsAsync(cancellationToken);
+        var snapshot = await dashboardSnapshotService.GetSnapshotAsync(cancellationToken);
+        Status = snapshot.Status;
+        Runs = snapshot.Runs;
+        ActiveRun = snapshot.ActiveRun;
+        LastCompletedRun = snapshot.LastCompletedRun;
+        RequiresAttention = snapshot.RequiresAttention;
+        AttentionMessage = snapshot.AttentionMessage;
     }
 }

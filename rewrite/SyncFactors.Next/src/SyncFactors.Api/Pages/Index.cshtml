@@ -12,59 +12,453 @@
     </div>
 </section>
 
-<section class="panel-grid">
+@if (Model.RequiresAttention)
+{
+    <section class="panel">
+        <p class="callout danger" data-dashboard-attention>@(Model.AttentionMessage ?? "Operator attention is required.")</p>
+    </section>
+}
+
+<section class="panel-grid dashboard-grid">
     <article class="panel">
         <h2>Status</h2>
-        <dl class="kv">
-            <div><dt>Status</dt><dd>@Model.Status.Status</dd></div>
-            <div><dt>Stage</dt><dd>@Model.Status.Stage</dd></div>
-            <div><dt>Run Id</dt><dd>@(Model.Status.RunId ?? "None")</dd></div>
-            <div><dt>Worker</dt><dd>@(Model.Status.CurrentWorkerId ?? "None")</dd></div>
-            <div><dt>Progress</dt><dd>@Model.Status.ProcessedWorkers / @Model.Status.TotalWorkers</dd></div>
-            <div><dt>Last Updated</dt><dd>@(Model.Status.LastUpdatedAt?.ToString("u") ?? "Unknown")</dd></div>
+        <dl class="kv" data-dashboard-status>
+            <div><dt>Status</dt><dd data-status-value>@Model.Status.Status</dd></div>
+            <div><dt>Stage</dt><dd data-stage-value>@Model.Status.Stage</dd></div>
+            <div><dt>Run Id</dt><dd data-run-id-value>@(Model.Status.RunId ?? "None")</dd></div>
+            <div><dt>Worker</dt><dd data-worker-value>@(Model.Status.CurrentWorkerId ?? "None")</dd></div>
+            <div><dt>Progress</dt><dd data-progress-value>@Model.Status.ProcessedWorkers / @Model.Status.TotalWorkers</dd></div>
+            <div><dt>Last Action</dt><dd data-last-action-value>@(Model.Status.LastAction ?? "None")</dd></div>
+            <div><dt>Last Updated</dt><dd data-last-updated-value>@(Model.Status.LastUpdatedAt?.ToString("u") ?? "Unknown")</dd></div>
         </dl>
-        @if (!string.IsNullOrWhiteSpace(Model.Status.ErrorMessage))
-        {
-            <p class="callout danger">@Model.Status.ErrorMessage</p>
-        }
+        <p class="callout danger @(string.IsNullOrWhiteSpace(Model.Status.ErrorMessage) ? "is-hidden" : null)" data-status-error>@Model.Status.ErrorMessage</p>
+
+        <section class="connection-section" data-connection-health>
+            <div class="section-heading">
+                <div>
+                    <p class="eyebrow">Connection</p>
+                    <h3>Dependency Health</h3>
+                </div>
+                <div class="connection-overview">
+                    <span class="badge neutral" data-health-overall-badge>Loading</span>
+                    <span class="muted" data-health-last-checked>Probe has not run yet.</span>
+                </div>
+            </div>
+
+            <div class="connection-bar" aria-hidden="true">
+                <span class="connection-segment neutral" data-probe-segment="SuccessFactors"></span>
+                <span class="connection-segment neutral" data-probe-segment="Active Directory"></span>
+                <span class="connection-segment neutral" data-probe-segment="Worker Service"></span>
+                <span class="connection-segment neutral" data-probe-segment="SQLite"></span>
+            </div>
+
+            <div class="connection-list" data-health-list>
+                @foreach (var dependency in new[] { "SuccessFactors", "Active Directory", "Worker Service", "SQLite" })
+                {
+                    <article class="connection-card">
+                        <header class="connection-head">
+                            <h4>@dependency</h4>
+                            <span class="badge neutral">Waiting</span>
+                        </header>
+                        <p class="connection-summary">Probe pending.</p>
+                        <p class="connection-detail muted">The dashboard will run this check after the page settles.</p>
+                    </article>
+                }
+            </div>
+        </section>
+    </article>
+
+    <article class="panel">
+        <h2>Run Health</h2>
+        <div class="run-health-stack" data-run-health>
+            <section class="run-health-card">
+                <p class="eyebrow">Active Run</p>
+                @if (Model.ActiveRun is null)
+                {
+                    <p class="muted" data-active-run-empty>No run is active.</p>
+                }
+                else
+                {
+                    <div data-active-run-card>
+                        <p><strong data-active-run-id>@Model.ActiveRun.RunId</strong></p>
+                        <p class="muted" data-active-run-summary>@Model.ActiveRun.Mode · @Model.ActiveRun.ProcessedWorkers / @Model.ActiveRun.TotalWorkers workers</p>
+                        <p><a asp-page="/Runs/Detail" asp-route-runId="@Model.ActiveRun.RunId" data-active-run-link>Open active run</a></p>
+                    </div>
+                }
+            </section>
+
+            <section class="run-health-card">
+                <p class="eyebrow">Last Completed</p>
+                @if (Model.LastCompletedRun is null)
+                {
+                    <p class="muted" data-last-run-empty>No completed runs yet.</p>
+                }
+                else
+                {
+                    <div data-last-run-card>
+                        <p><strong data-last-run-id>@Model.LastCompletedRun.RunId</strong></p>
+                        <p class="muted" data-last-run-summary>@Model.LastCompletedRun.Status · @Model.LastCompletedRun.Mode · @Model.LastCompletedRun.TotalWorkers workers</p>
+                        <p><a asp-page="/Runs/Detail" asp-route-runId="@Model.LastCompletedRun.RunId" data-last-run-link>Review last run</a></p>
+                    </div>
+                }
+            </section>
+        </div>
     </article>
 
     <article class="panel">
         <h2>Recent Runs</h2>
-        @if (Model.Runs.Count == 0)
-        {
+        <p class="muted dashboard-refresh-note" data-dashboard-checked>Live data is refreshed automatically while this page is open.</p>
+        <div data-runs-empty class="@(Model.Runs.Count == 0 ? null : "is-hidden")">
             <p class="muted">No run data is configured yet. Set <code>SyncFactors__SqlitePath</code> to point the rewrite UI at an operational SQLite store.</p>
-        }
-        else
-        {
-            <table class="data-table">
-                <thead>
-                    <tr>
-                        <th>Started</th>
-                        <th>Mode</th>
-                        <th>Status</th>
-                        <th>Dry Run</th>
-                        <th>Workers</th>
-                        <th>Actions</th>
-                    </tr>
-                </thead>
-                <tbody>
-                @foreach (var run in Model.Runs)
-                {
-                    <tr>
-                        <td>@run.StartedAt.ToString("u")</td>
-                        <td>@run.Mode</td>
-                        <td><span class="badge @StatusClass(run.Status)">@run.Status</span></td>
-                        <td>@(run.DryRun ? "Yes" : "No")</td>
-                        <td>@run.TotalWorkers</td>
-                        <td><a asp-page="/Runs/Detail" asp-route-runId="@run.RunId">Open</a></td>
-                    </tr>
-                }
-                </tbody>
-            </table>
-        }
+        </div>
+        <table class="data-table @(Model.Runs.Count == 0 ? "is-hidden" : null)" data-runs-table>
+            <thead>
+                <tr>
+                    <th>Started</th>
+                    <th>Mode</th>
+                    <th>Status</th>
+                    <th>Dry Run</th>
+                    <th>Workers</th>
+                    <th>Summary</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody data-runs-body>
+            @foreach (var run in Model.Runs)
+            {
+                <tr>
+                    <td>@run.StartedAt.ToString("u")</td>
+                    <td>@run.Mode</td>
+                    <td><span class="badge @StatusClass(run.Status)">@run.Status</span></td>
+                    <td>@(run.DryRun ? "Yes" : "No")</td>
+                    <td>@run.TotalWorkers</td>
+                    <td>@RunSummaryLine(run)</td>
+                    <td><a asp-page="/Runs/Detail" asp-route-runId="@run.RunId">Open</a></td>
+                </tr>
+            }
+            </tbody>
+        </table>
     </article>
 </section>
+
+<script>
+    (function () {
+        var dashboardPollIntervalMs = 15000;
+        var dashboardTimerId = null;
+        var statusRoot = document.querySelector("[data-dashboard-status]");
+        var runsBody = document.querySelector("[data-runs-body]");
+        var runsTable = document.querySelector("[data-runs-table]");
+        var runsEmpty = document.querySelector("[data-runs-empty]");
+        var checkedMessage = document.querySelector("[data-dashboard-checked]");
+        var statusError = document.querySelector("[data-status-error]");
+        var attention = document.querySelector("[data-dashboard-attention]");
+        var activeRunEmpty = document.querySelector("[data-active-run-empty]");
+        var activeRunCard = document.querySelector("[data-active-run-card]");
+        var lastRunEmpty = document.querySelector("[data-last-run-empty]");
+        var lastRunCard = document.querySelector("[data-last-run-card]");
+
+        var root = document.querySelector("[data-connection-health]");
+        if (!root) {
+            return;
+        }
+
+        var list = root.querySelector("[data-health-list]");
+        var overallBadge = root.querySelector("[data-health-overall-badge]");
+        var lastChecked = root.querySelector("[data-health-last-checked]");
+        var segments = Array.prototype.slice.call(root.querySelectorAll("[data-probe-segment]"));
+        var probeOrder = ["SuccessFactors", "Active Directory", "Worker Service", "SQLite"];
+        var pollIntervalMs = 60000;
+        var timerId = null;
+        var isLoading = false;
+        var isDashboardLoading = false;
+
+        function statusClass(status) {
+            switch ((status || "").toLowerCase()) {
+                case "healthy":
+                    return "good";
+                case "degraded":
+                    return "warn";
+                case "unhealthy":
+                    return "bad";
+                default:
+                    return "neutral";
+            }
+        }
+
+        function formatTimestamp(value) {
+            if (!value) {
+                return "Unknown";
+            }
+
+            var parsed = new Date(value);
+            return isNaN(parsed.getTime()) ? "Unknown" : parsed.toLocaleString();
+        }
+
+        function setBadge(element, text, status) {
+            if (!element) {
+                return;
+            }
+
+            element.className = "badge " + statusClass(status);
+            element.textContent = text;
+        }
+
+        function textOrFallback(value, fallback) {
+            return value ? value : fallback;
+        }
+
+        function toggleHidden(element, hidden) {
+            if (!element) {
+                return;
+            }
+
+            element.classList.toggle("is-hidden", !!hidden);
+        }
+
+        function runSummary(run) {
+            var parts = [];
+
+            if (run.creates) {
+                parts.push(run.creates + " creates");
+            }
+
+            if (run.updates) {
+                parts.push(run.updates + " updates");
+            }
+
+            if (run.conflicts) {
+                parts.push(run.conflicts + " conflicts");
+            }
+
+            if (run.manualReview) {
+                parts.push(run.manualReview + " manual review");
+            }
+
+            if (run.guardrailFailures) {
+                parts.push(run.guardrailFailures + " guardrails");
+            }
+
+            return parts.length ? parts.join(" • ") : "No materialized bucket counts yet";
+        }
+
+        function renderRuns(runs) {
+            if (!runsBody || !runsTable || !runsEmpty) {
+                return;
+            }
+
+            runsBody.innerHTML = "";
+            toggleHidden(runsTable, !runs.length);
+            toggleHidden(runsEmpty, !!runs.length);
+
+            runs.forEach(function (run) {
+                var row = document.createElement("tr");
+                row.innerHTML =
+                    "<td>" + formatTimestamp(run.startedAt) + "</td>" +
+                    "<td>" + textOrFallback(run.mode, "Unknown") + "</td>" +
+                    "<td><span class=\"badge " + statusClass(run.status) + "\">" + textOrFallback(run.status, "Unknown") + "</span></td>" +
+                    "<td>" + (run.dryRun ? "Yes" : "No") + "</td>" +
+                    "<td>" + (run.totalWorkers || 0) + "</td>" +
+                    "<td>" + runSummary(run) + "</td>" +
+                    "<td><a href=\"/Runs/" + encodeURIComponent(run.runId) + "\">Open</a></td>";
+                runsBody.appendChild(row);
+            });
+        }
+
+        function renderStatus(snapshot) {
+            if (!statusRoot || !snapshot || !snapshot.status) {
+                return;
+            }
+
+            var status = snapshot.status;
+            statusRoot.querySelector("[data-status-value]").textContent = textOrFallback(status.status, "Unknown");
+            statusRoot.querySelector("[data-stage-value]").textContent = textOrFallback(status.stage, "Unknown");
+            statusRoot.querySelector("[data-run-id-value]").textContent = textOrFallback(status.runId, "None");
+            statusRoot.querySelector("[data-worker-value]").textContent = textOrFallback(status.currentWorkerId, "None");
+            statusRoot.querySelector("[data-progress-value]").textContent = (status.processedWorkers || 0) + " / " + (status.totalWorkers || 0);
+            statusRoot.querySelector("[data-last-action-value]").textContent = textOrFallback(status.lastAction, "None");
+            statusRoot.querySelector("[data-last-updated-value]").textContent = formatTimestamp(status.lastUpdatedAt);
+
+            if (statusError) {
+                statusError.textContent = textOrFallback(status.errorMessage, "");
+                toggleHidden(statusError, !status.errorMessage);
+            }
+
+            if (attention) {
+                attention.textContent = textOrFallback(snapshot.attentionMessage, "");
+                toggleHidden(attention, !snapshot.requiresAttention);
+            }
+        }
+
+        function renderRunCard(card, empty, run, summarySelector, idSelector, linkSelector, emptyText) {
+            if (!card || !empty) {
+                return;
+            }
+
+            if (!run) {
+                toggleHidden(empty, false);
+                empty.textContent = emptyText;
+                toggleHidden(card, true);
+                return;
+            }
+
+            toggleHidden(empty, true);
+            toggleHidden(card, false);
+            card.querySelector(idSelector).textContent = run.runId;
+            card.querySelector(summarySelector).textContent = run.status + " · " + run.mode + " · " + (run.processedWorkers || 0) + " / " + (run.totalWorkers || 0) + " workers";
+            card.querySelector(linkSelector).setAttribute("href", "/Runs/" + encodeURIComponent(run.runId));
+        }
+
+        function renderDashboard(snapshot) {
+            renderStatus(snapshot);
+            renderRuns(Array.isArray(snapshot.runs) ? snapshot.runs : []);
+            renderRunCard(activeRunCard, activeRunEmpty, snapshot.activeRun, "[data-active-run-summary]", "[data-active-run-id]", "[data-active-run-link]", "No run is active.");
+            renderRunCard(lastRunCard, lastRunEmpty, snapshot.lastCompletedRun, "[data-last-run-summary]", "[data-last-run-id]", "[data-last-run-link]", "No completed runs yet.");
+
+            if (checkedMessage) {
+                checkedMessage.textContent = "Live data refreshed " + formatTimestamp(snapshot.checkedAt);
+            }
+        }
+
+        function renderProbe(probe) {
+            var card = document.createElement("article");
+            card.className = "connection-card";
+
+            var head = document.createElement("header");
+            head.className = "connection-head";
+
+            var title = document.createElement("h4");
+            title.textContent = probe.dependency;
+            head.appendChild(title);
+
+            var badge = document.createElement("span");
+            setBadge(badge, probe.status, probe.status);
+            head.appendChild(badge);
+            card.appendChild(head);
+
+            var summary = document.createElement("p");
+            summary.className = "connection-summary";
+            summary.textContent = probe.summary;
+            card.appendChild(summary);
+
+            var detail = document.createElement("p");
+            detail.className = "connection-detail muted";
+            var detailParts = [];
+
+            if (probe.details) {
+                detailParts.push(probe.details);
+            }
+
+            detailParts.push("Checked " + formatTimestamp(probe.checkedAt));
+            detailParts.push("Latency " + probe.durationMilliseconds + " ms");
+
+            if (probe.observedAt) {
+                detailParts.push("Observed " + formatTimestamp(probe.observedAt));
+            }
+
+            detail.textContent = detailParts.join(" • ");
+            card.appendChild(detail);
+            return card;
+        }
+
+        function renderSnapshot(snapshot) {
+            var probes = Array.isArray(snapshot && snapshot.probes) ? snapshot.probes.slice() : [];
+            probes.sort(function (left, right) {
+                return probeOrder.indexOf(left.dependency) - probeOrder.indexOf(right.dependency);
+            });
+
+            if (list) {
+                list.innerHTML = "";
+                probes.forEach(function (probe) {
+                    list.appendChild(renderProbe(probe));
+                });
+            }
+
+            setBadge(overallBadge, snapshot.status || "Unknown", snapshot.status);
+            if (lastChecked) {
+                lastChecked.textContent = "Last checked " + formatTimestamp(snapshot.checkedAt);
+            }
+
+            segments.forEach(function (segment) {
+                var dependency = segment.getAttribute("data-probe-segment");
+                var probe = probes.find(function (item) { return item.dependency === dependency; });
+                segment.className = "connection-segment " + statusClass(probe ? probe.status : "unknown");
+                segment.title = dependency + ": " + (probe ? probe.summary : "No data");
+            });
+        }
+
+        function renderFailure(message) {
+            setBadge(overallBadge, "Unhealthy", "unhealthy");
+            if (lastChecked) {
+                lastChecked.textContent = message;
+            }
+        }
+
+        async function loadHealth() {
+            if (isLoading) {
+                return;
+            }
+
+            isLoading = true;
+            try {
+                var response = await fetch("/api/health", { headers: { "Accept": "application/json" } });
+                if (!response.ok) {
+                    throw new Error("Health probe request failed with HTTP " + response.status + ".");
+                }
+
+                renderSnapshot(await response.json());
+            } catch (error) {
+                renderFailure(error && error.message ? error.message : "Health probe request failed.");
+            } finally {
+                isLoading = false;
+            }
+        }
+
+        async function loadDashboard() {
+            if (isDashboardLoading) {
+                return;
+            }
+
+            isDashboardLoading = true;
+            try {
+                var response = await fetch("/api/dashboard", { headers: { "Accept": "application/json" } });
+                if (!response.ok) {
+                    throw new Error("Dashboard request failed with HTTP " + response.status + ".");
+                }
+
+                renderDashboard(await response.json());
+            } catch (error) {
+                if (checkedMessage) {
+                    checkedMessage.textContent = error && error.message ? error.message : "Dashboard request failed.";
+                }
+            } finally {
+                isDashboardLoading = false;
+            }
+        }
+
+        function startPolling() {
+            loadDashboard();
+            loadHealth();
+            timerId = window.setInterval(loadHealth, pollIntervalMs);
+            dashboardTimerId = window.setInterval(loadDashboard, dashboardPollIntervalMs);
+        }
+
+        if ("requestIdleCallback" in window) {
+            window.requestIdleCallback(startPolling, { timeout: 2000 });
+        } else {
+            window.setTimeout(startPolling, 0);
+        }
+
+        window.addEventListener("beforeunload", function () {
+            if (timerId) {
+                window.clearInterval(timerId);
+            }
+
+            if (dashboardTimerId) {
+                window.clearInterval(dashboardTimerId);
+            }
+        });
+    })();
+</script>
 
 @functions {
     private static string StatusClass(string status) =>
@@ -75,4 +469,15 @@
             "inprogress" => "warn",
             _ => "neutral",
         };
+
+    private static string RunSummaryLine(SyncFactors.Contracts.RunSummary run)
+    {
+        var parts = new List<string>();
+        if (run.Creates > 0) parts.Add($"{run.Creates} creates");
+        if (run.Updates > 0) parts.Add($"{run.Updates} updates");
+        if (run.Conflicts > 0) parts.Add($"{run.Conflicts} conflicts");
+        if (run.ManualReview > 0) parts.Add($"{run.ManualReview} manual review");
+        if (run.GuardrailFailures > 0) parts.Add($"{run.GuardrailFailures} guardrails");
+        return parts.Count == 0 ? "No materialized bucket counts yet" : string.Join(" · ", parts);
+    }
 }

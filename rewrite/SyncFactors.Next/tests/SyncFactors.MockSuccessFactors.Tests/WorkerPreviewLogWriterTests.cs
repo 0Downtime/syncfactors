@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging.Abstractions;
+using SyncFactors.Contracts;
 using SyncFactors.Domain;
 using SyncFactors.Infrastructure;
 
@@ -95,7 +96,9 @@ public sealed class WorkerPreviewLogWriterTests
             directoryGateway,
             new IdentityMatcher(),
             diffService,
+            mappingProvider,
             logWriter,
+            new StubRunRepository(),
             NullLogger<WorkerPreviewPlanner>.Instance);
 
         var preview = await planner.PreviewAsync("1000123", CancellationToken.None);
@@ -108,5 +111,63 @@ public sealed class WorkerPreviewLogWriterTests
         Assert.Contains(lines, line => line.Contains("\"Event\":\"preview.diff.start\"", StringComparison.Ordinal));
         Assert.Contains(lines, line => line.Contains("\"Event\":\"preview.diff.mapping\"", StringComparison.Ordinal));
         Assert.Contains(lines, line => line.Contains("\"Event\":\"preview.diff.complete\"", StringComparison.Ordinal));
+    }
+
+    private sealed class StubRunRepository : IRunRepository
+    {
+        public Task<IReadOnlyList<RunSummary>> ListRunsAsync(CancellationToken cancellationToken)
+        {
+            _ = cancellationToken;
+            return Task.FromResult<IReadOnlyList<RunSummary>>([]);
+        }
+
+        public Task<RunDetail?> GetRunAsync(string runId, CancellationToken cancellationToken)
+        {
+            _ = runId;
+            _ = cancellationToken;
+            return Task.FromResult<RunDetail?>(null);
+        }
+
+        public Task<WorkerPreviewResult?> GetWorkerPreviewAsync(string runId, CancellationToken cancellationToken)
+        {
+            _ = runId;
+            _ = cancellationToken;
+            return Task.FromResult<WorkerPreviewResult?>(null);
+        }
+
+        public Task<IReadOnlyList<WorkerPreviewHistoryItem>> ListWorkerPreviewHistoryAsync(string workerId, int take, CancellationToken cancellationToken)
+        {
+            _ = workerId;
+            _ = take;
+            _ = cancellationToken;
+            return Task.FromResult<IReadOnlyList<WorkerPreviewHistoryItem>>([]);
+        }
+
+        public Task SaveRunAsync(RunRecord run, CancellationToken cancellationToken)
+        {
+            _ = run;
+            _ = cancellationToken;
+            return Task.CompletedTask;
+        }
+
+        public Task ReplaceRunEntriesAsync(string runId, IReadOnlyList<RunEntryRecord> entries, CancellationToken cancellationToken)
+        {
+            _ = runId;
+            _ = entries;
+            _ = cancellationToken;
+            return Task.CompletedTask;
+        }
+
+        public Task<IReadOnlyList<RunEntry>> GetRunEntriesAsync(string runId, string? bucket, string? workerId, string? reason, string? filter, string? entryId, CancellationToken cancellationToken)
+        {
+            _ = runId;
+            _ = bucket;
+            _ = workerId;
+            _ = reason;
+            _ = filter;
+            _ = entryId;
+            _ = cancellationToken;
+            return Task.FromResult<IReadOnlyList<RunEntry>>([]);
+        }
     }
 }
