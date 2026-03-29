@@ -95,21 +95,40 @@ jobs:
           "tag=$($info.tag)" >> $env:GITHUB_OUTPUT
           "commit_sha=$($info.commitSha)" >> $env:GITHUB_OUTPUT
 
+      - name: Detect SyncFactors.Old changes in release commit
+        id: legacy_changes
+        shell: pwsh
+        env:
+          RELEASE_COMMIT_SHA: ${{ steps.release_info.outputs.commit_sha }}
+        run: |
+          $changedFiles = git diff-tree --no-commit-id --name-only -r $env:RELEASE_COMMIT_SHA -- 'SyncFactors.Old'
+          if ([string]::IsNullOrWhiteSpace(($changedFiles | Out-String))) {
+              "changed=false" >> $env:GITHUB_OUTPUT
+          } else {
+              "changed=true" >> $env:GITHUB_OUTPUT
+          }
+
       - name: Verify required CI checks succeeded
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY_NAME: ${{ github.repository }}
           RELEASE_COMMIT_SHA: ${{ steps.release_info.outputs.commit_sha }}
+          LEGACY_CHANGED: ${{ steps.legacy_changes.outputs.changed }}
         shell: pwsh
         run: |
           $requiredContexts = @(
               'dotnet',
-              '[old] pester',
-              '[old] PowerShell Static Analysis',
               'Semgrep Security SAST',
               'Gitleaks Secret Scan',
               'Trivy Repository Scan'
           )
+
+          if ($env:LEGACY_CHANGED -eq 'true') {
+              $requiredContexts += @(
+                  '[old] pester',
+                  '[old] PowerShell Static Analysis'
+              )
+          }
 
           $status = gh api "repos/$env:GITHUB_REPOSITORY_NAME/commits/$env:RELEASE_COMMIT_SHA/status" | ConvertFrom-Json -Depth 20
           $latestByContext = @{}
