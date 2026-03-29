@@ -2,7 +2,8 @@
 - 
 
 ## Validation
-- [ ] `pwsh ./scripts/Invoke-TestSuite.ps1 -Detailed -Coverage`
+- [ ] `dotnet test ./SyncFactors.Next.sln`
+- [ ] legacy validation completed when `SyncFactors.Old/` changed
 - [ ] relevant manual validation completed
 
 ## Risk Notes
