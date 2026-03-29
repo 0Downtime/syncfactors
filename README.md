@@ -44,6 +44,28 @@ The legacy PowerShell + Node implementation now lives in `SyncFactors.Old/` for 
 - `docs/migration-plan.md`: phased migration plan from the legacy implementation
 - `config/*`: tracked sample config, local config, and scaffold configuration
 
+## Codex Worktrees On macOS
+Codex app worktrees can bootstrap this repository automatically through the checked-in local environment at [`.codex/environments/environment.toml`](/Users/chrisbrien/.codex/worktrees/be52/syncfactors/.codex/environments/environment.toml). Open the project in the Codex app, choose the local environment when starting a worktree thread, and Codex will run [`scripts/codex/setup-worktree-macos.sh`](/Users/chrisbrien/.codex/worktrees/be52/syncfactors/scripts/codex/setup-worktree-macos.sh) on worktree creation.
+
+This setup is macOS-only in v1 and is intentionally scoped to the core local dev loop:
+- install legacy web dependencies in `SyncFactors.Old/` with `npm ci`
+- create gitignored local config files from `config/sample*.json` when missing
+- create runtime/report directories for the local dashboard and monitor
+- create a gitignored `.env.worktree` from [`.env.worktree.example`](/Users/chrisbrien/.codex/worktrees/be52/syncfactors/.env.worktree.example) when missing
+
+The per-worktree secret contract is `.env.worktree`. Keep auth and local overrides there rather than in tracked JSON or tracked `.codex` files. The default mock-oriented values are:
+
+```bash
+SYNCFACTORS_CONFIG_PATH=./config/local.mock-successfactors.real-ad.sync-config.json
+SYNCFACTORS_MAPPING_CONFIG_PATH=./config/local.syncfactors.mapping-config.json
+PORT=4280
+MOCK_SF_PORT=18080
+```
+
+The setup script leaves existing local files untouched, so it is safe to rerun. The helper actions under the local environment always source `.env.worktree` before running the underlying `npm` or `pwsh` command. Legacy PowerShell and web commands are routed through `SyncFactors.Old/`, while the root repository remains the `SyncFactors.Next` .NET solution.
+
+For project-scoped `.codex` settings to load, this repo or one of its parent paths must be marked trusted in `~/.codex/config.toml`. Codex skips project-scoped `.codex` layers for untrusted projects.
+
 ## Status
 
 The solution now builds from the repository root against the locally installed .NET 10 SDK.
