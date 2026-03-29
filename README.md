@@ -1,8 +1,19 @@
-# SyncFactors.Next
+# [Alpha] SyncFactors.Next
 
 `SyncFactors.Next` is the primary SyncFactors implementation and repository root.
 
 The legacy PowerShell + Node implementation now lives in `SyncFactors.Old/` for maintenance and migration reference.
+
+> [!WARNING]
+> [Alpha] This software is in active development, has a high risk of failure, and is not ready for production use.
+> Expect breaking changes, incomplete workflows, missing features, and operational defects. Validate everything in a non-production environment first.
+
+## Current State
+
+- The repository root is now the .NET-based `SyncFactors.Next` implementation.
+- The legacy PowerShell application has moved under `SyncFactors.Old/`.
+- The current stack is local-first and centered on ASP.NET Core, background workers, and SQLite-backed runtime state.
+- Production readiness is not implied by the current feature set, repository layout, or available scripts.
 
 ## Goals
 
@@ -27,27 +38,21 @@ The legacy PowerShell + Node implementation now lives in `SyncFactors.Old/` for 
 - `src/SyncFactors.Worker`: background sync execution host
 - `src/SyncFactors.Domain`: core lifecycle rules and orchestration contracts
 - `src/SyncFactors.Infrastructure`: SQLite, AD, SuccessFactors, email, filesystem, process adapters
-- `src/SyncFactors.Contracts`: shared DTOs/events
+- `src/SyncFactors.Contracts`: shared DTOs and events
 - `tests/*`: unit and integration test projects
 - `docs/architecture.md`: target architecture
-- `docs/migration-plan.md`: phased migration plan from the current repo
-- `config/*`: rewrite-local sync, mapping, and scaffold configuration
-
-## Suggested First Milestones
-
-1. Lock the domain model and storage model.
-2. Implement read-only status/report browsing from SQLite.
-3. Implement a dry-run worker preview flow end to end.
-4. Implement delta/full sync execution.
-5. Add approvals, rollback, and operator actions.
+- `docs/migration-plan.md`: phased migration plan from the legacy implementation
+- `config/*`: tracked sample config, local config, and scaffold configuration
 
 ## Status
 
 The solution now builds from the repository root against the locally installed .NET 10 SDK.
 
+This repository is still in alpha. Design direction is clearer than operational maturity. Expect APIs, config shapes, workflows, and storage details to change while the rewrite settles.
+
 ## Local Config
 
-The rewrite now keeps its tracked and local config files under `config`. Use the `sample.*.json` files there as templates and keep machine-specific values in the ignored `local.*.json` files in the same folder.
+The rewrite keeps its tracked and local config files under `config`. Use the `sample.*.json` files there as templates and keep machine-specific values in the ignored `local.*.json` files in the same folder.
 
 For Active Directory binds, the current .NET LDAP integration uses simple bind semantics. Set `SF_AD_SYNC_AD_USERNAME` to a UPN such as `svc_successfactors@example.local`, not a down-level logon name such as `EXAMPLE\svc_successfactors`, or AD may reject the credentials even when the password is correct.
 
@@ -78,7 +83,7 @@ If you need to capture a real `PerPerson` payload before sanitizing it, use:
 - `scripts/Export-SfPerPerson.ps1` for OAuth client-credentials auth
 - `scripts/Export-SfPerPerson-Basic.ps1` for Basic auth
 
-If you need an admin-safe handoff file, use `scripts/Export-SfPerPerson-Sanitized.ps1`. It fetches the response, sanitizes it in memory, and writes only the sanitized JSON to disk. Add `-AliasOrgValues` if company/department/location labels should also be anonymized, and `-KeepPersonIdExternal` if you need to preserve the source worker ID.
+If you need an admin-safe handoff file, use `scripts/Export-SfPerPerson-Sanitized.ps1`. It fetches the response, sanitizes it in memory, and writes only the sanitized JSON to disk. Add `-AliasOrgValues` if company, department, or location labels should also be anonymized, and `-KeepPersonIdExternal` if you need to preserve the source worker ID.
 
 If your tenant rejects one of the optional fields in the hard-coded query, all three export scripts now support `-ExcludeSelectPath` and `-ExcludeExpandPath`. For example, to skip business unit:
 
