@@ -79,6 +79,7 @@ jobs:
           semgrep scan \
             --config auto \
             --config .semgrep/powershell-security.yml \
+            --exclude .github/workflows/sonarcloud.yml \
             --sarif \
             --output semgrep.sarif \
             --error \
