@@ -137,11 +137,13 @@ public sealed class ApplyPreviewServiceTests
             MissingSourceAttributes: [],
             Entries: []);
 
+        var runtimeStatusStore = new CapturingRuntimeStatusStore();
+        var runRepository = new CapturingRunRepository(preview);
         var service = new ApplyPreviewService(
             new StubWorkerSource(worker),
             new ThrowingDirectoryCommandGateway(new InvalidOperationException("LDAP bind failed.")),
-            new StubRunRepository(preview),
-            new StubRuntimeStatusStore(),
+            runRepository,
+            runtimeStatusStore,
             NullLogger<ApplyPreviewService>.Instance);
 
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => service.ApplyAsync(
@@ -152,6 +154,13 @@ public sealed class ApplyPreviewServiceTests
                 ConfirmationText: ApplyPreviewService.BuildConfirmationText(preview)),
             CancellationToken.None));
         Assert.Equal("LDAP bind failed.", exception.Message);
+        Assert.Equal(2, runtimeStatusStore.SavedStatuses.Count);
+        Assert.Equal("InProgress", runtimeStatusStore.SavedStatuses[0].Status);
+        Assert.Equal("Failed", runtimeStatusStore.SavedStatuses[1].Status);
+        Assert.Single(runRepository.SavedRuns);
+        Assert.Equal("Failed", runRepository.SavedRuns[0].Status);
+        Assert.Single(runRepository.ReplacedEntries);
+        Assert.Equal("LDAP bind failed.", runRepository.ReplacedEntries[0].entries.Single().Reason);
     }
 
     private sealed class StubWorkerSource(WorkerSnapshot worker) : IWorkerSource
@@ -244,6 +253,66 @@ public sealed class ApplyPreviewServiceTests
         }
     }
 
+    private sealed class CapturingRunRepository(WorkerPreviewResult preview) : IRunRepository
+    {
+        public List<RunRecord> SavedRuns { get; } = [];
+        public List<(string runId, IReadOnlyList<RunEntryRecord> entries)> ReplacedEntries { get; } = [];
+
+        public Task<IReadOnlyList<RunSummary>> ListRunsAsync(CancellationToken cancellationToken)
+        {
+            _ = cancellationToken;
+            return Task.FromResult<IReadOnlyList<RunSummary>>([]);
+        }
+
+        public Task<RunDetail?> GetRunAsync(string runId, CancellationToken cancellationToken)
+        {
+            _ = runId;
+            _ = cancellationToken;
+            return Task.FromResult<RunDetail?>(null);
+        }
+
+        public Task<WorkerPreviewResult?> GetWorkerPreviewAsync(string runId, CancellationToken cancellationToken)
+        {
+            _ = runId;
+            _ = cancellationToken;
+            return Task.FromResult<WorkerPreviewResult?>(preview);
+        }
+
+        public Task<IReadOnlyList<WorkerPreviewHistoryItem>> ListWorkerPreviewHistoryAsync(string workerId, int take, CancellationToken cancellationToken)
+        {
+            _ = workerId;
+            _ = take;
+            _ = cancellationToken;
+            return Task.FromResult<IReadOnlyList<WorkerPreviewHistoryItem>>([]);
+        }
+
+        public Task SaveRunAsync(RunRecord run, CancellationToken cancellationToken)
+        {
+            _ = cancellationToken;
+            SavedRuns.Add(run);
+            return Task.CompletedTask;
+        }
+
+        public Task ReplaceRunEntriesAsync(string runId, IReadOnlyList<RunEntryRecord> entries, CancellationToken cancellationToken)
+        {
+            _ = cancellationToken;
+            ReplacedEntries.Add((runId, entries));
+            return Task.CompletedTask;
+        }
+
+        public Task<IReadOnlyList<RunEntry>> GetRunEntriesAsync(string runId, string? bucket, string? workerId, string? reason, string? filter, string? entryId, CancellationToken cancellationToken)
+        {
+            _ = runId;
+            _ = bucket;
+            _ = workerId;
+            _ = reason;
+            _ = filter;
+            _ = entryId;
+            _ = cancellationToken;
+            return Task.FromResult<IReadOnlyList<RunEntry>>([]);
+        }
+    }
+
     private sealed class StubRuntimeStatusStore : IRuntimeStatusStore
     {
         public Task<RuntimeStatus?> GetCurrentAsync(CancellationToken cancellationToken)
@@ -256,6 +325,24 @@ public sealed class ApplyPreviewServiceTests
         {
             _ = status;
             _ = cancellationToken;
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class CapturingRuntimeStatusStore : IRuntimeStatusStore
+    {
+        public List<RuntimeStatus> SavedStatuses { get; } = [];
+
+        public Task<RuntimeStatus?> GetCurrentAsync(CancellationToken cancellationToken)
+        {
+            _ = cancellationToken;
+            return Task.FromResult<RuntimeStatus?>(null);
+        }
+
+        public Task SaveAsync(RuntimeStatus status, CancellationToken cancellationToken)
+        {
+            _ = cancellationToken;
+            SavedStatuses.Add(status);
             return Task.CompletedTask;
         }
     }
