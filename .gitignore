@@ -1,15 +1,6 @@
-.vscode/
-.idea/
-.DS_Store
-.playwright-cli/
-.npm-cache/
-
-*.log
-*.tmp
-*.bak
-*.swp
-.env.worktree
-
+# Build and test artifacts
+bin/
+obj/
 TestResults/
 testResults.xml
 coverage.xml
@@ -24,16 +15,42 @@ web/.vite/
 **/bin/
 **/obj/
 
-state/runtime/
-reports/output/
-reports/mock-output/
-reports/demo-*/
-reports/synthetic/
-reports/synthetic*/
+# Visual Studio and editor local state
+.vs/
+.idea/
+*.user
+*.suo
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+!.vscode/*.code-snippets
+.DS_Store
 
-config/*.local.sync-config.json
-config/*.local.mapping-config.json
-config/local.*.json
-*.db
-*.db-shm
-*.db-wal
+# Local workspace tooling state
+.codex/
+.playwright-cli/
+.npm-cache/
+
+*.log
+*.tmp
+*.bak
+*.swp
+
+# Local generated artifacts and configuration
+package-lock.json
+local/
+config/local*/
+config/local*.json
+config/local.variables
+config/Untitled-*.ps1
+reports/
+state/
+src/SyncFactors.Api/.\\reports\\mock-output/
+.env.worktree
+
+# Root-level export and debug files produced during local exploration
+/sf-*.json
+/sf-*.xml
+/perperson-*.json

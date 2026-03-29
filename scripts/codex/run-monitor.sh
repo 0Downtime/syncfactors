@@ -6,5 +6,5 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${script_dir}/load-worktree-env.sh"
 
 exec pwsh ./scripts/Watch-SyncFactorsMonitor.ps1 \
-  -ConfigPath "${SYNCFACTORS_CONFIG_PATH}" \
-  -MappingConfigPath "${SYNCFACTORS_MAPPING_CONFIG_PATH}"
+  -ConfigPath "${SYNCFACTORS_CONFIG_PATH_ABS}" \
+  -MappingConfigPath "${SYNCFACTORS_MAPPING_CONFIG_PATH_ABS}"
