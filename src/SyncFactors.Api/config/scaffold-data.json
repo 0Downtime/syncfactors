@@ -1,0 +1,29 @@
+{
+  "workers": [
+    {
+      "workerId": "1000123",
+      "preferredName": "Bootstrap",
+      "lastName": "Worker123",
+      "department": "Platform",
+      "targetOu": "OU=Bootstrap,DC=example,DC=com",
+      "isPrehire": false
+    },
+    {
+      "workerId": "existing-2000456",
+      "preferredName": "Existing",
+      "lastName": "Worker456",
+      "department": "Platform",
+      "targetOu": "OU=Platform,DC=example,DC=com",
+      "isPrehire": false
+    }
+  ],
+  "directoryUsers": [
+    {
+      "workerId": "existing-2000456",
+      "samAccountName": "existing.worker456",
+      "distinguishedName": "CN=Existing Worker456,OU=Platform,DC=example,DC=com",
+      "enabled": true,
+      "displayName": "Existing Worker456 (Current)"
+    }
+  ]
+}
