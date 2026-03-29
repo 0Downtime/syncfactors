@@ -8,22 +8,6 @@ public interface IRuntimeStatusStore
     Task SaveAsync(RuntimeStatus status, CancellationToken cancellationToken);
 }
 
-public interface IRunRepository
-{
-    Task<IReadOnlyList<RunSummary>> ListRunsAsync(CancellationToken cancellationToken);
-    Task<RunDetail?> GetRunAsync(string runId, CancellationToken cancellationToken);
-    Task SaveRunAsync(RunRecord run, CancellationToken cancellationToken);
-    Task ReplaceRunEntriesAsync(string runId, IReadOnlyList<RunEntryRecord> entries, CancellationToken cancellationToken);
-    Task<IReadOnlyList<RunEntry>> GetRunEntriesAsync(
-        string runId,
-        string? bucket,
-        string? workerId,
-        string? reason,
-        string? filter,
-        string? entryId,
-        CancellationToken cancellationToken);
-}
-
 public interface IWorkerPreviewPlanner
 {
     Task<WorkerPreviewResult> PreviewAsync(string workerId, CancellationToken cancellationToken);
@@ -70,6 +54,29 @@ public interface IWorkerPreviewLogWriter
 public interface IDirectoryCommandGateway
 {
     Task<DirectoryCommandResult> ExecuteAsync(DirectoryMutationCommand command, CancellationToken cancellationToken);
+}
+
+public interface IRunRepository
+{
+    Task<IReadOnlyList<RunSummary>> ListRunsAsync(CancellationToken cancellationToken);
+    Task<RunDetail?> GetRunAsync(string runId, CancellationToken cancellationToken);
+    Task<WorkerPreviewResult?> GetWorkerPreviewAsync(string runId, CancellationToken cancellationToken);
+    Task<IReadOnlyList<WorkerPreviewHistoryItem>> ListWorkerPreviewHistoryAsync(string workerId, int take, CancellationToken cancellationToken);
+    Task SaveRunAsync(RunRecord run, CancellationToken cancellationToken);
+    Task ReplaceRunEntriesAsync(string runId, IReadOnlyList<RunEntryRecord> entries, CancellationToken cancellationToken);
+    Task<IReadOnlyList<RunEntry>> GetRunEntriesAsync(
+        string runId,
+        string? bucket,
+        string? workerId,
+        string? reason,
+        string? filter,
+        string? entryId,
+        CancellationToken cancellationToken);
+}
+
+public interface IDashboardSnapshotService
+{
+    Task<DashboardSnapshot> GetSnapshotAsync(CancellationToken cancellationToken);
 }
 
 public sealed record AttributeMapping(

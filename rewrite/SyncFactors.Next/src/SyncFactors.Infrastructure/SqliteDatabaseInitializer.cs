@@ -5,7 +5,7 @@ namespace SyncFactors.Infrastructure;
 
 public sealed class SqliteDatabaseInitializer(SqlitePathResolver pathResolver)
 {
-    private const int CurrentSchemaVersion = 1;
+    private const int CurrentSchemaVersion = 2;
 
     public async Task InitializeAsync(CancellationToken cancellationToken)
     {
@@ -36,20 +36,16 @@ public sealed class SqliteDatabaseInitializer(SqlitePathResolver pathResolver)
             cancellationToken);
 
         var appliedVersions = await GetAppliedVersionsAsync(connection, transaction, cancellationToken);
-        if (!appliedVersions.Contains(CurrentSchemaVersion))
+        if (!appliedVersions.Contains(1))
         {
             await ApplyVersion1Async(connection, transaction, cancellationToken);
+            await InsertVersionAsync(connection, transaction, 1, cancellationToken);
+        }
 
-        await using var versionCommand = connection.CreateCommand();
-        versionCommand.Transaction = (SqliteTransaction)transaction;
-            versionCommand.CommandText =
-                """
-                INSERT INTO schema_versions (version, applied_at)
-                VALUES ($version, $appliedAt);
-                """;
-            versionCommand.Parameters.AddWithValue("$version", CurrentSchemaVersion);
-            versionCommand.Parameters.AddWithValue("$appliedAt", DateTimeOffset.UtcNow.ToString("O"));
-            await versionCommand.ExecuteNonQueryAsync(cancellationToken);
+        if (!appliedVersions.Contains(2))
+        {
+            await ApplyVersion2Async(connection, transaction, cancellationToken);
+            await InsertVersionAsync(connection, transaction, 2, cancellationToken);
         }
 
         await transaction.CommitAsync(cancellationToken);
@@ -61,6 +57,17 @@ public sealed class SqliteDatabaseInitializer(SqlitePathResolver pathResolver)
         CancellationToken cancellationToken)
     {
         foreach (var statement in Version1Statements)
+        {
+            await ExecuteNonQueryAsync(connection, transaction, statement, cancellationToken);
+        }
+    }
+
+    private static async Task ApplyVersion2Async(
+        SqliteConnection connection,
+        DbTransaction transaction,
+        CancellationToken cancellationToken)
+    {
+        foreach (var statement in Version2Statements)
         {
             await ExecuteNonQueryAsync(connection, transaction, statement, cancellationToken);
         }
@@ -96,6 +103,24 @@ public sealed class SqliteDatabaseInitializer(SqlitePathResolver pathResolver)
         command.Transaction = (SqliteTransaction)transaction;
         command.CommandText = sql;
         await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task InsertVersionAsync(
+        SqliteConnection connection,
+        DbTransaction transaction,
+        int version,
+        CancellationToken cancellationToken)
+    {
+        await using var versionCommand = connection.CreateCommand();
+        versionCommand.Transaction = (SqliteTransaction)transaction;
+        versionCommand.CommandText =
+            """
+            INSERT INTO schema_versions (version, applied_at)
+            VALUES ($version, $appliedAt);
+            """;
+        versionCommand.Parameters.AddWithValue("$version", version);
+        versionCommand.Parameters.AddWithValue("$appliedAt", DateTimeOffset.UtcNow.ToString("O"));
+        await versionCommand.ExecuteNonQueryAsync(cancellationToken);
     }
 
     private static SqliteConnection OpenConnection(string databasePath)
@@ -180,5 +205,22 @@ public sealed class SqliteDatabaseInitializer(SqlitePathResolver pathResolver)
         CREATE INDEX IF NOT EXISTS idx_runtime_status_last_updated
           ON runtime_status (last_updated_at, started_at, completed_at);
         """,
+    ];
+
+    private static readonly string[] Version2Statements =
+    [
+        """
+        CREATE TABLE IF NOT EXISTS worker_heartbeat (
+          service TEXT NOT NULL,
+          state TEXT NOT NULL,
+          activity TEXT NULL,
+          started_at TEXT NOT NULL,
+          last_seen_at TEXT NOT NULL
+        );
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS idx_worker_heartbeat_last_seen
+          ON worker_heartbeat (last_seen_at);
+        """
     ];
 }
