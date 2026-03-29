@@ -46,7 +46,7 @@ mkdir -p \
 
 copy_if_missing "${repo_root}/config/sample.mock-successfactors.real-ad.sync-config.json" "${repo_root}/config/local.mock-successfactors.real-ad.sync-config.json"
 copy_if_missing "${repo_root}/config/sample.real-successfactors.real-ad.sync-config.json" "${repo_root}/config/local.real-successfactors.real-ad.sync-config.json"
-copy_if_missing "${repo_root}/config/sample.syncfactors.mapping-config.json" "${repo_root}/config/local.syncfactors.mapping-config.json"
+copy_if_missing "${repo_root}/config/sample.empjob-confirmed.mapping-config.json" "${repo_root}/config/local.syncfactors.mapping-config.json"
 copy_if_missing "${repo_root}/.env.worktree.example" "${repo_root}/.env.worktree"
 
 echo "Worktree bootstrap complete"
