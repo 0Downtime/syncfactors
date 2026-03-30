@@ -271,13 +271,37 @@ public sealed class ActiveDirectoryCommandGateway(
 
     private static string GetParentDistinguishedName(string distinguishedName)
     {
-        var separatorIndex = distinguishedName.IndexOf(',');
+        var separatorIndex = FindFirstUnescapedComma(distinguishedName);
         if (separatorIndex < 0 || separatorIndex == distinguishedName.Length - 1)
         {
             throw new InvalidOperationException($"Could not resolve parent distinguished name from '{distinguishedName}'.");
         }
 
         return distinguishedName[(separatorIndex + 1)..];
+    }
+
+    private static int FindFirstUnescapedComma(string distinguishedName)
+    {
+        for (var index = 0; index < distinguishedName.Length; index++)
+        {
+            if (distinguishedName[index] != ',')
+            {
+                continue;
+            }
+
+            var backslashCount = 0;
+            for (var lookbehind = index - 1; lookbehind >= 0 && distinguishedName[lookbehind] == '\\'; lookbehind--)
+            {
+                backslashCount++;
+            }
+
+            if (backslashCount % 2 == 0)
+            {
+                return index;
+            }
+        }
+
+        return -1;
     }
 
     private static LdapConnection CreateConnection(ActiveDirectoryConfig config, ILogger logger, string purpose)
