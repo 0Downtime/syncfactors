@@ -49,23 +49,25 @@ This setup is macOS-only in v1 and is intentionally scoped to the core local dev
 - create runtime/report directories used by the .NET API and worker
 - create a gitignored `.env.worktree` from [`.env.worktree.example`](/Users/chrisbrien/.codex/worktrees/be52/syncfactors/.env.worktree.example) when missing
 
-The per-worktree secret contract is `.env.worktree`. Keep auth and local overrides there rather than in tracked JSON or tracked `.codex` files. The default local test path is fake SuccessFactors plus real Active Directory, so fill in the AD values there before starting the rewrite services. The default values are:
+The per-worktree runtime contract is `.env.worktree`. Keep auth, profile selection, ports, and local overrides there rather than in tracked JSON or tracked `.codex` files. JSON remains the structural config layer. The default local test path is fake SuccessFactors plus real Active Directory, so fill in the AD values there before starting the rewrite services. The default values are:
 
 ```bash
-SYNCFACTORS_CONFIG_PATH=./config/local.mock-successfactors.real-ad.sync-config.json
+SYNCFACTORS_RUN_PROFILE=mock
+SYNCFACTORS_CONFIG_PATH=
 SYNCFACTORS_MAPPING_CONFIG_PATH=./config/local.syncfactors.mapping-config.json
+SYNCFACTORS_SQLITE_PATH=state/runtime/syncfactors.db
 SYNCFACTORS_API_PORT=5087
 MOCK_SF_PORT=18080
 ```
 
-The setup script leaves existing local files untouched, so it is safe to rerun. It prepares local files and directories only; it does not start long-running services. The helper actions under the local environment now open a dedicated macOS terminal window for each action, preferring Ghostty when installed and falling back to Terminal.app. Inside that window they still source `.env.worktree` before running the underlying `pwsh` command for the rewrite stack.
+Set `SYNCFACTORS_RUN_PROFILE=mock` or `real` to switch the active SuccessFactors config. Leave `SYNCFACTORS_CONFIG_PATH` empty for profile-based resolution, or set it only when you want an explicit one-off override. The setup script leaves existing local files untouched, so it is safe to rerun. It prepares local files and directories only; it does not start long-running services. The helper actions under the local environment now open a dedicated macOS terminal window for each action, preferring Ghostty when installed and falling back to Terminal.app. Inside that window they source `.env.worktree`, resolve the active profile once, and run the underlying `pwsh` command with explicit config paths.
 
 The intended local test loop is:
 - run `./scripts/codex/setup-worktree-macos.sh`
 - fill in `.env.worktree` with your real AD credentials and any local overrides
-- start the mock SuccessFactors API with `./scripts/codex/start-mock-api.sh`
-- start the .NET API with `./scripts/codex/start-next-api.sh`
-- start the worker with `./scripts/codex/start-worker.sh` when you need the background service running
+- start one service with `./scripts/codex/run.sh --service mock|api|worker`
+- or open the full local stack with `./scripts/codex/run.sh --service stack`
+- use `--profile real` to override the profile for a single run without editing `.env.worktree`
 
 For project-scoped `.codex` settings to load, this repo or one of its parent paths must be marked trusted in `~/.codex/config.toml`. Codex skips project-scoped `.codex` layers for untrusted projects.
 
@@ -77,7 +79,7 @@ This repository is still in alpha. Design direction is clearer than operational 
 
 ## Local Config
 
-The rewrite keeps its tracked and local config files under `config`. Use the `sample.*.json` files there as templates and keep machine-specific values in the ignored `local.*.json` files in the same folder.
+The rewrite keeps its tracked and local config files under `config`. Use the `sample.*.json` files there as templates and keep machine-specific values in the ignored `local.*.json` files in the same folder. The local JSON files are editable copies, not the primary environment selector. The active sync config is chosen from `.env.worktree` via `SYNCFACTORS_RUN_PROFILE` unless you explicitly override `SYNCFACTORS_CONFIG_PATH`.
 
 For Active Directory binds, the current .NET LDAP integration uses simple bind semantics. Set `SF_AD_SYNC_AD_USERNAME` to a UPN such as `svc_successfactors@example.local`, not a down-level logon name such as `EXAMPLE\svc_successfactors`, or AD may reject the credentials even when the password is correct.
 

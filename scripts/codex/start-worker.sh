@@ -2,9 +2,4 @@
 set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck disable=SC1091
-source "${script_dir}/load-worktree-env.sh"
-
-exec pwsh ./scripts/Start-SyncFactorsWorker.ps1 \
-  -ConfigPath "${SYNCFACTORS_CONFIG_PATH_ABS}" \
-  -MappingConfigPath "${SYNCFACTORS_MAPPING_CONFIG_PATH_ABS}"
+exec "${script_dir}/run.sh" --service worker "$@"
