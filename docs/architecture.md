@@ -1,20 +1,6 @@
 # Target Architecture
 
-## Why Rewrite This Way
-
-The current system has strong domain coverage, but the runtime is split across:
-
-- PowerShell for sync orchestration and AD operations
-- Node/Express for the local API
-- React for the dashboard
-
-That split introduces avoidable friction:
-
-- the web layer shells out to PowerShell for core actions and status
-- runtime state is procedural rather than strongly modeled
-- test coverage is deep in PowerShell, but the future product direction points toward a longer-lived application runtime
-
-The rewrite should optimize for operational safety, Windows/AD interoperability, and a future path to a richer control plane.
+The current product direction is a single .NET runtime optimized for operational safety, Windows/AD interoperability, and a future path to a richer control plane.
 
 ## Proposed Runtime
 
@@ -76,7 +62,6 @@ Responsibilities:
 - SQLite persistence
 - filesystem/report output
 - email/alert transport
-- optional PowerShell compatibility adapters during migration
 
 Guidelines:
 
@@ -167,19 +152,4 @@ This avoids rebuilding a heavy client-side state machine before the new domain r
 ### Active Directory
 
 - use native .NET directory APIs where they are sufficient
-- keep a PowerShell fallback adapter for operations that are materially easier or safer through existing cmdlets during migration
 - isolate this behind one `IDirectoryGateway`
-
-### Reporting
-
-- keep machine-readable JSON artifacts
-- add normalized event records instead of deriving everything from loose report files
-
-## Non-Goals for the First Rewrite Slice
-
-- multi-tenant SaaS hosting
-- distributed workers
-- config GUI editor
-- plugin marketplace
-
-Those should remain future options, not early constraints.
