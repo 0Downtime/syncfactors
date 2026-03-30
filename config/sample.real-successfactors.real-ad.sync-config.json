@@ -30,7 +30,6 @@
       "baseFilter": "emplStatus in 'A','U'",
       "select": [
         "userId",
-        "personIdExternal",
         "jobTitle",
         "company",
         "department",
