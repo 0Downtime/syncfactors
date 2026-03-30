@@ -18,46 +18,6 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  legacy-changes:
-    name: Detect legacy changes
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    outputs:
-      changed: ${{ steps.filter.outputs.changed }}
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-
-      - name: Detect SyncFactors.Old changes
-        id: filter
-        shell: bash
-        run: |
-          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            base="${{ github.event.pull_request.base.sha }}"
-            head="${{ github.event.pull_request.head.sha }}"
-          elif [[ "${{ github.event_name }}" == "push" ]]; then
-            base="${{ github.event.before }}"
-            head="${{ github.sha }}"
-          else
-            echo "changed=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          if [[ -z "$base" || "$base" == "0000000000000000000000000000000000000000" ]]; then
-            echo "changed=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          if git diff --quiet "$base" "$head" -- SyncFactors.Old; then
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "changed=true" >> "$GITHUB_OUTPUT"
-          fi
-
   semgrep:
     name: Semgrep Security SAST
     runs-on: ubuntu-latest
@@ -78,8 +38,6 @@ jobs:
         run: |
           semgrep scan \
             --config auto \
-            --config .semgrep/powershell-security.yml \
-            --exclude .github/workflows/sonarcloud.yml \
             --sarif \
             --output semgrep.sarif \
             --error \
@@ -91,64 +49,6 @@ jobs:
         with:
           sarif_file: semgrep.sarif
           category: /semgrep
-
-  powershell-static-analysis:
-    name: '[old] PowerShell Static Analysis'
-    needs: legacy-changes
-    if: needs.legacy-changes.outputs.changed == 'true'
-    runs-on: windows-latest
-    permissions:
-      contents: read
-      security-events: write
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-        with:
-          persist-credentials: false
-
-      - name: Run PSScriptAnalyzer on legacy src
-        id: pssa_src
-        continue-on-error: true
-        uses: microsoft/psscriptanalyzer-action@6b2948b1944407914a58661c49941824d149734f # v1.1
-        with:
-          path: .\SyncFactors.Old\src
-          recurse: true
-          settings: .\SyncFactors.Old\PSScriptAnalyzerSettings.psd1
-          severity: '"Error", "Warning"'
-          enableExit: true
-          output: results-src.sarif
-
-      - name: Run PSScriptAnalyzer on legacy scripts
-        id: pssa_scripts
-        continue-on-error: true
-        uses: microsoft/psscriptanalyzer-action@6b2948b1944407914a58661c49941824d149734f # v1.1
-        with:
-          path: .\SyncFactors.Old\scripts
-          recurse: true
-          settings: .\SyncFactors.Old\PSScriptAnalyzerSettings.psd1
-          severity: '"Error", "Warning"'
-          enableExit: true
-          output: results-scripts.sarif
-
-      - name: Upload PSScriptAnalyzer SARIF for src
-        if: always() && hashFiles('results-src.sarif') != ''
-        uses: github/codeql-action/upload-sarif@c10b8064de6f491fea524254123dbe5e09572f13 # v4
-        with:
-          sarif_file: results-src.sarif
-          category: /psscriptanalyzer/src
-
-      - name: Upload PSScriptAnalyzer SARIF for scripts
-        if: always() && hashFiles('results-scripts.sarif') != ''
-        uses: github/codeql-action/upload-sarif@c10b8064de6f491fea524254123dbe5e09572f13 # v4
-        with:
-          sarif_file: results-scripts.sarif
-          category: /psscriptanalyzer/scripts
-
-      - name: Enforce PSScriptAnalyzer result
-        if: always() && (steps.pssa_src.outcome == 'failure' || steps.pssa_scripts.outcome == 'failure')
-        shell: pwsh
-        run: |
-          throw 'PSScriptAnalyzer reported one or more Error/Warning findings.'
 
   gitleaks:
     name: Gitleaks Secret Scan

@@ -17,22 +17,7 @@ Thanks for contributing to `syncfactors`.
 dotnet test ./SyncFactors.Next.sln
 ```
 
-4. If you changed files under `SyncFactors.Old/`, run the legacy PowerShell test suite:
-
-```powershell
-pwsh ./SyncFactors.Old/scripts/Invoke-TestSuite.ps1 -Detailed -Coverage
-```
-
-5. If you changed legacy PowerShell modules or scripts, run static analysis:
-
-```powershell
-$paths = @('./SyncFactors.Old/src', './SyncFactors.Old/scripts')
-foreach ($path in $paths) {
-  Invoke-ScriptAnalyzer -Path $path -Recurse -Settings ./SyncFactors.Old/PSScriptAnalyzerSettings.psd1 -Severity Error,Warning
-}
-```
-
-6. If your change affects security scanning behavior, run the local repository scan:
+4. If your change affects security scanning behavior, run the local repository scan:
 
 ```bash
 trivy fs --severity HIGH,CRITICAL --ignore-unfixed --scanners vuln,secret,misconfig .
@@ -45,6 +30,5 @@ trivy fs --severity HIGH,CRITICAL --ignore-unfixed --scanners vuln,secret,miscon
 - Keep sample values obviously fake.
 
 ## Coding Notes
-- PowerShell code should stay compatible with the versions exercised by CI.
 - Prefer environment-backed secrets over plaintext sample values.
 - Avoid destructive Active Directory behavior changes without clear tests and documentation.
