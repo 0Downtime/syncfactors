@@ -211,14 +211,14 @@ public static class FixtureGenerationCommand
     {
         var key = worker.PersonIdExternal;
         var personNumber = StableNumber(key, 10_000, 99_999).ToString("D5");
-        var sanitizedId = $"mock-{personNumber}";
+        var sanitizedId = personNumber;
         var firstName = $"Worker{StableNumber(key + ":fn", 10, 999):D3}";
         var lastName = $"Sample{StableNumber(key + ":ln", 10, 999):D3}";
         var userName = $"user.{personNumber}";
         var email = $"{userName}@example.test";
         var managerId = string.IsNullOrWhiteSpace(worker.ManagerId)
             ? null
-            : $"mock-{StableNumber(worker.ManagerId, 10_000, 99_999):D5}";
+            : StableNumber(worker.ManagerId, 10_000, 99_999).ToString("D5");
 
         return worker with
         {

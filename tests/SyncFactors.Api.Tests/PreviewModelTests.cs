@@ -11,16 +11,16 @@ public sealed class PreviewModelTests
     [Fact]
     public async Task OnGetAsync_LoadsPreviewForRequestedWorker()
     {
-        var preview = CreatePreview(workerId: "mock-10001");
+        var preview = CreatePreview(workerId: "10001");
         var planner = new CapturingWorkerPreviewPlanner(preview);
         var model = new PreviewModel(planner, new StubApplyPreviewService(), new StubRunRepository(preview))
         {
-            WorkerId = "mock-10001"
+            WorkerId = "10001"
         };
 
         await model.OnGetAsync(CancellationToken.None);
 
-        Assert.Equal("mock-10001", planner.LastWorkerId);
+        Assert.Equal("10001", planner.LastWorkerId);
         Assert.Same(preview, model.Preview);
         Assert.Null(model.ErrorMessage);
     }
@@ -28,19 +28,19 @@ public sealed class PreviewModelTests
     [Fact]
     public async Task OnPostApplyAsync_UsesSameWorkerIdAndReloadsPreview()
     {
-        var preview = CreatePreview(workerId: "mock-10001");
+        var preview = CreatePreview(workerId: "10001");
         var planner = new CapturingWorkerPreviewPlanner(preview);
         var applyService = new CapturingApplyPreviewService(
             new DirectoryCommandResult(
                 Succeeded: true,
                 Action: "UpdateUser",
-                SamAccountName: "mock-10001",
+                SamAccountName: "10001",
                 DistinguishedName: "CN=Sample101\\, Winnie,OU=LabUsers,DC=example,DC=com",
-                Message: "Updated AD user mock-10001.",
-                RunId: "apply-mock-10001-20260327120000"));
+                Message: "Updated AD user 10001.",
+                RunId: "apply-10001-20260327120000"));
         var model = new PreviewModel(planner, applyService, new StubRunRepository(preview))
         {
-            WorkerId = "mock-10001",
+            WorkerId = "10001",
             PreviewRunId = preview.RunId!,
             PreviewFingerprint = preview.Fingerprint,
             ConfirmationText = ApplyPreviewService.BuildConfirmationText(preview)
@@ -50,18 +50,18 @@ public sealed class PreviewModelTests
 
         Assert.IsType<PageResult>(result);
         Assert.NotNull(applyService.LastRequest);
-        Assert.Equal("mock-10001", applyService.LastRequest!.WorkerId);
+        Assert.Equal("10001", applyService.LastRequest!.WorkerId);
         Assert.Equal(0, planner.CallCount);
         Assert.Same(preview, model.Preview);
         Assert.NotNull(model.ApplyResult);
-        Assert.Equal("apply-mock-10001-20260327120000", model.ApplyResult!.RunId);
+        Assert.Equal("apply-10001-20260327120000", model.ApplyResult!.RunId);
         Assert.Null(model.ErrorMessage);
     }
 
     [Fact]
     public async Task OnGetAsync_LoadsSavedPreviewWhenRunIdIsProvided()
     {
-        var preview = CreatePreview(workerId: "mock-10001");
+        var preview = CreatePreview(workerId: "10001");
         var planner = new CapturingWorkerPreviewPlanner(preview);
         var model = new PreviewModel(planner, new StubApplyPreviewService(), new StubRunRepository(preview))
         {

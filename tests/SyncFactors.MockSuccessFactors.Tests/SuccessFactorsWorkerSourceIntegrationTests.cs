@@ -123,10 +123,10 @@ public sealed class SuccessFactorsWorkerSourceIntegrationTests
         var fallbackSource = new ScaffoldWorkerSource(scaffoldStore);
         var workerSource = new SuccessFactorsWorkerSource(client, configLoader, fallbackSource, NullLogger<SuccessFactorsWorkerSource>.Instance);
 
-        var worker = await workerSource.GetWorkerAsync("mock-10001", CancellationToken.None);
+        var worker = await workerSource.GetWorkerAsync("10001", CancellationToken.None);
 
         Assert.NotNull(worker);
-        Assert.Equal("mock-10001", worker!.WorkerId);
+        Assert.Equal("10001", worker!.WorkerId);
         Assert.Equal("Worker101", worker.PreferredName);
         Assert.Equal("CORP", worker.Attributes["company"]);
         Assert.Equal("HQ North", worker.Attributes["location"]);
@@ -250,10 +250,10 @@ public sealed class SuccessFactorsWorkerSourceIntegrationTests
         var fallbackSource = new ScaffoldWorkerSource(scaffoldStore);
         var workerSource = new SuccessFactorsWorkerSource(client, configLoader, fallbackSource, NullLogger<SuccessFactorsWorkerSource>.Instance);
 
-        var worker = await workerSource.GetWorkerAsync("mock-10001", CancellationToken.None);
+        var worker = await workerSource.GetWorkerAsync("10001", CancellationToken.None);
 
         Assert.NotNull(worker);
-        Assert.Equal("mock-10001", worker!.WorkerId);
+        Assert.Equal("10001", worker!.WorkerId);
         Assert.Equal("CORP", worker.Attributes["company"]);
         Assert.Equal("IT", worker.Attributes["department"]);
         Assert.Equal("Operations", worker.Attributes["division"]);
@@ -262,7 +262,7 @@ public sealed class SuccessFactorsWorkerSourceIntegrationTests
         Assert.Equal("101 Example Way", worker.Attributes["officeLocationAddress"]);
         Assert.Equal("Exampletown", worker.Attributes["officeLocationCity"]);
         Assert.Equal("10001", worker.Attributes["officeLocationZipCode"]);
-        Assert.Equal("mock-90001", worker.Attributes["managerId"]);
+        Assert.Equal("90001", worker.Attributes["managerId"]);
         Assert.Equal("Field Ops", worker.Attributes["peopleGroup"]);
     }
 
@@ -392,10 +392,10 @@ public sealed class SuccessFactorsWorkerSourceIntegrationTests
         var fallbackSource = new ScaffoldWorkerSource(scaffoldStore);
         var workerSource = new SuccessFactorsWorkerSource(client, configLoader, fallbackSource, NullLogger<SuccessFactorsWorkerSource>.Instance);
 
-        var worker = await workerSource.GetWorkerAsync("mock-10001", CancellationToken.None);
+        var worker = await workerSource.GetWorkerAsync("10001", CancellationToken.None);
 
         Assert.NotNull(worker);
-        Assert.Equal("mock-10001", worker!.WorkerId);
+        Assert.Equal("10001", worker!.WorkerId);
         Assert.Equal("Winnie", worker.PreferredName);
         Assert.Equal("Sample101", worker.LastName);
         Assert.Equal("IT", worker.Department);
@@ -412,7 +412,7 @@ public sealed class SuccessFactorsWorkerSourceIntegrationTests
         Assert.Equal("Exampletown", worker.Attributes["officeLocationCity"]);
         Assert.Equal("10001", worker.Attributes["officeLocationZipCode"]);
         Assert.Equal("Floor 1", worker.Attributes["officeLocationCustomString4"]);
-        Assert.Equal("mock-90001", worker.Attributes["managerId"]);
+        Assert.Equal("90001", worker.Attributes["managerId"]);
         Assert.Equal("1", worker.Attributes["activeEmploymentsCount"]);
         Assert.Equal("212", worker.Attributes["businessPhoneAreaCode"]);
         Assert.Equal("5550101", worker.Attributes["businessPhoneNumber"]);
@@ -498,7 +498,7 @@ public sealed class SuccessFactorsWorkerSourceIntegrationTests
         var fallbackSource = new ScaffoldWorkerSource(scaffoldStore);
         var workerSource = new SuccessFactorsWorkerSource(client, configLoader, fallbackSource, NullLogger<SuccessFactorsWorkerSource>.Instance);
 
-        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => workerSource.GetWorkerAsync("mock-10001", CancellationToken.None));
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => workerSource.GetWorkerAsync("10001", CancellationToken.None));
         Assert.Contains("SuccessFactors request failed.", ex.Message);
         Assert.Contains("Status=400", ex.Message);
         Assert.Contains("COE_PROPERTY_NOT_FOUND", ex.Message);
@@ -584,10 +584,10 @@ public sealed class SuccessFactorsWorkerSourceIntegrationTests
         var fallbackSource = new ScaffoldWorkerSource(scaffoldStore);
         var workerSource = new SuccessFactorsWorkerSource(client, configLoader, fallbackSource, NullLogger<SuccessFactorsWorkerSource>.Instance);
 
-        var worker = await workerSource.GetWorkerAsync("mock-10001", CancellationToken.None);
+        var worker = await workerSource.GetWorkerAsync("10001", CancellationToken.None);
 
         Assert.NotNull(worker);
-        Assert.Equal("mock-10001", worker!.WorkerId);
+        Assert.Equal("10001", worker!.WorkerId);
         Assert.Equal("Union-17", worker.Attributes["unionJobCode"]);
     }
 
@@ -647,7 +647,7 @@ public sealed class SuccessFactorsWorkerSourceIntegrationTests
               "d": {
                 "results": [
                   {
-                    "personIdExternal": "mock-10001",
+                    "personIdExternal": "10001",
                     "personId": "10001",
                     "perPersonUuid": "uuid-10001",
                     "personEmpTerminationInfoNav": {
@@ -719,7 +719,7 @@ public sealed class SuccessFactorsWorkerSourceIntegrationTests
                             "custom01": "UserCustom01",
                             "manager": {
                               "empInfo": {
-                                "personIdExternal": "mock-90001"
+                                "personIdExternal": "90001"
                               }
                             }
                           },
@@ -852,7 +852,7 @@ public sealed class SuccessFactorsWorkerSourceIntegrationTests
               "d": {
                 "results": [
                   {
-                    "personIdExternal": "mock-10001",
+                    "personIdExternal": "10001",
                     "personalInfoNav": {
                       "results": [
                         {

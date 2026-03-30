@@ -24,7 +24,7 @@ public sealed class FixtureGenerationCommandTests
 
         using var fixtureDocument = JsonDocument.Parse(await File.ReadAllTextAsync(outputPath));
         var worker = fixtureDocument.RootElement.GetProperty("workers")[0];
-        Assert.StartsWith("mock-", worker.GetProperty("personIdExternal").GetString());
+        Assert.Matches("^\\d{5}$", worker.GetProperty("personIdExternal").GetString()!);
         Assert.Matches("^\\d{5}$", worker.GetProperty("personId").GetString()!);
         Assert.StartsWith("uuid-", worker.GetProperty("perPersonUuid").GetString());
         Assert.EndsWith("@example.test", worker.GetProperty("email").GetString());

@@ -36,7 +36,7 @@ public sealed class MockApiTests
         var query = ODataQueryParser.Parse(new Microsoft.AspNetCore.Http.QueryCollection(new Dictionary<string, Microsoft.Extensions.Primitives.StringValues>
         {
             ["$format"] = "json",
-            ["$filter"] = "personIdExternal eq 'mock-10001'",
+            ["$filter"] = "personIdExternal eq '10001'",
             ["$select"] = "personIdExternal,personalInfoNav/firstName,personalInfoNav/lastName,employmentNav/startDate,emailNav/emailAddress,employmentNav/jobInfoNav/departmentNav/department,employmentNav/jobInfoNav/companyNav/company,employmentNav/jobInfoNav/locationNav/LocationName,employmentNav/jobInfoNav/jobTitle,employmentNav/jobInfoNav/businessUnitNav/businessUnit,employmentNav/jobInfoNav/divisionNav/division,employmentNav/jobInfoNav/costCenterNav/costCenterDescription,employmentNav/jobInfoNav/employeeClass,employmentNav/jobInfoNav/employeeType,employmentNav/jobInfoNav/managerId,employmentNav/jobInfoNav/customString3,employmentNav/jobInfoNav/customString20,employmentNav/jobInfoNav/customString87,employmentNav/jobInfoNav/customString110,employmentNav/jobInfoNav/customString111,employmentNav/jobInfoNav/customString91",
             ["$expand"] = "employmentNav,employmentNav/jobInfoNav,personalInfoNav,emailNav,employmentNav/jobInfoNav/companyNav,employmentNav/jobInfoNav/departmentNav,employmentNav/jobInfoNav/businessUnitNav,employmentNav/jobInfoNav/costCenterNav,employmentNav/jobInfoNav/divisionNav,employmentNav/jobInfoNav/locationNav"
         }));
@@ -45,7 +45,7 @@ public sealed class MockApiTests
         using var document = JsonDocument.Parse(JsonSerializer.Serialize(payload));
         var worker = document.RootElement.GetProperty("d").GetProperty("results")[0];
 
-        Assert.Equal("mock-10001", worker.GetProperty("personIdExternal").GetString());
+        Assert.Equal("10001", worker.GetProperty("personIdExternal").GetString());
         Assert.Equal("Worker101", worker.GetProperty("personalInfoNav").GetProperty("results")[0].GetProperty("firstName").GetString());
         Assert.Equal("CORP", worker.GetProperty("employmentNav").GetProperty("results")[0].GetProperty("jobInfoNav").GetProperty("results")[0].GetProperty("companyNav").GetProperty("company").GetString());
         Assert.Equal("Central", worker.GetProperty("employmentNav").GetProperty("results")[0].GetProperty("jobInfoNav").GetProperty("results")[0].GetProperty("customString87").GetString());
@@ -87,7 +87,7 @@ public sealed class MockApiTests
         var job = document.RootElement.GetProperty("d").GetProperty("results")[0];
 
         Assert.Equal("user.10001", job.GetProperty("userId").GetString());
-        Assert.Equal("mock-10001", job.GetProperty("personIdExternal").GetString());
+        Assert.Equal("10001", job.GetProperty("personIdExternal").GetString());
         Assert.Equal("CORP", job.GetProperty("company").GetString());
         Assert.Equal("CORP", job.GetProperty("companyNav").GetProperty("company").GetString());
         Assert.Equal("Central", job.GetProperty("customString87").GetString());
