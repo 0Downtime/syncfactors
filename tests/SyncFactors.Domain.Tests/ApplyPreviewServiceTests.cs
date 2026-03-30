@@ -163,6 +163,77 @@ public sealed class ApplyPreviewServiceTests
         Assert.Equal("LDAP bind failed.", runRepository.ReplacedEntries[0].entries.Single().Reason);
     }
 
+    [Fact]
+    public async Task ApplyAsync_PersistsFailureReportWhenExceptionMessageContainsNewlines()
+    {
+        var worker = new WorkerSnapshot(
+            WorkerId: "mock-10001",
+            PreferredName: "Winnie",
+            LastName: "Sample101",
+            Department: "IT",
+            TargetOu: "OU=LabUsers,DC=example,DC=com",
+            IsPrehire: false,
+            Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase));
+
+        var preview = new WorkerPreviewResult(
+            ReportPath: null,
+            RunId: "preview-mock-10001-3",
+            PreviousRunId: null,
+            Fingerprint: "fingerprint-3",
+            Mode: "Preview",
+            Status: "Planned",
+            ErrorMessage: null,
+            ArtifactType: "WorkerPreview",
+            SuccessFactorsAuth: "NativeScaffold",
+            WorkerId: worker.WorkerId,
+            Buckets: ["creates"],
+            MatchedExistingUser: false,
+            ReviewCategory: null,
+            ReviewCaseType: null,
+            Reason: null,
+            OperatorActionSummary: null,
+            SamAccountName: "mock-10001",
+            ManagerDistinguishedName: null,
+            TargetOu: worker.TargetOu,
+            CurrentDistinguishedName: null,
+            CurrentEnabled: null,
+            ProposedEnable: true,
+            OperationSummary: null,
+            DiffRows:
+            [
+                new DiffRow("UserPrincipalName", "resolved email local-part", "(unset)", "preview.email@spireenergy.com", true)
+            ],
+            SourceAttributes: [],
+            UsedSourceAttributes: [],
+            UnusedSourceAttributes: [],
+            MissingSourceAttributes: [],
+            Entries: []);
+
+        var runtimeStatusStore = new CapturingRuntimeStatusStore();
+        var runRepository = new CapturingRunRepository(preview);
+        var service = new ApplyPreviewService(
+            new StubWorkerSource(worker),
+            new ThrowingDirectoryCommandGateway(new InvalidOperationException("LDAP bind failed.\nServer said no.")),
+            runRepository,
+            runtimeStatusStore,
+            NullLogger<ApplyPreviewService>.Instance);
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => service.ApplyAsync(
+            new ApplyPreviewRequest(
+                WorkerId: worker.WorkerId,
+                PreviewRunId: preview.RunId!,
+                PreviewFingerprint: preview.Fingerprint,
+                ConfirmationText: ApplyPreviewService.BuildConfirmationText(preview)),
+            CancellationToken.None));
+
+        Assert.Equal("LDAP bind failed.\nServer said no.", exception.Message);
+        Assert.Equal(2, runtimeStatusStore.SavedStatuses.Count);
+        Assert.Single(runRepository.SavedRuns);
+        Assert.Equal("Failed", runRepository.SavedRuns[0].Status);
+        Assert.Single(runRepository.ReplacedEntries);
+        Assert.Equal("LDAP bind failed.\nServer said no.", runRepository.ReplacedEntries[0].entries.Single().Reason);
+    }
+
     private sealed class StubWorkerSource(WorkerSnapshot worker) : IWorkerSource
     {
         public Task<WorkerSnapshot?> GetWorkerAsync(string workerId, CancellationToken cancellationToken)
