@@ -2,4 +2,4 @@
 set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-exec "${script_dir}/open-terminal-command.sh" "SyncFactors .NET API" "./scripts/codex/start-next-api.sh"
+exec "${script_dir}/open-terminal-command.sh" "SyncFactors .NET API" "./scripts/codex/run.sh" --service api

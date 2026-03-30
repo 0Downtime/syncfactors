@@ -18,13 +18,19 @@ command = "./scripts/codex/start-mock-api-terminal.sh"
 platform = "darwin"
 
 [[actions]]
-name = "Start .NET API (Mock SF + Real AD)"
+name = "Start .NET API"
 icon = "run"
 command = "./scripts/codex/start-next-api-terminal.sh"
 platform = "darwin"
 
 [[actions]]
-name = "Start Worker (Mock SF + Real AD)"
+name = "Start Worker"
 icon = "terminal"
 command = "./scripts/codex/start-worker-terminal.sh"
+platform = "darwin"
+
+[[actions]]
+name = "Start Stack"
+icon = "play"
+command = "./scripts/codex/start-stack-terminal.sh"
 platform = "darwin"

@@ -46,6 +46,78 @@ public sealed class PathResolverTests
     }
 
     [Fact]
+    public void SyncConfigPathResolver_UsesMockProfileDefaultWhenConfigured()
+    {
+        var mockConfigPath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "config", "local.mock-successfactors.real-ad.sync-config.json"));
+        var originalContents = File.Exists(mockConfigPath) ? File.ReadAllText(mockConfigPath) : null;
+        var originalProfile = Environment.GetEnvironmentVariable("SYNCFACTORS_RUN_PROFILE");
+
+        Directory.CreateDirectory(Path.GetDirectoryName(mockConfigPath)!);
+        File.WriteAllText(mockConfigPath, "{}");
+        Environment.SetEnvironmentVariable("SYNCFACTORS_RUN_PROFILE", "mock");
+
+        try
+        {
+            var resolver = new SyncFactorsConfigPathResolver(null, null);
+            Assert.Equal(mockConfigPath, resolver.ResolveConfigPath());
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("SYNCFACTORS_RUN_PROFILE", originalProfile);
+            RestoreFile(mockConfigPath, originalContents);
+        }
+    }
+
+    [Fact]
+    public void SyncConfigPathResolver_UsesRealProfileDefaultWhenConfigured()
+    {
+        var realConfigPath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "config", "local.real-successfactors.real-ad.sync-config.json"));
+        var originalContents = File.Exists(realConfigPath) ? File.ReadAllText(realConfigPath) : null;
+        var originalProfile = Environment.GetEnvironmentVariable("SYNCFACTORS_RUN_PROFILE");
+
+        Directory.CreateDirectory(Path.GetDirectoryName(realConfigPath)!);
+        File.WriteAllText(realConfigPath, "{}");
+        Environment.SetEnvironmentVariable("SYNCFACTORS_RUN_PROFILE", "real");
+
+        try
+        {
+            var resolver = new SyncFactorsConfigPathResolver(null, null);
+            Assert.Equal(realConfigPath, resolver.ResolveConfigPath());
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("SYNCFACTORS_RUN_PROFILE", originalProfile);
+            RestoreFile(realConfigPath, originalContents);
+        }
+    }
+
+    [Fact]
+    public void SyncConfigPathResolver_PrefersExplicitConfigEnvironmentVariable()
+    {
+        var tempRoot = Path.Combine(Path.GetTempPath(), $"syncfactors-path-tests-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempRoot);
+        var explicitConfigPath = Path.Combine(tempRoot, "custom.sync-config.json");
+        File.WriteAllText(explicitConfigPath, "{}");
+        var originalConfigPath = Environment.GetEnvironmentVariable("SYNCFACTORS_CONFIG_PATH");
+        var originalProfile = Environment.GetEnvironmentVariable("SYNCFACTORS_RUN_PROFILE");
+
+        Environment.SetEnvironmentVariable("SYNCFACTORS_CONFIG_PATH", explicitConfigPath);
+        Environment.SetEnvironmentVariable("SYNCFACTORS_RUN_PROFILE", "real");
+
+        try
+        {
+            var resolver = new SyncFactorsConfigPathResolver(null, null);
+            Assert.Equal(explicitConfigPath, resolver.ResolveConfigPath());
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("SYNCFACTORS_CONFIG_PATH", originalConfigPath);
+            Environment.SetEnvironmentVariable("SYNCFACTORS_RUN_PROFILE", originalProfile);
+            Directory.Delete(tempRoot, recursive: true);
+        }
+    }
+
+    [Fact]
     public void ScaffoldDataPathResolver_FindsRepoLevelScaffoldData()
     {
         var scaffoldPath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "config", "scaffold-data.json"));
@@ -81,5 +153,16 @@ public sealed class PathResolverTests
         {
             File.Delete(databasePath);
         }
+    }
+
+    private static void RestoreFile(string path, string? originalContents)
+    {
+        if (originalContents is null)
+        {
+            File.Delete(path);
+            return;
+        }
+
+        File.WriteAllText(path, originalContents);
     }
 }
