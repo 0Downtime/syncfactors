@@ -2,8 +2,6 @@
 
 `SyncFactors.Next` is the primary SyncFactors implementation and repository root.
 
-The legacy PowerShell + Node implementation now lives in `SyncFactors.Old/` for maintenance and migration reference.
-
 > [!WARNING]
 > [Alpha] This software is in active development, has a high risk of failure, and is not ready for production use.
 > Expect breaking changes, incomplete workflows, missing features, and operational defects. Validate everything in a non-production environment first.
@@ -11,7 +9,6 @@ The legacy PowerShell + Node implementation now lives in `SyncFactors.Old/` for 
 ## Current State
 
 - The repository root is now the .NET-based `SyncFactors.Next` implementation.
-- The legacy PowerShell application has moved under `SyncFactors.Old/`.
 - The current stack is local-first and centered on ASP.NET Core, background workers, and SQLite-backed runtime state.
 - Production readiness is not implied by the current feature set, repository layout, or available scripts.
 
@@ -41,7 +38,6 @@ The legacy PowerShell + Node implementation now lives in `SyncFactors.Old/` for 
 - `src/SyncFactors.Contracts`: shared DTOs and events
 - `tests/*`: unit and integration test projects
 - `docs/architecture.md`: target architecture
-- `docs/migration-plan.md`: phased migration plan from the legacy implementation
 - `config/*`: tracked sample config, local config, and scaffold configuration
 
 ## Codex Worktrees On macOS
