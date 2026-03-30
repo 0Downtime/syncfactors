@@ -184,8 +184,8 @@ public sealed class ApplyPreviewService(
 
     private static string Escape(string value)
     {
-        return value.Replace("\\", "\\\\", StringComparison.Ordinal)
-            .Replace("\"", "\\\"", StringComparison.Ordinal);
+        var serialized = JsonSerializer.Serialize(value);
+        return serialized[1..^1];
     }
 
     private async Task PersistApplyOutcomeAsync(

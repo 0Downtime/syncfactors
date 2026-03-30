@@ -248,8 +248,8 @@ public sealed class WorkerPreviewPlanner(
 
     private static string Escape(string value)
     {
-        return value.Replace("\\", "\\\\", StringComparison.Ordinal)
-            .Replace("\"", "\\\"", StringComparison.Ordinal);
+        var serialized = JsonSerializer.Serialize(value);
+        return serialized[1..^1];
     }
 
     private static string ToJsonString(string? value) => value is null ? "null" : $"\"{Escape(value)}\"";
