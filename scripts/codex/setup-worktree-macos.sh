@@ -13,6 +13,30 @@ require_command() {
   fi
 }
 
+copy_env_from_primary_worktree_if_missing() {
+  local destination_path="$1"
+
+  if [[ -e "${destination_path}" ]]; then
+    return
+  fi
+
+  local primary_worktree_root
+  primary_worktree_root="$(
+    git worktree list --porcelain 2>/dev/null |
+      awk '/^worktree / { print substr($0, 10); exit }'
+  )"
+
+  if [[ -z "${primary_worktree_root}" || "${primary_worktree_root}" == "${repo_root}" ]]; then
+    return
+  fi
+
+  local source_path="${primary_worktree_root}/.env.worktree"
+  if [[ -f "${source_path}" ]]; then
+    cp "${source_path}" "${destination_path}"
+    echo "Created ${destination_path#${repo_root}/} from ${source_path}"
+  fi
+}
+
 copy_if_missing() {
   local source_path="$1"
   local destination_path="$2"
@@ -47,6 +71,7 @@ mkdir -p \
 copy_if_missing "${repo_root}/config/sample.mock-successfactors.real-ad.sync-config.json" "${repo_root}/config/local.mock-successfactors.real-ad.sync-config.json"
 copy_if_missing "${repo_root}/config/sample.real-successfactors.real-ad.sync-config.json" "${repo_root}/config/local.real-successfactors.real-ad.sync-config.json"
 copy_if_missing "${repo_root}/config/sample.empjob-confirmed.mapping-config.json" "${repo_root}/config/local.syncfactors.mapping-config.json"
+copy_env_from_primary_worktree_if_missing "${repo_root}/.env.worktree"
 copy_if_missing "${repo_root}/.env.worktree.example" "${repo_root}/.env.worktree"
 
 echo "Worktree bootstrap complete"
