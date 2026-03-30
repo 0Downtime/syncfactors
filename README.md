@@ -41,7 +41,7 @@
 - `config/*`: tracked sample config, local config, and scaffold configuration
 
 ## Codex Worktrees On macOS
-Codex app worktrees can bootstrap this repository automatically through the checked-in local environment at [`.codex/environments/environment.toml`](/Users/chrisbrien/.codex/worktrees/be52/syncfactors/.codex/environments/environment.toml). Open the project in the Codex app, choose the local environment when starting a worktree thread, and Codex will run [`scripts/codex/setup-worktree-macos.sh`](/Users/chrisbrien/.codex/worktrees/be52/syncfactors/scripts/codex/setup-worktree-macos.sh) on worktree creation.
+Codex app worktrees can bootstrap this repository automatically through the checked-in local environment at [`.codex/environments/environment.toml`](/Users/chrisbrien/.codex/worktrees/be52/syncfactors/.codex/environments/environment.toml). Open the project in the Codex app, choose the local environment when starting a worktree thread, and Codex will run [`scripts/codex/setup-worktree-macos.sh`](/Users/chrisbrien/.codex/worktrees/be52/syncfactors/scripts/codex/setup-worktree-macos.sh) on worktree creation. That macOS wrapper now delegates to the shared PowerShell bootstrap script so the setup behavior matches Windows.
 
 This setup is macOS-only in v1 and is intentionally scoped to the core local dev loop:
 - prepare local config files for the .NET rewrite when missing
@@ -60,14 +60,16 @@ SYNCFACTORS_API_PORT=5087
 MOCK_SF_PORT=18080
 ```
 
-Set `SYNCFACTORS_RUN_PROFILE=mock` or `real` to switch the active SuccessFactors config. Leave `SYNCFACTORS_CONFIG_PATH` empty for profile-based resolution, or set it only when you want an explicit one-off override. The setup script leaves existing local files untouched, so it is safe to rerun. It prepares local files and directories only; it does not start long-running services. The helper actions under the local environment now open a dedicated macOS terminal window for each action, preferring Ghostty when installed and falling back to Terminal.app. Inside that window they source `.env.worktree`, resolve the active profile once, and run the underlying `pwsh` command with explicit config paths.
+Set `SYNCFACTORS_RUN_PROFILE=mock` or `real` to switch the active SuccessFactors config. Leave `SYNCFACTORS_CONFIG_PATH` empty for profile-based resolution, or set it only when you want an explicit one-off override. The setup script leaves existing local files untouched, so it is safe to rerun. It prepares local files and directories only; it does not start long-running services. The primary launcher is PowerShell so the same commands work on macOS and Windows. On macOS, the Codex helper actions still open dedicated terminal windows through the local shell helper.
 
 The intended local test loop is:
-- run `./scripts/codex/setup-worktree-macos.sh`
+- run `pwsh ./scripts/codex/setup-worktree.ps1`
 - fill in `.env.worktree` with your real AD credentials and any local overrides
-- start one service with `./scripts/codex/run.sh --service mock|api|worker`
-- or open the full local stack with `./scripts/codex/run.sh --service stack`
-- use `--profile real` to override the profile for a single run without editing `.env.worktree`
+- start one service with `pwsh ./scripts/codex/run.ps1 -Service mock|api|worker`
+- or open the full local stack with `pwsh ./scripts/codex/run.ps1 -Service stack`
+- use `-Profile real` to override the profile for a single run without editing `.env.worktree`
+
+On macOS, `./scripts/codex/setup-worktree-macos.sh` remains available as a wrapper. On Windows, use the PowerShell commands directly.
 
 For project-scoped `.codex` settings to load, this repo or one of its parent paths must be marked trusted in `~/.codex/config.toml`. Codex skips project-scoped `.codex` layers for untrusted projects.
 
