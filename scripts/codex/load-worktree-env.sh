@@ -20,7 +20,7 @@ set +a
 
 export SYNCFACTORS_CONFIG_PATH="${SYNCFACTORS_CONFIG_PATH:-./config/local.mock-successfactors.real-ad.sync-config.json}"
 export SYNCFACTORS_MAPPING_CONFIG_PATH="${SYNCFACTORS_MAPPING_CONFIG_PATH:-./config/local.syncfactors.mapping-config.json}"
-export PORT="${PORT:-4280}"
+export SYNCFACTORS_API_PORT="${SYNCFACTORS_API_PORT:-5087}"
 export MOCK_SF_PORT="${MOCK_SF_PORT:-18080}"
 export REPO_ROOT="${repo_root}"
 
