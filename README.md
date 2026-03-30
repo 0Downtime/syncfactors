@@ -66,8 +66,12 @@ The intended local test loop is:
 - run `pwsh ./scripts/codex/setup-worktree.ps1`
 - fill in `.env.worktree` with your real AD credentials and any local overrides
 - start one service with `pwsh ./scripts/codex/run.ps1 -Service mock|api|worker`
-- or open the full local stack with `pwsh ./scripts/codex/run.ps1 -Service stack`
+- or open the profile-aware local stack with `pwsh ./scripts/codex/run.ps1 -Service stack`
 - use `-Profile real` to override the profile for a single run without editing `.env.worktree`
+
+When you run `-Service stack`, the launched services depend on the active profile:
+- `mock`: starts the mock SuccessFactors API, the SyncFactors .NET API, and the worker
+- `real`: starts the SyncFactors .NET API and the worker
 
 On macOS, `./scripts/codex/setup-worktree-macos.sh` remains available as a wrapper. On Windows, use the PowerShell commands directly.
 
