@@ -14,7 +14,13 @@ $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $repoRoot = (Resolve-Path (Join-Path $scriptDir '../..')).ProviderPath
 
 if ([OperatingSystem]::IsMacOS()) {
-    & (Join-Path $scriptDir 'open-terminal-command.sh') $Label $Command @Arguments
+    if ($Command.EndsWith('.ps1', [StringComparison]::OrdinalIgnoreCase)) {
+        & (Join-Path $scriptDir 'open-terminal-command.sh') $Label 'pwsh' '-File' $Command @Arguments
+    }
+    else {
+        & (Join-Path $scriptDir 'open-terminal-command.sh') $Label $Command @Arguments
+    }
+
     exit $LASTEXITCODE
 }
 
