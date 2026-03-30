@@ -16,6 +16,7 @@
 
 <section class="panel">
     <form method="get" class="filters preview-form" data-worker-lookup-form>
+        <input type="hidden" name="runId" value="" />
         <label class="filter-search">
             <span>Worker Id</span>
             <input type="text" name="workerId" value="@Model.WorkerId" placeholder="1000123" />
@@ -129,6 +130,7 @@
 
             <form method="post" asp-page-handler="Apply" data-worker-apply-form class="apply-preview-form">
                 <input type="hidden" asp-for="WorkerId" />
+                <input type="hidden" asp-for="SavedRunId" />
                 <input type="hidden" asp-for="ShowAllAttributes" />
                 <input type="hidden" asp-for="PreviewRunId" />
                 <input type="hidden" asp-for="PreviewFingerprint" />

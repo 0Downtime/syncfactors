@@ -51,10 +51,29 @@ public sealed class PreviewModelTests
         Assert.IsType<PageResult>(result);
         Assert.NotNull(applyService.LastRequest);
         Assert.Equal("mock-10001", applyService.LastRequest!.WorkerId);
-        Assert.Equal(1, planner.CallCount);
+        Assert.Equal(0, planner.CallCount);
         Assert.Same(preview, model.Preview);
         Assert.NotNull(model.ApplyResult);
         Assert.Equal("apply-mock-10001-20260327120000", model.ApplyResult!.RunId);
+        Assert.Null(model.ErrorMessage);
+    }
+
+    [Fact]
+    public async Task OnGetAsync_LoadsSavedPreviewWhenRunIdIsProvided()
+    {
+        var preview = CreatePreview(workerId: "mock-10001");
+        var planner = new CapturingWorkerPreviewPlanner(preview);
+        var model = new PreviewModel(planner, new StubApplyPreviewService(), new StubRunRepository(preview))
+        {
+            SavedRunId = preview.RunId!
+        };
+
+        await model.OnGetAsync(CancellationToken.None);
+
+        Assert.Equal(0, planner.CallCount);
+        Assert.Same(preview, model.Preview);
+        Assert.Equal(preview.WorkerId, model.WorkerId);
+        Assert.Equal(preview.RunId, model.PreviewRunId);
         Assert.Null(model.ErrorMessage);
     }
 

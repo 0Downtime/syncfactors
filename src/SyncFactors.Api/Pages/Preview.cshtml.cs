@@ -10,6 +10,9 @@ public sealed class PreviewModel(
     IApplyPreviewService applyPreviewService,
     IRunRepository runRepository) : PageModel
 {
+    [BindProperty(SupportsGet = true, Name = "runId")]
+    public string SavedRunId { get; set; } = string.Empty;
+
     [BindProperty(SupportsGet = true)]
     public string WorkerId { get; set; } = string.Empty;
 
@@ -80,12 +83,34 @@ public sealed class PreviewModel(
             ErrorMessage = ex.Message;
         }
 
+        SavedRunId = PreviewRunId;
         await LoadPreviewAsync(cancellationToken);
         return Page();
     }
 
     private async Task LoadPreviewAsync(CancellationToken cancellationToken)
     {
+        if (!string.IsNullOrWhiteSpace(SavedRunId))
+        {
+            Preview = await runRepository.GetWorkerPreviewAsync(SavedRunId, cancellationToken);
+            if (Preview is null)
+            {
+                ErrorMessage = $"Preview run {SavedRunId} could not be resolved.";
+                return;
+            }
+
+            WorkerId = Preview.WorkerId;
+            PreviewRunId = Preview.RunId ?? string.Empty;
+            PreviewFingerprint = Preview.Fingerprint;
+            PreviewHistory = await runRepository.ListWorkerPreviewHistoryAsync(WorkerId, 6, cancellationToken);
+            if (!string.IsNullOrWhiteSpace(Preview.PreviousRunId))
+            {
+                PreviousPreview = await runRepository.GetWorkerPreviewAsync(Preview.PreviousRunId, cancellationToken);
+            }
+
+            return;
+        }
+
         if (string.IsNullOrWhiteSpace(WorkerId))
         {
             return;
@@ -96,6 +121,7 @@ public sealed class PreviewModel(
             Preview = await previewPlanner.PreviewAsync(WorkerId, cancellationToken);
             PreviewRunId = Preview.RunId ?? string.Empty;
             PreviewFingerprint = Preview.Fingerprint;
+            SavedRunId = PreviewRunId;
             PreviewHistory = await runRepository.ListWorkerPreviewHistoryAsync(WorkerId, 6, cancellationToken);
             if (!string.IsNullOrWhiteSpace(Preview.PreviousRunId))
             {
