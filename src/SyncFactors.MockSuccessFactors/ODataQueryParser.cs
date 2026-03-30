@@ -37,6 +37,17 @@ public static partial class ODataQueryParser
         }
 
         var filter = query["$filter"].ToString();
+        if (string.IsNullOrWhiteSpace(filter))
+        {
+            return new ODataQuery(
+                IsSupported: true,
+                ErrorMessage: null,
+                IdentityField: string.Empty,
+                WorkerId: null,
+                Select: ParseList(query["$select"].ToString()),
+                Expand: ParseList(query["$expand"].ToString()));
+        }
+
         if (!TryParseIdentityFilter(filter, out var identityField, out var workerId))
         {
             return new ODataQuery(false, "Only filters in the form personIdExternal eq 'value' are supported.", string.Empty, null, new HashSet<string>(StringComparer.OrdinalIgnoreCase), new HashSet<string>(StringComparer.OrdinalIgnoreCase));
