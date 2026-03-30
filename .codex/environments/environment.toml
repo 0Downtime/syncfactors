@@ -8,23 +8,23 @@ script = "./scripts/codex/setup-worktree-macos.sh"
 [[actions]]
 name = "Bootstrap"
 icon = "hammer"
-command = "./scripts/codex/setup-worktree-macos.sh"
+command = "./scripts/codex/bootstrap-terminal.sh"
 platform = "darwin"
 
 [[actions]]
 name = "Start Mock SF API"
 icon = "server"
-command = "./scripts/codex/start-mock-api.sh"
+command = "./scripts/codex/start-mock-api-terminal.sh"
 platform = "darwin"
 
 [[actions]]
 name = "Start .NET API (Mock SF + Real AD)"
 icon = "run"
-command = "./scripts/codex/start-next-api.sh"
+command = "./scripts/codex/start-next-api-terminal.sh"
 platform = "darwin"
 
 [[actions]]
 name = "Start Worker (Mock SF + Real AD)"
 icon = "terminal"
-command = "./scripts/codex/start-worker.sh"
+command = "./scripts/codex/start-worker-terminal.sh"
 platform = "darwin"
