@@ -2,4 +2,4 @@
 set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-exec "${script_dir}/open-terminal-command.sh" "SyncFactors stack" "./scripts/codex/run.sh" --service stack
+exec "${script_dir}/open-terminal-command.sh" "SyncFactors stack" "pwsh" "./scripts/codex/run.ps1" "-Service" "stack"

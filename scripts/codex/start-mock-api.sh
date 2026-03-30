@@ -2,4 +2,4 @@
 set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-exec "${script_dir}/run.sh" --service mock "$@"
+exec pwsh "${script_dir}/run.ps1" -Service mock "$@"
