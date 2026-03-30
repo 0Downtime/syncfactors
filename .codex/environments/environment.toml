@@ -12,37 +12,19 @@ command = "./scripts/codex/setup-worktree-macos.sh"
 platform = "darwin"
 
 [[actions]]
-name = "Run Pester"
-icon = "test"
-command = "./scripts/codex/run-pester.sh"
-platform = "darwin"
-
-[[actions]]
-name = "Run Web Tests"
-icon = "test"
-command = "./scripts/codex/run-web-tests.sh"
-platform = "darwin"
-
-[[actions]]
 name = "Start Mock SF API"
 icon = "server"
 command = "./scripts/codex/start-mock-api.sh"
 platform = "darwin"
 
 [[actions]]
-name = "Start Dashboard"
+name = "Start .NET API (Mock SF + Real AD)"
 icon = "run"
-command = "./scripts/codex/start-dashboard.sh"
+command = "./scripts/codex/start-next-api.sh"
 platform = "darwin"
 
 [[actions]]
-name = "Start Dashboard (Real Config)"
-icon = "run"
-command = "./scripts/codex/start-dashboard-real.sh"
-platform = "darwin"
-
-[[actions]]
-name = "Run Monitor"
+name = "Start Worker (Mock SF + Real AD)"
 icon = "terminal"
-command = "./scripts/codex/run-monitor.sh"
+command = "./scripts/codex/start-worker.sh"
 platform = "darwin"

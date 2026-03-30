@@ -22,22 +22,12 @@ copy_if_missing() {
   fi
 }
 
-require_command "node" "Install Node.js before creating a Codex worktree for this repo."
-require_command "npm" "Install npm before creating a Codex worktree for this repo."
+require_command "dotnet" "Install the .NET 10 SDK before creating a Codex worktree for this repo."
 require_command "pwsh" "Install PowerShell 7 before creating a Codex worktree for this repo."
 
 cd "${repo_root}"
 
-echo "Installing legacy web dependencies"
-mkdir -p "${repo_root}/.npm-cache"
-(
-  cd "${repo_root}/SyncFactors.Old"
-  if [[ -f "package-lock.json" || -f "npm-shrinkwrap.json" ]]; then
-    npm ci --cache "${repo_root}/.npm-cache"
-  else
-    npm install --cache "${repo_root}/.npm-cache"
-  fi
-)
+echo "Preparing SyncFactors.Next worktree defaults (mock SF + real AD)"
 
 mkdir -p \
   "${repo_root}/state/runtime" \
@@ -49,4 +39,4 @@ copy_if_missing "${repo_root}/config/sample.real-successfactors.real-ad.sync-con
 copy_if_missing "${repo_root}/config/sample.empjob-confirmed.mapping-config.json" "${repo_root}/config/local.syncfactors.mapping-config.json"
 copy_if_missing "${repo_root}/.env.worktree.example" "${repo_root}/.env.worktree"
 
-echo "Worktree bootstrap complete"
+echo "Worktree bootstrap complete. Start Mock SF, the .NET API, and the worker from Codex actions or scripts/codex."
