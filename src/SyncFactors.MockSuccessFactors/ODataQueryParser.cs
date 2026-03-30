@@ -12,7 +12,7 @@ public sealed record ODataQuery(
 
 public static partial class ODataQueryParser
 {
-    private static readonly string[] SupportedQueryKeys = ["$format", "$filter", "$select", "$expand"];
+    private static readonly string[] SupportedQueryKeys = ["$format", "$filter", "$select", "$expand", "$top"];
 
     public static ODataQuery Parse(IQueryCollection query)
     {
@@ -28,6 +28,12 @@ public static partial class ODataQueryParser
         if (!string.IsNullOrWhiteSpace(format) && !string.Equals(format, "json", StringComparison.OrdinalIgnoreCase))
         {
             return new ODataQuery(false, "Only $format=json is supported.", string.Empty, null, new HashSet<string>(StringComparer.OrdinalIgnoreCase), new HashSet<string>(StringComparer.OrdinalIgnoreCase));
+        }
+
+        var top = query["$top"].ToString();
+        if (!string.IsNullOrWhiteSpace(top) && (!int.TryParse(top, out var topValue) || topValue < 1))
+        {
+            return new ODataQuery(false, "Only positive integer values for $top are supported.", string.Empty, null, new HashSet<string>(StringComparer.OrdinalIgnoreCase), new HashSet<string>(StringComparer.OrdinalIgnoreCase));
         }
 
         var filter = query["$filter"].ToString();

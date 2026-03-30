@@ -77,6 +77,7 @@ public sealed class MockApiTests
         var query = ODataQueryParser.Parse(new Microsoft.AspNetCore.Http.QueryCollection(new Dictionary<string, Microsoft.Extensions.Primitives.StringValues>
         {
             ["$format"] = "json",
+            ["$top"] = "1",
             ["$filter"] = "userId eq 'user.10001'",
             ["$select"] = "userId,personIdExternal,jobTitle,company,department,division,location,businessUnit,costCenter,employeeClass,employeeType,managerId,customString3,customString20,customString87,customString110,customString111,customString91,startDate",
             ["$expand"] = "companyNav,departmentNav,divisionNav,locationNav,businessUnitNav,costCenterNav"
@@ -91,6 +92,22 @@ public sealed class MockApiTests
         Assert.Equal("CORP", job.GetProperty("company").GetString());
         Assert.Equal("CORP", job.GetProperty("companyNav").GetProperty("company").GetString());
         Assert.Equal("Central", job.GetProperty("customString87").GetString());
+    }
+
+    [Fact]
+    public void QueryParser_AcceptsPositiveTopValue()
+    {
+        var query = ODataQueryParser.Parse(new Microsoft.AspNetCore.Http.QueryCollection(new Dictionary<string, Microsoft.Extensions.Primitives.StringValues>
+        {
+            ["$format"] = "json",
+            ["$top"] = "1",
+            ["$filter"] = "userId eq 'user.10001'",
+            ["$select"] = "userId"
+        }));
+
+        Assert.True(query.IsSupported);
+        Assert.Equal("userId", query.IdentityField);
+        Assert.Equal("user.10001", query.WorkerId);
     }
 
     [Fact]
