@@ -5,7 +5,7 @@ namespace SyncFactors.Infrastructure;
 
 public sealed class SqliteDatabaseInitializer(SqlitePathResolver pathResolver)
 {
-    private const int CurrentSchemaVersion = 2;
+    private const int CurrentSchemaVersion = 3;
 
     public async Task InitializeAsync(CancellationToken cancellationToken)
     {
@@ -50,6 +50,12 @@ public sealed class SqliteDatabaseInitializer(SqlitePathResolver pathResolver)
         {
             await ApplyVersion2Async(connection, transaction, cancellationToken);
             await InsertVersionAsync(connection, transaction, 2, cancellationToken);
+        }
+
+        if (!appliedVersions.Contains(3))
+        {
+            await ApplyVersion3Async(connection, transaction, cancellationToken);
+            await InsertVersionAsync(connection, transaction, 3, cancellationToken);
         }
 
         await transaction.CommitAsync(cancellationToken);
@@ -154,6 +160,100 @@ public sealed class SqliteDatabaseInitializer(SqlitePathResolver pathResolver)
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
+    private static async Task ApplyVersion3Async(
+        SqliteConnection connection,
+        DbTransaction transaction,
+        CancellationToken cancellationToken)
+    {
+        var hasRuntimeStatusTable = await TableExistsAsync(connection, transaction, "runtime_status", cancellationToken);
+        if (!hasRuntimeStatusTable)
+        {
+            await CreateRuntimeStatusTableAsync(connection, transaction, cancellationToken);
+            return;
+        }
+
+        var runtimeStatusColumns = await GetTableColumnsAsync(connection, transaction, "runtime_status", cancellationToken);
+        var hasStatePath = runtimeStatusColumns.Contains("state_path");
+        var hasSnapshotJson = runtimeStatusColumns.Contains("snapshot_json");
+
+        if (hasStatePath && hasSnapshotJson)
+        {
+            await EnsureRuntimeStatusIndexAsync(connection, transaction, cancellationToken);
+            return;
+        }
+
+        await using (var renameCommand = connection.CreateCommand())
+        {
+            renameCommand.Transaction = (SqliteTransaction)transaction;
+            renameCommand.CommandText = "ALTER TABLE runtime_status RENAME TO runtime_status_legacy;";
+            await renameCommand.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await CreateRuntimeStatusTableAsync(connection, transaction, cancellationToken);
+
+        await using (var migrateCommand = connection.CreateCommand())
+        {
+            migrateCommand.Transaction = (SqliteTransaction)transaction;
+            migrateCommand.CommandText =
+                """
+                INSERT INTO runtime_status (
+                  state_path,
+                  run_id,
+                  status,
+                  stage,
+                  started_at,
+                  last_updated_at,
+                  completed_at,
+                  current_worker_id,
+                  last_action,
+                  processed_workers,
+                  total_workers,
+                  error_message,
+                  snapshot_json
+                )
+                SELECT
+                  'current',
+                  run_id,
+                  status,
+                  stage,
+                  started_at,
+                  last_updated_at,
+                  completed_at,
+                  current_worker_id,
+                  last_action,
+                  processed_workers,
+                  total_workers,
+                  error_message,
+                  json_object(
+                    'Status', COALESCE(status, 'Idle'),
+                    'Stage', COALESCE(stage, 'NotStarted'),
+                    'RunId', run_id,
+                    'Mode', NULL,
+                    'DryRun', json('false'),
+                    'ProcessedWorkers', COALESCE(processed_workers, 0),
+                    'TotalWorkers', COALESCE(total_workers, 0),
+                    'CurrentWorkerId', current_worker_id,
+                    'LastAction', last_action,
+                    'StartedAt', started_at,
+                    'LastUpdatedAt', last_updated_at,
+                    'CompletedAt', completed_at,
+                    'ErrorMessage', error_message
+                  )
+                FROM runtime_status_legacy
+                ORDER BY COALESCE(last_updated_at, started_at, completed_at, '') DESC
+                LIMIT 1;
+                """;
+            await migrateCommand.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await using (var dropCommand = connection.CreateCommand())
+        {
+            dropCommand.Transaction = (SqliteTransaction)transaction;
+            dropCommand.CommandText = "DROP TABLE runtime_status_legacy;";
+            await dropCommand.ExecuteNonQueryAsync(cancellationToken);
+        }
+    }
+
     private static async Task<HashSet<int>> GetAppliedVersionsAsync(
         SqliteConnection connection,
         DbTransaction transaction,
@@ -172,6 +272,93 @@ public sealed class SqliteDatabaseInitializer(SqlitePathResolver pathResolver)
         }
 
         return versions;
+    }
+
+    private static async Task<HashSet<string>> GetTableColumnsAsync(
+        SqliteConnection connection,
+        DbTransaction transaction,
+        string tableName,
+        CancellationToken cancellationToken)
+    {
+        var columns = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        await using var command = connection.CreateCommand();
+        command.Transaction = (SqliteTransaction)transaction;
+        command.CommandText = $"PRAGMA table_info({tableName});";
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            columns.Add(reader.GetString(1));
+        }
+
+        return columns;
+    }
+
+    private static async Task<bool> TableExistsAsync(
+        SqliteConnection connection,
+        DbTransaction transaction,
+        string tableName,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = (SqliteTransaction)transaction;
+        command.CommandText =
+            """
+            SELECT 1
+            FROM sqlite_master
+            WHERE type = 'table' AND name = $tableName
+            LIMIT 1;
+            """;
+        command.Parameters.AddWithValue("$tableName", tableName);
+
+        var result = await command.ExecuteScalarAsync(cancellationToken);
+        return result is not null;
+    }
+
+    private static async Task CreateRuntimeStatusTableAsync(
+        SqliteConnection connection,
+        DbTransaction transaction,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = (SqliteTransaction)transaction;
+        command.CommandText =
+            """
+            CREATE TABLE IF NOT EXISTS runtime_status (
+              state_path TEXT NOT NULL PRIMARY KEY,
+              run_id TEXT NULL,
+              status TEXT NULL,
+              stage TEXT NULL,
+              started_at TEXT NULL,
+              last_updated_at TEXT NULL,
+              completed_at TEXT NULL,
+              current_worker_id TEXT NULL,
+              last_action TEXT NULL,
+              processed_workers INTEGER NOT NULL DEFAULT 0,
+              total_workers INTEGER NOT NULL DEFAULT 0,
+              error_message TEXT NULL,
+              snapshot_json TEXT NOT NULL
+            );
+            """;
+        await command.ExecuteNonQueryAsync(cancellationToken);
+
+        await EnsureRuntimeStatusIndexAsync(connection, transaction, cancellationToken);
+    }
+
+    private static async Task EnsureRuntimeStatusIndexAsync(
+        SqliteConnection connection,
+        DbTransaction transaction,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = (SqliteTransaction)transaction;
+        command.CommandText =
+            """
+            CREATE INDEX IF NOT EXISTS idx_runtime_status_last_updated
+              ON runtime_status (last_updated_at, started_at, completed_at);
+            """;
+        await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     private static async Task InsertVersionAsync(

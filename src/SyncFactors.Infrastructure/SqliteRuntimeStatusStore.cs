@@ -1,11 +1,14 @@
 using Microsoft.Data.Sqlite;
 using SyncFactors.Contracts;
 using SyncFactors.Domain;
+using System.Text.Json;
 
 namespace SyncFactors.Infrastructure;
 
 public sealed class SqliteRuntimeStatusStore(SqlitePathResolver pathResolver) : IRuntimeStatusStore
 {
+    private const string CurrentStatePath = "current";
+
     public async Task<RuntimeStatus?> GetCurrentAsync(CancellationToken cancellationToken)
     {
         var databasePath = pathResolver.Resolve();
@@ -21,6 +24,7 @@ public sealed class SqliteRuntimeStatusStore(SqlitePathResolver pathResolver) : 
         command.CommandText =
             """
             SELECT
+              snapshot_json,
               run_id,
               status,
               stage,
@@ -43,6 +47,102 @@ public sealed class SqliteRuntimeStatusStore(SqlitePathResolver pathResolver) : 
             return null;
         }
 
+        var snapshotJson = reader.GetStringOrDefault("snapshot_json");
+        if (!string.IsNullOrWhiteSpace(snapshotJson))
+        {
+            try
+            {
+                var snapshot = JsonSerializer.Deserialize<RuntimeStatus>(snapshotJson, JsonOptions.Default);
+                if (snapshot is not null)
+                {
+                    return snapshot;
+                }
+            }
+            catch (JsonException)
+            {
+                // Fall back to the scalar columns if the stored snapshot no longer matches the current contract.
+            }
+        }
+
+        return ReadLegacyStatus(reader);
+    }
+
+    public async Task SaveAsync(RuntimeStatus status, CancellationToken cancellationToken)
+    {
+        var databasePath = pathResolver.ResolveConfiguredPath() ?? pathResolver.Resolve();
+        if (string.IsNullOrWhiteSpace(databasePath))
+        {
+            return;
+        }
+
+        await using var connection = OpenWriteConnection(databasePath);
+        await connection.OpenAsync(cancellationToken);
+
+        await using var upsertCommand = connection.CreateCommand();
+        upsertCommand.CommandText =
+            """
+            INSERT INTO runtime_status (
+              state_path,
+              run_id,
+              status,
+              stage,
+              started_at,
+              last_updated_at,
+              completed_at,
+              current_worker_id,
+              last_action,
+              processed_workers,
+              total_workers,
+              error_message,
+              snapshot_json
+            )
+            VALUES (
+              $statePath,
+              $runId,
+              $status,
+              $stage,
+              $startedAt,
+              $lastUpdatedAt,
+              $completedAt,
+              $currentWorkerId,
+              $lastAction,
+              $processedWorkers,
+              $totalWorkers,
+              $errorMessage,
+              $snapshotJson
+            )
+            ON CONFLICT(state_path) DO UPDATE SET
+              run_id = excluded.run_id,
+              status = excluded.status,
+              stage = excluded.stage,
+              started_at = excluded.started_at,
+              last_updated_at = excluded.last_updated_at,
+              completed_at = excluded.completed_at,
+              current_worker_id = excluded.current_worker_id,
+              last_action = excluded.last_action,
+              processed_workers = excluded.processed_workers,
+              total_workers = excluded.total_workers,
+              error_message = excluded.error_message,
+              snapshot_json = excluded.snapshot_json;
+            """;
+        upsertCommand.Parameters.AddWithValue("$statePath", CurrentStatePath);
+        upsertCommand.Parameters.AddWithValue("$runId", (object?)status.RunId ?? DBNull.Value);
+        upsertCommand.Parameters.AddWithValue("$status", status.Status);
+        upsertCommand.Parameters.AddWithValue("$stage", status.Stage);
+        upsertCommand.Parameters.AddWithValue("$startedAt", ToDbValue(status.StartedAt));
+        upsertCommand.Parameters.AddWithValue("$lastUpdatedAt", ToDbValue(status.LastUpdatedAt));
+        upsertCommand.Parameters.AddWithValue("$completedAt", ToDbValue(status.CompletedAt));
+        upsertCommand.Parameters.AddWithValue("$currentWorkerId", (object?)status.CurrentWorkerId ?? DBNull.Value);
+        upsertCommand.Parameters.AddWithValue("$lastAction", (object?)status.LastAction ?? DBNull.Value);
+        upsertCommand.Parameters.AddWithValue("$processedWorkers", status.ProcessedWorkers);
+        upsertCommand.Parameters.AddWithValue("$totalWorkers", status.TotalWorkers);
+        upsertCommand.Parameters.AddWithValue("$errorMessage", (object?)status.ErrorMessage ?? DBNull.Value);
+        upsertCommand.Parameters.AddWithValue("$snapshotJson", JsonSerializer.Serialize(status, JsonOptions.Default));
+        await upsertCommand.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static RuntimeStatus ReadLegacyStatus(SqliteDataReader reader)
+    {
         return new RuntimeStatus(
             Status: reader.GetStringOrDefault("status") ?? "Idle",
             Stage: reader.GetStringOrDefault("stage") ?? "NotStarted",
@@ -57,74 +157,6 @@ public sealed class SqliteRuntimeStatusStore(SqlitePathResolver pathResolver) : 
             LastUpdatedAt: ParseDate(reader.GetStringOrDefault("last_updated_at")),
             CompletedAt: ParseDate(reader.GetStringOrDefault("completed_at")),
             ErrorMessage: reader.GetStringOrDefault("error_message"));
-    }
-
-    public async Task SaveAsync(RuntimeStatus status, CancellationToken cancellationToken)
-    {
-        var databasePath = pathResolver.ResolveConfiguredPath() ?? pathResolver.Resolve();
-        if (string.IsNullOrWhiteSpace(databasePath))
-        {
-            return;
-        }
-
-        await using var connection = OpenWriteConnection(databasePath);
-        await connection.OpenAsync(cancellationToken);
-        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
-
-        await using (var deleteCommand = connection.CreateCommand())
-        {
-            deleteCommand.Transaction = (SqliteTransaction)transaction;
-            deleteCommand.CommandText = "DELETE FROM runtime_status;";
-            await deleteCommand.ExecuteNonQueryAsync(cancellationToken);
-        }
-
-        await using (var insertCommand = connection.CreateCommand())
-        {
-            insertCommand.Transaction = (SqliteTransaction)transaction;
-            insertCommand.CommandText =
-                """
-                INSERT INTO runtime_status (
-                  run_id,
-                  status,
-                  stage,
-                  started_at,
-                  last_updated_at,
-                  completed_at,
-                  current_worker_id,
-                  last_action,
-                  processed_workers,
-                  total_workers,
-                  error_message
-                )
-                VALUES (
-                  $runId,
-                  $status,
-                  $stage,
-                  $startedAt,
-                  $lastUpdatedAt,
-                  $completedAt,
-                  $currentWorkerId,
-                  $lastAction,
-                  $processedWorkers,
-                  $totalWorkers,
-                  $errorMessage
-                );
-                """;
-            insertCommand.Parameters.AddWithValue("$runId", (object?)status.RunId ?? DBNull.Value);
-            insertCommand.Parameters.AddWithValue("$status", status.Status);
-            insertCommand.Parameters.AddWithValue("$stage", status.Stage);
-            insertCommand.Parameters.AddWithValue("$startedAt", ToDbValue(status.StartedAt));
-            insertCommand.Parameters.AddWithValue("$lastUpdatedAt", ToDbValue(status.LastUpdatedAt));
-            insertCommand.Parameters.AddWithValue("$completedAt", ToDbValue(status.CompletedAt));
-            insertCommand.Parameters.AddWithValue("$currentWorkerId", (object?)status.CurrentWorkerId ?? DBNull.Value);
-            insertCommand.Parameters.AddWithValue("$lastAction", (object?)status.LastAction ?? DBNull.Value);
-            insertCommand.Parameters.AddWithValue("$processedWorkers", status.ProcessedWorkers);
-            insertCommand.Parameters.AddWithValue("$totalWorkers", status.TotalWorkers);
-            insertCommand.Parameters.AddWithValue("$errorMessage", (object?)status.ErrorMessage ?? DBNull.Value);
-            await insertCommand.ExecuteNonQueryAsync(cancellationToken);
-        }
-
-        await transaction.CommitAsync(cancellationToken);
     }
 
     private static DateTimeOffset? ParseDate(string? value)
