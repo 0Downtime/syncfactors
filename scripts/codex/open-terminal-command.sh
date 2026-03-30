@@ -46,7 +46,7 @@ repo_root_q="$(quote_for_shell "${repo_root}")"
 label_q="$(quote_for_shell "${label}")"
 command_q="$(join_command "$@")"
 
-child_command="cd ${repo_root_q} && printf 'Starting %s\\n\\n' ${label_q} && ${command_q}; status=\$?; printf '\\n[%s] exited with status %s.\\n' ${label_q} \"\$status\"; exec \${SHELL:-/bin/zsh} -l"
+child_command="cd ${repo_root_q} && printf 'Starting %s\\n\\n' ${label_q} && ${command_q}; exit_code=\$?; printf '\\n[%s] exited with status %s.\\n' ${label_q} \"\$exit_code\"; exec \${SHELL:-/bin/zsh} -l"
 
 if [[ -d "/Applications/Ghostty.app" ]] && command -v open >/dev/null 2>&1; then
   open -na Ghostty.app --args -e /bin/zsh -lc "${child_command}"
