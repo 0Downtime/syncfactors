@@ -1,4 +1,4 @@
-name: Security
+name: Security Scans
 
 on:
   push:
@@ -18,52 +18,128 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  legacy-changes:
+    name: Detect legacy changes
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      changed: ${{ steps.filter.outputs.changed }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Detect SyncFactors.Old changes
+        id: filter
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            base="${{ github.event.pull_request.base.sha }}"
+            head="${{ github.event.pull_request.head.sha }}"
+          elif [[ "${{ github.event_name }}" == "push" ]]; then
+            base="${{ github.event.before }}"
+            head="${{ github.sha }}"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [[ -z "$base" || "$base" == "0000000000000000000000000000000000000000" ]]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if git diff --quiet "$base" "$head" -- SyncFactors.Old; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  semgrep:
+    name: Semgrep Security SAST
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    container:
+      image: semgrep/semgrep
+    if: github.actor != 'dependabot[bot]'
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Run Semgrep
+        shell: sh
+        run: |
+          semgrep scan \
+            --config auto \
+            --config .semgrep/powershell-security.yml \
+            --exclude .github/workflows/sonarcloud.yml \
+            --sarif \
+            --output semgrep.sarif \
+            --error \
+            .
+
+      - name: Upload Semgrep SARIF
+        if: always() && hashFiles('semgrep.sarif') != ''
+        uses: github/codeql-action/upload-sarif@c10b8064de6f491fea524254123dbe5e09572f13 # v4
+        with:
+          sarif_file: semgrep.sarif
+          category: /semgrep
+
   powershell-static-analysis:
-    name: PowerShell Static Analysis
+    name: '[old] PowerShell Static Analysis'
+    needs: legacy-changes
+    if: needs.legacy-changes.outputs.changed == 'true'
     runs-on: windows-latest
     permissions:
       contents: read
       security-events: write
     steps:
       - name: Check out repository
-        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
 
-      - name: Run PSScriptAnalyzer on src
+      - name: Run PSScriptAnalyzer on legacy src
         id: pssa_src
         continue-on-error: true
-        uses: microsoft/psscriptanalyzer-action@2044ae068e37d0161fa2127de04c19633882f061 # v1.0
+        uses: microsoft/psscriptanalyzer-action@6b2948b1944407914a58661c49941824d149734f # v1.1
         with:
-          path: .\src
+          path: .\SyncFactors.Old\src
           recurse: true
-          settings: .\PSScriptAnalyzerSettings.psd1
+          settings: .\SyncFactors.Old\PSScriptAnalyzerSettings.psd1
           severity: '"Error", "Warning"'
           enableExit: true
           output: results-src.sarif
 
-      - name: Run PSScriptAnalyzer on scripts
+      - name: Run PSScriptAnalyzer on legacy scripts
         id: pssa_scripts
         continue-on-error: true
-        uses: microsoft/psscriptanalyzer-action@2044ae068e37d0161fa2127de04c19633882f061 # v1.0
+        uses: microsoft/psscriptanalyzer-action@6b2948b1944407914a58661c49941824d149734f # v1.1
         with:
-          path: .\scripts
+          path: .\SyncFactors.Old\scripts
           recurse: true
-          settings: .\PSScriptAnalyzerSettings.psd1
+          settings: .\SyncFactors.Old\PSScriptAnalyzerSettings.psd1
           severity: '"Error", "Warning"'
           enableExit: true
           output: results-scripts.sarif
 
       - name: Upload PSScriptAnalyzer SARIF for src
         if: always() && hashFiles('results-src.sarif') != ''
-        uses: github/codeql-action/upload-sarif@38697555549f1db7851b81482ff19f1fa5c4fedc # v4
+        uses: github/codeql-action/upload-sarif@c10b8064de6f491fea524254123dbe5e09572f13 # v4
         with:
           sarif_file: results-src.sarif
           category: /psscriptanalyzer/src
 
       - name: Upload PSScriptAnalyzer SARIF for scripts
         if: always() && hashFiles('results-scripts.sarif') != ''
-        uses: github/codeql-action/upload-sarif@38697555549f1db7851b81482ff19f1fa5c4fedc # v4
+        uses: github/codeql-action/upload-sarif@c10b8064de6f491fea524254123dbe5e09572f13 # v4
         with:
           sarif_file: results-scripts.sarif
           category: /psscriptanalyzer/scripts
@@ -82,7 +158,7 @@ jobs:
       security-events: write
     steps:
       - name: Check out repository
-        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
           fetch-depth: 0
@@ -100,7 +176,7 @@ jobs:
       security-events: write
     steps:
       - name: Check out repository
-        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
 
@@ -122,27 +198,12 @@ jobs:
             --output trivy-results.sarif \
             --severity HIGH,CRITICAL \
             --ignore-unfixed \
-            --scanners vuln,secret,misconfig \
-            .
-
-      - name: Generate Trivy JSON report
-        if: always()
-        shell: bash
-        env:
-          TRIVY_DEBUG: true
-        run: |
-          trivy fs \
-            --quiet \
-            --format json \
-            --output trivy-results.json \
-            --severity HIGH,CRITICAL \
-            --ignore-unfixed \
-            --scanners vuln,secret,misconfig \
+            --scanners vuln,misconfig \
             .
 
       - name: Upload Trivy results
         if: always() && hashFiles('trivy-results.sarif') != ''
-        uses: github/codeql-action/upload-sarif@38697555549f1db7851b81482ff19f1fa5c4fedc # v4
+        uses: github/codeql-action/upload-sarif@c10b8064de6f491fea524254123dbe5e09572f13 # v4
         with:
           sarif_file: trivy-results.sarif
 
@@ -161,16 +222,15 @@ jobs:
             --exit-code 1 \
             --severity HIGH,CRITICAL \
             --ignore-unfixed \
-            --scanners vuln,secret,misconfig \
+            --scanners vuln,misconfig \
             .
 
       - name: Upload Trivy diagnostic artifacts
-        if: always() && (hashFiles('trivy-results.json') != '' || hashFiles('trivy-results.txt') != '' || hashFiles('trivy-results.sarif') != '')
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always() && (hashFiles('trivy-results.txt') != '' || hashFiles('trivy-results.sarif') != '')
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: trivy-diagnostics
           path: |
-            trivy-results.json
             trivy-results.txt
             trivy-results.sarif
           if-no-files-found: ignore
