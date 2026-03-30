@@ -170,31 +170,33 @@
     {
         <section class="panel">
             <h2>Preview History</h2>
-            <table class="data-table compact">
-                <thead>
-                    <tr>
-                        <th>Started</th>
-                        <th>Run</th>
-                        <th>Action</th>
-                        <th>Status</th>
-                        <th>Changes</th>
-                        <th>Reason</th>
-                    </tr>
-                </thead>
-                <tbody>
-                @foreach (var item in Model.PreviewHistory)
-                {
-                    <tr>
-                        <td>@item.StartedAt.ToString("u")</td>
-                        <td><a asp-page="/Runs/Detail" asp-route-runId="@item.RunId">@item.RunId</a></td>
-                        <td>@(item.Action ?? item.Bucket)</td>
-                        <td>@(item.Status ?? "Unknown")</td>
-                        <td>@item.ChangeCount</td>
-                        <td>@(item.Reason ?? "n/a")</td>
-                    </tr>
-                }
-                </tbody>
-            </table>
+            <div class="table-scroll">
+                <table class="data-table compact">
+                    <thead>
+                        <tr>
+                            <th>Started</th>
+                            <th>Run</th>
+                            <th>Action</th>
+                            <th>Status</th>
+                            <th>Changes</th>
+                            <th>Reason</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    @foreach (var item in Model.PreviewHistory)
+                    {
+                        <tr>
+                            <td>@item.StartedAt.ToString("u")</td>
+                            <td><a asp-page="/Runs/Detail" asp-route-runId="@item.RunId">@item.RunId</a></td>
+                            <td>@(item.Action ?? item.Bucket)</td>
+                            <td>@(item.Status ?? "Unknown")</td>
+                            <td>@item.ChangeCount</td>
+                            <td>@(item.Reason ?? "n/a")</td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            </div>
         </section>
     }
 
@@ -222,42 +224,44 @@
         }
         else
         {
-            <table class="data-table preview-diff-table">
-                <colgroup>
-                    <col class="col-attribute" />
-                    <col class="col-source" />
-                    <col class="col-status" />
-                    <col class="col-current" />
-                    <col class="col-proposed" />
-                </colgroup>
-                <thead>
-                    <tr>
-                        <th>Attribute</th>
-                        <th>Source</th>
-                        <th>Status</th>
-                        <th>Current</th>
-                        <th>Proposed</th>
-                    </tr>
-                </thead>
-                <tbody>
-                @foreach (var row in Model.VisibleDiffRows)
-                {
-                    <tr class="diff-row @(row.Changed ? "changed" : "same")">
-                        <td>@row.Attribute</td>
-                        <td class="source-cell">
-                            <span class="source-path" title="@(row.Source ?? "-")" tabindex="0">@(row.Source ?? "-")</span>
-                        </td>
-                        <td>
-                            <span class="diff-status @(row.Changed ? "changed" : "same")">
-                                @(row.Changed ? "Changed" : "Unchanged")
-                            </span>
-                        </td>
-                        <td class="before"><span>@row.Before</span></td>
-                        <td class="after"><span>@row.After</span></td>
-                    </tr>
-                }
-                </tbody>
-            </table>
+            <div class="table-scroll preview-diff-scroll">
+                <table class="data-table preview-diff-table">
+                    <colgroup>
+                        <col class="col-attribute" />
+                        <col class="col-source" />
+                        <col class="col-status" />
+                        <col class="col-current" />
+                        <col class="col-proposed" />
+                    </colgroup>
+                    <thead>
+                        <tr>
+                            <th>Attribute</th>
+                            <th>Source</th>
+                            <th>Status</th>
+                            <th>Current</th>
+                            <th>Proposed</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    @foreach (var row in Model.VisibleDiffRows)
+                    {
+                        <tr class="diff-row @(row.Changed ? "changed" : "same")">
+                            <td data-label="Attribute">@row.Attribute</td>
+                            <td class="source-cell" data-label="Source">
+                                <span class="source-path" title="@(row.Source ?? "-")" tabindex="0">@(row.Source ?? "-")</span>
+                            </td>
+                            <td data-label="Status">
+                                <span class="diff-status @(row.Changed ? "changed" : "same")">
+                                    @(row.Changed ? "Changed" : "Unchanged")
+                                </span>
+                            </td>
+                            <td class="before" data-label="Current"><span>@row.Before</span></td>
+                            <td class="after" data-label="Proposed"><span>@row.After</span></td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            </div>
         }
     </section>
 
@@ -273,7 +277,8 @@
                     }
                     else
                     {
-                        <table class="data-table compact">
+                        <div class="table-scroll">
+                            <table class="data-table compact">
                             <thead><tr><th>Attribute</th><th>Value</th></tr></thead>
                             <tbody>
                             @foreach (var row in preview.UsedSourceAttributes)
@@ -281,7 +286,8 @@
                                 <tr><td>@row.Attribute</td><td>@row.Value</td></tr>
                             }
                             </tbody>
-                        </table>
+                            </table>
+                        </div>
                     }
                 </div>
 
@@ -293,7 +299,8 @@
                     }
                     else
                     {
-                        <table class="data-table compact">
+                        <div class="table-scroll">
+                            <table class="data-table compact">
                             <thead><tr><th>Attribute</th><th>Value</th></tr></thead>
                             <tbody>
                             @foreach (var row in preview.UnusedSourceAttributes.Take(20))
@@ -301,7 +308,8 @@
                                 <tr><td>@row.Attribute</td><td>@row.Value</td></tr>
                             }
                             </tbody>
-                        </table>
+                            </table>
+                        </div>
                     }
                 </div>
 
@@ -332,27 +340,29 @@
             }
             else
             {
-                <table class="data-table compact preview-source-table">
-                    <colgroup>
-                        <col class="col-source-path" />
-                        <col class="col-source-value" />
-                    </colgroup>
-                    <thead>
-                        <tr>
-                            <th>Source Path</th>
-                            <th>Value</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                    @foreach (var row in sourcePathAttributes)
-                    {
-                        <tr>
-                            <td><span class="source-path" title="@row.Attribute" tabindex="0">@row.Attribute</span></td>
-                            <td><span class="source-value" title="@row.Value" tabindex="0">@row.Value</span></td>
-                        </tr>
-                    }
-                    </tbody>
-                </table>
+                <div class="table-scroll">
+                    <table class="data-table compact preview-source-table">
+                        <colgroup>
+                            <col class="col-source-path" />
+                            <col class="col-source-value" />
+                        </colgroup>
+                        <thead>
+                            <tr>
+                                <th>Source Path</th>
+                                <th>Value</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                        @foreach (var row in sourcePathAttributes)
+                        {
+                            <tr>
+                                <td><span class="source-path" title="@row.Attribute" tabindex="0">@row.Attribute</span></td>
+                                <td><span class="source-value" title="@row.Value" tabindex="0">@row.Value</span></td>
+                            </tr>
+                        }
+                        </tbody>
+                    </table>
+                </div>
             }
         </article>
     </section>
