@@ -58,7 +58,7 @@ SYNCFACTORS_API_PORT=5087
 MOCK_SF_PORT=18080
 ```
 
-The setup script leaves existing local files untouched, so it is safe to rerun. It prepares local files and directories only; it does not start long-running services. The helper actions under the local environment always source `.env.worktree` before running the underlying `pwsh` command for the rewrite stack.
+The setup script leaves existing local files untouched, so it is safe to rerun. It prepares local files and directories only; it does not start long-running services. The helper actions under the local environment now open a dedicated macOS terminal window for each action, preferring Ghostty when installed and falling back to Terminal.app. Inside that window they still source `.env.worktree` before running the underlying `pwsh` command for the rewrite stack.
 
 The intended local test loop is:
 - run `./scripts/codex/setup-worktree-macos.sh`
