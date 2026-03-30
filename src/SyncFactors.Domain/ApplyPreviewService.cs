@@ -94,86 +94,52 @@ public sealed class ApplyPreviewService(
                 ErrorMessage: null),
             cancellationToken);
 
-        var result = await directoryCommandGateway.ExecuteAsync(command, cancellationToken);
-        var completedAt = DateTimeOffset.UtcNow;
-        logger.LogInformation("Directory mutation command finished. WorkerId={WorkerId} Action={Action} Succeeded={Succeeded} Message={Message}", worker.WorkerId, result.Action, result.Succeeded, result.Message);
+        try
+        {
+            var result = await directoryCommandGateway.ExecuteAsync(command, cancellationToken);
+            var completedAt = DateTimeOffset.UtcNow;
+            logger.LogInformation("Directory mutation command finished. WorkerId={WorkerId} Action={Action} Succeeded={Succeeded} Message={Message}", worker.WorkerId, result.Action, result.Succeeded, result.Message);
 
-        var report = ParseJson(
-            "{"
-            + "\"kind\":\"applyPreview\","
-            + $"\"workerId\":\"{Escape(worker.WorkerId)}\","
-            + $"\"action\":\"{Escape(result.Action)}\","
-            + $"\"samAccountName\":\"{Escape(result.SamAccountName)}\","
-            + $"\"succeeded\":{(result.Succeeded ? "true" : "false")},"
-            + $"\"message\":\"{Escape(result.Message)}\","
-            + $"\"sourcePreviewRunId\":\"{Escape(preview.RunId ?? request.PreviewRunId)}\","
-            + $"\"sourcePreviewFingerprint\":\"{Escape(preview.Fingerprint)}\""
-            + "}");
+            await PersistApplyOutcomeAsync(
+                worker.WorkerId,
+                preview,
+                request,
+                runId,
+                action,
+                startedAt,
+                completedAt,
+                result,
+                cancellationToken);
 
-        await runRepository.SaveRunAsync(
-            new RunRecord(
-                RunId: runId,
-                Path: null,
-                ArtifactType: "ApplyPreview",
-                ConfigPath: null,
-                MappingConfigPath: null,
-                Mode: "ApplyPreview",
-                DryRun: false,
-                Status: result.Succeeded ? "Succeeded" : "Failed",
-                StartedAt: startedAt,
-                CompletedAt: completedAt,
-                DurationSeconds: Math.Max(0, (int)(completedAt - startedAt).TotalSeconds),
-                Creates: action == "CreateUser" && result.Succeeded ? 1 : 0,
-                Updates: action == "UpdateUser" && result.Succeeded ? 1 : 0,
-                Enables: 0,
-                Disables: 0,
-                GraveyardMoves: 0,
-                Deletions: 0,
-                Quarantined: 0,
-                Conflicts: 0,
-                GuardrailFailures: 0,
-                ManualReview: 0,
-                Unchanged: 0,
-                Report: report),
-            cancellationToken);
+            logger.LogInformation("Preview apply flow completed. WorkerId={WorkerId} RunId={RunId} Succeeded={Succeeded}", worker.WorkerId, runId, result.Succeeded);
+            return result with { RunId = runId };
+        }
+        catch (Exception ex)
+        {
+            var completedAt = DateTimeOffset.UtcNow;
+            logger.LogError(ex, "Directory mutation command failed. WorkerId={WorkerId} Action={Action}", worker.WorkerId, action);
 
-        await runRepository.ReplaceRunEntriesAsync(
-            runId,
-            [
-                new RunEntryRecord(
-                    EntryId: $"{runId}:{worker.WorkerId}:0",
-                    RunId: runId,
-                    Bucket: action == "CreateUser" ? "creates" : "updates",
-                    BucketIndex: 0,
-                    WorkerId: worker.WorkerId,
-                    SamAccountName: result.SamAccountName,
-                    Reason: result.Message,
-                    ReviewCategory: null,
-                    ReviewCaseType: null,
-                    StartedAt: startedAt,
-                    Item: report)
-            ],
-            cancellationToken);
+            var failedResult = new DirectoryCommandResult(
+                Succeeded: false,
+                Action: action,
+                SamAccountName: command.SamAccountName,
+                DistinguishedName: null,
+                Message: ex.Message,
+                RunId: null);
 
-        await runtimeStatusStore.SaveAsync(
-            new RuntimeStatus(
-                Status: result.Succeeded ? "Idle" : "Failed",
-                Stage: "Completed",
-                RunId: runId,
-                Mode: "ApplyPreview",
-                DryRun: false,
-                ProcessedWorkers: result.Succeeded ? 1 : 0,
-                TotalWorkers: 1,
-                CurrentWorkerId: null,
-                LastAction: result.Message,
-                StartedAt: startedAt,
-                LastUpdatedAt: completedAt,
-                CompletedAt: completedAt,
-                ErrorMessage: result.Succeeded ? null : result.Message),
-            cancellationToken);
+            await PersistApplyOutcomeAsync(
+                worker.WorkerId,
+                preview,
+                request,
+                runId,
+                action,
+                startedAt,
+                completedAt,
+                failedResult,
+                cancellationToken);
 
-        logger.LogInformation("Preview apply flow completed. WorkerId={WorkerId} RunId={RunId} Succeeded={Succeeded}", worker.WorkerId, runId, result.Succeeded);
-        return result with { RunId = runId };
+            throw;
+        }
     }
 
     public static string BuildConfirmationText(WorkerPreviewResult preview)
@@ -220,6 +186,92 @@ public sealed class ApplyPreviewService(
     {
         return value.Replace("\\", "\\\\", StringComparison.Ordinal)
             .Replace("\"", "\\\"", StringComparison.Ordinal);
+    }
+
+    private async Task PersistApplyOutcomeAsync(
+        string workerId,
+        WorkerPreviewResult preview,
+        ApplyPreviewRequest request,
+        string runId,
+        string action,
+        DateTimeOffset startedAt,
+        DateTimeOffset completedAt,
+        DirectoryCommandResult result,
+        CancellationToken cancellationToken)
+    {
+        var report = ParseJson(
+            "{"
+            + "\"kind\":\"applyPreview\","
+            + $"\"workerId\":\"{Escape(workerId)}\","
+            + $"\"action\":\"{Escape(result.Action)}\","
+            + $"\"samAccountName\":\"{Escape(result.SamAccountName)}\","
+            + $"\"succeeded\":{(result.Succeeded ? "true" : "false")},"
+            + $"\"message\":\"{Escape(result.Message)}\","
+            + $"\"sourcePreviewRunId\":\"{Escape(preview.RunId ?? request.PreviewRunId)}\","
+            + $"\"sourcePreviewFingerprint\":\"{Escape(preview.Fingerprint)}\""
+            + "}");
+
+        await runRepository.SaveRunAsync(
+            new RunRecord(
+                RunId: runId,
+                Path: null,
+                ArtifactType: "ApplyPreview",
+                ConfigPath: null,
+                MappingConfigPath: null,
+                Mode: "ApplyPreview",
+                DryRun: false,
+                Status: result.Succeeded ? "Succeeded" : "Failed",
+                StartedAt: startedAt,
+                CompletedAt: completedAt,
+                DurationSeconds: Math.Max(0, (int)(completedAt - startedAt).TotalSeconds),
+                Creates: action == "CreateUser" && result.Succeeded ? 1 : 0,
+                Updates: action == "UpdateUser" && result.Succeeded ? 1 : 0,
+                Enables: 0,
+                Disables: 0,
+                GraveyardMoves: 0,
+                Deletions: 0,
+                Quarantined: 0,
+                Conflicts: 0,
+                GuardrailFailures: 0,
+                ManualReview: 0,
+                Unchanged: 0,
+                Report: report),
+            cancellationToken);
+
+        await runRepository.ReplaceRunEntriesAsync(
+            runId,
+            [
+                new RunEntryRecord(
+                    EntryId: $"{runId}:{workerId}:0",
+                    RunId: runId,
+                    Bucket: action == "CreateUser" ? "creates" : "updates",
+                    BucketIndex: 0,
+                    WorkerId: workerId,
+                    SamAccountName: result.SamAccountName,
+                    Reason: result.Message,
+                    ReviewCategory: null,
+                    ReviewCaseType: null,
+                    StartedAt: startedAt,
+                    Item: report)
+            ],
+            cancellationToken);
+
+        await runtimeStatusStore.SaveAsync(
+            new RuntimeStatus(
+                Status: result.Succeeded ? "Idle" : "Failed",
+                Stage: "Completed",
+                RunId: runId,
+                Mode: "ApplyPreview",
+                DryRun: false,
+                ProcessedWorkers: result.Succeeded ? 1 : 0,
+                TotalWorkers: 1,
+                CurrentWorkerId: null,
+                LastAction: result.Message,
+                StartedAt: startedAt,
+                LastUpdatedAt: completedAt,
+                CompletedAt: completedAt,
+                ErrorMessage: result.Succeeded ? null : result.Message),
+            cancellationToken);
     }
 
     private static void ValidatePreviewIsSafeToApply(WorkerPreviewResult preview)
