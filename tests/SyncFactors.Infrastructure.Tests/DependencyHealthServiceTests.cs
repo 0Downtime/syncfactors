@@ -183,6 +183,91 @@ public sealed class DependencyHealthServiceTests
         Assert.Contains("$select=userId", handler.RequestUris[1]);
     }
 
+    [Fact]
+    public async Task GetSnapshotAsync_ReturnsHttpFailure_WhenSuccessFactorsErrorPayloadIsJsonString()
+    {
+        var tempRoot = Path.Combine(Path.GetTempPath(), "syncfactors-health-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempRoot);
+
+        var databasePath = Path.Combine(tempRoot, "runtime.db");
+        var pathResolver = new SqlitePathResolver(databasePath);
+        var initializer = new SqliteDatabaseInitializer(pathResolver);
+        await initializer.InitializeAsync(CancellationToken.None);
+
+        IWorkerHeartbeatStore heartbeatStore = new StubWorkerHeartbeatStore(
+            new WorkerHeartbeat(
+                Service: "SyncFactors.Worker",
+                State: "Idle",
+                Activity: "Waiting for scheduled work.",
+                StartedAt: DateTimeOffset.Parse("2026-03-27T12:00:00Z"),
+                LastSeenAt: DateTimeOffset.Parse("2026-03-27T12:00:15Z")));
+
+        var configLoader = new SyncFactorsConfigurationLoader(
+            new SyncFactorsConfigPathResolver(
+                Path.Combine(tempRoot, "sync-config.json"),
+                null));
+
+        await File.WriteAllTextAsync(
+            Path.Combine(tempRoot, "sync-config.json"),
+            """
+            {
+              "secrets": {},
+              "ad": {
+                "server": "ldap.example.invalid:389",
+                "username": "",
+                "bindPassword": "",
+                "defaultActiveOu": "OU=LabUsers,DC=example,DC=com",
+                "graveyardOu": "OU=Graveyard,DC=example,DC=com",
+                "identityAttribute": "employeeID"
+              },
+              "successFactors": {
+                "baseUrl": "https://example.invalid/odata/v2",
+                "query": {
+                  "entitySet": "EmpJob",
+                  "identityField": "userId",
+                  "deltaField": "lastModifiedDateTime",
+                  "select": [ "userId" ],
+                  "expand": []
+                },
+                "auth": {
+                  "mode": "basic",
+                  "basic": {
+                    "username": "user",
+                    "password": "pass"
+                  }
+                }
+              },
+              "sync": {
+                "enableBeforeStartDays": 7,
+                "deletionRetentionDays": 30
+              },
+              "safety": {
+                "maxCreatesPerRun": 25,
+                "maxDisablesPerRun": 25,
+                "maxDeletionsPerRun": 25
+              },
+              "reporting": {
+                "outputDirectory": "/tmp"
+              }
+            }
+            """);
+
+        var service = new DependencyHealthService(
+            configLoader,
+            pathResolver,
+            heartbeatStore,
+            new HttpClient(new JsonStringErrorMessageHandler()),
+            new FakeTimeProvider(DateTimeOffset.Parse("2026-03-27T12:00:30Z")),
+            NullLogger<DependencyHealthService>.Instance);
+
+        var snapshot = await service.GetSnapshotAsync(CancellationToken.None);
+
+        var successFactorsProbe = Assert.Single(snapshot.Probes, probe => probe.Dependency == "SuccessFactors");
+        Assert.Equal(DependencyHealthStates.Unhealthy, successFactorsProbe.Status);
+        Assert.Contains("HTTP 500", successFactorsProbe.Summary, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("mock string error", successFactorsProbe.Details, StringComparison.OrdinalIgnoreCase);
+    }
+
     private sealed class StubWorkerHeartbeatStore(WorkerHeartbeat heartbeat) : IWorkerHeartbeatStore
     {
         public Task<WorkerHeartbeat?> GetCurrentAsync(CancellationToken cancellationToken)
@@ -239,7 +324,20 @@ public sealed class DependencyHealthServiceTests
 
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
             {
-                Content = new StringContent("""{"d":{"results":[{"userId":"mock-10001"}]}}""")
+                Content = new StringContent("""{"d":{"results":[{"userId":"10001"}]}}""")
+            });
+        }
+    }
+
+    private sealed class JsonStringErrorMessageHandler : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            _ = request;
+            _ = cancellationToken;
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.InternalServerError)
+            {
+                Content = new StringContent("\"mock string error\"")
             });
         }
     }

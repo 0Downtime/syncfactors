@@ -89,7 +89,7 @@ public sealed class AttributeDiffServiceTests
         var diffService = new AttributeDiffService(mappingProvider, new NoopWorkerPreviewLogWriter(), NullLogger<AttributeDiffService>.Instance);
 
         var worker = new WorkerSnapshot(
-            WorkerId: "mock-10001",
+            WorkerId: "10001",
             PreferredName: "Winnie",
             LastName: "Sample101",
             Department: "IT",
@@ -98,7 +98,7 @@ public sealed class AttributeDiffServiceTests
             Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase));
 
         var directoryUser = new DirectoryUserSnapshot(
-            SamAccountName: "mock-10001",
+            SamAccountName: "10001",
             DistinguishedName: "CN=Sample101\\, Winnie,OU=LabUsers,DC=example,DC=com",
             Enabled: true,
             DisplayName: "Sample101, Winnie",
@@ -130,7 +130,7 @@ public sealed class AttributeDiffServiceTests
             {
                 Assert.Equal("displayName", change.Attribute);
                 Assert.Equal("Sample101, Winnie", change.Before);
-                Assert.Equal("mock-10001", change.After);
+                Assert.Equal("10001", change.After);
                 Assert.True(change.Changed);
             },
             change =>
@@ -231,7 +231,7 @@ public sealed class AttributeDiffServiceTests
         var diffService = new AttributeDiffService(mappingProvider, new NoopWorkerPreviewLogWriter(), NullLogger<AttributeDiffService>.Instance);
 
         var worker = new WorkerSnapshot(
-            WorkerId: "mock-10001",
+            WorkerId: "10001",
             PreferredName: "Winnie",
             LastName: "Sample101",
             Department: "IT",
@@ -248,7 +248,7 @@ public sealed class AttributeDiffServiceTests
             });
 
         var directoryUser = new DirectoryUserSnapshot(
-            SamAccountName: "mock-10001",
+            SamAccountName: "10001",
             DistinguishedName: "CN=Sample101\\, Winnie,OU=LabUsers,DC=example,DC=com",
             Enabled: true,
             DisplayName: "Sample101, Winnie",
@@ -269,7 +269,7 @@ public sealed class AttributeDiffServiceTests
             {
                 Assert.Equal("displayName", change.Attribute);
                 Assert.Equal("Sample101, Winnie", change.Before);
-                Assert.Equal("mock-10001", change.After);
+                Assert.Equal("10001", change.After);
                 Assert.True(change.Changed);
             },
             change =>
@@ -370,7 +370,7 @@ public sealed class AttributeDiffServiceTests
         var diffService = new AttributeDiffService(mappingProvider, new NoopWorkerPreviewLogWriter(), NullLogger<AttributeDiffService>.Instance);
 
         var worker = new WorkerSnapshot(
-            WorkerId: "mock-10001",
+            WorkerId: "10001",
             PreferredName: "Winnie",
             LastName: "Sample101",
             Department: "Information Technology",
@@ -379,7 +379,7 @@ public sealed class AttributeDiffServiceTests
             Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase));
 
         var directoryUser = new DirectoryUserSnapshot(
-            SamAccountName: "mock-10001",
+            SamAccountName: "10001",
             DistinguishedName: "CN=Sample101\\, Winnie,OU=LabUsers,DC=example,DC=com",
             Enabled: true,
             DisplayName: "Old Display",
@@ -419,7 +419,7 @@ public sealed class AttributeDiffServiceTests
             {
                 Assert.Equal("displayName", change.Attribute);
                 Assert.Equal("Old Display", change.Before);
-                Assert.Equal("mock-10001", change.After);
+                Assert.Equal("10001", change.After);
                 Assert.True(change.Changed);
             },
             change =>

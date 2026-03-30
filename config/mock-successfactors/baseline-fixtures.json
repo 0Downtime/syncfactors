@@ -1,7 +1,7 @@
 {
   "workers": [
     {
-      "personIdExternal": "mock-10001",
+      "personIdExternal": "10001",
       "personId": "10001",
       "perPersonUuid": "uuid-10001",
       "userName": "user.10001",
@@ -38,7 +38,7 @@
       "costCenterId": "CC100",
       "employeeClass": "Employee",
       "employeeType": "Regular",
-      "managerId": "mock-90001",
+      "managerId": "90001",
       "peopleGroup": "Field Ops",
       "leadershipLevel": "IC-3",
       "region": "Central",
@@ -65,7 +65,7 @@
       ]
     },
     {
-      "personIdExternal": "mock-10002",
+      "personIdExternal": "10002",
       "personId": "10002",
       "perPersonUuid": "uuid-10002",
       "userName": "user.10002",
@@ -102,7 +102,7 @@
       "costCenterId": "CC200",
       "employeeClass": "Employee",
       "employeeType": "Regular",
-      "managerId": "mock-90001",
+      "managerId": "90001",
       "peopleGroup": "Corporate",
       "leadershipLevel": "IC-2",
       "region": "Central",
@@ -127,7 +127,7 @@
       ]
     },
     {
-      "personIdExternal": "mock-10003",
+      "personIdExternal": "10003",
       "personId": "10003",
       "perPersonUuid": "uuid-10003",
       "userName": "user.10003",
@@ -164,7 +164,7 @@
       "costCenterId": "CC100",
       "employeeClass": "Employee",
       "employeeType": "Regular",
-      "managerId": "mock-90002",
+      "managerId": "90002",
       "peopleGroup": "Field Ops",
       "leadershipLevel": "IC-1",
       "region": "Central",
@@ -190,7 +190,7 @@
       ]
     },
     {
-      "personIdExternal": "mock-10004",
+      "personIdExternal": "10004",
       "personId": "10004",
       "perPersonUuid": "uuid-10004",
       "userName": "user.10004",
@@ -227,7 +227,7 @@
       "costCenterId": "CC300",
       "employeeClass": "Contractor",
       "employeeType": "Temporary",
-      "managerId": "mock-90003",
+      "managerId": "90003",
       "peopleGroup": "Shared Services",
       "leadershipLevel": "IC-2",
       "region": "East",
@@ -252,7 +252,7 @@
       ]
     },
     {
-      "personIdExternal": "mock-10005",
+      "personIdExternal": "10005",
       "personId": "10005",
       "perPersonUuid": "uuid-10005",
       "userName": "user.10005",
@@ -289,7 +289,7 @@
       "costCenterId": "CC400",
       "employeeClass": "Employee",
       "employeeType": "Regular",
-      "managerId": "mock-90004",
+      "managerId": "90004",
       "peopleGroup": "Field Sales",
       "leadershipLevel": "IC-2",
       "region": "West",
@@ -313,7 +313,7 @@
       ]
     },
     {
-      "personIdExternal": "mock-10006",
+      "personIdExternal": "10006",
       "personId": "10006",
       "perPersonUuid": "uuid-10006",
       "userName": "user.10006",
@@ -350,7 +350,7 @@
       "costCenterId": "CC100",
       "employeeClass": "Employee",
       "employeeType": "Regular",
-      "managerId": "mock-90001",
+      "managerId": "90001",
       "peopleGroup": "Field Ops",
       "leadershipLevel": "IC-2",
       "region": "Central",
@@ -375,7 +375,7 @@
       ]
     },
     {
-      "personIdExternal": "mock-40101",
+      "personIdExternal": "40101",
       "personId": "40101",
       "perPersonUuid": "uuid-40101",
       "userName": "user.40101",
@@ -412,7 +412,7 @@
       "costCenterId": "CC900",
       "employeeClass": "Employee",
       "employeeType": "Regular",
-      "managerId": "mock-90005",
+      "managerId": "90005",
       "peopleGroup": "Security",
       "leadershipLevel": "IC-4",
       "region": "Central",

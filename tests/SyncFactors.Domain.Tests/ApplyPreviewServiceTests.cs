@@ -9,7 +9,7 @@ public sealed class ApplyPreviewServiceTests
     public async Task ApplyAsync_PassesPreviewAttributesIntoDirectoryMutationCommand()
     {
         var worker = new WorkerSnapshot(
-            WorkerId: "mock-10001",
+            WorkerId: "10001",
             PreferredName: "Different",
             LastName: "Name",
             Department: "IT",
@@ -17,12 +17,12 @@ public sealed class ApplyPreviewServiceTests
             IsPrehire: false,
             Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
             {
-                ["managerId"] = "mock-90001"
+                ["managerId"] = "90001"
             });
 
         var preview = new WorkerPreviewResult(
             ReportPath: null,
-            RunId: "preview-mock-10001-1",
+            RunId: "preview-10001-1",
             PreviousRunId: null,
             Fingerprint: "fingerprint-1",
             Mode: "Preview",
@@ -37,7 +37,7 @@ public sealed class ApplyPreviewServiceTests
             ReviewCaseType: null,
             Reason: null,
             OperatorActionSummary: null,
-            SamAccountName: "mock-10001",
+            SamAccountName: "10001",
             ManagerDistinguishedName: "CN=Manager,OU=LabUsers,DC=example,DC=com",
             TargetOu: worker.TargetOu,
             CurrentDistinguishedName: null,
@@ -46,9 +46,9 @@ public sealed class ApplyPreviewServiceTests
             OperationSummary: null,
             DiffRows:
             [
-                new DiffRow("employeeID", "personIdExternal", "(unset)", "mock-10001", true),
+                new DiffRow("employeeID", "personIdExternal", "(unset)", "10001", true),
                 new DiffRow("GivenName", "firstName", "(unset)", "Winnie", true),
-                new DiffRow("displayName", "sAMAccountName", "(unset)", "mock-10001", true),
+                new DiffRow("displayName", "sAMAccountName", "(unset)", "10001", true),
                 new DiffRow("UserPrincipalName", "resolved email local-part", "(unset)", "preview.email@spireenergy.com", true),
                 new DiffRow("mail", "resolved email local-part", "(unset)", "preview.email@spireenergy.com", true),
                 new DiffRow("department", "department", "(unset)", "Information Technology", true),
@@ -78,14 +78,14 @@ public sealed class ApplyPreviewServiceTests
 
         var command = Assert.IsType<DirectoryMutationCommand>(directoryCommandGateway.LastCommand);
         Assert.Equal("CreateUser", command.Action);
-        Assert.Equal("mock-10001", command.Attributes["employeeID"]);
+        Assert.Equal("10001", command.Attributes["employeeID"]);
         Assert.Equal("Winnie", command.Attributes["GivenName"]);
         Assert.Equal("Information Technology", command.Attributes["department"]);
         Assert.Null(command.Attributes["extensionAttribute2"]);
-        Assert.Equal("mock-10001", command.Attributes["displayName"]);
+        Assert.Equal("10001", command.Attributes["displayName"]);
         Assert.Equal("preview.email@spireenergy.com", command.Attributes["UserPrincipalName"]);
         Assert.Equal("preview.email@spireenergy.com", command.Attributes["mail"]);
-        Assert.Equal("mock-10001", command.DisplayName);
+        Assert.Equal("10001", command.DisplayName);
         Assert.Equal("preview.email@spireenergy.com", command.UserPrincipalName);
         Assert.Equal("preview.email@spireenergy.com", command.Mail);
         Assert.Equal("CN=Manager,OU=LabUsers,DC=example,DC=com", command.ManagerDistinguishedName);
@@ -95,7 +95,7 @@ public sealed class ApplyPreviewServiceTests
     public async Task ApplyAsync_PropagatesDirectoryMutationFailures()
     {
         var worker = new WorkerSnapshot(
-            WorkerId: "mock-10001",
+            WorkerId: "10001",
             PreferredName: "Winnie",
             LastName: "Sample101",
             Department: "IT",
@@ -105,7 +105,7 @@ public sealed class ApplyPreviewServiceTests
 
         var preview = new WorkerPreviewResult(
             ReportPath: null,
-            RunId: "preview-mock-10001-2",
+            RunId: "preview-10001-2",
             PreviousRunId: null,
             Fingerprint: "fingerprint-2",
             Mode: "Preview",
@@ -120,7 +120,7 @@ public sealed class ApplyPreviewServiceTests
             ReviewCaseType: null,
             Reason: null,
             OperatorActionSummary: null,
-            SamAccountName: "mock-10001",
+            SamAccountName: "10001",
             ManagerDistinguishedName: null,
             TargetOu: worker.TargetOu,
             CurrentDistinguishedName: null,
@@ -167,7 +167,7 @@ public sealed class ApplyPreviewServiceTests
     public async Task ApplyAsync_PersistsFailureReportWhenExceptionMessageContainsNewlines()
     {
         var worker = new WorkerSnapshot(
-            WorkerId: "mock-10001",
+            WorkerId: "10001",
             PreferredName: "Winnie",
             LastName: "Sample101",
             Department: "IT",
@@ -177,7 +177,7 @@ public sealed class ApplyPreviewServiceTests
 
         var preview = new WorkerPreviewResult(
             ReportPath: null,
-            RunId: "preview-mock-10001-3",
+            RunId: "preview-10001-3",
             PreviousRunId: null,
             Fingerprint: "fingerprint-3",
             Mode: "Preview",
@@ -192,7 +192,7 @@ public sealed class ApplyPreviewServiceTests
             ReviewCaseType: null,
             Reason: null,
             OperatorActionSummary: null,
-            SamAccountName: "mock-10001",
+            SamAccountName: "10001",
             ManagerDistinguishedName: null,
             TargetOu: worker.TargetOu,
             CurrentDistinguishedName: null,

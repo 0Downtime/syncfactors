@@ -258,7 +258,13 @@ public sealed class SuccessFactorsWorkerSource(
         try
         {
             using var document = JsonDocument.Parse(body);
+            if (document.RootElement.ValueKind != JsonValueKind.Object)
+            {
+                return null;
+            }
+
             if (!document.RootElement.TryGetProperty("error", out var error) ||
+                error.ValueKind != JsonValueKind.Object ||
                 !error.TryGetProperty("code", out var code) ||
                 !string.Equals(code.GetString(), "COE_PROPERTY_NOT_FOUND", StringComparison.Ordinal))
             {
@@ -266,6 +272,7 @@ public sealed class SuccessFactorsWorkerSource(
             }
 
             if (!error.TryGetProperty("message", out var message) ||
+                message.ValueKind != JsonValueKind.Object ||
                 !message.TryGetProperty("value", out var value))
             {
                 return null;
