@@ -20,19 +20,18 @@ public sealed class DependencyHealthService(
     ILogger<DependencyHealthService> logger) : IDependencyHealthService
 {
     private static readonly TimeSpan ActiveDirectoryTimeout = TimeSpan.FromSeconds(10);
+    private static readonly TimeSpan SuccessFactorsTimeout = TimeSpan.FromSeconds(10);
     private static readonly TimeSpan HealthyHeartbeatAge = TimeSpan.FromSeconds(45);
     private static readonly TimeSpan DegradedHeartbeatAge = TimeSpan.FromMinutes(2);
 
     public async Task<DependencyHealthSnapshot> GetSnapshotAsync(CancellationToken cancellationToken)
     {
         var checkedAt = timeProvider.GetUtcNow();
-        var probes = new List<DependencyProbeResult>
-        {
-            await ProbeSuccessFactorsAsync(checkedAt, cancellationToken),
-            await ProbeActiveDirectoryAsync(checkedAt, cancellationToken),
-            await ProbeWorkerAsync(checkedAt, cancellationToken),
-            await ProbeSqliteAsync(checkedAt, cancellationToken)
-        };
+        var probes = await Task.WhenAll(
+            ProbeSuccessFactorsAsync(checkedAt, cancellationToken),
+            ProbeActiveDirectoryAsync(checkedAt, cancellationToken),
+            ProbeWorkerAsync(checkedAt, cancellationToken),
+            ProbeSqliteAsync(checkedAt, cancellationToken));
 
         return new DependencyHealthSnapshot(
             Status: CalculateOverallStatus(probes),
@@ -52,14 +51,16 @@ public sealed class DependencyHealthService(
                 return BuildProbe("SuccessFactors", DependencyHealthStates.Unhealthy, "Base URL is not configured.", checkedAt, stopwatch.ElapsedMilliseconds);
             }
 
+            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeoutCts.CancelAfter(SuccessFactorsTimeout);
             using var request = new HttpRequestMessage(HttpMethod.Get, BuildSuccessFactorsProbeUri(config));
             request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
             request.Headers.AcceptEncoding.Add(new StringWithQualityHeaderValue("gzip"));
             request.Headers.AcceptEncoding.Add(new StringWithQualityHeaderValue("deflate"));
-            await ApplySuccessFactorsAuthenticationAsync(request, config.Auth, cancellationToken);
+            await ApplySuccessFactorsAuthenticationAsync(request, config.Auth, timeoutCts.Token);
 
-            using var response = await httpClient.SendAsync(request, cancellationToken);
-            var body = await response.Content.ReadAsStringAsync(cancellationToken);
+            using var response = await httpClient.SendAsync(request, timeoutCts.Token);
+            var body = await response.Content.ReadAsStringAsync(timeoutCts.Token);
             if (!response.IsSuccessStatusCode)
             {
                 return BuildProbe(
@@ -95,8 +96,18 @@ public sealed class DependencyHealthService(
                 checkedAt,
                 stopwatch.ElapsedMilliseconds);
         }
+        catch (OperationCanceledException ex) when (!cancellationToken.IsCancellationRequested)
+        {
+            logger.LogWarning(ex, "SuccessFactors health probe timed out.");
+            return BuildSuccessFactorsTimeoutProbe(checkedAt, stopwatch.ElapsedMilliseconds);
+        }
         catch (Exception ex)
         {
+            if (!cancellationToken.IsCancellationRequested && IsTimeoutLikeFailure(ex))
+            {
+                logger.LogWarning(ex, "SuccessFactors health probe timed out.");
+                return BuildSuccessFactorsTimeoutProbe(checkedAt, stopwatch.ElapsedMilliseconds);
+            }
             logger.LogWarning(ex, "SuccessFactors health probe failed.");
             return BuildProbe(
                 "SuccessFactors",
@@ -391,6 +402,15 @@ public sealed class DependencyHealthService(
             IsStale: isStale);
     }
 
+    private static DependencyProbeResult BuildSuccessFactorsTimeoutProbe(DateTimeOffset checkedAt, long durationMilliseconds)
+    {
+        return BuildProbe(
+            "SuccessFactors",
+            DependencyHealthStates.Unhealthy,
+            $"Authenticated read probe timed out after {Math.Max(1, (int)SuccessFactorsTimeout.TotalSeconds)}s.",
+            checkedAt,
+            durationMilliseconds);
+    }
     private static string CalculateOverallStatus(IReadOnlyList<DependencyProbeResult> probes)
     {
         if (probes.Any(probe => string.Equals(probe.Status, DependencyHealthStates.Unhealthy, StringComparison.OrdinalIgnoreCase)))
@@ -419,6 +439,16 @@ public sealed class DependencyHealthService(
         return flattened.Length <= 240 ? flattened : flattened[..240];
     }
 
+    private static bool IsTimeoutLikeFailure(Exception exception)
+    {
+        return exception switch
+        {
+            OperationCanceledException => true,
+            HttpRequestException { InnerException: OperationCanceledException } => true,
+            _ when exception.InnerException is not null => IsTimeoutLikeFailure(exception.InnerException),
+            _ => false
+        };
+    }
     private static string FormatAge(TimeSpan age)
     {
         if (age.TotalSeconds < 60)
