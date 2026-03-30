@@ -124,7 +124,7 @@ public sealed class PreviewModelTests
                 ToOu: "OU=LabUsers,DC=example,DC=com"),
             DiffRows:
             [
-                new DiffRow("displayName", "firstName,lastName", "Old Name", "Sample101, Winnie", true),
+                new DiffRow("displayName", "sAMAccountName", "Old Name", workerId, true),
                 new DiffRow("UserPrincipalName", "resolved email local-part", "old.email@spireenergy.com", "preview.email@spireenergy.com", true),
                 new DiffRow("mail", "resolved email local-part", "old.email@spireenergy.com", "preview.email@spireenergy.com", true)
             ],
