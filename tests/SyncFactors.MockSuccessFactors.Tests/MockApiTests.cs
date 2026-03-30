@@ -111,6 +111,22 @@ public sealed class MockApiTests
     }
 
     [Fact]
+    public void QueryParser_AllowsProbeWithoutFilter()
+    {
+        var query = ODataQueryParser.Parse(new Microsoft.AspNetCore.Http.QueryCollection(new Dictionary<string, Microsoft.Extensions.Primitives.StringValues>
+        {
+            ["$format"] = "json",
+            ["$top"] = "1",
+            ["$select"] = "userId"
+        }));
+
+        Assert.True(query.IsSupported);
+        Assert.Equal(string.Empty, query.IdentityField);
+        Assert.Null(query.WorkerId);
+        Assert.Contains("userId", query.Select);
+    }
+
+    [Fact]
     public void AuthenticationValidator_AcceptsBearerAndBasicCredentials()
     {
         var bearerRequest = new Microsoft.AspNetCore.Http.DefaultHttpContext().Request;
