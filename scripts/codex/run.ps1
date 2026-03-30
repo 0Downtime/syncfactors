@@ -13,6 +13,7 @@ $ErrorActionPreference = 'Stop'
 
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 . (Join-Path $scriptDir 'Load-WorktreeEnv.ps1')
+. (Join-Path $scriptDir '..' 'Start-SyncFactorsCommon.ps1')
 
 if ($PSBoundParameters.ContainsKey('Profile')) {
     $env:SYNCFACTORS_RUN_PROFILE = $Profile
@@ -80,6 +81,11 @@ switch ($Service) {
         $sharedArguments = @()
         if ($PSBoundParameters.ContainsKey('Profile')) {
             $sharedArguments += @('-Profile', $Profile)
+        }
+
+        if (-not $SkipBuild) {
+            Invoke-SolutionBuild -ProjectRoot (Resolve-ProjectRoot)
+            $sharedArguments += '-SkipBuild'
         }
 
         if ($SkipBuild) {
