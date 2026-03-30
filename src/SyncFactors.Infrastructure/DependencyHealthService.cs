@@ -488,6 +488,12 @@ public sealed class DependencyHealthService(
 
         var propertyName = parts[^1];
         var entityName = parts.Length > 1 ? parts[0] : string.Empty;
+        var propertyOnlyMatch = currentSelectValues.FirstOrDefault(value => string.Equals(value, propertyName, StringComparison.Ordinal));
+        if (!string.IsNullOrWhiteSpace(propertyOnlyMatch))
+        {
+            return propertyOnlyMatch;
+        }
+
         if (SuccessFactorsEntityNavigationAliases.TryGetValue(entityName, out var navigationName))
         {
             var aliasedMatch = currentSelectValues.FirstOrDefault(value =>
