@@ -52,7 +52,7 @@ public sealed class ApplyPreviewService(
 
         var samAccountName = preview.SamAccountName ?? throw new InvalidOperationException("Preview did not produce a SAM account name.");
         var displayName = GetPreviewAttributeValue(preview, "displayName")
-            ?? DirectoryIdentityFormatter.BuildDisplayName(worker.PreferredName, worker.LastName);
+            ?? samAccountName;
         var emailAddress = GetPreviewAttributeValue(preview, "UserPrincipalName")
             ?? GetPreviewAttributeValue(preview, "userPrincipalName")
             ?? GetPreviewAttributeValue(preview, "mail")

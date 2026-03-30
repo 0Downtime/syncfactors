@@ -130,8 +130,8 @@ public sealed class AttributeDiffServiceTests
             {
                 Assert.Equal("displayName", change.Attribute);
                 Assert.Equal("Sample101, Winnie", change.Before);
-                Assert.Equal("Sample101, Winnie", change.After);
-                Assert.False(change.Changed);
+                Assert.Equal("mock-10001", change.After);
+                Assert.True(change.Changed);
             },
             change =>
             {
@@ -269,8 +269,8 @@ public sealed class AttributeDiffServiceTests
             {
                 Assert.Equal("displayName", change.Attribute);
                 Assert.Equal("Sample101, Winnie", change.Before);
-                Assert.Equal("Sample101, Winnie", change.After);
-                Assert.False(change.Changed);
+                Assert.Equal("mock-10001", change.After);
+                Assert.True(change.Changed);
             },
             change =>
             {
@@ -419,7 +419,7 @@ public sealed class AttributeDiffServiceTests
             {
                 Assert.Equal("displayName", change.Attribute);
                 Assert.Equal("Old Display", change.Before);
-                Assert.Equal("Sample101, Winnie", change.After);
+                Assert.Equal("mock-10001", change.After);
                 Assert.True(change.Changed);
             },
             change =>

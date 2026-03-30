@@ -131,6 +131,13 @@ public sealed class ActiveDirectoryCommandGateway(
             return new DirectoryCommandResult(false, command.Action, command.SamAccountName, null, "Existing AD user did not include a distinguished name.", null);
         }
 
+        var currentCn = existing.Attributes.TryGetValue("cn", out var resolvedCn) ? resolvedCn : null;
+        if (!string.Equals(currentCn, command.DisplayName, StringComparison.Ordinal))
+        {
+            RenameUser(connection, distinguishedName, command.DisplayName, logger, command.WorkerId);
+            distinguishedName = BuildRenamedDistinguishedName(distinguishedName, command.DisplayName);
+        }
+
         var request = new ModifyRequest(distinguishedName);
         request.Modifications.Add(BuildReplaceModification("displayName", command.DisplayName));
         request.Modifications.Add(BuildReplaceModification("userPrincipalName", command.UserPrincipalName));
@@ -176,6 +183,7 @@ public sealed class ActiveDirectoryCommandGateway(
             $"({EscapeLdapFilter(config.IdentityAttribute)}={EscapeLdapFilter(workerId)})",
             SearchScope.Subtree,
             "sAMAccountName",
+            "cn",
             "distinguishedName",
             "displayName");
 
@@ -200,6 +208,7 @@ public sealed class ActiveDirectoryCommandGateway(
             DisplayName: GetAttribute(entry, "displayName"),
             Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
             {
+                ["cn"] = GetAttribute(entry, "cn"),
                 ["displayName"] = GetAttribute(entry, "displayName")
             });
     }
@@ -234,6 +243,41 @@ public sealed class ActiveDirectoryCommandGateway(
         var request = new ModifyRequest(distinguishedName);
         request.Modifications.Add(BuildReplaceModification("manager", managerDn));
         ExecuteModify(connection, request, logger, "set manager modify request", ("WorkerId", workerId), ("DistinguishedName", distinguishedName));
+    }
+
+    private static void RenameUser(LdapConnection connection, string distinguishedName, string commonName, ILogger logger, string workerId)
+    {
+        var parentDistinguishedName = GetParentDistinguishedName(distinguishedName);
+        var request = new ModifyDNRequest(distinguishedName, parentDistinguishedName, $"CN={EscapeDnComponent(commonName)}")
+        {
+            DeleteOldRdn = true
+        };
+
+        ExecuteModify(
+            connection,
+            request,
+            logger,
+            "rename user modify-dn request",
+            ("WorkerId", workerId),
+            ("DistinguishedName", distinguishedName),
+            ("NewCommonName", commonName));
+    }
+
+    private static string BuildRenamedDistinguishedName(string distinguishedName, string commonName)
+    {
+        var parentDistinguishedName = GetParentDistinguishedName(distinguishedName);
+        return $"CN={EscapeDnComponent(commonName)},{parentDistinguishedName}";
+    }
+
+    private static string GetParentDistinguishedName(string distinguishedName)
+    {
+        var separatorIndex = distinguishedName.IndexOf(',');
+        if (separatorIndex < 0 || separatorIndex == distinguishedName.Length - 1)
+        {
+            throw new InvalidOperationException($"Could not resolve parent distinguished name from '{distinguishedName}'.");
+        }
+
+        return distinguishedName[(separatorIndex + 1)..];
     }
 
     private static LdapConnection CreateConnection(ActiveDirectoryConfig config, ILogger logger, string purpose)
