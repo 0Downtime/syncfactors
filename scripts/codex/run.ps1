@@ -32,6 +32,8 @@ if ($PSBoundParameters.ContainsKey('Profile')) {
     }
 }
 
+$activeProfile = $env:SYNCFACTORS_RUN_PROFILE.ToLowerInvariant()
+
 switch ($Service) {
     'api' {
         $arguments = @(
@@ -93,12 +95,20 @@ switch ($Service) {
         }
 
         $terminalScriptPath = Join-Path $scriptDir 'Open-TerminalCommand.ps1'
-        $mockArguments = @('-Service', 'mock') + $sharedArguments
-        $apiArguments = @('-Service', 'api') + $sharedArguments
         $workerArguments = @('-Service', 'worker') + $sharedArguments
+        $startMockApi = $activeProfile -eq 'mock'
+        $startSyncFactorsApi = $true
 
-        & $terminalScriptPath 'SyncFactors mock API' './scripts/codex/run.ps1' $mockArguments
-        & $terminalScriptPath 'SyncFactors .NET API' './scripts/codex/run.ps1' $apiArguments
+        if ($startMockApi) {
+            $mockArguments = @('-Service', 'mock') + $sharedArguments
+            & $terminalScriptPath 'SyncFactors mock API' './scripts/codex/run.ps1' $mockArguments
+        }
+
+        if ($startSyncFactorsApi) {
+            $apiArguments = @('-Service', 'api') + $sharedArguments
+            & $terminalScriptPath 'SyncFactors .NET API' './scripts/codex/run.ps1' $apiArguments
+        }
+
         & $terminalScriptPath 'SyncFactors worker' './scripts/codex/run.ps1' $workerArguments
     }
 }
