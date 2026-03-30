@@ -123,7 +123,15 @@
                 }
                 @if (!string.IsNullOrWhiteSpace(entry.WorkerId))
                 {
-                    <p><a asp-page="/Preview" asp-route-workerId="@entry.WorkerId">Open worker preview</a></p>
+                    var savedPreviewRunId = GetSavedPreviewRunId(entry);
+                    if (!string.IsNullOrWhiteSpace(savedPreviewRunId))
+                    {
+                        <p><a asp-page="/Preview" asp-route-runId="@savedPreviewRunId">Open saved preview</a></p>
+                    }
+                    else
+                    {
+                        <p><a asp-page="/Preview" asp-route-workerId="@entry.WorkerId">Open worker preview</a></p>
+                    }
                 }
                 @if (entry.DiffRows.Count > 0)
                 {
@@ -166,4 +174,21 @@
             "inprogress" => "warn",
             _ => "neutral",
         };
+
+    private static string? GetSavedPreviewRunId(SyncFactors.Contracts.RunEntry entry)
+    {
+        if (string.Equals(entry.ArtifactType, "WorkerPreview", StringComparison.OrdinalIgnoreCase))
+        {
+            return entry.RunId;
+        }
+
+        if (entry.Item.ValueKind == System.Text.Json.JsonValueKind.Object &&
+            entry.Item.TryGetProperty("sourcePreviewRunId", out var sourcePreviewRunId) &&
+            sourcePreviewRunId.ValueKind == System.Text.Json.JsonValueKind.String)
+        {
+            return sourcePreviewRunId.GetString();
+        }
+
+        return null;
+    }
 }

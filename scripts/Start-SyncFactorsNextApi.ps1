@@ -2,6 +2,7 @@
 param(
     [string]$ConfigPath,
     [string]$MappingConfigPath,
+    [string]$SqlitePath = 'state/runtime/syncfactors.db',
     [string]$Urls = 'http://127.0.0.1:5087',
     [switch]$SkipBuild
 )
@@ -74,6 +75,7 @@ if ($null -eq $resolvedMappingConfigPath) {
 $env:ASPNETCORE_URLS = $Urls
 $env:SyncFactors__ConfigPath = $resolvedConfigPath
 $env:SyncFactors__MappingConfigPath = $resolvedMappingConfigPath
+$env:SyncFactors__SqlitePath = $SqlitePath
 $env:Logging__LogLevel__Default = 'Information'
 $env:Logging__LogLevel__SyncFactors = 'Debug'
 
@@ -81,6 +83,7 @@ Write-Host "Starting SyncFactors.Next API" -ForegroundColor Cyan
 Write-Host "URL: $Urls"
 Write-Host "Config: $resolvedConfigPath"
 Write-Host "Mapping Config: $resolvedMappingConfigPath"
+Write-Host "SQLite: $SqlitePath"
 Write-Host "Logging: SyncFactors=Debug" -ForegroundColor Cyan
 
 Push-Location $projectRoot
