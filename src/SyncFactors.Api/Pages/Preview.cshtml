@@ -112,7 +112,7 @@
 
         <article class="panel">
             <h2>Apply Guardrail</h2>
-            <p class="muted">Applying uses the saved preview snapshot, not a silent re-run. Confirm the exact action before continuing.</p>
+            <p class="muted">Applying uses the saved preview snapshot, not a silent re-run. This action writes to real Active Directory.</p>
 
             @if (riskCallouts.Count == 0)
             {
@@ -134,14 +134,14 @@
                 <input type="hidden" asp-for="ShowAllAttributes" />
                 <input type="hidden" asp-for="PreviewRunId" />
                 <input type="hidden" asp-for="PreviewFingerprint" />
-                <label class="filter-search">
-                    <span>Type confirmation text exactly</span>
-                    <input type="text" asp-for="ConfirmationText" autocomplete="off" placeholder="@Model.RequiredConfirmationText" />
+                <label class="filter-check">
+                    <span>I understand this will perform a real sync to AD using the saved preview.</span>
+                    <input type="checkbox" asp-for="AcknowledgeRealSync" />
                 </label>
-                <p class="muted confirmation-line"><code>@Model.RequiredConfirmationText</code></p>
+                <p class="callout warn">Real sync uses the reviewed preview fingerprint shown in this page and will fail if the saved snapshot is stale.</p>
                 <div class="filter-actions">
                     <button type="submit" data-worker-apply-button>
-                        <span class="button-label">Apply Preview</span>
+                        <span class="button-label">Real Sync To AD</span>
                         <span class="button-spinner" aria-hidden="true"></span>
                     </button>
                 </div>

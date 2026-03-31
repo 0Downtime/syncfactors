@@ -43,7 +43,7 @@ public sealed class PreviewModelTests
             WorkerId = "10001",
             PreviewRunId = preview.RunId!,
             PreviewFingerprint = preview.Fingerprint,
-            ConfirmationText = ApplyPreviewService.BuildConfirmationText(preview)
+            AcknowledgeRealSync = true
         };
 
         var result = await model.OnPostApplyAsync(CancellationToken.None);
@@ -51,6 +51,7 @@ public sealed class PreviewModelTests
         Assert.IsType<PageResult>(result);
         Assert.NotNull(applyService.LastRequest);
         Assert.Equal("10001", applyService.LastRequest!.WorkerId);
+        Assert.True(applyService.LastRequest.AcknowledgeRealSync);
         Assert.Equal(0, planner.CallCount);
         Assert.Same(preview, model.Preview);
         Assert.NotNull(model.ApplyResult);

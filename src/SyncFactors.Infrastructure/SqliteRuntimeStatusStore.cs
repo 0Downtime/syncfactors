@@ -69,10 +69,20 @@ public sealed class SqliteRuntimeStatusStore(SqlitePathResolver pathResolver) : 
 
     public async Task SaveAsync(RuntimeStatus status, CancellationToken cancellationToken)
     {
+        await UpsertAsync(status, requireNotInProgress: false, cancellationToken);
+    }
+
+    public async Task<bool> TryStartAsync(RuntimeStatus status, CancellationToken cancellationToken)
+    {
+        return await UpsertAsync(status, requireNotInProgress: true, cancellationToken) > 0;
+    }
+
+    private async Task<int> UpsertAsync(RuntimeStatus status, bool requireNotInProgress, CancellationToken cancellationToken)
+    {
         var databasePath = pathResolver.ResolveConfiguredPath() ?? pathResolver.Resolve();
         if (string.IsNullOrWhiteSpace(databasePath))
         {
-            return;
+            return 0;
         }
 
         await using var connection = OpenWriteConnection(databasePath);
@@ -80,7 +90,54 @@ public sealed class SqliteRuntimeStatusStore(SqlitePathResolver pathResolver) : 
 
         await using var upsertCommand = connection.CreateCommand();
         upsertCommand.CommandText =
+            requireNotInProgress
+                ? """
+            INSERT INTO runtime_status (
+              state_path,
+              run_id,
+              status,
+              stage,
+              started_at,
+              last_updated_at,
+              completed_at,
+              current_worker_id,
+              last_action,
+              processed_workers,
+              total_workers,
+              error_message,
+              snapshot_json
+            )
+            VALUES (
+              $statePath,
+              $runId,
+              $status,
+              $stage,
+              $startedAt,
+              $lastUpdatedAt,
+              $completedAt,
+              $currentWorkerId,
+              $lastAction,
+              $processedWorkers,
+              $totalWorkers,
+              $errorMessage,
+              $snapshotJson
+            )
+            ON CONFLICT(state_path) DO UPDATE SET
+              run_id = excluded.run_id,
+              status = excluded.status,
+              stage = excluded.stage,
+              started_at = excluded.started_at,
+              last_updated_at = excluded.last_updated_at,
+              completed_at = excluded.completed_at,
+              current_worker_id = excluded.current_worker_id,
+              last_action = excluded.last_action,
+              processed_workers = excluded.processed_workers,
+              total_workers = excluded.total_workers,
+              error_message = excluded.error_message,
+              snapshot_json = excluded.snapshot_json
+            WHERE runtime_status.status IS NULL OR runtime_status.status != 'InProgress';
             """
+                : """
             INSERT INTO runtime_status (
               state_path,
               run_id,
@@ -125,20 +182,25 @@ public sealed class SqliteRuntimeStatusStore(SqlitePathResolver pathResolver) : 
               error_message = excluded.error_message,
               snapshot_json = excluded.snapshot_json;
             """;
-        upsertCommand.Parameters.AddWithValue("$statePath", CurrentStatePath);
-        upsertCommand.Parameters.AddWithValue("$runId", (object?)status.RunId ?? DBNull.Value);
-        upsertCommand.Parameters.AddWithValue("$status", status.Status);
-        upsertCommand.Parameters.AddWithValue("$stage", status.Stage);
-        upsertCommand.Parameters.AddWithValue("$startedAt", ToDbValue(status.StartedAt));
-        upsertCommand.Parameters.AddWithValue("$lastUpdatedAt", ToDbValue(status.LastUpdatedAt));
-        upsertCommand.Parameters.AddWithValue("$completedAt", ToDbValue(status.CompletedAt));
-        upsertCommand.Parameters.AddWithValue("$currentWorkerId", (object?)status.CurrentWorkerId ?? DBNull.Value);
-        upsertCommand.Parameters.AddWithValue("$lastAction", (object?)status.LastAction ?? DBNull.Value);
-        upsertCommand.Parameters.AddWithValue("$processedWorkers", status.ProcessedWorkers);
-        upsertCommand.Parameters.AddWithValue("$totalWorkers", status.TotalWorkers);
-        upsertCommand.Parameters.AddWithValue("$errorMessage", (object?)status.ErrorMessage ?? DBNull.Value);
-        upsertCommand.Parameters.AddWithValue("$snapshotJson", JsonSerializer.Serialize(status, JsonOptions.Default));
-        await upsertCommand.ExecuteNonQueryAsync(cancellationToken);
+        BindStatusParameters(upsertCommand, status);
+        return await upsertCommand.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static void BindStatusParameters(SqliteCommand command, RuntimeStatus status)
+    {
+        command.Parameters.AddWithValue("$statePath", CurrentStatePath);
+        command.Parameters.AddWithValue("$runId", (object?)status.RunId ?? DBNull.Value);
+        command.Parameters.AddWithValue("$status", status.Status);
+        command.Parameters.AddWithValue("$stage", status.Stage);
+        command.Parameters.AddWithValue("$startedAt", ToDbValue(status.StartedAt));
+        command.Parameters.AddWithValue("$lastUpdatedAt", ToDbValue(status.LastUpdatedAt));
+        command.Parameters.AddWithValue("$completedAt", ToDbValue(status.CompletedAt));
+        command.Parameters.AddWithValue("$currentWorkerId", (object?)status.CurrentWorkerId ?? DBNull.Value);
+        command.Parameters.AddWithValue("$lastAction", (object?)status.LastAction ?? DBNull.Value);
+        command.Parameters.AddWithValue("$processedWorkers", status.ProcessedWorkers);
+        command.Parameters.AddWithValue("$totalWorkers", status.TotalWorkers);
+        command.Parameters.AddWithValue("$errorMessage", (object?)status.ErrorMessage ?? DBNull.Value);
+        command.Parameters.AddWithValue("$snapshotJson", JsonSerializer.Serialize(status, JsonOptions.Default));
     }
 
     private static RuntimeStatus ReadLegacyStatus(SqliteDataReader reader)

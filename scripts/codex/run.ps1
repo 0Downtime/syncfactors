@@ -1,9 +1,9 @@
 [CmdletBinding()]
 param(
     [ValidateSet('api', 'worker', 'mock', 'stack')]
-    [string]$Service,
+    [string]$Service = 'stack',
     [ValidateSet('mock', 'real')]
-    [string]$Profile,
+    [string]$Profile = 'mock',
     [switch]$SkipBuild,
     [Alias('h')]
     [switch]$Help
@@ -19,6 +19,7 @@ function Show-Usage {
 Usage:
   pwsh ./scripts/codex/run.ps1 -Service <api|worker|mock|stack> [-Profile <mock|real>] [-SkipBuild]
   pwsh ./scripts/codex/run.ps1 -Help
+  pwsh ./scripts/codex/run.ps1
 
 Services:
   api      Start the SyncFactors .NET API.
@@ -27,11 +28,12 @@ Services:
   stack    Start the full local stack in separate terminals.
 
 Options:
-  -Profile <mock|real>  Select the run profile. Defaults to the worktree environment.
+  -Profile <mock|real>  Select the run profile. Defaults to mock.
   -SkipBuild            Skip the solution build step before starting the selected service.
   -Help                 Show this help text.
 
 Examples:
+  pwsh ./scripts/codex/run.ps1
   pwsh ./scripts/codex/run.ps1 -Service api
   pwsh ./scripts/codex/run.ps1 -Service worker -Profile real -SkipBuild
   pwsh ./scripts/codex/run.ps1 -Service stack -Profile mock
@@ -43,29 +45,22 @@ if ($Help) {
     exit 0
 }
 
-if (-not $PSBoundParameters.ContainsKey('Service')) {
-    Show-Usage
-    throw "The -Service parameter is required unless -Help is specified."
-}
-
 . (Join-Path $scriptDir 'Load-WorktreeEnv.ps1')
 . (Join-Path $scriptDir '..' 'Start-SyncFactorsCommon.ps1')
 
-if ($PSBoundParameters.ContainsKey('Profile')) {
-    $env:SYNCFACTORS_RUN_PROFILE = $Profile
-    if ([string]::IsNullOrWhiteSpace($env:SYNCFACTORS_CONFIG_PATH)) {
-        $env:SYNCFACTORS_PROFILE_CONFIG_PATH_ABS = if ($Profile -eq 'real') {
-            $env:SYNCFACTORS_REAL_CONFIG_PATH_ABS
-        }
-        else {
-            $env:SYNCFACTORS_MOCK_CONFIG_PATH_ABS
-        }
-
-        $env:SYNCFACTORS_RESOLVED_CONFIG_PATH_ABS = $env:SYNCFACTORS_PROFILE_CONFIG_PATH_ABS
+$env:SYNCFACTORS_RUN_PROFILE = $Profile
+if ([string]::IsNullOrWhiteSpace($env:SYNCFACTORS_CONFIG_PATH)) {
+    $env:SYNCFACTORS_PROFILE_CONFIG_PATH_ABS = if ($Profile -eq 'real') {
+        $env:SYNCFACTORS_REAL_CONFIG_PATH_ABS
     }
     else {
-        $env:SYNCFACTORS_RESOLVED_CONFIG_PATH_ABS = $env:SYNCFACTORS_CONFIG_PATH_ABS
+        $env:SYNCFACTORS_MOCK_CONFIG_PATH_ABS
     }
+
+    $env:SYNCFACTORS_RESOLVED_CONFIG_PATH_ABS = $env:SYNCFACTORS_PROFILE_CONFIG_PATH_ABS
+}
+else {
+    $env:SYNCFACTORS_RESOLVED_CONFIG_PATH_ABS = $env:SYNCFACTORS_CONFIG_PATH_ABS
 }
 
 $activeProfile = $env:SYNCFACTORS_RUN_PROFILE.ToLowerInvariant()
@@ -117,9 +112,7 @@ switch ($Service) {
     }
     'stack' {
         $sharedArguments = @()
-        if ($PSBoundParameters.ContainsKey('Profile')) {
-            $sharedArguments += @('-Profile', $Profile)
-        }
+        $sharedArguments += @('-Profile', $Profile)
 
         if (-not $SkipBuild) {
             Invoke-SolutionBuild -ProjectRoot (Resolve-ProjectRoot)

@@ -5,6 +5,7 @@ namespace SyncFactors.Domain;
 public interface IRuntimeStatusStore
 {
     Task<RuntimeStatus?> GetCurrentAsync(CancellationToken cancellationToken);
+    Task<bool> TryStartAsync(RuntimeStatus status, CancellationToken cancellationToken);
     Task SaveAsync(RuntimeStatus status, CancellationToken cancellationToken);
 }
 
@@ -117,6 +118,11 @@ public interface ISyncScheduleStore
     Task<SyncScheduleStatus> UpdateAsync(UpdateSyncScheduleRequest request, CancellationToken cancellationToken);
     Task<SyncScheduleStatus> RecordSuccessfulEnqueueAsync(DateTimeOffset enqueuedAt, CancellationToken cancellationToken);
     Task<SyncScheduleStatus> RecordFailedEnqueueAsync(DateTimeOffset attemptedAt, string errorMessage, CancellationToken cancellationToken);
+}
+
+public interface IFullSyncRunService
+{
+    Task<RunLaunchResult> LaunchAsync(LaunchFullRunRequest request, CancellationToken cancellationToken);
 }
 
 public sealed record AttributeMapping(
