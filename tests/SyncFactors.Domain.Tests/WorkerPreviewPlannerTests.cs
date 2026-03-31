@@ -78,6 +78,44 @@ public sealed class WorkerPreviewPlannerTests
         Assert.Equal("christopher.brien@Exampleenergy.com", diffService.LastProposedEmailAddress);
     }
 
+    [Fact]
+    public async Task PreviewAsync_DoesNotRequireReviewWhenRequiredMappingsResolveThroughNormalizedSourcePaths()
+    {
+        var worker = new WorkerSnapshot(
+            WorkerId: "44522",
+            PreferredName: "Christopher",
+            LastName: "Brien",
+            Department: "Infrastructure & Security",
+            TargetOu: "OU=Employees,DC=example,DC=com",
+            IsPrehire: false,
+            Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["personIdExternal"] = "44522",
+                ["firstName"] = "Christopher",
+                ["lastName"] = "Brien",
+                ["email"] = "christopher.brien@example.test"
+            });
+
+        var mappingProvider = new RequiredPathMappingProvider();
+        var planner = new WorkerPreviewPlanner(
+            new StubWorkerSource(worker),
+            new WorkerPlanningService(
+                new StubDirectoryGateway(),
+                new StubIdentityMatcher(),
+                new StubAttributeDiffService(),
+                mappingProvider,
+                NullLogger<WorkerPlanningService>.Instance),
+            mappingProvider,
+            new StubWorkerPreviewLogWriter(),
+            new StubRunRepository(),
+            NullLogger<WorkerPreviewPlanner>.Instance);
+
+        var preview = await planner.PreviewAsync("44522", CancellationToken.None);
+
+        Assert.Null(preview.ReviewCaseType);
+        Assert.Empty(preview.MissingSourceAttributes);
+    }
+
     private sealed class StubWorkerSource(WorkerSnapshot worker) : IWorkerSource
     {
         public Task<WorkerSnapshot?> GetWorkerAsync(string workerId, CancellationToken cancellationToken)
@@ -194,6 +232,17 @@ public sealed class WorkerPreviewPlannerTests
         [
             new AttributeMapping("company", "company", Required: true, Transform: "identity"),
             new AttributeMapping("department", "department", Required: true, Transform: "identity")
+        ];
+    }
+
+    private sealed class RequiredPathMappingProvider : IAttributeMappingProvider
+    {
+        public IReadOnlyList<AttributeMapping> GetEnabledMappings() =>
+        [
+            new AttributeMapping("personIdExternal", "employeeID", Required: true, Transform: "Trim"),
+            new AttributeMapping("personalInfoNav[0].firstName", "GivenName", Required: true, Transform: "Trim"),
+            new AttributeMapping("personalInfoNav[0].lastName", "Surname", Required: true, Transform: "Trim"),
+            new AttributeMapping("emailNav[?(@.isPrimary == true)].emailAddress", "UserPrincipalName", Required: true, Transform: "Lower")
         ];
     }
 
