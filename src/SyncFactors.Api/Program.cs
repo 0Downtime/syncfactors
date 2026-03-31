@@ -15,6 +15,11 @@ builder.Services.AddSingleton<SyncFactorsConfigurationLoader>();
 builder.Services.AddSingleton<SyncFactorsConfigurationValidator>();
 builder.Services.AddSingleton<ScaffoldDataStore>();
 builder.Services.AddSingleton<ScaffoldWorkerSource>();
+builder.Services.AddSingleton(serviceProvider =>
+{
+    var config = serviceProvider.GetRequiredService<SyncFactorsConfigurationLoader>().GetSyncConfig();
+    return new WorkerRunSettings(config.Safety.MaxCreatesPerRun);
+});
 builder.Services.AddSingleton<ScaffoldDirectoryGateway>();
 builder.Services.AddSingleton<ScaffoldDirectoryCommandGateway>();
 builder.Services.AddSingleton(TimeProvider.System);
@@ -38,6 +43,7 @@ builder.Services.AddSingleton<IAttributeDiffService, AttributeDiffService>();
 builder.Services.AddSingleton<IWorkerHeartbeatStore, SqliteWorkerHeartbeatStore>();
 builder.Services.AddTransient<IWorkerPreviewPlanner, WorkerPreviewPlanner>();
 builder.Services.AddTransient<IApplyPreviewService, ApplyPreviewService>();
+builder.Services.AddTransient<IFullSyncRunService, FullSyncRunService>();
 builder.Services.AddSingleton<IDashboardSnapshotService, DashboardSnapshotService>();
 builder.Services.AddSingleton<IRuntimeStatusStore, SqliteRuntimeStatusStore>();
 builder.Services.AddSingleton<IRunRepository, SqliteRunRepository>();
@@ -173,6 +179,17 @@ app.MapPost("/api/preview/{workerId}/apply", async (
 
     var result = await applyPreviewService.ApplyAsync(request, cancellationToken);
     return result.Succeeded
+        ? Results.Ok(result)
+        : Results.BadRequest(result);
+});
+
+app.MapPost("/api/runs/full", async (
+    LaunchFullRunRequest request,
+    IFullSyncRunService fullSyncRunService,
+    CancellationToken cancellationToken) =>
+{
+    var result = await fullSyncRunService.LaunchAsync(request, cancellationToken);
+    return string.Equals(result.Status, "Succeeded", StringComparison.OrdinalIgnoreCase)
         ? Results.Ok(result)
         : Results.BadRequest(result);
 });

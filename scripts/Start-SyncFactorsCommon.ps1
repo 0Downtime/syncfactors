@@ -41,7 +41,7 @@ function Invoke-SolutionBuild {
         [string]$ProjectRoot
     )
 
-    dotnet build (Join-Path $ProjectRoot 'SyncFactors.Next.sln')
+    dotnet build (Join-Path $ProjectRoot 'SyncFactors.Next.sln') -m:1 -p:UseSharedCompilation=false
     if ($LASTEXITCODE -ne 0) {
         throw "dotnet build failed."
     }
