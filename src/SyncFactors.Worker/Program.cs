@@ -2,6 +2,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using SyncFactors.Domain;
 using SyncFactors.Infrastructure;
+using System.Net;
 
 var builder = Host.CreateApplicationBuilder(args);
 builder.Services.AddSingleton(new ScaffoldDataPathResolver(builder.Configuration["SyncFactors:ScaffoldDataPath"]));
@@ -25,7 +26,11 @@ builder.Services.AddSingleton<IWorkerHeartbeatStore, SqliteWorkerHeartbeatStore>
 builder.Services.AddSingleton<IRunRepository, SqliteRunRepository>();
 builder.Services.AddSingleton<IRunQueueStore, SqliteRunQueueStore>();
 builder.Services.AddSingleton<ISyncScheduleStore, SqliteSyncScheduleStore>();
-builder.Services.AddHttpClient<SuccessFactorsWorkerSource>();
+builder.Services.AddHttpClient<SuccessFactorsWorkerSource>()
+    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+    {
+        AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate
+    });
 builder.Services.AddTransient<IWorkerSource>(serviceProvider => serviceProvider.GetRequiredService<SuccessFactorsWorkerSource>());
 builder.Services.AddTransient<IDirectoryGateway, ActiveDirectoryGateway>();
 builder.Services.AddTransient<IDirectoryCommandGateway, ActiveDirectoryCommandGateway>();

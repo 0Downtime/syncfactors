@@ -84,27 +84,52 @@ public sealed class SuccessFactorsWorkerSource(
         while (true)
         {
             var payload = await ExecuteListRequestAsync(config, query, skip, pageSize, cancellationToken);
-            using var document = JsonDocument.Parse(payload.Body);
-            var workers = ExtractWorkerArray(document.RootElement)
-                .Select(worker => TryParseWorkerElement(worker, config, query))
-                .Where(worker => worker is not null)
-                .Select(worker => worker!)
-                .ToArray();
-
-            if (workers.Length == 0)
+            JsonDocument document;
+            try
             {
-                yield break;
+                document = JsonDocument.Parse(payload.Body);
+            }
+            catch (JsonException ex)
+            {
+                logger.LogError(
+                    ex,
+                    "SuccessFactors returned non-JSON or invalid JSON while listing workers. ContentType={ContentType} Uri={Uri} Skip={Skip} Top={Top} BodyPreview={BodyPreview}",
+                    payload.ContentType,
+                    payload.RequestUri,
+                    skip,
+                    pageSize,
+                    TrimForLog(payload.Body));
+                throw ExternalSystemExceptionFactory.CreateSuccessFactorsException(
+                    operation: "worker list response parsing",
+                    endpoint: payload.RequestUri,
+                    summary: $"The API returned invalid JSON. Status={payload.StatusCode}, ContentType={payload.ContentType}, BodyPreview={TrimForLog(payload.Body)}",
+                    innerException: ex);
             }
 
-            foreach (var worker in workers)
+            WorkerSnapshot[] workers;
+            using (document)
             {
-                cancellationToken.ThrowIfCancellationRequested();
-                yield return worker;
-            }
+                workers = ExtractWorkerArray(document.RootElement)
+                    .Select(worker => TryParseWorkerElement(worker, config, query))
+                    .Where(worker => worker is not null)
+                    .Select(worker => worker!)
+                    .ToArray();
 
-            if (workers.Length < pageSize)
-            {
-                yield break;
+                if (workers.Length == 0)
+                {
+                    yield break;
+                }
+
+                foreach (var worker in workers)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    yield return worker;
+                }
+
+                if (workers.Length < pageSize)
+                {
+                    yield break;
+                }
             }
 
             skip += workers.Length;
