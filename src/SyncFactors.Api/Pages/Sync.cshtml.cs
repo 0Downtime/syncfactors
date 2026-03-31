@@ -8,7 +8,8 @@ namespace SyncFactors.Api.Pages;
 public sealed class SyncModel(
     IDashboardSnapshotService dashboardSnapshotService,
     IRunQueueStore runQueueStore,
-    ISyncScheduleStore syncScheduleStore) : PageModel
+    ISyncScheduleStore syncScheduleStore,
+    IFullSyncRunService fullSyncRunService) : PageModel
 {
     private const string DryRunMode = "DryRun";
     private const string LiveRunMode = "LiveRun";
@@ -21,6 +22,9 @@ public sealed class SyncModel(
 
     [BindProperty]
     public int IntervalMinutes { get; set; } = 30;
+
+    [BindProperty]
+    public bool AcknowledgeRealSync { get; set; }
 
     public RuntimeStatus Status { get; private set; } = new(
         Status: "Idle",
@@ -51,13 +55,66 @@ public sealed class SyncModel(
 
     public bool HasPendingOrActiveRun { get; private set; }
 
-    public string? ErrorMessage { get; private set; }
+    public bool CanLaunchSync => !string.Equals(Status.Status, "InProgress", StringComparison.OrdinalIgnoreCase);
 
-    public string? SuccessMessage { get; private set; }
+    [TempData]
+    public string? ErrorMessage { get; set; }
+
+    [TempData]
+    public string? SuccessMessage { get; set; }
+
+    [TempData]
+    public string? LaunchRunId { get; set; }
 
     public async Task OnGetAsync(CancellationToken cancellationToken)
     {
         await LoadAsync(cancellationToken);
+    }
+
+    public async Task<IActionResult> OnPostDryRunAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            var result = await fullSyncRunService.LaunchAsync(
+                new LaunchFullRunRequest(DryRun: true, AcknowledgeRealSync: false),
+                cancellationToken);
+
+            LaunchRunId = result.RunId;
+            SuccessMessage = result.Message;
+            ErrorMessage = null;
+            return RedirectToPage();
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+            SuccessMessage = null;
+            LaunchRunId = null;
+            await LoadAsync(cancellationToken);
+            return Page();
+        }
+    }
+
+    public async Task<IActionResult> OnPostLiveRunAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            var result = await fullSyncRunService.LaunchAsync(
+                new LaunchFullRunRequest(DryRun: false, AcknowledgeRealSync: AcknowledgeRealSync),
+                cancellationToken);
+
+            LaunchRunId = result.RunId;
+            SuccessMessage = result.Message;
+            ErrorMessage = null;
+            return RedirectToPage();
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+            SuccessMessage = null;
+            LaunchRunId = null;
+            await LoadAsync(cancellationToken);
+            return Page();
+        }
     }
 
     public async Task<IActionResult> OnPostStartRunAsync(CancellationToken cancellationToken)
