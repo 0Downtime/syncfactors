@@ -134,8 +134,8 @@ public sealed class SyncModel(
         if (await runQueueStore.HasPendingOrActiveRunAsync(cancellationToken))
         {
             ErrorMessage = "A run is already pending or in progress.";
-            await LoadAsync(cancellationToken);
-            return Page();
+            SuccessMessage = null;
+            return RedirectToPage(new { PageNumber });
         }
 
         await runQueueStore.EnqueueAsync(
@@ -148,9 +148,8 @@ public sealed class SyncModel(
         SuccessMessage = string.Equals(RunMode, LiveRunMode, StringComparison.Ordinal)
             ? "Live provisioning run queued."
             : "Dry-run sync queued.";
-
-        await LoadAsync(cancellationToken);
-        return Page();
+        ErrorMessage = null;
+        return RedirectToPage(new { PageNumber });
     }
 
     public async Task<IActionResult> OnPostSaveScheduleAsync(CancellationToken cancellationToken)

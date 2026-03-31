@@ -95,7 +95,7 @@ public sealed class BulkRunCoordinator(
                     try
                     {
                         var plan = await planningService.PlanAsync(worker, logPath: null, ct);
-                        var bucket = plan.Bucket;
+                        var bucket = ResolveExecutionBucket(plan);
                         string? reason = plan.Reason;
                         string? action = null;
                         var applied = false;
@@ -247,6 +247,14 @@ public sealed class BulkRunCoordinator(
             TargetOu: plan.Worker.TargetOu,
             FromOu: plan.DirectoryUser.DistinguishedName,
             ToOu: plan.Worker.TargetOu);
+    }
+
+    private static string ResolveExecutionBucket(PlannedWorkerAction plan)
+    {
+        return string.Equals(plan.Bucket, "updates", StringComparison.OrdinalIgnoreCase) &&
+               plan.AttributeChanges.All(change => !change.Changed)
+            ? "unchanged"
+            : plan.Bucket;
     }
 
     private static JsonElement BuildEntryItem(PlannedWorkerAction plan, bool dryRun, string bucket, string? action, bool applied, bool succeeded, string? reason)
