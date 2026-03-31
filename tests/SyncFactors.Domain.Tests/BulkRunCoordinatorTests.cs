@@ -17,6 +17,7 @@ public sealed class BulkRunCoordinatorTests
         ];
         var coordinator = new BulkRunCoordinator(
             new StubWorkerSource(workers),
+            new StubRunQueueStore(),
             new StubWorkerPlanningService(),
             new StubDirectoryMutationCommandBuilder(),
             new StubDirectoryCommandGateway(),
@@ -131,6 +132,75 @@ public sealed class BulkRunCoordinatorTests
         }
     }
 
+    private sealed class StubRunQueueStore : IRunQueueStore
+    {
+        public Task<RunQueueRequest> EnqueueAsync(StartRunRequest request, CancellationToken cancellationToken)
+        {
+            _ = request;
+            _ = cancellationToken;
+            throw new NotSupportedException();
+        }
+
+        public Task<RunQueueRequest?> ClaimNextPendingAsync(string workerName, CancellationToken cancellationToken)
+        {
+            _ = workerName;
+            _ = cancellationToken;
+            return Task.FromResult<RunQueueRequest?>(null);
+        }
+
+        public Task<RunQueueRequest?> GetPendingOrActiveAsync(CancellationToken cancellationToken)
+        {
+            _ = cancellationToken;
+            return Task.FromResult<RunQueueRequest?>(null);
+        }
+
+        public Task<bool> HasPendingOrActiveRunAsync(CancellationToken cancellationToken)
+        {
+            _ = cancellationToken;
+            return Task.FromResult(false);
+        }
+
+        public Task<bool> CancelPendingOrActiveAsync(string? requestedBy, CancellationToken cancellationToken)
+        {
+            _ = requestedBy;
+            _ = cancellationToken;
+            return Task.FromResult(false);
+        }
+
+        public Task<bool> IsCancellationRequestedAsync(string requestId, CancellationToken cancellationToken)
+        {
+            _ = requestId;
+            _ = cancellationToken;
+            return Task.FromResult(false);
+        }
+
+        public Task CompleteAsync(string requestId, string runId, CancellationToken cancellationToken)
+        {
+            _ = requestId;
+            _ = runId;
+            _ = cancellationToken;
+            return Task.CompletedTask;
+        }
+
+        public Task CancelAsync(string requestId, string? runId, string? errorMessage, CancellationToken cancellationToken)
+        {
+            _ = requestId;
+            _ = runId;
+            _ = errorMessage;
+            _ = cancellationToken;
+            return Task.CompletedTask;
+        }
+
+        public Task FailAsync(string requestId, string? runId, string errorMessage, CancellationToken cancellationToken)
+        {
+            _ = requestId;
+            _ = runId;
+            _ = errorMessage;
+            _ = cancellationToken;
+            return Task.CompletedTask;
+        }
+    }
+
     private sealed class CapturingRunLifecycleService : IRunLifecycleService
     {
         public static List<RunEntryRecord> Entries { get; } = [];
@@ -189,6 +259,11 @@ public sealed class BulkRunCoordinatorTests
             _ = startedAt;
             _ = cancellationToken;
             return Task.CompletedTask;
+        }
+
+        public Task CancelRunAsync(string runId, string mode, bool dryRun, int processedWorkers, int totalWorkers, string? currentWorkerId, string? reason, RunTally tally, JsonElement report, DateTimeOffset startedAt, CancellationToken cancellationToken)
+        {
+            throw new InvalidOperationException("Bulk run should not be canceled in this test.");
         }
 
         public Task FailRunAsync(string runId, string mode, bool dryRun, int processedWorkers, int totalWorkers, string? currentWorkerId, string errorMessage, RunTally tally, JsonElement report, DateTimeOffset startedAt, CancellationToken cancellationToken)

@@ -50,9 +50,9 @@
         <p class="muted">Full-source sync only. Dry-run is the default and safest option.</p>
         @if (Model.HasPendingOrActiveRun)
         {
-            <p class="callout warn">A run is already pending or active. New ad hoc runs are temporarily blocked.</p>
+            <p class="callout warn">A run is already pending or active. You can request cancellation and the worker will stop gracefully.</p>
         }
-        <form method="post" asp-page-handler="StartRun" class="filters">
+        <form method="post" asp-page-handler="@(Model.HasPendingOrActiveRun ? "CancelRun" : "StartRun")" class="filters">
             <label>
                 <span>Run type</span>
                 <select asp-for="RunMode" disabled="@Model.HasPendingOrActiveRun">
@@ -61,7 +61,9 @@
                 </select>
             </label>
             <div class="filter-actions">
-                <button type="submit" disabled="@Model.HasPendingOrActiveRun">Queue run</button>
+                <button type="submit" disabled="@(string.Equals(Model.CurrentQueueRequest?.Status, "CancelRequested", StringComparison.OrdinalIgnoreCase))">
+                    @(string.Equals(Model.CurrentQueueRequest?.Status, "CancelRequested", StringComparison.OrdinalIgnoreCase) ? "Cancel requested" : Model.HasPendingOrActiveRun ? "Cancel run" : "Queue run")
+                </button>
             </div>
         </form>
     </article>
@@ -161,6 +163,7 @@
             "succeeded" => "good",
             "failed" => "bad",
             "inprogress" => "warn",
+            "canceled" => "neutral",
             _ => "neutral",
         };
 }

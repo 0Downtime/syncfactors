@@ -79,16 +79,45 @@ public sealed class SyncScheduleCoordinatorTests
             return Task.FromResult<RunQueueRequest?>(null);
         }
 
+        public Task<RunQueueRequest?> GetPendingOrActiveAsync(CancellationToken cancellationToken)
+        {
+            _ = cancellationToken;
+            return Task.FromResult<RunQueueRequest?>(null);
+        }
+
         public Task<bool> HasPendingOrActiveRunAsync(CancellationToken cancellationToken)
         {
             _ = cancellationToken;
             return Task.FromResult(HasPendingOrActiveRun);
         }
 
+        public Task<bool> CancelPendingOrActiveAsync(string? requestedBy, CancellationToken cancellationToken)
+        {
+            _ = requestedBy;
+            _ = cancellationToken;
+            return Task.FromResult(false);
+        }
+
+        public Task<bool> IsCancellationRequestedAsync(string requestId, CancellationToken cancellationToken)
+        {
+            _ = requestId;
+            _ = cancellationToken;
+            return Task.FromResult(false);
+        }
+
         public Task CompleteAsync(string requestId, string runId, CancellationToken cancellationToken)
         {
             _ = requestId;
             _ = runId;
+            _ = cancellationToken;
+            return Task.CompletedTask;
+        }
+
+        public Task CancelAsync(string requestId, string? runId, string? errorMessage, CancellationToken cancellationToken)
+        {
+            _ = requestId;
+            _ = runId;
+            _ = errorMessage;
             _ = cancellationToken;
             return Task.CompletedTask;
         }

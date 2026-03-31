@@ -37,6 +37,12 @@ public sealed class Worker(
                     await runQueueStore.CompleteAsync(claimed.RequestId, runId, stoppingToken);
                     await WriteHeartbeatAsync(startedAt, "Idle", $"Completed queued run {claimed.RequestId}.", stoppingToken);
                 }
+                catch (RunCanceledException ex)
+                {
+                    logger.LogInformation("Queued run canceled. RequestId={RequestId}", claimed.RequestId);
+                    await runQueueStore.CancelAsync(claimed.RequestId, ex.RunId, ex.Message, stoppingToken);
+                    await WriteHeartbeatAsync(startedAt, "Idle", $"Run {claimed.RequestId} canceled.", stoppingToken);
+                }
                 catch (Exception ex)
                 {
                     logger.LogError(ex, "Queued run failed. RequestId={RequestId}", claimed.RequestId);

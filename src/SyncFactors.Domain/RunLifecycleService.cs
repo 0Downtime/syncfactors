@@ -10,6 +10,7 @@ public interface IRunLifecycleService
     Task RecordProgressAsync(string runId, string mode, bool dryRun, int processedWorkers, int totalWorkers, string? currentWorkerId, string? lastAction, RunTally tally, CancellationToken cancellationToken);
     Task AppendRunEntryAsync(string runId, RunEntryRecord entry, CancellationToken cancellationToken);
     Task CompleteRunAsync(string runId, string mode, bool dryRun, int totalWorkers, RunTally tally, JsonElement report, DateTimeOffset startedAt, CancellationToken cancellationToken);
+    Task CancelRunAsync(string runId, string mode, bool dryRun, int processedWorkers, int totalWorkers, string? currentWorkerId, string? reason, RunTally tally, JsonElement report, DateTimeOffset startedAt, CancellationToken cancellationToken);
     Task FailRunAsync(string runId, string mode, bool dryRun, int processedWorkers, int totalWorkers, string? currentWorkerId, string errorMessage, RunTally tally, JsonElement report, DateTimeOffset startedAt, CancellationToken cancellationToken);
 }
 
@@ -295,6 +296,58 @@ public sealed class RunLifecycleService(
                 LastUpdatedAt: completedAt,
                 CompletedAt: completedAt,
                 ErrorMessage: errorMessage),
+            cancellationToken);
+    }
+
+    public async Task CancelRunAsync(string runId, string mode, bool dryRun, int processedWorkers, int totalWorkers, string? currentWorkerId, string? reason, RunTally tally, JsonElement report, DateTimeOffset startedAt, CancellationToken cancellationToken)
+    {
+        var completedAt = DateTimeOffset.UtcNow;
+        var existing = await runRepository.GetRunAsync(runId, cancellationToken);
+        var message = string.IsNullOrWhiteSpace(reason) ? "Run canceled." : reason;
+        await runRepository.SaveRunAsync(
+            new RunRecord(
+                RunId: runId,
+                Path: null,
+                ArtifactType: "BulkRun",
+                ConfigPath: null,
+                MappingConfigPath: null,
+                Mode: mode,
+                DryRun: dryRun,
+                Status: "Canceled",
+                StartedAt: startedAt,
+                CompletedAt: completedAt,
+                DurationSeconds: Math.Max(0, (int)(completedAt - startedAt).TotalSeconds),
+                Creates: tally.Creates,
+                Updates: tally.Updates,
+                Enables: tally.Enables,
+                Disables: tally.Disables,
+                GraveyardMoves: tally.GraveyardMoves,
+                Deletions: tally.Deletions,
+                Quarantined: tally.Quarantined,
+                Conflicts: tally.Conflicts,
+                GuardrailFailures: tally.GuardrailFailures,
+                ManualReview: tally.ManualReview,
+                Unchanged: tally.Unchanged,
+                Report: report,
+                RunTrigger: existing?.Run.RunTrigger ?? "AdHoc",
+                RequestedBy: existing?.Run.RequestedBy),
+            cancellationToken);
+
+        await runtimeStatusStore.SaveAsync(
+            new RuntimeStatus(
+                Status: "Idle",
+                Stage: "Canceled",
+                RunId: runId,
+                Mode: mode,
+                DryRun: dryRun,
+                ProcessedWorkers: processedWorkers,
+                TotalWorkers: totalWorkers,
+                CurrentWorkerId: currentWorkerId,
+                LastAction: message,
+                StartedAt: startedAt,
+                LastUpdatedAt: completedAt,
+                CompletedAt: completedAt,
+                ErrorMessage: null),
             cancellationToken);
     }
 
