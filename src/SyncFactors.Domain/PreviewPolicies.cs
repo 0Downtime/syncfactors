@@ -171,7 +171,7 @@ public sealed class AttributeDiffService : IAttributeDiffService
             return directValue;
         }
 
-        var normalizedSource = NormalizeSourcePath(source);
+        var normalizedSource = SourceAttributePathNormalizer.Normalize(source);
         if (!string.Equals(normalizedSource, source, StringComparison.OrdinalIgnoreCase)
             && worker.Attributes.TryGetValue(normalizedSource, out var normalizedValue))
         {
@@ -209,69 +209,6 @@ public sealed class AttributeDiffService : IAttributeDiffService
                 ? parsed.ToString("yyyy-MM-dd")
                 : value,
             _ => value
-        };
-    }
-
-    private static string NormalizeSourcePath(string source)
-    {
-        return source switch
-        {
-            "personalInfoNav[0].firstName" => "firstName",
-            "personalInfoNav[0].lastName" => "lastName",
-            "personalInfoNav[0].preferredName" => "preferredName",
-            "personalInfoNav[0].displayName" => "displayName",
-            "emailNav[0].emailAddress" => "email",
-            "emailNav[?(@.isPrimary == true)].emailAddress" => "email",
-            "emailNav[?(@.isPrimary == true)].emailType" => "emailType",
-            "emailNav[?(@.isPrimary == true)].isPrimary" => "emailIsPrimary",
-            "employmentNav[0].startDate" => "startDate",
-            "employmentNav[0].jobInfoNav[0].department" => "department",
-            "employmentNav[0].jobInfoNav[0].departmentNav.department" => "department",
-            "employmentNav[0].jobInfoNav[0].departmentNav.name_localized" => "department",
-            "employmentNav[0].jobInfoNav[0].departmentNav.name" => "department",
-            "employmentNav[0].jobInfoNav[0].company" => "company",
-            "employmentNav[0].jobInfoNav[0].companyNav.company" => "company",
-            "employmentNav[0].jobInfoNav[0].companyNav.name_localized" => "company",
-            "employmentNav[0].jobInfoNav[0].location" => "location",
-            "employmentNav[0].jobInfoNav[0].locationNav.LocationName" => "location",
-            "employmentNav[0].jobInfoNav[0].locationNav.name" => "location",
-            "employmentNav[0].jobInfoNav[0].jobTitle" => "jobTitle",
-            "employmentNav[0].jobInfoNav[0].businessUnit" => "businessUnit",
-            "employmentNav[0].jobInfoNav[0].businessUnitNav.businessUnit" => "businessUnit",
-            "employmentNav[0].jobInfoNav[0].businessUnitNav.name_localized" => "businessUnit",
-            "employmentNav[0].jobInfoNav[0].division" => "division",
-            "employmentNav[0].jobInfoNav[0].divisionNav.division" => "division",
-            "employmentNav[0].jobInfoNav[0].divisionNav.name_localized" => "division",
-            "employmentNav[0].jobInfoNav[0].costCenter" => "costCenter",
-            "employmentNav[0].jobInfoNav[0].costCenterNav.costCenterDescription" => "costCenter",
-            "employmentNav[0].jobInfoNav[0].costCenterNav.name_localized" => "costCenter",
-            "employmentNav[0].jobInfoNav[0].costCenterNav.description_localized" => "costCenterDescription",
-            "employmentNav[0].jobInfoNav[0].costCenterNav.externalCode" => "costCenterId",
-            "employmentNav[0].jobInfoNav[0].employeeClass" => "employeeClass",
-            "employmentNav[0].jobInfoNav[0].employeeType" => "employeeType",
-            "employmentNav[0].jobInfoNav[0].managerId" => "managerId",
-            "employmentNav[0].userNav.manager.empInfo.personIdExternal" => "managerId",
-            "employmentNav[0].jobInfoNav[0].customString3" => "peopleGroup",
-            "employmentNav[0].jobInfoNav[0].customString20" => "leadershipLevel",
-            "employmentNav[0].jobInfoNav[0].customString87" => "region",
-            "employmentNav[0].jobInfoNav[0].customString110" => "geozone",
-            "employmentNav[0].jobInfoNav[0].customString111" => "bargainingUnit",
-            "employmentNav[0].jobInfoNav[0].customString91" => "unionJobCode",
-            "employmentNav[0].jobInfoNav[0].customString112" => "cintasUniformCategory",
-            "employmentNav[0].jobInfoNav[0].customString113" => "cintasUniformAllotment",
-            "employmentNav[0].jobInfoNav[0].locationNav.addressNavDEFLT.address1" => "officeLocationAddress",
-            "employmentNav[0].jobInfoNav[0].locationNav.addressNavDEFLT.city" => "officeLocationCity",
-            "employmentNav[0].jobInfoNav[0].locationNav.addressNavDEFLT.zipCode" => "officeLocationZipCode",
-            "employmentNav[0].jobInfoNav[0].locationNav.addressNavDEFLT.customString4" => "officeLocationCustomString4",
-            "employmentNav[0].jobInfoNav[0].companyNav.externalCode" => "companyId",
-            "employmentNav[0].jobInfoNav[0].businessUnitNav.externalCode" => "businessUnitId",
-            "employmentNav[0].jobInfoNav[0].divisionNav.externalCode" => "divisionId",
-            "employmentNav[0].jobInfoNav[0].departmentNav.externalCode" => "departmentId",
-            "employmentNav[0].jobInfoNav[0].jobCodeNav.name_localized" => "jobCode",
-            "employmentNav[0].jobInfoNav[0].jobCodeNav.externalCode" => "jobCodeId",
-            "employmentNav[0].jobInfoNav[0].payGradeNav.name" => "payGrade",
-            "employmentNav[0].jobInfoNav[0].position" => "position",
-            _ => source
         };
     }
 

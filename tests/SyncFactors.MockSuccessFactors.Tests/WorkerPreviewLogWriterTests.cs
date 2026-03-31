@@ -93,9 +93,12 @@ public sealed class WorkerPreviewLogWriterTests
         var directoryGateway = new ScaffoldDirectoryGateway(scaffoldStore);
         var planner = new WorkerPreviewPlanner(
             workerSource,
-            directoryGateway,
-            new IdentityMatcher(),
-            diffService,
+            new WorkerPlanningService(
+                directoryGateway,
+                new IdentityMatcher(),
+                diffService,
+                mappingProvider,
+                NullLogger<WorkerPlanningService>.Instance),
             mappingProvider,
             logWriter,
             new StubRunRepository(),
@@ -158,7 +161,28 @@ public sealed class WorkerPreviewLogWriterTests
             return Task.CompletedTask;
         }
 
-        public Task<IReadOnlyList<RunEntry>> GetRunEntriesAsync(string runId, string? bucket, string? workerId, string? reason, string? filter, string? entryId, CancellationToken cancellationToken)
+        public Task AppendRunEntryAsync(RunEntryRecord entry, CancellationToken cancellationToken)
+        {
+            _ = entry;
+            _ = cancellationToken;
+            return Task.CompletedTask;
+        }
+
+        public Task<IReadOnlyList<RunEntry>> GetRunEntriesAsync(string runId, string? bucket, string? workerId, string? reason, string? filter, string? entryId, int skip, int take, CancellationToken cancellationToken)
+        {
+            _ = runId;
+            _ = bucket;
+            _ = workerId;
+            _ = reason;
+            _ = filter;
+            _ = entryId;
+            _ = skip;
+            _ = take;
+            _ = cancellationToken;
+            return Task.FromResult<IReadOnlyList<RunEntry>>([]);
+        }
+
+        public Task<int> CountRunEntriesAsync(string runId, string? bucket, string? workerId, string? reason, string? filter, string? entryId, CancellationToken cancellationToken)
         {
             _ = runId;
             _ = bucket;
@@ -167,7 +191,7 @@ public sealed class WorkerPreviewLogWriterTests
             _ = filter;
             _ = entryId;
             _ = cancellationToken;
-            return Task.FromResult<IReadOnlyList<RunEntry>>([]);
+            return Task.FromResult(0);
         }
     }
 }

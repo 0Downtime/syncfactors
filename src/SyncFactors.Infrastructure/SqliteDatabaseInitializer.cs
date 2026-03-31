@@ -5,7 +5,7 @@ namespace SyncFactors.Infrastructure;
 
 public sealed class SqliteDatabaseInitializer(SqlitePathResolver pathResolver)
 {
-    private const int CurrentSchemaVersion = 3;
+    private const int CurrentSchemaVersion = 5;
 
     public async Task InitializeAsync(CancellationToken cancellationToken)
     {
@@ -56,6 +56,18 @@ public sealed class SqliteDatabaseInitializer(SqlitePathResolver pathResolver)
         {
             await ApplyVersion3Async(connection, transaction, cancellationToken);
             await InsertVersionAsync(connection, transaction, 3, cancellationToken);
+        }
+
+        if (!appliedVersions.Contains(4))
+        {
+            await ApplyVersion4Async(connection, transaction, cancellationToken);
+            await InsertVersionAsync(connection, transaction, 4, cancellationToken);
+        }
+
+        if (!appliedVersions.Contains(5))
+        {
+            await ApplyVersion5Async(connection, transaction, cancellationToken);
+            await InsertVersionAsync(connection, transaction, 5, cancellationToken);
         }
 
         await transaction.CommitAsync(cancellationToken);
@@ -254,6 +266,86 @@ public sealed class SqliteDatabaseInitializer(SqlitePathResolver pathResolver)
         }
     }
 
+    private static async Task ApplyVersion4Async(
+        SqliteConnection connection,
+        DbTransaction transaction,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = (SqliteTransaction)transaction;
+        command.CommandText =
+            """
+            CREATE TABLE IF NOT EXISTS run_queue (
+              request_id TEXT NOT NULL PRIMARY KEY,
+              mode TEXT NOT NULL,
+              dry_run INTEGER NOT NULL DEFAULT 1,
+              status TEXT NOT NULL,
+              requested_at TEXT NOT NULL,
+              started_at TEXT NULL,
+              completed_at TEXT NULL,
+              run_id TEXT NULL,
+              worker_name TEXT NULL,
+              error_message TEXT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_run_queue_status_requested_at
+              ON run_queue (status, requested_at);
+            """;
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task ApplyVersion5Async(
+        SqliteConnection connection,
+        DbTransaction transaction,
+        CancellationToken cancellationToken)
+    {
+        var hasRunsTable = await TableExistsAsync(connection, transaction, "runs", cancellationToken);
+        if (hasRunsTable)
+        {
+            var runColumns = await GetTableColumnsAsync(connection, transaction, "runs", cancellationToken);
+            if (!runColumns.Contains("run_trigger"))
+            {
+                await AddRunTriggerColumnToRunsAsync(connection, transaction, cancellationToken);
+            }
+
+            if (!runColumns.Contains("requested_by"))
+            {
+                await AddRequestedByColumnToRunsAsync(connection, transaction, cancellationToken);
+            }
+        }
+
+        var hasRunQueueTable = await TableExistsAsync(connection, transaction, "run_queue", cancellationToken);
+        if (hasRunQueueTable)
+        {
+            var queueColumns = await GetTableColumnsAsync(connection, transaction, "run_queue", cancellationToken);
+            if (!queueColumns.Contains("run_trigger"))
+            {
+                await AddRunTriggerColumnToRunQueueAsync(connection, transaction, cancellationToken);
+            }
+
+            if (!queueColumns.Contains("requested_by"))
+            {
+                await AddRequestedByColumnToRunQueueAsync(connection, transaction, cancellationToken);
+            }
+        }
+
+        await using var command = connection.CreateCommand();
+        command.Transaction = (SqliteTransaction)transaction;
+        command.CommandText =
+            """
+            CREATE TABLE IF NOT EXISTS sync_schedule (
+              schedule_key TEXT NOT NULL PRIMARY KEY,
+              enabled INTEGER NOT NULL DEFAULT 0,
+              interval_minutes INTEGER NOT NULL DEFAULT 30,
+              next_run_at TEXT NULL,
+              last_scheduled_run_at TEXT NULL,
+              last_enqueue_attempt_at TEXT NULL,
+              last_enqueue_error TEXT NULL
+            );
+            """;
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
     private static async Task<HashSet<int>> GetAppliedVersionsAsync(
         SqliteConnection connection,
         DbTransaction transaction,
@@ -284,7 +376,16 @@ public sealed class SqliteDatabaseInitializer(SqlitePathResolver pathResolver)
 
         await using var command = connection.CreateCommand();
         command.Transaction = (SqliteTransaction)transaction;
-        command.CommandText = $"PRAGMA table_info({tableName});";
+        command.CommandText = tableName switch
+        {
+            "runs" => "PRAGMA table_info(runs);",
+            "run_queue" => "PRAGMA table_info(run_queue);",
+            "runtime_status" => "PRAGMA table_info(runtime_status);",
+            "schema_versions" => "PRAGMA table_info(schema_versions);",
+            "sync_schedule" => "PRAGMA table_info(sync_schedule);",
+            "worker_heartbeat" => "PRAGMA table_info(worker_heartbeat);",
+            _ => throw new InvalidOperationException($"Unsupported table name '{tableName}' for schema inspection.")
+        };
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
@@ -377,6 +478,50 @@ public sealed class SqliteDatabaseInitializer(SqlitePathResolver pathResolver)
         versionCommand.Parameters.AddWithValue("$version", version);
         versionCommand.Parameters.AddWithValue("$appliedAt", DateTimeOffset.UtcNow.ToString("O"));
         await versionCommand.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task AddRunTriggerColumnToRunsAsync(
+        SqliteConnection connection,
+        DbTransaction transaction,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = (SqliteTransaction)transaction;
+        command.CommandText = "ALTER TABLE runs ADD COLUMN run_trigger TEXT NOT NULL DEFAULT 'AdHoc';";
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task AddRequestedByColumnToRunsAsync(
+        SqliteConnection connection,
+        DbTransaction transaction,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = (SqliteTransaction)transaction;
+        command.CommandText = "ALTER TABLE runs ADD COLUMN requested_by TEXT NULL;";
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task AddRunTriggerColumnToRunQueueAsync(
+        SqliteConnection connection,
+        DbTransaction transaction,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = (SqliteTransaction)transaction;
+        command.CommandText = "ALTER TABLE run_queue ADD COLUMN run_trigger TEXT NOT NULL DEFAULT 'AdHoc';";
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task AddRequestedByColumnToRunQueueAsync(
+        SqliteConnection connection,
+        DbTransaction transaction,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = (SqliteTransaction)transaction;
+        command.CommandText = "ALTER TABLE run_queue ADD COLUMN requested_by TEXT NULL;";
+        await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     private static SqliteConnection OpenConnection(string databasePath)

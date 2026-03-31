@@ -27,9 +27,12 @@ public sealed class WorkerPreviewPlannerTests
 
         var planner = new WorkerPreviewPlanner(
             new StubWorkerSource(worker),
-            new StubDirectoryGateway(),
-            new StubIdentityMatcher(),
-            new StubAttributeDiffService(),
+            new WorkerPlanningService(
+                new StubDirectoryGateway(),
+                new StubIdentityMatcher(),
+                new StubAttributeDiffService(),
+                new StubAttributeMappingProvider(),
+                NullLogger<WorkerPlanningService>.Instance),
             new StubAttributeMappingProvider(),
             new StubWorkerPreviewLogWriter(),
             new StubRunRepository(),
@@ -59,9 +62,12 @@ public sealed class WorkerPreviewPlannerTests
         var diffService = new CapturingAttributeDiffService();
         var planner = new WorkerPreviewPlanner(
             new StubWorkerSource(worker),
-            new StubDirectoryGateway(),
-            new StubIdentityMatcher(),
-            diffService,
+            new WorkerPlanningService(
+                new StubDirectoryGateway(),
+                new StubIdentityMatcher(),
+                diffService,
+                new StubAttributeMappingProvider(),
+                NullLogger<WorkerPlanningService>.Instance),
             new StubAttributeMappingProvider(),
             new StubWorkerPreviewLogWriter(),
             new StubRunRepository(),
@@ -72,6 +78,44 @@ public sealed class WorkerPreviewPlannerTests
         Assert.Equal("christopher.brien@Exampleenergy.com", diffService.LastProposedEmailAddress);
     }
 
+    [Fact]
+    public async Task PreviewAsync_DoesNotRequireReviewWhenRequiredMappingsResolveThroughNormalizedSourcePaths()
+    {
+        var worker = new WorkerSnapshot(
+            WorkerId: "44522",
+            PreferredName: "Christopher",
+            LastName: "Brien",
+            Department: "Infrastructure & Security",
+            TargetOu: "OU=Employees,DC=example,DC=com",
+            IsPrehire: false,
+            Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["personIdExternal"] = "44522",
+                ["firstName"] = "Christopher",
+                ["lastName"] = "Brien",
+                ["email"] = "christopher.brien@example.test"
+            });
+
+        var mappingProvider = new RequiredPathMappingProvider();
+        var planner = new WorkerPreviewPlanner(
+            new StubWorkerSource(worker),
+            new WorkerPlanningService(
+                new StubDirectoryGateway(),
+                new StubIdentityMatcher(),
+                new StubAttributeDiffService(),
+                mappingProvider,
+                NullLogger<WorkerPlanningService>.Instance),
+            mappingProvider,
+            new StubWorkerPreviewLogWriter(),
+            new StubRunRepository(),
+            NullLogger<WorkerPreviewPlanner>.Instance);
+
+        var preview = await planner.PreviewAsync("44522", CancellationToken.None);
+
+        Assert.Null(preview.ReviewCaseType);
+        Assert.Empty(preview.MissingSourceAttributes);
+    }
+
     private sealed class StubWorkerSource(WorkerSnapshot worker) : IWorkerSource
     {
         public Task<WorkerSnapshot?> GetWorkerAsync(string workerId, CancellationToken cancellationToken)
@@ -79,6 +123,13 @@ public sealed class WorkerPreviewPlannerTests
             _ = workerId;
             _ = cancellationToken;
             return Task.FromResult<WorkerSnapshot?>(worker);
+        }
+
+        public async IAsyncEnumerable<WorkerSnapshot> ListWorkersAsync([System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            yield return worker;
+            await Task.Yield();
         }
     }
 
@@ -184,6 +235,17 @@ public sealed class WorkerPreviewPlannerTests
         ];
     }
 
+    private sealed class RequiredPathMappingProvider : IAttributeMappingProvider
+    {
+        public IReadOnlyList<AttributeMapping> GetEnabledMappings() =>
+        [
+            new AttributeMapping("personIdExternal", "employeeID", Required: true, Transform: "Trim"),
+            new AttributeMapping("personalInfoNav[0].firstName", "GivenName", Required: true, Transform: "Trim"),
+            new AttributeMapping("personalInfoNav[0].lastName", "Surname", Required: true, Transform: "Trim"),
+            new AttributeMapping("emailNav[?(@.isPrimary == true)].emailAddress", "UserPrincipalName", Required: true, Transform: "Lower")
+        ];
+    }
+
     private sealed class StubRunRepository : IRunRepository
     {
         public Task<IReadOnlyList<RunSummary>> ListRunsAsync(CancellationToken cancellationToken)
@@ -229,7 +291,28 @@ public sealed class WorkerPreviewPlannerTests
             return Task.CompletedTask;
         }
 
-        public Task<IReadOnlyList<RunEntry>> GetRunEntriesAsync(string runId, string? bucket, string? workerId, string? reason, string? filter, string? entryId, CancellationToken cancellationToken)
+        public Task AppendRunEntryAsync(RunEntryRecord entry, CancellationToken cancellationToken)
+        {
+            _ = entry;
+            _ = cancellationToken;
+            return Task.CompletedTask;
+        }
+
+        public Task<IReadOnlyList<RunEntry>> GetRunEntriesAsync(string runId, string? bucket, string? workerId, string? reason, string? filter, string? entryId, int skip, int take, CancellationToken cancellationToken)
+        {
+            _ = runId;
+            _ = bucket;
+            _ = workerId;
+            _ = reason;
+            _ = filter;
+            _ = entryId;
+            _ = skip;
+            _ = take;
+            _ = cancellationToken;
+            return Task.FromResult<IReadOnlyList<RunEntry>>([]);
+        }
+
+        public Task<int> CountRunEntriesAsync(string runId, string? bucket, string? workerId, string? reason, string? filter, string? entryId, CancellationToken cancellationToken)
         {
             _ = runId;
             _ = bucket;
@@ -238,7 +321,7 @@ public sealed class WorkerPreviewPlannerTests
             _ = filter;
             _ = entryId;
             _ = cancellationToken;
-            return Task.FromResult<IReadOnlyList<RunEntry>>([]);
+            return Task.FromResult(0);
         }
     }
 }

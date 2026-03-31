@@ -16,6 +16,7 @@ public interface IWorkerPreviewPlanner
 public interface IWorkerSource
 {
     Task<WorkerSnapshot?> GetWorkerAsync(string workerId, CancellationToken cancellationToken);
+    IAsyncEnumerable<WorkerSnapshot> ListWorkersAsync(CancellationToken cancellationToken);
 }
 
 public interface IDirectoryGateway
@@ -56,6 +57,17 @@ public interface IDirectoryCommandGateway
     Task<DirectoryCommandResult> ExecuteAsync(DirectoryMutationCommand command, CancellationToken cancellationToken);
 }
 
+public interface IWorkerPlanningService
+{
+    Task<PlannedWorkerAction> PlanAsync(WorkerSnapshot worker, string? logPath, CancellationToken cancellationToken);
+}
+
+public interface IDirectoryMutationCommandBuilder
+{
+    DirectoryMutationCommand Build(PlannedWorkerAction plan);
+    DirectoryMutationCommand Build(WorkerSnapshot worker, WorkerPreviewResult preview);
+}
+
 public interface IRunRepository
 {
     Task<IReadOnlyList<RunSummary>> ListRunsAsync(CancellationToken cancellationToken);
@@ -64,7 +76,18 @@ public interface IRunRepository
     Task<IReadOnlyList<WorkerPreviewHistoryItem>> ListWorkerPreviewHistoryAsync(string workerId, int take, CancellationToken cancellationToken);
     Task SaveRunAsync(RunRecord run, CancellationToken cancellationToken);
     Task ReplaceRunEntriesAsync(string runId, IReadOnlyList<RunEntryRecord> entries, CancellationToken cancellationToken);
+    Task AppendRunEntryAsync(RunEntryRecord entry, CancellationToken cancellationToken);
     Task<IReadOnlyList<RunEntry>> GetRunEntriesAsync(
+        string runId,
+        string? bucket,
+        string? workerId,
+        string? reason,
+        string? filter,
+        string? entryId,
+        int skip,
+        int take,
+        CancellationToken cancellationToken);
+    Task<int> CountRunEntriesAsync(
         string runId,
         string? bucket,
         string? workerId,
@@ -77,6 +100,23 @@ public interface IRunRepository
 public interface IDashboardSnapshotService
 {
     Task<DashboardSnapshot> GetSnapshotAsync(CancellationToken cancellationToken);
+}
+
+public interface IRunQueueStore
+{
+    Task<RunQueueRequest> EnqueueAsync(StartRunRequest request, CancellationToken cancellationToken);
+    Task<RunQueueRequest?> ClaimNextPendingAsync(string workerName, CancellationToken cancellationToken);
+    Task<bool> HasPendingOrActiveRunAsync(CancellationToken cancellationToken);
+    Task CompleteAsync(string requestId, string runId, CancellationToken cancellationToken);
+    Task FailAsync(string requestId, string? runId, string errorMessage, CancellationToken cancellationToken);
+}
+
+public interface ISyncScheduleStore
+{
+    Task<SyncScheduleStatus> GetCurrentAsync(CancellationToken cancellationToken);
+    Task<SyncScheduleStatus> UpdateAsync(UpdateSyncScheduleRequest request, CancellationToken cancellationToken);
+    Task<SyncScheduleStatus> RecordSuccessfulEnqueueAsync(DateTimeOffset enqueuedAt, CancellationToken cancellationToken);
+    Task<SyncScheduleStatus> RecordFailedEnqueueAsync(DateTimeOffset attemptedAt, string errorMessage, CancellationToken cancellationToken);
 }
 
 public sealed record AttributeMapping(

@@ -41,6 +41,10 @@ builder.Services.AddTransient<IApplyPreviewService, ApplyPreviewService>();
 builder.Services.AddSingleton<IDashboardSnapshotService, DashboardSnapshotService>();
 builder.Services.AddSingleton<IRuntimeStatusStore, SqliteRuntimeStatusStore>();
 builder.Services.AddSingleton<IRunRepository, SqliteRunRepository>();
+builder.Services.AddSingleton<IRunQueueStore, SqliteRunQueueStore>();
+builder.Services.AddSingleton<ISyncScheduleStore, SqliteSyncScheduleStore>();
+builder.Services.AddTransient<IWorkerPlanningService, WorkerPlanningService>();
+builder.Services.AddSingleton<IDirectoryMutationCommandBuilder, DirectoryMutationCommandBuilder>();
 builder.Services.AddRazorPages();
 
 var app = builder.Build();
@@ -90,6 +94,29 @@ app.MapGet("/api/runs", async (IRunRepository repository, CancellationToken canc
     return Results.Ok(new { runs });
 });
 
+app.MapPost("/api/runs", async (StartRunRequest request, IRunQueueStore queueStore, CancellationToken cancellationToken) =>
+{
+    if (await queueStore.HasPendingOrActiveRunAsync(cancellationToken))
+    {
+        return Results.Conflict(new { error = "A run is already pending or in progress." });
+    }
+
+    var queued = await queueStore.EnqueueAsync(request, cancellationToken);
+    return Results.Accepted($"/api/runs/{queued.RequestId}", queued);
+});
+
+app.MapGet("/api/sync/schedule", async (ISyncScheduleStore scheduleStore, CancellationToken cancellationToken) =>
+{
+    var schedule = await scheduleStore.GetCurrentAsync(cancellationToken);
+    return Results.Ok(new { schedule });
+});
+
+app.MapPut("/api/sync/schedule", async (UpdateSyncScheduleRequest request, ISyncScheduleStore scheduleStore, CancellationToken cancellationToken) =>
+{
+    var schedule = await scheduleStore.UpdateAsync(request, cancellationToken);
+    return Results.Ok(new { schedule });
+});
+
 app.MapGet("/api/runs/{runId}", async (string runId, IRunRepository repository, CancellationToken cancellationToken) =>
 {
     var run = await repository.GetRunAsync(runId, cancellationToken);
@@ -115,6 +142,8 @@ app.MapGet("/api/runs/{runId}/entries", async (
     string? reason,
     string? filter,
     string? entryId,
+    int? page,
+    int? pageSize,
     IRunRepository repository,
     CancellationToken cancellationToken) =>
 {
@@ -124,8 +153,11 @@ app.MapGet("/api/runs/{runId}/entries", async (
         return Results.NotFound();
     }
 
-    var entries = await repository.GetRunEntriesAsync(runId, bucket, workerId, reason, filter, entryId, cancellationToken);
-    return Results.Ok(new { run = run.Run, entries, total = entries.Count });
+    var resolvedPageSize = Math.Clamp(pageSize ?? 50, 1, 200);
+    var resolvedPage = Math.Max(1, page ?? 1);
+    var total = await repository.CountRunEntriesAsync(runId, bucket, workerId, reason, filter, entryId, cancellationToken);
+    var entries = await repository.GetRunEntriesAsync(runId, bucket, workerId, reason, filter, entryId, (resolvedPage - 1) * resolvedPageSize, resolvedPageSize, cancellationToken);
+    return Results.Ok(new { run = run.Run, entries, total, page = resolvedPage, pageSize = resolvedPageSize });
 });
 
 app.MapPost("/api/preview/{workerId}/apply", async (

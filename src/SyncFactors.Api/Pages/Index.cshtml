@@ -10,6 +10,9 @@
         <h1>Operator Dashboard</h1>
         <p class="lede">This page reads runtime status and recent runs from the configured operational store for the .NET rewrite.</p>
     </div>
+    <div class="hero-actions">
+        <a class="link-button" asp-page="/Sync">Manage sync</a>
+    </div>
 </section>
 
 @if (Model.RequiresAttention)
@@ -116,6 +119,7 @@
                 <thead>
                     <tr>
                         <th>Started</th>
+                        <th>Trigger</th>
                         <th>Mode</th>
                         <th>Status</th>
                         <th>Dry Run</th>
@@ -129,6 +133,7 @@
                 {
                     <tr>
                         <td>@run.StartedAt.ToString("u")</td>
+                        <td>@run.RunTrigger</td>
                         <td>@run.Mode</td>
                         <td><span class="badge @StatusClass(run.Status)">@run.Status</span></td>
                         <td>@(run.DryRun ? "Yes" : "No")</td>
@@ -256,6 +261,7 @@
                 var row = document.createElement("tr");
                 row.innerHTML =
                     "<td>" + formatTimestamp(run.startedAt) + "</td>" +
+                    "<td>" + textOrFallback(run.runTrigger, "AdHoc") + "</td>" +
                     "<td>" + textOrFallback(run.mode, "Unknown") + "</td>" +
                     "<td><span class=\"badge " + statusClass(run.status) + "\">" + textOrFallback(run.status, "Unknown") + "</span></td>" +
                     "<td>" + (run.dryRun ? "Yes" : "No") + "</td>" +
