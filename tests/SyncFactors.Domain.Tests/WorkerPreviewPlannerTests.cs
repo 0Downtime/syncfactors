@@ -7,6 +7,44 @@ namespace SyncFactors.Domain.Tests;
 public sealed class WorkerPreviewPlannerTests
 {
     [Fact]
+    public async Task PreviewAsync_PersistsExistingUsersWithoutDiffsAsUnchanged()
+    {
+        var worker = new WorkerSnapshot(
+            WorkerId: "44522",
+            PreferredName: "Christopher",
+            LastName: "Brien",
+            Department: "Infrastructure & Security",
+            TargetOu: "OU=Employees,DC=example,DC=com",
+            IsPrehire: false,
+            Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["company"] = "Example Services, Inc.",
+                ["department"] = "Infrastructure & Security"
+            });
+
+        var runRepository = new CapturingRunRepository();
+        var planner = new WorkerPreviewPlanner(
+            new StubWorkerSource(worker),
+            new WorkerPlanningService(
+                new StubDirectoryGateway(),
+                new ExistingUserIdentityMatcher(),
+                new UnchangedAttributeDiffService(),
+                new StubAttributeMappingProvider(),
+                NullLogger<WorkerPlanningService>.Instance),
+            new StubAttributeMappingProvider(),
+            new StubWorkerPreviewLogWriter(),
+            runRepository,
+            NullLogger<WorkerPreviewPlanner>.Instance);
+
+        var preview = await planner.PreviewAsync("44522", CancellationToken.None);
+
+        Assert.Equal("updates", preview.Buckets.Single());
+        Assert.Equal(1, runRepository.SavedRuns.Single().Unchanged);
+        Assert.Equal(0, runRepository.SavedRuns.Single().Updates);
+        Assert.Equal("unchanged", runRepository.ReplacedEntries.Single().entries.Single().Bucket);
+    }
+
+    [Fact]
     public async Task PreviewAsync_IncludesPopulatedSourceAttributes()
     {
         var worker = new WorkerSnapshot(
@@ -246,6 +284,27 @@ public sealed class WorkerPreviewPlannerTests
         }
     }
 
+    private sealed class UnchangedAttributeDiffService : IAttributeDiffService
+    {
+        public Task<IReadOnlyList<AttributeChange>> BuildDiffAsync(
+            WorkerSnapshot worker,
+            DirectoryUserSnapshot? directoryUser,
+            string? proposedEmailAddress,
+            string? logPath,
+            CancellationToken cancellationToken)
+        {
+            _ = worker;
+            _ = directoryUser;
+            _ = proposedEmailAddress;
+            _ = logPath;
+            _ = cancellationToken;
+            return Task.FromResult<IReadOnlyList<AttributeChange>>(
+            [
+                new AttributeChange("department", "department", "Infrastructure & Security", "Infrastructure & Security", false)
+            ]);
+        }
+    }
+
     private sealed class StubWorkerPreviewLogWriter : IWorkerPreviewLogWriter
     {
         public string CreateLogPath(string workerId, DateTimeOffset startedAt)
@@ -282,8 +341,27 @@ public sealed class WorkerPreviewPlannerTests
         ];
     }
 
-    private sealed class StubRunRepository : IRunRepository
+    private sealed class ExistingUserIdentityMatcher : IIdentityMatcher
     {
+        public IdentityMatchResult Match(WorkerSnapshot worker, DirectoryUserSnapshot? directoryUser)
+        {
+            _ = worker;
+            _ = directoryUser;
+            return new IdentityMatchResult(
+                Bucket: "updates",
+                MatchedExistingUser: true,
+                SamAccountName: "cbrien",
+                Reason: "Matched existing user",
+                OperatorActionSummary: "Update account preview");
+        }
+    }
+
+    private class CapturingRunRepository : IRunRepository
+    {
+        public List<RunRecord> SavedRuns { get; } = [];
+
+        public List<(string runId, IReadOnlyList<RunEntryRecord> entries)> ReplacedEntries { get; } = [];
+
         public Task<IReadOnlyList<RunSummary>> ListRunsAsync(CancellationToken cancellationToken)
         {
             _ = cancellationToken;
@@ -314,16 +392,15 @@ public sealed class WorkerPreviewPlannerTests
 
         public Task SaveRunAsync(RunRecord run, CancellationToken cancellationToken)
         {
-            _ = run;
             _ = cancellationToken;
+            SavedRuns.Add(run);
             return Task.CompletedTask;
         }
 
         public Task ReplaceRunEntriesAsync(string runId, IReadOnlyList<RunEntryRecord> entries, CancellationToken cancellationToken)
         {
-            _ = runId;
-            _ = entries;
             _ = cancellationToken;
+            ReplacedEntries.Add((runId, entries));
             return Task.CompletedTask;
         }
 
@@ -360,4 +437,6 @@ public sealed class WorkerPreviewPlannerTests
             return Task.FromResult(0);
         }
     }
+
+    private sealed class StubRunRepository : CapturingRunRepository;
 }

@@ -43,7 +43,7 @@ public sealed class BulkRunCoordinatorTests
 
         Assert.StartsWith("bulk-", runId, StringComparison.Ordinal);
         Assert.Equal(2, CapturingRunLifecycleService.Entries.Count);
-        Assert.Contains(CapturingRunLifecycleService.Entries, entry => entry.WorkerId == "10001" && entry.Bucket == "updates");
+        Assert.Contains(CapturingRunLifecycleService.Entries, entry => entry.WorkerId == "10001" && entry.Bucket == "unchanged");
         Assert.Contains(CapturingRunLifecycleService.Entries, entry => entry.WorkerId == "10002" && entry.Bucket == "conflicts");
     }
 

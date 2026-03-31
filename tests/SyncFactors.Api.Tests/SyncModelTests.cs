@@ -30,11 +30,13 @@ public sealed class SyncModelTests
 
         var result = await model.OnPostStartRunAsync(CancellationToken.None);
 
-        Assert.IsType<PageResult>(result);
+        Assert.IsType<RedirectToPageResult>(result);
         Assert.NotNull(queueStore.LastRequest);
         Assert.True(queueStore.LastRequest!.DryRun);
         Assert.Equal("AdHoc", queueStore.LastRequest.RunTrigger);
         Assert.Equal("Sync page", queueStore.LastRequest.RequestedBy);
+        Assert.Equal("Dry-run sync queued.", model.SuccessMessage);
+        Assert.Null(model.ErrorMessage);
     }
 
     [Fact]
@@ -48,9 +50,28 @@ public sealed class SyncModelTests
 
         var result = await model.OnPostStartRunAsync(CancellationToken.None);
 
-        Assert.IsType<PageResult>(result);
+        Assert.IsType<RedirectToPageResult>(result);
         Assert.NotNull(queueStore.LastRequest);
         Assert.False(queueStore.LastRequest!.DryRun);
+        Assert.Equal("Live provisioning run queued.", model.SuccessMessage);
+        Assert.Null(model.ErrorMessage);
+    }
+
+    [Fact]
+    public async Task OnPostStartRunAsync_WhenRunAlreadyPending_RedirectsWithError()
+    {
+        var queueStore = new CapturingRunQueueStore
+        {
+            HasPendingOrActiveRun = true
+        };
+        var model = new SyncModel(CreateDashboardService(), queueStore, new StubSyncScheduleStore(), new StubFullSyncRunService(new RunLaunchResult("full-sync-1", "Succeeded", true, "Dry run complete.")));
+
+        var result = await model.OnPostStartRunAsync(CancellationToken.None);
+
+        Assert.IsType<RedirectToPageResult>(result);
+        Assert.Null(queueStore.LastRequest);
+        Assert.Equal("A run is already pending or in progress.", model.ErrorMessage);
+        Assert.Null(model.SuccessMessage);
     }
 
     [Fact]

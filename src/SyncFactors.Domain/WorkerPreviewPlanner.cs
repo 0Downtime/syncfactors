@@ -64,7 +64,7 @@ public sealed class WorkerPreviewPlanner(
             + $"\"preview\":{SerializePreview(preview)}"
             + "}");
 
-        var bucket = preview.Buckets.FirstOrDefault() ?? "updates";
+        var bucket = ResolvePersistedBucket(preview);
         var runRecord = new RunRecord(
             RunId: preview.RunId ?? throw new InvalidOperationException("Preview run id is required."),
             Path: preview.ReportPath,
@@ -217,6 +217,15 @@ public sealed class WorkerPreviewPlanner(
     {
         using var document = JsonDocument.Parse(json);
         return document.RootElement.Clone();
+    }
+
+    private static string ResolvePersistedBucket(WorkerPreviewResult preview)
+    {
+        var bucket = preview.Buckets.FirstOrDefault() ?? "updates";
+        return string.Equals(bucket, "updates", StringComparison.OrdinalIgnoreCase) &&
+               preview.DiffRows.All(row => !row.Changed)
+            ? "unchanged"
+            : bucket;
     }
 
     private static string Escape(string value)
