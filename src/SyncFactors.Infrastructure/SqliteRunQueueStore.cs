@@ -6,6 +6,8 @@ namespace SyncFactors.Infrastructure;
 
 public sealed class SqliteRunQueueStore(SqlitePathResolver pathResolver) : IRunQueueStore
 {
+    private static readonly string[] PendingOrActiveStatuses = ["Pending", "InProgress", "CancelRequested"];
+
     public async Task<RunQueueRequest> EnqueueAsync(StartRunRequest request, CancellationToken cancellationToken)
     {
         var databasePath = pathResolver.ResolveConfiguredPath() ?? pathResolver.Resolve();
@@ -142,6 +144,110 @@ public sealed class SqliteRunQueueStore(SqlitePathResolver pathResolver) : IRunQ
 
     public async Task<bool> HasPendingOrActiveRunAsync(CancellationToken cancellationToken)
     {
+        return await GetPendingOrActiveAsync(cancellationToken) is not null;
+    }
+
+    public async Task<RunQueueRequest?> GetPendingOrActiveAsync(CancellationToken cancellationToken)
+    {
+        var databasePath = pathResolver.ResolveConfiguredPath() ?? pathResolver.Resolve();
+        if (string.IsNullOrWhiteSpace(databasePath))
+        {
+            return null;
+        }
+
+        await using var connection = new SqliteConnection($"Data Source={databasePath}");
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT request_id, mode, dry_run, run_trigger, requested_by, status, requested_at, started_at, completed_at, run_id, error_message
+            FROM run_queue
+            WHERE status IN ('Pending', 'InProgress', 'CancelRequested')
+            ORDER BY CASE status
+                WHEN 'InProgress' THEN 0
+                WHEN 'CancelRequested' THEN 1
+                ELSE 2
+            END, requested_at ASC
+            LIMIT 1;
+            """;
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        return await reader.ReadAsync(cancellationToken)
+            ? Map(reader)
+            : null;
+    }
+
+    public async Task<bool> CancelPendingOrActiveAsync(string? requestedBy, CancellationToken cancellationToken)
+    {
+        var databasePath = pathResolver.ResolveConfiguredPath() ?? pathResolver.Resolve();
+        if (string.IsNullOrWhiteSpace(databasePath))
+        {
+            return false;
+        }
+
+        await using var connection = new SqliteConnection($"Data Source={databasePath}");
+        await connection.OpenAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+
+        RunQueueRequest? current = null;
+        await using (var selectCommand = connection.CreateCommand())
+        {
+            selectCommand.Transaction = (SqliteTransaction)transaction;
+            selectCommand.CommandText =
+                """
+                SELECT request_id, mode, dry_run, run_trigger, requested_by, status, requested_at, started_at, completed_at, run_id, error_message
+                FROM run_queue
+                WHERE status IN ('Pending', 'InProgress', 'CancelRequested')
+                ORDER BY CASE status
+                    WHEN 'InProgress' THEN 0
+                    WHEN 'CancelRequested' THEN 1
+                    ELSE 2
+                END, requested_at ASC
+                LIMIT 1;
+                """;
+            await using var reader = await selectCommand.ExecuteReaderAsync(cancellationToken);
+            if (await reader.ReadAsync(cancellationToken))
+            {
+                current = Map(reader);
+            }
+        }
+
+        if (current is null)
+        {
+            await transaction.CommitAsync(cancellationToken);
+            return false;
+        }
+
+        var cancellationMessage = string.IsNullOrWhiteSpace(requestedBy)
+            ? "Cancellation requested."
+            : $"Cancellation requested by {requestedBy}.";
+
+        await using var updateCommand = connection.CreateCommand();
+        updateCommand.Transaction = (SqliteTransaction)transaction;
+        updateCommand.CommandText =
+            string.Equals(current.Status, "Pending", StringComparison.OrdinalIgnoreCase)
+                ? """
+                UPDATE run_queue
+                SET status = 'Canceled',
+                    completed_at = $completedAt,
+                    error_message = $errorMessage
+                WHERE request_id = $requestId;
+                """
+                : """
+                UPDATE run_queue
+                SET status = 'CancelRequested',
+                    error_message = $errorMessage
+                WHERE request_id = $requestId;
+                """;
+        updateCommand.Parameters.AddWithValue("$requestId", current.RequestId);
+        updateCommand.Parameters.AddWithValue("$completedAt", DateTimeOffset.UtcNow.ToString("O"));
+        updateCommand.Parameters.AddWithValue("$errorMessage", cancellationMessage);
+        var affected = await updateCommand.ExecuteNonQueryAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return affected > 0;
+    }
+
+    public async Task<bool> IsCancellationRequestedAsync(string requestId, CancellationToken cancellationToken)
+    {
         var databasePath = pathResolver.ResolveConfiguredPath() ?? pathResolver.Resolve();
         if (string.IsNullOrWhiteSpace(databasePath))
         {
@@ -151,14 +257,21 @@ public sealed class SqliteRunQueueStore(SqlitePathResolver pathResolver) : IRunQ
         await using var connection = new SqliteConnection($"Data Source={databasePath}");
         await connection.OpenAsync(cancellationToken);
         await using var command = connection.CreateCommand();
-        command.CommandText = "SELECT 1 FROM run_queue WHERE status IN ('Pending', 'InProgress') LIMIT 1;";
+        command.CommandText = "SELECT status FROM run_queue WHERE request_id = $requestId LIMIT 1;";
+        command.Parameters.AddWithValue("$requestId", requestId);
         var result = await command.ExecuteScalarAsync(cancellationToken);
-        return result is not null;
+        return result is string status &&
+               string.Equals(status, "CancelRequested", StringComparison.OrdinalIgnoreCase);
     }
 
     public async Task CompleteAsync(string requestId, string runId, CancellationToken cancellationToken)
     {
         await UpdateTerminalStatusAsync(requestId, "Completed", runId, null, cancellationToken);
+    }
+
+    public async Task CancelAsync(string requestId, string? runId, string? errorMessage, CancellationToken cancellationToken)
+    {
+        await UpdateTerminalStatusAsync(requestId, "Canceled", runId, errorMessage, cancellationToken);
     }
 
     public async Task FailAsync(string requestId, string? runId, string errorMessage, CancellationToken cancellationToken)

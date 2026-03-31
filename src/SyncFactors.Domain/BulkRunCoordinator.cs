@@ -7,6 +7,7 @@ namespace SyncFactors.Domain;
 
 public sealed class BulkRunCoordinator(
     IWorkerSource workerSource,
+    IRunQueueStore runQueueStore,
     IWorkerPlanningService planningService,
     IDirectoryMutationCommandBuilder mutationCommandBuilder,
     IDirectoryCommandGateway directoryCommandGateway,
@@ -17,10 +18,26 @@ public sealed class BulkRunCoordinator(
 {
     public async Task<string> ExecuteAsync(RunQueueRequest request, int maxDegreeOfParallelism, CancellationToken cancellationToken)
     {
+        using var runCancellationSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var runCancellationToken = runCancellationSource.Token;
+        var cancellationMonitor = MonitorCancellationAsync(request.RequestId, runCancellationSource, cancellationToken);
         var workers = new List<WorkerSnapshot>();
-        await foreach (var worker in workerSource.ListWorkersAsync(cancellationToken))
+        try
         {
-            workers.Add(worker);
+            await foreach (var worker in workerSource.ListWorkersAsync(runCancellationToken))
+            {
+                workers.Add(worker);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            if (!cancellationToken.IsCancellationRequested &&
+                await runQueueStore.IsCancellationRequestedAsync(request.RequestId, CancellationToken.None))
+            {
+                throw new RunCanceledException(runId: null, "Run canceled by operator.");
+            }
+
+            throw;
         }
 
         var runId = $"bulk-{timeProvider.GetUtcNow():yyyyMMddHHmmssfff}";
@@ -87,11 +104,12 @@ public sealed class BulkRunCoordinator(
                 workers,
                 new ParallelOptions
                 {
-                    CancellationToken = cancellationToken,
+                    CancellationToken = runCancellationToken,
                     MaxDegreeOfParallelism = Math.Max(1, maxDegreeOfParallelism)
                 },
                 async (worker, ct) =>
                 {
+                    ct.ThrowIfCancellationRequested();
                     try
                     {
                         var plan = await planningService.PlanAsync(worker, logPath: null, ct);
@@ -195,6 +213,37 @@ public sealed class BulkRunCoordinator(
 
             return runId;
         }
+        catch (OperationCanceledException)
+        {
+            if (!cancellationToken.IsCancellationRequested &&
+                await runQueueStore.IsCancellationRequestedAsync(request.RequestId, CancellationToken.None))
+            {
+                channel.Writer.TryComplete();
+                try
+                {
+                    await writerTask;
+                }
+                catch
+                {
+                }
+
+                await runLifecycleService.CancelRunAsync(
+                    runId,
+                    mode: "BulkSync",
+                    dryRun: request.DryRun,
+                    processedWorkers: processedWorkers,
+                    totalWorkers: totalWorkers,
+                    currentWorkerId: null,
+                    reason: "Run canceled by operator.",
+                    tally: tally,
+                    report: BuildReport(runId, request, tally, totalWorkers, startedAt),
+                    startedAt: startedAt,
+                    cancellationToken);
+                throw new RunCanceledException(runId, "Run canceled by operator.");
+            }
+
+            throw;
+        }
         catch (Exception ex)
         {
             channel.Writer.TryComplete(ex);
@@ -219,6 +268,34 @@ public sealed class BulkRunCoordinator(
                 startedAt: startedAt,
                 cancellationToken);
             throw;
+        }
+        finally
+        {
+            runCancellationSource.Cancel();
+            try
+            {
+                await cancellationMonitor;
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+            }
+        }
+    }
+
+    private async Task MonitorCancellationAsync(string requestId, CancellationTokenSource runCancellationSource, CancellationToken cancellationToken)
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(1));
+        while (!runCancellationSource.IsCancellationRequested &&
+               await timer.WaitForNextTickAsync(cancellationToken))
+        {
+            if (!await runQueueStore.IsCancellationRequestedAsync(requestId, cancellationToken))
+            {
+                continue;
+            }
+
+            logger.LogInformation("Cancellation requested for run queue item {RequestId}.", requestId);
+            runCancellationSource.Cancel();
+            return;
         }
     }
 
@@ -356,4 +433,9 @@ public sealed class BulkRunCoordinator(
             }
             """);
     }
+}
+
+public sealed class RunCanceledException(string? runId, string message) : Exception(message)
+{
+    public string? RunId { get; } = runId;
 }

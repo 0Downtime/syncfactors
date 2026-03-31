@@ -111,6 +111,14 @@ app.MapPost("/api/runs", async (StartRunRequest request, IRunQueueStore queueSto
     return Results.Accepted($"/api/runs/{queued.RequestId}", queued);
 });
 
+app.MapPost("/api/runs/cancel", async (IRunQueueStore queueStore, CancellationToken cancellationToken) =>
+{
+    var canceled = await queueStore.CancelPendingOrActiveAsync("API", cancellationToken);
+    return canceled
+        ? Results.Ok(new { status = "CancellationRequested" })
+        : Results.NotFound(new { error = "No queued or active run was available to cancel." });
+});
+
 app.MapGet("/api/sync/schedule", async (ISyncScheduleStore scheduleStore, CancellationToken cancellationToken) =>
 {
     var schedule = await scheduleStore.GetCurrentAsync(cancellationToken);

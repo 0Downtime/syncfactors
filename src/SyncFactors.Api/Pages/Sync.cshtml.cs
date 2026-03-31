@@ -64,6 +64,8 @@ public sealed class SyncModel(
 
     public RunSummary? ActiveRun { get; private set; }
 
+    public RunQueueRequest? CurrentQueueRequest { get; private set; }
+
     public bool HasPendingOrActiveRun { get; private set; }
 
     public bool CanLaunchSync => !string.Equals(Status.Status, "InProgress", StringComparison.OrdinalIgnoreCase);
@@ -102,6 +104,20 @@ public sealed class SyncModel(
         return RedirectToPage(new { PageNumber });
     }
 
+    public async Task<IActionResult> OnPostCancelRunAsync(CancellationToken cancellationToken)
+    {
+        if (!await runQueueStore.CancelPendingOrActiveAsync("Sync page", cancellationToken))
+        {
+            ErrorMessage = "No queued or active run was available to cancel.";
+            SuccessMessage = null;
+            return RedirectToPage(new { PageNumber });
+        }
+
+        SuccessMessage = "Run cancellation requested.";
+        ErrorMessage = null;
+        return RedirectToPage(new { PageNumber });
+    }
+
     public async Task<IActionResult> OnPostSaveScheduleAsync(CancellationToken cancellationToken)
     {
         Schedule = await syncScheduleStore.UpdateAsync(
@@ -125,7 +141,8 @@ public sealed class SyncModel(
         Schedule = await syncScheduleStore.GetCurrentAsync(cancellationToken);
         ScheduleEnabled = Schedule.Enabled;
         IntervalMinutes = Schedule.IntervalMinutes;
-        HasPendingOrActiveRun = await runQueueStore.HasPendingOrActiveRunAsync(cancellationToken);
+        CurrentQueueRequest = await runQueueStore.GetPendingOrActiveAsync(cancellationToken);
+        HasPendingOrActiveRun = CurrentQueueRequest is not null;
     }
 
     private async Task LoadSnapshotAsync(CancellationToken cancellationToken)
