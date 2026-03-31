@@ -11,6 +11,7 @@ public interface IApplyPreviewService
 
 public sealed class ApplyPreviewService(
     IWorkerSource workerSource,
+    IDirectoryMutationCommandBuilder commandBuilder,
     IDirectoryCommandGateway directoryCommandGateway,
     IRunRepository runRepository,
     IRuntimeStatusStore runtimeStatusStore,
@@ -50,28 +51,8 @@ public sealed class ApplyPreviewService(
             throw new InvalidOperationException($"Worker {request.WorkerId} could not be resolved.");
         }
 
-        var samAccountName = preview.SamAccountName ?? throw new InvalidOperationException("Preview did not produce a SAM account name.");
-        var displayName = GetPreviewAttributeValue(preview, "displayName")
-            ?? samAccountName;
-        var emailAddress = GetPreviewAttributeValue(preview, "UserPrincipalName")
-            ?? GetPreviewAttributeValue(preview, "userPrincipalName")
-            ?? GetPreviewAttributeValue(preview, "mail")
-            ?? DirectoryIdentityFormatter.BuildEmailAddress(
-                DirectoryIdentityFormatter.BuildBaseEmailLocalPart(worker.PreferredName, worker.LastName));
-        var mailAddress = GetPreviewAttributeValue(preview, "mail") ?? emailAddress;
-        var action = preview.Buckets.Contains("creates", StringComparer.OrdinalIgnoreCase) ? "CreateUser" : "UpdateUser";
-        var command = new DirectoryMutationCommand(
-            Action: action,
-            WorkerId: worker.WorkerId,
-            ManagerId: worker.Attributes.TryGetValue("managerId", out var managerId) ? managerId : null,
-            ManagerDistinguishedName: preview.ManagerDistinguishedName,
-            SamAccountName: samAccountName,
-            UserPrincipalName: emailAddress,
-            Mail: mailAddress,
-            TargetOu: preview.TargetOu ?? worker.TargetOu,
-            DisplayName: displayName,
-            EnableAccount: preview.ProposedEnable ?? true,
-            Attributes: BuildProposedAttributes(preview));
+        var command = commandBuilder.Build(worker, preview);
+        var action = command.Action;
         logger.LogInformation("Prepared directory mutation command. WorkerId={WorkerId} Action={Action} SamAccountName={SamAccountName}", worker.WorkerId, action, command.SamAccountName);
 
         var startedAt = DateTimeOffset.UtcNow;
@@ -152,20 +133,6 @@ public sealed class ApplyPreviewService(
     {
         using var document = JsonDocument.Parse(json);
         return document.RootElement.Clone();
-    }
-
-    private static IReadOnlyDictionary<string, string?> BuildProposedAttributes(WorkerPreviewResult preview)
-    {
-        var attributes = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
-
-        foreach (var row in preview.DiffRows.Where(row => row.Changed))
-        {
-            attributes[row.Attribute] = string.Equals(row.After, "(unset)", StringComparison.Ordinal)
-                ? null
-                : row.After;
-        }
-
-        return attributes;
     }
 
     private static string? GetPreviewAttributeValue(WorkerPreviewResult preview, string attributeName)

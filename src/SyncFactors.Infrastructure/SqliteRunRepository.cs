@@ -59,6 +59,8 @@ public sealed class SqliteRunRepository(SqlitePathResolver pathResolver) : IRunR
               mapping_config_path,
               mode,
               dry_run,
+              run_trigger,
+              requested_by,
               status,
               started_at,
               completed_at,
@@ -97,6 +99,8 @@ public sealed class SqliteRunRepository(SqlitePathResolver pathResolver) : IRunR
                 MappingConfigPath: row.MappingConfigPath,
                 Mode: row.Mode ?? "Unknown",
                 DryRun: row.DryRun != 0,
+                RunTrigger: row.RunTrigger ?? "AdHoc",
+                RequestedBy: row.RequestedBy,
                 Status: row.Status ?? "Unknown",
                 StartedAt: ParseDate(row.StartedAt) ?? DateTimeOffset.MinValue,
                 CompletedAt: ParseDate(row.CompletedAt),
@@ -141,6 +145,8 @@ public sealed class SqliteRunRepository(SqlitePathResolver pathResolver) : IRunR
               mapping_config_path,
               mode,
               dry_run,
+              run_trigger,
+              requested_by,
               status,
               started_at,
               completed_at,
@@ -281,6 +287,8 @@ public sealed class SqliteRunRepository(SqlitePathResolver pathResolver) : IRunR
               mapping_config_path,
               mode,
               dry_run,
+              run_trigger,
+              requested_by,
               status,
               started_at,
               completed_at,
@@ -306,6 +314,8 @@ public sealed class SqliteRunRepository(SqlitePathResolver pathResolver) : IRunR
               $mappingConfigPath,
               $mode,
               $dryRun,
+              $runTrigger,
+              $requestedBy,
               $status,
               $startedAt,
               $completedAt,
@@ -330,6 +340,8 @@ public sealed class SqliteRunRepository(SqlitePathResolver pathResolver) : IRunR
               mapping_config_path = excluded.mapping_config_path,
               mode = excluded.mode,
               dry_run = excluded.dry_run,
+              run_trigger = excluded.run_trigger,
+              requested_by = excluded.requested_by,
               status = excluded.status,
               started_at = excluded.started_at,
               completed_at = excluded.completed_at,
@@ -421,6 +433,71 @@ public sealed class SqliteRunRepository(SqlitePathResolver pathResolver) : IRunR
         await transaction.CommitAsync(cancellationToken);
     }
 
+    public async Task AppendRunEntryAsync(RunEntryRecord entry, CancellationToken cancellationToken)
+    {
+        var databasePath = pathResolver.ResolveConfiguredPath() ?? pathResolver.Resolve();
+        if (string.IsNullOrWhiteSpace(databasePath))
+        {
+            return;
+        }
+
+        await using var connection = OpenWriteConnection(databasePath);
+        await connection.OpenAsync(cancellationToken);
+        await using var insertCommand = connection.CreateCommand();
+        insertCommand.CommandText =
+            """
+            INSERT INTO run_entries (
+              entry_id,
+              run_id,
+              bucket,
+              bucket_index,
+              worker_id,
+              sam_account_name,
+              reason,
+              review_category,
+              review_case_type,
+              started_at,
+              item_json
+            )
+            VALUES (
+              $entryId,
+              $runId,
+              $bucket,
+              $bucketIndex,
+              $workerId,
+              $samAccountName,
+              $reason,
+              $reviewCategory,
+              $reviewCaseType,
+              $startedAt,
+              $itemJson
+            )
+            ON CONFLICT(entry_id) DO UPDATE SET
+              run_id = excluded.run_id,
+              bucket = excluded.bucket,
+              bucket_index = excluded.bucket_index,
+              worker_id = excluded.worker_id,
+              sam_account_name = excluded.sam_account_name,
+              reason = excluded.reason,
+              review_category = excluded.review_category,
+              review_case_type = excluded.review_case_type,
+              started_at = excluded.started_at,
+              item_json = excluded.item_json;
+            """;
+        insertCommand.Parameters.AddWithValue("$entryId", entry.EntryId);
+        insertCommand.Parameters.AddWithValue("$runId", entry.RunId);
+        insertCommand.Parameters.AddWithValue("$bucket", entry.Bucket);
+        insertCommand.Parameters.AddWithValue("$bucketIndex", entry.BucketIndex);
+        insertCommand.Parameters.AddWithValue("$workerId", (object?)entry.WorkerId ?? DBNull.Value);
+        insertCommand.Parameters.AddWithValue("$samAccountName", (object?)entry.SamAccountName ?? DBNull.Value);
+        insertCommand.Parameters.AddWithValue("$reason", (object?)entry.Reason ?? DBNull.Value);
+        insertCommand.Parameters.AddWithValue("$reviewCategory", (object?)entry.ReviewCategory ?? DBNull.Value);
+        insertCommand.Parameters.AddWithValue("$reviewCaseType", (object?)entry.ReviewCaseType ?? DBNull.Value);
+        insertCommand.Parameters.AddWithValue("$startedAt", ToDbValue(entry.StartedAt));
+        insertCommand.Parameters.AddWithValue("$itemJson", entry.Item.GetRawText());
+        await insertCommand.ExecuteNonQueryAsync(cancellationToken);
+    }
+
     public async Task<IReadOnlyList<RunEntry>> GetRunEntriesAsync(
         string runId,
         string? bucket,
@@ -428,6 +505,8 @@ public sealed class SqliteRunRepository(SqlitePathResolver pathResolver) : IRunR
         string? reason,
         string? filter,
         string? entryId,
+        int skip,
+        int take,
         CancellationToken cancellationToken)
     {
         var databasePath = pathResolver.Resolve();
@@ -449,6 +528,8 @@ public sealed class SqliteRunRepository(SqlitePathResolver pathResolver) : IRunR
                 : $"%{EscapeLike(workerId.ToLowerInvariant())}%");
         command.Parameters.AddWithValue("$reason", string.IsNullOrWhiteSpace(reason) ? DBNull.Value : reason);
         command.Parameters.AddWithValue("$entryId", string.IsNullOrWhiteSpace(entryId) ? DBNull.Value : entryId);
+        command.Parameters.AddWithValue("$skip", Math.Max(0, skip));
+        command.Parameters.AddWithValue("$take", Math.Max(1, take));
         command.Parameters.AddWithValue(
             "$filter",
             string.IsNullOrWhiteSpace(filter)
@@ -490,6 +571,7 @@ public sealed class SqliteRunRepository(SqlitePathResolver pathResolver) : IRunR
                 OR LOWER(COALESCE(e.review_case_type, '')) LIKE $filter ESCAPE '\'
               )
             ORDER BY e.bucket ASC, e.bucket_index ASC, e.entry_id ASC;
+            LIMIT $take OFFSET $skip;
             """;
 
         var entries = new List<RunEntry>();
@@ -500,6 +582,66 @@ public sealed class SqliteRunRepository(SqlitePathResolver pathResolver) : IRunR
         }
 
         return entries;
+    }
+
+    public async Task<int> CountRunEntriesAsync(
+        string runId,
+        string? bucket,
+        string? workerId,
+        string? reason,
+        string? filter,
+        string? entryId,
+        CancellationToken cancellationToken)
+    {
+        var databasePath = pathResolver.Resolve();
+        if (string.IsNullOrWhiteSpace(databasePath))
+        {
+            return 0;
+        }
+
+        await using var connection = OpenConnection(databasePath);
+        await connection.OpenAsync(cancellationToken);
+
+        await using var command = connection.CreateCommand();
+        command.Parameters.AddWithValue("$runId", runId);
+        command.Parameters.AddWithValue("$bucket", string.IsNullOrWhiteSpace(bucket) ? DBNull.Value : bucket);
+        command.Parameters.AddWithValue(
+            "$workerId",
+            string.IsNullOrWhiteSpace(workerId)
+                ? DBNull.Value
+                : $"%{EscapeLike(workerId.ToLowerInvariant())}%");
+        command.Parameters.AddWithValue("$reason", string.IsNullOrWhiteSpace(reason) ? DBNull.Value : reason);
+        command.Parameters.AddWithValue("$entryId", string.IsNullOrWhiteSpace(entryId) ? DBNull.Value : entryId);
+        command.Parameters.AddWithValue(
+            "$filter",
+            string.IsNullOrWhiteSpace(filter)
+                ? DBNull.Value
+                : $"%{EscapeLike(filter.ToLowerInvariant())}%");
+
+        command.CommandText =
+            """
+            SELECT COUNT(1)
+            FROM run_entries e
+            JOIN runs r ON r.run_id = e.run_id
+            WHERE e.run_id = $runId
+              AND ($bucket IS NULL OR e.bucket = $bucket)
+              AND (
+                $workerId IS NULL
+                OR LOWER(COALESCE(e.worker_id, '')) LIKE $workerId ESCAPE '\'
+                OR LOWER(COALESCE(e.sam_account_name, '')) LIKE $workerId ESCAPE '\'
+              )
+              AND ($reason IS NULL OR LOWER(COALESCE(e.reason, '')) = LOWER($reason))
+              AND ($entryId IS NULL OR e.entry_id = $entryId)
+              AND (
+                $filter IS NULL
+                OR LOWER(COALESCE(e.item_json, '')) LIKE $filter ESCAPE '\'
+                OR LOWER(COALESCE(e.reason, '')) LIKE $filter ESCAPE '\'
+                OR LOWER(COALESCE(e.review_case_type, '')) LIKE $filter ESCAPE '\'
+              );
+            """;
+
+        var result = await command.ExecuteScalarAsync(cancellationToken);
+        return result is null || result is DBNull ? 0 : Convert.ToInt32(result);
     }
 
     private static int Sum(params int[] values) => values.Sum();
@@ -525,6 +667,8 @@ public sealed class SqliteRunRepository(SqlitePathResolver pathResolver) : IRunR
             MappingConfigPath: row.MappingConfigPath,
             Mode: row.Mode ?? "Unknown",
             DryRun: row.DryRun != 0,
+            RunTrigger: row.RunTrigger ?? "AdHoc",
+            RequestedBy: row.RequestedBy,
             Status: row.Status ?? "Unknown",
             StartedAt: ParseDate(row.StartedAt) ?? DateTimeOffset.MinValue,
             CompletedAt: ParseDate(row.CompletedAt),
@@ -946,6 +1090,8 @@ public sealed class SqliteRunRepository(SqlitePathResolver pathResolver) : IRunR
         command.Parameters.AddWithValue("$mappingConfigPath", (object?)run.MappingConfigPath ?? DBNull.Value);
         command.Parameters.AddWithValue("$mode", run.Mode);
         command.Parameters.AddWithValue("$dryRun", run.DryRun ? 1 : 0);
+        command.Parameters.AddWithValue("$runTrigger", run.RunTrigger);
+        command.Parameters.AddWithValue("$requestedBy", (object?)run.RequestedBy ?? DBNull.Value);
         command.Parameters.AddWithValue("$status", run.Status);
         command.Parameters.AddWithValue("$startedAt", run.StartedAt.ToString("O"));
         command.Parameters.AddWithValue("$completedAt", ToDbValue(run.CompletedAt));
@@ -977,6 +1123,8 @@ public sealed class SqliteRunRepository(SqlitePathResolver pathResolver) : IRunR
             MappingConfigPath = reader.GetStringOrDefault("mapping_config_path"),
             Mode = reader.GetStringOrDefault("mode"),
             DryRun = reader.GetInt32OrDefault("dry_run"),
+            RunTrigger = reader.GetStringOrDefault("run_trigger"),
+            RequestedBy = reader.GetStringOrDefault("requested_by"),
             Status = reader.GetStringOrDefault("status"),
             StartedAt = reader.GetStringOrDefault("started_at"),
             CompletedAt = reader.GetStringOrDefault("completed_at"),
@@ -1007,6 +1155,8 @@ public sealed class SqliteRunRepository(SqlitePathResolver pathResolver) : IRunR
             MappingConfigPath = row.MappingConfigPath,
             Mode = row.Mode,
             DryRun = row.DryRun,
+            RunTrigger = row.RunTrigger,
+            RequestedBy = row.RequestedBy,
             Status = row.Status,
             StartedAt = row.StartedAt,
             CompletedAt = row.CompletedAt,
@@ -1056,6 +1206,8 @@ public sealed class SqliteRunRepository(SqlitePathResolver pathResolver) : IRunR
         public string? MappingConfigPath { get; init; }
         public string? Mode { get; init; }
         public int DryRun { get; init; }
+        public string? RunTrigger { get; init; }
+        public string? RequestedBy { get; init; }
         public string? Status { get; init; }
         public string? StartedAt { get; init; }
         public string? CompletedAt { get; init; }

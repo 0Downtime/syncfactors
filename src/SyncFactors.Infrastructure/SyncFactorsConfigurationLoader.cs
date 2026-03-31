@@ -40,6 +40,9 @@ public sealed class SyncFactorsConfigurationLoader
                     EntitySet: document.GetRequiredObject("successFactors").GetRequiredObject("query").GetRequiredString("entitySet"),
                     IdentityField: document.GetRequiredObject("successFactors").GetRequiredObject("query").GetRequiredString("identityField"),
                     DeltaField: document.GetRequiredObject("successFactors").GetRequiredObject("query").GetRequiredString("deltaField"),
+                    BaseFilter: document.GetRequiredObject("successFactors").GetRequiredObject("query").TryGetString("baseFilter"),
+                    AsOfDate: document.GetRequiredObject("successFactors").GetRequiredObject("query").TryGetString("asOfDate"),
+                    PageSize: TryGetInt32(document.GetRequiredObject("successFactors").GetRequiredObject("query"), "pageSize") ?? 200,
                     Select: document.GetRequiredObject("successFactors").GetRequiredObject("query").GetRequiredStringArray("select"),
                     Expand: document.GetRequiredObject("successFactors").GetRequiredObject("query").GetRequiredStringArray("expand")),
                 PreviewQuery: document.GetRequiredObject("successFactors").TryGetObject("previewQuery", out var previewQuery)
@@ -47,6 +50,9 @@ public sealed class SyncFactorsConfigurationLoader
                         EntitySet: previewQuery.GetRequiredString("entitySet"),
                         IdentityField: previewQuery.GetRequiredString("identityField"),
                         DeltaField: previewQuery.TryGetString("deltaField") ?? string.Empty,
+                        BaseFilter: previewQuery.TryGetString("baseFilter"),
+                        AsOfDate: previewQuery.TryGetString("asOfDate"),
+                        PageSize: TryGetInt32(previewQuery, "pageSize") ?? 200,
                         Select: previewQuery.GetRequiredStringArray("select"),
                         Expand: previewQuery.TryGetStringArray("expand") ?? [])
                     : null),
@@ -186,5 +192,14 @@ public sealed class SyncFactorsConfigurationLoader
 
         var value = Environment.GetEnvironmentVariable(environmentVariableName);
         return string.IsNullOrWhiteSpace(value) ? null : value;
+    }
+
+    private static int? TryGetInt32(JsonElement element, string propertyName)
+    {
+        return element.TryGetProperty(propertyName, out var property) &&
+               property.ValueKind == JsonValueKind.Number &&
+               property.TryGetInt32(out var value)
+            ? value
+            : null;
     }
 }

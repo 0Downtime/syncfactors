@@ -63,6 +63,7 @@ public sealed class ApplyPreviewServiceTests
         var directoryCommandGateway = new CapturingDirectoryCommandGateway();
         var service = new ApplyPreviewService(
             new StubWorkerSource(worker),
+            new DirectoryMutationCommandBuilder(),
             directoryCommandGateway,
             new StubRunRepository(preview),
             new StubRuntimeStatusStore(),
@@ -141,6 +142,7 @@ public sealed class ApplyPreviewServiceTests
         var runRepository = new CapturingRunRepository(preview);
         var service = new ApplyPreviewService(
             new StubWorkerSource(worker),
+            new DirectoryMutationCommandBuilder(),
             new ThrowingDirectoryCommandGateway(new InvalidOperationException("LDAP bind failed.")),
             runRepository,
             runtimeStatusStore,
@@ -213,6 +215,7 @@ public sealed class ApplyPreviewServiceTests
         var runRepository = new CapturingRunRepository(preview);
         var service = new ApplyPreviewService(
             new StubWorkerSource(worker),
+            new DirectoryMutationCommandBuilder(),
             new ThrowingDirectoryCommandGateway(new InvalidOperationException("LDAP bind failed.\nServer said no.")),
             runRepository,
             runtimeStatusStore,
@@ -241,6 +244,13 @@ public sealed class ApplyPreviewServiceTests
             _ = workerId;
             _ = cancellationToken;
             return Task.FromResult<WorkerSnapshot?>(worker);
+        }
+
+        public async IAsyncEnumerable<WorkerSnapshot> ListWorkersAsync([System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            yield return worker;
+            await Task.Yield();
         }
     }
 
@@ -311,7 +321,28 @@ public sealed class ApplyPreviewServiceTests
             return Task.CompletedTask;
         }
 
-        public Task<IReadOnlyList<RunEntry>> GetRunEntriesAsync(string runId, string? bucket, string? workerId, string? reason, string? filter, string? entryId, CancellationToken cancellationToken)
+        public Task AppendRunEntryAsync(RunEntryRecord entry, CancellationToken cancellationToken)
+        {
+            _ = entry;
+            _ = cancellationToken;
+            return Task.CompletedTask;
+        }
+
+        public Task<IReadOnlyList<RunEntry>> GetRunEntriesAsync(string runId, string? bucket, string? workerId, string? reason, string? filter, string? entryId, int skip, int take, CancellationToken cancellationToken)
+        {
+            _ = runId;
+            _ = bucket;
+            _ = workerId;
+            _ = reason;
+            _ = filter;
+            _ = entryId;
+            _ = skip;
+            _ = take;
+            _ = cancellationToken;
+            return Task.FromResult<IReadOnlyList<RunEntry>>([]);
+        }
+
+        public Task<int> CountRunEntriesAsync(string runId, string? bucket, string? workerId, string? reason, string? filter, string? entryId, CancellationToken cancellationToken)
         {
             _ = runId;
             _ = bucket;
@@ -320,7 +351,7 @@ public sealed class ApplyPreviewServiceTests
             _ = filter;
             _ = entryId;
             _ = cancellationToken;
-            return Task.FromResult<IReadOnlyList<RunEntry>>([]);
+            return Task.FromResult(0);
         }
     }
 
@@ -371,7 +402,28 @@ public sealed class ApplyPreviewServiceTests
             return Task.CompletedTask;
         }
 
-        public Task<IReadOnlyList<RunEntry>> GetRunEntriesAsync(string runId, string? bucket, string? workerId, string? reason, string? filter, string? entryId, CancellationToken cancellationToken)
+        public Task AppendRunEntryAsync(RunEntryRecord entry, CancellationToken cancellationToken)
+        {
+            _ = cancellationToken;
+            ReplacedEntries.Add((entry.RunId, [entry]));
+            return Task.CompletedTask;
+        }
+
+        public Task<IReadOnlyList<RunEntry>> GetRunEntriesAsync(string runId, string? bucket, string? workerId, string? reason, string? filter, string? entryId, int skip, int take, CancellationToken cancellationToken)
+        {
+            _ = runId;
+            _ = bucket;
+            _ = workerId;
+            _ = reason;
+            _ = filter;
+            _ = entryId;
+            _ = skip;
+            _ = take;
+            _ = cancellationToken;
+            return Task.FromResult<IReadOnlyList<RunEntry>>([]);
+        }
+
+        public Task<int> CountRunEntriesAsync(string runId, string? bucket, string? workerId, string? reason, string? filter, string? entryId, CancellationToken cancellationToken)
         {
             _ = runId;
             _ = bucket;
@@ -380,7 +432,7 @@ public sealed class ApplyPreviewServiceTests
             _ = filter;
             _ = entryId;
             _ = cancellationToken;
-            return Task.FromResult<IReadOnlyList<RunEntry>>([]);
+            return Task.FromResult(0);
         }
     }
 
