@@ -72,7 +72,8 @@ app.MapGet("/odata/v2/PerPerson", (
         return Results.BadRequest(new { error = query.ErrorMessage });
     }
 
-    var worker = store.FindByIdentity(query.IdentityField, query.WorkerId);
+    var workers = store.QueryWorkers("PerPerson", query);
+    var worker = workers.Count == 1 ? workers[0] : null;
     if (worker?.Response?.ForceUnauthorized == true)
     {
         return Results.Unauthorized();
@@ -88,7 +89,7 @@ app.MapGet("/odata/v2/PerPerson", (
         return Results.NotFound();
     }
 
-    var payload = responseBuilder.Build(worker, query);
+    var payload = responseBuilder.Build(workers, query, "PerPerson");
     return Results.Json(payload);
 });
 
@@ -109,7 +110,8 @@ app.MapGet("/odata/v2/EmpJob", (
         return Results.BadRequest(new { error = query.ErrorMessage });
     }
 
-    var worker = store.FindByIdentity(query.IdentityField, query.WorkerId);
+    var workers = store.QueryWorkers("EmpJob", query);
+    var worker = workers.Count == 1 ? workers[0] : null;
     if (worker?.Response?.ForceUnauthorized == true)
     {
         return Results.Unauthorized();
@@ -125,7 +127,7 @@ app.MapGet("/odata/v2/EmpJob", (
         return Results.NotFound();
     }
 
-    var payload = responseBuilder.Build(worker, query, "EmpJob");
+    var payload = responseBuilder.Build(workers, query, "EmpJob");
     return Results.Json(payload);
 });
 

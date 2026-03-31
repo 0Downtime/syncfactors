@@ -93,9 +93,12 @@ public sealed class WorkerPreviewLogWriterTests
         var directoryGateway = new ScaffoldDirectoryGateway(scaffoldStore);
         var planner = new WorkerPreviewPlanner(
             workerSource,
-            directoryGateway,
-            new IdentityMatcher(),
-            diffService,
+            new WorkerPlanningService(
+                directoryGateway,
+                new IdentityMatcher(),
+                diffService,
+                mappingProvider,
+                NullLogger<WorkerPlanningService>.Instance),
             mappingProvider,
             logWriter,
             new StubRunRepository(),
@@ -154,6 +157,13 @@ public sealed class WorkerPreviewLogWriterTests
         {
             _ = runId;
             _ = entries;
+            _ = cancellationToken;
+            return Task.CompletedTask;
+        }
+
+        public Task AppendRunEntryAsync(RunEntryRecord entry, CancellationToken cancellationToken)
+        {
+            _ = entry;
             _ = cancellationToken;
             return Task.CompletedTask;
         }

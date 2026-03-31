@@ -9,6 +9,17 @@ public sealed class MockSuccessFactorsOptions
     public string ServiceRoot { get; set; } = "http://127.0.0.1:18080/odata/v2";
 
     public MockAuthenticationOptions Authentication { get; set; } = new();
+
+    public MockSyntheticPopulationOptions SyntheticPopulation { get; set; } = new();
+}
+
+public sealed class MockSyntheticPopulationOptions
+{
+    public bool Enabled { get; set; }
+
+    public int TargetWorkerCount { get; set; } = 5000;
+
+    public string? SeedFixturePath { get; set; }
 }
 
 public sealed class MockAuthenticationOptions

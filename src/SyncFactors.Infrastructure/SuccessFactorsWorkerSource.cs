@@ -74,6 +74,43 @@ public sealed class SuccessFactorsWorkerSource(
         return await fallbackSource.GetWorkerAsync(workerId, cancellationToken);
     }
 
+    public async IAsyncEnumerable<WorkerSnapshot> ListWorkersAsync([System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        var config = configLoader.GetSyncConfig();
+        var query = config.SuccessFactors.PreviewQuery ?? config.SuccessFactors.Query;
+        var skip = 0;
+        var pageSize = Math.Max(1, query.PageSize);
+
+        while (true)
+        {
+            var payload = await ExecuteListRequestAsync(config, query, skip, pageSize, cancellationToken);
+            using var document = JsonDocument.Parse(payload.Body);
+            var workers = ExtractWorkerArray(document.RootElement)
+                .Select(worker => TryParseWorkerElement(worker, config, query))
+                .Where(worker => worker is not null)
+                .Select(worker => worker!)
+                .ToArray();
+
+            if (workers.Length == 0)
+            {
+                yield break;
+            }
+
+            foreach (var worker in workers)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                yield return worker;
+            }
+
+            if (workers.Length < pageSize)
+            {
+                yield break;
+            }
+
+            skip += workers.Length;
+        }
+    }
+
     private async Task ApplyAuthenticationAsync(
         HttpRequestMessage request,
         SuccessFactorsAuthConfig auth,
@@ -376,6 +413,41 @@ public sealed class SuccessFactorsWorkerSource(
             parts.Add($"$expand={Uri.EscapeDataString(string.Join(",", query.Expand))}");
         }
 
+        if (!string.IsNullOrWhiteSpace(query.AsOfDate))
+        {
+            parts.Add($"asOfDate={Uri.EscapeDataString(query.AsOfDate)}");
+        }
+
+        return $"{relativePath}?{string.Join("&", parts)}";
+    }
+
+    private static string BuildListRequestUri(SyncFactorsConfigDocument config, SuccessFactorsQueryConfig query, int skip, int top)
+    {
+        var baseUrl = config.SuccessFactors.BaseUrl.TrimEnd('/');
+        var relativePath = $"{baseUrl}/{query.EntitySet}";
+        var parts = new List<string>
+        {
+            "$format=json",
+            $"$top={top}",
+            $"$skip={skip}",
+            $"$select={Uri.EscapeDataString(string.Join(",", query.Select))}"
+        };
+
+        if (!string.IsNullOrWhiteSpace(query.BaseFilter))
+        {
+            parts.Add($"$filter={Uri.EscapeDataString(query.BaseFilter)}");
+        }
+
+        if (query.Expand.Count > 0)
+        {
+            parts.Add($"$expand={Uri.EscapeDataString(string.Join(",", query.Expand))}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(query.AsOfDate))
+        {
+            parts.Add($"asOfDate={Uri.EscapeDataString(query.AsOfDate)}");
+        }
+
         return $"{relativePath}?{string.Join("&", parts)}";
     }
 
@@ -383,6 +455,17 @@ public sealed class SuccessFactorsWorkerSource(
     {
         var worker = ExtractWorkerArray(root).FirstOrDefault();
         if (worker.ValueKind == JsonValueKind.Undefined)
+        {
+            return null;
+        }
+
+        return TryParseWorkerElement(worker, config, query, workerId);
+    }
+
+    private static WorkerSnapshot? TryParseWorkerElement(JsonElement worker, SyncFactorsConfigDocument config, SuccessFactorsQueryConfig query, string? fallbackWorkerId = null)
+    {
+        var workerId = GetString(worker, query.IdentityField) ?? fallbackWorkerId ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(workerId))
         {
             return null;
         }
@@ -436,6 +519,40 @@ public sealed class SuccessFactorsWorkerSource(
             TargetOu: config.Ad.DefaultActiveOu,
             IsPrehire: IsPrehire(startDate, config.Sync.EnableBeforeStartDays),
             Attributes: BuildAttributes(worker, personalInfo, employment, jobInfo));
+    }
+
+    private async Task<SuccessFactorsResponsePayload> ExecuteListRequestAsync(
+        SyncFactorsConfigDocument config,
+        SuccessFactorsQueryConfig query,
+        int skip,
+        int top,
+        CancellationToken cancellationToken)
+    {
+        var requestUri = BuildListRequestUri(config, query, skip, top);
+        using var request = new HttpRequestMessage(HttpMethod.Get, requestUri);
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+        request.Headers.AcceptEncoding.Add(new StringWithQualityHeaderValue("gzip"));
+        request.Headers.AcceptEncoding.Add(new StringWithQualityHeaderValue("deflate"));
+        AddTracingHeaders(request, $"list-{skip}-{top}");
+        await ApplyAuthenticationAsync(request, config.SuccessFactors.Auth, cancellationToken);
+
+        using var response = await httpClient.SendAsync(request, cancellationToken);
+        var body = await response.Content.ReadAsStringAsync(cancellationToken);
+        if (response.IsSuccessStatusCode)
+        {
+            return new SuccessFactorsResponsePayload(
+                RequestUri: requestUri,
+                Body: body,
+                StatusCode: (int)response.StatusCode,
+                ContentType: response.Content.Headers.ContentType?.MediaType ?? "(none)");
+        }
+
+        throw CreateDetailedSuccessFactorsException(
+            messagePrefix: "SuccessFactors request failed.",
+            response: response,
+            requestUri: requestUri,
+            body: body,
+            query: query);
     }
 
     private static IReadOnlyList<JsonElement> ExtractWorkerArray(JsonElement root)

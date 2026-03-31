@@ -41,6 +41,9 @@ builder.Services.AddTransient<IApplyPreviewService, ApplyPreviewService>();
 builder.Services.AddSingleton<IDashboardSnapshotService, DashboardSnapshotService>();
 builder.Services.AddSingleton<IRuntimeStatusStore, SqliteRuntimeStatusStore>();
 builder.Services.AddSingleton<IRunRepository, SqliteRunRepository>();
+builder.Services.AddSingleton<IRunQueueStore, SqliteRunQueueStore>();
+builder.Services.AddTransient<IWorkerPlanningService, WorkerPlanningService>();
+builder.Services.AddSingleton<IDirectoryMutationCommandBuilder, DirectoryMutationCommandBuilder>();
 builder.Services.AddRazorPages();
 
 var app = builder.Build();
@@ -88,6 +91,17 @@ app.MapGet("/api/runs", async (IRunRepository repository, CancellationToken canc
 {
     var runs = await repository.ListRunsAsync(cancellationToken);
     return Results.Ok(new { runs });
+});
+
+app.MapPost("/api/runs", async (StartRunRequest request, IRunQueueStore queueStore, CancellationToken cancellationToken) =>
+{
+    if (await queueStore.HasPendingOrActiveRunAsync(cancellationToken))
+    {
+        return Results.Conflict(new { error = "A run is already pending or in progress." });
+    }
+
+    var queued = await queueStore.EnqueueAsync(request, cancellationToken);
+    return Results.Accepted($"/api/runs/{queued.RequestId}", queued);
 });
 
 app.MapGet("/api/runs/{runId}", async (string runId, IRunRepository repository, CancellationToken cancellationToken) =>

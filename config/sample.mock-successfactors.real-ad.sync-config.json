@@ -29,9 +29,9 @@
       "identityField": "userId",
       "deltaField": "lastModifiedDateTime",
       "baseFilter": "emplStatus in 'A','U'",
+      "pageSize": 200,
       "select": [
         "userId",
-        "personIdExternal",
         "jobTitle",
         "company",
         "department",
@@ -63,6 +63,7 @@
       "entitySet": "PerPerson",
       "identityField": "personIdExternal",
       "deltaField": "lastModifiedDateTime",
+      "pageSize": 200,
       "select": [
         "personIdExternal",
         "personalInfoNav/firstName",
@@ -140,7 +141,7 @@
     "deletionRetentionDays": 90
   },
   "safety": {
-    "maxCreatesPerRun": 1050,
+    "maxCreatesPerRun": 5000,
     "maxDisablesPerRun": 50,
     "maxDeletionsPerRun": 10
   },

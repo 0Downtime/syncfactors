@@ -421,6 +421,71 @@ public sealed class SqliteRunRepository(SqlitePathResolver pathResolver) : IRunR
         await transaction.CommitAsync(cancellationToken);
     }
 
+    public async Task AppendRunEntryAsync(RunEntryRecord entry, CancellationToken cancellationToken)
+    {
+        var databasePath = pathResolver.ResolveConfiguredPath() ?? pathResolver.Resolve();
+        if (string.IsNullOrWhiteSpace(databasePath))
+        {
+            return;
+        }
+
+        await using var connection = OpenWriteConnection(databasePath);
+        await connection.OpenAsync(cancellationToken);
+        await using var insertCommand = connection.CreateCommand();
+        insertCommand.CommandText =
+            """
+            INSERT INTO run_entries (
+              entry_id,
+              run_id,
+              bucket,
+              bucket_index,
+              worker_id,
+              sam_account_name,
+              reason,
+              review_category,
+              review_case_type,
+              started_at,
+              item_json
+            )
+            VALUES (
+              $entryId,
+              $runId,
+              $bucket,
+              $bucketIndex,
+              $workerId,
+              $samAccountName,
+              $reason,
+              $reviewCategory,
+              $reviewCaseType,
+              $startedAt,
+              $itemJson
+            )
+            ON CONFLICT(entry_id) DO UPDATE SET
+              run_id = excluded.run_id,
+              bucket = excluded.bucket,
+              bucket_index = excluded.bucket_index,
+              worker_id = excluded.worker_id,
+              sam_account_name = excluded.sam_account_name,
+              reason = excluded.reason,
+              review_category = excluded.review_category,
+              review_case_type = excluded.review_case_type,
+              started_at = excluded.started_at,
+              item_json = excluded.item_json;
+            """;
+        insertCommand.Parameters.AddWithValue("$entryId", entry.EntryId);
+        insertCommand.Parameters.AddWithValue("$runId", entry.RunId);
+        insertCommand.Parameters.AddWithValue("$bucket", entry.Bucket);
+        insertCommand.Parameters.AddWithValue("$bucketIndex", entry.BucketIndex);
+        insertCommand.Parameters.AddWithValue("$workerId", (object?)entry.WorkerId ?? DBNull.Value);
+        insertCommand.Parameters.AddWithValue("$samAccountName", (object?)entry.SamAccountName ?? DBNull.Value);
+        insertCommand.Parameters.AddWithValue("$reason", (object?)entry.Reason ?? DBNull.Value);
+        insertCommand.Parameters.AddWithValue("$reviewCategory", (object?)entry.ReviewCategory ?? DBNull.Value);
+        insertCommand.Parameters.AddWithValue("$reviewCaseType", (object?)entry.ReviewCaseType ?? DBNull.Value);
+        insertCommand.Parameters.AddWithValue("$startedAt", ToDbValue(entry.StartedAt));
+        insertCommand.Parameters.AddWithValue("$itemJson", entry.Item.GetRawText());
+        await insertCommand.ExecuteNonQueryAsync(cancellationToken);
+    }
+
     public async Task<IReadOnlyList<RunEntry>> GetRunEntriesAsync(
         string runId,
         string? bucket,

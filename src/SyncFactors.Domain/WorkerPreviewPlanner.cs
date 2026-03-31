@@ -6,9 +6,7 @@ namespace SyncFactors.Domain;
 
 public sealed class WorkerPreviewPlanner(
     IWorkerSource workerSource,
-    IDirectoryGateway directoryGateway,
-    IIdentityMatcher identityMatcher,
-    IAttributeDiffService attributeDiffService,
+    IWorkerPlanningService planningService,
     IAttributeMappingProvider attributeMappingProvider,
     IWorkerPreviewLogWriter previewLogWriter,
     IRunRepository runRepository,
@@ -26,36 +24,15 @@ public sealed class WorkerPreviewPlanner(
         }
 
         var logPath = previewLogWriter.CreateLogPath(workerId, startedAt);
-
-        var directoryUser = await directoryGateway.FindByWorkerAsync(worker, cancellationToken)
-            ?? new DirectoryUserSnapshot(
-                SamAccountName: null,
-                DistinguishedName: null,
-                Enabled: null,
-                DisplayName: null,
-                Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase));
-        var managerId = worker.Attributes.TryGetValue("managerId", out var resolvedManagerId) ? resolvedManagerId : null;
-        var managerDistinguishedName = managerId is null
-            ? null
-            : await directoryGateway.ResolveManagerDistinguishedNameAsync(managerId, cancellationToken);
-
-        var identity = identityMatcher.Match(worker, directoryUser);
-        var proposedEmailLocalPart = await directoryGateway.ResolveAvailableEmailLocalPartAsync(worker, cancellationToken);
-        var proposedEmailAddress = DirectoryIdentityFormatter.BuildEmailAddress(proposedEmailLocalPart);
-
-        var attributeChanges = await attributeDiffService.BuildDiffAsync(worker, directoryUser, proposedEmailAddress, logPath, cancellationToken);
+        var plan = await planningService.PlanAsync(worker, logPath, cancellationToken);
         logger.LogInformation(
             "Worker preview completed planning. WorkerId={WorkerId} Bucket={Bucket} MatchedExistingUser={MatchedExistingUser} DiffCount={DiffCount}",
-            worker.WorkerId,
-            identity.Bucket,
-            identity.MatchedExistingUser,
-            attributeChanges.Count(change => change.Changed));
+            plan.Worker.WorkerId,
+            plan.Bucket,
+            plan.Identity.MatchedExistingUser,
+            plan.AttributeChanges.Count(change => change.Changed));
         var preview = BuildPreview(
-            worker,
-            directoryUser,
-            identity,
-            attributeChanges,
-            managerDistinguishedName,
+            plan,
             logPath,
             attributeMappingProvider.GetEnabledMappings());
         var history = await runRepository.ListWorkerPreviewHistoryAsync(worker.WorkerId, 1, cancellationToken);
@@ -157,18 +134,14 @@ public sealed class WorkerPreviewPlanner(
     }
 
     private static WorkerPreviewResult BuildPreview(
-        WorkerSnapshot worker,
-        DirectoryUserSnapshot directoryUser,
-        IdentityMatchResult identity,
-        IReadOnlyList<AttributeChange> attributeChanges,
-        string? managerDistinguishedName,
+        PlannedWorkerAction plan,
         string? logPath,
         IReadOnlyList<AttributeMapping> mappings)
     {
-        var diffRows = attributeChanges
+        var diffRows = plan.AttributeChanges
             .Select(change => new DiffRow(change.Attribute, change.Source, change.Before, change.After, change.Changed))
             .ToArray();
-        var sourceAttributes = worker.Attributes
+        var sourceAttributes = plan.Worker.Attributes
             .Where(attribute => !string.IsNullOrWhiteSpace(attribute.Value))
             .Select(attribute => new SourceAttributeRow(attribute.Key, attribute.Value!))
             .OrderBy(attribute => IsPathLikeAttribute(attribute.Attribute) ? 1 : 0)
@@ -178,14 +151,14 @@ public sealed class WorkerPreviewPlanner(
         var unusedSources = sourceAttributes
             .Where(attribute => usedSources.All(used => !string.Equals(used.Attribute, attribute.Attribute, StringComparison.OrdinalIgnoreCase)))
             .ToArray();
-        var missingSources = BuildMissingSourceAttributes(worker.Attributes, mappings);
+        var missingSources = WorkerPlanningService.BuildMissingSourceAttributes(plan.Worker.Attributes, mappings);
 
         var item = ParseJson(
             "{"
-            + $"\"workerId\":\"{Escape(worker.WorkerId)}\","
-            + $"\"samAccountName\":\"{Escape(identity.SamAccountName)}\","
-            + $"\"targetOu\":\"{Escape(worker.TargetOu)}\","
-            + $"\"matchedExistingUser\":{ToJsonBoolean(identity.MatchedExistingUser)},"
+            + $"\"workerId\":\"{Escape(plan.Worker.WorkerId)}\","
+            + $"\"samAccountName\":\"{Escape(plan.Identity.SamAccountName)}\","
+            + $"\"targetOu\":\"{Escape(plan.Worker.TargetOu)}\","
+            + $"\"matchedExistingUser\":{ToJsonBoolean(plan.Identity.MatchedExistingUser)},"
             + "\"changedAttributeDetails\":["
             + string.Join(",", diffRows
                 .Where(row => row.Changed)
@@ -208,25 +181,25 @@ public sealed class WorkerPreviewPlanner(
             ErrorMessage: null,
             ArtifactType: "WorkerPreview",
             SuccessFactorsAuth: "NativeScaffold",
-            WorkerId: worker.WorkerId,
-            Buckets: [identity.Bucket],
-            MatchedExistingUser: identity.MatchedExistingUser,
-            ReviewCategory: null,
-            ReviewCaseType: null,
-            Reason: identity.Reason,
-            OperatorActionSummary: identity.OperatorActionSummary,
-            SamAccountName: identity.SamAccountName,
-            ManagerDistinguishedName: managerDistinguishedName,
-            TargetOu: worker.TargetOu,
-            CurrentDistinguishedName: directoryUser.DistinguishedName,
-            CurrentEnabled: directoryUser.Enabled,
-            ProposedEnable: directoryUser.Enabled ?? true,
+            WorkerId: plan.Worker.WorkerId,
+            Buckets: [plan.Bucket],
+            MatchedExistingUser: plan.Identity.MatchedExistingUser,
+            ReviewCategory: plan.ReviewCategory,
+            ReviewCaseType: plan.ReviewCaseType,
+            Reason: plan.Reason,
+            OperatorActionSummary: plan.Identity.OperatorActionSummary,
+            SamAccountName: plan.Identity.SamAccountName,
+            ManagerDistinguishedName: plan.ManagerDistinguishedName,
+            TargetOu: plan.Worker.TargetOu,
+            CurrentDistinguishedName: plan.DirectoryUser.DistinguishedName,
+            CurrentEnabled: plan.DirectoryUser.Enabled,
+            ProposedEnable: plan.DirectoryUser.Enabled ?? true,
             OperationSummary: new OperationSummary(
-                Action: identity.Bucket == "creates" ? $"Create account {identity.SamAccountName}" : $"Update attributes for {identity.SamAccountName}",
-                Effect: identity.Bucket == "creates" ? null : $"{diffRows.Count(row => row.Changed)} attribute change.",
-                TargetOu: worker.TargetOu,
+                Action: plan.Bucket == "creates" ? $"Create account {plan.Identity.SamAccountName}" : $"Update attributes for {plan.Identity.SamAccountName}",
+                Effect: plan.Bucket == "creates" ? null : $"{diffRows.Count(row => row.Changed)} attribute change.",
+                TargetOu: plan.Worker.TargetOu,
                 FromOu: null,
-                ToOu: worker.TargetOu),
+                ToOu: plan.Worker.TargetOu),
             DiffRows: diffRows,
             SourceAttributes: sourceAttributes,
             UsedSourceAttributes: usedSources,
@@ -235,7 +208,7 @@ public sealed class WorkerPreviewPlanner(
             Entries:
             [
                 new WorkerPreviewEntry(
-                    Bucket: identity.Bucket,
+                    Bucket: plan.Bucket,
                     Item: item)
             ]);
     }
@@ -275,45 +248,6 @@ public sealed class WorkerPreviewPlanner(
         return sourceAttributes
             .Where(attribute => usedKeys.Contains(attribute.Attribute))
             .ToArray();
-    }
-
-    private static IReadOnlyList<MissingSourceAttributeRow> BuildMissingSourceAttributes(
-        IReadOnlyDictionary<string, string?> attributes,
-        IReadOnlyList<AttributeMapping> mappings)
-    {
-        var missing = new List<MissingSourceAttributeRow>();
-        foreach (var mapping in mappings.Where(mapping => mapping.Required))
-        {
-            if (TryResolveAttribute(attributes, mapping.Source, out var value) &&
-                !string.IsNullOrWhiteSpace(value))
-            {
-                continue;
-            }
-
-            missing.Add(new MissingSourceAttributeRow(mapping.Source, $"Required mapping for {mapping.Target} has no value."));
-        }
-
-        return missing
-            .DistinctBy(row => row.Attribute, StringComparer.OrdinalIgnoreCase)
-            .OrderBy(row => row.Attribute, StringComparer.OrdinalIgnoreCase)
-            .ToArray();
-    }
-
-    private static bool TryResolveAttribute(
-        IReadOnlyDictionary<string, string?> attributes,
-        string source,
-        out string? value)
-    {
-        foreach (var key in SplitSourceKeys(source))
-        {
-            if (attributes.TryGetValue(key, out value))
-            {
-                return true;
-            }
-        }
-
-        value = null;
-        return false;
     }
 
     private static IEnumerable<string> SplitSourceKeys(string? source)

@@ -7,6 +7,16 @@ public sealed class ODataResponseBuilder
     public object Build(MockWorkerFixture? worker, ODataQuery query)
         => Build(worker, query, "PerPerson");
 
+    public object Build(IReadOnlyList<MockWorkerFixture> workers, ODataQuery query, string entitySet)
+    {
+        if (string.Equals(entitySet, "EmpJob", StringComparison.OrdinalIgnoreCase))
+        {
+            return BuildEmpJob(workers, query);
+        }
+
+        return BuildPerPerson(workers, query);
+    }
+
     public object Build(MockWorkerFixture? worker, ODataQuery query, string entitySet)
     {
         if (string.Equals(entitySet, "EmpJob", StringComparison.OrdinalIgnoreCase))
@@ -18,12 +28,37 @@ public sealed class ODataResponseBuilder
     }
 
     private static object BuildPerPerson(MockWorkerFixture? worker, ODataQuery query)
+        => BuildPerPerson(worker is null ? [] : [worker], query);
+
+    private static object BuildPerPerson(IReadOnlyList<MockWorkerFixture> workers, ODataQuery query)
     {
-        if (worker is null || worker.Response?.ForceEmptyResults == true)
+        var results = ApplyPaging(workers, query)
+            .Where(worker => worker.Response?.ForceEmptyResults != true)
+            .Select(worker => BuildPerPersonWorker(worker, query))
+            .Where(node => node is not null)
+            .ToArray();
+        if (results.Length == 0)
         {
             return EmptyResults();
         }
 
+        var resultArray = new JsonArray();
+        foreach (var result in results)
+        {
+            resultArray.Add(result);
+        }
+
+        return new JsonObject
+        {
+            ["d"] = new JsonObject
+            {
+                ["results"] = resultArray
+            }
+        };
+    }
+
+    private static JsonObject? BuildPerPersonWorker(MockWorkerFixture worker, ODataQuery query)
+    {
         var workerNode = new JsonObject
         {
             ["personIdExternal"] = worker.PersonIdExternal
@@ -37,25 +72,43 @@ public sealed class ODataResponseBuilder
         AddTermination(workerNode, worker, query);
         AddEmployment(workerNode, worker, query);
 
-        return new JsonObject
-        {
-            ["d"] = new JsonObject
-            {
-                ["results"] = new JsonArray(workerNode)
-            }
-        };
+        return workerNode;
     }
 
     private static object BuildEmpJob(MockWorkerFixture? worker, ODataQuery query)
+        => BuildEmpJob(worker is null ? [] : [worker], query);
+
+    private static object BuildEmpJob(IReadOnlyList<MockWorkerFixture> workers, ODataQuery query)
     {
-        if (worker is null || worker.Response?.ForceEmptyResults == true)
+        var results = ApplyPaging(workers, query)
+            .Where(worker => worker.Response?.ForceEmptyResults != true)
+            .Select(worker => BuildEmpJobWorker(worker, query))
+            .Where(node => node is not null)
+            .ToArray();
+        if (results.Length == 0)
         {
             return EmptyResults();
         }
 
+        var resultArray = new JsonArray();
+        foreach (var result in results)
+        {
+            resultArray.Add(result);
+        }
+
+        return new JsonObject
+        {
+            ["d"] = new JsonObject
+            {
+                ["results"] = resultArray
+            }
+        };
+    }
+
+    private static JsonObject? BuildEmpJobWorker(MockWorkerFixture worker, ODataQuery query)
+    {
         var jobNode = new JsonObject();
         AddIfSelected(jobNode, "userId", worker.UserId ?? worker.UserName, query);
-        AddIfSelected(jobNode, "personIdExternal", worker.PersonIdExternal, query);
         AddIfSelected(jobNode, "jobTitle", worker.JobTitle, query);
         AddIfSelected(jobNode, "company", worker.Company, query);
         AddIfSelected(jobNode, "department", worker.Department, query);
@@ -127,13 +180,7 @@ public sealed class ODataResponseBuilder
             }
         }
 
-        return new JsonObject
-        {
-            ["d"] = new JsonObject
-            {
-                ["results"] = new JsonArray(jobNode)
-            }
-        };
+        return jobNode;
     }
 
     private static void AddPersonalInfo(JsonObject workerNode, MockWorkerFixture worker, ODataQuery query)
@@ -558,5 +605,12 @@ public sealed class ODataResponseBuilder
         }
 
         return query.Expand.Contains(path) || query.Select.Any(select => select.StartsWith(path + "/", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static IEnumerable<MockWorkerFixture> ApplyPaging(IReadOnlyList<MockWorkerFixture> workers, ODataQuery query)
+    {
+        var skip = Math.Max(0, query.Skip);
+        var top = query.Top ?? int.MaxValue;
+        return workers.Skip(skip).Take(top);
     }
 }
