@@ -5,7 +5,7 @@ namespace SyncFactors.Infrastructure;
 
 public sealed class SqliteDatabaseInitializer(SqlitePathResolver pathResolver)
 {
-    private const int CurrentSchemaVersion = 3;
+    private const int CurrentSchemaVersion = 4;
 
     public async Task InitializeAsync(CancellationToken cancellationToken)
     {
@@ -56,6 +56,12 @@ public sealed class SqliteDatabaseInitializer(SqlitePathResolver pathResolver)
         {
             await ApplyVersion3Async(connection, transaction, cancellationToken);
             await InsertVersionAsync(connection, transaction, 3, cancellationToken);
+        }
+
+        if (!appliedVersions.Contains(4))
+        {
+            await ApplyVersion4Async(connection, transaction, cancellationToken);
+            await InsertVersionAsync(connection, transaction, 4, cancellationToken);
         }
 
         await transaction.CommitAsync(cancellationToken);
@@ -252,6 +258,34 @@ public sealed class SqliteDatabaseInitializer(SqlitePathResolver pathResolver)
             dropCommand.CommandText = "DROP TABLE runtime_status_legacy;";
             await dropCommand.ExecuteNonQueryAsync(cancellationToken);
         }
+    }
+
+    private static async Task ApplyVersion4Async(
+        SqliteConnection connection,
+        DbTransaction transaction,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = (SqliteTransaction)transaction;
+        command.CommandText =
+            """
+            CREATE TABLE IF NOT EXISTS run_queue (
+              request_id TEXT NOT NULL PRIMARY KEY,
+              mode TEXT NOT NULL,
+              dry_run INTEGER NOT NULL DEFAULT 1,
+              status TEXT NOT NULL,
+              requested_at TEXT NOT NULL,
+              started_at TEXT NULL,
+              completed_at TEXT NULL,
+              run_id TEXT NULL,
+              worker_name TEXT NULL,
+              error_message TEXT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_run_queue_status_requested_at
+              ON run_queue (status, requested_at);
+            """;
+        await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     private static async Task<HashSet<int>> GetAppliedVersionsAsync(

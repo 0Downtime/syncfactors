@@ -9,6 +9,19 @@ public sealed class MockApiTests
 {
     private static readonly string FixturePath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "config", "mock-successfactors", "baseline-fixtures.json"));
 
+    private static MockFixtureStore CreateStore(bool syntheticPopulationEnabled = false, int targetWorkerCount = 5000)
+    {
+        return new MockFixtureStore(Options.Create(new MockSuccessFactorsOptions
+        {
+            FixturePath = FixturePath,
+            SyntheticPopulation = new MockSyntheticPopulationOptions
+            {
+                Enabled = syntheticPopulationEnabled,
+                TargetWorkerCount = targetWorkerCount
+            }
+        }));
+    }
+
     [Fact]
     public void TokenService_IssuesBearerToken_ForValidClientCredentials()
     {
@@ -31,7 +44,7 @@ public sealed class MockApiTests
     [Fact]
     public void PerPersonProjection_ReturnsProjectedWorker_ForCurrentQueryShape()
     {
-        var store = new MockFixtureStore(Options.Create(new MockSuccessFactorsOptions { FixturePath = FixturePath }));
+        var store = CreateStore();
         var builder = new ODataResponseBuilder();
         var query = ODataQueryParser.Parse(new Microsoft.AspNetCore.Http.QueryCollection(new Dictionary<string, Microsoft.Extensions.Primitives.StringValues>
         {
@@ -54,7 +67,7 @@ public sealed class MockApiTests
     [Fact]
     public void PerPersonProjection_ReturnsEmptyResults_WhenWorkerDoesNotExist()
     {
-        var store = new MockFixtureStore(Options.Create(new MockSuccessFactorsOptions { FixturePath = FixturePath }));
+        var store = CreateStore();
         var builder = new ODataResponseBuilder();
         var query = ODataQueryParser.Parse(new Microsoft.AspNetCore.Http.QueryCollection(new Dictionary<string, Microsoft.Extensions.Primitives.StringValues>
         {
@@ -72,14 +85,14 @@ public sealed class MockApiTests
     [Fact]
     public void EmpJobProjection_ReturnsProjectedWorker_ForTrackedRealQueryShape()
     {
-        var store = new MockFixtureStore(Options.Create(new MockSuccessFactorsOptions { FixturePath = FixturePath }));
+        var store = CreateStore();
         var builder = new ODataResponseBuilder();
         var query = ODataQueryParser.Parse(new Microsoft.AspNetCore.Http.QueryCollection(new Dictionary<string, Microsoft.Extensions.Primitives.StringValues>
         {
             ["$format"] = "json",
             ["$top"] = "1",
             ["$filter"] = "userId eq 'user.10001'",
-            ["$select"] = "userId,personIdExternal,jobTitle,company,department,division,location,businessUnit,costCenter,employeeClass,employeeType,managerId,customString3,customString20,customString87,customString110,customString111,customString91,startDate",
+            ["$select"] = "userId,jobTitle,company,department,division,location,businessUnit,costCenter,employeeClass,employeeType,managerId,customString3,customString20,customString87,customString110,customString111,customString91,startDate",
             ["$expand"] = "companyNav,departmentNav,divisionNav,locationNav,businessUnitNav,costCenterNav"
         }));
 
@@ -88,10 +101,146 @@ public sealed class MockApiTests
         var job = document.RootElement.GetProperty("d").GetProperty("results")[0];
 
         Assert.Equal("user.10001", job.GetProperty("userId").GetString());
-        Assert.Equal("10001", job.GetProperty("personIdExternal").GetString());
         Assert.Equal("CORP", job.GetProperty("company").GetString());
         Assert.Equal("CORP", job.GetProperty("companyNav").GetProperty("company").GetString());
         Assert.Equal("Central", job.GetProperty("customString87").GetString());
+        Assert.False(job.TryGetProperty("personIdExternal", out _));
+    }
+
+    [Fact]
+    public void SyntheticPopulation_IsOptIn_AndExpandsToRequestedWorkerCount()
+    {
+        var baselineStore = CreateStore();
+        var syntheticStore = CreateStore(syntheticPopulationEnabled: true);
+
+        var baselineWorkers = baselineStore.GetDocument().Workers;
+        var syntheticWorkers = syntheticStore.GetDocument().Workers;
+
+        Assert.Equal(7, baselineWorkers.Count);
+        Assert.Equal(5000, syntheticWorkers.Count);
+        Assert.Equal("10001", baselineWorkers[0].PersonIdExternal);
+        Assert.Equal("10000", syntheticWorkers[0].PersonIdExternal);
+        Assert.Equal("14999", syntheticWorkers[^1].PersonIdExternal);
+    }
+
+    [Fact]
+    public void SyntheticPopulation_GeneratesUniqueIdentities_AndPreservesLifecycleCoverage()
+    {
+        var workers = CreateStore(syntheticPopulationEnabled: true).GetDocument().Workers;
+
+        Assert.Equal(5000, workers.Select(worker => worker.PersonIdExternal).Distinct(StringComparer.Ordinal).Count());
+        Assert.Equal(5000, workers.Select(worker => worker.UserName).Distinct(StringComparer.Ordinal).Count());
+        Assert.Equal(5000, workers.Select(worker => worker.UserId).Distinct(StringComparer.Ordinal).Count());
+        Assert.Equal(5000, workers.Select(worker => worker.Email).Distinct(StringComparer.OrdinalIgnoreCase).Count());
+
+        var workerIds = workers.Select(worker => worker.PersonIdExternal).ToHashSet(StringComparer.Ordinal);
+        Assert.All(workers.Where(worker => !string.IsNullOrWhiteSpace(worker.ManagerId)), worker =>
+        {
+            Assert.Contains(worker.ManagerId!, workerIds);
+        });
+
+        var tags = workers
+            .SelectMany(worker => worker.ScenarioTags)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        Assert.Contains("create", tags);
+        Assert.Contains("update", tags);
+        Assert.Contains("prehire", tags);
+        Assert.Contains("manager-change", tags);
+        Assert.Contains("disable-candidate", tags);
+        Assert.Contains("delete-candidate", tags);
+    }
+
+    [Fact]
+    public void SyntheticPopulation_PerPersonProjection_ResolvesWorkerNearEndOfRange()
+    {
+        var store = CreateStore(syntheticPopulationEnabled: true);
+        var builder = new ODataResponseBuilder();
+        var query = ODataQueryParser.Parse(new Microsoft.AspNetCore.Http.QueryCollection(new Dictionary<string, Microsoft.Extensions.Primitives.StringValues>
+        {
+            ["$format"] = "json",
+            ["$filter"] = "personIdExternal eq '14999'",
+            ["$select"] = "personIdExternal,personalInfoNav/firstName,employmentNav/userId,emailNav/emailAddress,employmentNav/jobInfoNav/managerId",
+            ["$expand"] = "employmentNav,employmentNav/jobInfoNav,personalInfoNav,emailNav"
+        }));
+
+        var payload = builder.Build(store.FindByIdentity(query.IdentityField, query.WorkerId), query);
+        using var document = JsonDocument.Parse(JsonSerializer.Serialize(payload));
+        var worker = document.RootElement.GetProperty("d").GetProperty("results")[0];
+
+        Assert.Equal("14999", worker.GetProperty("personIdExternal").GetString());
+        Assert.Equal("Worker14999", worker.GetProperty("personalInfoNav").GetProperty("results")[0].GetProperty("firstName").GetString());
+        Assert.Equal("user.14999", worker.GetProperty("employmentNav").GetProperty("results")[0].GetProperty("userId").GetString());
+        Assert.Equal("user.14999@example.test", worker.GetProperty("emailNav").GetProperty("results")[0].GetProperty("emailAddress").GetString());
+    }
+
+    [Fact]
+    public void SyntheticPopulation_EmpJobProjection_ResolvesWorkerNearEndOfRange()
+    {
+        var store = CreateStore(syntheticPopulationEnabled: true);
+        var builder = new ODataResponseBuilder();
+        var query = ODataQueryParser.Parse(new Microsoft.AspNetCore.Http.QueryCollection(new Dictionary<string, Microsoft.Extensions.Primitives.StringValues>
+        {
+            ["$format"] = "json",
+            ["$top"] = "1",
+            ["$filter"] = "userId eq 'user.14999'",
+            ["$select"] = "userId,jobTitle,company,department,managerId,startDate",
+            ["$expand"] = "companyNav,departmentNav"
+        }));
+
+        var payload = builder.Build(store.FindByIdentity(query.IdentityField, query.WorkerId), query, "EmpJob");
+        using var document = JsonDocument.Parse(JsonSerializer.Serialize(payload));
+        var job = document.RootElement.GetProperty("d").GetProperty("results")[0];
+
+        Assert.Equal("user.14999", job.GetProperty("userId").GetString());
+        Assert.Equal("Systems Analyst 02-715", job.GetProperty("jobTitle").GetString());
+        Assert.Equal("Platform 02-715", job.GetProperty("department").GetString());
+        Assert.Equal("CORP", job.GetProperty("company").GetString());
+        Assert.False(job.TryGetProperty("personIdExternal", out _));
+    }
+
+    [Fact]
+    public void EmpJobProjection_SupportsPagedEnumeration_AndHonorsEffectiveDateDefault()
+    {
+        var store = CreateStore(syntheticPopulationEnabled: true);
+        var builder = new ODataResponseBuilder();
+        var query = ODataQueryParser.Parse(new Microsoft.AspNetCore.Http.QueryCollection(new Dictionary<string, Microsoft.Extensions.Primitives.StringValues>
+        {
+            ["$format"] = "json",
+            ["$top"] = "3",
+            ["$skip"] = "1",
+            ["$filter"] = "emplStatus in 'A','U'",
+            ["$select"] = "userId,startDate,company,department"
+        }));
+
+        var payload = builder.Build(store.QueryWorkers("EmpJob", query), query, "EmpJob");
+        using var document = JsonDocument.Parse(JsonSerializer.Serialize(payload));
+        var results = document.RootElement.GetProperty("d").GetProperty("results");
+
+        Assert.Equal(3, results.GetArrayLength());
+        Assert.Equal("user.10001", results[0].GetProperty("userId").GetString());
+        Assert.Equal("user.10003", results[1].GetProperty("userId").GetString());
+        Assert.Equal("user.10005", results[2].GetProperty("userId").GetString());
+    }
+
+    [Fact]
+    public void EmpJobProjection_HonorsExplicitAsOfDate()
+    {
+        var store = CreateStore();
+        var builder = new ODataResponseBuilder();
+        var query = ODataQueryParser.Parse(new Microsoft.AspNetCore.Http.QueryCollection(new Dictionary<string, Microsoft.Extensions.Primitives.StringValues>
+        {
+            ["$format"] = "json",
+            ["$filter"] = "emplStatus in 'A','U'",
+            ["$top"] = "10",
+            ["asOfDate"] = "2026-04-03",
+            ["$select"] = "userId,startDate"
+        }));
+
+        var payload = builder.Build(store.QueryWorkers("EmpJob", query), query, "EmpJob");
+        using var document = JsonDocument.Parse(JsonSerializer.Serialize(payload));
+        var results = document.RootElement.GetProperty("d").GetProperty("results");
+
+        Assert.Contains(results.EnumerateArray(), row => row.GetProperty("userId").GetString() == "user.10003");
     }
 
     [Fact]

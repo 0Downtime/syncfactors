@@ -28,6 +28,7 @@
       "identityField": "userId",
       "deltaField": "lastModifiedDateTime",
       "baseFilter": "emplStatus in 'A','U'",
+      "pageSize": 200,
       "select": [
         "userId",
         "jobTitle",
@@ -61,6 +62,7 @@
       "entitySet": "PerPerson",
       "identityField": "personIdExternal",
       "deltaField": "lastModifiedDateTime",
+      "pageSize": 200,
       "select": [
         "personIdExternal",
         "personalInfoNav/firstName",

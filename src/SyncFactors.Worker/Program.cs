@@ -4,6 +4,7 @@ using SyncFactors.Domain;
 using SyncFactors.Infrastructure;
 
 var builder = Host.CreateApplicationBuilder(args);
+builder.Services.AddSingleton(new ScaffoldDataPathResolver(builder.Configuration["SyncFactors:ScaffoldDataPath"]));
 builder.Services.AddSingleton(new SqlitePathResolver(builder.Configuration["SyncFactors:SqlitePath"]));
 builder.Services.AddSingleton(new SyncFactorsConfigPathResolver(
     builder.Configuration["SyncFactors:ConfigPath"],
@@ -11,11 +12,29 @@ builder.Services.AddSingleton(new SyncFactorsConfigPathResolver(
 builder.Services.AddSingleton<SqliteDatabaseInitializer>();
 builder.Services.AddSingleton<SyncFactorsConfigurationLoader>();
 builder.Services.AddSingleton<SyncFactorsConfigurationValidator>();
+builder.Services.AddSingleton<ScaffoldDataStore>();
+builder.Services.AddSingleton<ScaffoldWorkerSource>();
+builder.Services.AddSingleton(serviceProvider =>
+{
+    var config = serviceProvider.GetRequiredService<SyncFactorsConfigurationLoader>().GetSyncConfig();
+    return new SyncFactors.Contracts.WorkerRunSettings(config.Safety.MaxCreatesPerRun);
+});
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<IRuntimeStatusStore, SqliteRuntimeStatusStore>();
 builder.Services.AddSingleton<IWorkerHeartbeatStore, SqliteWorkerHeartbeatStore>();
 builder.Services.AddSingleton<IRunRepository, SqliteRunRepository>();
-builder.Services.AddSingleton<IScaffoldRunPlanner, ScaffoldRunPlanner>();
+builder.Services.AddSingleton<IRunQueueStore, SqliteRunQueueStore>();
+builder.Services.AddHttpClient<SuccessFactorsWorkerSource>();
+builder.Services.AddTransient<IWorkerSource>(serviceProvider => serviceProvider.GetRequiredService<SuccessFactorsWorkerSource>());
+builder.Services.AddTransient<IDirectoryGateway, ActiveDirectoryGateway>();
+builder.Services.AddTransient<IDirectoryCommandGateway, ActiveDirectoryCommandGateway>();
+builder.Services.AddSingleton<IAttributeMappingProvider, AttributeMappingProvider>();
+builder.Services.AddSingleton<IIdentityMatcher, IdentityMatcher>();
+builder.Services.AddSingleton<IWorkerPreviewLogWriter, FileWorkerPreviewLogWriter>();
+builder.Services.AddTransient<IAttributeDiffService, AttributeDiffService>();
+builder.Services.AddTransient<IWorkerPlanningService, WorkerPlanningService>();
+builder.Services.AddSingleton<IDirectoryMutationCommandBuilder, DirectoryMutationCommandBuilder>();
+builder.Services.AddTransient<BulkRunCoordinator>();
 builder.Services.AddSingleton<IRunLifecycleService, RunLifecycleService>();
 builder.Services.AddHostedService<Worker>();
 

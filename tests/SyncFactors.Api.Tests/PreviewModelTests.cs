@@ -217,6 +217,13 @@ public sealed class PreviewModelTests
             return Task.CompletedTask;
         }
 
+        public Task AppendRunEntryAsync(RunEntryRecord entry, CancellationToken cancellationToken)
+        {
+            _ = entry;
+            _ = cancellationToken;
+            return Task.CompletedTask;
+        }
+
         public Task<IReadOnlyList<RunEntry>> GetRunEntriesAsync(string runId, string? bucket, string? workerId, string? reason, string? filter, string? entryId, CancellationToken cancellationToken)
         {
             _ = runId;

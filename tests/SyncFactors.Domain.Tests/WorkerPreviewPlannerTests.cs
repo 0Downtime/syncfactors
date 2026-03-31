@@ -27,9 +27,12 @@ public sealed class WorkerPreviewPlannerTests
 
         var planner = new WorkerPreviewPlanner(
             new StubWorkerSource(worker),
-            new StubDirectoryGateway(),
-            new StubIdentityMatcher(),
-            new StubAttributeDiffService(),
+            new WorkerPlanningService(
+                new StubDirectoryGateway(),
+                new StubIdentityMatcher(),
+                new StubAttributeDiffService(),
+                new StubAttributeMappingProvider(),
+                NullLogger<WorkerPlanningService>.Instance),
             new StubAttributeMappingProvider(),
             new StubWorkerPreviewLogWriter(),
             new StubRunRepository(),
@@ -59,9 +62,12 @@ public sealed class WorkerPreviewPlannerTests
         var diffService = new CapturingAttributeDiffService();
         var planner = new WorkerPreviewPlanner(
             new StubWorkerSource(worker),
-            new StubDirectoryGateway(),
-            new StubIdentityMatcher(),
-            diffService,
+            new WorkerPlanningService(
+                new StubDirectoryGateway(),
+                new StubIdentityMatcher(),
+                diffService,
+                new StubAttributeMappingProvider(),
+                NullLogger<WorkerPlanningService>.Instance),
             new StubAttributeMappingProvider(),
             new StubWorkerPreviewLogWriter(),
             new StubRunRepository(),
@@ -79,6 +85,13 @@ public sealed class WorkerPreviewPlannerTests
             _ = workerId;
             _ = cancellationToken;
             return Task.FromResult<WorkerSnapshot?>(worker);
+        }
+
+        public async IAsyncEnumerable<WorkerSnapshot> ListWorkersAsync([System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            yield return worker;
+            await Task.Yield();
         }
     }
 
@@ -225,6 +238,13 @@ public sealed class WorkerPreviewPlannerTests
         {
             _ = runId;
             _ = entries;
+            _ = cancellationToken;
+            return Task.CompletedTask;
+        }
+
+        public Task AppendRunEntryAsync(RunEntryRecord entry, CancellationToken cancellationToken)
+        {
+            _ = entry;
             _ = cancellationToken;
             return Task.CompletedTask;
         }

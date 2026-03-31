@@ -42,6 +42,9 @@ public sealed record SuccessFactorsQueryConfig(
     string EntitySet,
     string IdentityField,
     string DeltaField,
+    string? BaseFilter,
+    string? AsOfDate,
+    int PageSize,
     IReadOnlyList<string> Select,
     IReadOnlyList<string> Expand);
 

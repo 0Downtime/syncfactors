@@ -153,6 +153,23 @@ public sealed record RunTally(
     int ManualReview,
     int Unchanged);
 
+public sealed record RunQueueRequest(
+    string RequestId,
+    string Mode,
+    bool DryRun,
+    string Status,
+    DateTimeOffset RequestedAt,
+    DateTimeOffset? StartedAt,
+    DateTimeOffset? CompletedAt,
+    string? RunId,
+    string? ErrorMessage);
+
+public sealed record StartRunRequest(
+    bool DryRun);
+
+public sealed record WorkerRunSettings(
+    int MaxCreatesPerRun);
+
 public sealed record WorkerSnapshot(
     string WorkerId,
     string PreferredName,
@@ -182,6 +199,20 @@ public sealed record AttributeChange(
     string Before,
     string After,
     bool Changed);
+
+public sealed record PlannedWorkerAction(
+    WorkerSnapshot Worker,
+    DirectoryUserSnapshot DirectoryUser,
+    IdentityMatchResult Identity,
+    string? ManagerDistinguishedName,
+    string ProposedEmailAddress,
+    IReadOnlyList<AttributeChange> AttributeChanges,
+    IReadOnlyList<MissingSourceAttributeRow> MissingSourceAttributes,
+    string Bucket,
+    string? ReviewCategory,
+    string? ReviewCaseType,
+    string? Reason,
+    bool CanAutoApply);
 
 public sealed record DirectoryMutationCommand(
     string Action,
@@ -278,3 +309,17 @@ public sealed record WorkerPreviewLogEntry(
     string? ProposedValue,
     bool? Changed,
     string? Message);
+
+public sealed record WorkerRunResult(
+    string WorkerId,
+    string Bucket,
+    string? SamAccountName,
+    string? Reason,
+    string? ReviewCategory,
+    string? ReviewCaseType,
+    string? Action,
+    bool Applied,
+    bool Succeeded,
+    OperationSummary? OperationSummary,
+    IReadOnlyList<DiffRow> DiffRows,
+    JsonElement Item);
