@@ -281,7 +281,17 @@ public sealed record ApplyPreviewRequest(
     string WorkerId,
     string PreviewRunId,
     string PreviewFingerprint,
-    string ConfirmationText);
+    bool AcknowledgeRealSync);
+
+public sealed record LaunchFullRunRequest(
+    bool DryRun,
+    bool AcknowledgeRealSync);
+
+public sealed record RunLaunchResult(
+    string RunId,
+    string Status,
+    bool DryRun,
+    string Message);
 
 public sealed record WorkerPreviewResult(
     string? ReportPath,

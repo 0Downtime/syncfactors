@@ -36,10 +36,9 @@ public sealed class ApplyPreviewService(
             throw new InvalidOperationException("The saved preview no longer matches the reviewed preview snapshot. Refresh preview before applying.");
         }
 
-        var requiredConfirmation = BuildConfirmationText(preview);
-        if (!string.Equals(requiredConfirmation, request.ConfirmationText?.Trim(), StringComparison.Ordinal))
+        if (!request.AcknowledgeRealSync)
         {
-            throw new InvalidOperationException($"Confirmation text must exactly match '{requiredConfirmation}'.");
+            throw new InvalidOperationException("Acknowledge the real AD sync before applying this preview.");
         }
 
         ValidatePreviewIsSafeToApply(preview);
@@ -121,12 +120,6 @@ public sealed class ApplyPreviewService(
 
             throw;
         }
-    }
-
-    public static string BuildConfirmationText(WorkerPreviewResult preview)
-    {
-        var action = preview.Buckets.Contains("creates", StringComparer.OrdinalIgnoreCase) ? "CreateUser" : "UpdateUser";
-        return $"APPLY {action} {preview.SamAccountName} FOR {preview.WorkerId}";
     }
 
     private static JsonElement ParseJson(string json)
