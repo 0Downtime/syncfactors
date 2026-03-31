@@ -24,6 +24,7 @@ public sealed class BulkRunCoordinator(
         var cancellationMonitor = MonitorCancellationAsync(request.RequestId, runCancellationSource, cancellationToken);
         var syncScope = await DetermineSyncScopeAsync(cancellationToken);
         var workers = new List<WorkerSnapshot>();
+        GuardrailExceededException? guardrailFailure = null;
         try
         {
             await foreach (var worker in workerSource.ListWorkersAsync(WorkerListingMode.DeltaPreferred, runCancellationToken))
@@ -128,6 +129,25 @@ public sealed class BulkRunCoordinator(
                             {
                                 bucket = "guardrailFailures";
                                 reason = $"Create guardrail exceeded. MaxCreatesPerRun={settings.MaxCreatesPerRun}.";
+                                var guardrailItem = BuildEntryItem(plan, request.DryRun, bucket, action: null, applied: false, succeeded: false, reason);
+                                await channel.Writer.WriteAsync(
+                                    new WorkerRunResult(
+                                        WorkerId: worker.WorkerId,
+                                        Bucket: bucket,
+                                        SamAccountName: plan.Identity.SamAccountName,
+                                        Reason: reason,
+                                        ReviewCategory: plan.ReviewCategory,
+                                        ReviewCaseType: plan.ReviewCaseType,
+                                        Action: null,
+                                        Applied: false,
+                                        Succeeded: false,
+                                        OperationSummary: BuildOperationSummary(plan, action: null, bucket),
+                                        DiffRows: plan.AttributeChanges.Select(change => new DiffRow(change.Attribute, change.Source, change.Before, change.After, change.Changed)).ToArray(),
+                                        Item: guardrailItem),
+                                    ct);
+                                Interlocked.CompareExchange(ref guardrailFailure, new GuardrailExceededException(runId, reason), null);
+                                runCancellationSource.Cancel();
+                                return;
                             }
                         }
 
@@ -222,6 +242,32 @@ public sealed class BulkRunCoordinator(
         }
         catch (OperationCanceledException)
         {
+            if (guardrailFailure is not null)
+            {
+                channel.Writer.TryComplete(guardrailFailure);
+                try
+                {
+                    await writerTask;
+                }
+                catch
+                {
+                }
+
+                await runLifecycleService.FailRunAsync(
+                    runId,
+                    mode: "BulkSync",
+                    dryRun: request.DryRun,
+                    processedWorkers: processedWorkers,
+                    totalWorkers: totalWorkers,
+                    currentWorkerId: null,
+                    errorMessage: guardrailFailure.Message,
+                    tally: tally,
+                    report: BuildReport(runId, request, tally, totalWorkers, startedAt, syncScope),
+                    startedAt: startedAt,
+                    cancellationToken);
+                throw guardrailFailure;
+            }
+
             if (!cancellationToken.IsCancellationRequested &&
                 await runQueueStore.IsCancellationRequestedAsync(request.RequestId, CancellationToken.None))
             {
@@ -464,4 +510,9 @@ public sealed class BulkRunCoordinator(
 public sealed class RunCanceledException(string? runId, string message) : Exception(message)
 {
     public string? RunId { get; } = runId;
+}
+
+public sealed class GuardrailExceededException(string runId, string message) : Exception(message)
+{
+    public string RunId { get; } = runId;
 }
