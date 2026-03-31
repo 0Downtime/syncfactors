@@ -6,7 +6,7 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 show_usage() {
   cat <<'EOF'
 Usage:
-  ./scripts/codex/run.sh -Service <api|worker|mock|stack> [-Profile <mock|real>] [-SkipBuild]
+  ./scripts/codex/run.sh -Service <api|worker|mock|stack> [-Profile <mock|real>] [-Restart] [-SkipBuild]
   ./scripts/codex/run.sh --help
 
 This is the shell wrapper for ./scripts/codex/run.ps1.
