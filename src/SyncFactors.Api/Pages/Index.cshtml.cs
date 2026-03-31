@@ -5,9 +5,7 @@ using SyncFactors.Domain;
 
 namespace SyncFactors.Api.Pages;
 
-public sealed class IndexModel(
-    IDashboardSnapshotService dashboardSnapshotService,
-    IFullSyncRunService fullSyncRunService) : PageModel
+public sealed class IndexModel(IDashboardSnapshotService dashboardSnapshotService) : PageModel
 {
     public RuntimeStatus Status { get; private set; } = new(
         Status: "Idle",
@@ -34,65 +32,9 @@ public sealed class IndexModel(
 
     public string? AttentionMessage { get; private set; }
 
-    public bool CanLaunchSync => !string.Equals(Status.Status, "InProgress", StringComparison.OrdinalIgnoreCase);
-
-    [BindProperty]
-    public bool AcknowledgeRealSync { get; set; }
-
-    [TempData]
-    public string? LaunchRunId { get; set; }
-
-    [TempData]
-    public string? LaunchMessage { get; set; }
-
-    [TempData]
-    public bool LaunchFailed { get; set; }
-
     public async Task OnGetAsync(CancellationToken cancellationToken)
     {
         await LoadSnapshotAsync(cancellationToken);
-    }
-
-    public async Task<IActionResult> OnPostDryRunAsync(CancellationToken cancellationToken)
-    {
-        try
-        {
-            var result = await fullSyncRunService.LaunchAsync(
-                new LaunchFullRunRequest(DryRun: true, AcknowledgeRealSync: false),
-                cancellationToken);
-            LaunchRunId = result.RunId;
-            LaunchMessage = result.Message;
-            LaunchFailed = !string.Equals(result.Status, "Succeeded", StringComparison.OrdinalIgnoreCase);
-            return RedirectToPage();
-        }
-        catch (Exception ex)
-        {
-            LaunchFailed = true;
-            LaunchMessage = ex.Message;
-            await LoadSnapshotAsync(cancellationToken);
-            return Page();
-        }
-    }
-
-    public async Task<IActionResult> OnPostLiveRunAsync(CancellationToken cancellationToken)
-    {
-        try
-        {
-            var result = await fullSyncRunService.LaunchAsync(
-                new LaunchFullRunRequest(DryRun: false, AcknowledgeRealSync: AcknowledgeRealSync),
-                cancellationToken);
-            LaunchRunId = result.RunId;
-            LaunchMessage = result.Message;
-            LaunchFailed = !string.Equals(result.Status, "Succeeded", StringComparison.OrdinalIgnoreCase);
-            return RedirectToPage();
-        }
-        catch (Exception ex)
-        {
-            LaunchFailed = true;
-            LaunchMessage = ex.Message;
-            await LoadSnapshotAsync(cancellationToken);
-            return Page();
-        }
     }
 
     private async Task LoadSnapshotAsync(CancellationToken cancellationToken)
