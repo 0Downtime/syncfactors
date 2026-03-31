@@ -75,7 +75,8 @@ public sealed class SqliteRunRepository(SqlitePathResolver pathResolver) : IRunR
               conflicts,
               guardrail_failures,
               manual_review,
-              unchanged
+              unchanged,
+              report_json
             FROM runs
             ORDER BY COALESCE(started_at, '') DESC, COALESCE(path, '') DESC
             LIMIT 25;
@@ -117,7 +118,8 @@ public sealed class SqliteRunRepository(SqlitePathResolver pathResolver) : IRunR
                 Conflicts: row.Conflicts,
                 GuardrailFailures: row.GuardrailFailures,
                 ManualReview: row.ManualReview,
-                Unchanged: row.Unchanged));
+                Unchanged: row.Unchanged,
+                SyncScope: ResolveSyncScope(row.Mode, row.ArtifactType, row.ReportJson)));
         }
 
         return runs;
@@ -685,7 +687,46 @@ public sealed class SqliteRunRepository(SqlitePathResolver pathResolver) : IRunR
             Conflicts: row.Conflicts,
             GuardrailFailures: row.GuardrailFailures,
             ManualReview: row.ManualReview,
-            Unchanged: row.Unchanged);
+            Unchanged: row.Unchanged,
+            SyncScope: ResolveSyncScope(row.Mode, row.ArtifactType, row.ReportJson));
+    }
+
+    private static string ResolveSyncScope(string? mode, string? artifactType, string? reportJson)
+    {
+        if (!string.IsNullOrWhiteSpace(reportJson))
+        {
+            try
+            {
+                using var document = JsonDocument.Parse(reportJson);
+                if (document.RootElement.ValueKind == JsonValueKind.Object &&
+                    document.RootElement.TryGetProperty("syncScope", out var syncScopeElement) &&
+                    syncScopeElement.ValueKind == JsonValueKind.String)
+                {
+                    var value = syncScopeElement.GetString();
+                    if (!string.IsNullOrWhiteSpace(value))
+                    {
+                        return value;
+                    }
+                }
+            }
+            catch (JsonException)
+            {
+            }
+        }
+
+        if (string.Equals(artifactType, "FullSync", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(mode, "FullSyncDryRun", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(mode, "FullSyncLive", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Full sync";
+        }
+
+        if (string.Equals(mode, "BulkSync", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Bulk full scan";
+        }
+
+        return "Unknown";
     }
 
     private static IReadOnlyDictionary<string, int> BuildBucketCounts(RunSummary run)
@@ -1140,6 +1181,7 @@ public sealed class SqliteRunRepository(SqlitePathResolver pathResolver) : IRunR
             GuardrailFailures = reader.GetInt32OrDefault("guardrail_failures"),
             ManualReview = reader.GetInt32OrDefault("manual_review"),
             Unchanged = reader.GetInt32OrDefault("unchanged"),
+            ReportJson = reader.GetStringOrDefault("report_json"),
         };
     }
 
@@ -1223,11 +1265,11 @@ public sealed class SqliteRunRepository(SqlitePathResolver pathResolver) : IRunR
         public int GuardrailFailures { get; init; }
         public int ManualReview { get; init; }
         public int Unchanged { get; init; }
+        public string? ReportJson { get; init; }
     }
 
     private sealed class RunWithReportRow : RunRow
     {
-        public string? ReportJson { get; init; }
     }
 
     private sealed class EntryRow

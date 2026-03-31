@@ -14,7 +14,7 @@
     <div>
         <p class="eyebrow">Run Detail</p>
         <h1>@Model.Run.Run.RunId</h1>
-        <p class="lede">@Model.Run.Run.Mode · @Model.Run.Run.Status · @(Model.Run.Run.DryRun ? "Dry Run" : "Live Run")</p>
+        <p class="lede">@Model.Run.Run.Mode · @Model.Run.Run.SyncScope · @Model.Run.Run.Status · @(Model.Run.Run.DryRun ? "Dry Run" : "Live Run")</p>
     </div>
     <div class="hero-actions">
         <a class="link-button" asp-page="/Index">Back to dashboard</a>
@@ -28,6 +28,7 @@
             <div><dt>Started</dt><dd>@Model.Run.Run.StartedAt.ToString("u")</dd></div>
             <div><dt>Completed</dt><dd>@(Model.Run.Run.CompletedAt?.ToString("u") ?? "Unknown")</dd></div>
             <div><dt>Artifact</dt><dd>@Model.Run.Run.ArtifactType</dd></div>
+            <div><dt>Scope</dt><dd>@Model.Run.Run.SyncScope</dd></div>
             <div><dt>Trigger</dt><dd>@Model.Run.Run.RunTrigger</dd></div>
             <div><dt>Requested By</dt><dd>@(Model.Run.Run.RequestedBy ?? "n/a")</dd></div>
             <div><dt>Status</dt><dd><span class="badge @StatusClass(Model.Run.Run.Status)">@Model.Run.Run.Status</span></dd></div>
