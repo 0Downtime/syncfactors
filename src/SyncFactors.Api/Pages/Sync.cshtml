@@ -32,7 +32,7 @@
     </section>
 }
 
-<section class="panel-grid dashboard-grid">
+<section class="panel-grid dashboard-grid sync-dashboard-grid">
     <article class="panel panel-span-full">
         <h2>Full Sync</h2>
         <p class="muted">Use dry run to materialize a full plan without writing to AD. Real sync executes live directory mutations for the full worker set.</p>
@@ -72,7 +72,7 @@
         }
     </article>
 
-    <article class="panel">
+    <article class="panel sync-current-run-panel">
         <h2>Current Run</h2>
         <dl class="kv">
             <div><dt>Status</dt><dd>@Model.Status.Status</dd></div>
@@ -90,7 +90,7 @@
         }
     </article>
 
-    <article class="panel">
+    <article class="panel sync-ad-hoc-panel">
         <h2>Ad Hoc Run</h2>
         <p class="muted">Full-source sync only. Dry-run is the default and safest option.</p>
         @if (Model.HasPendingOrActiveRun)
@@ -111,7 +111,7 @@
         </form>
     </article>
 
-    <article class="panel">
+    <article class="panel sync-schedule-panel">
         <h2>Recurring Schedule</h2>
         <dl class="kv">
             <div><dt>Enabled</dt><dd>@(Model.Schedule.Enabled ? "Yes" : "No")</dd></div>
