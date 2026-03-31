@@ -360,7 +360,7 @@ a:focus-visible {
 
 .panel-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
   gap: 18px;
   margin-bottom: 18px;
 }
@@ -498,14 +498,20 @@ a:focus-visible {
 }
 
 .filter-check {
-  display: inline-flex;
-  align-items: center;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
   gap: 10px;
+}
+
+.filter-check span {
+  min-width: 0;
 }
 
 .filter-check input {
   width: 18px;
   height: 18px;
+  margin-top: 0.15rem;
 }
 
 .apply-preview-form {
@@ -737,7 +743,7 @@ a:focus-visible {
 
 .filters {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr));
   gap: 14px;
   align-items: end;
 }
