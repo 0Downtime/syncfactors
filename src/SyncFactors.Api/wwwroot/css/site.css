@@ -456,6 +456,27 @@ a:focus-visible {
   grid-column: 1 / -1;
 }
 
+.sync-dashboard-grid {
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+}
+
+.sync-current-run-panel {
+  grid-column: span 5;
+}
+
+.sync-ad-hoc-panel {
+  grid-column: span 3;
+}
+
+.sync-schedule-panel {
+  grid-column: span 4;
+}
+
+.sync-dashboard-grid .kv dd {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
 .run-health-stack,
 .source-confidence-stack,
 .risk-list {
@@ -890,6 +911,20 @@ a:focus-visible {
 }
 
 @media (max-width: 780px) {
+  .sync-dashboard-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .sync-current-run-panel,
+  .sync-ad-hoc-panel,
+  .sync-schedule-panel {
+    grid-column: 1;
+  }
+
+  .panel-span-full {
+    grid-column: 1;
+  }
+
   .topbar,
   .hero-compact,
   .entry-head,
@@ -1009,5 +1044,21 @@ a:focus-visible {
 
   .preview-diff-table .diff-status {
     min-width: 0;
+  }
+}
+
+@media (max-width: 1180px) {
+  .sync-dashboard-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .sync-current-run-panel,
+  .sync-ad-hoc-panel,
+  .sync-schedule-panel {
+    grid-column: span 1;
+  }
+
+  .panel-span-full {
+    grid-column: 1 / -1;
   }
 }
