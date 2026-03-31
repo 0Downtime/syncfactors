@@ -268,6 +268,90 @@ public sealed class DependencyHealthServiceTests
         Assert.Contains("mock string error", successFactorsProbe.Details, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Fact]
+    public async Task GetSnapshotAsync_KeepsWorkerHealthy_WhenRunningHeartbeatIsBrieflyStale()
+    {
+        var tempRoot = Path.Combine(Path.GetTempPath(), "syncfactors-health-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempRoot);
+
+        var databasePath = Path.Combine(tempRoot, "runtime.db");
+        var pathResolver = new SqlitePathResolver(databasePath);
+        var initializer = new SqliteDatabaseInitializer(pathResolver);
+        await initializer.InitializeAsync(CancellationToken.None);
+
+        IWorkerHeartbeatStore heartbeatStore = new StubWorkerHeartbeatStore(
+            new WorkerHeartbeat(
+                Service: "SyncFactors.Worker",
+                State: "Running",
+                Activity: "Executing queued run req-1.",
+                StartedAt: DateTimeOffset.Parse("2026-03-27T12:00:00Z"),
+                LastSeenAt: DateTimeOffset.Parse("2026-03-27T12:00:00Z")));
+
+        var configLoader = new SyncFactorsConfigurationLoader(
+            new SyncFactorsConfigPathResolver(
+                Path.Combine(tempRoot, "sync-config.json"),
+                null));
+
+        await File.WriteAllTextAsync(
+            Path.Combine(tempRoot, "sync-config.json"),
+            """
+            {
+              "secrets": {},
+              "ad": {
+                "server": "ldap.example.invalid:389",
+                "username": "",
+                "bindPassword": "",
+                "defaultActiveOu": "OU=LabUsers,DC=example,DC=com",
+                "graveyardOu": "OU=Graveyard,DC=example,DC=com",
+                "identityAttribute": "employeeID"
+              },
+              "successFactors": {
+                "baseUrl": "https://example.invalid/odata/v2",
+                "query": {
+                  "entitySet": "EmpJob",
+                  "identityField": "userId",
+                  "deltaField": "lastModifiedDateTime",
+                  "select": [ "userId" ],
+                  "expand": []
+                },
+                "auth": {
+                  "mode": "basic",
+                  "basic": {
+                    "username": "user",
+                    "password": "pass"
+                  }
+                }
+              },
+              "sync": {
+                "enableBeforeStartDays": 7,
+                "deletionRetentionDays": 30
+              },
+              "safety": {
+                "maxCreatesPerRun": 25,
+                "maxDisablesPerRun": 25,
+                "maxDeletionsPerRun": 25
+              },
+              "reporting": {
+                "outputDirectory": "/tmp"
+              }
+            }
+            """);
+
+        var service = new DependencyHealthService(
+            configLoader,
+            pathResolver,
+            heartbeatStore,
+            new HttpClient(new HangingMessageHandler()),
+            new FakeTimeProvider(DateTimeOffset.Parse("2026-03-27T12:01:30Z")),
+            NullLogger<DependencyHealthService>.Instance);
+
+        var snapshot = await service.GetSnapshotAsync(CancellationToken.None);
+
+        var workerProbe = Assert.Single(snapshot.Probes, probe => probe.Dependency == "Worker Service");
+        Assert.Equal(DependencyHealthStates.Healthy, workerProbe.Status);
+        Assert.Contains("actively processing a run", workerProbe.Summary, StringComparison.OrdinalIgnoreCase);
+    }
+
     private sealed class StubWorkerHeartbeatStore(WorkerHeartbeat heartbeat) : IWorkerHeartbeatStore
     {
         public Task<WorkerHeartbeat?> GetCurrentAsync(CancellationToken cancellationToken)
