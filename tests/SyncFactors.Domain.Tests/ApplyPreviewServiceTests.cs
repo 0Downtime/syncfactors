@@ -74,7 +74,7 @@ public sealed class ApplyPreviewServiceTests
                 WorkerId: worker.WorkerId,
                 PreviewRunId: preview.RunId!,
                 PreviewFingerprint: preview.Fingerprint,
-                ConfirmationText: ApplyPreviewService.BuildConfirmationText(preview)),
+                AcknowledgeRealSync: true),
             CancellationToken.None);
 
         var command = Assert.IsType<DirectoryMutationCommand>(directoryCommandGateway.LastCommand);
@@ -153,7 +153,7 @@ public sealed class ApplyPreviewServiceTests
                 WorkerId: worker.WorkerId,
                 PreviewRunId: preview.RunId!,
                 PreviewFingerprint: preview.Fingerprint,
-                ConfirmationText: ApplyPreviewService.BuildConfirmationText(preview)),
+                AcknowledgeRealSync: true),
             CancellationToken.None));
         Assert.Equal("LDAP bind failed.", exception.Message);
         Assert.Equal(2, runtimeStatusStore.SavedStatuses.Count);
@@ -226,7 +226,7 @@ public sealed class ApplyPreviewServiceTests
                 WorkerId: worker.WorkerId,
                 PreviewRunId: preview.RunId!,
                 PreviewFingerprint: preview.Fingerprint,
-                ConfirmationText: ApplyPreviewService.BuildConfirmationText(preview)),
+                AcknowledgeRealSync: true),
             CancellationToken.None));
 
         Assert.Equal("LDAP bind failed.\nServer said no.", exception.Message);
@@ -235,6 +235,71 @@ public sealed class ApplyPreviewServiceTests
         Assert.Equal("Failed", runRepository.SavedRuns[0].Status);
         Assert.Single(runRepository.ReplacedEntries);
         Assert.Equal("LDAP bind failed.\nServer said no.", runRepository.ReplacedEntries[0].entries.Single().Reason);
+    }
+
+    [Fact]
+    public async Task ApplyAsync_RequiresAcknowledgement()
+    {
+        var worker = new WorkerSnapshot(
+            WorkerId: "10001",
+            PreferredName: "Winnie",
+            LastName: "Sample101",
+            Department: "IT",
+            TargetOu: "OU=LabUsers,DC=example,DC=com",
+            IsPrehire: false,
+            Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase));
+
+        var preview = new WorkerPreviewResult(
+            ReportPath: null,
+            RunId: "preview-10001-4",
+            PreviousRunId: null,
+            Fingerprint: "fingerprint-4",
+            Mode: "Preview",
+            Status: "Planned",
+            ErrorMessage: null,
+            ArtifactType: "WorkerPreview",
+            SuccessFactorsAuth: "NativeScaffold",
+            WorkerId: worker.WorkerId,
+            Buckets: ["updates"],
+            MatchedExistingUser: true,
+            ReviewCategory: null,
+            ReviewCaseType: null,
+            Reason: null,
+            OperatorActionSummary: null,
+            SamAccountName: "10001",
+            ManagerDistinguishedName: null,
+            TargetOu: worker.TargetOu,
+            CurrentDistinguishedName: "CN=Sample101\\, Winnie,OU=LabUsers,DC=example,DC=com",
+            CurrentEnabled: true,
+            ProposedEnable: true,
+            OperationSummary: null,
+            DiffRows:
+            [
+                new DiffRow("UserPrincipalName", "resolved email local-part", "(unset)", "preview.email@Exampleenergy.com", true)
+            ],
+            SourceAttributes: [],
+            UsedSourceAttributes: [],
+            UnusedSourceAttributes: [],
+            MissingSourceAttributes: [],
+            Entries: []);
+
+        var service = new ApplyPreviewService(
+            new StubWorkerSource(worker),
+            new DirectoryMutationCommandBuilder(),
+            new CapturingDirectoryCommandGateway(),
+            new StubRunRepository(preview),
+            new StubRuntimeStatusStore(),
+            NullLogger<ApplyPreviewService>.Instance);
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => service.ApplyAsync(
+            new ApplyPreviewRequest(
+                WorkerId: worker.WorkerId,
+                PreviewRunId: preview.RunId!,
+                PreviewFingerprint: preview.Fingerprint,
+                AcknowledgeRealSync: false),
+            CancellationToken.None));
+
+        Assert.Equal("Acknowledge the real AD sync before applying this preview.", exception.Message);
     }
 
     private sealed class StubWorkerSource(WorkerSnapshot worker) : IWorkerSource
@@ -444,6 +509,13 @@ public sealed class ApplyPreviewServiceTests
             return Task.FromResult<RuntimeStatus?>(null);
         }
 
+        public Task<bool> TryStartAsync(RuntimeStatus status, CancellationToken cancellationToken)
+        {
+            _ = status;
+            _ = cancellationToken;
+            return Task.FromResult(true);
+        }
+
         public Task SaveAsync(RuntimeStatus status, CancellationToken cancellationToken)
         {
             _ = status;
@@ -460,6 +532,13 @@ public sealed class ApplyPreviewServiceTests
         {
             _ = cancellationToken;
             return Task.FromResult<RuntimeStatus?>(null);
+        }
+
+        public Task<bool> TryStartAsync(RuntimeStatus status, CancellationToken cancellationToken)
+        {
+            _ = cancellationToken;
+            SavedStatuses.Add(status);
+            return Task.FromResult(true);
         }
 
         public Task SaveAsync(RuntimeStatus status, CancellationToken cancellationToken)

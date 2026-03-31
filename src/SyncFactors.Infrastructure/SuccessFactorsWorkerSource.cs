@@ -285,6 +285,52 @@ public sealed class SuccessFactorsWorkerSource(
         }
     }
 
+    private async Task<SuccessFactorsResponsePayload> ExecuteWorkersRequestAsync(
+        SyncFactorsConfigDocument config,
+        SuccessFactorsQueryConfig query,
+        CancellationToken cancellationToken)
+    {
+        var requestUri = BuildRequestUri(config, query, workerId: null);
+
+        logger.LogInformation(
+            "Fetching full sync data from SuccessFactors. EntitySet={EntitySet} AuthMode={AuthMode} SelectedFieldCount={SelectedFieldCount}",
+            query.EntitySet,
+            config.SuccessFactors.Auth.Mode,
+            query.Select.Count);
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, requestUri);
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+        request.Headers.AcceptEncoding.Add(new StringWithQualityHeaderValue("gzip"));
+        request.Headers.AcceptEncoding.Add(new StringWithQualityHeaderValue("deflate"));
+        AddTracingHeaders(request, "full-sync");
+        await ApplyAuthenticationAsync(request, config.SuccessFactors.Auth, cancellationToken);
+
+        using var response = await httpClient.SendAsync(request, cancellationToken);
+        var body = await response.Content.ReadAsStringAsync(cancellationToken);
+        if (response.IsSuccessStatusCode)
+        {
+            return new SuccessFactorsResponsePayload(
+                RequestUri: requestUri,
+                Body: body,
+                StatusCode: (int)response.StatusCode,
+                ContentType: response.Content.Headers.ContentType?.MediaType ?? "(none)");
+        }
+
+        logger.LogError(
+            "SuccessFactors full sync request failed. StatusCode={StatusCode} ContentType={ContentType} Uri={Uri} BodyPreview={BodyPreview}",
+            (int)response.StatusCode,
+            response.Content.Headers.ContentType?.MediaType ?? "(none)",
+            requestUri,
+            TrimForLog(body));
+
+        throw CreateDetailedSuccessFactorsException(
+            messagePrefix: "SuccessFactors full sync request failed.",
+            response: response,
+            requestUri: requestUri,
+            body: body,
+            query: query);
+    }
+
     private static string? TryExtractInvalidPropertyPath(string? body)
     {
         if (string.IsNullOrWhiteSpace(body))
@@ -397,16 +443,20 @@ public sealed class SuccessFactorsWorkerSource(
         return values;
     }
 
-    private static string BuildRequestUri(SyncFactorsConfigDocument config, SuccessFactorsQueryConfig query, string workerId)
+    private static string BuildRequestUri(SyncFactorsConfigDocument config, SuccessFactorsQueryConfig query, string? workerId)
     {
         var baseUrl = config.SuccessFactors.BaseUrl.TrimEnd('/');
         var relativePath = $"{baseUrl}/{query.EntitySet}";
         var parts = new List<string>
         {
             "$format=json",
-            $"$filter={Uri.EscapeDataString($"{query.IdentityField} eq '{workerId.Replace("'", "''")}'")}",
             $"$select={Uri.EscapeDataString(string.Join(",", query.Select))}",
         };
+
+        if (!string.IsNullOrWhiteSpace(workerId))
+        {
+            parts.Insert(1, $"$filter={Uri.EscapeDataString($"{query.IdentityField} eq '{workerId.Replace("'", "''")}'")}");
+        }
 
         if (query.Expand.Count > 0)
         {
@@ -469,7 +519,6 @@ public sealed class SuccessFactorsWorkerSource(
         {
             return null;
         }
-
         var personalInfo = GetFirstNavigationResult(worker, "personalInfoNav");
         var employment = GetFirstNavigationResult(worker, "employmentNav");
         var userNav = employment is { ValueKind: not JsonValueKind.Undefined }

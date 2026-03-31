@@ -20,7 +20,7 @@ public sealed class PreviewModel(
     public bool ShowAllAttributes { get; set; }
 
     [BindProperty]
-    public string ConfirmationText { get; set; } = string.Empty;
+    public bool AcknowledgeRealSync { get; set; }
 
     [BindProperty]
     public string PreviewRunId { get; set; } = string.Empty;
@@ -42,11 +42,6 @@ public sealed class PreviewModel(
         Preview is null
             ? []
             : (ShowAllAttributes ? Preview.DiffRows : Preview.DiffRows.Where(row => row.Changed).ToArray());
-
-    public string RequiredConfirmationText =>
-        Preview is null
-            ? string.Empty
-            : ApplyPreviewService.BuildConfirmationText(Preview);
 
     public async Task OnGetAsync(CancellationToken cancellationToken)
     {
@@ -75,7 +70,7 @@ public sealed class PreviewModel(
                     WorkerId: WorkerId,
                     PreviewRunId: PreviewRunId,
                     PreviewFingerprint: PreviewFingerprint,
-                    ConfirmationText: ConfirmationText),
+                    AcknowledgeRealSync: AcknowledgeRealSync),
                 cancellationToken);
         }
         catch (Exception ex)

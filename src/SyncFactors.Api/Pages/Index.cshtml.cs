@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using SyncFactors.Contracts;
 using SyncFactors.Domain;
@@ -32,6 +33,11 @@ public sealed class IndexModel(IDashboardSnapshotService dashboardSnapshotServic
     public string? AttentionMessage { get; private set; }
 
     public async Task OnGetAsync(CancellationToken cancellationToken)
+    {
+        await LoadSnapshotAsync(cancellationToken);
+    }
+
+    private async Task LoadSnapshotAsync(CancellationToken cancellationToken)
     {
         var snapshot = await dashboardSnapshotService.GetSnapshotAsync(cancellationToken);
         Status = snapshot.Status;

@@ -59,6 +59,44 @@ public sealed class SqliteRuntimeStatusStoreTests
     }
 
     [Fact]
+    public async Task TryStartAsync_RejectsWhenRuntimeStatusIsAlreadyInProgress()
+    {
+        var databasePath = Path.Combine(Path.GetTempPath(), $"syncfactors-runtime-start-{Guid.NewGuid():N}.db");
+
+        try
+        {
+            await CreateCurrentRuntimeStatusSchemaAsync(databasePath);
+
+            var store = new SqliteRuntimeStatusStore(new SqlitePathResolver(databasePath));
+            var firstStatus = new RuntimeStatus(
+                Status: "InProgress",
+                Stage: "Planning",
+                RunId: "run-1",
+                Mode: "FullSyncLive",
+                DryRun: false,
+                ProcessedWorkers: 0,
+                TotalWorkers: 0,
+                CurrentWorkerId: null,
+                LastAction: "Starting",
+                StartedAt: DateTimeOffset.Parse("2026-03-30T12:00:00Z"),
+                LastUpdatedAt: DateTimeOffset.Parse("2026-03-30T12:00:00Z"),
+                CompletedAt: null,
+                ErrorMessage: null);
+            var secondStatus = firstStatus with { RunId = "run-2" };
+
+            Assert.True(await store.TryStartAsync(firstStatus, CancellationToken.None));
+            Assert.False(await store.TryStartAsync(secondStatus, CancellationToken.None));
+
+            var actual = await store.GetCurrentAsync(CancellationToken.None);
+            Assert.Equal("run-1", actual!.RunId);
+        }
+        finally
+        {
+            File.Delete(databasePath);
+        }
+    }
+
+    [Fact]
     public async Task InitializeAsync_UpgradesLegacyRuntimeStatusTableToSnapshotSchema()
     {
         var databasePath = Path.Combine(Path.GetTempPath(), $"syncfactors-runtime-migration-{Guid.NewGuid():N}.db");
