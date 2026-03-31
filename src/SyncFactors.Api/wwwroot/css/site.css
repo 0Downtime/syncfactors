@@ -452,10 +452,6 @@ a:focus-visible {
   align-items: start;
 }
 
-.panel-span-full {
-  grid-column: 1 / -1;
-}
-
 .sync-dashboard-grid {
   grid-template-columns: repeat(12, minmax(0, 1fr));
 }
@@ -607,6 +603,19 @@ a:focus-visible {
 
 .table-scroll .data-table {
   min-width: max-content;
+}
+
+.table-pagination {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-top: 16px;
+  flex-wrap: wrap;
+}
+
+.table-pagination .muted {
+  margin: 0;
 }
 
 .data-table th,
@@ -778,13 +787,13 @@ a:focus-visible {
   gap: 6px;
 }
 
-.filters input,
+.filters input:not([type="checkbox"]):not([type="radio"]),
 .filters select,
 .filters button {
   width: 100%;
 }
 
-.filters input,
+.filters input:not([type="checkbox"]):not([type="radio"]),
 .filters select {
   min-height: 40px;
   padding: 10px 12px;
@@ -921,10 +930,6 @@ a:focus-visible {
     grid-column: 1;
   }
 
-  .panel-span-full {
-    grid-column: 1;
-  }
-
   .topbar,
   .hero-compact,
   .entry-head,
@@ -1058,7 +1063,4 @@ a:focus-visible {
     grid-column: span 1;
   }
 
-  .panel-span-full {
-    grid-column: 1 / -1;
-  }
 }

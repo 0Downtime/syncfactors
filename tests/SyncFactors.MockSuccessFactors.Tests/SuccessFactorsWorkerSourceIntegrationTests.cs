@@ -127,7 +127,7 @@ public sealed class SuccessFactorsWorkerSourceIntegrationTests
 
         Assert.NotNull(worker);
         Assert.Equal("10001", worker!.WorkerId);
-        Assert.Equal("Worker101", worker.PreferredName);
+        Assert.Equal("Worker10001", worker.PreferredName);
         Assert.Equal("CORP", worker.Attributes["company"]);
         Assert.Equal("HQ North", worker.Attributes["location"]);
         Assert.Equal("Field Ops", worker.Attributes["peopleGroup"]);
@@ -259,7 +259,7 @@ public sealed class SuccessFactorsWorkerSourceIntegrationTests
         Assert.Equal("Operations", worker.Attributes["division"]);
         Assert.Equal("Infrastructure", worker.Attributes["businessUnit"]);
         Assert.Equal("HQ North", worker.Attributes["location"]);
-        Assert.Equal("101 Example Way", worker.Attributes["officeLocationAddress"]);
+        Assert.Equal("Suite 10001", worker.Attributes["officeLocationAddress"]);
         Assert.Equal("Exampletown", worker.Attributes["officeLocationCity"]);
         Assert.Equal("10001", worker.Attributes["officeLocationZipCode"]);
         Assert.Equal("90001", worker.Attributes["managerId"]);
