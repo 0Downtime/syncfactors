@@ -8,8 +8,7 @@ namespace SyncFactors.Api.Pages;
 public sealed class SyncModel(
     IDashboardSnapshotService dashboardSnapshotService,
     IRunQueueStore runQueueStore,
-    ISyncScheduleStore syncScheduleStore,
-    IFullSyncRunService fullSyncRunService) : PageModel
+    ISyncScheduleStore syncScheduleStore) : PageModel
 {
     private const int RunsPageSize = 25;
     private const string DryRunMode = "DryRun";
@@ -75,58 +74,9 @@ public sealed class SyncModel(
     [TempData]
     public string? SuccessMessage { get; set; }
 
-    [TempData]
-    public string? LaunchRunId { get; set; }
-
     public async Task OnGetAsync(CancellationToken cancellationToken)
     {
         await LoadAsync(cancellationToken);
-    }
-
-    public async Task<IActionResult> OnPostDryRunAsync(CancellationToken cancellationToken)
-    {
-        try
-        {
-            var result = await fullSyncRunService.LaunchAsync(
-                new LaunchFullRunRequest(DryRun: true, AcknowledgeRealSync: false),
-                cancellationToken);
-
-            LaunchRunId = result.RunId;
-            SuccessMessage = result.Message;
-            ErrorMessage = null;
-            return RedirectToPage(new { PageNumber });
-        }
-        catch (Exception ex)
-        {
-            ErrorMessage = ex.Message;
-            SuccessMessage = null;
-            LaunchRunId = null;
-            await LoadAsync(cancellationToken);
-            return Page();
-        }
-    }
-
-    public async Task<IActionResult> OnPostLiveRunAsync(CancellationToken cancellationToken)
-    {
-        try
-        {
-            var result = await fullSyncRunService.LaunchAsync(
-                new LaunchFullRunRequest(DryRun: false, AcknowledgeRealSync: AcknowledgeRealSync),
-                cancellationToken);
-
-            LaunchRunId = result.RunId;
-            SuccessMessage = result.Message;
-            ErrorMessage = null;
-            return RedirectToPage(new { PageNumber });
-        }
-        catch (Exception ex)
-        {
-            ErrorMessage = ex.Message;
-            SuccessMessage = null;
-            LaunchRunId = null;
-            await LoadAsync(cancellationToken);
-            return Page();
-        }
     }
 
     public async Task<IActionResult> OnPostStartRunAsync(CancellationToken cancellationToken)
