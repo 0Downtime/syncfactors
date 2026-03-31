@@ -118,8 +118,20 @@ public sealed class MockFixtureStore(IOptions<MockSuccessFactorsOptions> options
 
     private static MockFixtureDocument NormalizeSyntheticIdentities(MockFixtureDocument document)
     {
-        var workers = document.Workers
+        var normalizedWorkers = document.Workers
             .Select((worker, index) => NormalizeSyntheticIdentity(worker, index))
+            .ToArray();
+
+        var normalizedIds = normalizedWorkers
+            .Select(worker => worker.PersonIdExternal)
+            .ToArray();
+        var normalizedIdSet = normalizedIds.ToHashSet(StringComparer.Ordinal);
+
+        var workers = normalizedWorkers
+            .Select((worker, index) => worker with
+            {
+                ManagerId = NormalizeManagerId(worker.ManagerId, normalizedIds, normalizedIdSet, index)
+            })
             .ToArray();
 
         return new MockFixtureDocument(workers);
@@ -177,6 +189,33 @@ public sealed class MockFixtureStore(IOptions<MockSuccessFactorsOptions> options
         }
 
         return StableNumber(workerId, 10_000, 99_999).ToString("D5");
+    }
+
+    private static string? NormalizeManagerId(
+        string? managerId,
+        IReadOnlyList<string> normalizedIds,
+        IReadOnlySet<string> normalizedIdSet,
+        int index)
+    {
+        if (normalizedIds.Count == 0 || index <= 0)
+        {
+            return null;
+        }
+
+        if (!string.IsNullOrWhiteSpace(managerId) && normalizedIdSet.Contains(managerId))
+        {
+            var managerIndex = normalizedIds
+                .Select((id, candidateIndex) => new { Id = id, Index = candidateIndex })
+                .FirstOrDefault(candidate => string.Equals(candidate.Id, managerId, StringComparison.Ordinal))
+                ?.Index;
+
+            if (managerIndex is not null && managerIndex.Value < index)
+            {
+                return managerId;
+            }
+        }
+
+        return normalizedIds[index - 1];
     }
 
     private static int StableNumber(string value, int minInclusive, int maxInclusive)

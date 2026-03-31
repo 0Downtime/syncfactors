@@ -254,13 +254,5 @@ public sealed class ApplyPreviewService(
             throw new InvalidOperationException("Preview cannot be applied because the planned email or user principal name is missing.");
         }
 
-        var managerIdRequired = preview.Entries.Any(entry =>
-            entry.Item.ValueKind == JsonValueKind.Object &&
-            entry.Item.TryGetProperty("managerRequired", out var managerRequired) &&
-            managerRequired.ValueKind == JsonValueKind.True);
-        if (managerIdRequired && string.IsNullOrWhiteSpace(preview.ManagerDistinguishedName))
-        {
-            throw new InvalidOperationException("Preview cannot be applied because the manager could not be resolved in Active Directory.");
-        }
     }
 }

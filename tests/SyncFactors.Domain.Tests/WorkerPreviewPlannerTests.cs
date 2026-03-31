@@ -116,6 +116,42 @@ public sealed class WorkerPreviewPlannerTests
         Assert.Empty(preview.MissingSourceAttributes);
     }
 
+    [Fact]
+    public async Task PreviewAsync_DoesNotRequireReviewWhenManagerCannotBeResolved()
+    {
+        var worker = new WorkerSnapshot(
+            WorkerId: "44522",
+            PreferredName: "Christopher",
+            LastName: "Brien",
+            Department: "Infrastructure & Security",
+            TargetOu: "OU=Employees,DC=example,DC=com",
+            IsPrehire: false,
+            Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["company"] = "Example Services, Inc.",
+                ["department"] = "Infrastructure & Security",
+                ["managerId"] = "10004"
+            });
+
+        var planner = new WorkerPreviewPlanner(
+            new StubWorkerSource(worker),
+            new WorkerPlanningService(
+                new StubDirectoryGateway(),
+                new StubIdentityMatcher(),
+                new StubAttributeDiffService(),
+                new StubAttributeMappingProvider(),
+                NullLogger<WorkerPlanningService>.Instance),
+            new StubAttributeMappingProvider(),
+            new StubWorkerPreviewLogWriter(),
+            new StubRunRepository(),
+            NullLogger<WorkerPreviewPlanner>.Instance);
+
+        var preview = await planner.PreviewAsync("44522", CancellationToken.None);
+
+        Assert.Null(preview.ReviewCaseType);
+        Assert.Null(preview.ReviewCategory);
+    }
+
     private sealed class StubWorkerSource(WorkerSnapshot worker) : IWorkerSource
     {
         public Task<WorkerSnapshot?> GetWorkerAsync(string workerId, CancellationToken cancellationToken)

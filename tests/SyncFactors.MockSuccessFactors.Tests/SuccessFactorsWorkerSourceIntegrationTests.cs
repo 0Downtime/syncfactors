@@ -262,7 +262,7 @@ public sealed class SuccessFactorsWorkerSourceIntegrationTests
         Assert.Equal("Suite 10001", worker.Attributes["officeLocationAddress"]);
         Assert.Equal("Exampletown", worker.Attributes["officeLocationCity"]);
         Assert.Equal("10001", worker.Attributes["officeLocationZipCode"]);
-        Assert.Equal("90001", worker.Attributes["managerId"]);
+        Assert.Null(worker.Attributes["managerId"]);
         Assert.Equal("Field Ops", worker.Attributes["peopleGroup"]);
     }
 
