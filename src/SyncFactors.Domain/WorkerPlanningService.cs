@@ -111,6 +111,13 @@ public sealed class WorkerPlanningService(
             {
                 return true;
             }
+
+            var normalizedKey = SourceAttributePathNormalizer.Normalize(key);
+            if (!string.Equals(normalizedKey, key, StringComparison.OrdinalIgnoreCase) &&
+                attributes.TryGetValue(normalizedKey, out value))
+            {
+                return true;
+            }
         }
 
         value = null;
