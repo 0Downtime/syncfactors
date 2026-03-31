@@ -21,8 +21,9 @@ public sealed class ScaffoldWorkerSource(ScaffoldDataStore dataStore) : IWorkerS
         return Task.FromResult(worker?.ToSnapshot());
     }
 
-    public async IAsyncEnumerable<WorkerSnapshot> ListWorkersAsync([System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
+    public async IAsyncEnumerable<WorkerSnapshot> ListWorkersAsync(WorkerListingMode mode, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
     {
+        _ = mode;
         foreach (var worker in dataStore.GetDocument().Workers)
         {
             cancellationToken.ThrowIfCancellationRequested();

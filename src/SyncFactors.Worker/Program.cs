@@ -22,6 +22,8 @@ builder.Services.AddSingleton(serviceProvider =>
 });
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<IRuntimeStatusStore, SqliteRuntimeStatusStore>();
+builder.Services.AddSingleton<IDeltaSyncStateStore, SqliteDeltaSyncStateStore>();
+builder.Services.AddSingleton<IDeltaSyncService, SuccessFactorsDeltaSyncService>();
 builder.Services.AddSingleton<IWorkerHeartbeatStore, SqliteWorkerHeartbeatStore>();
 builder.Services.AddSingleton<IRunRepository, SqliteRunRepository>();
 builder.Services.AddSingleton<IRunQueueStore, SqliteRunQueueStore>();

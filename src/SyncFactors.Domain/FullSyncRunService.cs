@@ -84,7 +84,7 @@ public sealed class FullSyncRunService(
                 cancellationToken);
             runRecordSaved = true;
 
-            await foreach (var worker in workerSource.ListWorkersAsync(cancellationToken))
+            await foreach (var worker in workerSource.ListWorkersAsync(WorkerListingMode.Full, cancellationToken))
             {
                 workers.Add(worker);
             }

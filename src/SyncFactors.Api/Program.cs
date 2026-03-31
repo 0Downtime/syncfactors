@@ -24,6 +24,8 @@ builder.Services.AddSingleton<ScaffoldDirectoryGateway>();
 builder.Services.AddSingleton<ScaffoldDirectoryCommandGateway>();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<IWorkerPreviewLogWriter, FileWorkerPreviewLogWriter>();
+builder.Services.AddSingleton<IDeltaSyncStateStore, SqliteDeltaSyncStateStore>();
+builder.Services.AddSingleton<IDeltaSyncService, SuccessFactorsDeltaSyncService>();
 builder.Services.AddHttpClient<SuccessFactorsWorkerSource>()
     .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
     {

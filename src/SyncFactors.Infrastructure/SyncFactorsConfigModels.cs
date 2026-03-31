@@ -42,6 +42,8 @@ public sealed record SuccessFactorsQueryConfig(
     string EntitySet,
     string IdentityField,
     string DeltaField,
+    bool DeltaSyncEnabled,
+    int DeltaOverlapMinutes,
     string? BaseFilter,
     string? OrderBy,
     string? AsOfDate,

@@ -388,8 +388,9 @@ public sealed class ApplyPreviewServiceTests
             return Task.FromResult<WorkerSnapshot?>(worker);
         }
 
-        public async IAsyncEnumerable<WorkerSnapshot> ListWorkersAsync([System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
+        public async IAsyncEnumerable<WorkerSnapshot> ListWorkersAsync(WorkerListingMode mode, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
         {
+            _ = mode;
             cancellationToken.ThrowIfCancellationRequested();
             yield return worker;
             await Task.Yield();

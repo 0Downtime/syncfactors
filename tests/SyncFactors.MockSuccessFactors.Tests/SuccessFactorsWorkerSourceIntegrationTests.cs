@@ -6,6 +6,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using SyncFactors.Contracts;
+using SyncFactors.Domain;
 using SyncFactors.Infrastructure;
 using SyncFactors.MockSuccessFactors;
 
@@ -125,7 +126,7 @@ public sealed class SuccessFactorsWorkerSourceIntegrationTests
         var configLoader = new SyncFactorsConfigurationLoader(new SyncFactorsConfigPathResolver(syncConfigPath, mappingConfigPath));
         var scaffoldStore = new ScaffoldDataStore(new ScaffoldDataPathResolver(scaffoldDataPath));
         var fallbackSource = new ScaffoldWorkerSource(scaffoldStore);
-        var workerSource = new SuccessFactorsWorkerSource(client, configLoader, fallbackSource, NullLogger<SuccessFactorsWorkerSource>.Instance);
+        var workerSource = new SuccessFactorsWorkerSource(client, configLoader, new DisabledDeltaSyncService(), fallbackSource, NullLogger<SuccessFactorsWorkerSource>.Instance);
 
         var worker = await workerSource.GetWorkerAsync("10001", CancellationToken.None);
 
@@ -254,7 +255,7 @@ public sealed class SuccessFactorsWorkerSourceIntegrationTests
         var configLoader = new SyncFactorsConfigurationLoader(new SyncFactorsConfigPathResolver(syncConfigPath, mappingConfigPath));
         var scaffoldStore = new ScaffoldDataStore(new ScaffoldDataPathResolver(scaffoldDataPath));
         var fallbackSource = new ScaffoldWorkerSource(scaffoldStore);
-        var workerSource = new SuccessFactorsWorkerSource(client, configLoader, fallbackSource, NullLogger<SuccessFactorsWorkerSource>.Instance);
+        var workerSource = new SuccessFactorsWorkerSource(client, configLoader, new DisabledDeltaSyncService(), fallbackSource, NullLogger<SuccessFactorsWorkerSource>.Instance);
 
         var worker = await workerSource.GetWorkerAsync("10001", CancellationToken.None);
 
@@ -369,10 +370,10 @@ public sealed class SuccessFactorsWorkerSourceIntegrationTests
         var configLoader = new SyncFactorsConfigurationLoader(new SyncFactorsConfigPathResolver(syncConfigPath, mappingConfigPath));
         var scaffoldStore = new ScaffoldDataStore(new ScaffoldDataPathResolver(scaffoldDataPath));
         var fallbackSource = new ScaffoldWorkerSource(scaffoldStore);
-        var workerSource = new SuccessFactorsWorkerSource(client, configLoader, fallbackSource, logger);
+        var workerSource = new SuccessFactorsWorkerSource(client, configLoader, new DisabledDeltaSyncService(), fallbackSource, logger);
 
         var workers = new List<WorkerSnapshot>();
-        await foreach (var worker in workerSource.ListWorkersAsync(CancellationToken.None))
+        await foreach (var worker in workerSource.ListWorkersAsync(WorkerListingMode.DeltaPreferred, CancellationToken.None))
         {
             workers.Add(worker);
             if (workers.Count == 5)
@@ -389,6 +390,217 @@ public sealed class SuccessFactorsWorkerSourceIntegrationTests
             uri.Contains("personIdExternal", StringComparison.Ordinal) &&
             uri.Contains("asc", StringComparison.OrdinalIgnoreCase));
         Assert.Contains(logger.Messages, message => message.Contains("PagingMode=snapshot", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task WorkerSource_ListWorkersAsync_DeltaPreferred_AppendsDeltaFilter()
+    {
+        var fixturePath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "config", "mock-successfactors", "baseline-fixtures.json"));
+        var fixtureStore = new MockFixtureStore(Options.Create(new MockSuccessFactorsOptions
+        {
+            FixturePath = fixturePath
+        }));
+        var responseBuilder = new ODataResponseBuilder();
+        var handler = new MockSuccessFactorsHttpHandler(fixtureStore, responseBuilder);
+        using var client = new HttpClient(handler)
+        {
+            BaseAddress = new Uri("http://mock-successfactors.local")
+        };
+        var logger = new CapturingLogger<SuccessFactorsWorkerSource>();
+
+        var tempDirectory = Path.Combine(Path.GetTempPath(), "syncfactors-worker-source", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDirectory);
+
+        var syncConfigPath = Path.Combine(tempDirectory, "sync-config.json");
+        var mappingConfigPath = Path.Combine(tempDirectory, "mapping-config.json");
+        var scaffoldDataPath = Path.Combine(tempDirectory, "scaffold-data.json");
+
+        await File.WriteAllTextAsync(syncConfigPath, """
+        {
+          "secrets": {
+            "adServerEnv": null,
+            "adUsernameEnv": null,
+            "adBindPasswordEnv": null,
+            "successFactorsClientIdEnv": null,
+            "successFactorsClientSecretEnv": null
+          },
+          "successFactors": {
+            "baseUrl": "http://mock-successfactors.local/odata/v2",
+            "auth": {
+              "mode": "oauth",
+              "oauth": {
+                "tokenUrl": "http://mock-successfactors.local/oauth/token",
+                "clientId": "mock-client-id",
+                "clientSecret": "mock-client-secret",
+                "companyId": "MOCK"
+              }
+            },
+            "query": {
+              "entitySet": "PerPerson",
+              "identityField": "personIdExternal",
+              "deltaField": "lastModifiedDateTime",
+              "deltaSyncEnabled": true,
+              "baseFilter": "status eq 'active'",
+              "pageSize": 2,
+              "select": [
+                "personIdExternal",
+                "personalInfoNav/firstName",
+                "personalInfoNav/lastName"
+              ],
+              "expand": [
+                "personalInfoNav"
+              ]
+            }
+          },
+          "ad": {
+            "server": "ldap.example.test",
+            "username": "",
+            "bindPassword": "",
+            "identityAttribute": "employeeID",
+            "defaultActiveOu": "OU=LabUsers,DC=example,DC=com",
+            "graveyardOu": "OU=LabGraveyard,DC=example,DC=com"
+          },
+          "sync": {
+            "enableBeforeStartDays": 7,
+            "deletionRetentionDays": 90
+          },
+          "safety": {
+            "maxCreatesPerRun": 10,
+            "maxDisablesPerRun": 10,
+            "maxDeletionsPerRun": 10
+          },
+          "reporting": {
+            "outputDirectory": "reports"
+          }
+        }
+        """);
+        File.Copy(Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "config", "sample.empjob-confirmed.mapping-config.json")), mappingConfigPath);
+        await File.WriteAllTextAsync(scaffoldDataPath, """{"workers":[],"directoryUsers":[]}""");
+
+        var configLoader = new SyncFactorsConfigurationLoader(new SyncFactorsConfigPathResolver(syncConfigPath, mappingConfigPath));
+        var scaffoldStore = new ScaffoldDataStore(new ScaffoldDataPathResolver(scaffoldDataPath));
+        var fallbackSource = new ScaffoldWorkerSource(scaffoldStore);
+        var workerSource = new SuccessFactorsWorkerSource(
+            client,
+            configLoader,
+            new ConfiguredDeltaSyncService("lastModifiedDateTime ge datetimeoffset'2026-03-30T12:00:00Z'"),
+            fallbackSource,
+            logger);
+
+        await using var enumerator = workerSource.ListWorkersAsync(WorkerListingMode.DeltaPreferred, CancellationToken.None).GetAsyncEnumerator();
+        Assert.True(await enumerator.MoveNextAsync());
+
+        Assert.Contains(
+            handler.RequestUris
+                .Select(uri => Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(new Uri(uri).Query))
+                .Select(query => query.TryGetValue("$filter", out var filter) ? filter.ToString() : null),
+            filter => !string.IsNullOrWhiteSpace(filter) &&
+                      filter.Contains("status eq 'active'", StringComparison.Ordinal) &&
+                      filter.Contains("lastModifiedDateTime ge datetimeoffset'2026-03-30T12:00:00Z'", StringComparison.Ordinal));
+        Assert.Contains(logger.Messages, message => message.Contains("using SuccessFactors delta sync", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task WorkerSource_ListWorkersAsync_PrefersPreviewQueryWhenConfigured()
+    {
+        var fixturePath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "config", "mock-successfactors", "baseline-fixtures.json"));
+        var fixtureStore = new MockFixtureStore(Options.Create(new MockSuccessFactorsOptions
+        {
+            FixturePath = fixturePath
+        }));
+        var responseBuilder = new ODataResponseBuilder();
+        var handler = new MockSuccessFactorsHttpHandler(fixtureStore, responseBuilder);
+        using var client = new HttpClient(handler)
+        {
+            BaseAddress = new Uri("http://mock-successfactors.local")
+        };
+
+        var tempDirectory = Path.Combine(Path.GetTempPath(), "syncfactors-worker-source", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDirectory);
+
+        var syncConfigPath = Path.Combine(tempDirectory, "sync-config.json");
+        var mappingConfigPath = Path.Combine(tempDirectory, "mapping-config.json");
+        var scaffoldDataPath = Path.Combine(tempDirectory, "scaffold-data.json");
+
+        await File.WriteAllTextAsync(syncConfigPath, """
+        {
+          "secrets": {
+            "adServerEnv": null,
+            "adUsernameEnv": null,
+            "adBindPasswordEnv": null,
+            "successFactorsClientIdEnv": null,
+            "successFactorsClientSecretEnv": null
+          },
+          "successFactors": {
+            "baseUrl": "http://mock-successfactors.local/odata/v2",
+            "auth": {
+              "mode": "oauth",
+              "oauth": {
+                "tokenUrl": "http://mock-successfactors.local/oauth/token",
+                "clientId": "mock-client-id",
+                "clientSecret": "mock-client-secret",
+                "companyId": "MOCK"
+              }
+            },
+            "query": {
+              "entitySet": "EmpJob",
+              "identityField": "userId",
+              "deltaField": "lastModifiedDateTime",
+              "pageSize": 2,
+              "select": [
+                "userId"
+              ],
+              "expand": []
+            },
+            "previewQuery": {
+              "entitySet": "PerPerson",
+              "identityField": "personIdExternal",
+              "deltaField": "lastModifiedDateTime",
+              "pageSize": 2,
+              "select": [
+                "personIdExternal",
+                "personalInfoNav/firstName",
+                "personalInfoNav/lastName"
+              ],
+              "expand": [
+                "personalInfoNav"
+              ]
+            }
+          },
+          "ad": {
+            "server": "ldap.example.test",
+            "username": "",
+            "bindPassword": "",
+            "identityAttribute": "employeeID",
+            "defaultActiveOu": "OU=LabUsers,DC=example,DC=com",
+            "graveyardOu": "OU=LabGraveyard,DC=example,DC=com"
+          },
+          "sync": {
+            "enableBeforeStartDays": 7,
+            "deletionRetentionDays": 90
+          },
+          "safety": {
+            "maxCreatesPerRun": 10,
+            "maxDisablesPerRun": 10,
+            "maxDeletionsPerRun": 10
+          },
+          "reporting": {
+            "outputDirectory": "reports"
+          }
+        }
+        """);
+        await File.WriteAllTextAsync(mappingConfigPath, """{"mappings":[{"source":"personIdExternal","target":"employeeID","enabled":true,"required":true,"transform":"copy"}]}""");
+        await File.WriteAllTextAsync(scaffoldDataPath, """{"workers":[],"directoryUsers":[]}""");
+
+        var configLoader = new SyncFactorsConfigurationLoader(new SyncFactorsConfigPathResolver(syncConfigPath, mappingConfigPath));
+        var scaffoldStore = new ScaffoldDataStore(new ScaffoldDataPathResolver(scaffoldDataPath));
+        var fallbackSource = new ScaffoldWorkerSource(scaffoldStore);
+        var workerSource = new SuccessFactorsWorkerSource(client, configLoader, new DisabledDeltaSyncService(), fallbackSource, NullLogger<SuccessFactorsWorkerSource>.Instance);
+
+        await using var enumerator = workerSource.ListWorkersAsync(WorkerListingMode.DeltaPreferred, CancellationToken.None).GetAsyncEnumerator();
+        Assert.True(await enumerator.MoveNextAsync());
+
+        Assert.Contains(handler.RequestUris, uri => uri.Contains("/PerPerson?", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -515,7 +727,7 @@ public sealed class SuccessFactorsWorkerSourceIntegrationTests
         var configLoader = new SyncFactorsConfigurationLoader(new SyncFactorsConfigPathResolver(syncConfigPath, mappingConfigPath));
         var scaffoldStore = new ScaffoldDataStore(new ScaffoldDataPathResolver(scaffoldDataPath));
         var fallbackSource = new ScaffoldWorkerSource(scaffoldStore);
-        var workerSource = new SuccessFactorsWorkerSource(client, configLoader, fallbackSource, NullLogger<SuccessFactorsWorkerSource>.Instance);
+        var workerSource = new SuccessFactorsWorkerSource(client, configLoader, new DisabledDeltaSyncService(), fallbackSource, NullLogger<SuccessFactorsWorkerSource>.Instance);
 
         var worker = await workerSource.GetWorkerAsync("10001", CancellationToken.None);
 
@@ -621,7 +833,7 @@ public sealed class SuccessFactorsWorkerSourceIntegrationTests
         var configLoader = new SyncFactorsConfigurationLoader(new SyncFactorsConfigPathResolver(syncConfigPath, mappingConfigPath));
         var scaffoldStore = new ScaffoldDataStore(new ScaffoldDataPathResolver(scaffoldDataPath));
         var fallbackSource = new ScaffoldWorkerSource(scaffoldStore);
-        var workerSource = new SuccessFactorsWorkerSource(client, configLoader, fallbackSource, NullLogger<SuccessFactorsWorkerSource>.Instance);
+        var workerSource = new SuccessFactorsWorkerSource(client, configLoader, new DisabledDeltaSyncService(), fallbackSource, NullLogger<SuccessFactorsWorkerSource>.Instance);
 
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => workerSource.GetWorkerAsync("10001", CancellationToken.None));
         Assert.Contains("SuccessFactors request failed.", ex.Message);
@@ -707,7 +919,7 @@ public sealed class SuccessFactorsWorkerSourceIntegrationTests
         var configLoader = new SyncFactorsConfigurationLoader(new SyncFactorsConfigPathResolver(syncConfigPath, mappingConfigPath));
         var scaffoldStore = new ScaffoldDataStore(new ScaffoldDataPathResolver(scaffoldDataPath));
         var fallbackSource = new ScaffoldWorkerSource(scaffoldStore);
-        var workerSource = new SuccessFactorsWorkerSource(client, configLoader, fallbackSource, NullLogger<SuccessFactorsWorkerSource>.Instance);
+        var workerSource = new SuccessFactorsWorkerSource(client, configLoader, new DisabledDeltaSyncService(), fallbackSource, NullLogger<SuccessFactorsWorkerSource>.Instance);
 
         var worker = await workerSource.GetWorkerAsync("10001", CancellationToken.None);
 
@@ -790,6 +1002,36 @@ public sealed class SuccessFactorsWorkerSourceIntegrationTests
             public void Dispose()
             {
             }
+        }
+    }
+
+    private sealed class DisabledDeltaSyncService : IDeltaSyncService
+    {
+        public Task<DeltaSyncWindow> GetWindowAsync(CancellationToken cancellationToken)
+        {
+            _ = cancellationToken;
+            return Task.FromResult(new DeltaSyncWindow(false, false, null, string.Empty, null, null));
+        }
+
+        public Task RecordSuccessfulRunAsync(CancellationToken cancellationToken)
+        {
+            _ = cancellationToken;
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class ConfiguredDeltaSyncService(string filter) : IDeltaSyncService
+    {
+        public Task<DeltaSyncWindow> GetWindowAsync(CancellationToken cancellationToken)
+        {
+            _ = cancellationToken;
+            return Task.FromResult(new DeltaSyncWindow(true, true, filter, "lastModifiedDateTime", DateTimeOffset.Parse("2026-03-30T12:05:00Z"), DateTimeOffset.Parse("2026-03-30T12:00:00Z")));
+        }
+
+        public Task RecordSuccessfulRunAsync(CancellationToken cancellationToken)
+        {
+            _ = cancellationToken;
+            return Task.CompletedTask;
         }
     }
 

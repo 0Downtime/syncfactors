@@ -10,13 +10,16 @@ public sealed class BulkRunCoordinatorTests
     [Fact]
     public async Task ExecuteAsync_ContinuesWhenWorkerPlanningFails()
     {
+        CapturingRunLifecycleService.Entries.Clear();
         WorkerSnapshot[] workers =
         [
             CreateWorker("10001"),
             CreateWorker("10002")
         ];
+        var deltaSyncService = new CapturingDeltaSyncService();
         var coordinator = new BulkRunCoordinator(
             new StubWorkerSource(workers),
+            deltaSyncService,
             new StubRunQueueStore(),
             new StubWorkerPlanningService(),
             new StubDirectoryMutationCommandBuilder(),
@@ -46,6 +49,79 @@ public sealed class BulkRunCoordinatorTests
         Assert.Equal(2, CapturingRunLifecycleService.Entries.Count);
         Assert.Contains(CapturingRunLifecycleService.Entries, entry => entry.WorkerId == "10001" && entry.Bucket == "unchanged");
         Assert.Contains(CapturingRunLifecycleService.Entries, entry => entry.WorkerId == "10002" && entry.Bucket == "conflicts");
+        Assert.Equal(0, deltaSyncService.RecordCalls);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_LiveRun_AdvancesDeltaCheckpointAfterSuccess()
+    {
+        CapturingRunLifecycleService.Entries.Clear();
+        var deltaSyncService = new CapturingDeltaSyncService();
+        var coordinator = new BulkRunCoordinator(
+            new StubWorkerSource([CreateWorker("10001")]),
+            deltaSyncService,
+            new StubRunQueueStore(),
+            new StubWorkerPlanningService(),
+            new StubDirectoryMutationCommandBuilder(),
+            new SuccessfulDirectoryCommandGateway(),
+            new CapturingRunLifecycleService(),
+            new WorkerRunSettings(MaxCreatesPerRun: 10),
+            NullLogger<BulkRunCoordinator>.Instance,
+            TimeProvider.System);
+
+        await coordinator.ExecuteAsync(
+            new RunQueueRequest(
+                RequestId: "req-live",
+                Mode: "BulkSync",
+                DryRun: false,
+                RunTrigger: "AdHoc",
+                RequestedBy: "test",
+                Status: "Pending",
+                RequestedAt: DateTimeOffset.UtcNow,
+                StartedAt: null,
+                CompletedAt: null,
+                RunId: null,
+                ErrorMessage: null),
+            maxDegreeOfParallelism: 1,
+            CancellationToken.None);
+
+        Assert.Equal(1, deltaSyncService.RecordCalls);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_LiveRun_DoesNotAdvanceDeltaCheckpointWhenRunHasConflicts()
+    {
+        CapturingRunLifecycleService.Entries.Clear();
+        var deltaSyncService = new CapturingDeltaSyncService();
+        var coordinator = new BulkRunCoordinator(
+            new StubWorkerSource([CreateWorker("10001")]),
+            deltaSyncService,
+            new StubRunQueueStore(),
+            new StubWorkerPlanningService(includeChangedAttribute: true),
+            new StubDirectoryMutationCommandBuilder(),
+            new FailingDirectoryCommandGateway(),
+            new CapturingRunLifecycleService(),
+            new WorkerRunSettings(MaxCreatesPerRun: 10),
+            NullLogger<BulkRunCoordinator>.Instance,
+            TimeProvider.System);
+
+        await coordinator.ExecuteAsync(
+            new RunQueueRequest(
+                RequestId: "req-conflict",
+                Mode: "BulkSync",
+                DryRun: false,
+                RunTrigger: "AdHoc",
+                RequestedBy: "test",
+                Status: "Pending",
+                RequestedAt: DateTimeOffset.UtcNow,
+                StartedAt: null,
+                CompletedAt: null,
+                RunId: null,
+                ErrorMessage: null),
+            maxDegreeOfParallelism: 1,
+            CancellationToken.None);
+
+        Assert.Equal(0, deltaSyncService.RecordCalls);
     }
 
     private static WorkerSnapshot CreateWorker(string workerId)
@@ -68,8 +144,9 @@ public sealed class BulkRunCoordinatorTests
             return Task.FromResult(workers.FirstOrDefault(worker => worker.WorkerId == workerId));
         }
 
-        public async IAsyncEnumerable<WorkerSnapshot> ListWorkersAsync([System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
+        public async IAsyncEnumerable<WorkerSnapshot> ListWorkersAsync(WorkerListingMode mode, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
         {
+            _ = mode;
             foreach (var worker in workers)
             {
                 cancellationToken.ThrowIfCancellationRequested();
@@ -79,7 +156,7 @@ public sealed class BulkRunCoordinatorTests
         }
     }
 
-    private sealed class StubWorkerPlanningService : IWorkerPlanningService
+    private sealed class StubWorkerPlanningService(bool includeChangedAttribute = false) : IWorkerPlanningService
     {
         public Task<PlannedWorkerAction> PlanAsync(WorkerSnapshot worker, string? logPath, CancellationToken cancellationToken)
         {
@@ -98,7 +175,9 @@ public sealed class BulkRunCoordinatorTests
                     Identity: new IdentityMatchResult("updates", true, worker.WorkerId, null, null),
                     ManagerDistinguishedName: null,
                     ProposedEmailAddress: $"{worker.WorkerId}@example.com",
-                    AttributeChanges: [],
+                    AttributeChanges: includeChangedAttribute
+                        ? [new AttributeChange("department", "department", "(unset)", worker.Department, true)]
+                        : [],
                     MissingSourceAttributes: [],
                     Bucket: "updates",
                     ReviewCategory: null,
@@ -129,6 +208,24 @@ public sealed class BulkRunCoordinatorTests
             _ = command;
             _ = cancellationToken;
             throw new InvalidOperationException("Should not execute for dry-run test.");
+        }
+    }
+
+    private sealed class SuccessfulDirectoryCommandGateway : IDirectoryCommandGateway
+    {
+        public Task<DirectoryCommandResult> ExecuteAsync(DirectoryMutationCommand command, CancellationToken cancellationToken)
+        {
+            _ = cancellationToken;
+            return Task.FromResult(new DirectoryCommandResult(true, command.Action, command.SamAccountName, null, "Applied", null));
+        }
+    }
+
+    private sealed class FailingDirectoryCommandGateway : IDirectoryCommandGateway
+    {
+        public Task<DirectoryCommandResult> ExecuteAsync(DirectoryMutationCommand command, CancellationToken cancellationToken)
+        {
+            _ = cancellationToken;
+            return Task.FromResult(new DirectoryCommandResult(false, command.Action, command.SamAccountName, null, "Failed", null));
         }
     }
 
@@ -269,6 +366,24 @@ public sealed class BulkRunCoordinatorTests
         public Task FailRunAsync(string runId, string mode, bool dryRun, int processedWorkers, int totalWorkers, string? currentWorkerId, string errorMessage, RunTally tally, JsonElement report, DateTimeOffset startedAt, CancellationToken cancellationToken)
         {
             throw new InvalidOperationException("Bulk run should not fail for a single planning exception.");
+        }
+    }
+
+    private sealed class CapturingDeltaSyncService : IDeltaSyncService
+    {
+        public int RecordCalls { get; private set; }
+
+        public Task<DeltaSyncWindow> GetWindowAsync(CancellationToken cancellationToken)
+        {
+            _ = cancellationToken;
+            return Task.FromResult(new DeltaSyncWindow(false, false, null, string.Empty, null, null));
+        }
+
+        public Task RecordSuccessfulRunAsync(CancellationToken cancellationToken)
+        {
+            _ = cancellationToken;
+            RecordCalls++;
+            return Task.CompletedTask;
         }
     }
 }

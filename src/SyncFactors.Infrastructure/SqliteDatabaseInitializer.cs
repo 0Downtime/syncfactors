@@ -5,7 +5,7 @@ namespace SyncFactors.Infrastructure;
 
 public sealed class SqliteDatabaseInitializer(SqlitePathResolver pathResolver)
 {
-    private const int CurrentSchemaVersion = 5;
+    private const int CurrentSchemaVersion = 6;
 
     public async Task InitializeAsync(CancellationToken cancellationToken)
     {
@@ -68,6 +68,12 @@ public sealed class SqliteDatabaseInitializer(SqlitePathResolver pathResolver)
         {
             await ApplyVersion5Async(connection, transaction, cancellationToken);
             await InsertVersionAsync(connection, transaction, 5, cancellationToken);
+        }
+
+        if (!appliedVersions.Contains(6))
+        {
+            await ApplyVersion6Async(connection, transaction, cancellationToken);
+            await InsertVersionAsync(connection, transaction, 6, cancellationToken);
         }
 
         await transaction.CommitAsync(cancellationToken);
@@ -341,6 +347,24 @@ public sealed class SqliteDatabaseInitializer(SqlitePathResolver pathResolver)
               last_scheduled_run_at TEXT NULL,
               last_enqueue_attempt_at TEXT NULL,
               last_enqueue_error TEXT NULL
+            );
+            """;
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task ApplyVersion6Async(
+        SqliteConnection connection,
+        DbTransaction transaction,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = (SqliteTransaction)transaction;
+        command.CommandText =
+            """
+            CREATE TABLE IF NOT EXISTS delta_sync_state (
+              sync_key TEXT NOT NULL PRIMARY KEY,
+              checkpoint_utc TEXT NOT NULL,
+              updated_at TEXT NOT NULL
             );
             """;
         await command.ExecuteNonQueryAsync(cancellationToken);

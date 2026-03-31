@@ -73,6 +73,16 @@ internal static class JsonElementExtensions
         return property.GetBoolean();
     }
 
+    public static bool? TryGetBoolean(this JsonElement element, string propertyName)
+    {
+        if (!element.TryGetProperty(propertyName, out var property) || property.ValueKind is not JsonValueKind.True and not JsonValueKind.False)
+        {
+            return null;
+        }
+
+        return property.GetBoolean();
+    }
+
     public static int GetRequiredInt32(this JsonElement element, string propertyName)
     {
         if (!element.TryGetProperty(propertyName, out var property) || property.ValueKind != JsonValueKind.Number || !property.TryGetInt32(out var value))
