@@ -7,6 +7,8 @@ namespace SyncFactors.Api.Pages.Runs;
 
 public sealed class DetailModel(IRunRepository runRepository) : PageModel
 {
+    public const int EntriesPerPage = 50;
+
     [BindProperty(SupportsGet = true)]
     public string RunId { get; set; } = string.Empty;
 
@@ -19,11 +21,22 @@ public sealed class DetailModel(IRunRepository runRepository) : PageModel
     [BindProperty(SupportsGet = true)]
     public string? Filter { get; set; }
 
+    [BindProperty(SupportsGet = true)]
+    public int PageNumber { get; set; } = 1;
+
     public RunDetail? Run { get; private set; }
 
     public IReadOnlyList<RunEntry> Entries { get; private set; } = [];
 
     public IReadOnlyList<string> AvailableBuckets { get; private set; } = [];
+
+    public int TotalEntries { get; private set; }
+
+    public int TotalPages { get; private set; }
+
+    public bool HasPreviousPage => PageNumber > 1;
+
+    public bool HasNextPage => PageNumber < TotalPages;
 
     public async Task<IActionResult> OnGetAsync(CancellationToken cancellationToken)
     {
@@ -43,7 +56,24 @@ public sealed class DetailModel(IRunRepository runRepository) : PageModel
             .Select(pair => pair.Key)
             .ToArray();
 
-        Entries = await runRepository.GetRunEntriesAsync(RunId, Bucket, WorkerId, null, Filter, null, cancellationToken);
+        PageNumber = Math.Max(1, PageNumber);
+        TotalEntries = await runRepository.CountRunEntriesAsync(RunId, Bucket, WorkerId, null, Filter, null, cancellationToken);
+        TotalPages = Math.Max(1, (int)Math.Ceiling(TotalEntries / (double)EntriesPerPage));
+        if (PageNumber > TotalPages)
+        {
+            PageNumber = TotalPages;
+        }
+
+        Entries = await runRepository.GetRunEntriesAsync(
+            RunId,
+            Bucket,
+            WorkerId,
+            null,
+            Filter,
+            null,
+            (PageNumber - 1) * EntriesPerPage,
+            EntriesPerPage,
+            cancellationToken);
         return Page();
     }
 }

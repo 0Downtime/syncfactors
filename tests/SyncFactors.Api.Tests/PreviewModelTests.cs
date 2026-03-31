@@ -224,7 +224,21 @@ public sealed class PreviewModelTests
             return Task.CompletedTask;
         }
 
-        public Task<IReadOnlyList<RunEntry>> GetRunEntriesAsync(string runId, string? bucket, string? workerId, string? reason, string? filter, string? entryId, CancellationToken cancellationToken)
+        public Task<IReadOnlyList<RunEntry>> GetRunEntriesAsync(string runId, string? bucket, string? workerId, string? reason, string? filter, string? entryId, int skip, int take, CancellationToken cancellationToken)
+        {
+            _ = runId;
+            _ = bucket;
+            _ = workerId;
+            _ = reason;
+            _ = filter;
+            _ = entryId;
+            _ = skip;
+            _ = take;
+            _ = cancellationToken;
+            return Task.FromResult<IReadOnlyList<RunEntry>>([]);
+        }
+
+        public Task<int> CountRunEntriesAsync(string runId, string? bucket, string? workerId, string? reason, string? filter, string? entryId, CancellationToken cancellationToken)
         {
             _ = runId;
             _ = bucket;
@@ -233,7 +247,7 @@ public sealed class PreviewModelTests
             _ = filter;
             _ = entryId;
             _ = cancellationToken;
-            return Task.FromResult<IReadOnlyList<RunEntry>>([]);
+            return Task.FromResult(0);
         }
     }
 }

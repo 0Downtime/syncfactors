@@ -7,6 +7,7 @@ using SyncFactors.Domain;
 public sealed class Worker(
     ILogger<Worker> logger,
     IRunQueueStore runQueueStore,
+    SyncScheduleCoordinator syncScheduleCoordinator,
     BulkRunCoordinator bulkRunCoordinator,
     IWorkerHeartbeatStore workerHeartbeatStore,
     TimeProvider timeProvider,
@@ -24,6 +25,7 @@ public sealed class Worker(
         using var timer = new PeriodicTimer(HeartbeatInterval);
         do
         {
+            await syncScheduleCoordinator.TryEnqueueDueRunAsync(stoppingToken);
             var claimed = await runQueueStore.ClaimNextPendingAsync("SyncFactors.Worker", stoppingToken);
             if (claimed is not null)
             {

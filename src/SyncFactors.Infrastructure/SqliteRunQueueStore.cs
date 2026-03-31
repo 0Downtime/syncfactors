@@ -18,6 +18,8 @@ public sealed class SqliteRunQueueStore(SqlitePathResolver pathResolver) : IRunQ
             RequestId: $"runreq-{DateTimeOffset.UtcNow:yyyyMMddHHmmssfff}",
             Mode: "BulkSync",
             DryRun: request.DryRun,
+            RunTrigger: string.IsNullOrWhiteSpace(request.RunTrigger) ? "AdHoc" : request.RunTrigger,
+            RequestedBy: request.RequestedBy,
             Status: "Pending",
             RequestedAt: DateTimeOffset.UtcNow,
             StartedAt: null,
@@ -34,6 +36,8 @@ public sealed class SqliteRunQueueStore(SqlitePathResolver pathResolver) : IRunQ
               request_id,
               mode,
               dry_run,
+              run_trigger,
+              requested_by,
               status,
               requested_at,
               started_at,
@@ -46,6 +50,8 @@ public sealed class SqliteRunQueueStore(SqlitePathResolver pathResolver) : IRunQ
               $requestId,
               $mode,
               $dryRun,
+              $runTrigger,
+              $requestedBy,
               $status,
               $requestedAt,
               NULL,
@@ -90,7 +96,7 @@ public sealed class SqliteRunQueueStore(SqlitePathResolver pathResolver) : IRunQ
             selectCommand.Transaction = (SqliteTransaction)transaction;
             selectCommand.CommandText =
                 """
-                SELECT request_id, mode, dry_run, status, requested_at, started_at, completed_at, run_id, error_message
+                SELECT request_id, mode, dry_run, run_trigger, requested_by, status, requested_at, started_at, completed_at, run_id, error_message
                 FROM run_queue
                 WHERE status = 'Pending'
                 ORDER BY requested_at ASC
@@ -193,6 +199,8 @@ public sealed class SqliteRunQueueStore(SqlitePathResolver pathResolver) : IRunQ
         command.Parameters.AddWithValue("$requestId", request.RequestId);
         command.Parameters.AddWithValue("$mode", request.Mode);
         command.Parameters.AddWithValue("$dryRun", request.DryRun ? 1 : 0);
+        command.Parameters.AddWithValue("$runTrigger", request.RunTrigger);
+        command.Parameters.AddWithValue("$requestedBy", (object?)request.RequestedBy ?? DBNull.Value);
         command.Parameters.AddWithValue("$status", request.Status);
         command.Parameters.AddWithValue("$requestedAt", request.RequestedAt.ToString("O"));
         command.Parameters.AddWithValue("$startedAt", (object?)request.StartedAt?.ToString("O") ?? DBNull.Value);
@@ -205,6 +213,8 @@ public sealed class SqliteRunQueueStore(SqlitePathResolver pathResolver) : IRunQ
             RequestId: reader.GetStringOrDefault("request_id") ?? string.Empty,
             Mode: reader.GetStringOrDefault("mode") ?? "BulkSync",
             DryRun: reader.GetInt32OrDefault("dry_run") != 0,
+            RunTrigger: reader.GetStringOrDefault("run_trigger") ?? "AdHoc",
+            RequestedBy: reader.GetStringOrDefault("requested_by"),
             Status: reader.GetStringOrDefault("status") ?? "Pending",
             RequestedAt: DateTimeOffset.Parse(reader.GetStringOrDefault("requested_at") ?? DateTimeOffset.UtcNow.ToString("O")),
             StartedAt: ParseDate(reader.GetStringOrDefault("started_at")),

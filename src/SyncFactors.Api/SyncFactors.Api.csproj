@@ -10,6 +10,7 @@
     <Compile Include="Pages\Index.cshtml.cs" />
     <Compile Include="Pages\Preview.cshtml.cs" />
     <Compile Include="Pages\Runs\Detail.cshtml.cs" />
+    <Compile Include="Pages\Sync.cshtml.cs" />
     <Content Include="appsettings.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Condition="Exists('appsettings.json')" />
     <Content Include="appsettings.Development.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Condition="Exists('appsettings.Development.json')" />
     <Content Include="config\**" CopyToPublishDirectory="PreserveNewest" Condition="Exists('config')" />

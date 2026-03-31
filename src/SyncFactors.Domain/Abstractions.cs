@@ -84,6 +84,16 @@ public interface IRunRepository
         string? reason,
         string? filter,
         string? entryId,
+        int skip,
+        int take,
+        CancellationToken cancellationToken);
+    Task<int> CountRunEntriesAsync(
+        string runId,
+        string? bucket,
+        string? workerId,
+        string? reason,
+        string? filter,
+        string? entryId,
         CancellationToken cancellationToken);
 }
 
@@ -99,6 +109,14 @@ public interface IRunQueueStore
     Task<bool> HasPendingOrActiveRunAsync(CancellationToken cancellationToken);
     Task CompleteAsync(string requestId, string runId, CancellationToken cancellationToken);
     Task FailAsync(string requestId, string? runId, string errorMessage, CancellationToken cancellationToken);
+}
+
+public interface ISyncScheduleStore
+{
+    Task<SyncScheduleStatus> GetCurrentAsync(CancellationToken cancellationToken);
+    Task<SyncScheduleStatus> UpdateAsync(UpdateSyncScheduleRequest request, CancellationToken cancellationToken);
+    Task<SyncScheduleStatus> RecordSuccessfulEnqueueAsync(DateTimeOffset enqueuedAt, CancellationToken cancellationToken);
+    Task<SyncScheduleStatus> RecordFailedEnqueueAsync(DateTimeOffset attemptedAt, string errorMessage, CancellationToken cancellationToken);
 }
 
 public sealed record AttributeMapping(

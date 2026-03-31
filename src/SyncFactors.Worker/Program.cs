@@ -24,6 +24,7 @@ builder.Services.AddSingleton<IRuntimeStatusStore, SqliteRuntimeStatusStore>();
 builder.Services.AddSingleton<IWorkerHeartbeatStore, SqliteWorkerHeartbeatStore>();
 builder.Services.AddSingleton<IRunRepository, SqliteRunRepository>();
 builder.Services.AddSingleton<IRunQueueStore, SqliteRunQueueStore>();
+builder.Services.AddSingleton<ISyncScheduleStore, SqliteSyncScheduleStore>();
 builder.Services.AddHttpClient<SuccessFactorsWorkerSource>();
 builder.Services.AddTransient<IWorkerSource>(serviceProvider => serviceProvider.GetRequiredService<SuccessFactorsWorkerSource>());
 builder.Services.AddTransient<IDirectoryGateway, ActiveDirectoryGateway>();
@@ -35,6 +36,7 @@ builder.Services.AddTransient<IAttributeDiffService, AttributeDiffService>();
 builder.Services.AddTransient<IWorkerPlanningService, WorkerPlanningService>();
 builder.Services.AddSingleton<IDirectoryMutationCommandBuilder, DirectoryMutationCommandBuilder>();
 builder.Services.AddTransient<BulkRunCoordinator>();
+builder.Services.AddTransient<SyncScheduleCoordinator>();
 builder.Services.AddSingleton<IRunLifecycleService, RunLifecycleService>();
 builder.Services.AddHostedService<Worker>();
 

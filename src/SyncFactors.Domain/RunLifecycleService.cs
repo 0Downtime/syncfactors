@@ -6,7 +6,7 @@ namespace SyncFactors.Domain;
 public interface IRunLifecycleService
 {
     Task ExecutePlannedRunAsync(RunPlan plan, CancellationToken cancellationToken);
-    Task StartRunAsync(string runId, string mode, bool dryRun, int totalWorkers, string? initialAction, CancellationToken cancellationToken);
+    Task StartRunAsync(string runId, string mode, bool dryRun, string runTrigger, string? requestedBy, int totalWorkers, string? initialAction, CancellationToken cancellationToken);
     Task RecordProgressAsync(string runId, string mode, bool dryRun, int processedWorkers, int totalWorkers, string? currentWorkerId, string? lastAction, RunTally tally, CancellationToken cancellationToken);
     Task AppendRunEntryAsync(string runId, RunEntryRecord entry, CancellationToken cancellationToken);
     Task CompleteRunAsync(string runId, string mode, bool dryRun, int totalWorkers, RunTally tally, JsonElement report, DateTimeOffset startedAt, CancellationToken cancellationToken);
@@ -78,7 +78,7 @@ public sealed class RunLifecycleService(
             cancellationToken);
     }
 
-    public async Task StartRunAsync(string runId, string mode, bool dryRun, int totalWorkers, string? initialAction, CancellationToken cancellationToken)
+    public async Task StartRunAsync(string runId, string mode, bool dryRun, string runTrigger, string? requestedBy, int totalWorkers, string? initialAction, CancellationToken cancellationToken)
     {
         var startedAt = DateTimeOffset.UtcNow;
         await runRepository.SaveRunAsync(
@@ -111,10 +111,14 @@ public sealed class RunLifecycleService(
                       "kind": "bulkRun",
                       "runId": "{{runId}}",
                       "mode": "{{mode}}",
+                      "runTrigger": "{{runTrigger}}",
+                      "requestedBy": {{ToJsonString(requestedBy)}},
                       "dryRun": {{(dryRun ? "true" : "false")}},
                       "startedAt": "{{startedAt:O}}"
                     }
-                    """)),
+                    """),
+                RunTrigger: runTrigger,
+                RequestedBy: requestedBy),
             cancellationToken);
 
         await runtimeStatusStore.SaveAsync(
@@ -169,7 +173,9 @@ public sealed class RunLifecycleService(
                 GuardrailFailures: tally.GuardrailFailures,
                 ManualReview: tally.ManualReview,
                 Unchanged: tally.Unchanged,
-                Report: existing?.Report ?? ParseJson("""{"kind":"bulkRun"}""")),
+                Report: existing?.Report ?? ParseJson("""{"kind":"bulkRun"}"""),
+                RunTrigger: existing?.Run.RunTrigger ?? "AdHoc",
+                RequestedBy: existing?.Run.RequestedBy),
             cancellationToken);
 
         await runtimeStatusStore.SaveAsync(
@@ -193,6 +199,7 @@ public sealed class RunLifecycleService(
     public async Task CompleteRunAsync(string runId, string mode, bool dryRun, int totalWorkers, RunTally tally, JsonElement report, DateTimeOffset startedAt, CancellationToken cancellationToken)
     {
         var completedAt = DateTimeOffset.UtcNow;
+        var existing = await runRepository.GetRunAsync(runId, cancellationToken);
         await runRepository.SaveRunAsync(
             new RunRecord(
                 RunId: runId,
@@ -217,7 +224,9 @@ public sealed class RunLifecycleService(
                 GuardrailFailures: tally.GuardrailFailures,
                 ManualReview: tally.ManualReview,
                 Unchanged: tally.Unchanged,
-                Report: report),
+                Report: report,
+                RunTrigger: existing?.Run.RunTrigger ?? "AdHoc",
+                RequestedBy: existing?.Run.RequestedBy),
             cancellationToken);
 
         await runtimeStatusStore.SaveAsync(
@@ -241,6 +250,7 @@ public sealed class RunLifecycleService(
     public async Task FailRunAsync(string runId, string mode, bool dryRun, int processedWorkers, int totalWorkers, string? currentWorkerId, string errorMessage, RunTally tally, JsonElement report, DateTimeOffset startedAt, CancellationToken cancellationToken)
     {
         var completedAt = DateTimeOffset.UtcNow;
+        var existing = await runRepository.GetRunAsync(runId, cancellationToken);
         await runRepository.SaveRunAsync(
             new RunRecord(
                 RunId: runId,
@@ -265,7 +275,9 @@ public sealed class RunLifecycleService(
                 GuardrailFailures: tally.GuardrailFailures,
                 ManualReview: tally.ManualReview,
                 Unchanged: tally.Unchanged,
-                Report: report),
+                Report: report,
+                RunTrigger: existing?.Run.RunTrigger ?? "AdHoc",
+                RequestedBy: existing?.Run.RequestedBy),
             cancellationToken);
 
         await runtimeStatusStore.SaveAsync(
@@ -316,13 +328,22 @@ public sealed class RunLifecycleService(
             GuardrailFailures: plan.Tally.GuardrailFailures,
             ManualReview: plan.Tally.ManualReview,
             Unchanged: plan.Tally.Unchanged,
-            Report: plan.Report);
+            Report: plan.Report,
+            RunTrigger: "AdHoc",
+            RequestedBy: null);
     }
 
     private static JsonElement ParseJson(string json)
     {
         using var document = JsonDocument.Parse(json);
         return document.RootElement.Clone();
+    }
+
+    private static string ToJsonString(string? value)
+    {
+        return value is null
+            ? "null"
+            : JsonSerializer.Serialize(value);
     }
 }
 
