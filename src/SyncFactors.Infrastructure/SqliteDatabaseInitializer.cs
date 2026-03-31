@@ -305,12 +305,12 @@ public sealed class SqliteDatabaseInitializer(SqlitePathResolver pathResolver)
             var runColumns = await GetTableColumnsAsync(connection, transaction, "runs", cancellationToken);
             if (!runColumns.Contains("run_trigger"))
             {
-                await ExecuteNonQueryAsync(connection, transaction, "ALTER TABLE runs ADD COLUMN run_trigger TEXT NOT NULL DEFAULT 'AdHoc';", cancellationToken);
+                await AddRunTriggerColumnToRunsAsync(connection, transaction, cancellationToken);
             }
 
             if (!runColumns.Contains("requested_by"))
             {
-                await ExecuteNonQueryAsync(connection, transaction, "ALTER TABLE runs ADD COLUMN requested_by TEXT NULL;", cancellationToken);
+                await AddRequestedByColumnToRunsAsync(connection, transaction, cancellationToken);
             }
         }
 
@@ -320,12 +320,12 @@ public sealed class SqliteDatabaseInitializer(SqlitePathResolver pathResolver)
             var queueColumns = await GetTableColumnsAsync(connection, transaction, "run_queue", cancellationToken);
             if (!queueColumns.Contains("run_trigger"))
             {
-                await ExecuteNonQueryAsync(connection, transaction, "ALTER TABLE run_queue ADD COLUMN run_trigger TEXT NOT NULL DEFAULT 'AdHoc';", cancellationToken);
+                await AddRunTriggerColumnToRunQueueAsync(connection, transaction, cancellationToken);
             }
 
             if (!queueColumns.Contains("requested_by"))
             {
-                await ExecuteNonQueryAsync(connection, transaction, "ALTER TABLE run_queue ADD COLUMN requested_by TEXT NULL;", cancellationToken);
+                await AddRequestedByColumnToRunQueueAsync(connection, transaction, cancellationToken);
             }
         }
 
@@ -376,7 +376,16 @@ public sealed class SqliteDatabaseInitializer(SqlitePathResolver pathResolver)
 
         await using var command = connection.CreateCommand();
         command.Transaction = (SqliteTransaction)transaction;
-        command.CommandText = $"PRAGMA table_info({tableName});";
+        command.CommandText = tableName switch
+        {
+            "runs" => "PRAGMA table_info(runs);",
+            "run_queue" => "PRAGMA table_info(run_queue);",
+            "runtime_status" => "PRAGMA table_info(runtime_status);",
+            "schema_versions" => "PRAGMA table_info(schema_versions);",
+            "sync_schedule" => "PRAGMA table_info(sync_schedule);",
+            "worker_heartbeat" => "PRAGMA table_info(worker_heartbeat);",
+            _ => throw new InvalidOperationException($"Unsupported table name '{tableName}' for schema inspection.")
+        };
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
@@ -471,15 +480,47 @@ public sealed class SqliteDatabaseInitializer(SqlitePathResolver pathResolver)
         await versionCommand.ExecuteNonQueryAsync(cancellationToken);
     }
 
-    private static async Task ExecuteNonQueryAsync(
+    private static async Task AddRunTriggerColumnToRunsAsync(
         SqliteConnection connection,
         DbTransaction transaction,
-        string commandText,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
         command.Transaction = (SqliteTransaction)transaction;
-        command.CommandText = commandText;
+        command.CommandText = "ALTER TABLE runs ADD COLUMN run_trigger TEXT NOT NULL DEFAULT 'AdHoc';";
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task AddRequestedByColumnToRunsAsync(
+        SqliteConnection connection,
+        DbTransaction transaction,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = (SqliteTransaction)transaction;
+        command.CommandText = "ALTER TABLE runs ADD COLUMN requested_by TEXT NULL;";
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task AddRunTriggerColumnToRunQueueAsync(
+        SqliteConnection connection,
+        DbTransaction transaction,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = (SqliteTransaction)transaction;
+        command.CommandText = "ALTER TABLE run_queue ADD COLUMN run_trigger TEXT NOT NULL DEFAULT 'AdHoc';";
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task AddRequestedByColumnToRunQueueAsync(
+        SqliteConnection connection,
+        DbTransaction transaction,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = (SqliteTransaction)transaction;
+        command.CommandText = "ALTER TABLE run_queue ADD COLUMN requested_by TEXT NULL;";
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
