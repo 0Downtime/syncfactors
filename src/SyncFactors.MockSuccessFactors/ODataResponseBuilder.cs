@@ -8,29 +8,35 @@ public sealed class ODataResponseBuilder
         => Build(worker, query, "PerPerson");
 
     public object Build(IReadOnlyList<MockWorkerFixture> workers, ODataQuery query, string entitySet)
+        => Build(workers, query, entitySet, serviceRoot: null);
+
+    public object Build(IReadOnlyList<MockWorkerFixture> workers, ODataQuery query, string entitySet, string? serviceRoot)
     {
         if (string.Equals(entitySet, "EmpJob", StringComparison.OrdinalIgnoreCase))
         {
-            return BuildEmpJob(workers, query);
+            return BuildEmpJob(workers, query, serviceRoot, entitySet);
         }
 
-        return BuildPerPerson(workers, query);
+        return BuildPerPerson(workers, query, serviceRoot, entitySet);
     }
 
     public object Build(MockWorkerFixture? worker, ODataQuery query, string entitySet)
+        => Build(worker, query, entitySet, serviceRoot: null);
+
+    public object Build(MockWorkerFixture? worker, ODataQuery query, string entitySet, string? serviceRoot)
     {
         if (string.Equals(entitySet, "EmpJob", StringComparison.OrdinalIgnoreCase))
         {
-            return BuildEmpJob(worker, query);
+            return BuildEmpJob(worker, query, serviceRoot, entitySet);
         }
 
-        return BuildPerPerson(worker, query);
+        return BuildPerPerson(worker, query, serviceRoot, entitySet);
     }
 
-    private static object BuildPerPerson(MockWorkerFixture? worker, ODataQuery query)
-        => BuildPerPerson(worker is null ? [] : [worker], query);
+    private static object BuildPerPerson(MockWorkerFixture? worker, ODataQuery query, string? serviceRoot, string entitySet)
+        => BuildPerPerson(worker is null ? [] : [worker], query, serviceRoot, entitySet);
 
-    private static object BuildPerPerson(IReadOnlyList<MockWorkerFixture> workers, ODataQuery query)
+    private static object BuildPerPerson(IReadOnlyList<MockWorkerFixture> workers, ODataQuery query, string? serviceRoot, string entitySet)
     {
         var results = ApplyPaging(workers, query)
             .Where(worker => worker.Response?.ForceEmptyResults != true)
@@ -52,7 +58,8 @@ public sealed class ODataResponseBuilder
         {
             ["d"] = new JsonObject
             {
-                ["results"] = resultArray
+                ["results"] = resultArray,
+                ["__next"] = BuildNextPageUrl(serviceRoot, entitySet, query, workers.Count)
             }
         };
     }
@@ -75,10 +82,10 @@ public sealed class ODataResponseBuilder
         return workerNode;
     }
 
-    private static object BuildEmpJob(MockWorkerFixture? worker, ODataQuery query)
-        => BuildEmpJob(worker is null ? [] : [worker], query);
+    private static object BuildEmpJob(MockWorkerFixture? worker, ODataQuery query, string? serviceRoot, string entitySet)
+        => BuildEmpJob(worker is null ? [] : [worker], query, serviceRoot, entitySet);
 
-    private static object BuildEmpJob(IReadOnlyList<MockWorkerFixture> workers, ODataQuery query)
+    private static object BuildEmpJob(IReadOnlyList<MockWorkerFixture> workers, ODataQuery query, string? serviceRoot, string entitySet)
     {
         var results = ApplyPaging(workers, query)
             .Where(worker => worker.Response?.ForceEmptyResults != true)
@@ -100,7 +107,8 @@ public sealed class ODataResponseBuilder
         {
             ["d"] = new JsonObject
             {
-                ["results"] = resultArray
+                ["results"] = resultArray,
+                ["__next"] = BuildNextPageUrl(serviceRoot, entitySet, query, workers.Count)
             }
         };
     }
@@ -612,5 +620,50 @@ public sealed class ODataResponseBuilder
         var skip = Math.Max(0, query.Skip);
         var top = query.Top ?? int.MaxValue;
         return workers.Skip(skip).Take(top);
+    }
+
+    private static string? BuildNextPageUrl(string? serviceRoot, string entitySet, ODataQuery query, int totalWorkers)
+    {
+        if (string.IsNullOrWhiteSpace(serviceRoot) || !string.IsNullOrWhiteSpace(query.WorkerId) || query.Top is null)
+        {
+            return null;
+        }
+
+        var nextSkip = Math.Max(0, query.Skip) + query.Top.Value;
+        if (nextSkip >= totalWorkers)
+        {
+            return null;
+        }
+
+        var parts = new List<string>
+        {
+            "$format=json",
+            $"customPageSize={query.Top.Value}",
+            "paging=snapshot",
+            $"$skiptoken={nextSkip}",
+            $"$select={Uri.EscapeDataString(string.Join(",", query.Select))}"
+        };
+
+        if (!string.IsNullOrWhiteSpace(query.Filter))
+        {
+            parts.Add($"$filter={Uri.EscapeDataString(query.Filter)}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(query.OrderBy))
+        {
+            parts.Add($"$orderby={Uri.EscapeDataString(query.OrderBy)}");
+        }
+
+        if (query.Expand.Count > 0)
+        {
+            parts.Add($"$expand={Uri.EscapeDataString(string.Join(",", query.Expand))}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(query.AsOfDate))
+        {
+            parts.Add($"asOfDate={Uri.EscapeDataString(query.AsOfDate)}");
+        }
+
+        return $"{serviceRoot.TrimEnd('/')}/{entitySet}?{string.Join("&", parts)}";
     }
 }
