@@ -96,27 +96,91 @@ function Stop-LocalProcesses {
     param(
         [Parameter(Mandatory)]
         [string]$Name,
-        [Parameter(Mandatory)]
-        [int[]]$ProcessIds
+        [AllowNull()]
+        [int[]]$ProcessIds = @()
     )
 
-    $targets = $ProcessIds | Sort-Object -Unique
+    $targets = @($ProcessIds | Where-Object { $null -ne $_ } | Sort-Object -Unique)
     if ($targets.Count -eq 0) {
         Write-Host "No running $Name processes found."
         return
     }
 
     Write-Host ("Stopping {0} process(es) for {1}: {2}" -f $targets.Count, $Name, ($targets -join ', ')) -ForegroundColor Yellow
-    foreach ($pid in $targets) {
-        Stop-Process -Id $pid -ErrorAction SilentlyContinue
+    foreach ($processId in $targets) {
+        Stop-Process -Id $processId -ErrorAction SilentlyContinue
     }
 
     Start-Sleep -Milliseconds 750
 
-    foreach ($pid in $targets) {
-        if (Get-Process -Id $pid -ErrorAction SilentlyContinue) {
-            Stop-Process -Id $pid -Force -ErrorAction SilentlyContinue
+    foreach ($processId in $targets) {
+        if (Get-Process -Id $processId -ErrorAction SilentlyContinue) {
+            Stop-Process -Id $processId -Force -ErrorAction SilentlyContinue
         }
+    }
+}
+
+function Close-HostedTerminals {
+    param(
+        [Parameter(Mandatory)]
+        [string[]]$Labels
+    )
+
+    if (-not [OperatingSystem]::IsMacOS()) {
+        return
+    }
+
+    $terminalAppPath = if (Test-Path '/System/Applications/Utilities/Terminal.app') {
+        '/System/Applications/Utilities/Terminal.app'
+    }
+    elseif (Test-Path '/Applications/Utilities/Terminal.app') {
+        '/Applications/Utilities/Terminal.app'
+    }
+    else {
+        $null
+    }
+
+    if ($null -eq $terminalAppPath) {
+        return
+    }
+
+    $script = @'
+on run argv
+    set targetLabel to item 1 of argv
+
+    tell application "Terminal"
+        repeat with currentWindow in windows
+            set shouldCloseWindow to false
+
+            repeat with currentTab in tabs of currentWindow
+                set tabTitle to ""
+                set tabName to ""
+
+                try
+                    set tabTitle to custom title of currentTab
+                end try
+
+                try
+                    set tabName to name of currentTab
+                end try
+
+                if tabTitle is targetLabel or tabName is targetLabel then
+                    set shouldCloseWindow to true
+                    exit repeat
+                end if
+            end repeat
+
+            if shouldCloseWindow then
+                close currentWindow saving no
+                exit repeat
+            end if
+        end repeat
+    end tell
+end run
+'@
+
+    foreach ($label in ($Labels | Sort-Object -Unique)) {
+        $script | & osascript - $label | Out-Null
     }
 }
 
@@ -159,6 +223,16 @@ function Restart-SelectedServices {
             }
         }
     }
+
+    $terminalLabels = $servicesToRestart | ForEach-Object {
+        switch ($_) {
+            'api' { 'SyncFactors .NET API' }
+            'worker' { 'SyncFactors worker' }
+            'mock' { 'SyncFactors mock API' }
+        }
+    }
+
+    Close-HostedTerminals -Labels $terminalLabels
 }
 
 $env:SYNCFACTORS_RUN_PROFILE = $Profile

@@ -44,14 +44,6 @@ public sealed class WorkerPlanningService(
             reviewCaseType = "MissingRequiredSourceAttribute";
             reason = missingSourceAttributes[0].Reason;
         }
-        else if (!string.IsNullOrWhiteSpace(managerId) && string.IsNullOrWhiteSpace(managerDistinguishedName))
-        {
-            bucket = "manualReview";
-            reviewCategory = "Manager";
-            reviewCaseType = "ManagerResolutionFailed";
-            reason = $"Manager {managerId} could not be resolved in Active Directory.";
-        }
-
         var canAutoApply =
             string.Equals(bucket, "creates", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(bucket, "updates", StringComparison.OrdinalIgnoreCase);

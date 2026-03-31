@@ -80,7 +80,7 @@ public sealed class FullSyncRunServiceTests
     }
 
     [Fact]
-    public async Task LaunchAsync_UnresolvedManager_GoesToManualReviewWithoutExecutingMutation()
+    public async Task LaunchAsync_UnresolvedManager_DoesNotBlockMutation()
     {
         var worker = CreateWorker("10001", managerId: "90001");
         var directoryCommandGateway = new CapturingDirectoryCommandGateway();
@@ -96,8 +96,10 @@ public sealed class FullSyncRunServiceTests
             CancellationToken.None);
 
         Assert.Equal("Succeeded", result.Status);
-        Assert.Null(directoryCommandGateway.LastCommand);
-        Assert.Equal("manualReview", runRepository.ReplacedEntries[0].entries.Single().Bucket);
+        Assert.NotNull(directoryCommandGateway.LastCommand);
+        Assert.Equal("90001", directoryCommandGateway.LastCommand!.ManagerId);
+        Assert.Null(directoryCommandGateway.LastCommand.ManagerDistinguishedName);
+        Assert.Equal("creates", runRepository.ReplacedEntries[0].entries.Single().Bucket);
     }
 
     [Fact]

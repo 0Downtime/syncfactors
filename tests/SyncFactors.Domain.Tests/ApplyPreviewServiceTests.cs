@@ -302,6 +302,83 @@ public sealed class ApplyPreviewServiceTests
         Assert.Equal("Acknowledge the real AD sync before applying this preview.", exception.Message);
     }
 
+    [Fact]
+    public async Task ApplyAsync_DoesNotBlockWhenManagerCannotBeResolved()
+    {
+        var worker = new WorkerSnapshot(
+            WorkerId: "10001",
+            PreferredName: "Winnie",
+            LastName: "Sample101",
+            Department: "IT",
+            TargetOu: "OU=LabUsers,DC=example,DC=com",
+            IsPrehire: false,
+            Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["managerId"] = "10004"
+            });
+
+        var preview = new WorkerPreviewResult(
+            ReportPath: null,
+            RunId: "preview-10001-manager-optional",
+            PreviousRunId: null,
+            Fingerprint: "fingerprint-manager-optional",
+            Mode: "Preview",
+            Status: "Planned",
+            ErrorMessage: null,
+            ArtifactType: "WorkerPreview",
+            SuccessFactorsAuth: "NativeScaffold",
+            WorkerId: worker.WorkerId,
+            Buckets: ["creates"],
+            MatchedExistingUser: false,
+            ReviewCategory: null,
+            ReviewCaseType: null,
+            Reason: null,
+            OperatorActionSummary: null,
+            SamAccountName: "10001",
+            ManagerDistinguishedName: null,
+            TargetOu: worker.TargetOu,
+            CurrentDistinguishedName: null,
+            CurrentEnabled: null,
+            ProposedEnable: true,
+            OperationSummary: null,
+            DiffRows:
+            [
+                new DiffRow("UserPrincipalName", "resolved email local-part", "(unset)", "preview.email@spireenergy.com", true),
+                new DiffRow("mail", "resolved email local-part", "(unset)", "preview.email@spireenergy.com", true)
+            ],
+            SourceAttributes: [],
+            UsedSourceAttributes: [],
+            UnusedSourceAttributes: [],
+            MissingSourceAttributes: [],
+            Entries:
+            [
+                new WorkerPreviewEntry(
+                    Bucket: "creates",
+                    Item: ParseJson("""{"managerRequired":true}"""))
+            ]);
+
+        var directoryCommandGateway = new CapturingDirectoryCommandGateway();
+        var service = new ApplyPreviewService(
+            new StubWorkerSource(worker),
+            new DirectoryMutationCommandBuilder(),
+            directoryCommandGateway,
+            new StubRunRepository(preview),
+            new StubRuntimeStatusStore(),
+            NullLogger<ApplyPreviewService>.Instance);
+
+        await service.ApplyAsync(
+            new ApplyPreviewRequest(
+                WorkerId: worker.WorkerId,
+                PreviewRunId: preview.RunId!,
+                PreviewFingerprint: preview.Fingerprint,
+                AcknowledgeRealSync: true),
+            CancellationToken.None);
+
+        var command = Assert.IsType<DirectoryMutationCommand>(directoryCommandGateway.LastCommand);
+        Assert.Equal("10004", command.ManagerId);
+        Assert.Null(command.ManagerDistinguishedName);
+    }
+
     private sealed class StubWorkerSource(WorkerSnapshot worker) : IWorkerSource
     {
         public Task<WorkerSnapshot?> GetWorkerAsync(string workerId, CancellationToken cancellationToken)
@@ -547,5 +624,11 @@ public sealed class ApplyPreviewServiceTests
             SavedStatuses.Add(status);
             return Task.CompletedTask;
         }
+    }
+
+    private static System.Text.Json.JsonElement ParseJson(string json)
+    {
+        using var document = System.Text.Json.JsonDocument.Parse(json);
+        return document.RootElement.Clone();
     }
 }

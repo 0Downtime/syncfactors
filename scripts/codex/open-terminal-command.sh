@@ -35,32 +35,33 @@ join_command() {
   printf '%s' "${joined}"
 }
 
-escape_for_applescript() {
-  local value="$1"
-  value="${value//\\/\\\\}"
-  value="${value//\"/\\\"}"
-  printf '%s' "${value}"
-}
-
 repo_root_q="$(quote_for_shell "${repo_root}")"
 label_q="$(quote_for_shell "${label}")"
 command_q="$(join_command "$@")"
 
-child_command="cd ${repo_root_q} && printf 'Starting %s\\n\\n' ${label_q} && ${command_q}; exit_code=\$?; printf '\\n[%s] exited with status %s.\\n' ${label_q} \"\$exit_code\"; exec \${SHELL:-/bin/zsh} -l"
+child_command="cd ${repo_root_q} && printf '\033]0;%s\007' ${label_q} && printf 'Starting %s\\n\\n' ${label_q} && ${command_q}; exit_code=\$?; printf '\\n[%s] exited with status %s.\\n' ${label_q} \"\$exit_code\"; exec \${SHELL:-/bin/zsh} -l"
 
-if [[ -d "/Applications/Ghostty.app" ]] && command -v open >/dev/null 2>&1; then
-  open -na Ghostty.app --args -e /bin/zsh -lc "${child_command}"
+if [[ -d "/System/Applications/Utilities/Terminal.app" || -d "/Applications/Utilities/Terminal.app" ]]; then
+  osascript - "${label}" "${child_command}" <<'EOF'
+on run argv
+  set targetLabel to item 1 of argv
+  set shellCommand to item 2 of argv
+
+  tell application "Terminal"
+    activate
+    do script shellCommand
+    delay 0.2
+    try
+      set custom title of selected tab of front window to targetLabel
+    end try
+  end tell
+end run
+EOF
   exit 0
 fi
 
-if [[ -d "/System/Applications/Utilities/Terminal.app" || -d "/Applications/Utilities/Terminal.app" ]]; then
-  child_command_applescript="$(escape_for_applescript "${child_command}")"
-  osascript <<EOF
-tell application "Terminal"
-  activate
-  do script "${child_command_applescript}"
-end tell
-EOF
+if [[ -d "/Applications/Ghostty.app" ]] && command -v open >/dev/null 2>&1; then
+  open -na Ghostty.app --args -e /bin/zsh -lc "${child_command}"
   exit 0
 fi
 
