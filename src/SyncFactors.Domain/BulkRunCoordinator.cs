@@ -7,6 +7,7 @@ namespace SyncFactors.Domain;
 
 public sealed class BulkRunCoordinator(
     IWorkerSource workerSource,
+    IDeltaSyncService deltaSyncService,
     IRunQueueStore runQueueStore,
     IWorkerPlanningService planningService,
     IDirectoryMutationCommandBuilder mutationCommandBuilder,
@@ -24,7 +25,7 @@ public sealed class BulkRunCoordinator(
         var workers = new List<WorkerSnapshot>();
         try
         {
-            await foreach (var worker in workerSource.ListWorkersAsync(runCancellationToken))
+            await foreach (var worker in workerSource.ListWorkersAsync(WorkerListingMode.DeltaPreferred, runCancellationToken))
             {
                 workers.Add(worker);
             }
@@ -211,6 +212,11 @@ public sealed class BulkRunCoordinator(
                 startedAt: startedAt,
                 cancellationToken);
 
+            if (!request.DryRun && ShouldAdvanceDeltaCheckpoint(tally))
+            {
+                await deltaSyncService.RecordSuccessfulRunAsync(cancellationToken);
+            }
+
             return runId;
         }
         catch (OperationCanceledException)
@@ -324,6 +330,13 @@ public sealed class BulkRunCoordinator(
             TargetOu: plan.Worker.TargetOu,
             FromOu: plan.DirectoryUser.DistinguishedName,
             ToOu: plan.Worker.TargetOu);
+    }
+
+    private static bool ShouldAdvanceDeltaCheckpoint(RunTally tally)
+    {
+        return tally.Conflicts == 0 &&
+               tally.GuardrailFailures == 0 &&
+               tally.ManualReview == 0;
     }
 
     private static string ResolveExecutionBucket(PlannedWorkerAction plan)

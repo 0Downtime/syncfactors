@@ -17,7 +17,33 @@ public interface IWorkerPreviewPlanner
 public interface IWorkerSource
 {
     Task<WorkerSnapshot?> GetWorkerAsync(string workerId, CancellationToken cancellationToken);
-    IAsyncEnumerable<WorkerSnapshot> ListWorkersAsync(CancellationToken cancellationToken);
+    IAsyncEnumerable<WorkerSnapshot> ListWorkersAsync(WorkerListingMode mode, CancellationToken cancellationToken);
+}
+
+public enum WorkerListingMode
+{
+    Full = 0,
+    DeltaPreferred = 1
+}
+
+public interface IDeltaSyncService
+{
+    Task<DeltaSyncWindow> GetWindowAsync(CancellationToken cancellationToken);
+    Task RecordSuccessfulRunAsync(CancellationToken cancellationToken);
+}
+
+public sealed record DeltaSyncWindow(
+    bool Enabled,
+    bool HasCheckpoint,
+    string? Filter,
+    string DeltaField,
+    DateTimeOffset? CheckpointUtc,
+    DateTimeOffset? EffectiveSinceUtc);
+    
+public interface IDeltaSyncStateStore
+{
+    Task<DateTimeOffset?> GetCheckpointAsync(string syncKey, CancellationToken cancellationToken);
+    Task SaveCheckpointAsync(string syncKey, DateTimeOffset checkpointUtc, CancellationToken cancellationToken);
 }
 
 public interface IDirectoryGateway

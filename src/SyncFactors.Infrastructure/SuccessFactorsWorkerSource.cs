@@ -11,6 +11,7 @@ namespace SyncFactors.Infrastructure;
 public sealed class SuccessFactorsWorkerSource(
     HttpClient httpClient,
     SyncFactorsConfigurationLoader configLoader,
+    IDeltaSyncService deltaSyncService,
     ScaffoldWorkerSource fallbackSource,
     ILogger<SuccessFactorsWorkerSource> logger) : IWorkerSource
 {
@@ -74,30 +75,31 @@ public sealed class SuccessFactorsWorkerSource(
         return await fallbackSource.GetWorkerAsync(workerId, cancellationToken);
     }
 
-    public async IAsyncEnumerable<WorkerSnapshot> ListWorkersAsync([System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
+    public async IAsyncEnumerable<WorkerSnapshot> ListWorkersAsync(WorkerListingMode mode, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
     {
         var config = configLoader.GetSyncConfig();
         var query = config.SuccessFactors.PreviewQuery ?? config.SuccessFactors.Query;
-        var pageSize = Math.Max(1, query.PageSize);
-        var firstRequestUri = BuildServerPagedListRequestUri(config, query, pageSize);
+        var effectiveQuery = await BuildEffectiveListQueryAsync(query, mode, cancellationToken);
+        var pageSize = Math.Max(1, effectiveQuery.PageSize);
+        var firstRequestUri = BuildServerPagedListRequestUri(config, effectiveQuery, pageSize);
         SuccessFactorsResponsePayload? firstPayload = null;
 
         try
         {
-            firstPayload = await ExecuteListRequestAsync(query, firstRequestUri, cancellationToken);
+            firstPayload = await ExecuteListRequestAsync(effectiveQuery, firstRequestUri, cancellationToken);
         }
         catch (InvalidOperationException ex) when (IsServerPagingCompatibilityFailure(ex, firstRequestUri))
         {
             logger.LogWarning(
                 "SuccessFactors rejected server-side pagination parameters. Falling back to legacy offset paging. EntitySet={EntitySet} PageSize={PageSize}",
-                query.EntitySet,
+                effectiveQuery.EntitySet,
                 pageSize);
             firstPayload = null;
         }
 
         if (firstPayload is not null)
         {
-            await foreach (var worker in ListWorkersServerPagedAsync(config, query, firstPayload, pageSize, cancellationToken))
+            await foreach (var worker in ListWorkersServerPagedAsync(config, effectiveQuery, firstPayload, pageSize, cancellationToken))
             {
                 yield return worker;
             }
@@ -105,10 +107,47 @@ public sealed class SuccessFactorsWorkerSource(
             yield break;
         }
 
-        await foreach (var worker in ListWorkersLegacyPagedAsync(config, query, pageSize, cancellationToken))
+        await foreach (var worker in ListWorkersLegacyPagedAsync(config, effectiveQuery, pageSize, cancellationToken))
         {
             yield return worker;
         }
+    }
+
+    private async Task<SuccessFactorsQueryConfig> BuildEffectiveListQueryAsync(
+        SuccessFactorsQueryConfig query,
+        WorkerListingMode mode,
+        CancellationToken cancellationToken)
+    {
+        if (mode != WorkerListingMode.DeltaPreferred)
+        {
+            return query;
+        }
+
+        var deltaWindow = await deltaSyncService.GetWindowAsync(cancellationToken);
+        if (!deltaWindow.Enabled)
+        {
+            return query;
+        }
+
+        if (!deltaWindow.HasCheckpoint || string.IsNullOrWhiteSpace(deltaWindow.Filter))
+        {
+            logger.LogInformation(
+                "Listing workers with a full scan because no delta checkpoint is available yet. EntitySet={EntitySet} DeltaField={DeltaField}",
+                query.EntitySet,
+                deltaWindow.DeltaField);
+            return query;
+        }
+
+        logger.LogInformation(
+            "Listing workers using SuccessFactors delta sync. EntitySet={EntitySet} DeltaField={DeltaField} CheckpointUtc={CheckpointUtc} EffectiveSinceUtc={EffectiveSinceUtc}",
+            query.EntitySet,
+            deltaWindow.DeltaField,
+            deltaWindow.CheckpointUtc,
+            deltaWindow.EffectiveSinceUtc);
+        return query with
+        {
+            BaseFilter = CombineFilters(query.BaseFilter, deltaWindow.Filter)
+        };
     }
 
     private async IAsyncEnumerable<WorkerSnapshot> ListWorkersServerPagedAsync(
@@ -778,6 +817,16 @@ public sealed class SuccessFactorsWorkerSource(
             TargetOu: config.Ad.DefaultActiveOu,
             IsPrehire: IsPrehire(startDate, config.Sync.EnableBeforeStartDays),
             Attributes: BuildAttributes(worker, personalInfo, employment, jobInfo));
+    }
+
+    private static string CombineFilters(string? baseFilter, string deltaFilter)
+    {
+        if (string.IsNullOrWhiteSpace(baseFilter))
+        {
+            return deltaFilter;
+        }
+
+        return $"({baseFilter}) and ({deltaFilter})";
     }
 
     private async Task<SuccessFactorsResponsePayload> ExecuteListRequestAsync(
