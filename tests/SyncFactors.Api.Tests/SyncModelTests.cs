@@ -143,6 +143,7 @@ public sealed class SyncModelTests
                         GuardrailFailures: 0,
                         ManualReview: 0,
                         Unchanged: 0,
+                        SyncScope: "Delta",
                         RunTrigger: "AdHoc",
                         RequestedBy: "Sync page")
                 ],

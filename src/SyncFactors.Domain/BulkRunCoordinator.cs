@@ -22,6 +22,7 @@ public sealed class BulkRunCoordinator(
         using var runCancellationSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         var runCancellationToken = runCancellationSource.Token;
         var cancellationMonitor = MonitorCancellationAsync(request.RequestId, runCancellationSource, cancellationToken);
+        var syncScope = await DetermineSyncScopeAsync(cancellationToken);
         var workers = new List<WorkerSnapshot>();
         try
         {
@@ -208,7 +209,7 @@ public sealed class BulkRunCoordinator(
                 dryRun: request.DryRun,
                 totalWorkers: totalWorkers,
                 tally: tally,
-                report: BuildReport(runId, request, tally, totalWorkers, startedAt),
+                report: BuildReport(runId, request, tally, totalWorkers, startedAt, syncScope),
                 startedAt: startedAt,
                 cancellationToken);
 
@@ -242,7 +243,7 @@ public sealed class BulkRunCoordinator(
                     currentWorkerId: null,
                     reason: "Run canceled by operator.",
                     tally: tally,
-                    report: BuildReport(runId, request, tally, totalWorkers, startedAt),
+                    report: BuildReport(runId, request, tally, totalWorkers, startedAt, syncScope),
                     startedAt: startedAt,
                     cancellationToken);
                 throw new RunCanceledException(runId, "Run canceled by operator.");
@@ -270,7 +271,7 @@ public sealed class BulkRunCoordinator(
                 currentWorkerId: null,
                 errorMessage: ex.Message,
                 tally: tally,
-                report: BuildReport(runId, request, tally, totalWorkers, startedAt),
+                report: BuildReport(runId, request, tally, totalWorkers, startedAt, syncScope),
                 startedAt: startedAt,
                 cancellationToken);
             throw;
@@ -339,6 +340,17 @@ public sealed class BulkRunCoordinator(
                tally.ManualReview == 0;
     }
 
+    private async Task<string> DetermineSyncScopeAsync(CancellationToken cancellationToken)
+    {
+        var deltaWindow = await deltaSyncService.GetWindowAsync(cancellationToken);
+        if (!deltaWindow.Enabled || !deltaWindow.HasCheckpoint || string.IsNullOrWhiteSpace(deltaWindow.Filter))
+        {
+            return "Bulk full scan";
+        }
+
+        return "Delta";
+    }
+
     private static string ResolveExecutionBucket(PlannedWorkerAction plan)
     {
         return string.Equals(plan.Bucket, "updates", StringComparison.OrdinalIgnoreCase) &&
@@ -382,12 +394,13 @@ public sealed class BulkRunCoordinator(
             """);
     }
 
-    private static JsonElement BuildReport(string runId, RunQueueRequest request, RunTally tally, int totalWorkers, DateTimeOffset startedAt)
+    private static JsonElement BuildReport(string runId, RunQueueRequest request, RunTally tally, int totalWorkers, DateTimeOffset startedAt, string syncScope)
     {
         return ParseJson(
             $$"""
             {
               "kind": "bulkRun",
+              "syncScope": "{{Escape(syncScope)}}",
               "runId": "{{runId}}",
               "requestId": "{{request.RequestId}}",
               "mode": "{{request.Mode}}",

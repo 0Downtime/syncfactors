@@ -118,6 +118,7 @@
                         <th>Started</th>
                         <th>Trigger</th>
                         <th>Status</th>
+                        <th>Scope</th>
                         <th>Dry Run</th>
                         <th>Workers</th>
                         <th>Requested By</th>
@@ -131,6 +132,7 @@
                         <td>@run.StartedAt.ToString("u")</td>
                         <td>@run.RunTrigger</td>
                         <td><span class="badge @StatusClass(run.Status)">@run.Status</span></td>
+                        <td>@run.SyncScope</td>
                         <td>@(run.DryRun ? "Yes" : "No")</td>
                         <td>@run.TotalWorkers</td>
                         <td>@(run.RequestedBy ?? "n/a")</td>
