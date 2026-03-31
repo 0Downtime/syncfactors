@@ -452,6 +452,10 @@ a:focus-visible {
   align-items: start;
 }
 
+.panel-span-full {
+  grid-column: 1 / -1;
+}
+
 .run-health-stack,
 .source-confidence-stack,
 .risk-list {
