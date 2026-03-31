@@ -57,7 +57,57 @@ function Get-ListeningProcessIds {
         [string]$Port
     )
 
-    $lines = @( & lsof "-nP" "-iTCP:$Port" "-sTCP:LISTEN" "-t" 2>$null )
+    if ([OperatingSystem]::IsWindows()) {
+        try {
+            $netstatLines = @( & netstat '-ano' '-p' 'tcp' 2>$null )
+        }
+        catch {
+            return @()
+        }
+
+        $matches = foreach ($line in $netstatLines) {
+            if ([string]::IsNullOrWhiteSpace($line)) {
+                continue
+            }
+
+            $trimmed = $line.Trim()
+            if (-not $trimmed.Contains('LISTENING', [StringComparison]::OrdinalIgnoreCase)) {
+                continue
+            }
+
+            $columns = $trimmed -split '\s+'
+            if ($columns.Length -lt 5) {
+                continue
+            }
+
+            $localAddress = $columns[1]
+            $state = $columns[3]
+            $processId = $columns[4]
+            if (-not $state.Equals('LISTENING', [StringComparison]::OrdinalIgnoreCase)) {
+                continue
+            }
+
+            $separatorIndex = $localAddress.LastIndexOf(':')
+            if ($separatorIndex -lt 0) {
+                continue
+            }
+
+            $localPort = $localAddress.Substring($separatorIndex + 1)
+            if ($localPort -eq $Port) {
+                [int]$processId
+            }
+        }
+
+        return $matches | Sort-Object -Unique
+    }
+
+    try {
+        $lines = @( & lsof "-nP" "-iTCP:$Port" "-sTCP:LISTEN" "-t" 2>$null )
+    }
+    catch {
+        return @()
+    }
+
     return $lines |
         Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
         ForEach-Object { [int]$_.Trim() } |
@@ -70,7 +120,41 @@ function Get-ProcessIdsByCommandPattern {
         [string[]]$Patterns
     )
 
-    $lines = @( & ps "-ax" "-o" "pid=" "-o" "command=" 2>$null )
+    if ([OperatingSystem]::IsWindows()) {
+        $getCimInstance = Get-Command 'Get-CimInstance' -ErrorAction SilentlyContinue
+        if ($null -eq $getCimInstance) {
+            Write-Warning 'Get-CimInstance is unavailable; command-line-based restart matching may be incomplete on Windows.'
+            return @()
+        }
+
+        try {
+            $processes = @( Get-CimInstance -ClassName Win32_Process -ErrorAction SilentlyContinue )
+        }
+        catch {
+            return @()
+        }
+
+        $matches = foreach ($process in $processes) {
+            $command = $process.CommandLine
+            if ([string]::IsNullOrWhiteSpace($command)) {
+                continue
+            }
+
+            if ($Patterns | Where-Object { $command.Contains($_, [StringComparison]::OrdinalIgnoreCase) }) {
+                [int]$process.ProcessId
+            }
+        }
+
+        return $matches | Sort-Object -Unique
+    }
+
+    try {
+        $lines = @( & ps "-ax" "-o" "pid=" "-o" "command=" 2>$null )
+    }
+    catch {
+        return @()
+    }
+
     $matches = foreach ($line in $lines) {
         if ([string]::IsNullOrWhiteSpace($line)) {
             continue
