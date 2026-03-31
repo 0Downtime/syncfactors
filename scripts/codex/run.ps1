@@ -1,17 +1,53 @@
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory)]
     [ValidateSet('api', 'worker', 'mock', 'stack')]
     [string]$Service,
     [ValidateSet('mock', 'real')]
     [string]$Profile,
-    [switch]$SkipBuild
+    [switch]$SkipBuild,
+    [Alias('h')]
+    [switch]$Help
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+
+function Show-Usage {
+    @'
+Usage:
+  pwsh ./scripts/codex/run.ps1 -Service <api|worker|mock|stack> [-Profile <mock|real>] [-SkipBuild]
+  pwsh ./scripts/codex/run.ps1 -Help
+
+Services:
+  api      Start the SyncFactors .NET API.
+  worker   Start the SyncFactors worker service.
+  mock     Start the mock SuccessFactors API.
+  stack    Start the full local stack in separate terminals.
+
+Options:
+  -Profile <mock|real>  Select the run profile. Defaults to the worktree environment.
+  -SkipBuild            Skip the solution build step before starting the selected service.
+  -Help                 Show this help text.
+
+Examples:
+  pwsh ./scripts/codex/run.ps1 -Service api
+  pwsh ./scripts/codex/run.ps1 -Service worker -Profile real -SkipBuild
+  pwsh ./scripts/codex/run.ps1 -Service stack -Profile mock
+'@ | Write-Host
+}
+
+if ($Help) {
+    Show-Usage
+    exit 0
+}
+
+if (-not $PSBoundParameters.ContainsKey('Service')) {
+    Show-Usage
+    throw "The -Service parameter is required unless -Help is specified."
+}
+
 . (Join-Path $scriptDir 'Load-WorktreeEnv.ps1')
 . (Join-Path $scriptDir '..' 'Start-SyncFactorsCommon.ps1')
 

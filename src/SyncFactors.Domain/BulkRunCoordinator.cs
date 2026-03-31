@@ -26,16 +26,24 @@ public sealed class BulkRunCoordinator(
         var runId = $"bulk-{timeProvider.GetUtcNow():yyyyMMddHHmmssfff}";
         var startedAt = timeProvider.GetUtcNow();
         var totalWorkers = workers.Count;
+        logger.LogInformation(
+            "Starting bulk run. RunId={RunId} Trigger={RunTrigger} DryRun={DryRun} RequestedBy={RequestedBy} Workers={Workers}",
+            runId,
+            request.RunTrigger,
+            request.DryRun,
+            request.RequestedBy,
+            totalWorkers);
         var channel = Channel.CreateUnbounded<WorkerRunResult>();
         var tally = new RunTally(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
         var processedWorkers = 0;
         var createCount = 0;
-        var operationLock = new object();
 
         await runLifecycleService.StartRunAsync(
             runId,
             mode: "BulkSync",
             dryRun: request.DryRun,
+            runTrigger: request.RunTrigger,
+            requestedBy: request.RequestedBy,
             totalWorkers: totalWorkers,
             initialAction: $"Executing queued request {request.RequestId}",
             cancellationToken);
@@ -84,71 +92,93 @@ public sealed class BulkRunCoordinator(
                 },
                 async (worker, ct) =>
                 {
-                    var plan = await planningService.PlanAsync(worker, logPath: null, ct);
-                    var bucket = plan.Bucket;
-                    string? reason = plan.Reason;
-                    string? action = null;
-                    var applied = false;
-                    var succeeded = true;
-
-                    if (plan.CanAutoApply && string.Equals(bucket, "creates", StringComparison.OrdinalIgnoreCase))
+                    try
                     {
-                        var nextCreateCount = Interlocked.Increment(ref createCount);
-                        if (nextCreateCount > settings.MaxCreatesPerRun)
+                        var plan = await planningService.PlanAsync(worker, logPath: null, ct);
+                        var bucket = plan.Bucket;
+                        string? reason = plan.Reason;
+                        string? action = null;
+                        var applied = false;
+                        var succeeded = true;
+
+                        if (plan.CanAutoApply && string.Equals(bucket, "creates", StringComparison.OrdinalIgnoreCase))
                         {
-                            bucket = "guardrailFailures";
-                            reason = $"Create guardrail exceeded. MaxCreatesPerRun={settings.MaxCreatesPerRun}.";
-                        }
-                    }
-
-                    if (plan.CanAutoApply && string.Equals(bucket, "updates", StringComparison.OrdinalIgnoreCase))
-                    {
-                        action = "UpdateUser";
-                    }
-                    else if (plan.CanAutoApply && string.Equals(bucket, "creates", StringComparison.OrdinalIgnoreCase))
-                    {
-                        action = "CreateUser";
-                    }
-
-                    if (!request.DryRun && action is not null && (string.Equals(bucket, "creates", StringComparison.OrdinalIgnoreCase) || string.Equals(bucket, "updates", StringComparison.OrdinalIgnoreCase)))
-                    {
-                        try
-                        {
-                            var command = mutationCommandBuilder.Build(plan);
-                            var result = await directoryCommandGateway.ExecuteAsync(command, ct);
-                            applied = true;
-                            succeeded = result.Succeeded;
-                            reason = result.Message;
-                            if (!result.Succeeded)
+                            var nextCreateCount = Interlocked.Increment(ref createCount);
+                            if (nextCreateCount > settings.MaxCreatesPerRun)
                             {
-                                bucket = "conflicts";
+                                bucket = "guardrailFailures";
+                                reason = $"Create guardrail exceeded. MaxCreatesPerRun={settings.MaxCreatesPerRun}.";
                             }
                         }
-                        catch (Exception ex)
-                        {
-                            applied = true;
-                            succeeded = false;
-                            bucket = "conflicts";
-                            reason = ex.Message;
-                        }
-                    }
 
-                    var item = BuildEntryItem(plan, request.DryRun, bucket, action, applied, succeeded, reason);
-                    await channel.Writer.WriteAsync(
-                        new WorkerRunResult(
-                            WorkerId: worker.WorkerId,
-                            Bucket: bucket,
-                            SamAccountName: plan.Identity.SamAccountName,
-                            Reason: reason,
-                            ReviewCategory: plan.ReviewCategory,
-                            ReviewCaseType: plan.ReviewCaseType,
-                            Action: action,
-                            Applied: applied,
-                            Succeeded: succeeded,
-                            OperationSummary: BuildOperationSummary(plan, action, bucket),
-                            DiffRows: plan.AttributeChanges.Select(change => new DiffRow(change.Attribute, change.Source, change.Before, change.After, change.Changed)).ToArray(),
-                            Item: item),
-                        ct);
+                        if (plan.CanAutoApply && string.Equals(bucket, "updates", StringComparison.OrdinalIgnoreCase))
+                        {
+                            action = "UpdateUser";
+                        }
+                        else if (plan.CanAutoApply && string.Equals(bucket, "creates", StringComparison.OrdinalIgnoreCase))
+                        {
+                            action = "CreateUser";
+                        }
+
+                        if (!request.DryRun && action is not null && (string.Equals(bucket, "creates", StringComparison.OrdinalIgnoreCase) || string.Equals(bucket, "updates", StringComparison.OrdinalIgnoreCase)))
+                        {
+                            try
+                            {
+                                var command = mutationCommandBuilder.Build(plan);
+                                var result = await directoryCommandGateway.ExecuteAsync(command, ct);
+                                applied = true;
+                                succeeded = result.Succeeded;
+                                reason = result.Message;
+                                if (!result.Succeeded)
+                                {
+                                    bucket = "conflicts";
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                applied = true;
+                                succeeded = false;
+                                bucket = "conflicts";
+                                reason = ex.Message;
+                            }
+                        }
+
+                        var item = BuildEntryItem(plan, request.DryRun, bucket, action, applied, succeeded, reason);
+                        await channel.Writer.WriteAsync(
+                            new WorkerRunResult(
+                                WorkerId: worker.WorkerId,
+                                Bucket: bucket,
+                                SamAccountName: plan.Identity.SamAccountName,
+                                Reason: reason,
+                                ReviewCategory: plan.ReviewCategory,
+                                ReviewCaseType: plan.ReviewCaseType,
+                                Action: action,
+                                Applied: applied,
+                                Succeeded: succeeded,
+                                OperationSummary: BuildOperationSummary(plan, action, bucket),
+                                DiffRows: plan.AttributeChanges.Select(change => new DiffRow(change.Attribute, change.Source, change.Before, change.After, change.Changed)).ToArray(),
+                                Item: item),
+                            ct);
+                    }
+                    catch (Exception ex)
+                    {
+                        logger.LogError(ex, "Worker planning failed. WorkerId={WorkerId}", worker.WorkerId);
+                        await channel.Writer.WriteAsync(
+                            new WorkerRunResult(
+                                WorkerId: worker.WorkerId,
+                                Bucket: "conflicts",
+                                SamAccountName: null,
+                                Reason: ex.Message,
+                                ReviewCategory: "ExternalSystem",
+                                ReviewCaseType: "WorkerPlanningFailed",
+                                Action: null,
+                                Applied: false,
+                                Succeeded: false,
+                                OperationSummary: null,
+                                DiffRows: [],
+                                Item: BuildPlanningFailureItem(worker, ex.Message)),
+                            ct);
+                    }
                 });
 
             channel.Writer.Complete();
@@ -263,6 +293,8 @@ public sealed class BulkRunCoordinator(
               "runId": "{{runId}}",
               "requestId": "{{request.RequestId}}",
               "mode": "{{request.Mode}}",
+              "runTrigger": "{{request.RunTrigger}}",
+              "requestedBy": {{ToJsonString(request.RequestedBy)}},
               "dryRun": {{(request.DryRun ? "true" : "false")}},
               "startedAt": "{{startedAt:O}}",
               "totalWorkers": {{totalWorkers}},
@@ -293,4 +325,27 @@ public sealed class BulkRunCoordinator(
     }
 
     private static string ToJsonString(string? value) => value is null ? "null" : $"\"{Escape(value)}\"";
+
+    private static JsonElement BuildPlanningFailureItem(WorkerSnapshot worker, string? reason)
+    {
+        return ParseJson(
+            $$"""
+            {
+              "workerId": "{{Escape(worker.WorkerId)}}",
+              "samAccountName": null,
+              "targetOu": {{ToJsonString(worker.TargetOu)}},
+              "managerDistinguishedName": null,
+              "reviewCategory": "ExternalSystem",
+              "reviewCaseType": "WorkerPlanningFailed",
+              "reason": {{ToJsonString(reason)}},
+              "bucket": "conflicts",
+              "action": null,
+              "dryRun": true,
+              "applied": false,
+              "succeeded": false,
+              "managerRequired": {{(!string.IsNullOrWhiteSpace(worker.Attributes.TryGetValue("managerId", out var managerId) ? managerId : null) ? "true" : "false")}},
+              "changedAttributeDetails": []
+            }
+            """);
+    }
 }

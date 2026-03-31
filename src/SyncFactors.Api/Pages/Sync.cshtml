@@ -1,0 +1,153 @@
+@page
+@model SyncFactors.Api.Pages.SyncModel
+@{
+    ViewData["Title"] = "Sync";
+}
+
+<section class="hero">
+    <div>
+        <p class="eyebrow">Provisioning Control</p>
+        <h1>Sync</h1>
+        <p class="lede">Queue ad hoc AD provisioning runs and manage the recurring full-sync schedule.</p>
+    </div>
+</section>
+
+@if (!string.IsNullOrWhiteSpace(Model.ErrorMessage))
+{
+    <section class="panel">
+        <p class="callout danger">@Model.ErrorMessage</p>
+    </section>
+}
+
+@if (!string.IsNullOrWhiteSpace(Model.SuccessMessage))
+{
+    <section class="panel">
+        <p class="callout good">@Model.SuccessMessage</p>
+    </section>
+}
+
+<section class="panel-grid dashboard-grid">
+    <article class="panel">
+        <h2>Current Run</h2>
+        <dl class="kv">
+            <div><dt>Status</dt><dd>@Model.Status.Status</dd></div>
+            <div><dt>Stage</dt><dd>@Model.Status.Stage</dd></div>
+            <div><dt>Run Id</dt><dd>@(Model.Status.RunId ?? "None")</dd></div>
+            <div><dt>Trigger</dt><dd>@(Model.ActiveRun?.RunTrigger ?? "n/a")</dd></div>
+            <div><dt>Requested By</dt><dd>@(Model.ActiveRun?.RequestedBy ?? "n/a")</dd></div>
+            <div><dt>Progress</dt><dd>@Model.Status.ProcessedWorkers / @Model.Status.TotalWorkers</dd></div>
+            <div><dt>Last Action</dt><dd>@(Model.Status.LastAction ?? "None")</dd></div>
+            <div><dt>Last Updated</dt><dd>@(Model.Status.LastUpdatedAt?.ToString("u") ?? "Unknown")</dd></div>
+        </dl>
+        @if (Model.ActiveRun is not null)
+        {
+            <p><a asp-page="/Runs/Detail" asp-route-runId="@Model.ActiveRun.RunId">Open active run</a></p>
+        }
+    </article>
+
+    <article class="panel">
+        <h2>Ad Hoc Run</h2>
+        <p class="muted">Full-source sync only. Dry-run is the default and safest option.</p>
+        @if (Model.HasPendingOrActiveRun)
+        {
+            <p class="callout warn">A run is already pending or active. New ad hoc runs are temporarily blocked.</p>
+        }
+        <form method="post" asp-page-handler="StartRun" class="filters">
+            <label>
+                <span>Run type</span>
+                <select asp-for="RunMode" disabled="@Model.HasPendingOrActiveRun">
+                    <option value="DryRun">Dry run</option>
+                    <option value="LiveRun">Live provisioning</option>
+                </select>
+            </label>
+            <div class="filter-actions">
+                <button type="submit" disabled="@Model.HasPendingOrActiveRun">Queue run</button>
+            </div>
+        </form>
+    </article>
+
+    <article class="panel">
+        <h2>Recurring Schedule</h2>
+        <dl class="kv">
+            <div><dt>Enabled</dt><dd>@(Model.Schedule.Enabled ? "Yes" : "No")</dd></div>
+            <div><dt>Interval</dt><dd>@Model.Schedule.IntervalMinutes minutes</dd></div>
+            <div><dt>Next Run</dt><dd>@(Model.Schedule.NextRunAt?.ToString("u") ?? "Not scheduled")</dd></div>
+            <div><dt>Last Scheduled</dt><dd>@(Model.Schedule.LastScheduledRunAt?.ToString("u") ?? "Never")</dd></div>
+            <div><dt>Last Enqueue Attempt</dt><dd>@(Model.Schedule.LastEnqueueAttemptAt?.ToString("u") ?? "Never")</dd></div>
+        </dl>
+        @if (!string.IsNullOrWhiteSpace(Model.Schedule.LastEnqueueError))
+        {
+            <p class="callout warn">@Model.Schedule.LastEnqueueError</p>
+        }
+        <form method="post" asp-page-handler="SaveSchedule" class="filters">
+            <label>
+                <span>Enabled</span>
+                <input asp-for="ScheduleEnabled" type="checkbox" />
+            </label>
+            <label>
+                <span>Interval minutes</span>
+                <input asp-for="IntervalMinutes" type="number" min="5" max="1440" step="1" />
+            </label>
+            <div class="filter-actions">
+                <button type="submit">Save schedule</button>
+            </div>
+        </form>
+    </article>
+</section>
+
+<section class="panel">
+    <div class="section-heading">
+        <div>
+            <p class="eyebrow">History</p>
+            <h2>Recent Runs</h2>
+        </div>
+        <a class="link-button" asp-page="/Index">Back to dashboard</a>
+    </div>
+    @if (Model.Runs.Count == 0)
+    {
+        <p class="muted">No runs have been recorded yet.</p>
+    }
+    else
+    {
+        <div class="table-scroll">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Started</th>
+                        <th>Trigger</th>
+                        <th>Status</th>
+                        <th>Dry Run</th>
+                        <th>Workers</th>
+                        <th>Requested By</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                @foreach (var run in Model.Runs)
+                {
+                    <tr>
+                        <td>@run.StartedAt.ToString("u")</td>
+                        <td>@run.RunTrigger</td>
+                        <td><span class="badge @StatusClass(run.Status)">@run.Status</span></td>
+                        <td>@(run.DryRun ? "Yes" : "No")</td>
+                        <td>@run.TotalWorkers</td>
+                        <td>@(run.RequestedBy ?? "n/a")</td>
+                        <td><a asp-page="/Runs/Detail" asp-route-runId="@run.RunId">Open</a></td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+    }
+</section>
+
+@functions {
+    private static string StatusClass(string status) =>
+        status.ToLowerInvariant() switch
+        {
+            "succeeded" => "good",
+            "failed" => "bad",
+            "inprogress" => "warn",
+            _ => "neutral",
+        };
+}

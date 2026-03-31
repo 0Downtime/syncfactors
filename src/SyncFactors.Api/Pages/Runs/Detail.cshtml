@@ -28,6 +28,8 @@
             <div><dt>Started</dt><dd>@Model.Run.Run.StartedAt.ToString("u")</dd></div>
             <div><dt>Completed</dt><dd>@(Model.Run.Run.CompletedAt?.ToString("u") ?? "Unknown")</dd></div>
             <div><dt>Artifact</dt><dd>@Model.Run.Run.ArtifactType</dd></div>
+            <div><dt>Trigger</dt><dd>@Model.Run.Run.RunTrigger</dd></div>
+            <div><dt>Requested By</dt><dd>@(Model.Run.Run.RequestedBy ?? "n/a")</dd></div>
             <div><dt>Status</dt><dd><span class="badge @StatusClass(Model.Run.Run.Status)">@Model.Run.Run.Status</span></dd></div>
             <div><dt>Processed</dt><dd>@Model.Run.Run.ProcessedWorkers</dd></div>
             <div><dt>Total</dt><dd>@Model.Run.Run.TotalWorkers</dd></div>
@@ -60,16 +62,17 @@
             <span>Text search</span>
             <input type="text" name="filter" value="@Model.Filter" placeholder="reason, reviewCaseType, raw entry text..." />
         </label>
+        <input type="hidden" name="pageNumber" value="1" />
         <div class="filter-actions">
             <button type="submit">Apply</button>
             <a class="link-button" asp-page="/Runs/Detail" asp-route-runId="@Model.Run.Run.RunId">Clear</a>
         </div>
     </form>
     <div class="bucket-chip-row">
-        <a class="bucket-card @(string.IsNullOrWhiteSpace(Model.Bucket) ? "active" : null)" asp-page="/Runs/Detail" asp-route-runId="@Model.Run.Run.RunId" asp-route-workerId="@Model.WorkerId" asp-route-filter="@Model.Filter">All buckets</a>
+        <a class="bucket-card @(string.IsNullOrWhiteSpace(Model.Bucket) ? "active" : null)" asp-page="/Runs/Detail" asp-route-runId="@Model.Run.Run.RunId" asp-route-workerId="@Model.WorkerId" asp-route-filter="@Model.Filter" asp-route-pageNumber="1">All buckets</a>
         @foreach (var bucket in Model.AvailableBuckets)
         {
-            <a class="bucket-card @(string.Equals(Model.Bucket, bucket, StringComparison.Ordinal) ? "active" : null)" asp-page="/Runs/Detail" asp-route-runId="@Model.Run.Run.RunId" asp-route-bucket="@bucket" asp-route-workerId="@Model.WorkerId" asp-route-filter="@Model.Filter">
+            <a class="bucket-card @(string.Equals(Model.Bucket, bucket, StringComparison.Ordinal) ? "active" : null)" asp-page="/Runs/Detail" asp-route-runId="@Model.Run.Run.RunId" asp-route-bucket="@bucket" asp-route-workerId="@Model.WorkerId" asp-route-filter="@Model.Filter" asp-route-pageNumber="1">
                 <span class="bucket-name">@bucket</span>
                 <strong>@Model.Run.BucketCounts[bucket]</strong>
             </a>
@@ -79,6 +82,7 @@
 
 <section class="panel">
     <h2>Entries @if (!string.IsNullOrWhiteSpace(Model.Bucket)) { <text>· @Model.Bucket</text> }</h2>
+    <p class="muted">Showing page @Model.PageNumber of @Model.TotalPages · @Model.TotalEntries total entries · 50 per page.</p>
     @if (Model.Entries.Count == 0)
     {
         <p class="muted">No entries matched this run.</p>
@@ -161,6 +165,19 @@
                 }
             </article>
         }
+        </div>
+    }
+    @if (Model.TotalPages > 1)
+    {
+        <div class="filter-actions">
+            @if (Model.HasPreviousPage)
+            {
+                <a class="link-button" asp-page="/Runs/Detail" asp-route-runId="@Model.Run.Run.RunId" asp-route-bucket="@Model.Bucket" asp-route-workerId="@Model.WorkerId" asp-route-filter="@Model.Filter" asp-route-pageNumber="@(Model.PageNumber - 1)">Previous</a>
+            }
+            @if (Model.HasNextPage)
+            {
+                <a class="link-button" asp-page="/Runs/Detail" asp-route-runId="@Model.Run.Run.RunId" asp-route-bucket="@Model.Bucket" asp-route-workerId="@Model.WorkerId" asp-route-filter="@Model.Filter" asp-route-pageNumber="@(Model.PageNumber + 1)">Next</a>
+            }
         </div>
     }
 </section>
