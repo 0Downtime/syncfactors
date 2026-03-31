@@ -22,13 +22,7 @@
 @if (!string.IsNullOrWhiteSpace(Model.SuccessMessage))
 {
     <section class="panel">
-        <p class="callout good">
-            @Model.SuccessMessage
-            @if (!string.IsNullOrWhiteSpace(Model.LaunchRunId))
-            {
-                <text> <a asp-page="/Runs/Detail" asp-route-runId="@Model.LaunchRunId">Open @Model.LaunchRunId</a></text>
-            }
-        </p>
+        <p class="callout good">@Model.SuccessMessage</p>
     </section>
 }
 

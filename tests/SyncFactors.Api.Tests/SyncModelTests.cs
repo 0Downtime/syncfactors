@@ -13,7 +13,7 @@ public sealed class SyncModelTests
     {
         var queueStore = new CapturingRunQueueStore();
         var scheduleStore = new StubSyncScheduleStore();
-        var model = new SyncModel(CreateDashboardService(), queueStore, scheduleStore, new StubFullSyncRunService(new RunLaunchResult("full-sync-1", "Succeeded", true, "Dry run complete.")));
+        var model = new SyncModel(CreateDashboardService(), queueStore, scheduleStore);
 
         await model.OnGetAsync(CancellationToken.None);
 
@@ -26,7 +26,7 @@ public sealed class SyncModelTests
     public async Task OnPostStartRunAsync_QueuesDryRunByDefault()
     {
         var queueStore = new CapturingRunQueueStore();
-        var model = new SyncModel(CreateDashboardService(), queueStore, new StubSyncScheduleStore(), new StubFullSyncRunService(new RunLaunchResult("full-sync-1", "Succeeded", true, "Dry run complete.")));
+        var model = new SyncModel(CreateDashboardService(), queueStore, new StubSyncScheduleStore());
 
         var result = await model.OnPostStartRunAsync(CancellationToken.None);
 
@@ -43,7 +43,7 @@ public sealed class SyncModelTests
     public async Task OnPostStartRunAsync_QueuesLiveRunWhenSelected()
     {
         var queueStore = new CapturingRunQueueStore();
-        var model = new SyncModel(CreateDashboardService(), queueStore, new StubSyncScheduleStore(), new StubFullSyncRunService(new RunLaunchResult("full-sync-1", "Succeeded", true, "Dry run complete.")))
+        var model = new SyncModel(CreateDashboardService(), queueStore, new StubSyncScheduleStore())
         {
             RunMode = "LiveRun"
         };
@@ -64,7 +64,7 @@ public sealed class SyncModelTests
         {
             HasPendingOrActiveRun = true
         };
-        var model = new SyncModel(CreateDashboardService(), queueStore, new StubSyncScheduleStore(), new StubFullSyncRunService(new RunLaunchResult("full-sync-1", "Succeeded", true, "Dry run complete.")));
+        var model = new SyncModel(CreateDashboardService(), queueStore, new StubSyncScheduleStore());
 
         var result = await model.OnPostStartRunAsync(CancellationToken.None);
 
@@ -78,7 +78,7 @@ public sealed class SyncModelTests
     public async Task OnPostSaveScheduleAsync_UpdatesSchedule()
     {
         var scheduleStore = new StubSyncScheduleStore();
-        var model = new SyncModel(CreateDashboardService(), new CapturingRunQueueStore(), scheduleStore, new StubFullSyncRunService(new RunLaunchResult("full-sync-1", "Succeeded", true, "Dry run complete.")))
+        var model = new SyncModel(CreateDashboardService(), new CapturingRunQueueStore(), scheduleStore)
         {
             ScheduleEnabled = true,
             IntervalMinutes = 45
@@ -92,56 +92,6 @@ public sealed class SyncModelTests
         Assert.Equal(45, scheduleStore.LastUpdateRequest.IntervalMinutes);
         Assert.True(model.Schedule.Enabled);
         Assert.Equal(45, model.Schedule.IntervalMinutes);
-    }
-
-    [Fact]
-    public async Task OnPostDryRunAsync_LaunchesDryRunAndRedirects()
-    {
-        var model = new SyncModel(
-            CreateDashboardService(),
-            new CapturingRunQueueStore(),
-            new StubSyncScheduleStore(),
-            new StubFullSyncRunService(new RunLaunchResult("full-sync-1", "Succeeded", true, "Dry run complete.")));
-
-        var result = await model.OnPostDryRunAsync(CancellationToken.None);
-
-        Assert.IsType<RedirectToPageResult>(result);
-        Assert.Equal("full-sync-1", model.LaunchRunId);
-        Assert.Equal("Dry run complete.", model.SuccessMessage);
-        Assert.Null(model.ErrorMessage);
-    }
-
-    [Fact]
-    public async Task OnPostLiveRunAsync_PropagatesAcknowledgement()
-    {
-        var service = new CapturingFullSyncRunService();
-        var model = new SyncModel(CreateDashboardService(), new CapturingRunQueueStore(), new StubSyncScheduleStore(), service)
-        {
-            AcknowledgeRealSync = true
-        };
-
-        var result = await model.OnPostLiveRunAsync(CancellationToken.None);
-
-        Assert.IsType<RedirectToPageResult>(result);
-        Assert.NotNull(service.LastRequest);
-        Assert.False(service.LastRequest!.DryRun);
-        Assert.True(service.LastRequest.AcknowledgeRealSync);
-    }
-
-    [Fact]
-    public async Task OnPostLiveRunAsync_OnFailureReloadsSnapshot()
-    {
-        var model = new SyncModel(
-            CreateDashboardService(),
-            new CapturingRunQueueStore(),
-            new StubSyncScheduleStore(),
-            new ThrowingFullSyncRunService(new InvalidOperationException("Another sync run is already in progress.")));
-
-        var result = await model.OnPostLiveRunAsync(CancellationToken.None);
-
-        Assert.IsType<PageResult>(result);
-        Assert.Equal("Another sync run is already in progress.", model.ErrorMessage);
-        Assert.Equal("Idle", model.Status.Status);
     }
 
     private static IDashboardSnapshotService CreateDashboardService()
@@ -192,38 +142,6 @@ public sealed class SyncModelTests
         {
             _ = cancellationToken;
             return Task.FromResult(snapshot);
-        }
-    }
-
-    private sealed class StubFullSyncRunService(RunLaunchResult result) : IFullSyncRunService
-    {
-        public Task<RunLaunchResult> LaunchAsync(LaunchFullRunRequest request, CancellationToken cancellationToken)
-        {
-            _ = request;
-            _ = cancellationToken;
-            return Task.FromResult(result);
-        }
-    }
-
-    private sealed class CapturingFullSyncRunService : IFullSyncRunService
-    {
-        public LaunchFullRunRequest? LastRequest { get; private set; }
-
-        public Task<RunLaunchResult> LaunchAsync(LaunchFullRunRequest request, CancellationToken cancellationToken)
-        {
-            _ = cancellationToken;
-            LastRequest = request;
-            return Task.FromResult(new RunLaunchResult("full-sync-2", "Succeeded", false, "Live sync complete."));
-        }
-    }
-
-    private sealed class ThrowingFullSyncRunService(Exception exception) : IFullSyncRunService
-    {
-        public Task<RunLaunchResult> LaunchAsync(LaunchFullRunRequest request, CancellationToken cancellationToken)
-        {
-            _ = request;
-            _ = cancellationToken;
-            return Task.FromException<RunLaunchResult>(exception);
         }
     }
 
