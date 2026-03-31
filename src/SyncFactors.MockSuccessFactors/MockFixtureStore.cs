@@ -1,4 +1,6 @@
 using Microsoft.Extensions.Options;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 
 namespace SyncFactors.MockSuccessFactors;
@@ -56,9 +58,11 @@ public sealed class MockFixtureStore(IOptions<MockSuccessFactorsOptions> options
         var document = JsonSerializer.Deserialize<MockFixtureDocument>(json, SerializerContext.Default.MockFixtureDocument)
             ?? new MockFixtureDocument([]);
 
-        return options.SyntheticPopulation.Enabled
+        var populatedDocument = options.SyntheticPopulation.Enabled
             ? ExpandSyntheticPopulation(document, options.SyntheticPopulation.TargetWorkerCount)
             : document;
+
+        return NormalizeSyntheticIdentities(populatedDocument);
     }
 
     private static string ResolveFixturePath(MockSuccessFactorsOptions options)
@@ -110,6 +114,82 @@ public sealed class MockFixtureStore(IOptions<MockSuccessFactorsOptions> options
         }
 
         return new MockFixtureDocument(workers);
+    }
+
+    private static MockFixtureDocument NormalizeSyntheticIdentities(MockFixtureDocument document)
+    {
+        var workers = document.Workers
+            .Select((worker, index) => NormalizeSyntheticIdentity(worker, index))
+            .ToArray();
+
+        return new MockFixtureDocument(workers);
+    }
+
+    private static MockWorkerFixture NormalizeSyntheticIdentity(MockWorkerFixture worker, int index)
+    {
+        var syntheticId = NormalizeSyntheticId(worker.PersonIdExternal, index);
+        var suffix = int.TryParse(syntheticId, out var numericId)
+            ? Math.Max(0, numericId - SyntheticWorkerIdStart)
+            : index;
+        var userName = $"user.{syntheticId}";
+        var lastName = $"Sample{syntheticId}";
+        var preferredName = worker.PreferredName is null ? null : $"Preferred{syntheticId}";
+
+        return worker with
+        {
+            PersonIdExternal = syntheticId,
+            PersonId = syntheticId,
+            PerPersonUuid = $"uuid-{syntheticId}",
+            UserName = userName,
+            UserId = userName,
+            Email = $"{userName}@example.test",
+            FirstName = $"Worker{syntheticId}",
+            LastName = lastName,
+            PreferredName = preferredName,
+            DisplayName = worker.DisplayName is null ? null : $"{preferredName ?? $"Worker{syntheticId}"} {lastName}",
+            Position = worker.Position is null ? null : $"POS-{syntheticId}",
+            BusinessPhoneNumber = worker.BusinessPhoneNumber is null ? null : $"{7000000 + suffix:D7}",
+            BusinessPhoneExtension = worker.BusinessPhoneExtension is null ? null : $"{100 + (suffix % 900):D3}",
+            CellPhoneNumber = worker.CellPhoneNumber is null ? null : $"{8000000 + suffix:D7}",
+            Location = worker.Location is null
+                ? null
+                : worker.Location with
+                {
+                    Address = worker.Location.Address is null ? null : $"Suite {syntheticId}",
+                    ZipCode = worker.Location.ZipCode is null ? null : syntheticId,
+                    CustomString4 = worker.Location.CustomString4 is null ? null : $"Floor {100 + (suffix % 900):D3}"
+                }
+        };
+    }
+
+    private static string NormalizeSyntheticId(string workerId, int index)
+    {
+        if (!string.IsNullOrWhiteSpace(workerId) &&
+            workerId.Length == 5 &&
+            workerId.All(char.IsDigit))
+        {
+            return workerId;
+        }
+
+        if (string.IsNullOrWhiteSpace(workerId))
+        {
+            return (SyntheticWorkerIdStart + index).ToString("D5");
+        }
+
+        return StableNumber(workerId, 10_000, 99_999).ToString("D5");
+    }
+
+    private static int StableNumber(string value, int minInclusive, int maxInclusive)
+    {
+        if (maxInclusive < minInclusive)
+        {
+            throw new ArgumentOutOfRangeException(nameof(maxInclusive));
+        }
+
+        var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(value));
+        var number = BitConverter.ToUInt32(bytes, 0);
+        var range = (uint)(maxInclusive - minInclusive + 1);
+        return (int)(minInclusive + (number % range));
     }
 
     private static MockWorkerFixture CreateSyntheticWorker(MockWorkerFixture seedWorker, int seedIndex, string syntheticId, int replication)

@@ -11,6 +11,7 @@ public sealed class SyncModel(
     ISyncScheduleStore syncScheduleStore,
     IFullSyncRunService fullSyncRunService) : PageModel
 {
+    private const int RunsPageSize = 25;
     private const string DryRunMode = "DryRun";
     private const string LiveRunMode = "LiveRun";
 
@@ -25,6 +26,9 @@ public sealed class SyncModel(
 
     [BindProperty]
     public bool AcknowledgeRealSync { get; set; }
+
+    [BindProperty(SupportsGet = true)]
+    public int PageNumber { get; set; } = 1;
 
     public RuntimeStatus Status { get; private set; } = new(
         Status: "Idle",
@@ -50,6 +54,14 @@ public sealed class SyncModel(
         LastEnqueueError: null);
 
     public IReadOnlyList<RunSummary> Runs { get; private set; } = [];
+
+    public int TotalRunsCount { get; private set; }
+
+    public int TotalRunPages => Math.Max(1, (int)Math.Ceiling(TotalRunsCount / (double)RunsPageSize));
+
+    public bool HasPreviousRunPage => PageNumber > 1;
+
+    public bool HasNextRunPage => PageNumber < TotalRunPages;
 
     public RunSummary? ActiveRun { get; private set; }
 
@@ -82,7 +94,7 @@ public sealed class SyncModel(
             LaunchRunId = result.RunId;
             SuccessMessage = result.Message;
             ErrorMessage = null;
-            return RedirectToPage();
+            return RedirectToPage(new { PageNumber });
         }
         catch (Exception ex)
         {
@@ -105,7 +117,7 @@ public sealed class SyncModel(
             LaunchRunId = result.RunId;
             SuccessMessage = result.Message;
             ErrorMessage = null;
-            return RedirectToPage();
+            return RedirectToPage(new { PageNumber });
         }
         catch (Exception ex)
         {
@@ -171,7 +183,12 @@ public sealed class SyncModel(
     {
         var snapshot = await dashboardSnapshotService.GetSnapshotAsync(cancellationToken);
         Status = snapshot.Status;
-        Runs = snapshot.Runs;
+        TotalRunsCount = snapshot.Runs.Count;
+        PageNumber = Math.Clamp(PageNumber, 1, TotalRunPages);
+        Runs = snapshot.Runs
+            .Skip((PageNumber - 1) * RunsPageSize)
+            .Take(RunsPageSize)
+            .ToArray();
         ActiveRun = snapshot.ActiveRun;
     }
 }

@@ -59,7 +59,7 @@ public sealed class MockApiTests
         var worker = document.RootElement.GetProperty("d").GetProperty("results")[0];
 
         Assert.Equal("10001", worker.GetProperty("personIdExternal").GetString());
-        Assert.Equal("Worker101", worker.GetProperty("personalInfoNav").GetProperty("results")[0].GetProperty("firstName").GetString());
+        Assert.Equal("Worker10001", worker.GetProperty("personalInfoNav").GetProperty("results")[0].GetProperty("firstName").GetString());
         Assert.Equal("CORP", worker.GetProperty("employmentNav").GetProperty("results")[0].GetProperty("jobInfoNav").GetProperty("results")[0].GetProperty("companyNav").GetProperty("company").GetString());
         Assert.Equal("Central", worker.GetProperty("employmentNav").GetProperty("results")[0].GetProperty("jobInfoNav").GetProperty("results")[0].GetProperty("customString87").GetString());
     }
@@ -119,8 +119,25 @@ public sealed class MockApiTests
         Assert.Equal(7, baselineWorkers.Count);
         Assert.Equal(5000, syntheticWorkers.Count);
         Assert.Equal("10001", baselineWorkers[0].PersonIdExternal);
+        Assert.Equal("Worker10001", baselineWorkers[0].FirstName);
         Assert.Equal("10000", syntheticWorkers[0].PersonIdExternal);
         Assert.Equal("14999", syntheticWorkers[^1].PersonIdExternal);
+    }
+
+    [Fact]
+    public void FixtureNormalization_IsDeterministicAcrossLoads()
+    {
+        var firstLoad = CreateStore().GetDocument().Workers;
+        var secondLoad = CreateStore().GetDocument().Workers;
+
+        Assert.Equal(firstLoad.Count, secondLoad.Count);
+        Assert.Equal(firstLoad.Select(worker => worker.PersonIdExternal), secondLoad.Select(worker => worker.PersonIdExternal));
+        Assert.Equal(firstLoad[0].FirstName, secondLoad[0].FirstName);
+        Assert.Equal(firstLoad[0].Email, secondLoad[0].Email);
+        Assert.Equal(firstLoad[0].Location?.Address, secondLoad[0].Location?.Address);
+        Assert.Equal("Worker10001", firstLoad[0].FirstName);
+        Assert.Equal("user.10001@example.test", firstLoad[0].Email);
+        Assert.Equal("Suite 10001", firstLoad[0].Location?.Address);
     }
 
     [Fact]
