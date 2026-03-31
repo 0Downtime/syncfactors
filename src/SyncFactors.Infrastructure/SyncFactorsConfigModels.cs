@@ -43,6 +43,7 @@ public sealed record SuccessFactorsQueryConfig(
     string IdentityField,
     string DeltaField,
     string? BaseFilter,
+    string? OrderBy,
     string? AsOfDate,
     int PageSize,
     IReadOnlyList<string> Select,

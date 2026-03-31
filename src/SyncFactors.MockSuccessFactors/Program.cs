@@ -89,7 +89,7 @@ app.MapGet("/odata/v2/PerPerson", (
         return Results.NotFound();
     }
 
-    var payload = responseBuilder.Build(workers, query, "PerPerson");
+    var payload = responseBuilder.Build(workers, query, "PerPerson", options.Value.ServiceRoot);
     return Results.Json(payload);
 });
 
@@ -127,7 +127,7 @@ app.MapGet("/odata/v2/EmpJob", (
         return Results.NotFound();
     }
 
-    var payload = responseBuilder.Build(workers, query, "EmpJob");
+    var payload = responseBuilder.Build(workers, query, "EmpJob", options.Value.ServiceRoot);
     return Results.Json(payload);
 });
 

@@ -2,8 +2,10 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using SyncFactors.Contracts;
 using SyncFactors.Infrastructure;
 using SyncFactors.MockSuccessFactors;
 
@@ -20,10 +22,12 @@ public sealed class SuccessFactorsWorkerSourceIntegrationTests
             FixturePath = fixturePath
         }));
         var responseBuilder = new ODataResponseBuilder();
-        using var client = new HttpClient(new MockSuccessFactorsHttpHandler(fixtureStore, responseBuilder))
+        var handler = new MockSuccessFactorsHttpHandler(fixtureStore, responseBuilder);
+        using var client = new HttpClient(handler)
         {
             BaseAddress = new Uri("http://mock-successfactors.local")
         };
+        var logger = new CapturingLogger<SuccessFactorsWorkerSource>();
 
         var tempDirectory = Path.Combine(Path.GetTempPath(), "syncfactors-worker-source", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(tempDirectory);
@@ -145,10 +149,12 @@ public sealed class SuccessFactorsWorkerSourceIntegrationTests
             FixturePath = fixturePath
         }));
         var responseBuilder = new ODataResponseBuilder();
-        using var client = new HttpClient(new MockSuccessFactorsHttpHandler(fixtureStore, responseBuilder))
+        var handler = new MockSuccessFactorsHttpHandler(fixtureStore, responseBuilder);
+        using var client = new HttpClient(handler)
         {
             BaseAddress = new Uri("http://mock-successfactors.local")
         };
+        var logger = new CapturingLogger<SuccessFactorsWorkerSource>();
 
         var tempDirectory = Path.Combine(Path.GetTempPath(), "syncfactors-worker-source", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(tempDirectory);
@@ -264,6 +270,125 @@ public sealed class SuccessFactorsWorkerSourceIntegrationTests
         Assert.Equal("10001", worker.Attributes["officeLocationZipCode"]);
         Assert.Null(worker.Attributes["managerId"]);
         Assert.Equal("Field Ops", worker.Attributes["peopleGroup"]);
+    }
+
+    [Fact]
+    public async Task WorkerSource_ListWorkersAsync_FollowsServerSidePaginationLinks()
+    {
+        var fixturePath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "config", "mock-successfactors", "baseline-fixtures.json"));
+        var fixtureStore = new MockFixtureStore(Options.Create(new MockSuccessFactorsOptions
+        {
+            FixturePath = fixturePath,
+            SyntheticPopulation = new MockSyntheticPopulationOptions
+            {
+                Enabled = true,
+                TargetWorkerCount = 12
+            }
+        }));
+        var responseBuilder = new ODataResponseBuilder();
+        var handler = new MockSuccessFactorsHttpHandler(fixtureStore, responseBuilder);
+        using var client = new HttpClient(handler)
+        {
+            BaseAddress = new Uri("http://mock-successfactors.local")
+        };
+        var logger = new CapturingLogger<SuccessFactorsWorkerSource>();
+
+        var tempDirectory = Path.Combine(Path.GetTempPath(), "syncfactors-worker-source", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDirectory);
+
+        var syncConfigPath = Path.Combine(tempDirectory, "sync-config.json");
+        var mappingConfigPath = Path.Combine(tempDirectory, "mapping-config.json");
+        var scaffoldDataPath = Path.Combine(tempDirectory, "scaffold-data.json");
+
+        await File.WriteAllTextAsync(syncConfigPath, """
+        {
+          "secrets": {
+            "adServerEnv": null,
+            "adUsernameEnv": null,
+            "adBindPasswordEnv": null,
+            "successFactorsClientIdEnv": null,
+            "successFactorsClientSecretEnv": null
+          },
+          "successFactors": {
+            "baseUrl": "http://mock-successfactors.local/odata/v2",
+            "auth": {
+              "mode": "oauth",
+              "oauth": {
+                "tokenUrl": "http://mock-successfactors.local/oauth/token",
+                "clientId": "mock-client-id",
+                "clientSecret": "mock-client-secret",
+                "companyId": "MOCK"
+              }
+            },
+            "query": {
+              "entitySet": "PerPerson",
+              "identityField": "personIdExternal",
+              "deltaField": "lastModifiedDateTime",
+              "pageSize": 2,
+              "orderBy": "personIdExternal asc",
+              "select": [
+                "personIdExternal",
+                "personalInfoNav/firstName",
+                "personalInfoNav/lastName",
+                "employmentNav/startDate",
+                "employmentNav/jobInfoNav/departmentNav/department"
+              ],
+              "expand": [
+                "personalInfoNav",
+                "employmentNav",
+                "employmentNav/jobInfoNav",
+                "employmentNav/jobInfoNav/departmentNav"
+              ]
+            }
+          },
+          "ad": {
+            "server": "ldap.example.test",
+            "username": "",
+            "bindPassword": "",
+            "identityAttribute": "employeeID",
+            "defaultActiveOu": "OU=LabUsers,DC=example,DC=com",
+            "graveyardOu": "OU=LabGraveyard,DC=example,DC=com"
+          },
+          "sync": {
+            "enableBeforeStartDays": 7,
+            "deletionRetentionDays": 90
+          },
+          "safety": {
+            "maxCreatesPerRun": 10,
+            "maxDisablesPerRun": 10,
+            "maxDeletionsPerRun": 10
+          },
+          "reporting": {
+            "outputDirectory": "reports"
+          }
+        }
+        """);
+        File.Copy(Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "config", "sample.empjob-confirmed.mapping-config.json")), mappingConfigPath);
+        await File.WriteAllTextAsync(scaffoldDataPath, """{"workers":[],"directoryUsers":[]}""");
+
+        var configLoader = new SyncFactorsConfigurationLoader(new SyncFactorsConfigPathResolver(syncConfigPath, mappingConfigPath));
+        var scaffoldStore = new ScaffoldDataStore(new ScaffoldDataPathResolver(scaffoldDataPath));
+        var fallbackSource = new ScaffoldWorkerSource(scaffoldStore);
+        var workerSource = new SuccessFactorsWorkerSource(client, configLoader, fallbackSource, logger);
+
+        var workers = new List<WorkerSnapshot>();
+        await foreach (var worker in workerSource.ListWorkersAsync(CancellationToken.None))
+        {
+            workers.Add(worker);
+            if (workers.Count == 5)
+            {
+                break;
+            }
+        }
+
+        Assert.Equal(5, workers.Count);
+        Assert.Equal(["10000", "10001", "10002", "10003", "10004"], workers.Select(worker => worker.WorkerId).ToArray());
+        Assert.All(workers, worker => Assert.False(string.IsNullOrWhiteSpace(worker.Department)));
+        Assert.Contains(handler.RequestUris, uri =>
+            uri.Contains("orderby=", StringComparison.OrdinalIgnoreCase) &&
+            uri.Contains("personIdExternal", StringComparison.Ordinal) &&
+            uri.Contains("asc", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(logger.Messages, message => message.Contains("PagingMode=snapshot", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -593,6 +718,8 @@ public sealed class SuccessFactorsWorkerSourceIntegrationTests
 
     private sealed class MockSuccessFactorsHttpHandler(MockFixtureStore fixtureStore, ODataResponseBuilder responseBuilder) : HttpMessageHandler
     {
+        public List<string> RequestUris { get; } = [];
+
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             _ = cancellationToken;
@@ -613,6 +740,7 @@ public sealed class SuccessFactorsWorkerSourceIntegrationTests
 
             if (request.RequestUri.AbsolutePath.Equals("/odata/v2/PerPerson", StringComparison.OrdinalIgnoreCase))
             {
+                RequestUris.Add(request.RequestUri.ToString());
                 if (request.Headers.Authorization is not AuthenticationHeaderValue auth ||
                     !string.Equals(auth.Scheme, "Bearer", StringComparison.OrdinalIgnoreCase) ||
                     !string.Equals(auth.Parameter, "mock-access-token", StringComparison.Ordinal))
@@ -622,17 +750,46 @@ public sealed class SuccessFactorsWorkerSourceIntegrationTests
 
                 var queryCollection = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(request.RequestUri.Query);
                 var query = ODataQueryParser.Parse(new Microsoft.AspNetCore.Http.QueryCollection(queryCollection));
-                var worker = fixtureStore.FindByIdentity(query.IdentityField, query.WorkerId);
-                var payload = responseBuilder.Build(worker, query);
+                var workers = fixtureStore.QueryWorkers("PerPerson", query);
+                var payload = responseBuilder.Build(
+                    workers,
+                    query,
+                    "PerPerson",
+                    $"{request.RequestUri.GetLeftPart(UriPartial.Authority)}/odata/v2");
                 var json = JsonSerializer.Serialize(payload);
 
-                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+                var response = new HttpResponseMessage(HttpStatusCode.OK)
                 {
                     Content = new StringContent(json, Encoding.UTF8, "application/json")
-                });
+                };
+                response.Headers.Add("X-SF-Paging", "snapshot");
+                return Task.FromResult(response);
             }
 
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound));
+        }
+    }
+
+    private sealed class CapturingLogger<T> : ILogger<T>
+    {
+        public List<string> Messages { get; } = [];
+
+        public IDisposable BeginScope<TState>(TState state) where TState : notnull => NullScope.Instance;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
+        {
+            Messages.Add(formatter(state, exception));
+        }
+
+        private sealed class NullScope : IDisposable
+        {
+            public static NullScope Instance { get; } = new();
+
+            public void Dispose()
+            {
+            }
         }
     }
 

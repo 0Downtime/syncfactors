@@ -6,6 +6,7 @@ public sealed record ODataQuery(
     bool IsSupported,
     string? ErrorMessage,
     string? Filter,
+    string? OrderBy,
     string IdentityField,
     string? WorkerId,
     int? Top,
@@ -16,7 +17,7 @@ public sealed record ODataQuery(
 
 public static partial class ODataQueryParser
 {
-    private static readonly string[] SupportedQueryKeys = ["$format", "$filter", "$select", "$expand", "$top", "$skip", "asOfDate"];
+    private static readonly string[] SupportedQueryKeys = ["$format", "$filter", "$orderby", "$select", "$expand", "$top", "$skip", "$skiptoken", "customPageSize", "paging", "asOfDate"];
 
     public static ODataQuery Parse(IQueryCollection query)
     {
@@ -24,27 +25,46 @@ public static partial class ODataQueryParser
         {
             if (!SupportedQueryKeys.Contains(key, StringComparer.OrdinalIgnoreCase))
             {
-                return new ODataQuery(false, $"Unsupported query option '{key}'.", null, string.Empty, null, null, 0, null, new HashSet<string>(StringComparer.OrdinalIgnoreCase), new HashSet<string>(StringComparer.OrdinalIgnoreCase));
+                return new ODataQuery(false, $"Unsupported query option '{key}'.", null, null, string.Empty, null, null, 0, null, new HashSet<string>(StringComparer.OrdinalIgnoreCase), new HashSet<string>(StringComparer.OrdinalIgnoreCase));
             }
         }
 
         var format = GetQueryValue(query, "$format");
         if (!string.IsNullOrWhiteSpace(format) && !string.Equals(format, "json", StringComparison.OrdinalIgnoreCase))
         {
-            return new ODataQuery(false, "Only $format=json is supported.", null, string.Empty, null, null, 0, null, new HashSet<string>(StringComparer.OrdinalIgnoreCase), new HashSet<string>(StringComparer.OrdinalIgnoreCase));
+            return new ODataQuery(false, "Only $format=json is supported.", null, null, string.Empty, null, null, 0, null, new HashSet<string>(StringComparer.OrdinalIgnoreCase), new HashSet<string>(StringComparer.OrdinalIgnoreCase));
         }
 
         var top = GetQueryValue(query, "$top");
         if (!string.IsNullOrWhiteSpace(top) && (!int.TryParse(top, out var topValue) || topValue < 1))
         {
-            return new ODataQuery(false, "Only positive integer values for $top are supported.", null, string.Empty, null, null, 0, null, new HashSet<string>(StringComparer.OrdinalIgnoreCase), new HashSet<string>(StringComparer.OrdinalIgnoreCase));
+            return new ODataQuery(false, "Only positive integer values for $top are supported.", null, null, string.Empty, null, null, 0, null, new HashSet<string>(StringComparer.OrdinalIgnoreCase), new HashSet<string>(StringComparer.OrdinalIgnoreCase));
+        }
+
+        var customPageSize = GetQueryValue(query, "customPageSize");
+        if (!string.IsNullOrWhiteSpace(customPageSize) && (!int.TryParse(customPageSize, out var customPageSizeValue) || customPageSizeValue < 1))
+        {
+            return new ODataQuery(false, "Only positive integer values for customPageSize are supported.", null, null, string.Empty, null, null, 0, null, new HashSet<string>(StringComparer.OrdinalIgnoreCase), new HashSet<string>(StringComparer.OrdinalIgnoreCase));
         }
 
         var skip = GetQueryValue(query, "$skip");
         if (!string.IsNullOrWhiteSpace(skip) && (!int.TryParse(skip, out var skipValue) || skipValue < 0))
         {
-            return new ODataQuery(false, "Only non-negative integer values for $skip are supported.", null, string.Empty, null, null, 0, null, new HashSet<string>(StringComparer.OrdinalIgnoreCase), new HashSet<string>(StringComparer.OrdinalIgnoreCase));
+            return new ODataQuery(false, "Only non-negative integer values for $skip are supported.", null, null, string.Empty, null, null, 0, null, new HashSet<string>(StringComparer.OrdinalIgnoreCase), new HashSet<string>(StringComparer.OrdinalIgnoreCase));
         }
+
+        var skipToken = GetQueryValue(query, "$skiptoken");
+        if (!string.IsNullOrWhiteSpace(skipToken) && (!int.TryParse(skipToken, out var skipTokenValue) || skipTokenValue < 0))
+        {
+            return new ODataQuery(false, "Only non-negative integer values for $skiptoken are supported.", null, null, string.Empty, null, null, 0, null, new HashSet<string>(StringComparer.OrdinalIgnoreCase), new HashSet<string>(StringComparer.OrdinalIgnoreCase));
+        }
+
+        int? resolvedTop = !string.IsNullOrWhiteSpace(customPageSize)
+            ? int.Parse(customPageSize)
+            : string.IsNullOrWhiteSpace(top) ? null : int.Parse(top);
+        var resolvedSkip = !string.IsNullOrWhiteSpace(skipToken)
+            ? int.Parse(skipToken)
+            : string.IsNullOrWhiteSpace(skip) ? 0 : int.Parse(skip);
 
         var filter = GetQueryValue(query, "$filter");
         if (string.IsNullOrWhiteSpace(filter))
@@ -53,10 +73,11 @@ public static partial class ODataQueryParser
                 IsSupported: true,
                 ErrorMessage: null,
                 Filter: null,
+                OrderBy: GetQueryValue(query, "$orderby"),
                 IdentityField: string.Empty,
                 WorkerId: null,
-                Top: string.IsNullOrWhiteSpace(top) ? null : int.Parse(top),
-                Skip: string.IsNullOrWhiteSpace(skip) ? 0 : int.Parse(skip),
+                Top: resolvedTop,
+                Skip: resolvedSkip,
                 AsOfDate: GetQueryValue(query, "asOfDate"),
                 Select: ParseList(GetQueryValue(query, "$select")),
                 Expand: ParseList(GetQueryValue(query, "$expand")));
@@ -68,10 +89,11 @@ public static partial class ODataQueryParser
                 IsSupported: true,
                 ErrorMessage: null,
                 Filter: filter,
+                OrderBy: GetQueryValue(query, "$orderby"),
                 IdentityField: string.Empty,
                 WorkerId: null,
-                Top: string.IsNullOrWhiteSpace(top) ? null : int.Parse(top),
-                Skip: string.IsNullOrWhiteSpace(skip) ? 0 : int.Parse(skip),
+                Top: resolvedTop,
+                Skip: resolvedSkip,
                 AsOfDate: GetQueryValue(query, "asOfDate"),
                 Select: ParseList(GetQueryValue(query, "$select")),
                 Expand: ParseList(GetQueryValue(query, "$expand")));
@@ -81,10 +103,11 @@ public static partial class ODataQueryParser
             IsSupported: true,
             ErrorMessage: null,
             Filter: filter,
+            OrderBy: GetQueryValue(query, "$orderby"),
             IdentityField: identityField!,
             WorkerId: workerId,
-            Top: string.IsNullOrWhiteSpace(top) ? null : int.Parse(top),
-            Skip: string.IsNullOrWhiteSpace(skip) ? 0 : int.Parse(skip),
+            Top: resolvedTop,
+            Skip: resolvedSkip,
             AsOfDate: GetQueryValue(query, "asOfDate"),
             Select: ParseList(GetQueryValue(query, "$select")),
             Expand: ParseList(GetQueryValue(query, "$expand")));
