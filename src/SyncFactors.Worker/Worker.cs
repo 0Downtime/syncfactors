@@ -49,7 +49,10 @@ public sealed class Worker(
                 catch (Exception ex)
                 {
                     logger.LogError(ex, "Queued run failed. RequestId={RequestId}", claimed.RequestId);
-                    await runQueueStore.FailAsync(claimed.RequestId, runId: null, ex.Message, stoppingToken);
+                    var failedRunId = ex is GuardrailExceededException guardrailExceededException
+                        ? guardrailExceededException.RunId
+                        : null;
+                    await runQueueStore.FailAsync(claimed.RequestId, failedRunId, ex.Message, stoppingToken);
                     await WriteHeartbeatAsync(startedAt, "Idle", $"Run {claimed.RequestId} failed.", stoppingToken);
                 }
                 finally

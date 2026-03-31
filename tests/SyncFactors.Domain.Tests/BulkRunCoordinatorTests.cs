@@ -11,6 +11,7 @@ public sealed class BulkRunCoordinatorTests
     public async Task ExecuteAsync_ContinuesWhenWorkerPlanningFails()
     {
         CapturingRunLifecycleService.Entries.Clear();
+        CapturingRunLifecycleService.Reset();
         WorkerSnapshot[] workers =
         [
             CreateWorker("10001"),
@@ -56,6 +57,7 @@ public sealed class BulkRunCoordinatorTests
     public async Task ExecuteAsync_LiveRun_AdvancesDeltaCheckpointAfterSuccess()
     {
         CapturingRunLifecycleService.Entries.Clear();
+        CapturingRunLifecycleService.Reset();
         var deltaSyncService = new CapturingDeltaSyncService();
         var coordinator = new BulkRunCoordinator(
             new StubWorkerSource([CreateWorker("10001")]),
@@ -92,6 +94,7 @@ public sealed class BulkRunCoordinatorTests
     public async Task ExecuteAsync_LiveRun_DoesNotAdvanceDeltaCheckpointWhenRunHasConflicts()
     {
         CapturingRunLifecycleService.Entries.Clear();
+        CapturingRunLifecycleService.Reset();
         var deltaSyncService = new CapturingDeltaSyncService();
         var coordinator = new BulkRunCoordinator(
             new StubWorkerSource([CreateWorker("10001")]),
@@ -122,6 +125,47 @@ public sealed class BulkRunCoordinatorTests
             CancellationToken.None);
 
         Assert.Equal(0, deltaSyncService.RecordCalls);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_CreateGuardrailExceeded_FailsRunAndStopsProcessing()
+    {
+        CapturingRunLifecycleService.Entries.Clear();
+        CapturingRunLifecycleService.Reset();
+        var deltaSyncService = new CapturingDeltaSyncService();
+        var coordinator = new BulkRunCoordinator(
+            new StubWorkerSource([CreateWorker("10001"), CreateWorker("10002")]),
+            deltaSyncService,
+            new StubRunQueueStore(),
+            new CreateWorkerPlanningService(),
+            new StubDirectoryMutationCommandBuilder(),
+            new SuccessfulDirectoryCommandGateway(),
+            new CapturingRunLifecycleService(),
+            new WorkerRunSettings(MaxCreatesPerRun: 1),
+            NullLogger<BulkRunCoordinator>.Instance,
+            TimeProvider.System);
+
+        var ex = await Assert.ThrowsAsync<GuardrailExceededException>(() => coordinator.ExecuteAsync(
+            new RunQueueRequest(
+                RequestId: "req-guardrail",
+                Mode: "BulkSync",
+                DryRun: true,
+                RunTrigger: "AdHoc",
+                RequestedBy: "test",
+                Status: "Pending",
+                RequestedAt: DateTimeOffset.UtcNow,
+                StartedAt: null,
+                CompletedAt: null,
+                RunId: null,
+                ErrorMessage: null),
+            maxDegreeOfParallelism: 1,
+            CancellationToken.None));
+
+        Assert.Contains("Create guardrail exceeded", ex.Message, StringComparison.Ordinal);
+        Assert.Equal(0, deltaSyncService.RecordCalls);
+        Assert.Equal(0, CapturingRunLifecycleService.CompletedCalls);
+        Assert.Equal(1, CapturingRunLifecycleService.FailedCalls);
+        Assert.Contains(CapturingRunLifecycleService.Entries, entry => entry.WorkerId == "10002" && entry.Bucket == "guardrailFailures");
     }
 
     private static WorkerSnapshot CreateWorker(string workerId)
@@ -180,6 +224,30 @@ public sealed class BulkRunCoordinatorTests
                         : [],
                     MissingSourceAttributes: [],
                     Bucket: "updates",
+                    ReviewCategory: null,
+                    ReviewCaseType: null,
+                    Reason: null,
+                    CanAutoApply: true));
+        }
+    }
+
+    private sealed class CreateWorkerPlanningService : IWorkerPlanningService
+    {
+        public Task<PlannedWorkerAction> PlanAsync(WorkerSnapshot worker, string? logPath, CancellationToken cancellationToken)
+        {
+            _ = logPath;
+            _ = cancellationToken;
+
+            return Task.FromResult(
+                new PlannedWorkerAction(
+                    Worker: worker,
+                    DirectoryUser: new DirectoryUserSnapshot(null, null, null, null, new Dictionary<string, string?>()),
+                    Identity: new IdentityMatchResult("creates", false, worker.WorkerId, null, null),
+                    ManagerDistinguishedName: null,
+                    ProposedEmailAddress: $"{worker.WorkerId}@example.com",
+                    AttributeChanges: [new AttributeChange("displayName", "preferredName", "(unset)", worker.PreferredName, true)],
+                    MissingSourceAttributes: [],
+                    Bucket: "creates",
                     ReviewCategory: null,
                     ReviewCaseType: null,
                     Reason: null,
@@ -301,6 +369,14 @@ public sealed class BulkRunCoordinatorTests
     private sealed class CapturingRunLifecycleService : IRunLifecycleService
     {
         public static List<RunEntryRecord> Entries { get; } = [];
+        public static int CompletedCalls { get; private set; }
+        public static int FailedCalls { get; private set; }
+
+        public static void Reset()
+        {
+            CompletedCalls = 0;
+            FailedCalls = 0;
+        }
 
         public Task ExecutePlannedRunAsync(RunPlan plan, CancellationToken cancellationToken)
         {
@@ -355,6 +431,7 @@ public sealed class BulkRunCoordinatorTests
             _ = report;
             _ = startedAt;
             _ = cancellationToken;
+            CompletedCalls++;
             return Task.CompletedTask;
         }
 
@@ -365,7 +442,19 @@ public sealed class BulkRunCoordinatorTests
 
         public Task FailRunAsync(string runId, string mode, bool dryRun, int processedWorkers, int totalWorkers, string? currentWorkerId, string errorMessage, RunTally tally, JsonElement report, DateTimeOffset startedAt, CancellationToken cancellationToken)
         {
-            throw new InvalidOperationException("Bulk run should not fail for a single planning exception.");
+            _ = runId;
+            _ = mode;
+            _ = dryRun;
+            _ = processedWorkers;
+            _ = totalWorkers;
+            _ = currentWorkerId;
+            _ = errorMessage;
+            _ = tally;
+            _ = report;
+            _ = startedAt;
+            _ = cancellationToken;
+            FailedCalls++;
+            return Task.CompletedTask;
         }
     }
 
