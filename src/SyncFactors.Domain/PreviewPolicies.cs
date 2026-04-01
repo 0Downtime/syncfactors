@@ -119,20 +119,23 @@ public sealed class AttributeDiffService : IAttributeDiffService
             before: FormatValue(GetDirectoryValue(currentAttributes, "displayName")),
             after: proposedDisplayName,
             changed: !string.Equals(GetDirectoryValue(currentAttributes, "displayName"), proposedDisplayName, StringComparison.Ordinal));
+        var isCreate = string.IsNullOrWhiteSpace(directoryUser?.SamAccountName);
+        var currentUserPrincipalName = GetDirectoryValue(currentAttributes, "UserPrincipalName");
+        var currentMail = GetDirectoryValue(currentAttributes, "mail");
         UpsertSystemAttributeChange(
             changes,
             attribute: "UserPrincipalName",
             source: "resolved email local-part",
-            before: FormatValue(GetDirectoryValue(currentAttributes, "UserPrincipalName")),
-            after: FormatValue(proposedEmailAddress),
-            changed: !string.Equals(GetDirectoryValue(currentAttributes, "UserPrincipalName"), proposedEmailAddress, StringComparison.Ordinal));
+            before: FormatValue(currentUserPrincipalName),
+            after: FormatValue(isCreate ? proposedEmailAddress : currentUserPrincipalName),
+            changed: isCreate && !string.Equals(currentUserPrincipalName, proposedEmailAddress, StringComparison.Ordinal));
         UpsertSystemAttributeChange(
             changes,
             attribute: "mail",
             source: "resolved email local-part",
-            before: FormatValue(GetDirectoryValue(currentAttributes, "mail")),
-            after: FormatValue(proposedEmailAddress),
-            changed: !string.Equals(GetDirectoryValue(currentAttributes, "mail"), proposedEmailAddress, StringComparison.Ordinal));
+            before: FormatValue(currentMail),
+            after: FormatValue(isCreate ? proposedEmailAddress : currentMail),
+            changed: isCreate && !string.Equals(currentMail, proposedEmailAddress, StringComparison.Ordinal));
 
         _logger.LogDebug(
             "Attribute diff completed. WorkerId={WorkerId} EnabledMappings={EnabledMappings} ChangedMappings={ChangedMappings}",

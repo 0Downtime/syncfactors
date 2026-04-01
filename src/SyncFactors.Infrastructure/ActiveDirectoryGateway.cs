@@ -220,17 +220,27 @@ public sealed class ActiveDirectoryGateway(
         }
 
         using var connection = CreateConnection(config, logger, $"resolve email local-part for worker {worker.WorkerId}");
+        return ResolveAvailableEmailLocalPart(
+            worker.WorkerId,
+            baseLocalPart,
+            candidate => EmailLocalPartExists(connection, config, candidate, existingSamAccountName, logger, worker.WorkerId));
+    }
 
+    private static string ResolveAvailableEmailLocalPart(
+        string workerId,
+        string baseLocalPart,
+        Func<string, bool> candidateExists)
+    {
         for (var suffix = 0; suffix < 1000; suffix++)
         {
             var candidate = suffix == 0 ? baseLocalPart : $"{baseLocalPart}{suffix + 1}";
-            if (!EmailLocalPartExists(connection, config, candidate, existingSamAccountName, logger, worker.WorkerId))
+            if (!candidateExists(candidate))
             {
                 return candidate;
             }
         }
 
-        throw new InvalidOperationException($"Could not find an available email local part for worker {worker.WorkerId}.");
+        throw new InvalidOperationException($"Could not find an available email local part for worker {workerId}.");
     }
 
     private static bool EmailLocalPartExists(
