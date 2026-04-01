@@ -30,6 +30,7 @@
       "deltaSyncEnabled": false,
       "deltaOverlapMinutes": 5,
       "baseFilter": "emplStatus in 'A','U'",
+      "inactiveRetentionDays": 180,
       "pageSize": 200,
       "select": [
         "userId",
