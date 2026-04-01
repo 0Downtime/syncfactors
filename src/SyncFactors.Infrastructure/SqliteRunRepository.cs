@@ -726,6 +726,11 @@ public sealed class SqliteRunRepository(SqlitePathResolver pathResolver) : IRunR
             return "Bulk full scan";
         }
 
+        if (string.Equals(mode, "DeleteAllUsers", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Delete all users";
+        }
+
         return "Unknown";
     }
 

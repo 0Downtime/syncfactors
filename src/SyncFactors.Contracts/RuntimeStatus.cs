@@ -173,6 +173,7 @@ public sealed record RunQueueRequest(
 
 public sealed record StartRunRequest(
     bool DryRun,
+    string Mode = "BulkSync",
     string RunTrigger = "AdHoc",
     string? RequestedBy = null);
 
