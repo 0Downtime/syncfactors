@@ -45,9 +45,10 @@ Codex app worktrees can bootstrap this repository automatically through the chec
 
 This setup is macOS-only in v1 and is intentionally scoped to the core local dev loop:
 - prepare local config files for the .NET rewrite when missing
-- create gitignored local config files from `config/sample*.json` when missing
+- copy ignored local runtime files from the primary checkout when missing
+- fall back to tracked `config/sample*.json` files when local config files are still missing
 - create runtime/report directories used by the .NET API and worker
-- create a gitignored `.env.worktree` from [`.env.worktree.example`](/Users/chrisbrien/.codex/worktrees/be52/syncfactors/.env.worktree.example) when missing
+- fall back to [`.env.worktree.example`](/Users/chrisbrien/.codex/worktrees/be52/syncfactors/.env.worktree.example) when `.env.worktree` is still missing
 
 The per-worktree runtime contract is `.env.worktree`. Keep auth, profile selection, ports, and local overrides there rather than in tracked JSON or tracked `.codex` files. JSON remains the structural config layer. The default local test path is fake SuccessFactors plus real Active Directory, so fill in the AD values there before starting the rewrite services. The default values are:
 
@@ -60,7 +61,7 @@ SYNCFACTORS_API_PORT=5087
 MOCK_SF_PORT=18080
 ```
 
-Set `SYNCFACTORS_RUN_PROFILE=mock` or `real` to switch the active SuccessFactors config. Leave `SYNCFACTORS_CONFIG_PATH` empty for profile-based resolution, or set it only when you want an explicit one-off override. The setup script leaves existing local files untouched, so it is safe to rerun. It prepares local files and directories only; it does not start long-running services. The primary launcher is PowerShell so the same commands work on macOS and Windows. On macOS, the Codex helper actions still open dedicated terminal windows through the local shell helper.
+Set `SYNCFACTORS_RUN_PROFILE=mock` or `real` to switch the active SuccessFactors config. Leave `SYNCFACTORS_CONFIG_PATH` empty for profile-based resolution, or set it only when you want an explicit one-off override. In secondary worktrees, the setup script first seeds `.env.worktree` and root `config/local*` or `config/*.variables` files from the primary checkout when they exist. It then falls back to tracked sample files for anything still missing. Existing local files stay untouched, so it is safe to rerun. It prepares local files and directories only; it does not start long-running services. The primary launcher is PowerShell so the same commands work on macOS and Windows. On macOS, the Codex helper actions still open dedicated terminal windows through the local shell helper.
 
 The intended local test loop is:
 - run `pwsh ./scripts/codex/setup-worktree.ps1`
