@@ -49,7 +49,7 @@ public sealed class ActiveDirectoryGateway(
         }
     }
 
-    public async Task<string> ResolveAvailableEmailLocalPartAsync(WorkerSnapshot worker, CancellationToken cancellationToken)
+    public async Task<string> ResolveAvailableEmailLocalPartAsync(WorkerSnapshot worker, bool isCreate, CancellationToken cancellationToken)
     {
         var baseLocalPart = DirectoryIdentityFormatter.BuildBaseEmailLocalPart(worker.PreferredName, worker.LastName);
         var config = configLoader.GetSyncConfig().Ad;
@@ -66,8 +66,19 @@ public sealed class ActiveDirectoryGateway(
                 server: config.Server,
                 cancellationToken: cancellationToken);
 
+            if (!isCreate)
+            {
+                return baseLocalPart;
+            }
+
             return await ExecuteWithTimeoutAsync(
-                operation: () => ResolveAvailableEmailLocalPart(worker, config, baseLocalPart, existingDirectoryUser?.SamAccountName, logger),
+                operation: () => ResolveAvailableEmailLocalPart(
+                    worker,
+                    config,
+                    baseLocalPart,
+                    existingDirectoryUser?.SamAccountName,
+                    config.IdentityPolicy.ResolveCreateConflictingUpnAndMail,
+                    logger),
                 operationName: "email local-part lookup",
                 server: config.Server,
                 cancellationToken: cancellationToken);
@@ -200,8 +211,14 @@ public sealed class ActiveDirectoryGateway(
         ActiveDirectoryConfig config,
         string baseLocalPart,
         string? existingSamAccountName,
+        bool resolveCreateConflictingUpnAndMail,
         ILogger logger)
     {
+        if (!resolveCreateConflictingUpnAndMail)
+        {
+            return baseLocalPart;
+        }
+
         using var connection = CreateConnection(config, logger, $"resolve email local-part for worker {worker.WorkerId}");
 
         for (var suffix = 0; suffix < 1000; suffix++)
@@ -227,7 +244,7 @@ public sealed class ActiveDirectoryGateway(
         var userPrincipalName = DirectoryIdentityFormatter.BuildEmailAddress(localPart);
         var request = new SearchRequest(
             config.DefaultActiveOu,
-            $"(userPrincipalName={EscapeLdapFilter(userPrincipalName)})",
+            $"(|(userPrincipalName={EscapeLdapFilter(userPrincipalName)})(mail={EscapeLdapFilter(userPrincipalName)}))",
             SearchScope.Subtree,
             "sAMAccountName");
 

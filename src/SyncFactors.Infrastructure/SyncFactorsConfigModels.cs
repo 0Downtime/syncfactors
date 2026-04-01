@@ -61,7 +61,11 @@ public sealed record ActiveDirectoryConfig(
     string? BindPassword,
     string IdentityAttribute,
     string DefaultActiveOu,
-    string GraveyardOu);
+    string GraveyardOu,
+    ActiveDirectoryIdentityPolicyConfig IdentityPolicy);
+
+public sealed record ActiveDirectoryIdentityPolicyConfig(
+    bool ResolveCreateConflictingUpnAndMail);
 
 public sealed record SyncPolicyConfig(
     int EnableBeforeStartDays,

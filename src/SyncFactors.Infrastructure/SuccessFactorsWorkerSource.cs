@@ -1332,7 +1332,7 @@ public sealed class SuccessFactorsWorkerSource(
         var correlationId = Guid.NewGuid().ToString("D");
         request.Headers.TryAddWithoutValidation("x-correlation-id", correlationId);
         request.Headers.TryAddWithoutValidation("X-SF-Correlation-Id", correlationId);
-        request.Headers.TryAddWithoutValidation("X-SF-Process-Name", "SyncFactors.Next.WorkerPreview");
+        request.Headers.TryAddWithoutValidation("X-SF-Process-Name", "SyncFactors.WorkerPreview");
         request.Headers.TryAddWithoutValidation("X-SF-Execution-Id", workerId);
     }
 

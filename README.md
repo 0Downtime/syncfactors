@@ -1,6 +1,6 @@
-# [Alpha] SyncFactors.Next
+# [Alpha] SyncFactors
 
-`SyncFactors.Next` is the primary SyncFactors implementation and repository root.
+`SyncFactors` is the primary SyncFactors implementation and repository root.
 
 > [!WARNING]
 > [Alpha] This software is in active development, has a high risk of failure, and is not ready for production use.
@@ -8,7 +8,7 @@
 
 ## Current State
 
-- The repository root is now the .NET-based `SyncFactors.Next` implementation.
+- The repository root is now the .NET-based `SyncFactors` implementation.
 - The current stack is local-first and centered on ASP.NET Core, background workers, and SQLite-backed runtime state.
 - Production readiness is not implied by the current feature set, repository layout, or available scripts.
 

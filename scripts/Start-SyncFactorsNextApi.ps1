@@ -23,7 +23,7 @@ Set-StandardLoggingEnvironment -DefaultLevel 'Information' -Overrides @{
     'Logging__LogLevel__SyncFactors' = 'Debug'
 }
 
-Write-Host "Starting SyncFactors.Next API" -ForegroundColor Cyan
+Write-Host "Starting SyncFactors API" -ForegroundColor Cyan
 Write-Host "URL: $Urls"
 Write-Host "Config: $resolvedConfigPath"
 Write-Host "Mapping Config: $resolvedMappingConfigPath"

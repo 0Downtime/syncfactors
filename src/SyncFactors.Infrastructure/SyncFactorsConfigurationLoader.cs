@@ -84,7 +84,8 @@ public sealed class SyncFactorsConfigurationLoader
                     fallbackJsonValue: document.GetRequiredObject("ad").TryGetString("bindPassword")),
                 IdentityAttribute: document.GetRequiredObject("ad").GetRequiredString("identityAttribute"),
                 DefaultActiveOu: document.GetRequiredObject("ad").GetRequiredString("defaultActiveOu"),
-                GraveyardOu: document.GetRequiredObject("ad").GetRequiredString("graveyardOu")),
+                GraveyardOu: document.GetRequiredObject("ad").GetRequiredString("graveyardOu"),
+                IdentityPolicy: LoadActiveDirectoryIdentityPolicy(document.GetRequiredObject("ad"))),
             Sync: new SyncPolicyConfig(
                 EnableBeforeStartDays: document.GetRequiredObject("sync").GetRequiredInt32("enableBeforeStartDays"),
                 DeletionRetentionDays: document.GetRequiredObject("sync").GetRequiredInt32("deletionRetentionDays")),
@@ -231,5 +232,16 @@ public sealed class SyncFactorsConfigurationLoader
         }
 
         return days;
+    }
+
+    private static ActiveDirectoryIdentityPolicyConfig LoadActiveDirectoryIdentityPolicy(JsonElement ad)
+    {
+        if (!ad.TryGetObject("identityPolicy", out var identityPolicy))
+        {
+            return new ActiveDirectoryIdentityPolicyConfig(ResolveCreateConflictingUpnAndMail: false);
+        }
+
+        return new ActiveDirectoryIdentityPolicyConfig(
+            ResolveCreateConflictingUpnAndMail: identityPolicy.TryGetBoolean("resolveCreateConflictingUpnAndMail") ?? false);
     }
 }

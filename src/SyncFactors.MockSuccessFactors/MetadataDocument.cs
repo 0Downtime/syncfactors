@@ -39,7 +39,7 @@ public static class MetadataDocument
                 <EntitySet Name="EmpJob" EntityType="SFOData.EmpJob" />
               </EntityContainer>
               <Annotations Target="SFOData.SFODataContainer">
-                <Annotation Term="Org.OData.Core.V1.Description" String="Mock SuccessFactors metadata for SyncFactors.Next" />
+                <Annotation Term="Org.OData.Core.V1.Description" String="Mock SuccessFactors metadata for SyncFactors" />
               </Annotations>
             </Schema>
           </edmx:DataServices>
