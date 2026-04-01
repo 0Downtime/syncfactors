@@ -11,6 +11,8 @@ public sealed class MockSuccessFactorsOptions
     public MockAuthenticationOptions Authentication { get; set; } = new();
 
     public MockSyntheticPopulationOptions SyntheticPopulation { get; set; } = new();
+
+    public MockEmpJobOptions EmpJob { get; set; } = new();
 }
 
 public sealed class MockSyntheticPopulationOptions
@@ -35,6 +37,11 @@ public sealed class MockAuthenticationOptions
     public string BasicPassword { get; set; } = "mock-password";
 
     public string BearerToken { get; set; } = "mock-access-token";
+}
+
+public sealed class MockEmpJobOptions
+{
+    public bool IncludeTaggedPrehiresInDefaultListing { get; set; } = true;
 }
 
 public sealed class MockSuccessFactorsOptionsSetup : IConfigureOptions<MockSuccessFactorsOptions>

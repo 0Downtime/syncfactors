@@ -9,11 +9,15 @@ public sealed class MockApiTests
 {
     private static readonly string FixturePath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "config", "mock-successfactors", "baseline-fixtures.json"));
 
-    private static MockFixtureStore CreateStore(bool syntheticPopulationEnabled = false, int targetWorkerCount = 5000)
+    private static MockFixtureStore CreateStore(bool syntheticPopulationEnabled = false, int targetWorkerCount = 5000, bool includeTaggedPrehiresInDefaultListing = true)
     {
         return new MockFixtureStore(Options.Create(new MockSuccessFactorsOptions
         {
             FixturePath = FixturePath,
+            EmpJob = new MockEmpJobOptions
+            {
+                IncludeTaggedPrehiresInDefaultListing = includeTaggedPrehiresInDefaultListing
+            },
             SyntheticPopulation = new MockSyntheticPopulationOptions
             {
                 Enabled = syntheticPopulationEnabled,
@@ -235,8 +239,8 @@ public sealed class MockApiTests
 
         Assert.Equal(3, results.GetArrayLength());
         Assert.Equal("user.10001", results[0].GetProperty("userId").GetString());
-        Assert.Equal("user.10003", results[1].GetProperty("userId").GetString());
-        Assert.Equal("user.10005", results[2].GetProperty("userId").GetString());
+        Assert.Equal("user.10002", results[1].GetProperty("userId").GetString());
+        Assert.Equal("user.10003", results[2].GetProperty("userId").GetString());
     }
 
     [Fact]
@@ -286,6 +290,46 @@ public sealed class MockApiTests
         var results = document.RootElement.GetProperty("d").GetProperty("results");
 
         Assert.Contains(results.EnumerateArray(), row => row.GetProperty("userId").GetString() == "user.10003");
+    }
+
+    [Fact]
+    public void EmpJobProjection_DefaultListing_IncludesTaggedPrehireWorkers()
+    {
+        var store = CreateStore();
+        var builder = new ODataResponseBuilder();
+        var query = ODataQueryParser.Parse(new Microsoft.AspNetCore.Http.QueryCollection(new Dictionary<string, Microsoft.Extensions.Primitives.StringValues>
+        {
+            ["$format"] = "json",
+            ["$filter"] = "emplStatus in 'A','U'",
+            ["$top"] = "20",
+            ["$select"] = "userId,startDate"
+        }));
+
+        var payload = builder.Build(store.QueryWorkers("EmpJob", query), query, "EmpJob");
+        using var document = JsonDocument.Parse(JsonSerializer.Serialize(payload));
+        var results = document.RootElement.GetProperty("d").GetProperty("results");
+
+        Assert.Contains(results.EnumerateArray(), row => row.GetProperty("userId").GetString() == "user.10003");
+    }
+
+    [Fact]
+    public void EmpJobProjection_DefaultListing_CanExcludeTaggedPrehireWorkers()
+    {
+        var store = CreateStore(includeTaggedPrehiresInDefaultListing: false);
+        var builder = new ODataResponseBuilder();
+        var query = ODataQueryParser.Parse(new Microsoft.AspNetCore.Http.QueryCollection(new Dictionary<string, Microsoft.Extensions.Primitives.StringValues>
+        {
+            ["$format"] = "json",
+            ["$filter"] = "emplStatus in 'A','U'",
+            ["$top"] = "20",
+            ["$select"] = "userId,startDate"
+        }));
+
+        var payload = builder.Build(store.QueryWorkers("EmpJob", query), query, "EmpJob");
+        using var document = JsonDocument.Parse(JsonSerializer.Serialize(payload));
+        var results = document.RootElement.GetProperty("d").GetProperty("results");
+
+        Assert.DoesNotContain(results.EnumerateArray(), row => row.GetProperty("userId").GetString() == "user.10003");
     }
 
     [Fact]

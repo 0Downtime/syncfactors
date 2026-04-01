@@ -9,6 +9,7 @@ public sealed class MockFixtureStore(IOptions<MockSuccessFactorsOptions> options
 {
     private const int SyntheticWorkerIdStart = 10000;
     private readonly Lazy<MockFixtureDocument> _document = new(() => Load(options.Value));
+    private readonly MockSuccessFactorsOptions _options = options.Value;
 
     public MockFixtureDocument GetDocument() => _document.Value;
 
@@ -40,7 +41,7 @@ public sealed class MockFixtureStore(IOptions<MockSuccessFactorsOptions> options
         }
         else if (string.Equals(entitySet, "EmpJob", StringComparison.OrdinalIgnoreCase))
         {
-            workers = ApplyEmpJobSemantics(workers, query);
+            workers = ApplyEmpJobSemantics(workers, query, _options.EmpJob);
         }
 
         return workers.ToArray();
@@ -306,7 +307,7 @@ public sealed class MockFixtureStore(IOptions<MockSuccessFactorsOptions> options
         return $"{value}{suffix}";
     }
 
-    private static IEnumerable<MockWorkerFixture> ApplyEmpJobSemantics(IEnumerable<MockWorkerFixture> workers, ODataQuery query)
+    private static IEnumerable<MockWorkerFixture> ApplyEmpJobSemantics(IEnumerable<MockWorkerFixture> workers, ODataQuery query, MockEmpJobOptions empJobOptions)
     {
         if (!string.IsNullOrWhiteSpace(query.AsOfDate) && DateTimeOffset.TryParse(query.AsOfDate, out var explicitAsOf))
         {
@@ -314,7 +315,9 @@ public sealed class MockFixtureStore(IOptions<MockSuccessFactorsOptions> options
         }
         else
         {
-            workers = workers.Where(worker => IsEffectiveOnOrBefore(worker.StartDate, DateTimeOffset.UtcNow));
+            workers = workers.Where(worker =>
+                IsEffectiveOnOrBefore(worker.StartDate, DateTimeOffset.UtcNow) ||
+                (empJobOptions.IncludeTaggedPrehiresInDefaultListing && IsTaggedPrehire(worker)));
         }
 
         if (string.IsNullOrWhiteSpace(query.Filter))
@@ -345,5 +348,10 @@ public sealed class MockFixtureStore(IOptions<MockSuccessFactorsOptions> options
         }
 
         return parsedStart <= asOfDate;
+    }
+
+    private static bool IsTaggedPrehire(MockWorkerFixture worker)
+    {
+        return worker.ScenarioTags.Any(tag => string.Equals(tag, "prehire", StringComparison.OrdinalIgnoreCase));
     }
 }
