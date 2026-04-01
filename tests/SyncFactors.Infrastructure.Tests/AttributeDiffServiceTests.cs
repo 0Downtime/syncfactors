@@ -8,6 +8,107 @@ namespace SyncFactors.Infrastructure.Tests;
 public sealed class AttributeDiffServiceTests
 {
     [Fact]
+    public async Task BuildDiffAsync_PreservesExistingEmailTargets_ForMatchedUsers()
+    {
+        var tempRoot = Path.Combine(Path.GetTempPath(), "syncfactors-attribute-diff", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempRoot);
+
+        var configPath = Path.Combine(tempRoot, "sync-config.json");
+        var mappingConfigPath = Path.Combine(tempRoot, "mapping-config.json");
+
+        await File.WriteAllTextAsync(configPath, """
+        {
+          "secrets": {
+            "adServerEnv": null,
+            "adUsernameEnv": null,
+            "adBindPasswordEnv": null
+          },
+          "successFactors": {
+            "baseUrl": "http://example.test/odata/v2",
+            "auth": {
+              "mode": "basic",
+              "basic": {
+                "username": "mock-user",
+                "password": "mock-password"
+              }
+            },
+            "query": {
+              "entitySet": "PerPerson",
+              "identityField": "personIdExternal",
+              "deltaField": "lastModifiedDateTime",
+              "select": ["personIdExternal"],
+              "expand": []
+            }
+          },
+          "ad": {
+            "server": "ldap.example.test",
+            "username": "",
+            "bindPassword": "",
+            "identityAttribute": "employeeID",
+            "defaultActiveOu": "OU=LabUsers,DC=example,DC=com",
+            "graveyardOu": "OU=LabGraveyard,DC=example,DC=com"
+          },
+          "sync": {
+            "enableBeforeStartDays": 7,
+            "deletionRetentionDays": 90
+          },
+          "safety": {
+            "maxCreatesPerRun": 10,
+            "maxDisablesPerRun": 10,
+            "maxDeletionsPerRun": 10
+          },
+          "reporting": {
+            "outputDirectory": "/tmp"
+          }
+        }
+        """);
+
+        await File.WriteAllTextAsync(mappingConfigPath, """
+        {
+          "mappings": []
+        }
+        """);
+
+        var loader = new SyncFactorsConfigurationLoader(new SyncFactorsConfigPathResolver(configPath, mappingConfigPath));
+        var mappingProvider = new AttributeMappingProvider(loader, NullLogger<AttributeMappingProvider>.Instance);
+        var diffService = new AttributeDiffService(mappingProvider, new NoopWorkerPreviewLogWriter(), NullLogger<AttributeDiffService>.Instance);
+
+        var worker = new WorkerSnapshot(
+            WorkerId: "10001",
+            PreferredName: "John",
+            LastName: "Smith",
+            Department: "IT",
+            TargetOu: "OU=LabUsers,DC=example,DC=com",
+            IsPrehire: false,
+            Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase));
+
+        var directoryUser = new DirectoryUserSnapshot(
+            SamAccountName: "10001",
+            DistinguishedName: "CN=Smith\\, John,OU=LabUsers,DC=example,DC=com",
+            Enabled: true,
+            DisplayName: "Smith, John",
+            Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["UserPrincipalName"] = "existing.upn@spireenergy.com",
+                ["mail"] = "existing.mail@spireenergy.com"
+            });
+
+        var changes = await diffService.BuildDiffAsync(
+            worker,
+            directoryUser,
+            proposedEmailAddress: "john.smith2@spireenergy.com",
+            logPath: null,
+            CancellationToken.None);
+
+        var upnChange = Assert.Single(changes.Where(change => change.Attribute == "UserPrincipalName"));
+        var mailChange = Assert.Single(changes.Where(change => change.Attribute == "mail"));
+        Assert.Equal("existing.upn@spireenergy.com", upnChange.After);
+        Assert.False(upnChange.Changed);
+        Assert.Equal("existing.mail@spireenergy.com", mailChange.After);
+        Assert.False(mailChange.Changed);
+    }
+
+    [Fact]
     public async Task BuildDiffAsync_UsesResolvedEmailAddressForEmailTargets()
     {
         var tempRoot = Path.Combine(Path.GetTempPath(), "syncfactors-attribute-diff", Guid.NewGuid().ToString("N"));

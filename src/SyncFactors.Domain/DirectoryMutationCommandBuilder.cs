@@ -9,7 +9,16 @@ public sealed class DirectoryMutationCommandBuilder : IDirectoryMutationCommandB
         var action = plan.Identity.MatchedExistingUser ? "UpdateUser" : "CreateUser";
         var samAccountName = plan.Identity.SamAccountName;
         var displayName = plan.DirectoryUser.SamAccountName ?? samAccountName;
-        var mail = plan.ProposedEmailAddress;
+        var userPrincipalName = plan.Identity.MatchedExistingUser
+            ? plan.DirectoryUser.Attributes.TryGetValue("UserPrincipalName", out var existingUserPrincipalName) && !string.IsNullOrWhiteSpace(existingUserPrincipalName)
+                ? existingUserPrincipalName
+                : plan.ProposedEmailAddress
+            : plan.ProposedEmailAddress;
+        var mail = plan.Identity.MatchedExistingUser
+            ? plan.DirectoryUser.Attributes.TryGetValue("mail", out var existingMail) && !string.IsNullOrWhiteSpace(existingMail)
+                ? existingMail
+                : plan.ProposedEmailAddress
+            : plan.ProposedEmailAddress;
 
         return new DirectoryMutationCommand(
             Action: action,
@@ -17,7 +26,7 @@ public sealed class DirectoryMutationCommandBuilder : IDirectoryMutationCommandB
             ManagerId: plan.Worker.Attributes.TryGetValue("managerId", out var managerId) ? managerId : null,
             ManagerDistinguishedName: plan.ManagerDistinguishedName,
             SamAccountName: samAccountName,
-            UserPrincipalName: mail,
+            UserPrincipalName: userPrincipalName,
             Mail: mail,
             TargetOu: plan.Worker.TargetOu,
             DisplayName: displayName,

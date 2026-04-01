@@ -124,6 +124,9 @@
     "identityAttribute": "employeeID",
     "defaultActiveOu": "OU=LabUsers,DC=example,DC=com",
     "graveyardOu": "OU=LabGraveyard,DC=example,DC=com",
+    "identityPolicy": {
+      "resolveCreateConflictingUpnAndMail": false
+    },
     "defaultPassword": "Replace-This-Password123!",
     "ouRoutingRules": [
       {

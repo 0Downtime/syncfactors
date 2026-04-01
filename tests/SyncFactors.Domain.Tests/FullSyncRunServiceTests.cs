@@ -351,8 +351,9 @@ public sealed class FullSyncRunServiceTests
             return Task.FromResult(managerDistinguishedName);
         }
 
-        public Task<string> ResolveAvailableEmailLocalPartAsync(WorkerSnapshot worker, CancellationToken cancellationToken)
+        public Task<string> ResolveAvailableEmailLocalPartAsync(WorkerSnapshot worker, bool isCreate, CancellationToken cancellationToken)
         {
+            _ = isCreate;
             _ = cancellationToken;
             return Task.FromResult($"{worker.PreferredName.ToLowerInvariant()}.{worker.LastName.ToLowerInvariant()}");
         }

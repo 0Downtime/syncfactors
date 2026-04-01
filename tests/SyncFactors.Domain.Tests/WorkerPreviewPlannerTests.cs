@@ -190,6 +190,39 @@ public sealed class WorkerPreviewPlannerTests
         Assert.Null(preview.ReviewCategory);
     }
 
+    [Fact]
+    public async Task PreviewAsync_ForExistingUsers_PreservesCurrentEmailTargets()
+    {
+        var worker = new WorkerSnapshot(
+            WorkerId: "44522",
+            PreferredName: "Christopher",
+            LastName: "Brien",
+            Department: "Infrastructure & Security",
+            TargetOu: "OU=Employees,DC=example,DC=com",
+            IsPrehire: false,
+            Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase));
+
+        var planner = new WorkerPreviewPlanner(
+            new StubWorkerSource(worker),
+            new WorkerPlanningService(
+                new ExistingUserDirectoryGateway(),
+                new ExistingUserIdentityMatcher(),
+                new AttributeDiffService(new EmptyAttributeMappingProvider(), new StubWorkerPreviewLogWriter(), NullLogger<AttributeDiffService>.Instance),
+                new EmptyAttributeMappingProvider(),
+                NullLogger<WorkerPlanningService>.Instance),
+            new EmptyAttributeMappingProvider(),
+            new StubWorkerPreviewLogWriter(),
+            new StubRunRepository(),
+            NullLogger<WorkerPreviewPlanner>.Instance);
+
+        var preview = await planner.PreviewAsync("44522", CancellationToken.None);
+
+        Assert.Equal("existing.upn@spireenergy.com", preview.DiffRows.Single(row => row.Attribute == "UserPrincipalName").After);
+        Assert.False(preview.DiffRows.Single(row => row.Attribute == "UserPrincipalName").Changed);
+        Assert.Equal("existing.mail@spireenergy.com", preview.DiffRows.Single(row => row.Attribute == "mail").After);
+        Assert.False(preview.DiffRows.Single(row => row.Attribute == "mail").Changed);
+    }
+
     private sealed class StubWorkerSource(WorkerSnapshot worker) : IWorkerSource
     {
         public Task<WorkerSnapshot?> GetWorkerAsync(string workerId, CancellationToken cancellationToken)
@@ -224,9 +257,10 @@ public sealed class WorkerPreviewPlannerTests
             return Task.FromResult<string?>(null);
         }
 
-        public Task<string> ResolveAvailableEmailLocalPartAsync(WorkerSnapshot worker, CancellationToken cancellationToken)
+        public Task<string> ResolveAvailableEmailLocalPartAsync(WorkerSnapshot worker, bool isCreate, CancellationToken cancellationToken)
         {
             _ = worker;
+            _ = isCreate;
             _ = cancellationToken;
             return Task.FromResult("christopher.brien");
         }
@@ -355,6 +389,45 @@ public sealed class WorkerPreviewPlannerTests
                 Reason: "Matched existing user",
                 OperatorActionSummary: "Update account preview");
         }
+    }
+
+    private sealed class ExistingUserDirectoryGateway : IDirectoryGateway
+    {
+        public Task<DirectoryUserSnapshot?> FindByWorkerAsync(WorkerSnapshot worker, CancellationToken cancellationToken)
+        {
+            _ = worker;
+            _ = cancellationToken;
+            return Task.FromResult<DirectoryUserSnapshot?>(new DirectoryUserSnapshot(
+                SamAccountName: "cbrien",
+                DistinguishedName: "CN=Brien\\, Christopher,OU=Employees,DC=example,DC=com",
+                Enabled: true,
+                DisplayName: "Brien, Christopher",
+                Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+                {
+                    ["UserPrincipalName"] = "existing.upn@spireenergy.com",
+                    ["mail"] = "existing.mail@spireenergy.com"
+                }));
+        }
+
+        public Task<string?> ResolveManagerDistinguishedNameAsync(string managerId, CancellationToken cancellationToken)
+        {
+            _ = managerId;
+            _ = cancellationToken;
+            return Task.FromResult<string?>(null);
+        }
+
+        public Task<string> ResolveAvailableEmailLocalPartAsync(WorkerSnapshot worker, bool isCreate, CancellationToken cancellationToken)
+        {
+            _ = worker;
+            _ = isCreate;
+            _ = cancellationToken;
+            return Task.FromResult("christopher.brien2");
+        }
+    }
+
+    private sealed class EmptyAttributeMappingProvider : IAttributeMappingProvider
+    {
+        public IReadOnlyList<AttributeMapping> GetEnabledMappings() => [];
     }
 
     private class CapturingRunRepository : IRunRepository
