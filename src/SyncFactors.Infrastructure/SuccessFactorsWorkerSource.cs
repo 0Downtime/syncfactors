@@ -35,23 +35,60 @@ public sealed class SuccessFactorsWorkerSource(
         }
 
         var config = configLoader.GetSyncConfig();
-        var query = config.SuccessFactors.PreviewQuery ?? config.SuccessFactors.Query;
+        var previewQuery = config.SuccessFactors.PreviewQuery;
+        WorkerSnapshot? worker = null;
+        if (previewQuery is not null &&
+            !string.Equals(previewQuery.IdentityField, config.SuccessFactors.Query.IdentityField, StringComparison.OrdinalIgnoreCase))
+        {
+            var canonicalWorker = await TryResolveWorkerAsync(config, config.SuccessFactors.Query, workerId, cancellationToken);
+            if (canonicalWorker is not null)
+            {
+                var previewIdentity = ResolveIdentityValue(previewQuery.IdentityField, canonicalWorker);
+                if (!string.IsNullOrWhiteSpace(previewIdentity))
+                {
+                    worker = await TryResolveWorkerAsync(config, previewQuery, previewIdentity, cancellationToken, canonicalWorker.WorkerId);
+                }
+
+                worker ??= canonicalWorker;
+            }
+        }
+        else
+        {
+            var query = previewQuery ?? config.SuccessFactors.Query;
+            worker = await TryResolveWorkerAsync(config, query, workerId, cancellationToken);
+        }
+
+        if (worker is not null)
+        {
+            worker = NormalizeWorkerIdentity(worker, config.SuccessFactors.Query.IdentityField);
+            logger.LogInformation(
+                "Resolved worker from SuccessFactors. RequestedWorkerId={RequestedWorkerId} ResolvedWorkerId={ResolvedWorkerId}",
+                workerId,
+                worker.WorkerId);
+            return worker;
+        }
+
+        logger.LogWarning(
+            "No worker was returned from SuccessFactors. Falling back to scaffold worker source. WorkerId={WorkerId}",
+            workerId);
+
+        return await fallbackSource.GetWorkerAsync(workerId, cancellationToken);
+    }
+
+    private async Task<WorkerSnapshot?> TryResolveWorkerAsync(
+        SyncFactorsConfigDocument config,
+        SuccessFactorsQueryConfig query,
+        string workerId,
+        CancellationToken cancellationToken,
+        string? fallbackWorkerId = null)
+    {
         var responsePayload = await ExecuteWorkerRequestAsync(config, query, workerId, cancellationToken);
         var requestUri = responsePayload.RequestUri;
         var rawBody = responsePayload.Body;
         try
         {
             using var document = JsonDocument.Parse(rawBody);
-
-            var worker = TryParseWorker(document.RootElement, config, query, workerId);
-            if (worker is not null)
-            {
-                logger.LogInformation(
-                    "Resolved worker from SuccessFactors. RequestedWorkerId={RequestedWorkerId} ResolvedWorkerId={ResolvedWorkerId}",
-                    workerId,
-                    worker.WorkerId);
-                return worker;
-            }
+            return TryParseWorker(document.RootElement, config, query, fallbackWorkerId ?? workerId);
         }
         catch (JsonException ex)
         {
@@ -68,12 +105,32 @@ public sealed class SuccessFactorsWorkerSource(
                 summary: $"The API returned invalid JSON. Status={responsePayload.StatusCode}, ContentType={responsePayload.ContentType}, BodyPreview={TrimForLog(rawBody)}",
                 innerException: ex);
         }
+    }
 
-        logger.LogWarning(
-            "No worker was returned from SuccessFactors. Falling back to scaffold worker source. WorkerId={WorkerId}",
-            workerId);
+    private static WorkerSnapshot NormalizeWorkerIdentity(WorkerSnapshot worker, string canonicalIdentityField)
+    {
+        var canonicalWorkerId = ResolveIdentityValue(canonicalIdentityField, worker);
+        return string.IsNullOrWhiteSpace(canonicalWorkerId) || string.Equals(canonicalWorkerId, worker.WorkerId, StringComparison.Ordinal)
+            ? worker
+            : worker with { WorkerId = canonicalWorkerId };
+    }
 
-        return await fallbackSource.GetWorkerAsync(workerId, cancellationToken);
+    private static string? ResolveIdentityValue(string identityField, WorkerSnapshot worker)
+    {
+        if (string.IsNullOrWhiteSpace(identityField))
+        {
+            return worker.WorkerId;
+        }
+
+        if (worker.Attributes.TryGetValue(identityField, out var attributeValue) &&
+            !string.IsNullOrWhiteSpace(attributeValue))
+        {
+            return attributeValue;
+        }
+
+        return string.Equals(identityField, "workerId", StringComparison.OrdinalIgnoreCase)
+            ? worker.WorkerId
+            : null;
     }
 
     public async IAsyncEnumerable<WorkerSnapshot> ListWorkersAsync(WorkerListingMode mode, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
