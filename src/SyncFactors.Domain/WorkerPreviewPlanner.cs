@@ -101,6 +101,14 @@ public sealed class WorkerPreviewPlanner(
             + $"\"matchedExistingUser\":{ToJsonBoolean(preview.MatchedExistingUser ?? false)},"
             + $"\"proposedEnable\":{ToJsonNullableBoolean(preview.ProposedEnable)},"
             + $"\"currentEnabled\":{ToJsonNullableBoolean(preview.CurrentEnabled)},"
+            + $"\"currentOu\":{ToJsonString(preview.OperationSummary?.FromOu)},"
+            + $"\"targetOu\":{ToJsonString(preview.TargetOu)},"
+            + "\"operations\":["
+            + string.Join(",", preview.Entries
+                .SelectMany(entry => entry.Item.TryGetProperty("operations", out var operations) && operations.ValueKind == JsonValueKind.Array
+                    ? operations.EnumerateArray().Select(operation => operation.GetRawText())
+                    : []))
+            + "],"
             + "\"changedAttributeDetails\":["
             + string.Join(",", preview.DiffRows
                 .Where(row => row.Changed)
@@ -190,16 +198,16 @@ public sealed class WorkerPreviewPlanner(
             OperatorActionSummary: plan.Identity.OperatorActionSummary,
             SamAccountName: plan.Identity.SamAccountName,
             ManagerDistinguishedName: plan.ManagerDistinguishedName,
-            TargetOu: plan.Worker.TargetOu,
+            TargetOu: plan.TargetOu,
             CurrentDistinguishedName: plan.DirectoryUser.DistinguishedName,
-            CurrentEnabled: plan.DirectoryUser.Enabled,
-            ProposedEnable: plan.DirectoryUser.Enabled ?? true,
+            CurrentEnabled: plan.CurrentEnabled,
+            ProposedEnable: plan.TargetEnabled,
             OperationSummary: new OperationSummary(
-                Action: plan.Bucket == "creates" ? $"Create account {plan.Identity.SamAccountName}" : $"Update attributes for {plan.Identity.SamAccountName}",
-                Effect: plan.Bucket == "creates" ? null : $"{diffRows.Count(row => row.Changed)} attribute change.",
-                TargetOu: plan.Worker.TargetOu,
-                FromOu: null,
-                ToOu: plan.Worker.TargetOu),
+                Action: DescribeOperation(plan),
+                Effect: DescribeEffect(plan, diffRows),
+                TargetOu: plan.TargetOu,
+                FromOu: plan.CurrentOu,
+                ToOu: plan.TargetOu),
             DiffRows: diffRows,
             SourceAttributes: sourceAttributes,
             UsedSourceAttributes: usedSources,
@@ -209,7 +217,7 @@ public sealed class WorkerPreviewPlanner(
             [
                 new WorkerPreviewEntry(
                     Bucket: plan.Bucket,
-                    Item: item)
+                    Item: AddOperations(item, plan.Operations))
             ]);
     }
 
@@ -243,6 +251,71 @@ public sealed class WorkerPreviewPlanner(
     private static string SerializePreview(WorkerPreviewResult preview)
     {
         return JsonSerializer.Serialize(preview);
+    }
+
+    private static JsonElement AddOperations(JsonElement item, IReadOnlyList<DirectoryOperation> operations)
+    {
+        return ParseJson(
+            "{"
+            + $"\"workerId\":{item.GetProperty("workerId").GetRawText()},"
+            + $"\"samAccountName\":{item.GetProperty("samAccountName").GetRawText()},"
+            + $"\"targetOu\":{item.GetProperty("targetOu").GetRawText()},"
+            + $"\"matchedExistingUser\":{item.GetProperty("matchedExistingUser").GetRawText()},"
+            + "\"operations\":["
+            + string.Join(",", operations.Select(operation =>
+                "{"
+                + $"\"kind\":\"{Escape(operation.Kind)}\","
+                + $"\"targetOu\":{ToJsonString(operation.TargetOu)}"
+                + "}"))
+            + "],"
+            + "\"changedAttributeDetails\":"
+            + item.GetProperty("changedAttributeDetails").GetRawText()
+            + "}");
+    }
+
+    private static string DescribeOperation(PlannedWorkerAction plan)
+    {
+        var sam = plan.Identity.SamAccountName;
+        return plan.Bucket switch
+        {
+            "creates" => $"Create account {sam}",
+            "updates" => $"Update account {sam}",
+            "enables" => $"Activate account {sam}",
+            "disables" => $"Disable account {sam}",
+            "graveyardMoves" => $"Move account {sam} to graveyard",
+            "unchanged" => $"No changes for {sam}",
+            _ => plan.PrimaryAction
+        };
+    }
+
+    private static string? DescribeEffect(PlannedWorkerAction plan, IReadOnlyList<DiffRow> diffRows)
+    {
+        var changedCount = diffRows.Count(row => row.Changed);
+        var operationCount = plan.Operations.Count;
+        if (plan.Bucket == "creates")
+        {
+            return plan.TargetEnabled
+                ? "Create active account."
+                : "Create disabled account in the prehire OU.";
+        }
+
+        if (operationCount == 0 && changedCount == 0)
+        {
+            return "No attribute or lifecycle changes.";
+        }
+
+        var parts = new List<string>();
+        if (operationCount > 0)
+        {
+            parts.Add($"{operationCount} directory operation{(operationCount == 1 ? string.Empty : "s")}");
+        }
+
+        if (changedCount > 0)
+        {
+            parts.Add($"{changedCount} attribute change{(changedCount == 1 ? string.Empty : "s")}");
+        }
+
+        return string.Join(", ", parts) + ".";
     }
 
     private static IReadOnlyList<SourceAttributeRow> BuildUsedSourceAttributes(

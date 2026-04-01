@@ -44,6 +44,7 @@ public sealed class DependencyHealthServiceTests
                 "username": "",
                 "bindPassword": "",
                 "defaultActiveOu": "OU=LabUsers,DC=example,DC=com",
+                "prehireOu": "OU=Prehire,DC=example,DC=com",
                 "graveyardOu": "OU=Graveyard,DC=example,DC=com",
                 "identityAttribute": "employeeID"
               },
@@ -128,6 +129,7 @@ public sealed class DependencyHealthServiceTests
                 "username": "",
                 "bindPassword": "",
                 "defaultActiveOu": "OU=LabUsers,DC=example,DC=com",
+                "prehireOu": "OU=Prehire,DC=example,DC=com",
                 "graveyardOu": "OU=Graveyard,DC=example,DC=com",
                 "identityAttribute": "employeeID"
               },
@@ -217,6 +219,7 @@ public sealed class DependencyHealthServiceTests
                 "username": "",
                 "bindPassword": "",
                 "defaultActiveOu": "OU=LabUsers,DC=example,DC=com",
+                "prehireOu": "OU=Prehire,DC=example,DC=com",
                 "graveyardOu": "OU=Graveyard,DC=example,DC=com",
                 "identityAttribute": "employeeID"
               },
@@ -302,6 +305,7 @@ public sealed class DependencyHealthServiceTests
                 "username": "",
                 "bindPassword": "",
                 "defaultActiveOu": "OU=LabUsers,DC=example,DC=com",
+                "prehireOu": "OU=Prehire,DC=example,DC=com",
                 "graveyardOu": "OU=Graveyard,DC=example,DC=com",
                 "identityAttribute": "employeeID"
               },

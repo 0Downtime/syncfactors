@@ -7,6 +7,7 @@ namespace SyncFactors.Domain;
 public sealed class WorkerPlanningService(
     IDirectoryGateway directoryGateway,
     IIdentityMatcher identityMatcher,
+    ILifecyclePolicy lifecyclePolicy,
     IAttributeDiffService attributeDiffService,
     IAttributeMappingProvider attributeMappingProvider,
     ILogger<WorkerPlanningService> logger) : IWorkerPlanningService
@@ -27,6 +28,7 @@ public sealed class WorkerPlanningService(
             : await directoryGateway.ResolveManagerDistinguishedNameAsync(managerId, cancellationToken);
 
         var identity = identityMatcher.Match(worker, directoryUser);
+        var lifecycle = lifecyclePolicy.Evaluate(worker, directoryUser);
         var proposedEmailAddress = identity.MatchedExistingUser
             ? directoryUser.Attributes.TryGetValue("UserPrincipalName", out var existingUserPrincipalName) && !string.IsNullOrWhiteSpace(existingUserPrincipalName)
                 ? existingUserPrincipalName
@@ -39,10 +41,11 @@ public sealed class WorkerPlanningService(
         var attributeChanges = await attributeDiffService.BuildDiffAsync(worker, directoryUser, proposedEmailAddress, logPath, cancellationToken);
         var missingSourceAttributes = BuildMissingSourceAttributes(worker.Attributes, attributeMappingProvider.GetEnabledMappings());
 
-        var bucket = identity.Bucket;
+        var currentOu = DirectoryDistinguishedName.GetParentOu(directoryUser.DistinguishedName);
+        var bucket = lifecycle.Bucket;
         string? reviewCaseType = null;
         string? reviewCategory = null;
-        string? reason = identity.Reason;
+        string? reason = lifecycle.Reason ?? identity.Reason;
 
         if (missingSourceAttributes.Count > 0)
         {
@@ -51,9 +54,10 @@ public sealed class WorkerPlanningService(
             reviewCaseType = "MissingRequiredSourceAttribute";
             reason = missingSourceAttributes[0].Reason;
         }
-        var canAutoApply =
-            string.Equals(bucket, "creates", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(bucket, "updates", StringComparison.OrdinalIgnoreCase);
+        var targetEnabled = lifecycle.TargetEnabled;
+        var operations = BuildOperations(bucket, directoryUser, lifecycle.TargetOu, targetEnabled, attributeChanges);
+        var primaryAction = ResolvePrimaryAction(bucket, operations);
+        var canAutoApply = operations.Count > 0;
 
         logger.LogInformation(
             "Planned worker action. WorkerId={WorkerId} Bucket={Bucket} AutoApply={CanAutoApply} MissingRequiredCount={MissingRequiredCount}",
@@ -71,10 +75,78 @@ public sealed class WorkerPlanningService(
             AttributeChanges: attributeChanges,
             MissingSourceAttributes: missingSourceAttributes,
             Bucket: bucket,
+            CurrentOu: currentOu,
+            TargetOu: lifecycle.TargetOu,
+            CurrentEnabled: directoryUser.Enabled,
+            TargetEnabled: targetEnabled,
+            PrimaryAction: primaryAction,
+            Operations: operations,
             ReviewCategory: reviewCategory,
             ReviewCaseType: reviewCaseType,
             Reason: reason,
             CanAutoApply: canAutoApply);
+    }
+
+    private static IReadOnlyList<DirectoryOperation> BuildOperations(
+        string bucket,
+        DirectoryUserSnapshot directoryUser,
+        string targetOu,
+        bool targetEnabled,
+        IReadOnlyList<AttributeChange> attributeChanges)
+    {
+        var operations = new List<DirectoryOperation>();
+        var hasExistingUser = !string.IsNullOrWhiteSpace(directoryUser.SamAccountName);
+        var currentOu = DirectoryDistinguishedName.GetParentOu(directoryUser.DistinguishedName);
+        var hasAttributeChanges = attributeChanges.Any(change => change.Changed);
+
+        if (string.Equals(bucket, "manualReview", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(bucket, "quarantined", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(bucket, "unchanged", StringComparison.OrdinalIgnoreCase))
+        {
+            return operations;
+        }
+
+        if (!hasExistingUser)
+        {
+            operations.Add(new DirectoryOperation("CreateUser", targetOu));
+            return operations;
+        }
+
+        if (!string.IsNullOrWhiteSpace(targetOu) &&
+            !string.Equals(currentOu, targetOu, StringComparison.OrdinalIgnoreCase))
+        {
+            operations.Add(new DirectoryOperation("MoveUser", targetOu));
+        }
+
+        if (hasAttributeChanges)
+        {
+            operations.Add(new DirectoryOperation("UpdateUser"));
+        }
+
+        if (directoryUser.Enabled != targetEnabled)
+        {
+            operations.Add(new DirectoryOperation(targetEnabled ? "EnableUser" : "DisableUser"));
+        }
+
+        return operations;
+    }
+
+    private static string ResolvePrimaryAction(string bucket, IReadOnlyList<DirectoryOperation> operations)
+    {
+        if (operations.Count > 0)
+        {
+            return operations[0].Kind;
+        }
+
+        return bucket switch
+        {
+            "creates" => "CreateUser",
+            "updates" => "UpdateUser",
+            "enables" => "EnableUser",
+            "disables" => "DisableUser",
+            "graveyardMoves" => "MoveUser",
+            _ => "NoOp"
+        };
     }
 
     internal static IReadOnlyList<MissingSourceAttributeRow> BuildMissingSourceAttributes(

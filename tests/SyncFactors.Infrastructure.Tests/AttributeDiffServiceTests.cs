@@ -46,6 +46,7 @@ public sealed class AttributeDiffServiceTests
             "bindPassword": "",
             "identityAttribute": "employeeID",
             "defaultActiveOu": "OU=LabUsers,DC=example,DC=com",
+            "prehireOu": "OU=Prehire,DC=example,DC=com",
             "graveyardOu": "OU=LabGraveyard,DC=example,DC=com"
           },
           "sync": {
@@ -147,6 +148,7 @@ public sealed class AttributeDiffServiceTests
             "bindPassword": "",
             "identityAttribute": "employeeID",
             "defaultActiveOu": "OU=LabUsers,DC=example,DC=com",
+            "prehireOu": "OU=Prehire,DC=example,DC=com",
             "graveyardOu": "OU=LabGraveyard,DC=example,DC=com"
           },
           "sync": {
@@ -282,6 +284,7 @@ public sealed class AttributeDiffServiceTests
             "bindPassword": "",
             "identityAttribute": "employeeID",
             "defaultActiveOu": "OU=LabUsers,DC=example,DC=com",
+            "prehireOu": "OU=Prehire,DC=example,DC=com",
             "graveyardOu": "OU=LabGraveyard,DC=example,DC=com"
           },
           "sync": {
@@ -435,6 +438,7 @@ public sealed class AttributeDiffServiceTests
             "bindPassword": "",
             "identityAttribute": "employeeID",
             "defaultActiveOu": "OU=LabUsers,DC=example,DC=com",
+            "prehireOu": "OU=Prehire,DC=example,DC=com",
             "graveyardOu": "OU=LabGraveyard,DC=example,DC=com"
           },
           "sync": {

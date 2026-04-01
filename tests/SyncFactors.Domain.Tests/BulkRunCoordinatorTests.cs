@@ -224,6 +224,12 @@ public sealed class BulkRunCoordinatorTests
                         : [],
                     MissingSourceAttributes: [],
                     Bucket: "updates",
+                    CurrentOu: worker.TargetOu,
+                    TargetOu: worker.TargetOu,
+                    CurrentEnabled: true,
+                    TargetEnabled: true,
+                    PrimaryAction: "UpdateUser",
+                    Operations: [new DirectoryOperation("UpdateUser")],
                     ReviewCategory: null,
                     ReviewCaseType: null,
                     Reason: null,
@@ -248,6 +254,12 @@ public sealed class BulkRunCoordinatorTests
                     AttributeChanges: [new AttributeChange("displayName", "preferredName", "(unset)", worker.PreferredName, true)],
                     MissingSourceAttributes: [],
                     Bucket: "creates",
+                    CurrentOu: string.Empty,
+                    TargetOu: worker.TargetOu,
+                    CurrentEnabled: null,
+                    TargetEnabled: true,
+                    PrimaryAction: "CreateUser",
+                    Operations: [new DirectoryOperation("CreateUser", worker.TargetOu)],
                     ReviewCategory: null,
                     ReviewCaseType: null,
                     Reason: null,
@@ -259,13 +271,13 @@ public sealed class BulkRunCoordinatorTests
     {
         public DirectoryMutationCommand Build(PlannedWorkerAction plan)
         {
-            return new DirectoryMutationCommand("UpdateUser", plan.Worker.WorkerId, null, null, plan.Worker.WorkerId, $"{plan.Worker.WorkerId}@example.com", $"{plan.Worker.WorkerId}@example.com", plan.Worker.TargetOu, plan.Worker.WorkerId, true, new Dictionary<string, string?>());
+            return new DirectoryMutationCommand("UpdateUser", plan.Worker.WorkerId, null, null, plan.Worker.WorkerId, $"{plan.Worker.WorkerId}@example.com", $"{plan.Worker.WorkerId}@example.com", plan.Worker.TargetOu, plan.Worker.WorkerId, null, true, [new DirectoryOperation("UpdateUser")], new Dictionary<string, string?>());
         }
 
         public DirectoryMutationCommand Build(WorkerSnapshot worker, WorkerPreviewResult preview)
         {
             _ = preview;
-            return new DirectoryMutationCommand("UpdateUser", worker.WorkerId, null, null, worker.WorkerId, $"{worker.WorkerId}@example.com", $"{worker.WorkerId}@example.com", worker.TargetOu, worker.WorkerId, true, new Dictionary<string, string?>());
+            return new DirectoryMutationCommand("UpdateUser", worker.WorkerId, null, null, worker.WorkerId, $"{worker.WorkerId}@example.com", $"{worker.WorkerId}@example.com", worker.TargetOu, worker.WorkerId, null, true, [new DirectoryOperation("UpdateUser")], new Dictionary<string, string?>());
         }
     }
 
