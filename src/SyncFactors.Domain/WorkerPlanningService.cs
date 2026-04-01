@@ -191,6 +191,24 @@ public sealed class WorkerPlanningService(
         string source,
         out string? value)
     {
+        if (AttributeDiffService.TryParseConcatSource(source, out var concatKeys))
+        {
+            var parts = new List<string>();
+            foreach (var key in concatKeys)
+            {
+                if (!TryResolveAttribute(attributes, key, out var part) || string.IsNullOrWhiteSpace(part))
+                {
+                    value = null;
+                    return false;
+                }
+
+                parts.Add(part.Trim());
+            }
+
+            value = string.Join(' ', parts);
+            return true;
+        }
+
         foreach (var key in SplitSourceKeys(source))
         {
             if (attributes.TryGetValue(key, out value))
