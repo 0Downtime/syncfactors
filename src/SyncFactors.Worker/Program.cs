@@ -54,6 +54,7 @@ builder.Services.AddTransient<IAttributeDiffService, AttributeDiffService>();
 builder.Services.AddTransient<IWorkerPlanningService, WorkerPlanningService>();
 builder.Services.AddSingleton<IDirectoryMutationCommandBuilder, DirectoryMutationCommandBuilder>();
 builder.Services.AddTransient<BulkRunCoordinator>();
+builder.Services.AddTransient<DeleteAllUsersCoordinator>();
 builder.Services.AddTransient<SyncScheduleCoordinator>();
 builder.Services.AddSingleton<IRunLifecycleService, RunLifecycleService>();
 builder.Services.AddHostedService<Worker>();

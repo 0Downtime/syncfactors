@@ -18,7 +18,7 @@ public sealed class SqliteRunQueueStore(SqlitePathResolver pathResolver) : IRunQ
 
         var queued = new RunQueueRequest(
             RequestId: $"runreq-{DateTimeOffset.UtcNow:yyyyMMddHHmmssfff}",
-            Mode: "BulkSync",
+            Mode: string.IsNullOrWhiteSpace(request.Mode) ? "BulkSync" : request.Mode,
             DryRun: request.DryRun,
             RunTrigger: string.IsNullOrWhiteSpace(request.RunTrigger) ? "AdHoc" : request.RunTrigger,
             RequestedBy: request.RequestedBy,

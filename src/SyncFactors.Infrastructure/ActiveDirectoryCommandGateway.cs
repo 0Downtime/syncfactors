@@ -71,6 +71,7 @@ public sealed class ActiveDirectoryCommandGateway(
                 "MoveUser" => MoveUser(connection, command, config, logger, operation.TargetOu, distinguishedName).DistinguishedName,
                 "EnableUser" => SetAccountEnabled(connection, command, config, logger, true, distinguishedName).DistinguishedName,
                 "DisableUser" => SetAccountEnabled(connection, command, config, logger, false, distinguishedName).DistinguishedName,
+                "DeleteUser" => DeleteUser(connection, command, config, logger, distinguishedName).DistinguishedName,
                 _ => throw new InvalidOperationException($"Unsupported action {operation.Kind}.")
             };
         }
@@ -272,6 +273,25 @@ public sealed class ActiveDirectoryCommandGateway(
         request.Modifications.Add(BuildReplaceModification("userAccountControl", targetValue.ToString()));
         ExecuteModify(connection, request, logger, enabled ? "enable user modify request" : "disable user modify request", ("WorkerId", command.WorkerId));
         return new DirectoryCommandResult(true, command.Action, command.SamAccountName, distinguishedName, enabled ? $"Enabled AD user {command.SamAccountName}." : $"Disabled AD user {command.SamAccountName}.", null);
+    }
+
+    private static DirectoryCommandResult DeleteUser(
+        LdapConnection connection,
+        DirectoryMutationCommand command,
+        ActiveDirectoryConfig config,
+        ILogger logger,
+        string? distinguishedName)
+    {
+        var existing = FindExistingUser(connection, command.WorkerId, config);
+        distinguishedName ??= existing?.DistinguishedName;
+        if (string.IsNullOrWhiteSpace(distinguishedName))
+        {
+            return new DirectoryCommandResult(false, command.Action, command.SamAccountName, null, "Could not resolve AD user to delete.", null);
+        }
+
+        var request = new DeleteRequest(distinguishedName);
+        ExecuteModify(connection, request, logger, "delete user request", ("WorkerId", command.WorkerId), ("DistinguishedName", distinguishedName));
+        return new DirectoryCommandResult(true, command.Action, command.SamAccountName, distinguishedName, $"Deleted AD user {command.SamAccountName}.", null);
     }
 
     private static void SetManager(LdapConnection connection, string distinguishedName, string managerDn, ILogger logger, string workerId)

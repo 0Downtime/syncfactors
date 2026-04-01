@@ -68,6 +68,15 @@
         </form>
     </article>
 
+    <article class="panel sync-delete-panel">
+        <h2>Testing Reset</h2>
+        <p class="muted">Testing only. This queues a live job that deletes every AD user matched from the current worker listing.</p>
+        <p class="callout danger">This is destructive. It uses the normal worker queue and will remove matched AD accounts.</p>
+        <div class="filter-actions">
+            <button type="button" class="danger-button" data-open-delete-dialog disabled="@Model.HasPendingOrActiveRun">Delete all users</button>
+        </div>
+    </article>
+
     <article class="panel sync-schedule-panel">
         <h2>Recurring Schedule</h2>
         <dl class="kv">
@@ -96,6 +105,33 @@
         </form>
     </article>
 </section>
+
+<dialog class="confirm-dialog" data-delete-dialog>
+    <form method="dialog" class="confirm-dialog__surface">
+        <div class="section-heading">
+            <div>
+                <p class="eyebrow">Danger Zone</p>
+                <h2>Delete All Users</h2>
+            </div>
+        </div>
+        <p class="muted">This queues a live delete job against all users currently returned by the worker source. Type <strong>@SyncFactors.Api.Pages.SyncModel.DeleteAllUsersConfirmationPhrase</strong> to continue.</p>
+        <label>
+            <span>Confirmation text</span>
+            <input type="text" name="confirmationText" data-delete-confirmation-input autocomplete="off" />
+        </label>
+        <div class="filter-actions">
+            <button type="button" class="link-button" data-close-delete-dialog>Cancel</button>
+        </div>
+    </form>
+    <form method="post" asp-page-handler="DeleteAllUsers" class="confirm-dialog__surface confirm-dialog__surface--danger">
+        <input type="hidden" asp-for="DeleteAllUsersConfirmationText" data-delete-confirmation-hidden />
+        <p class="muted">The run will appear in history like any other queued job.</p>
+        <div class="filter-actions">
+            <button type="button" class="link-button" data-close-delete-dialog>Go back</button>
+            <button type="submit" class="danger-button" data-submit-delete-dialog disabled>Queue delete-all run</button>
+        </div>
+    </form>
+</dialog>
 
 <section class="panel">
     <div class="section-heading">
@@ -169,3 +205,40 @@
             _ => "neutral",
         };
 }
+
+<script>
+    (function () {
+        var dialog = document.querySelector("[data-delete-dialog]");
+        var openButton = document.querySelector("[data-open-delete-dialog]");
+        var closeButtons = document.querySelectorAll("[data-close-delete-dialog]");
+        var input = document.querySelector("[data-delete-confirmation-input]");
+        var hidden = document.querySelector("[data-delete-confirmation-hidden]");
+        var submit = document.querySelector("[data-submit-delete-dialog]");
+        var requiredText = "@SyncFactors.Api.Pages.SyncModel.DeleteAllUsersConfirmationPhrase";
+
+        if (!dialog || !openButton || !input || !hidden || !submit) {
+            return;
+        }
+
+        function syncConfirmationState() {
+            var value = input.value || "";
+            hidden.value = value;
+            submit.disabled = value.trim() !== requiredText;
+        }
+
+        openButton.addEventListener("click", function () {
+            input.value = "";
+            syncConfirmationState();
+            dialog.showModal();
+            input.focus();
+        });
+
+        closeButtons.forEach(function (button) {
+            button.addEventListener("click", function () {
+                dialog.close();
+            });
+        });
+
+        input.addEventListener("input", syncConfirmationState);
+    })();
+</script>

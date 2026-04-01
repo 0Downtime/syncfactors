@@ -33,6 +33,7 @@ public sealed class SyncModelTests
         Assert.IsType<RedirectToPageResult>(result);
         Assert.NotNull(queueStore.LastRequest);
         Assert.True(queueStore.LastRequest!.DryRun);
+        Assert.Equal("BulkSync", queueStore.LastRequest.Mode);
         Assert.Equal("AdHoc", queueStore.LastRequest.RunTrigger);
         Assert.Equal("Sync page", queueStore.LastRequest.RequestedBy);
         Assert.Equal("Dry-run sync queued.", model.SuccessMessage);
@@ -53,8 +54,46 @@ public sealed class SyncModelTests
         Assert.IsType<RedirectToPageResult>(result);
         Assert.NotNull(queueStore.LastRequest);
         Assert.False(queueStore.LastRequest!.DryRun);
+        Assert.Equal("BulkSync", queueStore.LastRequest.Mode);
         Assert.Equal("Live provisioning run queued.", model.SuccessMessage);
         Assert.Null(model.ErrorMessage);
+    }
+
+    [Fact]
+    public async Task OnPostDeleteAllUsersAsync_QueuesDeleteAllUsersRunWhenPhraseMatches()
+    {
+        var queueStore = new CapturingRunQueueStore();
+        var model = new SyncModel(CreateDashboardService(), queueStore, new StubSyncScheduleStore())
+        {
+            DeleteAllUsersConfirmationText = SyncModel.DeleteAllUsersConfirmationPhrase
+        };
+
+        var result = await model.OnPostDeleteAllUsersAsync(CancellationToken.None);
+
+        Assert.IsType<RedirectToPageResult>(result);
+        Assert.NotNull(queueStore.LastRequest);
+        Assert.False(queueStore.LastRequest!.DryRun);
+        Assert.Equal("DeleteAllUsers", queueStore.LastRequest.Mode);
+        Assert.Equal("DeleteAllUsers", queueStore.LastRequest.RunTrigger);
+        Assert.Equal("Delete-all test run queued.", model.SuccessMessage);
+        Assert.Null(model.ErrorMessage);
+    }
+
+    [Fact]
+    public async Task OnPostDeleteAllUsersAsync_RejectsInvalidConfirmationPhrase()
+    {
+        var queueStore = new CapturingRunQueueStore();
+        var model = new SyncModel(CreateDashboardService(), queueStore, new StubSyncScheduleStore())
+        {
+            DeleteAllUsersConfirmationText = "delete all users"
+        };
+
+        var result = await model.OnPostDeleteAllUsersAsync(CancellationToken.None);
+
+        Assert.IsType<RedirectToPageResult>(result);
+        Assert.Null(queueStore.LastRequest);
+        Assert.Equal($"Type {SyncModel.DeleteAllUsersConfirmationPhrase} to queue the delete-all test run.", model.ErrorMessage);
+        Assert.Null(model.SuccessMessage);
     }
 
     [Fact]
@@ -177,7 +216,7 @@ public sealed class SyncModelTests
         {
             _ = cancellationToken;
             LastRequest = request;
-            return Task.FromResult(new RunQueueRequest("req-1", "BulkSync", request.DryRun, request.RunTrigger, request.RequestedBy, "Pending", DateTimeOffset.UtcNow, null, null, null, null));
+            return Task.FromResult(new RunQueueRequest("req-1", request.Mode, request.DryRun, request.RunTrigger, request.RequestedBy, "Pending", DateTimeOffset.UtcNow, null, null, null, null));
         }
 
         public Task<RunQueueRequest?> ClaimNextPendingAsync(string workerName, CancellationToken cancellationToken)
