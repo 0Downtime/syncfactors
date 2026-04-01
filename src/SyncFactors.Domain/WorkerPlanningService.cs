@@ -39,7 +39,10 @@ public sealed class WorkerPlanningService(
             : DirectoryIdentityFormatter.BuildEmailAddress(
                 await directoryGateway.ResolveAvailableEmailLocalPartAsync(worker, isCreate: true, cancellationToken));
         var attributeChanges = await attributeDiffService.BuildDiffAsync(worker, directoryUser, proposedEmailAddress, logPath, cancellationToken);
-        var missingSourceAttributes = BuildMissingSourceAttributes(worker.Attributes, attributeMappingProvider.GetEnabledMappings());
+        var missingSourceAttributes = BuildMissingSourceAttributes(
+            worker.Attributes,
+            attributeMappingProvider.GetEnabledMappings(),
+            proposedEmailAddress);
 
         var currentOu = DirectoryDistinguishedName.GetParentOu(directoryUser.DistinguishedName);
         var bucket = lifecycle.Bucket;
@@ -151,11 +154,17 @@ public sealed class WorkerPlanningService(
 
     internal static IReadOnlyList<MissingSourceAttributeRow> BuildMissingSourceAttributes(
         IReadOnlyDictionary<string, string?> attributes,
-        IReadOnlyList<AttributeMapping> mappings)
+        IReadOnlyList<AttributeMapping> mappings,
+        string? proposedEmailAddress = null)
     {
         var missing = new List<MissingSourceAttributeRow>();
         foreach (var mapping in mappings.Where(mapping => mapping.Required))
         {
+            if (TargetCanUseResolvedEmail(mapping.Target, proposedEmailAddress))
+            {
+                continue;
+            }
+
             if (TryResolveAttribute(attributes, mapping.Source, out var value) &&
                 !string.IsNullOrWhiteSpace(value))
             {
@@ -169,6 +178,12 @@ public sealed class WorkerPlanningService(
             .DistinctBy(row => row.Attribute, StringComparer.OrdinalIgnoreCase)
             .OrderBy(row => row.Attribute, StringComparer.OrdinalIgnoreCase)
             .ToArray();
+    }
+
+    private static bool TargetCanUseResolvedEmail(string target, string? proposedEmailAddress)
+    {
+        return target is "UserPrincipalName" or "mail"
+            && !string.IsNullOrWhiteSpace(proposedEmailAddress);
     }
 
     private static bool TryResolveAttribute(
