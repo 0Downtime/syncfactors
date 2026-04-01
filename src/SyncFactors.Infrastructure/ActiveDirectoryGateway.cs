@@ -131,42 +131,15 @@ public sealed class ActiveDirectoryGateway(
     private static DirectoryUserSnapshot? QueryDirectory(WorkerSnapshot worker, ActiveDirectoryConfig config, ILogger logger)
     {
         using var connection = CreateConnection(config, logger, $"lookup worker {worker.WorkerId}");
-        var request = new SearchRequest(
-            config.DefaultActiveOu,
-            $"({EscapeLdapFilter(config.IdentityAttribute)}={EscapeLdapFilter(worker.WorkerId)})",
-            SearchScope.Subtree,
-            "sAMAccountName",
-            "distinguishedName",
-            "displayName",
-            "userAccountControl",
-            config.IdentityAttribute,
-            "givenName",
-            "sn",
-            "userPrincipalName",
-            "mail",
-            "department",
-            "company",
-            "physicalDeliveryOfficeName",
-            "streetAddress",
-            "l",
-            "postalCode",
-            "title",
-            "division",
-            "employeeType",
-            "extensionAttribute1",
-            "extensionAttribute2",
-            "extensionAttribute3",
-            "extensionAttribute4");
-
-        var response = ExecuteSearch(
+        var entry = FindFirstEntry(
             connection,
-            request,
+            GetSearchBases(config),
+            $"({EscapeLdapFilter(config.IdentityAttribute)}={EscapeLdapFilter(worker.WorkerId)})",
+            config.IdentityAttribute,
             logger,
             "worker lookup search",
             ("WorkerId", worker.WorkerId),
-            ("IdentityAttribute", config.IdentityAttribute),
-            ("SearchBase", config.DefaultActiveOu));
-        var entry = response.Entries.Cast<SearchResultEntry>().FirstOrDefault();
+            ("IdentityAttribute", config.IdentityAttribute));
         if (entry is null)
         {
             return null;
@@ -188,21 +161,15 @@ public sealed class ActiveDirectoryGateway(
     private static string? ResolveDistinguishedName(string workerId, ActiveDirectoryConfig config, ILogger logger)
     {
         using var connection = CreateConnection(config, logger, $"resolve manager {workerId}");
-        var request = new SearchRequest(
-            config.DefaultActiveOu,
-            $"({EscapeLdapFilter(config.IdentityAttribute)}={EscapeLdapFilter(workerId)})",
-            SearchScope.Subtree,
-            "distinguishedName");
-
-        var response = ExecuteSearch(
+        var entry = FindFirstEntry(
             connection,
-            request,
+            GetSearchBases(config),
+            $"({EscapeLdapFilter(config.IdentityAttribute)}={EscapeLdapFilter(workerId)})",
+            "distinguishedName",
             logger,
             "manager DN search",
             ("ManagerId", workerId),
-            ("IdentityAttribute", config.IdentityAttribute),
-            ("SearchBase", config.DefaultActiveOu));
-        var entry = response.Entries.Cast<SearchResultEntry>().FirstOrDefault();
+            ("IdentityAttribute", config.IdentityAttribute));
         return entry is null ? null : GetAttribute(entry, "distinguishedName");
     }
 
@@ -252,28 +219,85 @@ public sealed class ActiveDirectoryGateway(
         string workerId)
     {
         var userPrincipalName = DirectoryIdentityFormatter.BuildEmailAddress(localPart);
-        var request = new SearchRequest(
-            config.DefaultActiveOu,
-            $"(|(userPrincipalName={EscapeLdapFilter(userPrincipalName)})(mail={EscapeLdapFilter(userPrincipalName)}))",
-            SearchScope.Subtree,
-            "sAMAccountName");
-
-        var response = ExecuteSearch(
+        var entry = FindFirstEntry(
             connection,
-            request,
+            GetSearchBases(config),
+            $"(|(userPrincipalName={EscapeLdapFilter(userPrincipalName)})(mail={EscapeLdapFilter(userPrincipalName)}))",
+            "mail",
             logger,
             "email local-part search",
             ("WorkerId", workerId),
-            ("CandidateUserPrincipalName", userPrincipalName),
-            ("SearchBase", config.DefaultActiveOu));
+            ("CandidateUserPrincipalName", userPrincipalName));
 
-        if (response.Entries.Count == 0)
+        if (entry is null)
         {
             return false;
         }
 
-        var matchedSamAccountName = GetAttribute(response.Entries[0], "sAMAccountName");
+        var matchedSamAccountName = GetAttribute(entry, "sAMAccountName");
         return !string.Equals(matchedSamAccountName, existingSamAccountName, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static SearchResultEntry? FindFirstEntry(
+        LdapConnection connection,
+        IReadOnlyList<string> searchBases,
+        string filter,
+        string additionalAttribute,
+        ILogger logger,
+        string operation,
+        params (string Key, object? Value)[] context)
+    {
+        foreach (var searchBase in searchBases)
+        {
+            var request = new SearchRequest(
+                searchBase,
+                filter,
+                SearchScope.Subtree,
+                "sAMAccountName",
+                "distinguishedName",
+                "displayName",
+                "userAccountControl",
+                additionalAttribute,
+                "givenName",
+                "sn",
+                "userPrincipalName",
+                "mail",
+                "department",
+                "company",
+                "physicalDeliveryOfficeName",
+                "streetAddress",
+                "l",
+                "postalCode",
+                "title",
+                "division",
+                "employeeType",
+                "extensionAttribute1",
+                "extensionAttribute2",
+                "extensionAttribute3",
+                "extensionAttribute4");
+
+            var response = ExecuteSearch(
+                connection,
+                request,
+                logger,
+                operation,
+                [.. context, ("SearchBase", searchBase)]);
+            var entry = response.Entries.Cast<SearchResultEntry>().FirstOrDefault();
+            if (entry is not null)
+            {
+                return entry;
+            }
+        }
+
+        return null;
+    }
+
+    private static IReadOnlyList<string> GetSearchBases(ActiveDirectoryConfig config)
+    {
+        return new[] { config.DefaultActiveOu, config.PrehireOu, config.GraveyardOu }
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
     }
 
     private static LdapConnection CreateConnection(ActiveDirectoryConfig config, ILogger logger, string purpose)

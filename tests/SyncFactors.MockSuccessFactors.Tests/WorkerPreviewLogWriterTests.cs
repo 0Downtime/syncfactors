@@ -47,6 +47,7 @@ public sealed class WorkerPreviewLogWriterTests
             "bindPassword": "",
             "identityAttribute": "employeeID",
             "defaultActiveOu": "OU=LabUsers,DC=example,DC=com",
+            "prehireOu": "OU=Prehire,DC=example,DC=com",
             "graveyardOu": "OU=LabGraveyard,DC=example,DC=com"
           },
           "sync": {
@@ -96,6 +97,14 @@ public sealed class WorkerPreviewLogWriterTests
             new WorkerPlanningService(
                 directoryGateway,
                 new IdentityMatcher(),
+                new LifecyclePolicy(
+                    new LifecyclePolicySettings(
+                        loader.GetSyncConfig().Ad.DefaultActiveOu,
+                        loader.GetSyncConfig().Ad.PrehireOu,
+                        loader.GetSyncConfig().Ad.GraveyardOu,
+                        loader.GetSyncConfig().SuccessFactors.Query.InactiveStatusField,
+                        loader.GetSyncConfig().SuccessFactors.Query.InactiveStatusValues),
+                    TimeProvider.System),
                 diffService,
                 mappingProvider,
                 NullLogger<WorkerPlanningService>.Instance),

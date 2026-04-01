@@ -26,8 +26,9 @@ public sealed class WorkerPreviewPlannerTests
         var planner = new WorkerPreviewPlanner(
             new StubWorkerSource(worker),
             new WorkerPlanningService(
-                new StubDirectoryGateway(),
+                new ExistingUserDirectoryGateway(),
                 new ExistingUserIdentityMatcher(),
+                CreateLifecyclePolicy(),
                 new UnchangedAttributeDiffService(),
                 new StubAttributeMappingProvider(),
                 NullLogger<WorkerPlanningService>.Instance),
@@ -68,6 +69,7 @@ public sealed class WorkerPreviewPlannerTests
             new WorkerPlanningService(
                 new StubDirectoryGateway(),
                 new StubIdentityMatcher(),
+                CreateLifecyclePolicy(),
                 new StubAttributeDiffService(),
                 new StubAttributeMappingProvider(),
                 NullLogger<WorkerPlanningService>.Instance),
@@ -103,6 +105,7 @@ public sealed class WorkerPreviewPlannerTests
             new WorkerPlanningService(
                 new StubDirectoryGateway(),
                 new StubIdentityMatcher(),
+                CreateLifecyclePolicy(),
                 diffService,
                 new StubAttributeMappingProvider(),
                 NullLogger<WorkerPlanningService>.Instance),
@@ -140,6 +143,7 @@ public sealed class WorkerPreviewPlannerTests
             new WorkerPlanningService(
                 new StubDirectoryGateway(),
                 new StubIdentityMatcher(),
+                CreateLifecyclePolicy(),
                 new StubAttributeDiffService(),
                 mappingProvider,
                 NullLogger<WorkerPlanningService>.Instance),
@@ -176,6 +180,7 @@ public sealed class WorkerPreviewPlannerTests
             new WorkerPlanningService(
                 new StubDirectoryGateway(),
                 new StubIdentityMatcher(),
+                CreateLifecyclePolicy(),
                 new StubAttributeDiffService(),
                 new StubAttributeMappingProvider(),
                 NullLogger<WorkerPlanningService>.Instance),
@@ -207,6 +212,7 @@ public sealed class WorkerPreviewPlannerTests
             new WorkerPlanningService(
                 new ExistingUserDirectoryGateway(),
                 new ExistingUserIdentityMatcher(),
+                CreateLifecyclePolicy(),
                 new AttributeDiffService(new EmptyAttributeMappingProvider(), new StubWorkerPreviewLogWriter(), NullLogger<AttributeDiffService>.Instance),
                 new EmptyAttributeMappingProvider(),
                 NullLogger<WorkerPlanningService>.Instance),
@@ -513,4 +519,16 @@ public sealed class WorkerPreviewPlannerTests
     }
 
     private sealed class StubRunRepository : CapturingRunRepository;
+
+    private static LifecyclePolicy CreateLifecyclePolicy()
+    {
+        return new LifecyclePolicy(
+            new LifecyclePolicySettings(
+                ActiveOu: "OU=Employees,DC=example,DC=com",
+                PrehireOu: "OU=Prehire,DC=example,DC=com",
+                GraveyardOu: "OU=Graveyard,DC=example,DC=com",
+                InactiveStatusField: "emplStatus",
+                InactiveStatusValues: ["T"]),
+            TimeProvider.System);
+    }
 }

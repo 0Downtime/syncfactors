@@ -51,6 +51,7 @@ public sealed class FullSyncRunService(
         var runStatus = "Succeeded";
         string? errorMessage = null;
         var runRecordSaved = false;
+        var disableCount = 0;
 
         try
         {
@@ -116,6 +117,7 @@ public sealed class FullSyncRunService(
                     request.DryRun,
                     index,
                     createCount,
+                    disableCount,
                     cancellationToken);
                 entries.Add(outcome.Entry);
                 operations.Add(outcome.Operation);
@@ -124,6 +126,12 @@ public sealed class FullSyncRunService(
                 if (string.Equals(outcome.Bucket, "creates", StringComparison.OrdinalIgnoreCase))
                 {
                     createCount++;
+                }
+                else if ((string.Equals(outcome.Bucket, "disables", StringComparison.OrdinalIgnoreCase) ||
+                          string.Equals(outcome.Bucket, "graveyardMoves", StringComparison.OrdinalIgnoreCase)) &&
+                         outcome.IncludedDisable)
+                {
+                    disableCount++;
                 }
 
                 if (!outcome.Succeeded)
@@ -235,6 +243,7 @@ public sealed class FullSyncRunService(
         bool dryRun,
         int index,
         int createCount,
+        int disableCount,
         CancellationToken cancellationToken)
     {
         try
@@ -254,8 +263,16 @@ public sealed class FullSyncRunService(
                 bucket = "guardrailFailures";
                 message = $"Create guardrail exceeded. MaxCreatesPerRun={settings.MaxCreatesPerRun}.";
             }
+            else if ((string.Equals(bucket, "disables", StringComparison.OrdinalIgnoreCase) ||
+                      string.Equals(bucket, "graveyardMoves", StringComparison.OrdinalIgnoreCase)) &&
+                     plan.Operations.Any(operation => string.Equals(operation.Kind, "DisableUser", StringComparison.OrdinalIgnoreCase)) &&
+                     disableCount + 1 > settings.MaxDisablesPerRun)
+            {
+                bucket = "guardrailFailures";
+                message = $"Disable guardrail exceeded. MaxDisablesPerRun={settings.MaxDisablesPerRun}.";
+            }
 
-            if (!dryRun && (bucket == "creates" || bucket == "updates"))
+            if (!dryRun && plan.Operations.Count > 0 && bucket != "guardrailFailures")
             {
                 try
                 {
@@ -288,12 +305,18 @@ public sealed class FullSyncRunService(
             {
                 workerId = plan.Worker.WorkerId,
                 samAccountName = plan.Identity.SamAccountName,
-                targetOu = plan.Worker.TargetOu,
+                targetOu = plan.TargetOu,
+                currentOu = plan.CurrentOu,
                 managerDistinguishedName = plan.ManagerDistinguishedName,
                 reason = message,
                 matchedExistingUser = plan.Identity.MatchedExistingUser,
-                proposedEnable = plan.DirectoryUser.Enabled ?? true,
-                currentEnabled = plan.DirectoryUser.Enabled,
+                proposedEnable = plan.TargetEnabled,
+                currentEnabled = plan.CurrentEnabled,
+                operations = plan.Operations.Select(operation => new
+                {
+                    kind = operation.Kind,
+                    targetOu = operation.TargetOu
+                }).ToArray(),
                 changedAttributeDetails = plan.AttributeChanges
                     .Where(change => change.Changed)
                     .Select(change => new
@@ -331,18 +354,19 @@ public sealed class FullSyncRunService(
                     before = new
                     {
                         distinguishedName = plan.DirectoryUser.DistinguishedName,
-                        parentOu = ExtractParentOu(plan.DirectoryUser.DistinguishedName)
+                        parentOu = plan.CurrentOu
                     },
                     after = new
                     {
                         distinguishedName,
-                        targetOu = plan.Worker.TargetOu
+                        targetOu = plan.TargetOu
                     },
                     message,
                     succeeded
                 },
                 Succeeded: succeeded || bucket is "manualReview" or "unchanged" or "guardrailFailures",
-                Message: message);
+                Message: message,
+                IncludedDisable: plan.Operations.Any(operation => string.Equals(operation.Kind, "DisableUser", StringComparison.OrdinalIgnoreCase)));
         }
         catch (Exception ex)
         {
@@ -378,7 +402,8 @@ public sealed class FullSyncRunService(
                     succeeded = false
                 },
                 Succeeded: false,
-                Message: ex.Message);
+                Message: ex.Message,
+                IncludedDisable: false);
         }
     }
 
@@ -429,19 +454,6 @@ public sealed class FullSyncRunService(
             : plan.Bucket;
     }
 
-    private static string? ExtractParentOu(string? distinguishedName)
-    {
-        if (string.IsNullOrWhiteSpace(distinguishedName))
-        {
-            return null;
-        }
-
-        var commaIndex = distinguishedName.IndexOf(',');
-        return commaIndex < 0 || commaIndex + 1 >= distinguishedName.Length
-            ? null
-            : distinguishedName[(commaIndex + 1)..];
-    }
-
     private static void IncrementBucket(IDictionary<string, int> tally, string bucket)
     {
         tally[bucket] = GetBucketCount(tally, bucket) + 1;
@@ -462,5 +474,6 @@ public sealed class FullSyncRunService(
         RunEntryRecord Entry,
         object Operation,
         bool Succeeded,
-        string Message);
+        string Message,
+        bool IncludedDisable);
 }

@@ -17,9 +17,11 @@ public sealed class SyncFactorsConfigurationValidator(SyncFactorsConfigurationLo
             throw new InvalidOperationException("SyncFactors AD server must be configured.");
         }
 
-        if (string.IsNullOrWhiteSpace(sync.Ad.DefaultActiveOu) || string.IsNullOrWhiteSpace(sync.Ad.GraveyardOu))
+        if (string.IsNullOrWhiteSpace(sync.Ad.DefaultActiveOu) ||
+            string.IsNullOrWhiteSpace(sync.Ad.PrehireOu) ||
+            string.IsNullOrWhiteSpace(sync.Ad.GraveyardOu))
         {
-            throw new InvalidOperationException("SyncFactors AD OUs must be configured.");
+            throw new InvalidOperationException("SyncFactors AD active, prehire, and graveyard OUs must be configured.");
         }
 
         if (sync.Sync.EnableBeforeStartDays < 0 || sync.Sync.DeletionRetentionDays < 0)

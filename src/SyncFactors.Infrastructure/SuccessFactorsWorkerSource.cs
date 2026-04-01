@@ -868,7 +868,7 @@ public sealed class SuccessFactorsWorkerSource(
             LastName: lastName,
             Department: department,
             TargetOu: config.Ad.DefaultActiveOu,
-            IsPrehire: IsPrehire(startDate, config.Sync.EnableBeforeStartDays),
+            IsPrehire: IsPrehire(startDate),
             Attributes: BuildAttributes(worker, personalInfo, employment, jobInfo));
     }
 
@@ -1317,14 +1317,14 @@ public sealed class SuccessFactorsWorkerSource(
         return null;
     }
 
-    private static bool IsPrehire(string? startDate, int enableBeforeStartDays)
+    private static bool IsPrehire(string? startDate)
     {
         if (!DateTimeOffset.TryParse(startDate, out var parsedStart))
         {
             return false;
         }
 
-        return parsedStart > DateTimeOffset.UtcNow.AddDays(enableBeforeStartDays);
+        return parsedStart.Date > DateTimeOffset.UtcNow.Date;
     }
 
     private static void AddTracingHeaders(HttpRequestMessage request, string workerId)

@@ -57,6 +57,7 @@ public sealed class BulkRunCoordinator(
         var tally = new RunTally(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
         var processedWorkers = 0;
         var createCount = 0;
+        var disableCount = 0;
 
         await runLifecycleService.StartRunAsync(
             runId,
@@ -151,13 +152,41 @@ public sealed class BulkRunCoordinator(
                             }
                         }
 
-                        if (plan.CanAutoApply && string.Equals(bucket, "updates", StringComparison.OrdinalIgnoreCase))
+                        if (plan.CanAutoApply &&
+                            (string.Equals(bucket, "disables", StringComparison.OrdinalIgnoreCase) ||
+                             string.Equals(bucket, "graveyardMoves", StringComparison.OrdinalIgnoreCase)) &&
+                            plan.Operations.Any(operation => string.Equals(operation.Kind, "DisableUser", StringComparison.OrdinalIgnoreCase)))
                         {
-                            action = "UpdateUser";
+                            var nextDisableCount = Interlocked.Increment(ref disableCount);
+                            if (nextDisableCount > settings.MaxDisablesPerRun)
+                            {
+                                bucket = "guardrailFailures";
+                                reason = $"Disable guardrail exceeded. MaxDisablesPerRun={settings.MaxDisablesPerRun}.";
+                                var guardrailItem = BuildEntryItem(plan, request.DryRun, bucket, action: null, applied: false, succeeded: false, reason);
+                                await channel.Writer.WriteAsync(
+                                    new WorkerRunResult(
+                                        WorkerId: worker.WorkerId,
+                                        Bucket: bucket,
+                                        SamAccountName: plan.Identity.SamAccountName,
+                                        Reason: reason,
+                                        ReviewCategory: plan.ReviewCategory,
+                                        ReviewCaseType: plan.ReviewCaseType,
+                                        Action: null,
+                                        Applied: false,
+                                        Succeeded: false,
+                                        OperationSummary: BuildOperationSummary(plan, action: null, bucket),
+                                        DiffRows: plan.AttributeChanges.Select(change => new DiffRow(change.Attribute, change.Source, change.Before, change.After, change.Changed)).ToArray(),
+                                        Item: guardrailItem),
+                                    ct);
+                                Interlocked.CompareExchange(ref guardrailFailure, new GuardrailExceededException(runId, reason), null);
+                                runCancellationSource.Cancel();
+                                return;
+                            }
                         }
-                        else if (plan.CanAutoApply && string.Equals(bucket, "creates", StringComparison.OrdinalIgnoreCase))
+
+                        if (plan.CanAutoApply)
                         {
-                            action = "CreateUser";
+                            action = plan.PrimaryAction;
                         }
 
                         if (!request.DryRun && action is not null && (string.Equals(bucket, "creates", StringComparison.OrdinalIgnoreCase) || string.Equals(bucket, "updates", StringComparison.OrdinalIgnoreCase)))
@@ -358,6 +387,9 @@ public sealed class BulkRunCoordinator(
         {
             "creates" => tally with { Creates = tally.Creates + 1 },
             "updates" => tally with { Updates = tally.Updates + 1 },
+            "enables" => tally with { Enables = tally.Enables + 1 },
+            "disables" => tally with { Disables = tally.Disables + 1 },
+            "graveyardMoves" => tally with { GraveyardMoves = tally.GraveyardMoves + 1 },
             "manualReview" => tally with { ManualReview = tally.ManualReview + 1 },
             "guardrailFailures" => tally with { GuardrailFailures = tally.GuardrailFailures + 1 },
             "conflicts" => tally with { Conflicts = tally.Conflicts + 1 },
@@ -374,9 +406,9 @@ public sealed class BulkRunCoordinator(
             Effect: plan.AttributeChanges.Count(change => change.Changed) == 0
                 ? "No attribute changes."
                 : $"{plan.AttributeChanges.Count(change => change.Changed)} attribute changes.",
-            TargetOu: plan.Worker.TargetOu,
-            FromOu: plan.DirectoryUser.DistinguishedName,
-            ToOu: plan.Worker.TargetOu);
+            TargetOu: plan.TargetOu,
+            FromOu: plan.CurrentOu,
+            ToOu: plan.TargetOu);
     }
 
     private static bool ShouldAdvanceDeltaCheckpoint(RunTally tally)
@@ -425,6 +457,7 @@ public sealed class BulkRunCoordinator(
               "workerId": "{{Escape(plan.Worker.WorkerId)}}",
               "samAccountName": "{{Escape(plan.Identity.SamAccountName)}}",
               "targetOu": "{{Escape(plan.Worker.TargetOu)}}",
+              "currentOu": {{ToJsonString(plan.CurrentOu)}},
               "managerDistinguishedName": {{ToJsonString(plan.ManagerDistinguishedName)}},
               "reviewCategory": {{ToJsonString(plan.ReviewCategory)}},
               "reviewCaseType": {{ToJsonString(plan.ReviewCaseType)}},
@@ -434,6 +467,17 @@ public sealed class BulkRunCoordinator(
               "dryRun": {{(dryRun ? "true" : "false")}},
               "applied": {{(applied ? "true" : "false")}},
               "succeeded": {{(succeeded ? "true" : "false")}},
+              "currentEnabled": {{ToJsonNullableBoolean(plan.CurrentEnabled)}},
+              "proposedEnable": {{ToJsonNullableBoolean(plan.TargetEnabled)}},
+              "operations": [
+                {{string.Join(",", plan.Operations.Select(operation =>
+                    $$"""
+                    {
+                      "kind": "{{Escape(operation.Kind)}}",
+                      "targetOu": {{ToJsonString(operation.TargetOu)}}
+                    }
+                    """))}}
+              ],
               "managerRequired": {{(!string.IsNullOrWhiteSpace(plan.Worker.Attributes.TryGetValue("managerId", out var managerId) ? managerId : null) ? "true" : "false")}},
               "changedAttributeDetails": [{{string.Join(",", changedRows)}}]
             }
@@ -458,6 +502,9 @@ public sealed class BulkRunCoordinator(
               "tally": {
                 "creates": {{tally.Creates}},
                 "updates": {{tally.Updates}},
+                "enables": {{tally.Enables}},
+                "disables": {{tally.Disables}},
+                "graveyardMoves": {{tally.GraveyardMoves}},
                 "manualReview": {{tally.ManualReview}},
                 "guardrailFailures": {{tally.GuardrailFailures}},
                 "conflicts": {{tally.Conflicts}},
@@ -482,6 +529,8 @@ public sealed class BulkRunCoordinator(
     }
 
     private static string ToJsonString(string? value) => value is null ? "null" : $"\"{Escape(value)}\"";
+
+    private static string ToJsonNullableBoolean(bool? value) => value.HasValue ? (value.Value ? "true" : "false") : "null";
 
     private static JsonElement BuildPlanningFailureItem(WorkerSnapshot worker, string? reason)
     {

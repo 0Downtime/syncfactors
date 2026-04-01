@@ -6,7 +6,7 @@ public sealed class DirectoryMutationCommandBuilder : IDirectoryMutationCommandB
 {
     public DirectoryMutationCommand Build(PlannedWorkerAction plan)
     {
-        var action = plan.Identity.MatchedExistingUser ? "UpdateUser" : "CreateUser";
+        var action = plan.PrimaryAction;
         var samAccountName = plan.Identity.SamAccountName;
         var displayName = plan.DirectoryUser.SamAccountName ?? samAccountName;
         var userPrincipalName = plan.Identity.MatchedExistingUser
@@ -28,15 +28,17 @@ public sealed class DirectoryMutationCommandBuilder : IDirectoryMutationCommandB
             SamAccountName: samAccountName,
             UserPrincipalName: userPrincipalName,
             Mail: mail,
-            TargetOu: plan.Worker.TargetOu,
+            TargetOu: plan.TargetOu,
             DisplayName: displayName,
-            EnableAccount: plan.DirectoryUser.Enabled ?? true,
+            CurrentDistinguishedName: plan.DirectoryUser.DistinguishedName,
+            EnableAccount: plan.TargetEnabled,
+            Operations: plan.Operations,
             Attributes: BuildAttributes(plan.AttributeChanges));
     }
 
     public DirectoryMutationCommand Build(WorkerSnapshot worker, WorkerPreviewResult preview)
     {
-        var action = preview.Buckets.Contains("creates", StringComparer.OrdinalIgnoreCase) ? "CreateUser" : "UpdateUser";
+        var action = ResolvePrimaryAction(preview);
         var samAccountName = preview.SamAccountName ?? throw new InvalidOperationException("Preview did not produce a SAM account name.");
         var displayName = GetPreviewAttributeValue(preview, "displayName") ?? samAccountName;
         var emailAddress = GetPreviewAttributeValue(preview, "UserPrincipalName")
@@ -56,8 +58,49 @@ public sealed class DirectoryMutationCommandBuilder : IDirectoryMutationCommandB
             Mail: mailAddress,
             TargetOu: preview.TargetOu ?? worker.TargetOu,
             DisplayName: displayName,
+            CurrentDistinguishedName: preview.CurrentDistinguishedName,
             EnableAccount: preview.ProposedEnable ?? true,
+            Operations: preview.Entries
+                .SelectMany(entry => GetPreviewOperations(entry.Item))
+                .Distinct()
+                .ToArray(),
             Attributes: BuildAttributes(preview.DiffRows.Select(row => new AttributeChange(row.Attribute, row.Source, row.Before, row.After, row.Changed)).ToArray()));
+    }
+
+    private static string ResolvePrimaryAction(WorkerPreviewResult preview)
+    {
+        var bucket = preview.Buckets.FirstOrDefault() ?? "updates";
+        return bucket switch
+        {
+            "creates" => "CreateUser",
+            "updates" => "UpdateUser",
+            "enables" => "EnableUser",
+            "disables" => "DisableUser",
+            "graveyardMoves" => "MoveUser",
+            _ => "UpdateUser"
+        };
+    }
+
+    private static IEnumerable<DirectoryOperation> GetPreviewOperations(System.Text.Json.JsonElement item)
+    {
+        if (!item.TryGetProperty("operations", out var operations) || operations.ValueKind != System.Text.Json.JsonValueKind.Array)
+        {
+            yield break;
+        }
+
+        foreach (var operation in operations.EnumerateArray())
+        {
+            var kind = operation.TryGetProperty("kind", out var kindValue) ? kindValue.GetString() : null;
+            if (string.IsNullOrWhiteSpace(kind))
+            {
+                continue;
+            }
+
+            var targetOu = operation.TryGetProperty("targetOu", out var targetOuValue)
+                ? targetOuValue.GetString()
+                : null;
+            yield return new DirectoryOperation(kind, targetOu);
+        }
     }
 
     private static IReadOnlyDictionary<string, string?> BuildAttributes(IReadOnlyList<AttributeChange> changes)

@@ -58,6 +58,11 @@ public interface IIdentityMatcher
     IdentityMatchResult Match(WorkerSnapshot worker, DirectoryUserSnapshot? directoryUser);
 }
 
+public interface ILifecyclePolicy
+{
+    LifecycleDecision Evaluate(WorkerSnapshot worker, DirectoryUserSnapshot directoryUser);
+}
+
 public interface IAttributeDiffService
 {
     Task<IReadOnlyList<AttributeChange>> BuildDiffAsync(
@@ -160,3 +165,9 @@ public sealed record AttributeMapping(
     string Target,
     bool Required,
     string Transform);
+
+public sealed record LifecycleDecision(
+    string Bucket,
+    string TargetOu,
+    bool TargetEnabled,
+    string? Reason);
