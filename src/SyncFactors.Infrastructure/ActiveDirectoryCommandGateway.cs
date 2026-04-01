@@ -95,9 +95,13 @@ public sealed class ActiveDirectoryCommandGateway(
             new("displayName", command.DisplayName),
             new("sAMAccountName", command.SamAccountName),
             new("userPrincipalName", command.UserPrincipalName),
-            new("mail", command.Mail),
-            new(config.IdentityAttribute, command.WorkerId)
+            new("mail", command.Mail)
         };
+
+        if (!IsReservedAttribute(config.IdentityAttribute, config.IdentityAttribute))
+        {
+            attributes.Add(new DirectoryAttribute(config.IdentityAttribute, command.WorkerId));
+        }
 
         foreach (var attribute in command.Attributes)
         {
@@ -155,7 +159,10 @@ public sealed class ActiveDirectoryCommandGateway(
         request.Modifications.Add(BuildReplaceModification("displayName", command.DisplayName));
         request.Modifications.Add(BuildReplaceModification("userPrincipalName", command.UserPrincipalName));
         request.Modifications.Add(BuildReplaceModification("mail", command.Mail));
-        request.Modifications.Add(BuildReplaceModification(config.IdentityAttribute, command.WorkerId));
+        if (!IsReservedAttribute(config.IdentityAttribute, config.IdentityAttribute))
+        {
+            request.Modifications.Add(BuildReplaceModification(config.IdentityAttribute, command.WorkerId));
+        }
 
         foreach (var attribute in command.Attributes)
         {
