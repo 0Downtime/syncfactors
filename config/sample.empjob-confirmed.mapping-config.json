@@ -36,7 +36,7 @@
       "transform": "Lower"
     },
     {
-      "source": "employmentNav[0].jobInfoNav[0].departmentNav.name_localized",
+      "source": "Concat(employmentNav[0].jobInfoNav[0].costCenterNav.externalCode, employmentNav[0].jobInfoNav[0].costCenterNav.description_localized)",
       "target": "department",
       "enabled": true,
       "required": false,

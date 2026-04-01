@@ -169,6 +169,11 @@ public sealed class AttributeDiffService : IAttributeDiffService
                 DirectoryIdentityFormatter.BuildBaseEmailLocalPart(worker.PreferredName, worker.LastName));
         }
 
+        if (TryResolveConcatSource(worker, source, out var concatenatedValue))
+        {
+            return concatenatedValue;
+        }
+
         if (worker.Attributes.TryGetValue(source, out var directValue))
         {
             return directValue;
@@ -190,6 +195,68 @@ public sealed class AttributeDiffService : IAttributeDiffService
             "startDate" => worker.Attributes.TryGetValue("startDate", out var startDate) ? startDate : null,
             _ => null
         };
+    }
+
+    private static bool TryResolveConcatSource(WorkerSnapshot worker, string source, out string? value)
+    {
+        if (!TryParseConcatSource(source, out var keys))
+        {
+            value = null;
+            return false;
+        }
+
+        var parts = keys
+            .Select(key => ResolveSingleSourceValue(worker, key))
+            .Where(part => !string.IsNullOrWhiteSpace(part))
+            .Select(part => part!.Trim())
+            .ToArray();
+
+        value = parts.Length == 0 ? null : string.Join(' ', parts);
+        return true;
+    }
+
+    private static string? ResolveSingleSourceValue(WorkerSnapshot worker, string source)
+    {
+        if (worker.Attributes.TryGetValue(source, out var directValue))
+        {
+            return directValue;
+        }
+
+        var normalizedSource = SourceAttributePathNormalizer.Normalize(source);
+        if (!string.Equals(normalizedSource, source, StringComparison.OrdinalIgnoreCase)
+            && worker.Attributes.TryGetValue(normalizedSource, out var normalizedValue))
+        {
+            return normalizedValue;
+        }
+
+        return normalizedSource switch
+        {
+            "preferredName" => worker.PreferredName,
+            "firstName" => worker.PreferredName,
+            "lastName" => worker.LastName,
+            "department" => worker.Department,
+            "startDate" => worker.Attributes.TryGetValue("startDate", out var startDate) ? startDate : null,
+            _ => null
+        };
+    }
+
+    internal static bool TryParseConcatSource(string? source, out IReadOnlyList<string> keys)
+    {
+        const string prefix = "Concat(";
+        if (string.IsNullOrWhiteSpace(source) ||
+            !source.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) ||
+            !source.EndsWith(')'))
+        {
+            keys = [];
+            return false;
+        }
+
+        keys = source[prefix.Length..^1]
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(key => !string.IsNullOrWhiteSpace(key))
+            .ToArray();
+
+        return keys.Count > 0;
     }
 
     private static string? GetDirectoryValue(IReadOnlyDictionary<string, string?> attributes, string target)
