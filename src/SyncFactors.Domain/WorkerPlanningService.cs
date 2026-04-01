@@ -27,7 +27,10 @@ public sealed class WorkerPlanningService(
             : await directoryGateway.ResolveManagerDistinguishedNameAsync(managerId, cancellationToken);
 
         var identity = identityMatcher.Match(worker, directoryUser);
-        var proposedEmailLocalPart = await directoryGateway.ResolveAvailableEmailLocalPartAsync(worker, cancellationToken);
+        var proposedEmailLocalPart = await directoryGateway.ResolveAvailableEmailLocalPartAsync(
+            worker,
+            isCreate: !identity.MatchedExistingUser,
+            cancellationToken);
         var proposedEmailAddress = DirectoryIdentityFormatter.BuildEmailAddress(proposedEmailLocalPart);
         var attributeChanges = await attributeDiffService.BuildDiffAsync(worker, directoryUser, proposedEmailAddress, logPath, cancellationToken);
         var missingSourceAttributes = BuildMissingSourceAttributes(worker.Attributes, attributeMappingProvider.GetEnabledMappings());
