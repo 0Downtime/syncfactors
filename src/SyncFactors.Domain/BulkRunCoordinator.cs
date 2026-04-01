@@ -7,6 +7,8 @@ namespace SyncFactors.Domain;
 
 public sealed class BulkRunCoordinator(
     IWorkerSource workerSource,
+    IDeltaSyncService deltaSyncService,
+    IRunQueueStore runQueueStore,
     IWorkerPlanningService planningService,
     IDirectoryMutationCommandBuilder mutationCommandBuilder,
     IDirectoryCommandGateway directoryCommandGateway,
@@ -17,10 +19,28 @@ public sealed class BulkRunCoordinator(
 {
     public async Task<string> ExecuteAsync(RunQueueRequest request, int maxDegreeOfParallelism, CancellationToken cancellationToken)
     {
+        using var runCancellationSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var runCancellationToken = runCancellationSource.Token;
+        var cancellationMonitor = MonitorCancellationAsync(request.RequestId, runCancellationSource, cancellationToken);
+        var syncScope = await DetermineSyncScopeAsync(cancellationToken);
         var workers = new List<WorkerSnapshot>();
-        await foreach (var worker in workerSource.ListWorkersAsync(cancellationToken))
+        GuardrailExceededException? guardrailFailure = null;
+        try
         {
-            workers.Add(worker);
+            await foreach (var worker in workerSource.ListWorkersAsync(WorkerListingMode.DeltaPreferred, runCancellationToken))
+            {
+                workers.Add(worker);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            if (!cancellationToken.IsCancellationRequested &&
+                await runQueueStore.IsCancellationRequestedAsync(request.RequestId, CancellationToken.None))
+            {
+                throw new RunCanceledException(runId: null, "Run canceled by operator.");
+            }
+
+            throw;
         }
 
         var runId = $"bulk-{timeProvider.GetUtcNow():yyyyMMddHHmmssfff}";
@@ -87,11 +107,12 @@ public sealed class BulkRunCoordinator(
                 workers,
                 new ParallelOptions
                 {
-                    CancellationToken = cancellationToken,
+                    CancellationToken = runCancellationToken,
                     MaxDegreeOfParallelism = Math.Max(1, maxDegreeOfParallelism)
                 },
                 async (worker, ct) =>
                 {
+                    ct.ThrowIfCancellationRequested();
                     try
                     {
                         var plan = await planningService.PlanAsync(worker, logPath: null, ct);
@@ -108,6 +129,25 @@ public sealed class BulkRunCoordinator(
                             {
                                 bucket = "guardrailFailures";
                                 reason = $"Create guardrail exceeded. MaxCreatesPerRun={settings.MaxCreatesPerRun}.";
+                                var guardrailItem = BuildEntryItem(plan, request.DryRun, bucket, action: null, applied: false, succeeded: false, reason);
+                                await channel.Writer.WriteAsync(
+                                    new WorkerRunResult(
+                                        WorkerId: worker.WorkerId,
+                                        Bucket: bucket,
+                                        SamAccountName: plan.Identity.SamAccountName,
+                                        Reason: reason,
+                                        ReviewCategory: plan.ReviewCategory,
+                                        ReviewCaseType: plan.ReviewCaseType,
+                                        Action: null,
+                                        Applied: false,
+                                        Succeeded: false,
+                                        OperationSummary: BuildOperationSummary(plan, action: null, bucket),
+                                        DiffRows: plan.AttributeChanges.Select(change => new DiffRow(change.Attribute, change.Source, change.Before, change.After, change.Changed)).ToArray(),
+                                        Item: guardrailItem),
+                                    ct);
+                                Interlocked.CompareExchange(ref guardrailFailure, new GuardrailExceededException(runId, reason), null);
+                                runCancellationSource.Cancel();
+                                return;
                             }
                         }
 
@@ -189,11 +229,73 @@ public sealed class BulkRunCoordinator(
                 dryRun: request.DryRun,
                 totalWorkers: totalWorkers,
                 tally: tally,
-                report: BuildReport(runId, request, tally, totalWorkers, startedAt),
+                report: BuildReport(runId, request, tally, totalWorkers, startedAt, syncScope),
                 startedAt: startedAt,
                 cancellationToken);
 
+            if (!request.DryRun && ShouldAdvanceDeltaCheckpoint(tally))
+            {
+                await deltaSyncService.RecordSuccessfulRunAsync(cancellationToken);
+            }
+
             return runId;
+        }
+        catch (OperationCanceledException)
+        {
+            if (guardrailFailure is not null)
+            {
+                channel.Writer.TryComplete(guardrailFailure);
+                try
+                {
+                    await writerTask;
+                }
+                catch
+                {
+                }
+
+                await runLifecycleService.FailRunAsync(
+                    runId,
+                    mode: "BulkSync",
+                    dryRun: request.DryRun,
+                    processedWorkers: processedWorkers,
+                    totalWorkers: totalWorkers,
+                    currentWorkerId: null,
+                    errorMessage: guardrailFailure.Message,
+                    tally: tally,
+                    report: BuildReport(runId, request, tally, totalWorkers, startedAt, syncScope),
+                    startedAt: startedAt,
+                    cancellationToken);
+                throw guardrailFailure;
+            }
+
+            if (!cancellationToken.IsCancellationRequested &&
+                await runQueueStore.IsCancellationRequestedAsync(request.RequestId, CancellationToken.None))
+            {
+                channel.Writer.TryComplete();
+                try
+                {
+                    await writerTask;
+                }
+                catch
+                {
+                }
+
+                await runLifecycleService.CancelRunAsync(
+                    runId,
+                    mode: "BulkSync",
+                    dryRun: request.DryRun,
+                    processedWorkers: processedWorkers,
+                    totalWorkers: totalWorkers,
+                    currentWorkerId: null,
+                    reason: "Run canceled by operator.",
+                    tally: tally,
+                    report: BuildReport(runId, request, tally, totalWorkers, startedAt, syncScope),
+                    startedAt: startedAt,
+                    cancellationToken);
+                throw new RunCanceledException(runId, "Run canceled by operator.");
+            }
+
+            throw;
         }
         catch (Exception ex)
         {
@@ -215,10 +317,38 @@ public sealed class BulkRunCoordinator(
                 currentWorkerId: null,
                 errorMessage: ex.Message,
                 tally: tally,
-                report: BuildReport(runId, request, tally, totalWorkers, startedAt),
+                report: BuildReport(runId, request, tally, totalWorkers, startedAt, syncScope),
                 startedAt: startedAt,
                 cancellationToken);
             throw;
+        }
+        finally
+        {
+            runCancellationSource.Cancel();
+            try
+            {
+                await cancellationMonitor;
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+            }
+        }
+    }
+
+    private async Task MonitorCancellationAsync(string requestId, CancellationTokenSource runCancellationSource, CancellationToken cancellationToken)
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(1));
+        while (!runCancellationSource.IsCancellationRequested &&
+               await timer.WaitForNextTickAsync(cancellationToken))
+        {
+            if (!await runQueueStore.IsCancellationRequestedAsync(requestId, cancellationToken))
+            {
+                continue;
+            }
+
+            logger.LogInformation("Cancellation requested for run queue item {RequestId}.", requestId);
+            runCancellationSource.Cancel();
+            return;
         }
     }
 
@@ -247,6 +377,24 @@ public sealed class BulkRunCoordinator(
             TargetOu: plan.Worker.TargetOu,
             FromOu: plan.DirectoryUser.DistinguishedName,
             ToOu: plan.Worker.TargetOu);
+    }
+
+    private static bool ShouldAdvanceDeltaCheckpoint(RunTally tally)
+    {
+        return tally.Conflicts == 0 &&
+               tally.GuardrailFailures == 0 &&
+               tally.ManualReview == 0;
+    }
+
+    private async Task<string> DetermineSyncScopeAsync(CancellationToken cancellationToken)
+    {
+        var deltaWindow = await deltaSyncService.GetWindowAsync(cancellationToken);
+        if (!deltaWindow.Enabled || !deltaWindow.HasCheckpoint || string.IsNullOrWhiteSpace(deltaWindow.Filter))
+        {
+            return "Bulk full scan";
+        }
+
+        return "Delta";
     }
 
     private static string ResolveExecutionBucket(PlannedWorkerAction plan)
@@ -292,12 +440,13 @@ public sealed class BulkRunCoordinator(
             """);
     }
 
-    private static JsonElement BuildReport(string runId, RunQueueRequest request, RunTally tally, int totalWorkers, DateTimeOffset startedAt)
+    private static JsonElement BuildReport(string runId, RunQueueRequest request, RunTally tally, int totalWorkers, DateTimeOffset startedAt, string syncScope)
     {
         return ParseJson(
             $$"""
             {
               "kind": "bulkRun",
+              "syncScope": "{{Escape(syncScope)}}",
               "runId": "{{runId}}",
               "requestId": "{{request.RequestId}}",
               "mode": "{{request.Mode}}",
@@ -356,4 +505,14 @@ public sealed class BulkRunCoordinator(
             }
             """);
     }
+}
+
+public sealed class RunCanceledException(string? runId, string message) : Exception(message)
+{
+    public string? RunId { get; } = runId;
+}
+
+public sealed class GuardrailExceededException(string runId, string message) : Exception(message)
+{
+    public string RunId { get; } = runId;
 }

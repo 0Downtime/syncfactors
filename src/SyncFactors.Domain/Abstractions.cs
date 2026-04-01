@@ -17,7 +17,33 @@ public interface IWorkerPreviewPlanner
 public interface IWorkerSource
 {
     Task<WorkerSnapshot?> GetWorkerAsync(string workerId, CancellationToken cancellationToken);
-    IAsyncEnumerable<WorkerSnapshot> ListWorkersAsync(CancellationToken cancellationToken);
+    IAsyncEnumerable<WorkerSnapshot> ListWorkersAsync(WorkerListingMode mode, CancellationToken cancellationToken);
+}
+
+public enum WorkerListingMode
+{
+    Full = 0,
+    DeltaPreferred = 1
+}
+
+public interface IDeltaSyncService
+{
+    Task<DeltaSyncWindow> GetWindowAsync(CancellationToken cancellationToken);
+    Task RecordSuccessfulRunAsync(CancellationToken cancellationToken);
+}
+
+public sealed record DeltaSyncWindow(
+    bool Enabled,
+    bool HasCheckpoint,
+    string? Filter,
+    string DeltaField,
+    DateTimeOffset? CheckpointUtc,
+    DateTimeOffset? EffectiveSinceUtc);
+    
+public interface IDeltaSyncStateStore
+{
+    Task<DateTimeOffset?> GetCheckpointAsync(string syncKey, CancellationToken cancellationToken);
+    Task SaveCheckpointAsync(string syncKey, DateTimeOffset checkpointUtc, CancellationToken cancellationToken);
 }
 
 public interface IDirectoryGateway
@@ -107,8 +133,12 @@ public interface IRunQueueStore
 {
     Task<RunQueueRequest> EnqueueAsync(StartRunRequest request, CancellationToken cancellationToken);
     Task<RunQueueRequest?> ClaimNextPendingAsync(string workerName, CancellationToken cancellationToken);
+    Task<RunQueueRequest?> GetPendingOrActiveAsync(CancellationToken cancellationToken);
     Task<bool> HasPendingOrActiveRunAsync(CancellationToken cancellationToken);
+    Task<bool> CancelPendingOrActiveAsync(string? requestedBy, CancellationToken cancellationToken);
+    Task<bool> IsCancellationRequestedAsync(string requestId, CancellationToken cancellationToken);
     Task CompleteAsync(string requestId, string runId, CancellationToken cancellationToken);
+    Task CancelAsync(string requestId, string? runId, string? errorMessage, CancellationToken cancellationToken);
     Task FailAsync(string requestId, string? runId, string errorMessage, CancellationToken cancellationToken);
 }
 

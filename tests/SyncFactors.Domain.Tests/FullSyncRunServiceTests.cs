@@ -170,6 +170,24 @@ public sealed class FullSyncRunServiceTests
         Assert.Equal(0, workerSource.ListCallCount);
     }
 
+    [Fact]
+    public async Task LaunchAsync_EnumeratesWorkersWithFullListingMode()
+    {
+        var workerSource = new CountingWorkerSource([CreateWorker("10001", managerId: "90001")]);
+        var service = CreateService(
+            workerSource: workerSource,
+            directoryGateway: new StubDirectoryGateway(managerDistinguishedName: "CN=Manager,OU=LabUsers,DC=example,DC=com"),
+            directoryCommandGateway: new CapturingDirectoryCommandGateway(),
+            runtimeStatusStore: new CapturingRuntimeStatusStore(),
+            runRepository: out _);
+
+        await service.LaunchAsync(
+            new LaunchFullRunRequest(DryRun: true, AcknowledgeRealSync: false),
+            CancellationToken.None);
+
+        Assert.Equal(WorkerListingMode.Full, workerSource.LastMode);
+    }
+
     private static FullSyncRunService CreateService(
         IReadOnlyList<WorkerSnapshot> workers,
         IDirectoryGateway directoryGateway,
@@ -280,8 +298,9 @@ public sealed class FullSyncRunServiceTests
             return Task.FromResult(workers.FirstOrDefault(worker => worker.WorkerId == workerId));
         }
 
-        public async IAsyncEnumerable<WorkerSnapshot> ListWorkersAsync([System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
+        public async IAsyncEnumerable<WorkerSnapshot> ListWorkersAsync(WorkerListingMode mode, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
         {
+            _ = mode;
             foreach (var worker in workers)
             {
                 cancellationToken.ThrowIfCancellationRequested();
@@ -301,8 +320,9 @@ public sealed class FullSyncRunServiceTests
             return Task.FromResult(workers.FirstOrDefault(worker => worker.WorkerId == workerId));
         }
 
-        public async IAsyncEnumerable<WorkerSnapshot> ListWorkersAsync([System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
+        public async IAsyncEnumerable<WorkerSnapshot> ListWorkersAsync(WorkerListingMode mode, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
         {
+            LastMode = mode;
             ListCallCount++;
             foreach (var worker in workers)
             {
@@ -311,6 +331,8 @@ public sealed class FullSyncRunServiceTests
                 await Task.Yield();
             }
         }
+
+        public WorkerListingMode? LastMode { get; private set; }
     }
 
     private sealed class StubDirectoryGateway(string? managerDistinguishedName) : IDirectoryGateway

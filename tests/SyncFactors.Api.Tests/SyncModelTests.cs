@@ -75,6 +75,23 @@ public sealed class SyncModelTests
     }
 
     [Fact]
+    public async Task OnPostCancelRunAsync_RequestsCancellation()
+    {
+        var queueStore = new CapturingRunQueueStore
+        {
+            PendingOrActiveRun = new RunQueueRequest("req-1", "BulkSync", true, "AdHoc", "Sync page", "InProgress", DateTimeOffset.UtcNow, DateTimeOffset.UtcNow, null, "bulk-1", null)
+        };
+        var model = new SyncModel(CreateDashboardService(), queueStore, new StubSyncScheduleStore());
+
+        var result = await model.OnPostCancelRunAsync(CancellationToken.None);
+
+        Assert.IsType<RedirectToPageResult>(result);
+        Assert.True(queueStore.CancelRequested);
+        Assert.Equal("Run cancellation requested.", model.SuccessMessage);
+        Assert.Null(model.ErrorMessage);
+    }
+
+    [Fact]
     public async Task OnPostSaveScheduleAsync_UpdatesSchedule()
     {
         var scheduleStore = new StubSyncScheduleStore();
@@ -126,6 +143,7 @@ public sealed class SyncModelTests
                         GuardrailFailures: 0,
                         ManualReview: 0,
                         Unchanged: 0,
+                        SyncScope: "Delta",
                         RunTrigger: "AdHoc",
                         RequestedBy: "Sync page")
                 ],
@@ -151,6 +169,10 @@ public sealed class SyncModelTests
 
         public bool HasPendingOrActiveRun { get; set; }
 
+        public bool CancelRequested { get; private set; }
+
+        public RunQueueRequest? PendingOrActiveRun { get; set; }
+
         public Task<RunQueueRequest> EnqueueAsync(StartRunRequest request, CancellationToken cancellationToken)
         {
             _ = cancellationToken;
@@ -165,10 +187,31 @@ public sealed class SyncModelTests
             return Task.FromResult<RunQueueRequest?>(null);
         }
 
+        public Task<RunQueueRequest?> GetPendingOrActiveAsync(CancellationToken cancellationToken)
+        {
+            _ = cancellationToken;
+            return Task.FromResult(PendingOrActiveRun);
+        }
+
         public Task<bool> HasPendingOrActiveRunAsync(CancellationToken cancellationToken)
         {
             _ = cancellationToken;
-            return Task.FromResult(HasPendingOrActiveRun);
+            return Task.FromResult(HasPendingOrActiveRun || PendingOrActiveRun is not null);
+        }
+
+        public Task<bool> CancelPendingOrActiveAsync(string? requestedBy, CancellationToken cancellationToken)
+        {
+            _ = requestedBy;
+            _ = cancellationToken;
+            CancelRequested = PendingOrActiveRun is not null || HasPendingOrActiveRun;
+            return Task.FromResult(CancelRequested);
+        }
+
+        public Task<bool> IsCancellationRequestedAsync(string requestId, CancellationToken cancellationToken)
+        {
+            _ = requestId;
+            _ = cancellationToken;
+            return Task.FromResult(CancelRequested);
         }
 
         public Task CompleteAsync(string requestId, string runId, CancellationToken cancellationToken)
@@ -176,6 +219,16 @@ public sealed class SyncModelTests
             _ = requestId;
             _ = runId;
             _ = cancellationToken;
+            return Task.CompletedTask;
+        }
+
+        public Task CancelAsync(string requestId, string? runId, string? errorMessage, CancellationToken cancellationToken)
+        {
+            _ = requestId;
+            _ = runId;
+            _ = errorMessage;
+            _ = cancellationToken;
+            CancelRequested = true;
             return Task.CompletedTask;
         }
 

@@ -242,6 +242,20 @@ public sealed class DependencyHealthService(
                     observedAt: heartbeat.LastSeenAt);
             }
 
+            if (age <= DegradedHeartbeatAge &&
+                string.Equals(heartbeat.State, "Running", StringComparison.OrdinalIgnoreCase))
+            {
+                return BuildProbe(
+                    "Worker Service",
+                    DependencyHealthStates.Healthy,
+                    $"Worker is actively processing a run; last heartbeat was {FormatAge(age)} ago.",
+                    checkedAt,
+                    stopwatch.ElapsedMilliseconds,
+                    details: heartbeat.Activity,
+                    observedAt: heartbeat.LastSeenAt,
+                    isStale: true);
+            }
+
             if (age <= DegradedHeartbeatAge)
             {
                 return BuildProbe(
