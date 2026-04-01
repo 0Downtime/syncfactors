@@ -111,11 +111,11 @@ public sealed class AttributeDiffService : IAttributeDiffService
                 Changed: changed));
         }
 
-        var proposedDisplayName = directoryUser?.SamAccountName ?? worker.WorkerId;
+        var proposedDisplayName = DirectoryIdentityFormatter.BuildDisplayName(worker.PreferredName, worker.LastName);
         UpsertSystemAttributeChange(
             changes,
             attribute: "displayName",
-            source: "sAMAccountName",
+            source: "preferredName,lastName",
             before: FormatValue(GetDirectoryValue(currentAttributes, "displayName")),
             after: proposedDisplayName,
             changed: !string.Equals(GetDirectoryValue(currentAttributes, "displayName"), proposedDisplayName, StringComparison.Ordinal));

@@ -8,7 +8,7 @@ public sealed class DirectoryMutationCommandBuilder : IDirectoryMutationCommandB
     {
         var action = plan.PrimaryAction;
         var samAccountName = plan.Identity.SamAccountName;
-        var displayName = plan.DirectoryUser.SamAccountName ?? samAccountName;
+        var displayName = DirectoryIdentityFormatter.BuildDisplayName(plan.Worker.PreferredName, plan.Worker.LastName);
         var userPrincipalName = plan.Identity.MatchedExistingUser
             ? plan.DirectoryUser.Attributes.TryGetValue("UserPrincipalName", out var existingUserPrincipalName) && !string.IsNullOrWhiteSpace(existingUserPrincipalName)
                 ? existingUserPrincipalName
@@ -40,7 +40,8 @@ public sealed class DirectoryMutationCommandBuilder : IDirectoryMutationCommandB
     {
         var action = ResolvePrimaryAction(preview);
         var samAccountName = preview.SamAccountName ?? throw new InvalidOperationException("Preview did not produce a SAM account name.");
-        var displayName = GetPreviewAttributeValue(preview, "displayName") ?? samAccountName;
+        var displayName = GetPreviewAttributeValue(preview, "displayName")
+            ?? DirectoryIdentityFormatter.BuildDisplayName(worker.PreferredName, worker.LastName);
         var emailAddress = GetPreviewAttributeValue(preview, "UserPrincipalName")
             ?? GetPreviewAttributeValue(preview, "userPrincipalName")
             ?? GetPreviewAttributeValue(preview, "mail")

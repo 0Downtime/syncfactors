@@ -233,8 +233,8 @@ public sealed class AttributeDiffServiceTests
             {
                 Assert.Equal("displayName", change.Attribute);
                 Assert.Equal("Sample101, Winnie", change.Before);
-                Assert.Equal("10001", change.After);
-                Assert.True(change.Changed);
+                Assert.Equal("Sample101, Winnie", change.After);
+                Assert.False(change.Changed);
             },
             change =>
             {
@@ -373,8 +373,8 @@ public sealed class AttributeDiffServiceTests
             {
                 Assert.Equal("displayName", change.Attribute);
                 Assert.Equal("Sample101, Winnie", change.Before);
-                Assert.Equal("10001", change.After);
-                Assert.True(change.Changed);
+                Assert.Equal("Sample101, Winnie", change.After);
+                Assert.False(change.Changed);
             },
             change =>
             {
@@ -524,7 +524,7 @@ public sealed class AttributeDiffServiceTests
             {
                 Assert.Equal("displayName", change.Attribute);
                 Assert.Equal("Old Display", change.Before);
-                Assert.Equal("10001", change.After);
+                Assert.Equal("Sample101, Winnie", change.After);
                 Assert.True(change.Changed);
             },
             change =>
