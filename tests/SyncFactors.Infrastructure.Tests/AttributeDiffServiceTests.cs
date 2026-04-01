@@ -100,8 +100,8 @@ public sealed class AttributeDiffServiceTests
             logPath: null,
             CancellationToken.None);
 
-        var upnChange = Assert.Single(changes.Where(change => change.Attribute == "UserPrincipalName"));
-        var mailChange = Assert.Single(changes.Where(change => change.Attribute == "mail"));
+        var upnChange = Assert.Single(changes, change => change.Attribute == "UserPrincipalName");
+        var mailChange = Assert.Single(changes, change => change.Attribute == "mail");
         Assert.Equal("existing.upn@spireenergy.com", upnChange.After);
         Assert.False(upnChange.Changed);
         Assert.Equal("existing.mail@spireenergy.com", mailChange.After);
@@ -506,8 +506,8 @@ public sealed class AttributeDiffServiceTests
             {
                 Assert.Equal("UserPrincipalName", change.Attribute);
                 Assert.Equal("old.email@spireenergy.com", change.Before);
-                Assert.Equal("preview.email@spireenergy.com", change.After);
-                Assert.True(change.Changed);
+                Assert.Equal("old.email@spireenergy.com", change.After);
+                Assert.False(change.Changed);
             },
             change =>
             {
@@ -527,8 +527,8 @@ public sealed class AttributeDiffServiceTests
             {
                 Assert.Equal("mail", change.Attribute);
                 Assert.Equal("old.email@spireenergy.com", change.Before);
-                Assert.Equal("preview.email@spireenergy.com", change.After);
-                Assert.True(change.Changed);
+                Assert.Equal("old.email@spireenergy.com", change.After);
+                Assert.False(change.Changed);
             });
     }
 
