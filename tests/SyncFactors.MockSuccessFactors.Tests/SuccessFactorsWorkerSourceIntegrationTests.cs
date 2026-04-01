@@ -928,6 +928,104 @@ public sealed class SuccessFactorsWorkerSourceIntegrationTests
         Assert.Equal("Union-17", worker.Attributes["unionJobCode"]);
     }
 
+    [Fact]
+    public async Task ListWorkersAsync_AddsRecentInactiveRetentionClause_WhenConfigured()
+    {
+        var handler = new CaptureListRequestHttpHandler();
+        using var client = new HttpClient(handler)
+        {
+            BaseAddress = new Uri("http://mock-successfactors.local")
+        };
+
+        var tempDirectory = Path.Combine(Path.GetTempPath(), "syncfactors-worker-source", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDirectory);
+
+        var syncConfigPath = Path.Combine(tempDirectory, "sync-config.json");
+        var mappingConfigPath = Path.Combine(tempDirectory, "mapping-config.json");
+        var scaffoldDataPath = Path.Combine(tempDirectory, "scaffold-data.json");
+
+        await File.WriteAllTextAsync(syncConfigPath, """
+        {
+          "secrets": {
+            "adServerEnv": null,
+            "adUsernameEnv": null,
+            "adBindPasswordEnv": null
+          },
+          "successFactors": {
+            "baseUrl": "http://mock-successfactors.local/odata/v2",
+            "auth": {
+              "mode": "basic",
+              "basic": {
+                "username": "mock-user",
+                "password": "mock-password"
+              }
+            },
+            "query": {
+              "entitySet": "EmpJob",
+              "identityField": "userId",
+              "deltaField": "lastModifiedDateTime",
+              "baseFilter": "emplStatus in 'A','U'",
+              "inactiveRetentionDays": 180,
+              "select": [
+                "userId"
+              ],
+              "expand": []
+            }
+          },
+          "ad": {
+            "server": "ldap.example.test",
+            "username": "",
+            "bindPassword": "",
+            "identityAttribute": "employeeID",
+            "defaultActiveOu": "OU=LabUsers,DC=example,DC=com",
+            "graveyardOu": "OU=LabGraveyard,DC=example,DC=com"
+          },
+          "sync": {
+            "enableBeforeStartDays": 7,
+            "deletionRetentionDays": 90
+          },
+          "safety": {
+            "maxCreatesPerRun": 10,
+            "maxDisablesPerRun": 10,
+            "maxDeletionsPerRun": 10
+          },
+          "reporting": {
+            "outputDirectory": "reports"
+          }
+        }
+        """);
+        File.Copy(Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "config", "sample.empjob-confirmed.mapping-config.json")), mappingConfigPath);
+        await File.WriteAllTextAsync(scaffoldDataPath, """{"workers":[],"directoryUsers":[]}""");
+
+        var configLoader = new SyncFactorsConfigurationLoader(new SyncFactorsConfigPathResolver(syncConfigPath, mappingConfigPath));
+        var scaffoldStore = new ScaffoldDataStore(new ScaffoldDataPathResolver(scaffoldDataPath));
+        var fallbackSource = new ScaffoldWorkerSource(scaffoldStore);
+        var workerSource = new SuccessFactorsWorkerSource(client, configLoader, new DisabledDeltaSyncService(), fallbackSource, NullLogger<SuccessFactorsWorkerSource>.Instance);
+
+        var beforeDate = DateTime.UtcNow.Date;
+        var workerCount = 0;
+        await foreach (var worker in workerSource.ListWorkersAsync(WorkerListingMode.Full, CancellationToken.None))
+        {
+            workerCount++;
+        }
+        var afterDate = DateTime.UtcNow.Date;
+
+        Assert.Equal(0, workerCount);
+        Assert.NotNull(handler.LastRequestUri);
+
+        var queryCollection = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(handler.LastRequestUri!.Query);
+        var filter = queryCollection["$filter"].ToString();
+        var expectedFilters = new[]
+        {
+            "(emplStatus in 'A','U') or (emplStatus eq 'T' and endDate ge datetime'" +
+            $"{beforeDate.AddDays(-180):yyyy-MM-ddTHH:mm:ss}')",
+            "(emplStatus in 'A','U') or (emplStatus eq 'T' and endDate ge datetime'" +
+            $"{afterDate.AddDays(-180):yyyy-MM-ddTHH:mm:ss}')"
+        }.Distinct(StringComparer.Ordinal).ToArray();
+
+        Assert.Contains(filter, expectedFilters);
+    }
+
     private sealed class MockSuccessFactorsHttpHandler(MockFixtureStore fixtureStore, ODataResponseBuilder responseBuilder) : HttpMessageHandler
     {
         public List<string> RequestUris { get; } = [];
@@ -1032,6 +1130,30 @@ public sealed class SuccessFactorsWorkerSourceIntegrationTests
         {
             _ = cancellationToken;
             return Task.CompletedTask;
+        }
+    }
+
+    private sealed class CaptureListRequestHttpHandler : HttpMessageHandler
+    {
+        public Uri? LastRequestUri { get; private set; }
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            _ = cancellationToken;
+            LastRequestUri = request.RequestUri;
+
+            var emptyResultsJson = """
+            {
+              "d": {
+                "results": []
+              }
+            }
+            """;
+
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(emptyResultsJson, Encoding.UTF8, "application/json")
+            });
         }
     }
 

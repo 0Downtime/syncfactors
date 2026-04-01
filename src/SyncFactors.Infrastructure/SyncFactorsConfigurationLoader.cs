@@ -44,6 +44,10 @@ public sealed class SyncFactorsConfigurationLoader
                     DeltaOverlapMinutes: TryGetInt32(document.GetRequiredObject("successFactors").GetRequiredObject("query"), "deltaOverlapMinutes") ?? 5,
                     BaseFilter: document.GetRequiredObject("successFactors").GetRequiredObject("query").TryGetString("baseFilter"),
                     OrderBy: document.GetRequiredObject("successFactors").GetRequiredObject("query").TryGetString("orderBy"),
+                    InactiveRetentionDays: LoadInactiveRetentionDays(document.GetRequiredObject("successFactors").GetRequiredObject("query")),
+                    InactiveStatusField: document.GetRequiredObject("successFactors").GetRequiredObject("query").TryGetString("inactiveStatusField") ?? "emplStatus",
+                    InactiveStatusValues: document.GetRequiredObject("successFactors").GetRequiredObject("query").TryGetStringArray("inactiveStatusValues") ?? ["T"],
+                    InactiveDateField: document.GetRequiredObject("successFactors").GetRequiredObject("query").TryGetString("inactiveDateField") ?? "endDate",
                     AsOfDate: document.GetRequiredObject("successFactors").GetRequiredObject("query").TryGetString("asOfDate"),
                     PageSize: TryGetInt32(document.GetRequiredObject("successFactors").GetRequiredObject("query"), "pageSize") ?? 200,
                     Select: document.GetRequiredObject("successFactors").GetRequiredObject("query").GetRequiredStringArray("select"),
@@ -57,6 +61,10 @@ public sealed class SyncFactorsConfigurationLoader
                         DeltaOverlapMinutes: TryGetInt32(previewQuery, "deltaOverlapMinutes") ?? 5,
                         BaseFilter: previewQuery.TryGetString("baseFilter"),
                         OrderBy: previewQuery.TryGetString("orderBy"),
+                        InactiveRetentionDays: LoadInactiveRetentionDays(previewQuery),
+                        InactiveStatusField: previewQuery.TryGetString("inactiveStatusField") ?? "emplStatus",
+                        InactiveStatusValues: previewQuery.TryGetStringArray("inactiveStatusValues") ?? ["T"],
+                        InactiveDateField: previewQuery.TryGetString("inactiveDateField") ?? "endDate",
                         AsOfDate: previewQuery.TryGetString("asOfDate"),
                         PageSize: TryGetInt32(previewQuery, "pageSize") ?? 200,
                         Select: previewQuery.GetRequiredStringArray("select"),
@@ -207,5 +215,21 @@ public sealed class SyncFactorsConfigurationLoader
                property.TryGetInt32(out var value)
             ? value
             : null;
+    }
+
+    private static int? LoadInactiveRetentionDays(JsonElement query)
+    {
+        var days = TryGetInt32(query, "inactiveRetentionDays");
+        if (days is null)
+        {
+            return null;
+        }
+
+        if (days.Value < 1)
+        {
+            throw new InvalidOperationException("Property 'inactiveRetentionDays' must be a positive integer when configured.");
+        }
+
+        return days;
     }
 }
