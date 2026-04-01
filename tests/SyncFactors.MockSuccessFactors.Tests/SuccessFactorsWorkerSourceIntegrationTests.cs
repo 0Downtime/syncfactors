@@ -276,6 +276,119 @@ public sealed class SuccessFactorsWorkerSourceIntegrationTests
     }
 
     [Fact]
+    public async Task WorkerSource_ListWorkersAsync_IncludesTaggedPrehireWorkers_AndMarksIsPrehire()
+    {
+        var fixturePath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "config", "mock-successfactors", "baseline-fixtures.json"));
+        var fixtureStore = new MockFixtureStore(Options.Create(new MockSuccessFactorsOptions
+        {
+            FixturePath = fixturePath
+        }));
+        var responseBuilder = new ODataResponseBuilder();
+        var handler = new MockSuccessFactorsHttpHandler(fixtureStore, responseBuilder);
+        using var client = new HttpClient(handler)
+        {
+            BaseAddress = new Uri("http://mock-successfactors.local")
+        };
+
+        var tempDirectory = Path.Combine(Path.GetTempPath(), "syncfactors-worker-source", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDirectory);
+
+        var syncConfigPath = Path.Combine(tempDirectory, "sync-config.json");
+        var mappingConfigPath = Path.Combine(tempDirectory, "mapping-config.json");
+        var scaffoldDataPath = Path.Combine(tempDirectory, "scaffold-data.json");
+
+        await File.WriteAllTextAsync(syncConfigPath, """
+        {
+          "secrets": {
+            "adServerEnv": null,
+            "adUsernameEnv": null,
+            "adBindPasswordEnv": null,
+            "successFactorsClientIdEnv": null,
+            "successFactorsClientSecretEnv": null
+          },
+          "successFactors": {
+            "baseUrl": "http://mock-successfactors.local/odata/v2",
+            "auth": {
+              "mode": "oauth",
+              "oauth": {
+                "tokenUrl": "http://mock-successfactors.local/oauth/token",
+                "clientId": "mock-client-id",
+                "clientSecret": "mock-client-secret",
+                "companyId": "MOCK"
+              }
+            },
+            "query": {
+              "entitySet": "EmpJob",
+              "identityField": "userId",
+              "deltaField": "lastModifiedDateTime",
+              "baseFilter": "emplStatus in 'A','U'",
+              "pageSize": 50,
+              "select": [
+                "userId",
+                "jobTitle",
+                "company",
+                "department",
+                "division",
+                "location",
+                "businessUnit",
+                "costCenter",
+                "employeeClass",
+                "employeeType",
+                "managerId",
+                "customString3",
+                "customString20",
+                "customString87",
+                "customString110",
+                "customString111",
+                "customString91",
+                "startDate"
+              ],
+              "expand": []
+            }
+          },
+          "ad": {
+            "server": "ldap.example.test",
+            "username": "",
+            "bindPassword": "",
+            "identityAttribute": "employeeID",
+            "defaultActiveOu": "OU=LabUsers,DC=example,DC=com",
+            "prehireOu": "OU=Prehire,DC=example,DC=com",
+            "graveyardOu": "OU=LabGraveyard,DC=example,DC=com"
+          },
+          "sync": {
+            "enableBeforeStartDays": 7,
+            "deletionRetentionDays": 90
+          },
+          "safety": {
+            "maxCreatesPerRun": 10,
+            "maxDisablesPerRun": 10,
+            "maxDeletionsPerRun": 10
+          },
+          "reporting": {
+            "outputDirectory": "reports"
+          }
+        }
+        """);
+        File.Copy(Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "config", "sample.empjob-confirmed.mapping-config.json")), mappingConfigPath);
+        await File.WriteAllTextAsync(scaffoldDataPath, """{"workers":[],"directoryUsers":[]}""");
+
+        var configLoader = new SyncFactorsConfigurationLoader(new SyncFactorsConfigPathResolver(syncConfigPath, mappingConfigPath));
+        var scaffoldStore = new ScaffoldDataStore(new ScaffoldDataPathResolver(scaffoldDataPath));
+        var fallbackSource = new ScaffoldWorkerSource(scaffoldStore);
+        var workerSource = new SuccessFactorsWorkerSource(client, configLoader, new DisabledDeltaSyncService(), fallbackSource, NullLogger<SuccessFactorsWorkerSource>.Instance);
+
+        var workers = new List<WorkerSnapshot>();
+        await foreach (var worker in workerSource.ListWorkersAsync(WorkerListingMode.Full, CancellationToken.None))
+        {
+            workers.Add(worker);
+        }
+
+        var prehire = Assert.Single(workers, worker => worker.WorkerId == "user.10003");
+        Assert.True(prehire.IsPrehire);
+        Assert.Equal("2026-04-02T00:00:00Z", prehire.Attributes["startDate"]);
+    }
+
+    [Fact]
     public async Task WorkerSource_ListWorkersAsync_FollowsServerSidePaginationLinks()
     {
         var fixturePath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "config", "mock-successfactors", "baseline-fixtures.json"));
@@ -1074,6 +1187,34 @@ public sealed class SuccessFactorsWorkerSourceIntegrationTests
                     workers,
                     query,
                     "PerPerson",
+                    $"{request.RequestUri.GetLeftPart(UriPartial.Authority)}/odata/v2");
+                var json = JsonSerializer.Serialize(payload);
+
+                var response = new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(json, Encoding.UTF8, "application/json")
+                };
+                response.Headers.Add("X-SF-Paging", "snapshot");
+                return Task.FromResult(response);
+            }
+
+            if (request.RequestUri.AbsolutePath.Equals("/odata/v2/EmpJob", StringComparison.OrdinalIgnoreCase))
+            {
+                RequestUris.Add(request.RequestUri.ToString());
+                if (request.Headers.Authorization is not AuthenticationHeaderValue auth ||
+                    !string.Equals(auth.Scheme, "Bearer", StringComparison.OrdinalIgnoreCase) ||
+                    !string.Equals(auth.Parameter, "mock-access-token", StringComparison.Ordinal))
+                {
+                    return Task.FromResult(new HttpResponseMessage(HttpStatusCode.Unauthorized));
+                }
+
+                var queryCollection = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(request.RequestUri.Query);
+                var query = ODataQueryParser.Parse(new Microsoft.AspNetCore.Http.QueryCollection(queryCollection));
+                var workers = fixtureStore.QueryWorkers("EmpJob", query);
+                var payload = responseBuilder.Build(
+                    workers,
+                    query,
+                    "EmpJob",
                     $"{request.RequestUri.GetLeftPart(UriPartial.Authority)}/odata/v2");
                 var json = JsonSerializer.Serialize(payload);
 
