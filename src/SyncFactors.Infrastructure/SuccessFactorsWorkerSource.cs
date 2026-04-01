@@ -1,6 +1,7 @@
 using SyncFactors.Contracts;
 using SyncFactors.Domain;
 using Microsoft.Extensions.Logging;
+using System.Globalization;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
@@ -144,9 +145,11 @@ public sealed class SuccessFactorsWorkerSource(
             deltaWindow.DeltaField,
             deltaWindow.CheckpointUtc,
             deltaWindow.EffectiveSinceUtc);
+        var populationFilter = BuildListFilter(query);
         return query with
         {
-            BaseFilter = CombineFilters(query.BaseFilter, deltaWindow.Filter)
+            BaseFilter = CombineFilters(populationFilter, deltaWindow.Filter),
+            InactiveRetentionDays = null
         };
     }
 
@@ -660,9 +663,10 @@ public sealed class SuccessFactorsWorkerSource(
             $"$select={Uri.EscapeDataString(string.Join(",", query.Select))}"
         };
 
-        if (!string.IsNullOrWhiteSpace(query.BaseFilter))
+        var listFilter = BuildListFilter(query);
+        if (!string.IsNullOrWhiteSpace(listFilter))
         {
-            parts.Add($"$filter={Uri.EscapeDataString(query.BaseFilter)}");
+            parts.Add($"$filter={Uri.EscapeDataString(listFilter)}");
         }
 
         if (!string.IsNullOrWhiteSpace(query.OrderBy))
@@ -695,9 +699,10 @@ public sealed class SuccessFactorsWorkerSource(
             $"$select={Uri.EscapeDataString(string.Join(",", query.Select))}"
         };
 
-        if (!string.IsNullOrWhiteSpace(query.BaseFilter))
+        var listFilter = BuildListFilter(query);
+        if (!string.IsNullOrWhiteSpace(listFilter))
         {
-            parts.Add($"$filter={Uri.EscapeDataString(query.BaseFilter)}");
+            parts.Add($"$filter={Uri.EscapeDataString(listFilter)}");
         }
 
         if (!string.IsNullOrWhiteSpace(query.OrderBy))
@@ -748,6 +753,54 @@ public sealed class SuccessFactorsWorkerSource(
         return Uri.TryCreate(next, UriKind.Absolute, out var absoluteUri)
             ? absoluteUri.ToString()
             : new Uri(new Uri(requestUri), next).ToString();
+    }
+
+    private static string? BuildListFilter(SuccessFactorsQueryConfig query)
+    {
+        var baseFilter = string.IsNullOrWhiteSpace(query.BaseFilter)
+            ? null
+            : query.BaseFilter.Trim();
+
+        if (query.InactiveRetentionDays is null)
+        {
+            return baseFilter;
+        }
+
+        var cutoff = DateTime.UtcNow.Date.AddDays(-query.InactiveRetentionDays.Value);
+        var retentionClause = BuildInactiveRetentionClause(query, cutoff);
+
+        return string.IsNullOrWhiteSpace(baseFilter)
+            ? retentionClause
+            : $"({baseFilter}) or ({retentionClause})";
+    }
+
+    private static string BuildInactiveRetentionClause(SuccessFactorsQueryConfig query, DateTime cutoff)
+    {
+        var statusField = string.IsNullOrWhiteSpace(query.InactiveStatusField)
+            ? "emplStatus"
+            : query.InactiveStatusField.Trim();
+        var dateField = string.IsNullOrWhiteSpace(query.InactiveDateField)
+            ? "endDate"
+            : query.InactiveDateField.Trim();
+        var statusValues = query.InactiveStatusValues
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Select(value => value.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        if (statusValues.Length == 0)
+        {
+            statusValues = ["T"];
+        }
+
+        var escapedStatuses = statusValues
+            .Select(value => $"'{value.Replace("'", "''", StringComparison.Ordinal)}'")
+            .ToArray();
+        var statusClause = escapedStatuses.Length == 1
+            ? $"{statusField} eq {escapedStatuses[0]}"
+            : $"{statusField} in {string.Join(",", escapedStatuses)}";
+
+        return $"{statusClause} and {dateField} ge datetime'{cutoff.ToString("yyyy-MM-ddTHH:mm:ss", CultureInfo.InvariantCulture)}'";
     }
 
     private static WorkerSnapshot? TryParseWorker(JsonElement root, SyncFactorsConfigDocument config, SuccessFactorsQueryConfig query, string workerId)
