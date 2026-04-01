@@ -208,11 +208,17 @@ public sealed class AttributeDiffService : IAttributeDiffService
         {
             "Trim" => value.Trim(),
             "Lower" => value.Trim().ToLowerInvariant(),
+            "TrimStripCommasPeriods" => StripCharacters(value.Trim(), ',', '.'),
             "DateOnly" => DateTimeOffset.TryParse(value, out var parsed)
                 ? parsed.ToString("yyyy-MM-dd")
                 : value,
             _ => value
         };
+    }
+
+    private static string StripCharacters(string value, params char[] characters)
+    {
+        return new string(value.Where(character => !characters.Contains(character)).ToArray());
     }
 
     private static void UpsertSystemAttributeChange(

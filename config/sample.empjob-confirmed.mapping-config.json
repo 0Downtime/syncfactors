@@ -54,7 +54,7 @@
       "target": "company",
       "enabled": true,
       "required": false,
-      "transform": "Trim"
+      "transform": "TrimStripCommasPeriods"
     },
     {
       "source": "employmentNav[0].jobInfoNav[0].locationNav.name",
