@@ -74,7 +74,8 @@ public sealed class RunDetailModelTests
                         Conflicts: 10,
                         GuardrailFailures: 0,
                         ManualReview: 0,
-                        Unchanged: 0),
+                        Unchanged: 0,
+                        SyncScope: "Delta"),
                     JsonDocument.Parse("""{"kind":"bulkRun"}""").RootElement.Clone(),
                     new Dictionary<string, int> { ["updates"] = 100, ["conflicts"] = 10, ["creates"] = 10 }));
         }

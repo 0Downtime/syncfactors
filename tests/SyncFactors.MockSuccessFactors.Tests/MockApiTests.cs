@@ -240,6 +240,34 @@ public sealed class MockApiTests
     }
 
     [Fact]
+    public void PerPersonProjection_EmitsNextLink_ForServerSidePagination()
+    {
+        var store = CreateStore(syntheticPopulationEnabled: true);
+        var builder = new ODataResponseBuilder();
+        var query = ODataQueryParser.Parse(new Microsoft.AspNetCore.Http.QueryCollection(new Dictionary<string, Microsoft.Extensions.Primitives.StringValues>
+        {
+            ["$format"] = "json",
+            ["customPageSize"] = "2",
+            ["paging"] = "snapshot",
+            ["$filter"] = "emplStatus in 'A','U'",
+            ["$orderby"] = "personIdExternal asc",
+            ["$select"] = "personIdExternal"
+        }));
+
+        var payload = builder.Build(store.QueryWorkers("PerPerson", query), query, "PerPerson", "http://mock-successfactors.local/odata/v2");
+        using var document = JsonDocument.Parse(JsonSerializer.Serialize(payload));
+        var d = document.RootElement.GetProperty("d");
+        var results = d.GetProperty("results");
+
+        Assert.Equal(2, results.GetArrayLength());
+        Assert.Equal("10000", results[0].GetProperty("personIdExternal").GetString());
+        Assert.Equal("10001", results[1].GetProperty("personIdExternal").GetString());
+        Assert.Equal(
+            "http://mock-successfactors.local/odata/v2/PerPerson?$format=json&customPageSize=2&paging=snapshot&$skiptoken=2&$select=personIdExternal&$filter=emplStatus%20in%20%27A%27%2C%27U%27&$orderby=personIdExternal%20asc",
+            d.GetProperty("__next").GetString());
+    }
+
+    [Fact]
     public void EmpJobProjection_HonorsExplicitAsOfDate()
     {
         var store = CreateStore();

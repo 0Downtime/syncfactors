@@ -32,6 +32,11 @@ public sealed class SyncFactorsConfigurationValidator(SyncFactorsConfigurationLo
             throw new InvalidOperationException("SyncFactors safety thresholds must be positive.");
         }
 
+        if (sync.SuccessFactors.Query.DeltaOverlapMinutes < 0)
+        {
+            throw new InvalidOperationException("SyncFactors successFactors.query.deltaOverlapMinutes must be non-negative.");
+        }
+
         if (mapping.Mappings.Count == 0)
         {
             throw new InvalidOperationException("SyncFactors mapping config must contain at least one mapping.");

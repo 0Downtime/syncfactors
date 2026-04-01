@@ -11,6 +11,7 @@ namespace SyncFactors.Infrastructure;
 public sealed class SuccessFactorsWorkerSource(
     HttpClient httpClient,
     SyncFactorsConfigurationLoader configLoader,
+    IDeltaSyncService deltaSyncService,
     ScaffoldWorkerSource fallbackSource,
     ILogger<SuccessFactorsWorkerSource> logger) : IWorkerSource
 {
@@ -74,16 +75,155 @@ public sealed class SuccessFactorsWorkerSource(
         return await fallbackSource.GetWorkerAsync(workerId, cancellationToken);
     }
 
-    public async IAsyncEnumerable<WorkerSnapshot> ListWorkersAsync([System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
+    public async IAsyncEnumerable<WorkerSnapshot> ListWorkersAsync(WorkerListingMode mode, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
     {
         var config = configLoader.GetSyncConfig();
         var query = config.SuccessFactors.PreviewQuery ?? config.SuccessFactors.Query;
-        var skip = 0;
-        var pageSize = Math.Max(1, query.PageSize);
+        var effectiveQuery = await BuildEffectiveListQueryAsync(query, mode, cancellationToken);
+        var pageSize = Math.Max(1, effectiveQuery.PageSize);
+        var firstRequestUri = BuildServerPagedListRequestUri(config, effectiveQuery, pageSize);
+        SuccessFactorsResponsePayload? firstPayload = null;
 
+        try
+        {
+            firstPayload = await ExecuteListRequestAsync(effectiveQuery, firstRequestUri, cancellationToken);
+        }
+        catch (InvalidOperationException ex) when (IsServerPagingCompatibilityFailure(ex, firstRequestUri))
+        {
+            logger.LogWarning(
+                "SuccessFactors rejected server-side pagination parameters. Falling back to legacy offset paging. EntitySet={EntitySet} PageSize={PageSize}",
+                effectiveQuery.EntitySet,
+                pageSize);
+            firstPayload = null;
+        }
+
+        if (firstPayload is not null)
+        {
+            await foreach (var worker in ListWorkersServerPagedAsync(config, effectiveQuery, firstPayload, pageSize, cancellationToken))
+            {
+                yield return worker;
+            }
+
+            yield break;
+        }
+
+        await foreach (var worker in ListWorkersLegacyPagedAsync(config, effectiveQuery, pageSize, cancellationToken))
+        {
+            yield return worker;
+        }
+    }
+
+    private async Task<SuccessFactorsQueryConfig> BuildEffectiveListQueryAsync(
+        SuccessFactorsQueryConfig query,
+        WorkerListingMode mode,
+        CancellationToken cancellationToken)
+    {
+        if (mode != WorkerListingMode.DeltaPreferred)
+        {
+            return query;
+        }
+
+        var deltaWindow = await deltaSyncService.GetWindowAsync(cancellationToken);
+        if (!deltaWindow.Enabled)
+        {
+            return query;
+        }
+
+        if (!deltaWindow.HasCheckpoint || string.IsNullOrWhiteSpace(deltaWindow.Filter))
+        {
+            logger.LogInformation(
+                "Listing workers with a full scan because no delta checkpoint is available yet. EntitySet={EntitySet} DeltaField={DeltaField}",
+                query.EntitySet,
+                deltaWindow.DeltaField);
+            return query;
+        }
+
+        logger.LogInformation(
+            "Listing workers using SuccessFactors delta sync. EntitySet={EntitySet} DeltaField={DeltaField} CheckpointUtc={CheckpointUtc} EffectiveSinceUtc={EffectiveSinceUtc}",
+            query.EntitySet,
+            deltaWindow.DeltaField,
+            deltaWindow.CheckpointUtc,
+            deltaWindow.EffectiveSinceUtc);
+        return query with
+        {
+            BaseFilter = CombineFilters(query.BaseFilter, deltaWindow.Filter)
+        };
+    }
+
+    private async IAsyncEnumerable<WorkerSnapshot> ListWorkersServerPagedAsync(
+        SyncFactorsConfigDocument config,
+        SuccessFactorsQueryConfig query,
+        SuccessFactorsResponsePayload initialPayload,
+        int pageSize,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        var payload = initialPayload;
         while (true)
         {
-            var payload = await ExecuteListRequestAsync(config, query, skip, pageSize, cancellationToken);
+            JsonDocument document;
+            try
+            {
+                document = JsonDocument.Parse(payload.Body);
+            }
+            catch (JsonException ex)
+            {
+                logger.LogError(
+                    ex,
+                    "SuccessFactors returned non-JSON or invalid JSON while listing workers. ContentType={ContentType} Uri={Uri} PageSize={PageSize} BodyPreview={BodyPreview}",
+                    payload.ContentType,
+                    payload.RequestUri,
+                    pageSize,
+                    TrimForLog(payload.Body));
+                throw ExternalSystemExceptionFactory.CreateSuccessFactorsException(
+                    operation: "worker list response parsing",
+                    endpoint: payload.RequestUri,
+                    summary: $"The API returned invalid JSON. Status={payload.StatusCode}, ContentType={payload.ContentType}, BodyPreview={TrimForLog(payload.Body)}",
+                    innerException: ex);
+            }
+
+            WorkerSnapshot[] workers;
+            string? nextRequestUri;
+            using (document)
+            {
+                workers = ExtractWorkerArray(document.RootElement)
+                    .Select(worker => TryParseWorkerElement(worker, config, query))
+                    .Where(worker => worker is not null)
+                    .Select(worker => worker!)
+                    .ToArray();
+                nextRequestUri = TryGetNextPageRequestUri(document.RootElement, payload.RequestUri);
+            }
+
+            if (workers.Length == 0)
+            {
+                yield break;
+            }
+
+            foreach (var worker in workers)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                yield return worker;
+            }
+
+            if (string.IsNullOrWhiteSpace(nextRequestUri))
+            {
+                yield break;
+            }
+
+            payload = await ExecuteListRequestAsync(query, nextRequestUri, cancellationToken);
+        }
+    }
+
+    private async IAsyncEnumerable<WorkerSnapshot> ListWorkersLegacyPagedAsync(
+        SyncFactorsConfigDocument config,
+        SuccessFactorsQueryConfig query,
+        int pageSize,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        var skip = 0;
+        while (true)
+        {
+            var requestUri = BuildLegacyListRequestUri(config, query, skip, pageSize);
+            var payload = await ExecuteListRequestAsync(query, requestUri, cancellationToken);
             JsonDocument document;
             try
             {
@@ -114,22 +254,22 @@ public sealed class SuccessFactorsWorkerSource(
                     .Where(worker => worker is not null)
                     .Select(worker => worker!)
                     .ToArray();
+            }
 
-                if (workers.Length == 0)
-                {
-                    yield break;
-                }
+            if (workers.Length == 0)
+            {
+                yield break;
+            }
 
-                foreach (var worker in workers)
-                {
-                    cancellationToken.ThrowIfCancellationRequested();
-                    yield return worker;
-                }
+            foreach (var worker in workers)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                yield return worker;
+            }
 
-                if (workers.Length < pageSize)
-                {
-                    yield break;
-                }
+            if (workers.Length < pageSize)
+            {
+                yield break;
             }
 
             skip += workers.Length;
@@ -483,6 +623,11 @@ public sealed class SuccessFactorsWorkerSource(
             parts.Insert(1, $"$filter={Uri.EscapeDataString($"{query.IdentityField} eq '{workerId.Replace("'", "''")}'")}");
         }
 
+        if (!string.IsNullOrWhiteSpace(query.OrderBy))
+        {
+            parts.Add($"$orderby={Uri.EscapeDataString(query.OrderBy)}");
+        }
+
         if (query.Expand.Count > 0)
         {
             parts.Add($"$expand={Uri.EscapeDataString(string.Join(",", query.Expand))}");
@@ -496,7 +641,49 @@ public sealed class SuccessFactorsWorkerSource(
         return $"{relativePath}?{string.Join("&", parts)}";
     }
 
-    private static string BuildListRequestUri(SyncFactorsConfigDocument config, SuccessFactorsQueryConfig query, int skip, int top)
+    private static bool IsServerPagingCompatibilityFailure(InvalidOperationException exception, string requestUri)
+    {
+        return exception.Message.Contains("Status=400", StringComparison.Ordinal) &&
+               (requestUri.Contains("customPageSize=", StringComparison.OrdinalIgnoreCase) ||
+                requestUri.Contains("paging=snapshot", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static string BuildServerPagedListRequestUri(SyncFactorsConfigDocument config, SuccessFactorsQueryConfig query, int pageSize)
+    {
+        var baseUrl = config.SuccessFactors.BaseUrl.TrimEnd('/');
+        var relativePath = $"{baseUrl}/{query.EntitySet}";
+        var parts = new List<string>
+        {
+            "$format=json",
+            $"customPageSize={pageSize}",
+            "paging=snapshot",
+            $"$select={Uri.EscapeDataString(string.Join(",", query.Select))}"
+        };
+
+        if (!string.IsNullOrWhiteSpace(query.BaseFilter))
+        {
+            parts.Add($"$filter={Uri.EscapeDataString(query.BaseFilter)}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(query.OrderBy))
+        {
+            parts.Add($"$orderby={Uri.EscapeDataString(query.OrderBy)}");
+        }
+
+        if (query.Expand.Count > 0)
+        {
+            parts.Add($"$expand={Uri.EscapeDataString(string.Join(",", query.Expand))}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(query.AsOfDate))
+        {
+            parts.Add($"asOfDate={Uri.EscapeDataString(query.AsOfDate)}");
+        }
+
+        return $"{relativePath}?{string.Join("&", parts)}";
+    }
+
+    private static string BuildLegacyListRequestUri(SyncFactorsConfigDocument config, SuccessFactorsQueryConfig query, int skip, int top)
     {
         var baseUrl = config.SuccessFactors.BaseUrl.TrimEnd('/');
         var relativePath = $"{baseUrl}/{query.EntitySet}";
@@ -513,6 +700,11 @@ public sealed class SuccessFactorsWorkerSource(
             parts.Add($"$filter={Uri.EscapeDataString(query.BaseFilter)}");
         }
 
+        if (!string.IsNullOrWhiteSpace(query.OrderBy))
+        {
+            parts.Add($"$orderby={Uri.EscapeDataString(query.OrderBy)}");
+        }
+
         if (query.Expand.Count > 0)
         {
             parts.Add($"$expand={Uri.EscapeDataString(string.Join(",", query.Expand))}");
@@ -524,6 +716,38 @@ public sealed class SuccessFactorsWorkerSource(
         }
 
         return $"{relativePath}?{string.Join("&", parts)}";
+    }
+
+    private static string? TryGetNextPageRequestUri(JsonElement root, string requestUri)
+    {
+        string? next = null;
+
+        if (root.TryGetProperty("d", out var d) &&
+            d.ValueKind == JsonValueKind.Object &&
+            d.TryGetProperty("__next", out var nextProperty) &&
+            nextProperty.ValueKind == JsonValueKind.String)
+        {
+            next = nextProperty.GetString();
+        }
+        else if (root.TryGetProperty("@odata.nextLink", out var odataNextProperty) &&
+                 odataNextProperty.ValueKind == JsonValueKind.String)
+        {
+            next = odataNextProperty.GetString();
+        }
+        else if (root.TryGetProperty("odata.nextLink", out var legacyNextProperty) &&
+                 legacyNextProperty.ValueKind == JsonValueKind.String)
+        {
+            next = legacyNextProperty.GetString();
+        }
+
+        if (string.IsNullOrWhiteSpace(next))
+        {
+            return null;
+        }
+
+        return Uri.TryCreate(next, UriKind.Absolute, out var absoluteUri)
+            ? absoluteUri.ToString()
+            : new Uri(new Uri(requestUri), next).ToString();
     }
 
     private static WorkerSnapshot? TryParseWorker(JsonElement root, SyncFactorsConfigDocument config, SuccessFactorsQueryConfig query, string workerId)
@@ -595,30 +819,43 @@ public sealed class SuccessFactorsWorkerSource(
             Attributes: BuildAttributes(worker, personalInfo, employment, jobInfo));
     }
 
+    private static string CombineFilters(string? baseFilter, string deltaFilter)
+    {
+        if (string.IsNullOrWhiteSpace(baseFilter))
+        {
+            return deltaFilter;
+        }
+
+        return $"({baseFilter}) and ({deltaFilter})";
+    }
+
     private async Task<SuccessFactorsResponsePayload> ExecuteListRequestAsync(
-        SyncFactorsConfigDocument config,
         SuccessFactorsQueryConfig query,
-        int skip,
-        int top,
+        string requestUri,
         CancellationToken cancellationToken)
     {
-        var requestUri = BuildListRequestUri(config, query, skip, top);
         using var request = new HttpRequestMessage(HttpMethod.Get, requestUri);
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
         request.Headers.AcceptEncoding.Add(new StringWithQualityHeaderValue("gzip"));
         request.Headers.AcceptEncoding.Add(new StringWithQualityHeaderValue("deflate"));
-        AddTracingHeaders(request, $"list-{skip}-{top}");
-        await ApplyAuthenticationAsync(request, config.SuccessFactors.Auth, cancellationToken);
+        AddTracingHeaders(request, "list-page");
+        await ApplyAuthenticationAsync(request, configLoader.GetSyncConfig().SuccessFactors.Auth, cancellationToken);
 
         using var response = await httpClient.SendAsync(request, cancellationToken);
         var body = await response.Content.ReadAsStringAsync(cancellationToken);
         if (response.IsSuccessStatusCode)
         {
+            var pagingMode = TryGetHeaderValue(response.Headers, "X-SF-Paging");
+            logger.LogInformation(
+                "SuccessFactors list page returned successfully. PagingMode={PagingMode} RequestUri={RequestUri}",
+                string.IsNullOrWhiteSpace(pagingMode) ? "(none)" : pagingMode,
+                requestUri);
             return new SuccessFactorsResponsePayload(
                 RequestUri: requestUri,
                 Body: body,
                 StatusCode: (int)response.StatusCode,
-                ContentType: response.Content.Headers.ContentType?.MediaType ?? "(none)");
+                ContentType: response.Content.Headers.ContentType?.MediaType ?? "(none)",
+                PagingMode: pagingMode);
         }
 
         throw CreateDetailedSuccessFactorsException(
@@ -668,6 +905,13 @@ public sealed class SuccessFactorsWorkerSource(
     {
         return element is { ValueKind: not JsonValueKind.Undefined }
             ? GetString(element.Value, propertyName)
+            : null;
+    }
+
+    private static string? TryGetHeaderValue(HttpResponseHeaders headers, string headerName)
+    {
+        return headers.TryGetValues(headerName, out var values)
+            ? values.FirstOrDefault()
             : null;
     }
 
@@ -1039,5 +1283,5 @@ public sealed class SuccessFactorsWorkerSource(
         request.Headers.TryAddWithoutValidation("X-SF-Execution-Id", workerId);
     }
 
-    private sealed record SuccessFactorsResponsePayload(string RequestUri, string Body, int StatusCode, string ContentType);
+    private sealed record SuccessFactorsResponsePayload(string RequestUri, string Body, int StatusCode, string ContentType, string? PagingMode = null);
 }

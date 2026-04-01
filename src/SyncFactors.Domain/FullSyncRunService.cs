@@ -78,13 +78,13 @@ public sealed class FullSyncRunService(
                     GuardrailFailures: 0,
                     ManualReview: 0,
                     Unchanged: 0,
-                    Report: ToJsonElement(new { kind = "fullSyncRun", dryRun = request.DryRun, operations = Array.Empty<object>() }),
+                    Report: ToJsonElement(new { kind = "fullSyncRun", syncScope = "Full sync", dryRun = request.DryRun, operations = Array.Empty<object>() }),
                     RunTrigger: "AdHoc",
                     RequestedBy: "Dashboard"),
                 cancellationToken);
             runRecordSaved = true;
 
-            await foreach (var worker in workerSource.ListWorkersAsync(cancellationToken))
+            await foreach (var worker in workerSource.ListWorkersAsync(WorkerListingMode.Full, cancellationToken))
             {
                 workers.Add(worker);
             }
@@ -417,7 +417,7 @@ public sealed class FullSyncRunService(
             GuardrailFailures: GetBucketCount(tally, "guardrailFailures"),
             ManualReview: GetBucketCount(tally, "manualReview"),
             Unchanged: GetBucketCount(tally, "unchanged"),
-            Report: ToJsonElement(new { kind = "fullSyncRun", dryRun, operations, totals = tally, errorMessage }),
+            Report: ToJsonElement(new { kind = "fullSyncRun", syncScope = "Full sync", dryRun, operations, totals = tally, errorMessage }),
             RunTrigger: "AdHoc",
             RequestedBy: requestedBy);
     }

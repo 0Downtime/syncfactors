@@ -50,9 +50,9 @@
         <p class="muted">Full-source sync only. Dry-run is the default and safest option.</p>
         @if (Model.HasPendingOrActiveRun)
         {
-            <p class="callout warn">A run is already pending or active. New ad hoc runs are temporarily blocked.</p>
+            <p class="callout warn">A run is already pending or active. You can request cancellation and the worker will stop gracefully.</p>
         }
-        <form method="post" asp-page-handler="StartRun" class="filters">
+        <form method="post" asp-page-handler="@(Model.HasPendingOrActiveRun ? "CancelRun" : "StartRun")" class="filters">
             <label>
                 <span>Run type</span>
                 <select asp-for="RunMode" disabled="@Model.HasPendingOrActiveRun">
@@ -61,7 +61,9 @@
                 </select>
             </label>
             <div class="filter-actions">
-                <button type="submit" disabled="@Model.HasPendingOrActiveRun">Queue run</button>
+                <button type="submit" disabled="@(string.Equals(Model.CurrentQueueRequest?.Status, "CancelRequested", StringComparison.OrdinalIgnoreCase))">
+                    @(string.Equals(Model.CurrentQueueRequest?.Status, "CancelRequested", StringComparison.OrdinalIgnoreCase) ? "Cancel requested" : Model.HasPendingOrActiveRun ? "Cancel run" : "Queue run")
+                </button>
             </div>
         </form>
     </article>
@@ -116,6 +118,7 @@
                         <th>Started</th>
                         <th>Trigger</th>
                         <th>Status</th>
+                        <th>Scope</th>
                         <th>Dry Run</th>
                         <th>Workers</th>
                         <th>Requested By</th>
@@ -129,6 +132,7 @@
                         <td>@run.StartedAt.ToString("u")</td>
                         <td>@run.RunTrigger</td>
                         <td><span class="badge @StatusClass(run.Status)">@run.Status</span></td>
+                        <td>@run.SyncScope</td>
                         <td>@(run.DryRun ? "Yes" : "No")</td>
                         <td>@run.TotalWorkers</td>
                         <td>@(run.RequestedBy ?? "n/a")</td>
@@ -161,6 +165,7 @@
             "succeeded" => "good",
             "failed" => "bad",
             "inprogress" => "warn",
+            "canceled" => "neutral",
             _ => "neutral",
         };
 }

@@ -27,6 +27,8 @@
       "entitySet": "EmpJob",
       "identityField": "userId",
       "deltaField": "lastModifiedDateTime",
+      "deltaSyncEnabled": false,
+      "deltaOverlapMinutes": 5,
       "baseFilter": "emplStatus in 'A','U'",
       "pageSize": 200,
       "select": [

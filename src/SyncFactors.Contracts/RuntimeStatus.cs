@@ -78,6 +78,7 @@ public sealed record RunSummary(
     int GuardrailFailures,
     int ManualReview,
     int Unchanged,
+    string SyncScope = "Unknown",
     string RunTrigger = "AdHoc",
     string? RequestedBy = null);
 
