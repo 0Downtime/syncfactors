@@ -74,6 +74,7 @@ public sealed class SyncFactorsConfigurationLoaderTests
             "bindPassword": "",
             "identityAttribute": "employeeID",
             "defaultActiveOu": "OU=LabUsers,DC=example,DC=com",
+            "prehireOu": "OU=Prehire,DC=example,DC=com",
             "graveyardOu": "OU=LabGraveyard,DC=example,DC=com",
         {{identityPolicyJson ?? string.Empty}}
             "defaultPassword": "ignored-by-loader"

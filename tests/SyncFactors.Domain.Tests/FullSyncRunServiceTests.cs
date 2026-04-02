@@ -261,6 +261,7 @@ public sealed class FullSyncRunServiceTests
             planningService ?? new WorkerPlanningService(
                 directoryGateway,
                 new IdentityMatcher(),
+                CreateLifecyclePolicy(),
                 new StubAttributeDiffService(),
                 new StubAttributeMappingProvider(),
                 NullLogger<WorkerPlanningService>.Instance),
@@ -268,7 +269,7 @@ public sealed class FullSyncRunServiceTests
             directoryCommandGateway,
             runRepository,
             resolvedRuntimeStatusStore,
-            settings ?? new WorkerRunSettings(MaxCreatesPerRun: 10),
+            settings ?? new WorkerRunSettings(MaxCreatesPerRun: 10, MaxDisablesPerRun: 10),
             NullLogger<FullSyncRunService>.Instance);
     }
 
@@ -288,6 +289,18 @@ public sealed class FullSyncRunServiceTests
                 ["department"] = "IT",
                 ["managerId"] = managerId
             });
+    }
+
+    private static LifecyclePolicy CreateLifecyclePolicy()
+    {
+        return new LifecyclePolicy(
+            new LifecyclePolicySettings(
+                ActiveOu: "OU=LabUsers,DC=example,DC=com",
+                PrehireOu: "OU=Prehire,DC=example,DC=com",
+                GraveyardOu: "OU=Graveyard,DC=example,DC=com",
+                InactiveStatusField: "emplStatus",
+                InactiveStatusValues: ["T"]),
+            TimeProvider.System);
     }
 
     private sealed class StubWorkerSource(IReadOnlyList<WorkerSnapshot> workers) : IWorkerSource

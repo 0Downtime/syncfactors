@@ -9,6 +9,7 @@ public sealed class Worker(
     IRunQueueStore runQueueStore,
     SyncScheduleCoordinator syncScheduleCoordinator,
     BulkRunCoordinator bulkRunCoordinator,
+    DeleteAllUsersCoordinator deleteAllUsersCoordinator,
     IWorkerHeartbeatStore workerHeartbeatStore,
     TimeProvider timeProvider,
     IConfiguration configuration) : BackgroundService
@@ -36,7 +37,9 @@ public sealed class Worker(
                 try
                 {
                     var maxDegreeOfParallelism = Math.Max(1, configuration.GetValue<int?>("SyncFactors:Worker:MaxDegreeOfParallelism") ?? 2);
-                    var runId = await bulkRunCoordinator.ExecuteAsync(claimed, maxDegreeOfParallelism, stoppingToken);
+                    var runId = string.Equals(claimed.Mode, "DeleteAllUsers", StringComparison.OrdinalIgnoreCase)
+                        ? await deleteAllUsersCoordinator.ExecuteAsync(claimed, stoppingToken)
+                        : await bulkRunCoordinator.ExecuteAsync(claimed, maxDegreeOfParallelism, stoppingToken);
                     await runQueueStore.CompleteAsync(claimed.RequestId, runId, stoppingToken);
                     await WriteHeartbeatAsync(startedAt, "Idle", $"Completed queued run {claimed.RequestId}.", stoppingToken);
                 }

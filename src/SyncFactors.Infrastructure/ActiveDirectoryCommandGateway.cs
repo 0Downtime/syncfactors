@@ -57,13 +57,32 @@ public sealed class ActiveDirectoryCommandGateway(
     private static DirectoryCommandResult ExecuteCommand(DirectoryMutationCommand command, ActiveDirectoryConfig config, ILogger logger)
     {
         using var connection = CreateConnection(config, logger, $"command {command.Action} for worker {command.WorkerId}");
+        var operations = command.Operations.Count > 0
+            ? command.Operations
+            : [new SyncFactors.Contracts.DirectoryOperation(command.Action, command.TargetOu)];
+        string? distinguishedName = command.CurrentDistinguishedName;
 
-        return command.Action switch
+        foreach (var operation in operations)
         {
-            "CreateUser" => CreateUser(connection, command, config, logger),
-            "UpdateUser" => UpdateUser(connection, command, config, logger),
-            _ => new DirectoryCommandResult(false, command.Action, command.SamAccountName, null, $"Unsupported action {command.Action}.", null)
-        };
+            distinguishedName = operation.Kind switch
+            {
+                "CreateUser" => CreateUser(connection, command, config, logger).DistinguishedName,
+                "UpdateUser" => UpdateUser(connection, command, config, logger, distinguishedName).DistinguishedName,
+                "MoveUser" => MoveUser(connection, command, config, logger, operation.TargetOu, distinguishedName).DistinguishedName,
+                "EnableUser" => SetAccountEnabled(connection, command, config, logger, true, distinguishedName).DistinguishedName,
+                "DisableUser" => SetAccountEnabled(connection, command, config, logger, false, distinguishedName).DistinguishedName,
+                "DeleteUser" => DeleteUser(connection, command, config, logger, distinguishedName).DistinguishedName,
+                _ => throw new InvalidOperationException($"Unsupported action {operation.Kind}.")
+            };
+        }
+
+        return new DirectoryCommandResult(
+            Succeeded: true,
+            Action: command.Action,
+            SamAccountName: command.SamAccountName,
+            DistinguishedName: distinguishedName,
+            Message: BuildCompletionMessage(command, operations),
+            RunId: null);
     }
 
     private static DirectoryCommandResult CreateUser(LdapConnection connection, DirectoryMutationCommand command, ActiveDirectoryConfig config, ILogger logger)
@@ -76,9 +95,13 @@ public sealed class ActiveDirectoryCommandGateway(
             new("displayName", command.DisplayName),
             new("sAMAccountName", command.SamAccountName),
             new("userPrincipalName", command.UserPrincipalName),
-            new("mail", command.Mail),
-            new(config.IdentityAttribute, command.WorkerId)
+            new("mail", command.Mail)
         };
+
+        if (!IsReservedAttribute(config.IdentityAttribute, config.IdentityAttribute))
+        {
+            attributes.Add(new DirectoryAttribute(config.IdentityAttribute, command.WorkerId));
+        }
 
         foreach (var attribute in command.Attributes)
         {
@@ -102,16 +125,10 @@ public sealed class ActiveDirectoryCommandGateway(
             SetManager(connection, dn, managerDn, logger, command.WorkerId);
         }
 
-        return new DirectoryCommandResult(
-            Succeeded: true,
-            Action: command.Action,
-            SamAccountName: command.SamAccountName,
-            DistinguishedName: dn,
-            Message: $"Created AD user {command.SamAccountName}.",
-            RunId: null);
+        return new DirectoryCommandResult(true, command.Action, command.SamAccountName, dn, $"Created AD user {command.SamAccountName}.", null);
     }
 
-    private static DirectoryCommandResult UpdateUser(LdapConnection connection, DirectoryMutationCommand command, ActiveDirectoryConfig config, ILogger logger)
+    private static DirectoryCommandResult UpdateUser(LdapConnection connection, DirectoryMutationCommand command, ActiveDirectoryConfig config, ILogger logger, string? distinguishedName)
     {
         var existing = FindExistingUser(connection, command.WorkerId, config);
         if (existing is null)
@@ -125,7 +142,7 @@ public sealed class ActiveDirectoryCommandGateway(
                 RunId: null);
         }
 
-        var distinguishedName = existing.DistinguishedName;
+        distinguishedName ??= existing.DistinguishedName;
         if (string.IsNullOrWhiteSpace(distinguishedName))
         {
             return new DirectoryCommandResult(false, command.Action, command.SamAccountName, null, "Existing AD user did not include a distinguished name.", null);
@@ -142,7 +159,10 @@ public sealed class ActiveDirectoryCommandGateway(
         request.Modifications.Add(BuildReplaceModification("displayName", command.DisplayName));
         request.Modifications.Add(BuildReplaceModification("userPrincipalName", command.UserPrincipalName));
         request.Modifications.Add(BuildReplaceModification("mail", command.Mail));
-        request.Modifications.Add(BuildReplaceModification(config.IdentityAttribute, command.WorkerId));
+        if (!IsReservedAttribute(config.IdentityAttribute, config.IdentityAttribute))
+        {
+            request.Modifications.Add(BuildReplaceModification(config.IdentityAttribute, command.WorkerId));
+        }
 
         foreach (var attribute in command.Attributes)
         {
@@ -167,35 +187,19 @@ public sealed class ActiveDirectoryCommandGateway(
 
         LogRequestModifications("UpdateUser", command.WorkerId, request.Modifications, logger);
         ExecuteModify(connection, request, logger, "update user modify request", ("WorkerId", command.WorkerId), ("SamAccountName", command.SamAccountName));
-        return new DirectoryCommandResult(
-            Succeeded: true,
-            Action: command.Action,
-            SamAccountName: command.SamAccountName,
-            DistinguishedName: distinguishedName,
-            Message: $"Updated AD user {command.SamAccountName}.",
-            RunId: null);
+        return new DirectoryCommandResult(true, command.Action, command.SamAccountName, distinguishedName, $"Updated AD user {command.SamAccountName}.", null);
     }
 
     private static DirectoryUserSnapshot? FindExistingUser(LdapConnection connection, string workerId, ActiveDirectoryConfig config)
     {
-        var request = new SearchRequest(
-            config.DefaultActiveOu,
-            $"({EscapeLdapFilter(config.IdentityAttribute)}={EscapeLdapFilter(workerId)})",
-            SearchScope.Subtree,
-            "sAMAccountName",
-            "cn",
-            "distinguishedName",
-            "displayName");
-
-        var response = ExecuteSearch(
+        var entry = FindFirstEntry(
             connection,
-            request,
-            logger: NullLogger<ActiveDirectoryCommandGateway>.Instance,
-            operation: "find existing user search",
+            GetSearchBases(config),
+            $"({EscapeLdapFilter(config.IdentityAttribute)}={EscapeLdapFilter(workerId)})",
+            NullLogger<ActiveDirectoryCommandGateway>.Instance,
+            "find existing user search",
             ("WorkerId", workerId),
-            ("IdentityAttribute", config.IdentityAttribute),
-            ("SearchBase", config.DefaultActiveOu));
-        var entry = response.Entries.Cast<SearchResultEntry>().FirstOrDefault();
+            ("IdentityAttribute", config.IdentityAttribute));
         if (entry is null)
         {
             return null;
@@ -220,22 +224,81 @@ public sealed class ActiveDirectoryCommandGateway(
             return null;
         }
 
-        var request = new SearchRequest(
-            config.DefaultActiveOu,
-            $"({EscapeLdapFilter(config.IdentityAttribute)}={EscapeLdapFilter(managerId)})",
-            SearchScope.Subtree,
-            "distinguishedName");
-
-        var response = ExecuteSearch(
+        var entry = FindFirstEntry(
             connection,
-            request,
+            GetSearchBases(config),
+            $"({EscapeLdapFilter(config.IdentityAttribute)}={EscapeLdapFilter(managerId)})",
             logger ?? NullLogger<ActiveDirectoryCommandGateway>.Instance,
             "command manager DN search",
             ("ManagerId", managerId),
-            ("IdentityAttribute", config.IdentityAttribute),
-            ("SearchBase", config.DefaultActiveOu));
-        var entry = response.Entries.Cast<SearchResultEntry>().FirstOrDefault();
+            ("IdentityAttribute", config.IdentityAttribute));
         return entry is null ? null : GetAttribute(entry, "distinguishedName");
+    }
+
+    private static DirectoryCommandResult MoveUser(
+        LdapConnection connection,
+        DirectoryMutationCommand command,
+        ActiveDirectoryConfig config,
+        ILogger logger,
+        string? targetOu,
+        string? distinguishedName)
+    {
+        var existing = FindExistingUser(connection, command.WorkerId, config);
+        distinguishedName ??= existing?.DistinguishedName;
+        if (string.IsNullOrWhiteSpace(distinguishedName) || string.IsNullOrWhiteSpace(targetOu))
+        {
+            return new DirectoryCommandResult(false, command.Action, command.SamAccountName, distinguishedName, "Could not resolve move target for AD user.", null);
+        }
+
+        var request = new ModifyDNRequest(distinguishedName, targetOu, null) { DeleteOldRdn = true };
+        ExecuteModify(connection, request, logger, "move user modify-dn request", ("WorkerId", command.WorkerId), ("TargetOu", targetOu));
+        var movedDn = $"CN={EscapeDnComponent(command.DisplayName)},{targetOu}";
+        return new DirectoryCommandResult(true, command.Action, command.SamAccountName, movedDn, $"Moved AD user {command.SamAccountName}.", null);
+    }
+
+    private static DirectoryCommandResult SetAccountEnabled(
+        LdapConnection connection,
+        DirectoryMutationCommand command,
+        ActiveDirectoryConfig config,
+        ILogger logger,
+        bool enabled,
+        string? distinguishedName)
+    {
+        var existing = FindExistingUser(connection, command.WorkerId, config);
+        distinguishedName ??= existing?.DistinguishedName;
+        if (string.IsNullOrWhiteSpace(distinguishedName))
+        {
+            return new DirectoryCommandResult(false, command.Action, command.SamAccountName, null, "Could not resolve AD user to update account state.", null);
+        }
+
+        const int AccountDisabledFlag = 0x0002;
+        var currentValue = ResolveUserAccountControl(existing);
+        var targetValue = enabled
+            ? currentValue & ~AccountDisabledFlag
+            : currentValue | AccountDisabledFlag;
+        var request = new ModifyRequest(distinguishedName);
+        request.Modifications.Add(BuildReplaceModification("userAccountControl", targetValue.ToString()));
+        ExecuteModify(connection, request, logger, enabled ? "enable user modify request" : "disable user modify request", ("WorkerId", command.WorkerId));
+        return new DirectoryCommandResult(true, command.Action, command.SamAccountName, distinguishedName, enabled ? $"Enabled AD user {command.SamAccountName}." : $"Disabled AD user {command.SamAccountName}.", null);
+    }
+
+    private static DirectoryCommandResult DeleteUser(
+        LdapConnection connection,
+        DirectoryMutationCommand command,
+        ActiveDirectoryConfig config,
+        ILogger logger,
+        string? distinguishedName)
+    {
+        var existing = FindExistingUser(connection, command.WorkerId, config);
+        distinguishedName ??= existing?.DistinguishedName;
+        if (string.IsNullOrWhiteSpace(distinguishedName))
+        {
+            return new DirectoryCommandResult(false, command.Action, command.SamAccountName, null, "Could not resolve AD user to delete.", null);
+        }
+
+        var request = new DeleteRequest(distinguishedName);
+        ExecuteModify(connection, request, logger, "delete user request", ("WorkerId", command.WorkerId), ("DistinguishedName", distinguishedName));
+        return new DirectoryCommandResult(true, command.Action, command.SamAccountName, distinguishedName, $"Deleted AD user {command.SamAccountName}.", null);
     }
 
     private static void SetManager(LdapConnection connection, string distinguishedName, string managerDn, ILogger logger, string workerId)
@@ -459,6 +522,64 @@ public sealed class ActiveDirectoryCommandGateway(
         return AttributeAliases.TryGetValue(attributeName, out var normalized)
             ? normalized
             : attributeName;
+    }
+
+    private static SearchResultEntry? FindFirstEntry(
+        LdapConnection connection,
+        IReadOnlyList<string> searchBases,
+        string filter,
+        ILogger logger,
+        string operation,
+        params (string Key, object? Value)[] context)
+    {
+        foreach (var searchBase in searchBases)
+        {
+            var request = new SearchRequest(
+                searchBase,
+                filter,
+                SearchScope.Subtree,
+                "sAMAccountName",
+                "cn",
+                "distinguishedName",
+                "displayName",
+                "userAccountControl");
+            var response = ExecuteSearch(connection, request, logger, operation, [.. context, ("SearchBase", searchBase)]);
+            var entry = response.Entries.Cast<SearchResultEntry>().FirstOrDefault();
+            if (entry is not null)
+            {
+                return entry;
+            }
+        }
+
+        return null;
+    }
+
+    private static IReadOnlyList<string> GetSearchBases(ActiveDirectoryConfig config)
+    {
+        return new[] { config.DefaultActiveOu, config.PrehireOu, config.GraveyardOu }
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
+    private static int ResolveUserAccountControl(DirectoryUserSnapshot? existing)
+    {
+        if (existing?.Enabled == false)
+        {
+            return 0x0202;
+        }
+
+        return 0x0200;
+    }
+
+    private static string BuildCompletionMessage(DirectoryMutationCommand command, IReadOnlyList<SyncFactors.Contracts.DirectoryOperation> operations)
+    {
+        if (operations.Count == 1)
+        {
+            return $"{operations[0].Kind} completed for {command.SamAccountName}.";
+        }
+
+        return $"{string.Join(", ", operations.Select(operation => operation.Kind))} completed for {command.SamAccountName}.";
     }
 
     private static void LogRequestAttributes(string action, string workerId, IEnumerable<DirectoryAttribute> attributes, ILogger logger)
