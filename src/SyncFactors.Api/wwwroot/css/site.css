@@ -912,6 +912,13 @@ a:focus-visible {
   align-items: center;
 }
 
+.admin-user-role-form {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .admin-user-inline-form input {
   min-width: 0;
 }
