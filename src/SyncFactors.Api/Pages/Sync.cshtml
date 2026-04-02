@@ -4,11 +4,14 @@
     ViewData["Title"] = "Sync";
 }
 
-<section class="hero">
+<section class="hero hero-compact">
     <div>
         <p class="eyebrow">Provisioning Control</p>
         <h1>Sync</h1>
         <p class="lede">Queue ad hoc AD provisioning runs and manage the recurring full-sync schedule.</p>
+    </div>
+    <div class="hero-actions">
+        <button type="button" class="link-button danger-button" data-open-delete-dialog disabled="@Model.HasPendingOrActiveRun">Testing Reset</button>
     </div>
 </section>
 
@@ -66,15 +69,6 @@
                 </button>
             </div>
         </form>
-    </article>
-
-    <article class="panel sync-delete-panel">
-        <h2>Testing Reset</h2>
-        <p class="muted">Testing only. This queues a live job that deletes every AD user matched from the current worker listing.</p>
-        <p class="callout danger">This is destructive. It uses the normal worker queue and will remove matched AD accounts.</p>
-        <div class="filter-actions">
-            <button type="button" class="danger-button" data-open-delete-dialog disabled="@Model.HasPendingOrActiveRun">Delete all users</button>
-        </div>
     </article>
 
     <article class="panel sync-schedule-panel">
