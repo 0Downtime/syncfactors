@@ -161,6 +161,53 @@ public sealed class LoginModelTests
             LastRecordedLoginUserId = userId;
             return Task.CompletedTask;
         }
+
+        public Task<IReadOnlyList<LocalUserSummary>> ListUsersAsync(CancellationToken cancellationToken)
+        {
+            _ = cancellationToken;
+            return Task.FromResult<IReadOnlyList<LocalUserSummary>>([]);
+        }
+
+        public Task<LocalUserRecord?> FindUserByIdAsync(string userId, CancellationToken cancellationToken)
+        {
+            _ = userId;
+            _ = cancellationToken;
+            return Task.FromResult(user);
+        }
+
+        public Task<LocalUserCommandResult> CreateUserAsync(string username, string password, bool isAdmin, CancellationToken cancellationToken)
+        {
+            _ = username;
+            _ = password;
+            _ = isAdmin;
+            _ = cancellationToken;
+            return Task.FromResult(LocalUserCommandResult.Success("created"));
+        }
+
+        public Task<LocalUserCommandResult> ResetPasswordAsync(string userId, string newPassword, CancellationToken cancellationToken)
+        {
+            _ = userId;
+            _ = newPassword;
+            _ = cancellationToken;
+            return Task.FromResult(LocalUserCommandResult.Success("reset"));
+        }
+
+        public Task<LocalUserCommandResult> SetUserActiveStateAsync(string userId, bool isActive, string actingUserId, CancellationToken cancellationToken)
+        {
+            _ = userId;
+            _ = isActive;
+            _ = actingUserId;
+            _ = cancellationToken;
+            return Task.FromResult(LocalUserCommandResult.Success("updated"));
+        }
+
+        public Task<LocalUserCommandResult> DeleteUserAsync(string userId, string actingUserId, CancellationToken cancellationToken)
+        {
+            _ = userId;
+            _ = actingUserId;
+            _ = cancellationToken;
+            return Task.FromResult(LocalUserCommandResult.Success("deleted"));
+        }
     }
 
     private sealed class CapturingAuthenticationService : IAuthenticationService

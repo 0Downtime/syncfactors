@@ -116,6 +116,103 @@ public sealed class LocalAuthServiceTests
         }
     }
 
+    [Fact]
+    public async Task CreateUserAsync_CreatesOperatorByDefault()
+    {
+        var databasePath = Path.Combine(Path.GetTempPath(), $"syncfactors-auth-create-{Guid.NewGuid():N}.db");
+
+        try
+        {
+            var store = await CreateStoreAsync(databasePath);
+            var service = CreateService(store, username: "admin", password: "Password123!");
+            await service.EnsureBootstrapAdminAsync(CancellationToken.None);
+
+            var result = await service.CreateUserAsync("alice", "Password1234", isAdmin: false, CancellationToken.None);
+            var user = await store.FindByUsernameAsync("alice", CancellationToken.None);
+
+            Assert.True(result.Succeeded);
+            Assert.NotNull(user);
+            Assert.Equal("Operator", user!.Role);
+        }
+        finally
+        {
+            File.Delete(databasePath);
+        }
+    }
+
+    [Fact]
+    public async Task ResetPasswordAsync_UpdatesStoredHash()
+    {
+        var databasePath = Path.Combine(Path.GetTempPath(), $"syncfactors-auth-reset-{Guid.NewGuid():N}.db");
+
+        try
+        {
+            var store = await CreateStoreAsync(databasePath);
+            var service = CreateService(store, username: "admin", password: "Password123!");
+            await service.EnsureBootstrapAdminAsync(CancellationToken.None);
+            var before = await store.FindByUsernameAsync("admin", CancellationToken.None);
+
+            var result = await service.ResetPasswordAsync(before!.UserId, "NewPassword1234", CancellationToken.None);
+            var after = await store.FindByUsernameAsync("admin", CancellationToken.None);
+            var auth = await service.AuthenticateAsync("admin", "NewPassword1234", CancellationToken.None);
+
+            Assert.True(result.Succeeded);
+            Assert.NotEqual(before.PasswordHash, after!.PasswordHash);
+            Assert.True(auth.Succeeded);
+        }
+        finally
+        {
+            File.Delete(databasePath);
+        }
+    }
+
+    [Fact]
+    public async Task SetUserActiveStateAsync_ProtectsLastActiveAdmin()
+    {
+        var databasePath = Path.Combine(Path.GetTempPath(), $"syncfactors-auth-protect-{Guid.NewGuid():N}.db");
+
+        try
+        {
+            var store = await CreateStoreAsync(databasePath);
+            var service = CreateService(store, username: "admin", password: "Password123!");
+            await service.EnsureBootstrapAdminAsync(CancellationToken.None);
+            var admin = await store.FindByUsernameAsync("admin", CancellationToken.None);
+
+            var result = await service.SetUserActiveStateAsync(admin!.UserId, false, "someone-else", CancellationToken.None);
+
+            Assert.False(result.Succeeded);
+            Assert.Equal("At least one active admin account must remain.", result.Message);
+        }
+        finally
+        {
+            File.Delete(databasePath);
+        }
+    }
+
+    [Fact]
+    public async Task DeleteUserAsync_DeletesNonAdminUsers()
+    {
+        var databasePath = Path.Combine(Path.GetTempPath(), $"syncfactors-auth-delete-{Guid.NewGuid():N}.db");
+
+        try
+        {
+            var store = await CreateStoreAsync(databasePath);
+            var service = CreateService(store, username: "admin", password: "Password123!");
+            await service.EnsureBootstrapAdminAsync(CancellationToken.None);
+            await service.CreateUserAsync("alice", "Password1234", isAdmin: false, CancellationToken.None);
+            var user = await store.FindByUsernameAsync("alice", CancellationToken.None);
+
+            var result = await service.DeleteUserAsync(user!.UserId, "admin-id", CancellationToken.None);
+
+            Assert.True(result.Succeeded);
+            Assert.Null(await store.FindByUsernameAsync("alice", CancellationToken.None));
+        }
+        finally
+        {
+            File.Delete(databasePath);
+        }
+    }
+
     private static LocalAuthService CreateService(ILocalUserStore store, string? username, string? password)
     {
         return new LocalAuthService(

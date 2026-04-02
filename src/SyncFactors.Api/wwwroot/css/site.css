@@ -892,6 +892,48 @@ a:focus-visible {
   gap: 16px;
 }
 
+.admin-user-grid {
+  grid-template-columns: minmax(0, 1.3fr) minmax(320px, 0.7fr);
+}
+
+.admin-user-form {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.admin-user-table td,
+.admin-user-table th {
+  white-space: nowrap;
+}
+
+.admin-user-inline-form {
+  display: grid;
+  grid-template-columns: minmax(160px, 1fr) minmax(160px, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.admin-user-inline-form input {
+  min-width: 0;
+}
+
+.admin-user-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 .filters label {
   display: grid;
   gap: 6px;

@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc.Authorization;
@@ -89,7 +90,35 @@ builder.Services
         options.Events = new CookieAuthenticationEvents
         {
             OnRedirectToLogin = context => HandleAuthRedirectAsync(context, StatusCodes.Status401Unauthorized),
-            OnRedirectToAccessDenied = context => HandleAuthRedirectAsync(context, StatusCodes.Status403Forbidden)
+            OnRedirectToAccessDenied = context => HandleAuthRedirectAsync(context, StatusCodes.Status403Forbidden),
+            OnValidatePrincipal = async context =>
+            {
+                var userId = context.Principal?.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+                if (string.IsNullOrWhiteSpace(userId))
+                {
+                    context.RejectPrincipal();
+                    await context.HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+                    return;
+                }
+
+                var authService = context.HttpContext.RequestServices.GetRequiredService<ILocalAuthService>();
+                var currentUser = await authService.FindUserByIdAsync(userId, context.HttpContext.RequestAborted);
+                if (currentUser is null || !currentUser.IsActive)
+                {
+                    context.RejectPrincipal();
+                    await context.HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+                    return;
+                }
+
+                var identity = context.Principal?.Identity as ClaimsIdentity;
+                if (identity is null)
+                {
+                    return;
+                }
+
+                ReplaceClaim(identity, ClaimTypes.Name, currentUser.Username);
+                ReplaceClaim(identity, ClaimTypes.Role, currentUser.Role);
+            }
         };
     });
 builder.Services.AddAuthorization();
@@ -303,6 +332,22 @@ static string ResolveRequestedBy(ClaimsPrincipal user, string fallback) =>
     string.IsNullOrWhiteSpace(user.Identity?.Name)
         ? fallback
         : user.Identity!.Name!;
+
+static void ReplaceClaim(ClaimsIdentity identity, string claimType, string value)
+{
+    var existingClaim = identity.FindFirst(claimType);
+    if (existingClaim is not null && string.Equals(existingClaim.Value, value, StringComparison.Ordinal))
+    {
+        return;
+    }
+
+    if (existingClaim is not null)
+    {
+        identity.RemoveClaim(existingClaim);
+    }
+
+    identity.AddClaim(new Claim(claimType, value));
+}
 
 static string DescribeSuccessFactorsAccount(SuccessFactorsAuthConfig auth)
 {
