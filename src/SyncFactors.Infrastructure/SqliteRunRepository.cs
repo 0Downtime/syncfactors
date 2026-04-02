@@ -79,6 +79,7 @@ public sealed class SqliteRunRepository(SqlitePathResolver pathResolver) : IRunR
                 unchanged,
                 report_json
               FROM runs
+              WHERE artifact_type IS NULL OR artifact_type <> 'WorkerPreview'
               ORDER BY COALESCE(started_at, '') DESC, COALESCE(path, '') DESC
               LIMIT 25
             ),

@@ -76,6 +76,41 @@ public sealed class SqliteRunRepositoryTests
         }
     }
 
+    [Fact]
+    public async Task ListRunsAsync_ExcludesWorkerPreviewArtifactsFromRecentRuns()
+    {
+        var databasePath = Path.Combine(Path.GetTempPath(), $"syncfactors-run-filter-{Guid.NewGuid():N}.db");
+
+        try
+        {
+            var repository = await CreateRepositoryAsync(databasePath);
+            var bulkRunId = "bulk-run-1";
+            var previewRunId = "preview-run-1";
+            var startedAt = DateTimeOffset.Parse("2026-04-02T14:00:00Z");
+
+            await repository.SaveRunAsync(
+                CreateRunRecord(bulkRunId, startedAt),
+                CancellationToken.None);
+
+            await repository.SaveRunAsync(
+                CreateRunRecord(
+                    previewRunId,
+                    startedAt.AddMinutes(1),
+                    artifactType: "WorkerPreview",
+                    mode: "WorkerPreview"),
+                CancellationToken.None);
+
+            var runs = await repository.ListRunsAsync(CancellationToken.None);
+
+            var run = Assert.Single(runs);
+            Assert.Equal(bulkRunId, run.RunId);
+        }
+        finally
+        {
+            File.Delete(databasePath);
+        }
+    }
+
     private static async Task<SqliteRunRepository> CreateRepositoryAsync(string databasePath)
     {
         var pathResolver = new SqlitePathResolver(databasePath);
@@ -84,15 +119,19 @@ public sealed class SqliteRunRepositoryTests
         return new SqliteRunRepository(pathResolver);
     }
 
-    private static RunRecord CreateRunRecord(string runId, DateTimeOffset startedAt)
+    private static RunRecord CreateRunRecord(
+        string runId,
+        DateTimeOffset startedAt,
+        string artifactType = "BulkRun",
+        string mode = "BulkSync")
     {
         return new RunRecord(
             RunId: runId,
             Path: null,
-            ArtifactType: "BulkRun",
+            ArtifactType: artifactType,
             ConfigPath: null,
             MappingConfigPath: null,
-            Mode: "BulkSync",
+            Mode: mode,
             DryRun: false,
             Status: "Canceled",
             StartedAt: startedAt,
