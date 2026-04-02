@@ -82,6 +82,35 @@ public sealed class ActiveDirectoryCommandGatewayTests
         Assert.Contains("ManagerId=12345", details, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void BuildUpdateStepFailureDetails_IncludesFallbackStepContext()
+    {
+        var method = typeof(ActiveDirectoryCommandGateway).GetMethod("BuildUpdateStepFailureDetails", BindingFlags.NonPublic | BindingFlags.Static);
+        Assert.NotNull(method);
+
+        var command = new DirectoryMutationCommand(
+            Action: "UpdateUser",
+            WorkerId: "00225",
+            ManagerId: null,
+            ManagerDistinguishedName: null,
+            SamAccountName: "00225",
+            UserPrincipalName: "tanya.willislivers@example.com",
+            Mail: "tanya.willislivers@example.com",
+            TargetOu: "OU=Users,DC=example,DC=com",
+            DisplayName: "Willis Livers, Tanya",
+            CurrentDistinguishedName: null,
+            EnableAccount: true,
+            Operations: [new SyncFactors.Contracts.DirectoryOperation("UpdateUser")],
+            Attributes: new Dictionary<string, string?>());
+
+        var details = Assert.IsType<string>(method!.Invoke(null, [command, null, null, null, "FindExistingUser"]));
+
+        Assert.Contains("Step=FindExistingUser", details, StringComparison.Ordinal);
+        Assert.Contains("DistinguishedName=(unset)", details, StringComparison.Ordinal);
+        Assert.Contains("CurrentCn=(unset)", details, StringComparison.Ordinal);
+        Assert.Contains("Attributes=(none)", details, StringComparison.Ordinal);
+    }
+
     private static DirectoryAttributeModification CreateModification(string name)
     {
         return new DirectoryAttributeModification
