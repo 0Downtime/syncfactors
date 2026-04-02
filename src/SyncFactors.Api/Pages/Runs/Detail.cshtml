@@ -93,6 +93,7 @@
         <div class="entry-list">
         @foreach (var entry in Model.Entries)
         {
+            var diagnostics = Model.GetFailureDiagnostics(entry);
             <article class="entry-card">
                 <header class="entry-head">
                     <div>
@@ -117,6 +118,19 @@
                         <div><dt>Reason</dt><dd>@(entry.Reason ?? "n/a")</dd></div>
                         <div><dt>Review Case</dt><dd>@(entry.ReviewCaseType ?? "n/a")</dd></div>
                     </dl>
+                    @if (diagnostics is not null && (diagnostics.Details.Count > 0 || !string.IsNullOrWhiteSpace(diagnostics.Guidance)))
+                    {
+                        <dl class="kv preview-meta">
+                            @foreach (var item in diagnostics.Details)
+                            {
+                                <div><dt>@item.Label</dt><dd>@item.Value</dd></div>
+                            }
+                            @if (!string.IsNullOrWhiteSpace(diagnostics.Guidance))
+                            {
+                                <div><dt>Next Check</dt><dd>@diagnostics.Guidance</dd></div>
+                            }
+                        </dl>
+                    }
                 }
                 @if (entry.OperationSummary is not null)
                 {

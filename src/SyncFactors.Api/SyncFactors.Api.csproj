@@ -6,6 +6,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Include="ActiveDirectoryFailureDiagnostics.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="Pages\Index.cshtml.cs" />
     <Compile Include="Pages\Admin\Users.cshtml.cs" />

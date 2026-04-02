@@ -32,6 +32,43 @@ public sealed class RunDetailModelTests
         Assert.Equal(50, model.Entries.Count);
     }
 
+    [Fact]
+    public async Task GetFailureDiagnostics_ParsesEntryReason()
+    {
+        var repository = new StubRunRepository();
+        var model = new DetailModel(repository)
+        {
+            RunId = "bulk-1"
+        };
+
+        await model.OnGetAsync(CancellationToken.None);
+
+        var diagnostics = model.GetFailureDiagnostics(new RunEntry(
+            EntryId: "entry-conflict",
+            RunId: "bulk-1",
+            ArtifactType: "BulkRun",
+            Mode: "BulkSync",
+            Bucket: "conflicts",
+            BucketLabel: "Conflicts",
+            WorkerId: "10001",
+            SamAccountName: "winnie",
+            Reason: "Active Directory command 'UpdateUser' failed against LDAP server 'localhost'. The server cannot handle directory requests. Details: Step=ModifyAttributes WorkerId=10001 SamAccountName=winnie DistinguishedName=CN=Sample101\\, Winnie,OU=LabUsers,DC=example,DC=com Attributes=displayName,department,company,streetAddress ManagerId=90001 Next check: Check the target OU, manager resolution, and whether the account already exists with unexpected state.",
+            ReviewCategory: null,
+            ReviewCaseType: null,
+            StartedAt: DateTimeOffset.UtcNow,
+            ChangeCount: 4,
+            OperationSummary: null,
+            FailureSummary: null,
+            PrimarySummary: null,
+            TopChangedAttributes: [],
+            DiffRows: [],
+            Item: JsonDocument.Parse("""{}""").RootElement.Clone()));
+
+        Assert.NotNull(diagnostics);
+        Assert.Contains(diagnostics!.Details, item => item.Label == "Step" && item.Value == "ModifyAttributes");
+        Assert.Contains(diagnostics.Details, item => item.Label == "SAM" && item.Value == "winnie");
+    }
+
     private sealed class StubRunRepository : IRunRepository
     {
         public int LastSkip { get; private set; }

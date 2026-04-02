@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
+using SyncFactors.Api;
 using SyncFactors.Contracts;
 using SyncFactors.Domain;
 
@@ -33,6 +34,10 @@ public sealed class PreviewModel(
     public DirectoryCommandResult? ApplyResult { get; private set; }
 
     public string? ErrorMessage { get; private set; }
+
+    public FailureDiagnostics? ErrorDiagnostics => ActiveDirectoryFailureDiagnostics.Parse(ErrorMessage);
+
+    public FailureDiagnostics? ApplyDiagnostics => ActiveDirectoryFailureDiagnostics.Parse(ApplyResult?.Message);
 
     public WorkerPreviewResult? PreviousPreview { get; private set; }
 

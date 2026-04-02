@@ -38,6 +38,19 @@
 {
     <section class="panel">
         <p class="callout danger">@Model.ErrorMessage</p>
+        @if (Model.ErrorDiagnostics is not null)
+        {
+            <dl class="kv preview-meta">
+                @foreach (var item in Model.ErrorDiagnostics.Details)
+                {
+                    <div><dt>@item.Label</dt><dd>@item.Value</dd></div>
+                }
+                @if (!string.IsNullOrWhiteSpace(Model.ErrorDiagnostics.Guidance))
+                {
+                    <div><dt>Next Check</dt><dd>@Model.ErrorDiagnostics.Guidance</dd></div>
+                }
+            </dl>
+        }
     </section>
 }
 
@@ -45,6 +58,19 @@
 {
     <section class="panel">
         <p class="callout @(Model.ApplyResult.Succeeded ? "good" : "danger")">@Model.ApplyResult.Message</p>
+        @if (Model.ApplyDiagnostics is not null)
+        {
+            <dl class="kv preview-meta">
+                @foreach (var item in Model.ApplyDiagnostics.Details)
+                {
+                    <div><dt>@item.Label</dt><dd>@item.Value</dd></div>
+                }
+                @if (!string.IsNullOrWhiteSpace(Model.ApplyDiagnostics.Guidance))
+                {
+                    <div><dt>Next Check</dt><dd>@Model.ApplyDiagnostics.Guidance</dd></div>
+                }
+            </dl>
+        }
         <dl class="kv preview-meta">
             <div><dt>Action</dt><dd>@Model.ApplyResult.Action</dd></div>
             <div><dt>SAM</dt><dd>@Model.ApplyResult.SamAccountName</dd></div>
