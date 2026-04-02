@@ -903,30 +903,40 @@ a:focus-visible {
 .admin-user-table td,
 .admin-user-table th {
   white-space: nowrap;
+  padding: 9px 8px;
+  font-size: 0.95rem;
 }
 
 .admin-user-inline-form {
   display: grid;
-  grid-template-columns: minmax(160px, 1fr) minmax(160px, 1fr) auto;
-  gap: 8px;
+  grid-template-columns: minmax(110px, 1fr) minmax(110px, 1fr) auto;
+  gap: 6px;
   align-items: center;
 }
 
 .admin-user-role-form {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   flex-wrap: wrap;
 }
 
 .admin-user-inline-form input {
   min-width: 0;
+  min-height: 34px;
+  padding: 8px 10px;
 }
 
 .admin-user-actions {
   display: flex;
-  gap: 8px;
+  gap: 6px;
   flex-wrap: wrap;
+}
+
+.admin-user-compact-button {
+  min-height: 34px;
+  padding: 0 10px;
+  font-size: 0.95rem;
 }
 
 .sr-only {
