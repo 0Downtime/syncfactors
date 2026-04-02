@@ -92,7 +92,7 @@
                             <input type="hidden" name="userId" value="@user.UserId" />
                             <input type="hidden" name="makeAdmin" value="@(string.Equals(user.Role, "Admin", StringComparison.OrdinalIgnoreCase) ? "false" : "true")" />
                             <span class="badge @(string.Equals(user.Role, "Admin", StringComparison.OrdinalIgnoreCase) ? "info" : "neutral")">@user.Role</span>
-                            <button type="submit" class="link-button">@(string.Equals(user.Role, "Admin", StringComparison.OrdinalIgnoreCase) ? "Make regular" : "Make admin")</button>
+                            <button type="submit" class="link-button admin-user-compact-button">@(string.Equals(user.Role, "Admin", StringComparison.OrdinalIgnoreCase) ? "Set regular" : "Set admin")</button>
                         </form>
                     </td>
                     <td>
@@ -105,13 +105,13 @@
                             <input type="hidden" name="userId" value="@user.UserId" />
                             <label>
                                 <span class="sr-only">New password for @user.Username</span>
-                                <input type="password" name="newPassword" autocomplete="new-password" placeholder="New password" />
+                                <input type="password" name="newPassword" autocomplete="new-password" placeholder="New" />
                             </label>
                             <label>
                                 <span class="sr-only">Confirm password for @user.Username</span>
-                                <input type="password" name="confirmPassword" autocomplete="new-password" placeholder="Confirm password" />
+                                <input type="password" name="confirmPassword" autocomplete="new-password" placeholder="Confirm" />
                             </label>
-                            <button type="submit">Reset</button>
+                            <button type="submit" class="admin-user-compact-button">Reset</button>
                         </form>
                     </td>
                     <td>
@@ -119,11 +119,11 @@
                             <form method="post" asp-page-handler="ToggleActive">
                                 <input type="hidden" name="userId" value="@user.UserId" />
                                 <input type="hidden" name="makeActive" value="@(user.IsActive ? "false" : "true")" />
-                                <button type="submit" class="link-button">@(user.IsActive ? "Deactivate" : "Reactivate")</button>
+                                <button type="submit" class="link-button admin-user-compact-button">@(user.IsActive ? "Disable" : "Enable")</button>
                             </form>
                             <form method="post" asp-page-handler="Delete">
                                 <input type="hidden" name="userId" value="@user.UserId" />
-                                <button type="submit" class="link-button danger-button">Delete</button>
+                                <button type="submit" class="link-button danger-button admin-user-compact-button">Delete</button>
                             </form>
                         </div>
                     </td>
