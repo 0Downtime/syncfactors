@@ -343,7 +343,7 @@ a:focus-visible {
   margin-bottom: 18px;
   padding: 20px 22px;
   display: grid;
-  grid-template-columns: minmax(0, 1.85fr) minmax(280px, 0.8fr);
+  grid-template-columns: minmax(0, 1.45fr) minmax(420px, 1.05fr);
   gap: 18px;
   align-items: start;
   background:
@@ -388,8 +388,8 @@ a:focus-visible {
   display: grid;
   gap: 10px;
   min-width: 0;
-  width: min(100%, 560px);
-  justify-self: end;
+  width: 100%;
+  justify-self: stretch;
   padding: 14px 16px;
   border: 1px solid var(--line);
   border-radius: 6px;
@@ -529,6 +529,7 @@ a:focus-visible {
 }
 
 .run-health-stack-compact {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
 }
 
@@ -1014,6 +1015,10 @@ a:focus-visible {
     grid-template-columns: 1fr;
   }
 
+  .run-health-stack-compact {
+    grid-template-columns: 1fr;
+  }
+
   .sync-dashboard-grid {
     grid-template-columns: 1fr;
   }
@@ -1154,6 +1159,10 @@ a:focus-visible {
 
 @media (max-width: 1180px) {
   .dashboard-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .run-health-stack-compact {
     grid-template-columns: 1fr;
   }
 
