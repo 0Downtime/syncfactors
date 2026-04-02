@@ -5,14 +5,55 @@
 }
 
 <section class="hero">
-    <div>
-        <p class="eyebrow">Current Runtime</p>
-        <h1>Operator Dashboard</h1>
-        <p class="lede">This page reads runtime status and recent runs from the configured operational store for the .NET rewrite.</p>
+    <div class="hero-main">
+        <div>
+            <p class="eyebrow">Current Runtime</p>
+            <h1>Operator Dashboard</h1>
+            <p class="lede">This page reads runtime status and recent runs from the configured operational store for the .NET rewrite.</p>
+        </div>
+        <div class="hero-actions">
+            <a class="link-button" asp-page="/Sync">Manage sync</a>
+        </div>
     </div>
-    <div class="hero-actions">
-        <a class="link-button" asp-page="/Sync">Manage sync</a>
-    </div>
+    <aside class="hero-run-health" aria-label="Run health summary">
+        <div class="hero-run-health-header">
+            <p class="eyebrow">Run Health</p>
+            <span class="badge neutral">Live</span>
+        </div>
+        <div class="run-health-stack run-health-stack-compact" data-run-health>
+            <section class="run-health-card">
+                <p class="eyebrow">Active Run</p>
+                @if (Model.ActiveRun is null)
+                {
+                    <p class="muted" data-active-run-empty>No run is active.</p>
+                }
+                else
+                {
+                    <div data-active-run-card>
+                        <p><strong data-active-run-id>@Model.ActiveRun.RunId</strong></p>
+                        <p class="muted" data-active-run-summary>@Model.ActiveRun.Mode · @Model.ActiveRun.ProcessedWorkers / @Model.ActiveRun.TotalWorkers workers</p>
+                        <p><a asp-page="/Runs/Detail" asp-route-runId="@Model.ActiveRun.RunId" data-active-run-link>Open active run</a></p>
+                    </div>
+                }
+            </section>
+
+            <section class="run-health-card">
+                <p class="eyebrow">Last Completed</p>
+                @if (Model.LastCompletedRun is null)
+                {
+                    <p class="muted" data-last-run-empty>No completed runs yet.</p>
+                }
+                else
+                {
+                    <div data-last-run-card>
+                        <p><strong data-last-run-id>@Model.LastCompletedRun.RunId</strong></p>
+                        <p class="muted" data-last-run-summary>@Model.LastCompletedRun.Status · @Model.LastCompletedRun.Mode · @Model.LastCompletedRun.TotalWorkers workers</p>
+                        <p><a asp-page="/Runs/Detail" asp-route-runId="@Model.LastCompletedRun.RunId" data-last-run-link>Review last run</a></p>
+                    </div>
+                }
+            </section>
+        </div>
+    </aside>
 </section>
 
 @if (Model.RequiresAttention)
@@ -71,44 +112,7 @@
         </section>
     </article>
 
-    <article class="panel">
-        <h2>Run Health</h2>
-        <div class="run-health-stack" data-run-health>
-            <section class="run-health-card">
-                <p class="eyebrow">Active Run</p>
-                @if (Model.ActiveRun is null)
-                {
-                    <p class="muted" data-active-run-empty>No run is active.</p>
-                }
-                else
-                {
-                    <div data-active-run-card>
-                        <p><strong data-active-run-id>@Model.ActiveRun.RunId</strong></p>
-                        <p class="muted" data-active-run-summary>@Model.ActiveRun.Mode · @Model.ActiveRun.ProcessedWorkers / @Model.ActiveRun.TotalWorkers workers</p>
-                        <p><a asp-page="/Runs/Detail" asp-route-runId="@Model.ActiveRun.RunId" data-active-run-link>Open active run</a></p>
-                    </div>
-                }
-            </section>
-
-            <section class="run-health-card">
-                <p class="eyebrow">Last Completed</p>
-                @if (Model.LastCompletedRun is null)
-                {
-                    <p class="muted" data-last-run-empty>No completed runs yet.</p>
-                }
-                else
-                {
-                    <div data-last-run-card>
-                        <p><strong data-last-run-id>@Model.LastCompletedRun.RunId</strong></p>
-                        <p class="muted" data-last-run-summary>@Model.LastCompletedRun.Status · @Model.LastCompletedRun.Mode · @Model.LastCompletedRun.TotalWorkers workers</p>
-                        <p><a asp-page="/Runs/Detail" asp-route-runId="@Model.LastCompletedRun.RunId" data-last-run-link>Review last run</a></p>
-                    </div>
-                }
-            </section>
-        </div>
-    </article>
-
-    <article class="panel">
+    <article class="panel recent-runs-panel">
         <h2>Recent Runs</h2>
         <p class="muted dashboard-refresh-note" data-dashboard-checked>Live data is refreshed automatically while this page is open.</p>
         <div data-runs-empty class="@(Model.Runs.Count == 0 ? null : "is-hidden")">
