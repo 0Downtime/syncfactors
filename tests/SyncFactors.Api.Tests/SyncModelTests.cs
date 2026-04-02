@@ -1,5 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
+using Microsoft.AspNetCore.Http;
+using System.Security.Claims;
 using SyncFactors.Api.Pages;
 using SyncFactors.Contracts;
 using SyncFactors.Domain;
@@ -57,6 +59,18 @@ public sealed class SyncModelTests
         Assert.Equal("BulkSync", queueStore.LastRequest.Mode);
         Assert.Equal("Live provisioning run queued.", model.SuccessMessage);
         Assert.Null(model.ErrorMessage);
+    }
+
+    [Fact]
+    public async Task OnPostStartRunAsync_UsesAuthenticatedUsernameWhenAvailable()
+    {
+        var queueStore = new CapturingRunQueueStore();
+        var model = new SyncModel(CreateDashboardService(), queueStore, new StubSyncScheduleStore());
+        AttachAuthenticatedUser(model, "operator@example.com");
+
+        await model.OnPostStartRunAsync(CancellationToken.None);
+
+        Assert.Equal("operator@example.com", queueStore.LastRequest?.RequestedBy);
     }
 
     [Fact]
@@ -200,6 +214,22 @@ public sealed class SyncModelTests
             _ = cancellationToken;
             return Task.FromResult(snapshot);
         }
+    }
+
+    private static void AttachAuthenticatedUser(PageModel model, string username)
+    {
+        model.PageContext = new PageContext
+        {
+            HttpContext = new DefaultHttpContext
+            {
+                User = new ClaimsPrincipal(
+                    new ClaimsIdentity(
+                    [
+                        new Claim(ClaimTypes.Name, username)
+                    ],
+                    "Cookies"))
+            }
+        };
     }
 
     private sealed class CapturingRunQueueStore : IRunQueueStore
