@@ -238,6 +238,10 @@
             return value ? value : fallback;
         }
 
+        function runDetailHref(runId) {
+            return "/Runs/Detail/" + encodeURIComponent(runId);
+        }
+
         function toggleHidden(element, hidden) {
             if (!element) {
                 return;
@@ -291,7 +295,7 @@
                     "<td>" + (run.dryRun ? "Yes" : "No") + "</td>" +
                     "<td>" + (run.totalWorkers || 0) + "</td>" +
                     "<td>" + runSummary(run) + "</td>" +
-                    "<td><a href=\"/Runs/" + encodeURIComponent(run.runId) + "\">Open</a></td>";
+                    "<td><a href=\"" + runDetailHref(run.runId) + "\">Open</a></td>";
                 runsBody.appendChild(row);
             });
         }
@@ -337,7 +341,7 @@
             toggleHidden(card, false);
             card.querySelector(idSelector).textContent = run.runId;
             card.querySelector(summarySelector).textContent = run.status + " · " + run.mode + " · " + (run.processedWorkers || 0) + " / " + (run.totalWorkers || 0) + " workers";
-            card.querySelector(linkSelector).setAttribute("href", "/Runs/" + encodeURIComponent(run.runId));
+            card.querySelector(linkSelector).setAttribute("href", runDetailHref(run.runId));
         }
 
         function renderDashboard(snapshot) {
