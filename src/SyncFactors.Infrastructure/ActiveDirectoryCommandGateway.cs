@@ -130,31 +130,89 @@ public sealed class ActiveDirectoryCommandGateway(
 
     private static DirectoryCommandResult UpdateUser(LdapConnection connection, DirectoryMutationCommand command, ActiveDirectoryConfig config, ILogger logger, string? distinguishedName)
     {
-        var existing = FindExistingUser(connection, command.WorkerId, config);
-        if (existing is null)
-        {
-            return new DirectoryCommandResult(
-                Succeeded: false,
-                Action: command.Action,
-                SamAccountName: command.SamAccountName,
-                DistinguishedName: null,
-                Message: $"Could not find AD user for worker {command.WorkerId}.",
-                RunId: null);
-        }
+        string step = "FindExistingUser";
+        DirectoryUserSnapshot? existing = null;
+        string? currentCn = null;
+        DirectoryAttributeModificationCollection? modifications = null;
 
-        distinguishedName ??= existing.DistinguishedName;
-        if (string.IsNullOrWhiteSpace(distinguishedName))
+        try
         {
-            return new DirectoryCommandResult(false, command.Action, command.SamAccountName, null, "Existing AD user did not include a distinguished name.", null);
-        }
+            existing = FindExistingUser(connection, command.WorkerId, config);
+            if (existing is null)
+            {
+                return new DirectoryCommandResult(
+                    Succeeded: false,
+                    Action: command.Action,
+                    SamAccountName: command.SamAccountName,
+                    DistinguishedName: null,
+                    Message: $"Could not find AD user for worker {command.WorkerId}.",
+                    RunId: null);
+            }
 
-        var currentCn = existing.Attributes.TryGetValue("cn", out var resolvedCn) ? resolvedCn : null;
-        if (!string.Equals(currentCn, command.DisplayName, StringComparison.Ordinal))
-        {
+            distinguishedName ??= existing.DistinguishedName;
+            if (string.IsNullOrWhiteSpace(distinguishedName))
+            {
+                return new DirectoryCommandResult(false, command.Action, command.SamAccountName, null, "Existing AD user did not include a distinguished name.", null);
+            }
+
+            currentCn = existing.Attributes.TryGetValue("cn", out var resolvedCn) ? resolvedCn : null;
+            if (!string.Equals(currentCn, command.DisplayName, StringComparison.Ordinal))
+            {
+                step = "RenameUser";
+                try
+                {
+                    RenameUser(connection, distinguishedName, command.DisplayName, logger, command.WorkerId);
+                    distinguishedName = BuildRenamedDistinguishedName(distinguishedName, command.DisplayName);
+                }
+                catch (Exception ex) when (ex is LdapException or DirectoryOperationException)
+                {
+                    throw ExternalSystemExceptionFactory.CreateActiveDirectoryException(
+                        "command 'UpdateUser'",
+                        config.Server,
+                        ex,
+                        BuildUpdateRenameFailureDetails(command, distinguishedName, currentCn));
+                }
+            }
+
+            step = "BuildModifyRequest";
+            var request = new ModifyRequest(distinguishedName);
+            request.Modifications.Add(BuildReplaceModification("displayName", command.DisplayName));
+            request.Modifications.Add(BuildReplaceModification("userPrincipalName", command.UserPrincipalName));
+            request.Modifications.Add(BuildReplaceModification("mail", command.Mail));
+            if (!IsReservedAttribute(config.IdentityAttribute, config.IdentityAttribute))
+            {
+                request.Modifications.Add(BuildReplaceModification(config.IdentityAttribute, command.WorkerId));
+            }
+
+            foreach (var attribute in command.Attributes)
+            {
+                var attributeName = NormalizeAttributeName(attribute.Key);
+                if (IsReservedAttribute(attributeName, config.IdentityAttribute))
+                {
+                    continue;
+                }
+
+                request.Modifications.Add(
+                    string.IsNullOrWhiteSpace(attribute.Value)
+                        ? BuildDeleteModification(attributeName)
+                        : BuildReplaceModification(attributeName, attribute.Value));
+            }
+
+            step = "ResolveManager";
+            var managerDn = command.ManagerDistinguishedName
+                ?? ResolveManagerDistinguishedName(connection, command.ManagerId, config);
+            if (!string.IsNullOrWhiteSpace(managerDn))
+            {
+                request.Modifications.Add(BuildReplaceModification("manager", managerDn));
+            }
+
+            modifications = request.Modifications;
+
+            step = "ModifyAttributes";
+            LogRequestModifications("UpdateUser", command.WorkerId, request.Modifications, logger);
             try
             {
-                RenameUser(connection, distinguishedName, command.DisplayName, logger, command.WorkerId);
-                distinguishedName = BuildRenamedDistinguishedName(distinguishedName, command.DisplayName);
+                ExecuteModify(connection, request, logger, "update user modify request", ("WorkerId", command.WorkerId), ("SamAccountName", command.SamAccountName));
             }
             catch (Exception ex) when (ex is LdapException or DirectoryOperationException)
             {
@@ -162,44 +220,10 @@ public sealed class ActiveDirectoryCommandGateway(
                     "command 'UpdateUser'",
                     config.Server,
                     ex,
-                    BuildUpdateRenameFailureDetails(command, distinguishedName, currentCn));
-            }
-        }
-
-        var request = new ModifyRequest(distinguishedName);
-        request.Modifications.Add(BuildReplaceModification("displayName", command.DisplayName));
-        request.Modifications.Add(BuildReplaceModification("userPrincipalName", command.UserPrincipalName));
-        request.Modifications.Add(BuildReplaceModification("mail", command.Mail));
-        if (!IsReservedAttribute(config.IdentityAttribute, config.IdentityAttribute))
-        {
-            request.Modifications.Add(BuildReplaceModification(config.IdentityAttribute, command.WorkerId));
-        }
-
-        foreach (var attribute in command.Attributes)
-        {
-            var attributeName = NormalizeAttributeName(attribute.Key);
-            if (IsReservedAttribute(attributeName, config.IdentityAttribute))
-            {
-                continue;
+                    BuildUpdateModifyFailureDetails(command, distinguishedName, request.Modifications));
             }
 
-            request.Modifications.Add(
-                string.IsNullOrWhiteSpace(attribute.Value)
-                    ? BuildDeleteModification(attributeName)
-                    : BuildReplaceModification(attributeName, attribute.Value));
-        }
-
-        var managerDn = command.ManagerDistinguishedName
-            ?? ResolveManagerDistinguishedName(connection, command.ManagerId, config);
-        if (!string.IsNullOrWhiteSpace(managerDn))
-        {
-            request.Modifications.Add(BuildReplaceModification("manager", managerDn));
-        }
-
-        LogRequestModifications("UpdateUser", command.WorkerId, request.Modifications, logger);
-        try
-        {
-            ExecuteModify(connection, request, logger, "update user modify request", ("WorkerId", command.WorkerId), ("SamAccountName", command.SamAccountName));
+            return new DirectoryCommandResult(true, command.Action, command.SamAccountName, distinguishedName, $"Updated AD user {command.SamAccountName}.", null);
         }
         catch (Exception ex) when (ex is LdapException or DirectoryOperationException)
         {
@@ -207,10 +231,8 @@ public sealed class ActiveDirectoryCommandGateway(
                 "command 'UpdateUser'",
                 config.Server,
                 ex,
-                BuildUpdateModifyFailureDetails(command, distinguishedName, request.Modifications));
+                BuildUpdateStepFailureDetails(command, distinguishedName, currentCn, modifications, step));
         }
-
-        return new DirectoryCommandResult(true, command.Action, command.SamAccountName, distinguishedName, $"Updated AD user {command.SamAccountName}.", null);
     }
 
     private static DirectoryUserSnapshot? FindExistingUser(LdapConnection connection, string workerId, ActiveDirectoryConfig config)
@@ -633,8 +655,23 @@ public sealed class ActiveDirectoryCommandGateway(
         return $"Step=ModifyAttributes WorkerId={command.WorkerId} SamAccountName={command.SamAccountName} DistinguishedName={distinguishedName} Attributes={FormatModificationAttributeNames(modifications)} ManagerId={FormatDetailValue(command.ManagerId)}";
     }
 
-    private static string FormatModificationAttributeNames(DirectoryAttributeModificationCollection modifications)
+    private static string BuildUpdateStepFailureDetails(
+        DirectoryMutationCommand command,
+        string? distinguishedName,
+        string? currentCn,
+        DirectoryAttributeModificationCollection? modifications,
+        string step)
     {
+        return $"Step={step} WorkerId={command.WorkerId} SamAccountName={command.SamAccountName} DistinguishedName={FormatDetailValue(distinguishedName)} CurrentCn={FormatDetailValue(currentCn)} DesiredCn={FormatDetailValue(command.DisplayName)} Attributes={FormatModificationAttributeNames(modifications)} ManagerId={FormatDetailValue(command.ManagerId)}";
+    }
+
+    private static string FormatModificationAttributeNames(DirectoryAttributeModificationCollection? modifications)
+    {
+        if (modifications is null || modifications.Count == 0)
+        {
+            return "(none)";
+        }
+
         return string.Join(",", modifications.Cast<DirectoryAttributeModification>().Select(modification => modification.Name));
     }
 
