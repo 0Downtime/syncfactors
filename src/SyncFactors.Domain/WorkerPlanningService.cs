@@ -59,6 +59,7 @@ public sealed class WorkerPlanningService(
         }
         var targetEnabled = lifecycle.TargetEnabled;
         var operations = BuildOperations(bucket, directoryUser, lifecycle.TargetOu, targetEnabled, attributeChanges);
+        bucket = ResolveBucket(bucket, directoryUser, lifecycle.TargetOu, targetEnabled, attributeChanges);
         var primaryAction = ResolvePrimaryAction(bucket, operations);
         var canAutoApply = operations.Count > 0;
 
@@ -150,6 +151,35 @@ public sealed class WorkerPlanningService(
             "graveyardMoves" => "MoveUser",
             _ => "NoOp"
         };
+    }
+
+    private static string ResolveBucket(
+        string lifecycleBucket,
+        DirectoryUserSnapshot directoryUser,
+        string targetOu,
+        bool targetEnabled,
+        IReadOnlyList<AttributeChange> attributeChanges)
+    {
+        if (!string.Equals(lifecycleBucket, "enables", StringComparison.OrdinalIgnoreCase))
+        {
+            return lifecycleBucket;
+        }
+
+        if (attributeChanges.Any(change => change.Changed))
+        {
+            return "updates";
+        }
+
+        var currentOu = DirectoryDistinguishedName.GetParentOu(directoryUser.DistinguishedName);
+        if (directoryUser.Enabled != targetEnabled)
+        {
+            return "enables";
+        }
+
+        return !string.IsNullOrWhiteSpace(targetOu) &&
+               !string.Equals(currentOu, targetOu, StringComparison.OrdinalIgnoreCase)
+            ? "enables"
+            : "updates";
     }
 
     internal static IReadOnlyList<MissingSourceAttributeRow> BuildMissingSourceAttributes(

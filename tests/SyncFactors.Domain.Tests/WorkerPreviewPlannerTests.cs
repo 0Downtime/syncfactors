@@ -268,6 +268,83 @@ public sealed class WorkerPreviewPlannerTests
         Assert.False(preview.DiffRows.Single(row => row.Attribute == "mail").Changed);
     }
 
+    [Fact]
+    public async Task PreviewAsync_ForDisabledExistingUsersWithAttributeChanges_UsesUpdateBucket()
+    {
+        var worker = new WorkerSnapshot(
+            WorkerId: "44522",
+            PreferredName: "Christopher",
+            LastName: "Brien",
+            Department: "Infrastructure & Security",
+            TargetOu: "OU=Employees,DC=example,DC=com",
+            IsPrehire: false,
+            Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["company"] = "Example Services, Inc.",
+                ["department"] = "Infrastructure"
+            });
+
+        var planner = new WorkerPreviewPlanner(
+            new StubWorkerSource(worker),
+            new WorkerPlanningService(
+                new DisabledExistingUserDirectoryGateway(),
+                new ExistingUserIdentityMatcher(),
+                CreateLifecyclePolicy(),
+                new ChangedDepartmentDiffService(),
+                new StubAttributeMappingProvider(),
+                NullLogger<WorkerPlanningService>.Instance),
+            new StubAttributeMappingProvider(),
+            new StubWorkerPreviewLogWriter(),
+            new StubRunRepository(),
+            NullLogger<WorkerPreviewPlanner>.Instance);
+
+        var preview = await planner.PreviewAsync("44522", CancellationToken.None);
+
+        Assert.Equal("updates", preview.Buckets.Single());
+        Assert.True(preview.DiffRows.Single(row => row.Attribute == "department").Changed);
+        var operationKinds = preview.Entries
+            .SelectMany(entry => entry.Item.GetProperty("operations").EnumerateArray())
+            .Select(operation => operation.GetProperty("kind").GetString())
+            .ToArray();
+        Assert.Contains("UpdateUser", operationKinds);
+        Assert.Contains("EnableUser", operationKinds);
+    }
+
+    [Fact]
+    public async Task PreviewAsync_ForDisabledExistingUsersWithoutAttributeChanges_UsesEnableBucket()
+    {
+        var worker = new WorkerSnapshot(
+            WorkerId: "44522",
+            PreferredName: "Christopher",
+            LastName: "Brien",
+            Department: "Infrastructure & Security",
+            TargetOu: "OU=Employees,DC=example,DC=com",
+            IsPrehire: false,
+            Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["company"] = "Example Services, Inc.",
+                ["department"] = "Infrastructure & Security"
+            });
+
+        var planner = new WorkerPreviewPlanner(
+            new StubWorkerSource(worker),
+            new WorkerPlanningService(
+                new DisabledExistingUserDirectoryGateway(),
+                new ExistingUserIdentityMatcher(),
+                CreateLifecyclePolicy(),
+                new UnchangedAttributeDiffService(),
+                new StubAttributeMappingProvider(),
+                NullLogger<WorkerPlanningService>.Instance),
+            new StubAttributeMappingProvider(),
+            new StubWorkerPreviewLogWriter(),
+            new StubRunRepository(),
+            NullLogger<WorkerPreviewPlanner>.Instance);
+
+        var preview = await planner.PreviewAsync("44522", CancellationToken.None);
+
+        Assert.Equal("enables", preview.Buckets.Single());
+    }
+
     private sealed class StubWorkerSource(WorkerSnapshot worker) : IWorkerSource
     {
         public Task<WorkerSnapshot?> GetWorkerAsync(string workerId, CancellationToken cancellationToken)
@@ -475,6 +552,66 @@ public sealed class WorkerPreviewPlannerTests
             _ = isCreate;
             _ = cancellationToken;
             return Task.FromResult("christopher.brien2");
+        }
+    }
+
+    private sealed class DisabledExistingUserDirectoryGateway : IDirectoryGateway
+    {
+        public Task<DirectoryUserSnapshot?> FindByWorkerAsync(WorkerSnapshot worker, CancellationToken cancellationToken)
+        {
+            _ = worker;
+            _ = cancellationToken;
+            return Task.FromResult<DirectoryUserSnapshot?>(new DirectoryUserSnapshot(
+                SamAccountName: "cbrien",
+                DistinguishedName: "CN=Brien\\, Christopher,OU=Employees,DC=example,DC=com",
+                Enabled: false,
+                DisplayName: "Brien, Christopher",
+                Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+                {
+                    ["department"] = "Infrastructure & Security",
+                    ["UserPrincipalName"] = "existing.upn@Exampleenergy.com",
+                    ["mail"] = "existing.mail@Exampleenergy.com"
+                }));
+        }
+
+        public Task<string?> ResolveManagerDistinguishedNameAsync(string managerId, CancellationToken cancellationToken)
+        {
+            _ = managerId;
+            _ = cancellationToken;
+            return Task.FromResult<string?>(null);
+        }
+
+        public Task<string> ResolveAvailableEmailLocalPartAsync(WorkerSnapshot worker, bool isCreate, CancellationToken cancellationToken)
+        {
+            _ = worker;
+            _ = isCreate;
+            _ = cancellationToken;
+            return Task.FromResult("christopher.brien2");
+        }
+    }
+
+    private sealed class ChangedDepartmentDiffService : IAttributeDiffService
+    {
+        public Task<IReadOnlyList<AttributeChange>> BuildDiffAsync(
+            WorkerSnapshot worker,
+            DirectoryUserSnapshot? directoryUser,
+            string? proposedEmailAddress,
+            string? logPath,
+            CancellationToken cancellationToken)
+        {
+            _ = worker;
+            _ = proposedEmailAddress;
+            _ = logPath;
+            _ = cancellationToken;
+            return Task.FromResult<IReadOnlyList<AttributeChange>>(
+            [
+                new AttributeChange(
+                    "department",
+                    "department",
+                    directoryUser?.Attributes["department"] ?? "(unset)",
+                    "Infrastructure",
+                    true)
+            ]);
         }
     }
 
