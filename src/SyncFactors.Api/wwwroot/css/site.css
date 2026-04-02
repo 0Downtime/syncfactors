@@ -12,12 +12,16 @@
   --accent: #0078d4;
   --accent-strong: #005a9e;
   --accent-soft: rgba(0, 120, 212, 0.1);
+  --info: #0b6a7f;
+  --info-bg: #daf2f8;
   --good: #107c10;
   --good-bg: #def6dd;
   --bad: #c4314b;
   --bad-bg: #fde7eb;
   --warn: #a15c00;
   --warn-bg: #fff1d6;
+  --dim: #526071;
+  --dim-bg: #e8edf3;
   --shadow-soft: 0 10px 30px rgba(13, 48, 82, 0.08);
   --shadow-raised: 0 18px 40px rgba(13, 48, 82, 0.12);
   --focus: 0 0 0 3px rgba(0, 120, 212, 0.22);
@@ -38,12 +42,16 @@
   --accent: #4aa0ff;
   --accent-strong: #82bdff;
   --accent-soft: rgba(74, 160, 255, 0.16);
+  --info: #8fe6f4;
+  --info-bg: rgba(16, 95, 110, 0.45);
   --good: #7ee787;
   --good-bg: rgba(32, 94, 48, 0.46);
   --bad: #ff9fb0;
   --bad-bg: rgba(122, 33, 53, 0.5);
   --warn: #ffd38a;
   --warn-bg: rgba(122, 86, 20, 0.44);
+  --dim: #d0dae8;
+  --dim-bg: rgba(70, 84, 104, 0.5);
   --shadow-soft: 0 14px 30px rgba(0, 0, 0, 0.28);
   --shadow-raised: 0 24px 48px rgba(0, 0, 0, 0.36);
   --focus: 0 0 0 3px rgba(130, 189, 255, 0.28);
@@ -783,6 +791,16 @@ a:focus-visible {
 .badge.warn {
   background: var(--warn-bg);
   color: var(--warn);
+}
+
+.badge.info {
+  background: var(--info-bg);
+  color: var(--info);
+}
+
+.badge.dim {
+  background: var(--dim-bg);
+  color: var(--dim);
 }
 
 .badge.neutral {
