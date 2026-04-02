@@ -51,35 +51,97 @@ public sealed class SqliteRunRepository(SqlitePathResolver pathResolver) : IRunR
         await using var command = connection.CreateCommand();
         command.CommandText =
             """
+            WITH recent_runs AS (
+              SELECT
+                run_id,
+                path,
+                artifact_type,
+                config_path,
+                mapping_config_path,
+                mode,
+                dry_run,
+                run_trigger,
+                requested_by,
+                status,
+                started_at,
+                completed_at,
+                duration_seconds,
+                creates,
+                updates,
+                enables,
+                disables,
+                graveyard_moves,
+                deletions,
+                quarantined,
+                conflicts,
+                guardrail_failures,
+                manual_review,
+                unchanged,
+                report_json
+              FROM runs
+              ORDER BY COALESCE(started_at, '') DESC, COALESCE(path, '') DESC
+              LIMIT 25
+            ),
+            entry_counts AS (
+              SELECT
+                run_id,
+                COUNT(1) AS entry_count,
+                SUM(CASE WHEN bucket = 'creates' THEN 1 ELSE 0 END) AS entry_creates,
+                SUM(CASE WHEN bucket = 'updates' THEN 1 ELSE 0 END) AS entry_updates,
+                SUM(CASE WHEN bucket = 'enables' THEN 1 ELSE 0 END) AS entry_enables,
+                SUM(CASE WHEN bucket = 'disables' THEN 1 ELSE 0 END) AS entry_disables,
+                SUM(CASE WHEN bucket = 'graveyardMoves' THEN 1 ELSE 0 END) AS entry_graveyard_moves,
+                SUM(CASE WHEN bucket = 'deletions' THEN 1 ELSE 0 END) AS entry_deletions,
+                SUM(CASE WHEN bucket = 'quarantined' THEN 1 ELSE 0 END) AS entry_quarantined,
+                SUM(CASE WHEN bucket = 'conflicts' THEN 1 ELSE 0 END) AS entry_conflicts,
+                SUM(CASE WHEN bucket = 'guardrailFailures' THEN 1 ELSE 0 END) AS entry_guardrail_failures,
+                SUM(CASE WHEN bucket = 'manualReview' THEN 1 ELSE 0 END) AS entry_manual_review,
+                SUM(CASE WHEN bucket = 'unchanged' THEN 1 ELSE 0 END) AS entry_unchanged
+              FROM run_entries
+              WHERE run_id IN (SELECT run_id FROM recent_runs)
+              GROUP BY run_id
+            )
             SELECT
-              run_id,
-              path,
-              artifact_type,
-              config_path,
-              mapping_config_path,
-              mode,
-              dry_run,
-              run_trigger,
-              requested_by,
-              status,
-              started_at,
-              completed_at,
-              duration_seconds,
-              creates,
-              updates,
-              enables,
-              disables,
-              graveyard_moves,
-              deletions,
-              quarantined,
-              conflicts,
-              guardrail_failures,
-              manual_review,
-              unchanged,
-              report_json
-            FROM runs
-            ORDER BY COALESCE(started_at, '') DESC, COALESCE(path, '') DESC
-            LIMIT 25;
+              recent_runs.run_id,
+              recent_runs.path,
+              recent_runs.artifact_type,
+              recent_runs.config_path,
+              recent_runs.mapping_config_path,
+              recent_runs.mode,
+              recent_runs.dry_run,
+              recent_runs.run_trigger,
+              recent_runs.requested_by,
+              recent_runs.status,
+              recent_runs.started_at,
+              recent_runs.completed_at,
+              recent_runs.duration_seconds,
+              recent_runs.creates,
+              recent_runs.updates,
+              recent_runs.enables,
+              recent_runs.disables,
+              recent_runs.graveyard_moves,
+              recent_runs.deletions,
+              recent_runs.quarantined,
+              recent_runs.conflicts,
+              recent_runs.guardrail_failures,
+              recent_runs.manual_review,
+              recent_runs.unchanged,
+              recent_runs.report_json,
+              COALESCE(entry_counts.entry_count, 0) AS entry_count,
+              COALESCE(entry_counts.entry_creates, 0) AS entry_creates,
+              COALESCE(entry_counts.entry_updates, 0) AS entry_updates,
+              COALESCE(entry_counts.entry_enables, 0) AS entry_enables,
+              COALESCE(entry_counts.entry_disables, 0) AS entry_disables,
+              COALESCE(entry_counts.entry_graveyard_moves, 0) AS entry_graveyard_moves,
+              COALESCE(entry_counts.entry_deletions, 0) AS entry_deletions,
+              COALESCE(entry_counts.entry_quarantined, 0) AS entry_quarantined,
+              COALESCE(entry_counts.entry_conflicts, 0) AS entry_conflicts,
+              COALESCE(entry_counts.entry_guardrail_failures, 0) AS entry_guardrail_failures,
+              COALESCE(entry_counts.entry_manual_review, 0) AS entry_manual_review,
+              COALESCE(entry_counts.entry_unchanged, 0) AS entry_unchanged
+            FROM recent_runs
+            LEFT JOIN entry_counts ON entry_counts.run_id = recent_runs.run_id
+            ORDER BY COALESCE(recent_runs.started_at, '') DESC, COALESCE(recent_runs.path, '') DESC;
             """;
 
         var runs = new List<RunSummary>();
@@ -140,33 +202,64 @@ public sealed class SqliteRunRepository(SqlitePathResolver pathResolver) : IRunR
         command.CommandText =
             """
             SELECT
-              run_id,
-              path,
-              artifact_type,
-              config_path,
-              mapping_config_path,
-              mode,
-              dry_run,
-              run_trigger,
-              requested_by,
-              status,
-              started_at,
-              completed_at,
-              duration_seconds,
-              creates,
-              updates,
-              enables,
-              disables,
-              graveyard_moves,
-              deletions,
-              quarantined,
-              conflicts,
-              guardrail_failures,
-              manual_review,
-              unchanged,
-              report_json
+              runs.run_id,
+              runs.path,
+              runs.artifact_type,
+              runs.config_path,
+              runs.mapping_config_path,
+              runs.mode,
+              runs.dry_run,
+              runs.run_trigger,
+              runs.requested_by,
+              runs.status,
+              runs.started_at,
+              runs.completed_at,
+              runs.duration_seconds,
+              runs.creates,
+              runs.updates,
+              runs.enables,
+              runs.disables,
+              runs.graveyard_moves,
+              runs.deletions,
+              runs.quarantined,
+              runs.conflicts,
+              runs.guardrail_failures,
+              runs.manual_review,
+              runs.unchanged,
+              runs.report_json,
+              COALESCE(entry_counts.entry_count, 0) AS entry_count,
+              COALESCE(entry_counts.entry_creates, 0) AS entry_creates,
+              COALESCE(entry_counts.entry_updates, 0) AS entry_updates,
+              COALESCE(entry_counts.entry_enables, 0) AS entry_enables,
+              COALESCE(entry_counts.entry_disables, 0) AS entry_disables,
+              COALESCE(entry_counts.entry_graveyard_moves, 0) AS entry_graveyard_moves,
+              COALESCE(entry_counts.entry_deletions, 0) AS entry_deletions,
+              COALESCE(entry_counts.entry_quarantined, 0) AS entry_quarantined,
+              COALESCE(entry_counts.entry_conflicts, 0) AS entry_conflicts,
+              COALESCE(entry_counts.entry_guardrail_failures, 0) AS entry_guardrail_failures,
+              COALESCE(entry_counts.entry_manual_review, 0) AS entry_manual_review,
+              COALESCE(entry_counts.entry_unchanged, 0) AS entry_unchanged
             FROM runs
-            WHERE run_id = $runId
+            LEFT JOIN (
+              SELECT
+                run_id,
+                COUNT(1) AS entry_count,
+                SUM(CASE WHEN bucket = 'creates' THEN 1 ELSE 0 END) AS entry_creates,
+                SUM(CASE WHEN bucket = 'updates' THEN 1 ELSE 0 END) AS entry_updates,
+                SUM(CASE WHEN bucket = 'enables' THEN 1 ELSE 0 END) AS entry_enables,
+                SUM(CASE WHEN bucket = 'disables' THEN 1 ELSE 0 END) AS entry_disables,
+                SUM(CASE WHEN bucket = 'graveyardMoves' THEN 1 ELSE 0 END) AS entry_graveyard_moves,
+                SUM(CASE WHEN bucket = 'deletions' THEN 1 ELSE 0 END) AS entry_deletions,
+                SUM(CASE WHEN bucket = 'quarantined' THEN 1 ELSE 0 END) AS entry_quarantined,
+                SUM(CASE WHEN bucket = 'conflicts' THEN 1 ELSE 0 END) AS entry_conflicts,
+                SUM(CASE WHEN bucket = 'guardrailFailures' THEN 1 ELSE 0 END) AS entry_guardrail_failures,
+                SUM(CASE WHEN bucket = 'manualReview' THEN 1 ELSE 0 END) AS entry_manual_review,
+                SUM(CASE WHEN bucket = 'unchanged' THEN 1 ELSE 0 END) AS entry_unchanged
+              FROM run_entries
+              WHERE run_id = $runId
+              GROUP BY run_id
+            ) AS entry_counts ON entry_counts.run_id = runs.run_id
+            WHERE runs.run_id = $runId
             LIMIT 1;
             """;
         command.Parameters.AddWithValue("$runId", runId);
@@ -1160,7 +1253,7 @@ public sealed class SqliteRunRepository(SqlitePathResolver pathResolver) : IRunR
 
     private static RunRow MapRunRow(SqliteDataReader reader)
     {
-        return new RunRow
+        var row = new RunRow
         {
             RunId = reader.GetStringOrDefault("run_id"),
             Path = reader.GetStringOrDefault("path"),
@@ -1187,7 +1280,21 @@ public sealed class SqliteRunRepository(SqlitePathResolver pathResolver) : IRunR
             ManualReview = reader.GetInt32OrDefault("manual_review"),
             Unchanged = reader.GetInt32OrDefault("unchanged"),
             ReportJson = reader.GetStringOrDefault("report_json"),
+            EntryCount = reader.GetInt32OrDefault("entry_count"),
+            EntryCreates = reader.GetInt32OrDefault("entry_creates"),
+            EntryUpdates = reader.GetInt32OrDefault("entry_updates"),
+            EntryEnables = reader.GetInt32OrDefault("entry_enables"),
+            EntryDisables = reader.GetInt32OrDefault("entry_disables"),
+            EntryGraveyardMoves = reader.GetInt32OrDefault("entry_graveyard_moves"),
+            EntryDeletions = reader.GetInt32OrDefault("entry_deletions"),
+            EntryQuarantined = reader.GetInt32OrDefault("entry_quarantined"),
+            EntryConflicts = reader.GetInt32OrDefault("entry_conflicts"),
+            EntryGuardrailFailures = reader.GetInt32OrDefault("entry_guardrail_failures"),
+            EntryManualReview = reader.GetInt32OrDefault("entry_manual_review"),
+            EntryUnchanged = reader.GetInt32OrDefault("entry_unchanged"),
         };
+
+        return BackfillBucketCountsFromEntries(row);
     }
 
     private static RunWithReportRow MapRunWithReportRow(SqliteDataReader reader)
@@ -1271,6 +1378,80 @@ public sealed class SqliteRunRepository(SqlitePathResolver pathResolver) : IRunR
         public int ManualReview { get; init; }
         public int Unchanged { get; init; }
         public string? ReportJson { get; init; }
+        public int EntryCount { get; init; }
+        public int EntryCreates { get; init; }
+        public int EntryUpdates { get; init; }
+        public int EntryEnables { get; init; }
+        public int EntryDisables { get; init; }
+        public int EntryGraveyardMoves { get; init; }
+        public int EntryDeletions { get; init; }
+        public int EntryQuarantined { get; init; }
+        public int EntryConflicts { get; init; }
+        public int EntryGuardrailFailures { get; init; }
+        public int EntryManualReview { get; init; }
+        public int EntryUnchanged { get; init; }
+    }
+
+    private static RunRow BackfillBucketCountsFromEntries(RunRow row)
+    {
+        var materializedTotal = Sum(
+            row.Creates,
+            row.Updates,
+            row.Enables,
+            row.Disables,
+            row.GraveyardMoves,
+            row.Deletions,
+            row.Quarantined,
+            row.Conflicts,
+            row.GuardrailFailures,
+            row.ManualReview,
+            row.Unchanged);
+
+        if (row.EntryCount <= materializedTotal)
+        {
+            return row;
+        }
+
+        return new RunRow
+        {
+            RunId = row.RunId,
+            Path = row.Path,
+            ArtifactType = row.ArtifactType,
+            ConfigPath = row.ConfigPath,
+            MappingConfigPath = row.MappingConfigPath,
+            Mode = row.Mode,
+            DryRun = row.DryRun,
+            RunTrigger = row.RunTrigger,
+            RequestedBy = row.RequestedBy,
+            Status = row.Status,
+            StartedAt = row.StartedAt,
+            CompletedAt = row.CompletedAt,
+            DurationSeconds = row.DurationSeconds,
+            Creates = row.EntryCreates,
+            Updates = row.EntryUpdates,
+            Enables = row.EntryEnables,
+            Disables = row.EntryDisables,
+            GraveyardMoves = row.EntryGraveyardMoves,
+            Deletions = row.EntryDeletions,
+            Quarantined = row.EntryQuarantined,
+            Conflicts = row.EntryConflicts,
+            GuardrailFailures = row.EntryGuardrailFailures,
+            ManualReview = row.EntryManualReview,
+            Unchanged = row.EntryUnchanged,
+            ReportJson = row.ReportJson,
+            EntryCount = row.EntryCount,
+            EntryCreates = row.EntryCreates,
+            EntryUpdates = row.EntryUpdates,
+            EntryEnables = row.EntryEnables,
+            EntryDisables = row.EntryDisables,
+            EntryGraveyardMoves = row.EntryGraveyardMoves,
+            EntryDeletions = row.EntryDeletions,
+            EntryQuarantined = row.EntryQuarantined,
+            EntryConflicts = row.EntryConflicts,
+            EntryGuardrailFailures = row.EntryGuardrailFailures,
+            EntryManualReview = row.EntryManualReview,
+            EntryUnchanged = row.EntryUnchanged,
+        };
     }
 
     private sealed class RunWithReportRow : RunRow
