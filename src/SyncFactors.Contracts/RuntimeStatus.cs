@@ -173,6 +173,7 @@ public sealed record RunQueueRequest(
 
 public sealed record StartRunRequest(
     bool DryRun,
+    string Mode = "BulkSync",
     string RunTrigger = "AdHoc",
     string? RequestedBy = null);
 
@@ -189,7 +190,16 @@ public sealed record UpdateSyncScheduleRequest(
     int IntervalMinutes);
 
 public sealed record WorkerRunSettings(
-    int MaxCreatesPerRun);
+    int MaxCreatesPerRun,
+    int MaxDisablesPerRun = int.MaxValue,
+    int MaxDeletionsPerRun = int.MaxValue);
+
+public sealed record LifecyclePolicySettings(
+    string ActiveOu,
+    string PrehireOu,
+    string GraveyardOu,
+    string InactiveStatusField,
+    IReadOnlyList<string> InactiveStatusValues);
 
 public sealed record WorkerSnapshot(
     string WorkerId,
@@ -230,10 +240,20 @@ public sealed record PlannedWorkerAction(
     IReadOnlyList<AttributeChange> AttributeChanges,
     IReadOnlyList<MissingSourceAttributeRow> MissingSourceAttributes,
     string Bucket,
+    string CurrentOu,
+    string TargetOu,
+    bool? CurrentEnabled,
+    bool TargetEnabled,
+    string PrimaryAction,
+    IReadOnlyList<DirectoryOperation> Operations,
     string? ReviewCategory,
     string? ReviewCaseType,
     string? Reason,
     bool CanAutoApply);
+
+public sealed record DirectoryOperation(
+    string Kind,
+    string? TargetOu = null);
 
 public sealed record DirectoryMutationCommand(
     string Action,
@@ -245,7 +265,9 @@ public sealed record DirectoryMutationCommand(
     string Mail,
     string TargetOu,
     string DisplayName,
+    string? CurrentDistinguishedName,
     bool EnableAccount,
+    IReadOnlyList<DirectoryOperation> Operations,
     IReadOnlyDictionary<string, string?> Attributes);
 
 public sealed record DirectoryCommandResult(

@@ -26,8 +26,9 @@ public sealed class WorkerPreviewPlannerTests
         var planner = new WorkerPreviewPlanner(
             new StubWorkerSource(worker),
             new WorkerPlanningService(
-                new StubDirectoryGateway(),
+                new ExistingUserDirectoryGateway(),
                 new ExistingUserIdentityMatcher(),
+                CreateLifecyclePolicy(),
                 new UnchangedAttributeDiffService(),
                 new StubAttributeMappingProvider(),
                 NullLogger<WorkerPlanningService>.Instance),
@@ -68,6 +69,7 @@ public sealed class WorkerPreviewPlannerTests
             new WorkerPlanningService(
                 new StubDirectoryGateway(),
                 new StubIdentityMatcher(),
+                CreateLifecyclePolicy(),
                 new StubAttributeDiffService(),
                 new StubAttributeMappingProvider(),
                 NullLogger<WorkerPlanningService>.Instance),
@@ -103,6 +105,7 @@ public sealed class WorkerPreviewPlannerTests
             new WorkerPlanningService(
                 new StubDirectoryGateway(),
                 new StubIdentityMatcher(),
+                CreateLifecyclePolicy(),
                 diffService,
                 new StubAttributeMappingProvider(),
                 NullLogger<WorkerPlanningService>.Instance),
@@ -140,6 +143,7 @@ public sealed class WorkerPreviewPlannerTests
             new WorkerPlanningService(
                 new StubDirectoryGateway(),
                 new StubIdentityMatcher(),
+                CreateLifecyclePolicy(),
                 new StubAttributeDiffService(),
                 mappingProvider,
                 NullLogger<WorkerPlanningService>.Instance),
@@ -152,6 +156,45 @@ public sealed class WorkerPreviewPlannerTests
 
         Assert.Null(preview.ReviewCaseType);
         Assert.Empty(preview.MissingSourceAttributes);
+    }
+
+    [Fact]
+    public async Task PreviewAsync_DoesNotRequireReviewWhenRequiredUpnIsGeneratedFromResolvedEmail()
+    {
+        var worker = new WorkerSnapshot(
+            WorkerId: "44522",
+            PreferredName: "Christopher",
+            LastName: "Brien",
+            Department: "Infrastructure & Security",
+            TargetOu: "OU=Employees,DC=example,DC=com",
+            IsPrehire: false,
+            Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["personIdExternal"] = "44522",
+                ["firstName"] = "Christopher",
+                ["lastName"] = "Brien"
+            });
+
+        var mappingProvider = new RequiredGeneratedUpnMappingProvider();
+        var planner = new WorkerPreviewPlanner(
+            new StubWorkerSource(worker),
+            new WorkerPlanningService(
+                new StubDirectoryGateway(),
+                new StubIdentityMatcher(),
+                CreateLifecyclePolicy(),
+                new AttributeDiffService(mappingProvider, new StubWorkerPreviewLogWriter(), NullLogger<AttributeDiffService>.Instance),
+                mappingProvider,
+                NullLogger<WorkerPlanningService>.Instance),
+            mappingProvider,
+            new StubWorkerPreviewLogWriter(),
+            new StubRunRepository(),
+            NullLogger<WorkerPreviewPlanner>.Instance);
+
+        var preview = await planner.PreviewAsync("44522", CancellationToken.None);
+
+        Assert.Null(preview.ReviewCaseType);
+        Assert.Empty(preview.MissingSourceAttributes);
+        Assert.Equal("christopher.brien@spireenergy.com", preview.DiffRows.Single(row => row.Attribute == "UserPrincipalName").After);
     }
 
     [Fact]
@@ -176,6 +219,7 @@ public sealed class WorkerPreviewPlannerTests
             new WorkerPlanningService(
                 new StubDirectoryGateway(),
                 new StubIdentityMatcher(),
+                CreateLifecyclePolicy(),
                 new StubAttributeDiffService(),
                 new StubAttributeMappingProvider(),
                 NullLogger<WorkerPlanningService>.Instance),
@@ -207,6 +251,7 @@ public sealed class WorkerPreviewPlannerTests
             new WorkerPlanningService(
                 new ExistingUserDirectoryGateway(),
                 new ExistingUserIdentityMatcher(),
+                CreateLifecyclePolicy(),
                 new AttributeDiffService(new EmptyAttributeMappingProvider(), new StubWorkerPreviewLogWriter(), NullLogger<AttributeDiffService>.Instance),
                 new EmptyAttributeMappingProvider(),
                 NullLogger<WorkerPlanningService>.Instance),
@@ -376,6 +421,14 @@ public sealed class WorkerPreviewPlannerTests
         ];
     }
 
+    private sealed class RequiredGeneratedUpnMappingProvider : IAttributeMappingProvider
+    {
+        public IReadOnlyList<AttributeMapping> GetEnabledMappings() =>
+        [
+            new AttributeMapping("emailNav[?(@.isPrimary == true)].emailAddress", "UserPrincipalName", Required: true, Transform: "Lower")
+        ];
+    }
+
     private sealed class ExistingUserIdentityMatcher : IIdentityMatcher
     {
         public IdentityMatchResult Match(WorkerSnapshot worker, DirectoryUserSnapshot? directoryUser)
@@ -513,4 +566,16 @@ public sealed class WorkerPreviewPlannerTests
     }
 
     private sealed class StubRunRepository : CapturingRunRepository;
+
+    private static LifecyclePolicy CreateLifecyclePolicy()
+    {
+        return new LifecyclePolicy(
+            new LifecyclePolicySettings(
+                ActiveOu: "OU=Employees,DC=example,DC=com",
+                PrehireOu: "OU=Prehire,DC=example,DC=com",
+                GraveyardOu: "OU=Graveyard,DC=example,DC=com",
+                InactiveStatusField: "emplStatus",
+                InactiveStatusValues: ["T"]),
+            TimeProvider.System);
+    }
 }

@@ -18,7 +18,17 @@ builder.Services.AddSingleton<ScaffoldWorkerSource>();
 builder.Services.AddSingleton(serviceProvider =>
 {
     var config = serviceProvider.GetRequiredService<SyncFactorsConfigurationLoader>().GetSyncConfig();
-    return new SyncFactors.Contracts.WorkerRunSettings(config.Safety.MaxCreatesPerRun);
+    return new SyncFactors.Contracts.WorkerRunSettings(config.Safety.MaxCreatesPerRun, config.Safety.MaxDisablesPerRun, config.Safety.MaxDeletionsPerRun);
+});
+builder.Services.AddSingleton(serviceProvider =>
+{
+    var config = serviceProvider.GetRequiredService<SyncFactorsConfigurationLoader>().GetSyncConfig();
+    return new SyncFactors.Contracts.LifecyclePolicySettings(
+        config.Ad.DefaultActiveOu,
+        config.Ad.PrehireOu,
+        config.Ad.GraveyardOu,
+        config.SuccessFactors.Query.InactiveStatusField,
+        config.SuccessFactors.Query.InactiveStatusValues);
 });
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<IRuntimeStatusStore, SqliteRuntimeStatusStore>();
@@ -38,11 +48,13 @@ builder.Services.AddTransient<IDirectoryGateway, ActiveDirectoryGateway>();
 builder.Services.AddTransient<IDirectoryCommandGateway, ActiveDirectoryCommandGateway>();
 builder.Services.AddSingleton<IAttributeMappingProvider, AttributeMappingProvider>();
 builder.Services.AddSingleton<IIdentityMatcher, IdentityMatcher>();
+builder.Services.AddSingleton<ILifecyclePolicy, LifecyclePolicy>();
 builder.Services.AddSingleton<IWorkerPreviewLogWriter, FileWorkerPreviewLogWriter>();
 builder.Services.AddTransient<IAttributeDiffService, AttributeDiffService>();
 builder.Services.AddTransient<IWorkerPlanningService, WorkerPlanningService>();
 builder.Services.AddSingleton<IDirectoryMutationCommandBuilder, DirectoryMutationCommandBuilder>();
 builder.Services.AddTransient<BulkRunCoordinator>();
+builder.Services.AddTransient<DeleteAllUsersCoordinator>();
 builder.Services.AddTransient<SyncScheduleCoordinator>();
 builder.Services.AddSingleton<IRunLifecycleService, RunLifecycleService>();
 builder.Services.AddHostedService<Worker>();

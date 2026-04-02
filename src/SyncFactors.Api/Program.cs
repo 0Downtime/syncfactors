@@ -18,7 +18,17 @@ builder.Services.AddSingleton<ScaffoldWorkerSource>();
 builder.Services.AddSingleton(serviceProvider =>
 {
     var config = serviceProvider.GetRequiredService<SyncFactorsConfigurationLoader>().GetSyncConfig();
-    return new WorkerRunSettings(config.Safety.MaxCreatesPerRun);
+    return new WorkerRunSettings(config.Safety.MaxCreatesPerRun, config.Safety.MaxDisablesPerRun, config.Safety.MaxDeletionsPerRun);
+});
+builder.Services.AddSingleton(serviceProvider =>
+{
+    var config = serviceProvider.GetRequiredService<SyncFactorsConfigurationLoader>().GetSyncConfig();
+    return new LifecyclePolicySettings(
+        config.Ad.DefaultActiveOu,
+        config.Ad.PrehireOu,
+        config.Ad.GraveyardOu,
+        config.SuccessFactors.Query.InactiveStatusField,
+        config.SuccessFactors.Query.InactiveStatusValues);
 });
 builder.Services.AddSingleton<ScaffoldDirectoryGateway>();
 builder.Services.AddSingleton<ScaffoldDirectoryCommandGateway>();
@@ -41,6 +51,7 @@ builder.Services.AddTransient<IDirectoryGateway, ActiveDirectoryGateway>();
 builder.Services.AddTransient<IDirectoryCommandGateway, ActiveDirectoryCommandGateway>();
 builder.Services.AddSingleton<IAttributeMappingProvider, AttributeMappingProvider>();
 builder.Services.AddSingleton<IIdentityMatcher, IdentityMatcher>();
+builder.Services.AddSingleton<ILifecyclePolicy, LifecyclePolicy>();
 builder.Services.AddSingleton<IAttributeDiffService, AttributeDiffService>();
 builder.Services.AddSingleton<IWorkerHeartbeatStore, SqliteWorkerHeartbeatStore>();
 builder.Services.AddTransient<IWorkerPreviewPlanner, WorkerPreviewPlanner>();

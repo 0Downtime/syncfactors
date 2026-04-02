@@ -8,6 +8,205 @@ namespace SyncFactors.Infrastructure.Tests;
 public sealed class AttributeDiffServiceTests
 {
     [Fact]
+    public async Task BuildDiffAsync_StripsCommasAndPeriods_WhenConfigured()
+    {
+        var tempRoot = Path.Combine(Path.GetTempPath(), "syncfactors-attribute-diff", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempRoot);
+
+        var configPath = Path.Combine(tempRoot, "sync-config.json");
+        var mappingConfigPath = Path.Combine(tempRoot, "mapping-config.json");
+
+        await File.WriteAllTextAsync(configPath, """
+        {
+          "secrets": {
+            "adServerEnv": null,
+            "adUsernameEnv": null,
+            "adBindPasswordEnv": null
+          },
+          "successFactors": {
+            "baseUrl": "http://example.test/odata/v2",
+            "auth": {
+              "mode": "basic",
+              "basic": {
+                "username": "mock-user",
+                "password": "mock-password"
+              }
+            },
+            "query": {
+              "entitySet": "PerPerson",
+              "identityField": "personIdExternal",
+              "deltaField": "lastModifiedDateTime",
+              "select": ["personIdExternal"],
+              "expand": []
+            }
+          },
+          "ad": {
+            "server": "ldap.example.test",
+            "username": "",
+            "bindPassword": "",
+            "identityAttribute": "employeeID",
+            "defaultActiveOu": "OU=LabUsers,DC=example,DC=com",
+            "prehireOu": "OU=Prehire,DC=example,DC=com",
+            "graveyardOu": "OU=LabGraveyard,DC=example,DC=com"
+          },
+          "sync": {
+            "enableBeforeStartDays": 7,
+            "deletionRetentionDays": 90
+          },
+          "safety": {
+            "maxCreatesPerRun": 10,
+            "maxDisablesPerRun": 10,
+            "maxDeletionsPerRun": 10
+          },
+          "reporting": {
+            "outputDirectory": "/tmp"
+          }
+        }
+        """);
+
+        await File.WriteAllTextAsync(mappingConfigPath, """
+        {
+          "mappings": [
+            {
+              "source": "employmentNav[0].jobInfoNav[0].companyNav.name_localized",
+              "target": "company",
+              "enabled": true,
+              "required": false,
+              "transform": "TrimStripCommasPeriods"
+            }
+          ]
+        }
+        """);
+
+        var loader = new SyncFactorsConfigurationLoader(new SyncFactorsConfigPathResolver(configPath, mappingConfigPath));
+        var mappingProvider = new AttributeMappingProvider(loader, NullLogger<AttributeMappingProvider>.Instance);
+        var diffService = new AttributeDiffService(mappingProvider, new NoopWorkerPreviewLogWriter(), NullLogger<AttributeDiffService>.Instance);
+
+        var worker = new WorkerSnapshot(
+            WorkerId: "44522",
+            PreferredName: "Christopher",
+            LastName: "Brien",
+            Department: "Infrastructure & Security",
+            TargetOu: "OU=LabUsers,DC=example,DC=com",
+            IsPrehire: false,
+            Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["employmentNav[0].jobInfoNav[0].companyNav.name_localized"] = "Spire Services, Inc."
+            });
+
+        var changes = await diffService.BuildDiffAsync(
+            worker,
+            directoryUser: null,
+            proposedEmailAddress: null,
+            logPath: null,
+            CancellationToken.None);
+
+        var companyChange = Assert.Single(changes, change => change.Attribute == "company");
+        Assert.Equal("Spire Services Inc", companyChange.After);
+        Assert.True(companyChange.Changed);
+    }
+
+    [Fact]
+    public async Task BuildDiffAsync_ConcatenatesCostCenterFields_WhenConfigured()
+    {
+        var tempRoot = Path.Combine(Path.GetTempPath(), "syncfactors-attribute-diff", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempRoot);
+
+        var configPath = Path.Combine(tempRoot, "sync-config.json");
+        var mappingConfigPath = Path.Combine(tempRoot, "mapping-config.json");
+
+        await File.WriteAllTextAsync(configPath, """
+        {
+          "secrets": {
+            "adServerEnv": null,
+            "adUsernameEnv": null,
+            "adBindPasswordEnv": null
+          },
+          "successFactors": {
+            "baseUrl": "http://example.test/odata/v2",
+            "auth": {
+              "mode": "basic",
+              "basic": {
+                "username": "mock-user",
+                "password": "mock-password"
+              }
+            },
+            "query": {
+              "entitySet": "PerPerson",
+              "identityField": "personIdExternal",
+              "deltaField": "lastModifiedDateTime",
+              "select": ["personIdExternal"],
+              "expand": []
+            }
+          },
+          "ad": {
+            "server": "ldap.example.test",
+            "username": "",
+            "bindPassword": "",
+            "identityAttribute": "employeeID",
+            "defaultActiveOu": "OU=LabUsers,DC=example,DC=com",
+            "prehireOu": "OU=Prehire,DC=example,DC=com",
+            "graveyardOu": "OU=LabGraveyard,DC=example,DC=com"
+          },
+          "sync": {
+            "enableBeforeStartDays": 7,
+            "deletionRetentionDays": 90
+          },
+          "safety": {
+            "maxCreatesPerRun": 10,
+            "maxDisablesPerRun": 10,
+            "maxDeletionsPerRun": 10
+          },
+          "reporting": {
+            "outputDirectory": "/tmp"
+          }
+        }
+        """);
+
+        await File.WriteAllTextAsync(mappingConfigPath, """
+        {
+          "mappings": [
+            {
+              "source": "Concat(employmentNav[0].jobInfoNav[0].costCenterNav.externalCode, employmentNav[0].jobInfoNav[0].costCenterNav.description_localized)",
+              "target": "department",
+              "enabled": true,
+              "required": false,
+              "transform": "Trim"
+            }
+          ]
+        }
+        """);
+
+        var loader = new SyncFactorsConfigurationLoader(new SyncFactorsConfigPathResolver(configPath, mappingConfigPath));
+        var mappingProvider = new AttributeMappingProvider(loader, NullLogger<AttributeMappingProvider>.Instance);
+        var diffService = new AttributeDiffService(mappingProvider, new NoopWorkerPreviewLogWriter(), NullLogger<AttributeDiffService>.Instance);
+
+        var worker = new WorkerSnapshot(
+            WorkerId: "44522",
+            PreferredName: "Christopher",
+            LastName: "Brien",
+            Department: "Infrastructure & Security",
+            TargetOu: "OU=LabUsers,DC=example,DC=com",
+            IsPrehire: false,
+            Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["employmentNav[0].jobInfoNav[0].costCenterNav.externalCode"] = "10450",
+                ["employmentNav[0].jobInfoNav[0].costCenterNav.description_localized"] = "Information Technology"
+            });
+
+        var changes = await diffService.BuildDiffAsync(
+            worker,
+            directoryUser: null,
+            proposedEmailAddress: null,
+            logPath: null,
+            CancellationToken.None);
+
+        var departmentChange = Assert.Single(changes, change => change.Attribute == "department");
+        Assert.Equal("10450 Information Technology", departmentChange.After);
+        Assert.True(departmentChange.Changed);
+    }
+
+    [Fact]
     public async Task BuildDiffAsync_PreservesExistingEmailTargets_ForMatchedUsers()
     {
         var tempRoot = Path.Combine(Path.GetTempPath(), "syncfactors-attribute-diff", Guid.NewGuid().ToString("N"));
@@ -46,6 +245,7 @@ public sealed class AttributeDiffServiceTests
             "bindPassword": "",
             "identityAttribute": "employeeID",
             "defaultActiveOu": "OU=LabUsers,DC=example,DC=com",
+            "prehireOu": "OU=Prehire,DC=example,DC=com",
             "graveyardOu": "OU=LabGraveyard,DC=example,DC=com"
           },
           "sync": {
@@ -147,6 +347,7 @@ public sealed class AttributeDiffServiceTests
             "bindPassword": "",
             "identityAttribute": "employeeID",
             "defaultActiveOu": "OU=LabUsers,DC=example,DC=com",
+            "prehireOu": "OU=Prehire,DC=example,DC=com",
             "graveyardOu": "OU=LabGraveyard,DC=example,DC=com"
           },
           "sync": {
@@ -231,8 +432,8 @@ public sealed class AttributeDiffServiceTests
             {
                 Assert.Equal("displayName", change.Attribute);
                 Assert.Equal("Sample101, Winnie", change.Before);
-                Assert.Equal("10001", change.After);
-                Assert.True(change.Changed);
+                Assert.Equal("Sample101, Winnie", change.After);
+                Assert.False(change.Changed);
             },
             change =>
             {
@@ -282,6 +483,7 @@ public sealed class AttributeDiffServiceTests
             "bindPassword": "",
             "identityAttribute": "employeeID",
             "defaultActiveOu": "OU=LabUsers,DC=example,DC=com",
+            "prehireOu": "OU=Prehire,DC=example,DC=com",
             "graveyardOu": "OU=LabGraveyard,DC=example,DC=com"
           },
           "sync": {
@@ -370,8 +572,8 @@ public sealed class AttributeDiffServiceTests
             {
                 Assert.Equal("displayName", change.Attribute);
                 Assert.Equal("Sample101, Winnie", change.Before);
-                Assert.Equal("10001", change.After);
-                Assert.True(change.Changed);
+                Assert.Equal("Sample101, Winnie", change.After);
+                Assert.False(change.Changed);
             },
             change =>
             {
@@ -435,6 +637,7 @@ public sealed class AttributeDiffServiceTests
             "bindPassword": "",
             "identityAttribute": "employeeID",
             "defaultActiveOu": "OU=LabUsers,DC=example,DC=com",
+            "prehireOu": "OU=Prehire,DC=example,DC=com",
             "graveyardOu": "OU=LabGraveyard,DC=example,DC=com"
           },
           "sync": {
@@ -520,7 +723,7 @@ public sealed class AttributeDiffServiceTests
             {
                 Assert.Equal("displayName", change.Attribute);
                 Assert.Equal("Old Display", change.Before);
-                Assert.Equal("10001", change.After);
+                Assert.Equal("Sample101, Winnie", change.After);
                 Assert.True(change.Changed);
             },
             change =>

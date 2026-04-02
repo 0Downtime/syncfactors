@@ -13,6 +13,8 @@ public sealed class SyncModel(
     private const int RunsPageSize = 25;
     private const string DryRunMode = "DryRun";
     private const string LiveRunMode = "LiveRun";
+    private const string DeleteAllUsersMode = "DeleteAllUsers";
+    public const string DeleteAllUsersConfirmationPhrase = "DELETE ALL USERS";
 
     [BindProperty]
     public string RunMode { get; set; } = DryRunMode;
@@ -25,6 +27,9 @@ public sealed class SyncModel(
 
     [BindProperty]
     public bool AcknowledgeRealSync { get; set; }
+
+    [BindProperty]
+    public string DeleteAllUsersConfirmationText { get; set; } = string.Empty;
 
     [BindProperty(SupportsGet = true)]
     public int PageNumber { get; set; } = 1;
@@ -93,6 +98,7 @@ public sealed class SyncModel(
         await runQueueStore.EnqueueAsync(
             new StartRunRequest(
                 DryRun: !string.Equals(RunMode, LiveRunMode, StringComparison.Ordinal),
+                Mode: "BulkSync",
                 RunTrigger: "AdHoc",
                 RequestedBy: "Sync page"),
             cancellationToken);
@@ -100,6 +106,35 @@ public sealed class SyncModel(
         SuccessMessage = string.Equals(RunMode, LiveRunMode, StringComparison.Ordinal)
             ? "Live provisioning run queued."
             : "Dry-run sync queued.";
+        ErrorMessage = null;
+        return RedirectToPage(new { PageNumber });
+    }
+
+    public async Task<IActionResult> OnPostDeleteAllUsersAsync(CancellationToken cancellationToken)
+    {
+        if (await runQueueStore.HasPendingOrActiveRunAsync(cancellationToken))
+        {
+            ErrorMessage = "A run is already pending or in progress.";
+            SuccessMessage = null;
+            return RedirectToPage(new { PageNumber });
+        }
+
+        if (!string.Equals(DeleteAllUsersConfirmationText?.Trim(), DeleteAllUsersConfirmationPhrase, StringComparison.Ordinal))
+        {
+            ErrorMessage = $"Type {DeleteAllUsersConfirmationPhrase} to queue the delete-all test run.";
+            SuccessMessage = null;
+            return RedirectToPage(new { PageNumber });
+        }
+
+        await runQueueStore.EnqueueAsync(
+            new StartRunRequest(
+                DryRun: false,
+                Mode: DeleteAllUsersMode,
+                RunTrigger: "DeleteAllUsers",
+                RequestedBy: "Sync page"),
+            cancellationToken);
+
+        SuccessMessage = "Delete-all test run queued.";
         ErrorMessage = null;
         return RedirectToPage(new { PageNumber });
     }

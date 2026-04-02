@@ -84,6 +84,7 @@ public sealed class SyncFactorsConfigurationLoader
                     fallbackJsonValue: document.GetRequiredObject("ad").TryGetString("bindPassword")),
                 IdentityAttribute: document.GetRequiredObject("ad").GetRequiredString("identityAttribute"),
                 DefaultActiveOu: document.GetRequiredObject("ad").GetRequiredString("defaultActiveOu"),
+                PrehireOu: document.GetRequiredObject("ad").GetRequiredString("prehireOu"),
                 GraveyardOu: document.GetRequiredObject("ad").GetRequiredString("graveyardOu"),
                 IdentityPolicy: LoadActiveDirectoryIdentityPolicy(document.GetRequiredObject("ad"))),
             Sync: new SyncPolicyConfig(

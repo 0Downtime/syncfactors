@@ -61,6 +61,7 @@ public sealed record ActiveDirectoryConfig(
     string? BindPassword,
     string IdentityAttribute,
     string DefaultActiveOu,
+    string PrehireOu,
     string GraveyardOu,
     ActiveDirectoryIdentityPolicyConfig IdentityPolicy);
 
