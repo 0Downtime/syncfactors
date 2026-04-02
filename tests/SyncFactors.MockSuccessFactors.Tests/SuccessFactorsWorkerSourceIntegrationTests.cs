@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -278,7 +279,7 @@ public sealed class SuccessFactorsWorkerSourceIntegrationTests
     [Fact]
     public async Task WorkerSource_ListWorkersAsync_IncludesTaggedPrehireWorkers_AndMarksIsPrehire()
     {
-        var fixturePath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "config", "mock-successfactors", "baseline-fixtures.json"));
+        var (fixturePath, futureStartDate) = CreateRelativeFuturePrehireFixture();
         var fixtureStore = new MockFixtureStore(Options.Create(new MockSuccessFactorsOptions
         {
             FixturePath = fixturePath
@@ -385,7 +386,7 @@ public sealed class SuccessFactorsWorkerSourceIntegrationTests
 
         var prehire = Assert.Single(workers, worker => worker.WorkerId == "user.10003");
         Assert.True(prehire.IsPrehire);
-        Assert.Equal("2026-04-02T00:00:00Z", prehire.Attributes["startDate"]);
+        Assert.Equal(futureStartDate, prehire.Attributes["startDate"]);
     }
 
     [Fact]
@@ -1368,6 +1369,26 @@ public sealed class SuccessFactorsWorkerSourceIntegrationTests
             _ = cancellationToken;
             return Task.CompletedTask;
         }
+    }
+
+    private static (string FixturePath, string FutureStartDate) CreateRelativeFuturePrehireFixture()
+    {
+        var baselineFixturePath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "config", "mock-successfactors", "baseline-fixtures.json"));
+        var futureStartDate = DateTimeOffset.UtcNow.Date.AddDays(7).ToString("yyyy-MM-ddTHH:mm:ssZ");
+        var document = JsonNode.Parse(File.ReadAllText(baselineFixturePath))?.AsObject()
+            ?? throw new InvalidOperationException("Unable to parse mock fixture document.");
+        var workers = document["workers"]?.AsArray()
+            ?? throw new InvalidOperationException("Mock fixture document does not contain a workers array.");
+        var prehire = workers
+            .OfType<JsonObject>()
+            .FirstOrDefault(worker => string.Equals(worker["userId"]?.GetValue<string>(), "user.10003", StringComparison.Ordinal))
+            ?? throw new InvalidOperationException("Expected prehire worker user.10003 was not found in the mock fixture document.");
+
+        prehire["startDate"] = futureStartDate;
+
+        var tempPath = Path.Combine(Path.GetTempPath(), $"mock-successfactors-fixtures-{Guid.NewGuid():N}.json");
+        File.WriteAllText(tempPath, document.ToJsonString(new JsonSerializerOptions()));
+        return (tempPath, futureStartDate);
     }
 
     private sealed class ConfiguredDeltaSyncService(string filter) : IDeltaSyncService

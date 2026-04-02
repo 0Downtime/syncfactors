@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Microsoft.Extensions.Options;
 using SyncFactors.MockSuccessFactors;
 
@@ -9,11 +10,15 @@ public sealed class MockApiTests
 {
     private static readonly string FixturePath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "config", "mock-successfactors", "baseline-fixtures.json"));
 
-    private static MockFixtureStore CreateStore(bool syntheticPopulationEnabled = false, int targetWorkerCount = 5000, bool includeTaggedPrehiresInDefaultListing = true)
+    private static MockFixtureStore CreateStore(
+        bool syntheticPopulationEnabled = false,
+        int targetWorkerCount = 5000,
+        bool includeTaggedPrehiresInDefaultListing = true,
+        string? fixturePath = null)
     {
         return new MockFixtureStore(Options.Create(new MockSuccessFactorsOptions
         {
-            FixturePath = FixturePath,
+            FixturePath = fixturePath ?? FixturePath,
             EmpJob = new MockEmpJobOptions
             {
                 IncludeTaggedPrehiresInDefaultListing = includeTaggedPrehiresInDefaultListing
@@ -295,7 +300,8 @@ public sealed class MockApiTests
     [Fact]
     public void EmpJobProjection_DefaultListing_IncludesTaggedPrehireWorkers()
     {
-        var store = CreateStore();
+        var (fixturePath, futureStartDate) = CreateRelativeFuturePrehireFixture();
+        var store = CreateStore(fixturePath: fixturePath);
         var builder = new ODataResponseBuilder();
         var query = ODataQueryParser.Parse(new Microsoft.AspNetCore.Http.QueryCollection(new Dictionary<string, Microsoft.Extensions.Primitives.StringValues>
         {
@@ -309,13 +315,15 @@ public sealed class MockApiTests
         using var document = JsonDocument.Parse(JsonSerializer.Serialize(payload));
         var results = document.RootElement.GetProperty("d").GetProperty("results");
 
-        Assert.Contains(results.EnumerateArray(), row => row.GetProperty("userId").GetString() == "user.10003");
+        var prehire = Assert.Single(results.EnumerateArray(), row => row.GetProperty("userId").GetString() == "user.10003");
+        Assert.Equal(futureStartDate, prehire.GetProperty("startDate").GetString());
     }
 
     [Fact]
     public void EmpJobProjection_DefaultListing_CanExcludeTaggedPrehireWorkers()
     {
-        var store = CreateStore(includeTaggedPrehiresInDefaultListing: false);
+        var (fixturePath, _) = CreateRelativeFuturePrehireFixture();
+        var store = CreateStore(includeTaggedPrehiresInDefaultListing: false, fixturePath: fixturePath);
         var builder = new ODataResponseBuilder();
         var query = ODataQueryParser.Parse(new Microsoft.AspNetCore.Http.QueryCollection(new Dictionary<string, Microsoft.Extensions.Primitives.StringValues>
         {
@@ -377,5 +385,24 @@ public sealed class MockApiTests
 
         Assert.True(AuthenticationValidator.IsAuthorized(bearerRequest, options));
         Assert.True(AuthenticationValidator.IsAuthorized(basicRequest, options));
+    }
+
+    private static (string FixturePath, string FutureStartDate) CreateRelativeFuturePrehireFixture()
+    {
+        var futureStartDate = DateTimeOffset.UtcNow.Date.AddDays(7).ToString("yyyy-MM-ddTHH:mm:ssZ");
+        var document = JsonNode.Parse(File.ReadAllText(FixturePath))?.AsObject()
+            ?? throw new InvalidOperationException("Unable to parse mock fixture document.");
+        var workers = document["workers"]?.AsArray()
+            ?? throw new InvalidOperationException("Mock fixture document does not contain a workers array.");
+        var prehire = workers
+            .OfType<JsonObject>()
+            .FirstOrDefault(worker => string.Equals(worker["userId"]?.GetValue<string>(), "user.10003", StringComparison.Ordinal))
+            ?? throw new InvalidOperationException("Expected prehire worker user.10003 was not found in the mock fixture document.");
+
+        prehire["startDate"] = futureStartDate;
+
+        var tempPath = Path.Combine(Path.GetTempPath(), $"mock-successfactors-fixtures-{Guid.NewGuid():N}.json");
+        File.WriteAllText(tempPath, document.ToJsonString(new JsonSerializerOptions()));
+        return (tempPath, futureStartDate);
     }
 }
