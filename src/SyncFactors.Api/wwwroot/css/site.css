@@ -470,19 +470,19 @@ a:focus-visible {
 }
 
 .sync-dashboard-grid {
-  grid-template-columns: repeat(12, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .sync-current-run-panel {
-  grid-column: span 5;
+  grid-column: span 1;
 }
 
 .sync-ad-hoc-panel {
-  grid-column: span 3;
+  grid-column: span 1;
 }
 
 .sync-schedule-panel {
-  grid-column: span 4;
+  grid-column: span 1;
 }
 
 .sync-dashboard-grid .kv dd {
