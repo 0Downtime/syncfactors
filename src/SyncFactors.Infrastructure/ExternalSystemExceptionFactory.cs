@@ -5,6 +5,9 @@ namespace SyncFactors.Infrastructure;
 internal static class ExternalSystemExceptionFactory
 {
     public static InvalidOperationException CreateActiveDirectoryException(string operation, string server, Exception exception)
+        => CreateActiveDirectoryException(operation, server, exception, details: null);
+
+    public static InvalidOperationException CreateActiveDirectoryException(string operation, string server, Exception exception, string? details)
     {
         var summary = exception switch
         {
@@ -20,7 +23,7 @@ internal static class ExternalSystemExceptionFactory
         };
 
         return new InvalidOperationException(
-            $"Active Directory {operation} failed against LDAP server '{server}'. {summary} Next check: {guidance}",
+            $"Active Directory {operation} failed against LDAP server '{server}'. {summary}{FormatDetails(details)} Next check: {guidance}",
             exception);
     }
 
@@ -106,5 +109,12 @@ internal static class ExternalSystemExceptionFactory
         }
 
         return "Confirm the endpoint URL, authentication settings, and selected field paths for this tenant.";
+    }
+
+    private static string FormatDetails(string? details)
+    {
+        return string.IsNullOrWhiteSpace(details)
+            ? " "
+            : $" Details: {details} ";
     }
 }

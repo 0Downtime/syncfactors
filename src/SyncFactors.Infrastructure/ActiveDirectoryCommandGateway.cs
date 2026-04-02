@@ -151,8 +151,19 @@ public sealed class ActiveDirectoryCommandGateway(
         var currentCn = existing.Attributes.TryGetValue("cn", out var resolvedCn) ? resolvedCn : null;
         if (!string.Equals(currentCn, command.DisplayName, StringComparison.Ordinal))
         {
-            RenameUser(connection, distinguishedName, command.DisplayName, logger, command.WorkerId);
-            distinguishedName = BuildRenamedDistinguishedName(distinguishedName, command.DisplayName);
+            try
+            {
+                RenameUser(connection, distinguishedName, command.DisplayName, logger, command.WorkerId);
+                distinguishedName = BuildRenamedDistinguishedName(distinguishedName, command.DisplayName);
+            }
+            catch (Exception ex) when (ex is LdapException or DirectoryOperationException)
+            {
+                throw ExternalSystemExceptionFactory.CreateActiveDirectoryException(
+                    "command 'UpdateUser'",
+                    config.Server,
+                    ex,
+                    BuildUpdateRenameFailureDetails(command, distinguishedName, currentCn));
+            }
         }
 
         var request = new ModifyRequest(distinguishedName);
@@ -186,7 +197,19 @@ public sealed class ActiveDirectoryCommandGateway(
         }
 
         LogRequestModifications("UpdateUser", command.WorkerId, request.Modifications, logger);
-        ExecuteModify(connection, request, logger, "update user modify request", ("WorkerId", command.WorkerId), ("SamAccountName", command.SamAccountName));
+        try
+        {
+            ExecuteModify(connection, request, logger, "update user modify request", ("WorkerId", command.WorkerId), ("SamAccountName", command.SamAccountName));
+        }
+        catch (Exception ex) when (ex is LdapException or DirectoryOperationException)
+        {
+            throw ExternalSystemExceptionFactory.CreateActiveDirectoryException(
+                "command 'UpdateUser'",
+                config.Server,
+                ex,
+                BuildUpdateModifyFailureDetails(command, distinguishedName, request.Modifications));
+        }
+
         return new DirectoryCommandResult(true, command.Action, command.SamAccountName, distinguishedName, $"Updated AD user {command.SamAccountName}.", null);
     }
 
@@ -598,5 +621,25 @@ public sealed class ActiveDirectoryCommandGateway(
             action,
             workerId,
             string.Join(", ", modifications.Cast<DirectoryAttributeModification>().Select(modification => modification.Name)));
+    }
+
+    private static string BuildUpdateRenameFailureDetails(DirectoryMutationCommand command, string distinguishedName, string? currentCn)
+    {
+        return $"Step=RenameUser WorkerId={command.WorkerId} SamAccountName={command.SamAccountName} DistinguishedName={distinguishedName} CurrentCn={FormatDetailValue(currentCn)} DesiredCn={FormatDetailValue(command.DisplayName)}";
+    }
+
+    private static string BuildUpdateModifyFailureDetails(DirectoryMutationCommand command, string distinguishedName, DirectoryAttributeModificationCollection modifications)
+    {
+        return $"Step=ModifyAttributes WorkerId={command.WorkerId} SamAccountName={command.SamAccountName} DistinguishedName={distinguishedName} Attributes={FormatModificationAttributeNames(modifications)} ManagerId={FormatDetailValue(command.ManagerId)}";
+    }
+
+    private static string FormatModificationAttributeNames(DirectoryAttributeModificationCollection modifications)
+    {
+        return string.Join(",", modifications.Cast<DirectoryAttributeModification>().Select(modification => modification.Name));
+    }
+
+    private static string FormatDetailValue(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? "(unset)" : value;
     }
 }
