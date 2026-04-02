@@ -342,6 +342,10 @@ a:focus-visible {
 .hero {
   margin-bottom: 18px;
   padding: 24px 26px;
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(320px, 0.95fr);
+  gap: 24px;
+  align-items: start;
   background:
     linear-gradient(135deg, rgba(0, 120, 212, 0.12), rgba(0, 120, 212, 0.03) 22%, transparent 22%),
     linear-gradient(180deg, var(--panel) 0%, var(--panel-alt) 100%);
@@ -373,6 +377,30 @@ a:focus-visible {
 .hero-actions {
   display: flex;
   gap: 10px;
+}
+
+.hero-main {
+  display: grid;
+  gap: 18px;
+}
+
+.hero-run-health {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.2), transparent),
+    color-mix(in srgb, var(--panel) 82%, var(--panel-alt) 18%);
+}
+
+.hero-run-health-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
 }
 
 .panel-grid {
@@ -467,6 +495,7 @@ a:focus-visible {
 
 .dashboard-grid {
   align-items: start;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
 }
 
 .sync-dashboard-grid {
@@ -497,11 +526,28 @@ a:focus-visible {
   gap: 14px;
 }
 
+.run-health-stack-compact {
+  gap: 10px;
+}
+
 .run-health-card {
   padding: 14px;
   border: 1px solid var(--line);
   border-radius: 4px;
   background: var(--panel-alt);
+}
+
+.run-health-stack-compact .run-health-card {
+  padding: 12px 14px;
+}
+
+.run-health-stack-compact .run-health-card p {
+  margin-top: 8px;
+  margin-bottom: 0;
+}
+
+.recent-runs-panel {
+  min-width: 0;
 }
 
 .dashboard-refresh-note,
@@ -962,6 +1008,10 @@ a:focus-visible {
 }
 
 @media (max-width: 780px) {
+  .dashboard-grid {
+    grid-template-columns: 1fr;
+  }
+
   .sync-dashboard-grid {
     grid-template-columns: 1fr;
   }
@@ -973,12 +1023,18 @@ a:focus-visible {
   }
 
   .topbar,
+  .hero,
   .hero-compact,
   .entry-head,
   .section-heading,
   .connection-head {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  .hero {
+    display: grid;
+    grid-template-columns: 1fr;
   }
 
   .topbar-actions,
@@ -1095,6 +1151,10 @@ a:focus-visible {
 }
 
 @media (max-width: 1180px) {
+  .dashboard-grid {
+    grid-template-columns: 1fr;
+  }
+
   .sync-dashboard-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
