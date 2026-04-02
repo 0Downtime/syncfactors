@@ -1,0 +1,428 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  color: #1d1d1f;
+  background: #f5f5f7;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  --background: oklch(0.97 0 0);
+  --foreground: oklch(0.18 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.18 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.18 0 0);
+  --primary: oklch(0.56 0.19 252);
+  --primary-foreground: oklch(0.99 0 0);
+  --secondary: oklch(0.965 0 0);
+  --secondary-foreground: oklch(0.18 0 0);
+  --muted: oklch(0.965 0 0);
+  --muted-foreground: oklch(0.5 0 0);
+  --accent: oklch(0.965 0 0);
+  --accent-foreground: oklch(0.18 0 0);
+  --destructive: oklch(0.62 0.22 24);
+  --border: oklch(0.9 0 0);
+  --input: oklch(0.9 0 0);
+  --ring: oklch(0.56 0.19 252);
+  --radius: 0.5rem;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family:
+    "SF Pro Text",
+    "SF Pro Display",
+    "SF Pro Icons",
+    "Helvetica Neue",
+    Helvetica,
+    Arial,
+    sans-serif;
+  font-size: 17px;
+  line-height: 1.47;
+  letter-spacing: -0.022em;
+  background: #f5f5f7;
+  color: #1d1d1f;
+}
+
+@theme inline {
+  --font-sans:
+    "SF Pro Text",
+    "SF Pro Display",
+    "SF Pro Icons",
+    "Helvetica Neue",
+    Helvetica,
+    Arial,
+    sans-serif;
+  --font-heading:
+    "SF Pro Display",
+    "SF Pro Icons",
+    "Helvetica Neue",
+    Helvetica,
+    Arial,
+    sans-serif;
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --color-foreground: var(--foreground);
+  --color-background: var(--background);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+  }
+
+  a {
+    color: #06c;
+    text-decoration: none;
+  }
+
+  a:hover {
+    text-decoration: underline;
+  }
+}
+
+@layer components {
+  .vf-eyebrow {
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1.33;
+    letter-spacing: -0.01em;
+    text-transform: uppercase;
+    color: #06c;
+  }
+
+  .vf-eyebrow-dark {
+    color: rgba(255, 255, 255, 0.72);
+  }
+
+  .vf-nav-link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    height: 32px;
+    padding: 0 12px;
+    border-radius: 999px;
+    color: rgba(255, 255, 255, 0.84);
+    font-size: 12px;
+    letter-spacing: -0.01em;
+  }
+
+  .vf-nav-link:hover {
+    background: rgba(255, 255, 255, 0.08);
+    color: #fff;
+    text-decoration: none;
+  }
+
+  .vf-nav-button {
+    height: 32px;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    background: rgba(255, 255, 255, 0.08);
+    color: #fff;
+    padding-inline: 14px;
+    font-size: 12px;
+    font-weight: 400;
+    letter-spacing: -0.01em;
+  }
+
+  .vf-nav-button:hover {
+    background: rgba(255, 255, 255, 0.14);
+  }
+
+  .vf-nav-badge {
+    height: 22px;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    background: rgba(255, 255, 255, 0.08);
+    color: rgba(255, 255, 255, 0.72);
+    padding-inline: 10px;
+    font-size: 12px;
+    font-weight: 400;
+    letter-spacing: -0.01em;
+  }
+
+  .vf-scroll-target {
+    scroll-margin-top: 88px;
+  }
+
+  .vf-hero {
+    display: flex;
+    justify-content: space-between;
+    gap: 24px;
+    border-radius: 36px;
+    background: #000;
+    padding: 48px 52px;
+    color: #fff;
+  }
+
+  .vf-hero-title {
+    margin-top: 6px;
+    font-family:
+      "SF Pro Display",
+      "SF Pro Icons",
+      "Helvetica Neue",
+      Helvetica,
+      Arial,
+      sans-serif;
+    font-size: clamp(2.8rem, 6vw, 4.25rem);
+    font-weight: 600;
+    line-height: 1.07;
+    letter-spacing: -0.03em;
+  }
+
+  .vf-hero-lede {
+    margin-top: 12px;
+    max-width: 54rem;
+    color: rgba(255, 255, 255, 0.76);
+    font-size: 21px;
+    line-height: 1.19;
+    letter-spacing: 0.01em;
+  }
+
+  .vf-primary-button {
+    min-height: 44px;
+    border-radius: 999px;
+    background: #0071e3;
+    color: #fff;
+    padding-inline: 18px;
+    font-size: 17px;
+    font-weight: 400;
+    letter-spacing: -0.022em;
+  }
+
+  .vf-primary-button:hover {
+    background: #0077ed;
+  }
+
+  .vf-panel-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
+    gap: 20px;
+  }
+
+  .vf-panel {
+    border-radius: 32px;
+    background: #fff;
+    padding: 30px 32px;
+    box-shadow: rgba(0, 0, 0, 0.12) 3px 5px 30px 0;
+  }
+
+  .vf-panel-title {
+    font-family:
+      "SF Pro Display",
+      "SF Pro Icons",
+      "Helvetica Neue",
+      Helvetica,
+      Arial,
+      sans-serif;
+    font-size: clamp(1.9rem, 3vw, 2.5rem);
+    font-weight: 600;
+    line-height: 1.1;
+    letter-spacing: -0.02em;
+    color: #1d1d1f;
+  }
+
+  .vf-section-title {
+    margin-top: 4px;
+    font-family:
+      "SF Pro Display",
+      "SF Pro Icons",
+      "Helvetica Neue",
+      Helvetica,
+      Arial,
+      sans-serif;
+    font-size: 28px;
+    font-weight: 400;
+    line-height: 1.14;
+    letter-spacing: 0.01em;
+    color: #1d1d1f;
+  }
+
+  .vf-kv {
+    margin-top: 18px;
+  }
+
+  .vf-kv div {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 11px 0;
+    border-bottom: 1px solid rgba(29, 29, 31, 0.08);
+  }
+
+  .vf-kv dt {
+    flex: 0 0 128px;
+    font-weight: 600;
+    color: #1d1d1f;
+  }
+
+  .vf-kv dd {
+    margin: 0;
+    min-width: 0;
+    text-align: right;
+    color: rgba(0, 0, 0, 0.62);
+  }
+
+  .vf-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 28px;
+    border-radius: 999px;
+    padding: 0 12px;
+    font-size: 12px;
+    font-weight: 400;
+    letter-spacing: -0.01em;
+  }
+
+  .vf-badge.good {
+    background: rgba(29, 155, 77, 0.14);
+    color: #1d9b4d;
+  }
+
+  .vf-badge.warn {
+    background: rgba(166, 106, 0, 0.14);
+    color: #a66a00;
+  }
+
+  .vf-badge.bad {
+    background: rgba(201, 52, 47, 0.14);
+    color: #c9342f;
+  }
+
+  .vf-badge.neutral {
+    background: rgba(0, 113, 227, 0.1);
+    color: #06c;
+  }
+
+  .vf-callout {
+    border-radius: 24px;
+    padding: 16px 18px;
+    font-size: 17px;
+    line-height: 1.47;
+    letter-spacing: -0.022em;
+  }
+
+  .vf-callout-danger {
+    background: rgba(201, 52, 47, 0.1);
+    color: #c9342f;
+  }
+
+  .vf-connection-segment {
+    height: 10px;
+    border-radius: 999px;
+    background: rgba(29, 29, 31, 0.12);
+  }
+
+  .vf-connection-segment.good {
+    background: #1d9b4d;
+  }
+
+  .vf-connection-segment.warn {
+    background: #a66a00;
+  }
+
+  .vf-connection-segment.bad {
+    background: #c9342f;
+  }
+
+  .vf-connection-card,
+  .vf-run-health-card {
+    border-radius: 24px;
+    background: #f5f5f7;
+    padding: 20px 22px;
+  }
+
+  .vf-connection-title {
+    font-family:
+      "SF Pro Display",
+      "SF Pro Icons",
+      "Helvetica Neue",
+      Helvetica,
+      Arial,
+      sans-serif;
+    font-size: 21px;
+    font-weight: 600;
+    line-height: 1.19;
+    letter-spacing: 0.01em;
+    color: #1d1d1f;
+  }
+
+  .vf-inline-link {
+    color: #06c;
+    font-size: 14px;
+    line-height: 1.43;
+    letter-spacing: -0.016em;
+  }
+
+  .vf-table {
+    width: 100%;
+    min-width: 860px;
+    border-collapse: collapse;
+    overflow: hidden;
+    border-radius: 24px;
+    background: #f5f5f7;
+  }
+
+  .vf-table th,
+  .vf-table td {
+    padding: 12px 10px;
+    border-bottom: 1px solid rgba(29, 29, 31, 0.08);
+    text-align: left;
+    vertical-align: top;
+    font-size: 14px;
+    line-height: 1.43;
+    letter-spacing: -0.016em;
+  }
+
+  .vf-table th {
+    color: rgba(0, 0, 0, 0.56);
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    background: rgba(255, 255, 255, 0.64);
+  }
+}
+
+@media (max-width: 900px) {
+  .vf-hero {
+    flex-direction: column;
+    padding: 34px 24px;
+  }
+
+  .vf-panel {
+    padding: 24px 22px;
+  }
+
+  .vf-scroll-target {
+    scroll-margin-top: 96px;
+  }
+}
