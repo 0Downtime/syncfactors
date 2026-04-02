@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
+using SyncFactors.Api;
 using SyncFactors.Api.Pages;
 using SyncFactors.Contracts;
 using SyncFactors.Domain;
@@ -92,6 +93,41 @@ public sealed class PreviewModelTests
         Assert.Null(model.Preview);
     }
 
+    [Fact]
+    public async Task OnPostApplyAsync_ParsesActiveDirectoryFailureDiagnostics()
+    {
+        var preview = CreatePreview(workerId: "10001");
+        var applyService = new ThrowingApplyPreviewService(new InvalidOperationException(
+            "Active Directory command 'UpdateUser' failed against LDAP server 'localhost'. The server cannot handle directory requests. Details: Step=ModifyAttributes WorkerId=10001 SamAccountName=winnie DistinguishedName=CN=Sample101\\, Winnie,OU=LabUsers,DC=example,DC=com Attributes=displayName,department,company,streetAddress ManagerId=90001 Next check: Check the target OU, manager resolution, and whether the account already exists with unexpected state."));
+        var model = new PreviewModel(new CapturingWorkerPreviewPlanner(preview), applyService, new StubRunRepository(preview))
+        {
+            WorkerId = "10001",
+            PreviewRunId = preview.RunId!,
+            PreviewFingerprint = preview.Fingerprint,
+            AcknowledgeRealSync = true
+        };
+
+        var result = await model.OnPostApplyAsync(CancellationToken.None);
+
+        Assert.IsType<PageResult>(result);
+        Assert.NotNull(model.ErrorDiagnostics);
+        Assert.Equal("Check the target OU, manager resolution, and whether the account already exists with unexpected state.", model.ErrorDiagnostics!.Guidance);
+        Assert.Contains(model.ErrorDiagnostics.Details, item => item.Label == "Step" && item.Value == "ModifyAttributes");
+        Assert.Contains(model.ErrorDiagnostics.Details, item => item.Label == "Attributes" && item.Value == "displayName,department,company,streetAddress");
+        Assert.Contains(model.ErrorDiagnostics.Details, item => item.Label == "Manager ID" && item.Value == "90001");
+    }
+
+    [Fact]
+    public void ActiveDirectoryFailureDiagnostics_Parse_HandlesDisplayNameWithSpaces()
+    {
+        var diagnostics = ActiveDirectoryFailureDiagnostics.Parse(
+            "Active Directory command 'UpdateUser' failed against LDAP server 'localhost'. The server cannot handle directory requests. Details: Step=RenameUser WorkerId=10001 SamAccountName=winnie DistinguishedName=CN=Old\\, Name,OU=LabUsers,DC=example,DC=com CurrentCn=Old\\, Name DesiredCn=Doe, Winnie Attributes=displayName Next check: Check the target OU.");
+
+        Assert.NotNull(diagnostics);
+        Assert.Contains(diagnostics!.Details, item => item.Label == "Desired CN" && item.Value == "Doe, Winnie");
+        Assert.Contains(diagnostics.Details, item => item.Label == "Current CN" && item.Value == "Old\\, Name");
+    }
+
     private static WorkerPreviewResult CreatePreview(string workerId)
     {
         return new WorkerPreviewResult(
@@ -170,6 +206,16 @@ public sealed class PreviewModelTests
             _ = request;
             _ = cancellationToken;
             throw new InvalidOperationException("Apply should not be called in this test.");
+        }
+    }
+
+    private sealed class ThrowingApplyPreviewService(Exception exception) : IApplyPreviewService
+    {
+        public Task<DirectoryCommandResult> ApplyAsync(ApplyPreviewRequest request, CancellationToken cancellationToken)
+        {
+            _ = request;
+            _ = cancellationToken;
+            return Task.FromException<DirectoryCommandResult>(exception);
         }
     }
 

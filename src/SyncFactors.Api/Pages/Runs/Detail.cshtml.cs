@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
+using SyncFactors.Api;
 using SyncFactors.Contracts;
 using SyncFactors.Domain;
 
@@ -37,6 +38,9 @@ public sealed class DetailModel(IRunRepository runRepository) : PageModel
     public bool HasPreviousPage => PageNumber > 1;
 
     public bool HasNextPage => PageNumber < TotalPages;
+
+    public FailureDiagnostics? GetFailureDiagnostics(RunEntry entry)
+        => ActiveDirectoryFailureDiagnostics.Parse(entry.Reason ?? entry.FailureSummary);
 
     public async Task<IActionResult> OnGetAsync(CancellationToken cancellationToken)
     {
