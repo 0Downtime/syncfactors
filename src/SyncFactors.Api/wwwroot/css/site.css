@@ -341,10 +341,10 @@ a:focus-visible {
 
 .hero {
   margin-bottom: 18px;
-  padding: 24px 26px;
+  padding: 20px 22px;
   display: grid;
-  grid-template-columns: minmax(0, 1.6fr) minmax(320px, 0.95fr);
-  gap: 24px;
+  grid-template-columns: minmax(0, 1.85fr) minmax(280px, 0.8fr);
+  gap: 18px;
   align-items: start;
   background:
     linear-gradient(135deg, rgba(0, 120, 212, 0.12), rgba(0, 120, 212, 0.03) 22%, transparent 22%),
@@ -371,7 +371,7 @@ a:focus-visible {
 
 .lede {
   max-width: 72ch;
-  margin: 10px 0 0;
+  margin: 8px 0 0;
 }
 
 .hero-actions {
@@ -381,14 +381,16 @@ a:focus-visible {
 
 .hero-main {
   display: grid;
-  gap: 18px;
+  gap: 14px;
 }
 
 .hero-run-health {
   display: grid;
-  gap: 14px;
+  gap: 10px;
   min-width: 0;
-  padding: 18px;
+  width: min(100%, 560px);
+  justify-self: end;
+  padding: 14px 16px;
   border: 1px solid var(--line);
   border-radius: 6px;
   background:
@@ -400,7 +402,7 @@ a:focus-visible {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
 }
 
 .panel-grid {
@@ -527,7 +529,7 @@ a:focus-visible {
 }
 
 .run-health-stack-compact {
-  gap: 10px;
+  gap: 8px;
 }
 
 .run-health-card {
@@ -538,11 +540,11 @@ a:focus-visible {
 }
 
 .run-health-stack-compact .run-health-card {
-  padding: 12px 14px;
+  padding: 10px 12px;
 }
 
 .run-health-stack-compact .run-health-card p {
-  margin-top: 8px;
+  margin-top: 6px;
   margin-bottom: 0;
 }
 
