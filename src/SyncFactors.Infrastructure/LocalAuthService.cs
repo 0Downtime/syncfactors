@@ -151,6 +151,44 @@ public sealed class LocalAuthService(
         return LocalUserCommandResult.Success($"Password reset for '{user.Username}'.");
     }
 
+    public async Task<LocalUserCommandResult> SetUserRoleAsync(string userId, bool isAdmin, string actingUserId, CancellationToken cancellationToken)
+    {
+        if (string.Equals(userId, actingUserId, StringComparison.Ordinal))
+        {
+            return LocalUserCommandResult.Failure("You cannot change your own role.");
+        }
+
+        var user = await userStore.FindByIdAsync(userId, cancellationToken);
+        if (user is null)
+        {
+            return LocalUserCommandResult.Failure("User could not be found.");
+        }
+
+        var targetRole = isAdmin ? "Admin" : "Operator";
+        if (string.Equals(user.Role, targetRole, StringComparison.OrdinalIgnoreCase))
+        {
+            return LocalUserCommandResult.Success($"User '{user.Username}' is already an {targetRole.ToLowerInvariant()}.");
+        }
+
+        if (!isAdmin)
+        {
+            var adminProtection = await ValidateAdminProtectionAsync(user, cancellationToken);
+            if (adminProtection is not null)
+            {
+                return adminProtection;
+            }
+        }
+
+        var now = timeProvider.GetUtcNow();
+        await userStore.UpdateAsync(user with
+        {
+            Role = targetRole,
+            UpdatedAt = now
+        }, cancellationToken);
+
+        return LocalUserCommandResult.Success($"User '{user.Username}' role changed to {targetRole}.");
+    }
+
     public async Task<LocalUserCommandResult> SetUserActiveStateAsync(string userId, bool isActive, string actingUserId, CancellationToken cancellationToken)
     {
         if (string.Equals(userId, actingUserId, StringComparison.Ordinal))

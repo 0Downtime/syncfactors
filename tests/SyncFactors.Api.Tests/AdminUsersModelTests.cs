@@ -71,6 +71,20 @@ public sealed class AdminUsersModelTests
         Assert.Equal("admin-1", service.LastActingUserId);
     }
 
+    [Fact]
+    public async Task OnPostChangeRoleAsync_UsesRequestedRoleAndActor()
+    {
+        var service = new StubAdminAuthService();
+        var model = CreateModel(service, "admin-1");
+
+        var result = await model.OnPostChangeRoleAsync("user-2", true, CancellationToken.None);
+
+        Assert.IsType<RedirectToPageResult>(result);
+        Assert.Equal("user-2", service.LastRoleUserId);
+        Assert.True(service.LastMakeAdmin);
+        Assert.Equal("admin-1", service.LastActingUserId);
+    }
+
     private static UsersModel CreateModel(StubAdminAuthService service, string actingUserId = "admin-1")
     {
         return new UsersModel(service)
@@ -99,6 +113,10 @@ public sealed class AdminUsersModelTests
         public bool LastCreateIsAdmin { get; private set; }
 
         public string? LastResetUserId { get; private set; }
+
+        public string? LastRoleUserId { get; private set; }
+
+        public bool LastMakeAdmin { get; private set; }
 
         public string? LastDeleteUserId { get; private set; }
 
@@ -153,6 +171,15 @@ public sealed class AdminUsersModelTests
             _ = cancellationToken;
             LastResetUserId = userId;
             return Task.FromResult(LocalUserCommandResult.Success("reset"));
+        }
+
+        public Task<LocalUserCommandResult> SetUserRoleAsync(string userId, bool isAdmin, string actingUserId, CancellationToken cancellationToken)
+        {
+            LastRoleUserId = userId;
+            LastMakeAdmin = isAdmin;
+            LastActingUserId = actingUserId;
+            _ = cancellationToken;
+            return Task.FromResult(LocalUserCommandResult.Success("role"));
         }
 
         public Task<LocalUserCommandResult> SetUserActiveStateAsync(string userId, bool isActive, string actingUserId, CancellationToken cancellationToken)

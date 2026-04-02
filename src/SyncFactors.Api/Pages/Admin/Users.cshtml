@@ -87,7 +87,14 @@
             {
                 <tr>
                     <td>@user.Username</td>
-                    <td>@user.Role</td>
+                    <td>
+                        <form method="post" asp-page-handler="ChangeRole" class="admin-user-role-form">
+                            <input type="hidden" name="userId" value="@user.UserId" />
+                            <input type="hidden" name="makeAdmin" value="@(string.Equals(user.Role, "Admin", StringComparison.OrdinalIgnoreCase) ? "false" : "true")" />
+                            <span class="badge @(string.Equals(user.Role, "Admin", StringComparison.OrdinalIgnoreCase) ? "info" : "neutral")">@user.Role</span>
+                            <button type="submit" class="link-button">@(string.Equals(user.Role, "Admin", StringComparison.OrdinalIgnoreCase) ? "Make regular" : "Make admin")</button>
+                        </form>
+                    </td>
                     <td>
                         <span class="badge @(user.IsActive ? "good" : "dim")">@(user.IsActive ? "Active" : "Inactive")</span>
                     </td>

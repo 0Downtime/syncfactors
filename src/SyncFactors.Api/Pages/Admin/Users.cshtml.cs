@@ -62,6 +62,13 @@ public sealed class UsersModel(ILocalAuthService localAuthService) : PageModel
         return RedirectToPage();
     }
 
+    public async Task<IActionResult> OnPostChangeRoleAsync(string userId, bool makeAdmin, CancellationToken cancellationToken)
+    {
+        var result = await localAuthService.SetUserRoleAsync(userId, makeAdmin, GetActingUserId(), cancellationToken);
+        SetFlash(result);
+        return RedirectToPage();
+    }
+
     public async Task<IActionResult> OnPostToggleActiveAsync(string userId, bool makeActive, CancellationToken cancellationToken)
     {
         var result = await localAuthService.SetUserActiveStateAsync(userId, makeActive, GetActingUserId(), cancellationToken);

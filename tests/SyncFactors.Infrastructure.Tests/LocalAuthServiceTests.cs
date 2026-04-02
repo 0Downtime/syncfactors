@@ -167,6 +167,54 @@ public sealed class LocalAuthServiceTests
     }
 
     [Fact]
+    public async Task SetUserRoleAsync_PromotesOperatorToAdmin()
+    {
+        var databasePath = Path.Combine(Path.GetTempPath(), $"syncfactors-auth-role-up-{Guid.NewGuid():N}.db");
+
+        try
+        {
+            var store = await CreateStoreAsync(databasePath);
+            var service = CreateService(store, username: "admin", password: "Password123!");
+            await service.EnsureBootstrapAdminAsync(CancellationToken.None);
+            await service.CreateUserAsync("alice", "Password1234", isAdmin: false, CancellationToken.None);
+            var user = await store.FindByUsernameAsync("alice", CancellationToken.None);
+
+            var result = await service.SetUserRoleAsync(user!.UserId, true, "admin-id", CancellationToken.None);
+            var updated = await store.FindByUsernameAsync("alice", CancellationToken.None);
+
+            Assert.True(result.Succeeded);
+            Assert.Equal("Admin", updated!.Role);
+        }
+        finally
+        {
+            File.Delete(databasePath);
+        }
+    }
+
+    [Fact]
+    public async Task SetUserRoleAsync_ProtectsLastActiveAdminFromDemotion()
+    {
+        var databasePath = Path.Combine(Path.GetTempPath(), $"syncfactors-auth-role-down-{Guid.NewGuid():N}.db");
+
+        try
+        {
+            var store = await CreateStoreAsync(databasePath);
+            var service = CreateService(store, username: "admin", password: "Password123!");
+            await service.EnsureBootstrapAdminAsync(CancellationToken.None);
+            var admin = await store.FindByUsernameAsync("admin", CancellationToken.None);
+
+            var result = await service.SetUserRoleAsync(admin!.UserId, false, "someone-else", CancellationToken.None);
+
+            Assert.False(result.Succeeded);
+            Assert.Equal("At least one active admin account must remain.", result.Message);
+        }
+        finally
+        {
+            File.Delete(databasePath);
+        }
+    }
+
+    [Fact]
     public async Task SetUserActiveStateAsync_ProtectsLastActiveAdmin()
     {
         var databasePath = Path.Combine(Path.GetTempPath(), $"syncfactors-auth-protect-{Guid.NewGuid():N}.db");

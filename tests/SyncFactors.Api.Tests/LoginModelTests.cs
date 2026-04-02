@@ -192,6 +192,15 @@ public sealed class LoginModelTests
             return Task.FromResult(LocalUserCommandResult.Success("reset"));
         }
 
+        public Task<LocalUserCommandResult> SetUserRoleAsync(string userId, bool isAdmin, string actingUserId, CancellationToken cancellationToken)
+        {
+            _ = userId;
+            _ = isAdmin;
+            _ = actingUserId;
+            _ = cancellationToken;
+            return Task.FromResult(LocalUserCommandResult.Success("role"));
+        }
+
         public Task<LocalUserCommandResult> SetUserActiveStateAsync(string userId, bool isActive, string actingUserId, CancellationToken cancellationToken)
         {
             _ = userId;
