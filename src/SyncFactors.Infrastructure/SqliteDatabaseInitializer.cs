@@ -5,7 +5,7 @@ namespace SyncFactors.Infrastructure;
 
 public sealed class SqliteDatabaseInitializer(SqlitePathResolver pathResolver)
 {
-    private const int CurrentSchemaVersion = 6;
+    private const int CurrentSchemaVersion = 7;
 
     public async Task InitializeAsync(CancellationToken cancellationToken)
     {
@@ -74,6 +74,12 @@ public sealed class SqliteDatabaseInitializer(SqlitePathResolver pathResolver)
         {
             await ApplyVersion6Async(connection, transaction, cancellationToken);
             await InsertVersionAsync(connection, transaction, 6, cancellationToken);
+        }
+
+        if (!appliedVersions.Contains(7))
+        {
+            await ApplyVersion7Async(connection, transaction, cancellationToken);
+            await InsertVersionAsync(connection, transaction, 7, cancellationToken);
         }
 
         await transaction.CommitAsync(cancellationToken);
@@ -370,6 +376,33 @@ public sealed class SqliteDatabaseInitializer(SqlitePathResolver pathResolver)
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
+    private static async Task ApplyVersion7Async(
+        SqliteConnection connection,
+        DbTransaction transaction,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = (SqliteTransaction)transaction;
+        command.CommandText =
+            """
+            CREATE TABLE IF NOT EXISTS local_users (
+              user_id TEXT NOT NULL PRIMARY KEY,
+              username TEXT NOT NULL,
+              normalized_username TEXT NOT NULL,
+              password_hash TEXT NOT NULL,
+              role TEXT NOT NULL,
+              is_active INTEGER NOT NULL DEFAULT 1,
+              created_at TEXT NOT NULL,
+              updated_at TEXT NOT NULL,
+              last_login_at TEXT NULL
+            );
+
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_local_users_normalized_username
+              ON local_users (normalized_username);
+            """;
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
     private static async Task<HashSet<int>> GetAppliedVersionsAsync(
         SqliteConnection connection,
         DbTransaction transaction,
@@ -408,6 +441,7 @@ public sealed class SqliteDatabaseInitializer(SqlitePathResolver pathResolver)
             "schema_versions" => "PRAGMA table_info(schema_versions);",
             "sync_schedule" => "PRAGMA table_info(sync_schedule);",
             "worker_heartbeat" => "PRAGMA table_info(worker_heartbeat);",
+            "local_users" => "PRAGMA table_info(local_users);",
             _ => throw new InvalidOperationException($"Unsupported table name '{tableName}' for schema inspection.")
         };
 

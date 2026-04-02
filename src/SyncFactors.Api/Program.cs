@@ -1,3 +1,8 @@
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc.Authorization;
+using System.Security.Claims;
 using SyncFactors.Contracts;
 using SyncFactors.Domain;
 using SyncFactors.Infrastructure;
@@ -10,9 +15,13 @@ builder.Services.AddSingleton(new SyncFactorsConfigPathResolver(
     builder.Configuration["SyncFactors:ConfigPath"],
     builder.Configuration["SyncFactors:MappingConfigPath"]));
 builder.Services.AddSingleton(new ScaffoldDataPathResolver(builder.Configuration["SyncFactors:ScaffoldDataPath"]));
+builder.Services.Configure<LocalAuthOptions>(builder.Configuration.GetSection("SyncFactors:Auth"));
 builder.Services.AddSingleton<SqliteDatabaseInitializer>();
 builder.Services.AddSingleton<SyncFactorsConfigurationLoader>();
 builder.Services.AddSingleton<SyncFactorsConfigurationValidator>();
+builder.Services.AddSingleton<ILocalUserStore, SqliteLocalUserStore>();
+builder.Services.AddSingleton<ILocalAuthService, LocalAuthService>();
+builder.Services.AddSingleton<Microsoft.AspNetCore.Identity.IPasswordHasher<LocalUserRecord>, Microsoft.AspNetCore.Identity.PasswordHasher<LocalUserRecord>>();
 builder.Services.AddSingleton<ScaffoldDataStore>();
 builder.Services.AddSingleton<ScaffoldWorkerSource>();
 builder.Services.AddSingleton(serviceProvider =>
@@ -64,17 +73,76 @@ builder.Services.AddSingleton<IRunQueueStore, SqliteRunQueueStore>();
 builder.Services.AddSingleton<ISyncScheduleStore, SqliteSyncScheduleStore>();
 builder.Services.AddTransient<IWorkerPlanningService, WorkerPlanningService>();
 builder.Services.AddSingleton<IDirectoryMutationCommandBuilder, DirectoryMutationCommandBuilder>();
-builder.Services.AddRazorPages();
+builder.Services
+    .AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
+    .AddCookie(options =>
+    {
+        options.LoginPath = "/Login";
+        options.AccessDeniedPath = "/Login";
+        options.Cookie.Name = "SyncFactors.Auth";
+        options.Cookie.HttpOnly = true;
+        options.Cookie.SameSite = SameSiteMode.Lax;
+        options.Cookie.SecurePolicy = builder.Environment.IsDevelopment()
+            ? CookieSecurePolicy.SameAsRequest
+            : CookieSecurePolicy.Always;
+        options.SlidingExpiration = true;
+        options.ExpireTimeSpan = TimeSpan.FromDays(30);
+        options.Events = new CookieAuthenticationEvents
+        {
+            OnRedirectToLogin = context => HandleAuthRedirectAsync(context, StatusCodes.Status401Unauthorized),
+            OnRedirectToAccessDenied = context => HandleAuthRedirectAsync(context, StatusCodes.Status403Forbidden),
+            OnValidatePrincipal = async context =>
+            {
+                var userId = context.Principal?.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+                if (string.IsNullOrWhiteSpace(userId))
+                {
+                    context.RejectPrincipal();
+                    await context.HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+                    return;
+                }
+
+                var authService = context.HttpContext.RequestServices.GetRequiredService<ILocalAuthService>();
+                var currentUser = await authService.FindUserByIdAsync(userId, context.HttpContext.RequestAborted);
+                if (currentUser is null || !currentUser.IsActive)
+                {
+                    context.RejectPrincipal();
+                    await context.HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+                    return;
+                }
+
+                var identity = context.Principal?.Identity as ClaimsIdentity;
+                if (identity is null)
+                {
+                    return;
+                }
+
+                ReplaceClaim(identity, ClaimTypes.Name, currentUser.Username);
+                ReplaceClaim(identity, ClaimTypes.Role, currentUser.Role);
+            }
+        };
+    });
+builder.Services.AddAuthorization();
+builder.Services.AddRazorPages(options =>
+{
+    options.Conventions.AuthorizeFolder("/");
+    options.Conventions.AllowAnonymousToPage("/Login");
+});
 
 var app = builder.Build();
 
 await app.Services.GetRequiredService<SqliteDatabaseInitializer>().InitializeAsync(CancellationToken.None);
+await app.Services.GetRequiredService<ILocalAuthService>().EnsureBootstrapAdminAsync(CancellationToken.None);
 app.Services.GetRequiredService<SyncFactorsConfigurationValidator>().Validate();
 LogConfiguredEndpoints(app);
 
 app.UseStaticFiles();
+app.UseAuthentication();
+app.UseAuthorization();
 
-app.MapGet("/api/status", async (IRuntimeStatusStore store, CancellationToken cancellationToken) =>
+var api = app.MapGroup("/api")
+    .RequireAuthorization();
+
+api.MapGet("/status", async (IRuntimeStatusStore store, CancellationToken cancellationToken) =>
 {
     var status = await store.GetCurrentAsync(cancellationToken)
         ?? new RuntimeStatus(
@@ -95,74 +163,76 @@ app.MapGet("/api/status", async (IRuntimeStatusStore store, CancellationToken ca
     return Results.Ok(new { status });
 });
 
-app.MapGet("/api/dashboard", async (IDashboardSnapshotService dashboardSnapshotService, CancellationToken cancellationToken) =>
+api.MapGet("/dashboard", async (IDashboardSnapshotService dashboardSnapshotService, CancellationToken cancellationToken) =>
 {
     var snapshot = await dashboardSnapshotService.GetSnapshotAsync(cancellationToken);
     return Results.Ok(snapshot);
 });
 
-app.MapGet("/api/health", async (IDependencyHealthService healthService, CancellationToken cancellationToken) =>
+api.MapGet("/health", async (IDependencyHealthService healthService, CancellationToken cancellationToken) =>
 {
     var snapshot = await healthService.GetSnapshotAsync(cancellationToken);
     return Results.Ok(snapshot);
 });
 
-app.MapGet("/api/runs", async (IRunRepository repository, CancellationToken cancellationToken) =>
+api.MapGet("/runs", async (IRunRepository repository, CancellationToken cancellationToken) =>
 {
     var runs = await repository.ListRunsAsync(cancellationToken);
     return Results.Ok(new { runs });
 });
 
-app.MapPost("/api/runs", async (StartRunRequest request, IRunQueueStore queueStore, CancellationToken cancellationToken) =>
+api.MapPost("/runs", async (StartRunRequest request, ClaimsPrincipal user, IRunQueueStore queueStore, CancellationToken cancellationToken) =>
 {
     if (await queueStore.HasPendingOrActiveRunAsync(cancellationToken))
     {
         return Results.Conflict(new { error = "A run is already pending or in progress." });
     }
 
-    var queued = await queueStore.EnqueueAsync(request, cancellationToken);
+    var queued = await queueStore.EnqueueAsync(
+        request with { RequestedBy = ResolveRequestedBy(user, request.RequestedBy ?? "API") },
+        cancellationToken);
     return Results.Accepted($"/api/runs/{queued.RequestId}", queued);
 });
 
-app.MapPost("/api/runs/cancel", async (IRunQueueStore queueStore, CancellationToken cancellationToken) =>
+api.MapPost("/runs/cancel", async (ClaimsPrincipal user, IRunQueueStore queueStore, CancellationToken cancellationToken) =>
 {
-    var canceled = await queueStore.CancelPendingOrActiveAsync("API", cancellationToken);
+    var canceled = await queueStore.CancelPendingOrActiveAsync(ResolveRequestedBy(user, "API"), cancellationToken);
     return canceled
         ? Results.Ok(new { status = "CancellationRequested" })
         : Results.NotFound(new { error = "No queued or active run was available to cancel." });
 });
 
-app.MapGet("/api/sync/schedule", async (ISyncScheduleStore scheduleStore, CancellationToken cancellationToken) =>
+api.MapGet("/sync/schedule", async (ISyncScheduleStore scheduleStore, CancellationToken cancellationToken) =>
 {
     var schedule = await scheduleStore.GetCurrentAsync(cancellationToken);
     return Results.Ok(new { schedule });
 });
 
-app.MapPut("/api/sync/schedule", async (UpdateSyncScheduleRequest request, ISyncScheduleStore scheduleStore, CancellationToken cancellationToken) =>
+api.MapPut("/sync/schedule", async (UpdateSyncScheduleRequest request, ISyncScheduleStore scheduleStore, CancellationToken cancellationToken) =>
 {
     var schedule = await scheduleStore.UpdateAsync(request, cancellationToken);
     return Results.Ok(new { schedule });
 });
 
-app.MapGet("/api/runs/{runId}", async (string runId, IRunRepository repository, CancellationToken cancellationToken) =>
+api.MapGet("/runs/{runId}", async (string runId, IRunRepository repository, CancellationToken cancellationToken) =>
 {
     var run = await repository.GetRunAsync(runId, cancellationToken);
     return run is null ? Results.NotFound() : Results.Ok(run);
 });
 
-app.MapGet("/api/previews/{runId}", async (string runId, IRunRepository repository, CancellationToken cancellationToken) =>
+api.MapGet("/previews/{runId}", async (string runId, IRunRepository repository, CancellationToken cancellationToken) =>
 {
     var preview = await repository.GetWorkerPreviewAsync(runId, cancellationToken);
     return preview is null ? Results.NotFound() : Results.Ok(preview);
 });
 
-app.MapGet("/api/workers/{workerId}/previews", async (string workerId, int? take, IRunRepository repository, CancellationToken cancellationToken) =>
+api.MapGet("/workers/{workerId}/previews", async (string workerId, int? take, IRunRepository repository, CancellationToken cancellationToken) =>
 {
     var history = await repository.ListWorkerPreviewHistoryAsync(workerId, take ?? 6, cancellationToken);
     return Results.Ok(new { workerId, previews = history });
 });
 
-app.MapGet("/api/runs/{runId}/entries", async (
+api.MapGet("/runs/{runId}/entries", async (
     string runId,
     string? bucket,
     string? workerId,
@@ -187,7 +257,7 @@ app.MapGet("/api/runs/{runId}/entries", async (
     return Results.Ok(new { run = run.Run, entries, total, page = resolvedPage, pageSize = resolvedPageSize });
 });
 
-app.MapPost("/api/preview/{workerId}/apply", async (
+api.MapPost("/preview/{workerId}/apply", async (
     string workerId,
     ApplyPreviewRequest request,
     IApplyPreviewService applyPreviewService,
@@ -204,7 +274,7 @@ app.MapPost("/api/preview/{workerId}/apply", async (
         : Results.BadRequest(result);
 });
 
-app.MapPost("/api/runs/full", async (
+api.MapPost("/runs/full", async (
     LaunchFullRunRequest request,
     IFullSyncRunService fullSyncRunService,
     CancellationToken cancellationToken) =>
@@ -244,6 +314,39 @@ static void LogConfiguredEndpoints(WebApplication app)
             "Active Directory is configured for authenticated LDAP on port 389 at '{ActiveDirectoryServer}'. If the directory requires LDAPS or LDAP signing, binds may fail until the connection settings are updated.",
             config.Ad.Server);
     }
+}
+
+static Task HandleAuthRedirectAsync(Microsoft.AspNetCore.Authentication.RedirectContext<CookieAuthenticationOptions> context, int statusCode)
+{
+    if (context.Request.Path.StartsWithSegments("/api", StringComparison.OrdinalIgnoreCase))
+    {
+        context.Response.StatusCode = statusCode;
+        return Task.CompletedTask;
+    }
+
+    context.Response.Redirect(context.RedirectUri);
+    return Task.CompletedTask;
+}
+
+static string ResolveRequestedBy(ClaimsPrincipal user, string fallback) =>
+    string.IsNullOrWhiteSpace(user.Identity?.Name)
+        ? fallback
+        : user.Identity!.Name!;
+
+static void ReplaceClaim(ClaimsIdentity identity, string claimType, string value)
+{
+    var existingClaim = identity.FindFirst(claimType);
+    if (existingClaim is not null && string.Equals(existingClaim.Value, value, StringComparison.Ordinal))
+    {
+        return;
+    }
+
+    if (existingClaim is not null)
+    {
+        identity.RemoveClaim(existingClaim);
+    }
+
+    identity.AddClaim(new Claim(claimType, value));
 }
 
 static string DescribeSuccessFactorsAccount(SuccessFactorsAuthConfig auth)

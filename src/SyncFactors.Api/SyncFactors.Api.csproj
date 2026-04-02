@@ -8,7 +8,10 @@
   <ItemGroup>
     <Compile Include="Program.cs" />
     <Compile Include="Pages\Index.cshtml.cs" />
+    <Compile Include="Pages\Admin\Users.cshtml.cs" />
+    <Compile Include="Pages\Login.cshtml.cs" />
     <Compile Include="Pages\Preview.cshtml.cs" />
+    <Compile Include="Pages\Logout.cshtml.cs" />
     <Compile Include="Pages\Runs\Detail.cshtml.cs" />
     <Compile Include="Pages\Sync.cshtml.cs" />
     <Content Include="appsettings.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Condition="Exists('appsettings.json')" />
