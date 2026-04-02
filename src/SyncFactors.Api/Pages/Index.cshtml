@@ -196,6 +196,26 @@
             }
         }
 
+        function runStatusClass(status) {
+            switch ((status || "").toLowerCase()) {
+                case "succeeded":
+                    return "good";
+                case "failed":
+                    return "bad";
+                case "inprogress":
+                    return "info";
+                case "planned":
+                case "pending":
+                case "cancelrequested":
+                    return "warn";
+                case "canceled":
+                case "cancelled":
+                    return "dim";
+                default:
+                    return "neutral";
+            }
+        }
+
         function formatTimestamp(value) {
             if (!value) {
                 return "Unknown";
@@ -267,7 +287,7 @@
                     "<td>" + formatTimestamp(run.startedAt) + "</td>" +
                     "<td>" + textOrFallback(run.runTrigger, "AdHoc") + "</td>" +
                     "<td>" + textOrFallback(run.mode, "Unknown") + "</td>" +
-                    "<td><span class=\"badge " + statusClass(run.status) + "\">" + textOrFallback(run.status, "Unknown") + "</span></td>" +
+                    "<td><span class=\"badge " + runStatusClass(run.status) + "\">" + textOrFallback(run.status, "Unknown") + "</span></td>" +
                     "<td>" + (run.dryRun ? "Yes" : "No") + "</td>" +
                     "<td>" + (run.totalWorkers || 0) + "</td>" +
                     "<td>" + runSummary(run) + "</td>" +
@@ -478,7 +498,9 @@
         {
             "succeeded" => "good",
             "failed" => "bad",
-            "inprogress" => "warn",
+            "inprogress" => "info",
+            "planned" or "pending" or "cancelrequested" => "warn",
+            "canceled" or "cancelled" => "dim",
             _ => "neutral",
         };
 
