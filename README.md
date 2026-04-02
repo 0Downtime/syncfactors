@@ -50,7 +50,7 @@ This setup is macOS-only in v1 and is intentionally scoped to the core local dev
 - create runtime/report directories used by the .NET API and worker
 - fall back to [`.env.worktree.example`](/Users/chrisbrien/.codex/worktrees/be52/syncfactors/.env.worktree.example) when `.env.worktree` is still missing
 
-The per-worktree runtime contract is `.env.worktree`. Keep auth, profile selection, ports, and local overrides there rather than in tracked JSON or tracked `.codex` files. JSON remains the structural config layer. The default local test path is fake SuccessFactors plus real Active Directory, so fill in the AD values there before starting the rewrite services. The default values are:
+The per-worktree runtime contract is `.env.worktree`. Keep auth, profile selection, ports, and local overrides there rather than in tracked JSON or tracked `.codex` files. JSON remains the structural config layer. On Windows, `scripts/codex/Load-WorktreeEnv.ps1` now checks Windows Credential Manager first for each variable and falls back to `.env.worktree` when no stored value exists. The default local test path is fake SuccessFactors plus real Active Directory, so fill in the AD values there before starting the rewrite services. The default values are:
 
 ```bash
 SYNCFACTORS_RUN_PROFILE=mock
@@ -66,9 +66,17 @@ Set `SYNCFACTORS_RUN_PROFILE=mock` or `real` to switch the active SuccessFactors
 The intended local test loop is:
 - run `pwsh ./scripts/codex/setup-worktree.ps1`
 - fill in `.env.worktree` with your real AD credentials and any local overrides
+- on Windows, import those values with `pwsh ./scripts/codex/Save-WorktreeEnvToWindowsCredentialManager.ps1`
 - start one service with `pwsh ./scripts/codex/run.ps1 -Service mock|api|worker`
 - or open the profile-aware local stack with `pwsh ./scripts/codex/run.ps1 -Service stack`
 - use `-Profile real` to override the profile for a single run without editing `.env.worktree`
+
+On Windows, the effective lookup order is:
+- the worktree-scoped Windows Credential Manager entry for that variable
+- the value in `.env.worktree`
+- the fallback default from `.env.worktree.example` where one exists
+
+Use `pwsh ./scripts/codex/Save-WorktreeEnvToWindowsCredentialManager.ps1 -RemoveEmptyValues` if you want blank entries in `.env.worktree` to delete the corresponding stored credentials instead of saving empty strings.
 
 When you run `-Service stack`, the launched services depend on the active profile:
 - `mock`: starts the mock SuccessFactors API, the SyncFactors .NET API, and the worker
