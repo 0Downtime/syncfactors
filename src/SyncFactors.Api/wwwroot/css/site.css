@@ -196,6 +196,21 @@ a:focus-visible {
   justify-content: flex-end;
 }
 
+.auth-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.auth-actions form {
+  margin: 0;
+}
+
+.auth-user strong {
+  color: var(--ink);
+}
+
 .nav {
   display: flex;
   gap: 6px;
@@ -385,6 +400,13 @@ a:focus-visible {
 .hero-actions {
   display: flex;
   gap: 10px;
+}
+
+.auth-hero,
+.auth-panel {
+  max-width: 520px;
+  margin-left: auto;
+  margin-right: auto;
 }
 
 .hero-main {
@@ -866,6 +888,10 @@ a:focus-visible {
   align-items: end;
 }
 
+.auth-form {
+  gap: 16px;
+}
+
 .filters label {
   display: grid;
   gap: 6px;
@@ -899,6 +925,10 @@ a:focus-visible {
 
 .filter-actions .link-button {
   text-align: center;
+}
+
+.auth-remember {
+  justify-content: space-between;
 }
 
 .confirm-dialog {

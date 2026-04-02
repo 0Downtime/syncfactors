@@ -100,7 +100,7 @@ public sealed class SyncModel(
                 DryRun: !string.Equals(RunMode, LiveRunMode, StringComparison.Ordinal),
                 Mode: "BulkSync",
                 RunTrigger: "AdHoc",
-                RequestedBy: "Sync page"),
+                RequestedBy: ResolveRequestedBy()),
             cancellationToken);
 
         SuccessMessage = string.Equals(RunMode, LiveRunMode, StringComparison.Ordinal)
@@ -131,7 +131,7 @@ public sealed class SyncModel(
                 DryRun: false,
                 Mode: DeleteAllUsersMode,
                 RunTrigger: "DeleteAllUsers",
-                RequestedBy: "Sync page"),
+                RequestedBy: ResolveRequestedBy()),
             cancellationToken);
 
         SuccessMessage = "Delete-all test run queued.";
@@ -141,7 +141,7 @@ public sealed class SyncModel(
 
     public async Task<IActionResult> OnPostCancelRunAsync(CancellationToken cancellationToken)
     {
-        if (!await runQueueStore.CancelPendingOrActiveAsync("Sync page", cancellationToken))
+        if (!await runQueueStore.CancelPendingOrActiveAsync(ResolveRequestedBy(), cancellationToken))
         {
             ErrorMessage = "No queued or active run was available to cancel.";
             SuccessMessage = null;
@@ -192,4 +192,9 @@ public sealed class SyncModel(
             .ToArray();
         ActiveRun = snapshot.ActiveRun;
     }
+
+    private string ResolveRequestedBy() =>
+        string.IsNullOrWhiteSpace(PageContext?.HttpContext?.User.Identity?.Name)
+            ? "Sync page"
+            : PageContext.HttpContext.User.Identity!.Name!;
 }

@@ -1,0 +1,39 @@
+@page
+@model SyncFactors.Api.Pages.LoginModel
+@{
+    ViewData["Title"] = "Login";
+}
+
+<section class="hero hero-compact auth-hero">
+    <div>
+        <p class="eyebrow">Local Access</p>
+        <h1>Sign in</h1>
+        <p class="lede">Use a local operator account to access the SyncFactors portal.</p>
+    </div>
+</section>
+
+<section class="panel auth-panel">
+    @if (!string.IsNullOrWhiteSpace(Model.ErrorMessage))
+    {
+        <p class="callout danger">@Model.ErrorMessage</p>
+    }
+
+    <form method="post" class="filters auth-form">
+        <input type="hidden" asp-for="ReturnUrl" />
+        <label>
+            <span>Username</span>
+            <input asp-for="Username" type="text" autocomplete="username" />
+        </label>
+        <label>
+            <span>Password</span>
+            <input asp-for="Password" type="password" autocomplete="current-password" />
+        </label>
+        <label class="filter-check auth-remember">
+            <span>Remember my login</span>
+            <input asp-for="RememberMe" type="checkbox" />
+        </label>
+        <div class="filter-actions">
+            <button type="submit">Sign in</button>
+        </div>
+    </form>
+</section>
