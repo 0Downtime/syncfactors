@@ -247,12 +247,6 @@ sessionApi.MapPost("/logout", async (HttpContext httpContext) =>
     return Results.Ok(LocalSessionManager.AnonymousSession);
 }).AllowAnonymous();
 
-api.MapGet("/health", async (IDependencyHealthService healthService, CancellationToken cancellationToken) =>
-{
-    var snapshot = await healthService.GetSnapshotAsync(cancellationToken);
-    return Results.Ok(snapshot);
-}).AllowAnonymous();
-
 app.MapGet("/healthz", () => Results.Ok(new { status = "ok" })).AllowAnonymous();
 
 var readApi = api.MapGroup(string.Empty)
@@ -286,6 +280,12 @@ readApi.MapGet("/status", async (IRuntimeStatusStore store, CancellationToken ca
 readApi.MapGet("/dashboard", async (IDashboardSnapshotService dashboardSnapshotService, CancellationToken cancellationToken) =>
 {
     var snapshot = await dashboardSnapshotService.GetSnapshotAsync(cancellationToken);
+    return Results.Ok(snapshot);
+});
+
+readApi.MapGet("/health", async (IDependencyHealthService healthService, CancellationToken cancellationToken) =>
+{
+    var snapshot = await healthService.GetSnapshotAsync(cancellationToken);
     return Results.Ok(snapshot);
 });
 
