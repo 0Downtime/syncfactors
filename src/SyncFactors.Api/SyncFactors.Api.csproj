@@ -3,6 +3,8 @@
     <EnableDefaultItems>false</EnableDefaultItems>
     <EnableDefaultContentItems>false</EnableDefaultContentItems>
     <EnableDefaultEmbeddedResourceItems>false</EnableDefaultEmbeddedResourceItems>
+    <FrontendRoot>..\..\frontend-spike\</FrontendRoot>
+    <FrontendDist>$(FrontendRoot)dist\</FrontendDist>
   </PropertyGroup>
 
   <ItemGroup>
@@ -30,5 +32,17 @@
     <ProjectReference Include="..\SyncFactors.Contracts\SyncFactors.Contracts.csproj" />
     <ProjectReference Include="..\SyncFactors.Domain\SyncFactors.Domain.csproj" />
     <ProjectReference Include="..\SyncFactors.Infrastructure\SyncFactors.Infrastructure.csproj" />
+  </ItemGroup>
+
+  <Target Name="BuildFrontendSpike" BeforeTargets="Build" Condition="Exists('$(FrontendRoot)package.json')">
+    <Message Text="Building frontend-spike assets for SyncFactors.Api" Importance="high" />
+    <Exec WorkingDirectory="$(FrontendRoot)" Command="npm run build" />
+  </Target>
+
+  <ItemGroup Condition="Exists('$(FrontendDist)index.html')">
+    <Content Include="$(FrontendDist)**\*"
+             CopyToOutputDirectory="PreserveNewest"
+             CopyToPublishDirectory="PreserveNewest"
+             Link="wwwroot\%(RecursiveDir)%(Filename)%(Extension)" />
   </ItemGroup>
 </Project>

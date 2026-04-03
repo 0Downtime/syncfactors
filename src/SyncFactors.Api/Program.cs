@@ -575,9 +575,28 @@ adminApi.MapDelete("/admin/users/{userId}", async (
     return result.Succeeded ? Results.Ok(result) : Results.BadRequest(result);
 });
 
+MapSpaShell(app, ViewerPolicy);
 app.MapRazorPages();
 
 app.Run();
+
+static void MapSpaShell(WebApplication app, string viewerPolicy)
+{
+    var spaIndexPath = Path.Combine(app.Environment.WebRootPath ?? string.Empty, "index.html");
+    if (!File.Exists(spaIndexPath))
+    {
+        app.Logger.LogWarning("SPA index file was not found at {SpaIndexPath}. Razor Pages remain the available UI.", spaIndexPath);
+        return;
+    }
+
+    var authorizedSpa = app.MapGroup(string.Empty)
+        .RequireAuthorization(viewerPolicy);
+
+    foreach (var route in new[] { "/", "/sync", "/preview", "/runs/{*path}" })
+    {
+        authorizedSpa.MapGet(route, () => Results.File(spaIndexPath, "text/html"));
+    }
+}
 
 static void ValidateAuthConfiguration(WebApplication app)
 {
