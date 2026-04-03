@@ -146,6 +146,36 @@ else {
 $env:SYNCFACTORS_PROFILE_CONFIG_PATH_ABS = $profileConfigPath
 $env:SYNCFACTORS_RESOLVED_CONFIG_PATH_ABS = $resolvedSyncConfigPath
 
+$keychainService = if ([string]::IsNullOrWhiteSpace($env:SYNCFACTORS_KEYCHAIN_SERVICE)) { 'syncfactors' } else { $env:SYNCFACTORS_KEYCHAIN_SERVICE }
+$secretNames = @(
+    'SF_AD_SYNC_SF_USERNAME',
+    'SF_AD_SYNC_SF_PASSWORD',
+    'SF_AD_SYNC_SF_CLIENT_ID',
+    'SF_AD_SYNC_SF_CLIENT_SECRET',
+    'SF_AD_SYNC_AD_SERVER',
+    'SF_AD_SYNC_AD_USERNAME',
+    'SF_AD_SYNC_AD_BIND_PASSWORD',
+    'SF_AD_SYNC_AD_DEFAULT_PASSWORD'
+)
+
+if ($IsMacOS) {
+    foreach ($secretName in $secretNames) {
+        if (-not [string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($secretName))) {
+            continue
+        }
+
+        try {
+            $secretValue = & security find-generic-password -s $keychainService -a $secretName -w 2>$null
+            if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace($secretValue)) {
+                [Environment]::SetEnvironmentVariable($secretName, $secretValue)
+            }
+        }
+        catch {
+            continue
+        }
+    }
+}
+
 Write-Host 'Worktree environment sources:' -ForegroundColor Cyan
 foreach ($entry in $variableSources.GetEnumerator()) {
     Write-Host ("  {0}: {1}" -f $entry.Key, $entry.Value)
