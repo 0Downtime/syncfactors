@@ -1,42 +1,70 @@
-import { type PropsWithChildren } from 'react'
+import { type PropsWithChildren, useEffect, useState } from 'react'
 import { NavLink } from 'react-router-dom'
-import { RefreshCcw } from 'lucide-react'
+import { Activity, RefreshCcw } from 'lucide-react'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { formatDate } from '@/lib/format'
 
 export function AppShell({ children }: PropsWithChildren) {
+  const [lastRefreshAt, setLastRefreshAt] = useState(() => new Date().toISOString())
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setLastRefreshAt(new Date().toISOString()), 30000)
+    return () => window.clearInterval(timer)
+  }, [])
+
   return (
-    <div className="min-h-screen bg-[#f5f5f7] text-[#1d1d1f]">
-      <div className="sticky top-0 z-50 px-4 pt-3 md:px-6">
-        <div className="mx-auto flex h-12 w-full max-w-[1200px] items-center justify-between rounded-full border border-white/10 bg-black/80 px-4 text-white backdrop-blur-[20px]">
-          <div className="flex items-center gap-3">
-            <NavLink className="text-[13px] font-medium tracking-[-0.01em] text-white no-underline" to="/">
-              SyncFactors
-            </NavLink>
-            <Badge className="vf-nav-badge">Vite Dashboard</Badge>
+    <div className="vf-app-shell">
+      <div className="vf-topbar-wrap">
+        <div className="vf-topbar">
+          <div className="vf-topbar-main">
+            <div className="vf-topbar-brand">
+              <NavLink className="text-[13px] font-medium tracking-[-0.01em] text-white no-underline" to="/">
+                SyncFactors
+              </NavLink>
+              <Badge className="vf-nav-badge">Ops Console</Badge>
+              <div className="vf-topbar-copy">
+                <p className="vf-topbar-title">Runtime cockpit</p>
+                <p className="vf-topbar-subtitle">Live visibility for sync, preview, and operator actions</p>
+              </div>
+            </div>
+            <div className="hidden items-center gap-1 md:flex">
+              <NavLink className={({ isActive }) => `vf-nav-link${isActive ? ' active' : ''}`} to="/">
+                Dashboard
+              </NavLink>
+              <NavLink className={({ isActive }) => `vf-nav-link${isActive ? ' active' : ''}`} to="/sync">
+                Sync
+              </NavLink>
+              <NavLink className={({ isActive }) => `vf-nav-link${isActive ? ' active' : ''}`} to="/preview">
+                Worker Preview
+              </NavLink>
+            </div>
           </div>
-          <div className="hidden items-center gap-1 md:flex">
-            <NavLink className={({ isActive }) => `vf-nav-link${isActive ? ' active' : ''}`} to="/">
-              Dashboard
-            </NavLink>
-            <NavLink className={({ isActive }) => `vf-nav-link${isActive ? ' active' : ''}`} to="/sync">
-              Sync
-            </NavLink>
-            <NavLink className={({ isActive }) => `vf-nav-link${isActive ? ' active' : ''}`} to="/preview">
-              Worker Preview
-            </NavLink>
+
+          <div className="flex items-center gap-3 max-md:flex-wrap">
+            <div className="vf-topbar-status">
+              <span className="vf-status-dot good" aria-hidden="true" />
+              <Activity className="size-3.5" />
+              <span>Console live</span>
+              <span className="text-white/40">·</span>
+              <span>Refreshed {formatDate(lastRefreshAt)}</span>
+            </div>
+            <Button
+              className="vf-nav-button"
+              onClick={() => {
+                setLastRefreshAt(new Date().toISOString())
+                window.location.reload()
+              }}
+            >
+              <RefreshCcw className="size-4" />
+              Refresh
+            </Button>
           </div>
-          <Button className="vf-nav-button" onClick={() => window.location.reload()}>
-            <RefreshCcw className="size-4" />
-            Refresh
-          </Button>
         </div>
       </div>
 
-      <div className="mx-auto flex w-full max-w-[1200px] flex-col gap-5 px-4 py-5 md:px-6 md:pb-10">
-        {children}
-      </div>
+      <div className="vf-page">{children}</div>
     </div>
   )
 }
