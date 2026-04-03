@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Net;
 
 namespace SyncFactors.Infrastructure;
 
@@ -21,6 +22,11 @@ public sealed class SyncFactorsConfigurationValidator(SyncFactorsConfigurationLo
         if (string.IsNullOrWhiteSpace(sync.Ad.Server))
         {
             throw new InvalidOperationException("SyncFactors AD server must be configured.");
+        }
+
+        if (!isDevelopment && IsLoopbackHost(sync.Ad.Server))
+        {
+            throw new InvalidOperationException("SyncFactors AD server must not resolve to localhost or a loopback address outside Development.");
         }
 
         if (string.IsNullOrWhiteSpace(sync.Ad.DefaultActiveOu) ||
@@ -125,6 +131,33 @@ public sealed class SyncFactorsConfigurationValidator(SyncFactorsConfigurationLo
         {
             throw new InvalidOperationException("Production config contains placeholder credentials.");
         }
+    }
+
+    private static bool IsLoopbackHost(string server)
+    {
+        var trimmed = server.Trim();
+        if (string.IsNullOrWhiteSpace(trimmed))
+        {
+            return false;
+        }
+
+        if (string.Equals(trimmed, "localhost", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        if (Uri.CheckHostName(trimmed) == UriHostNameType.IPv6 &&
+            IPAddress.TryParse(trimmed.Trim('[', ']'), out var ipv6Address))
+        {
+            return IPAddress.IsLoopback(ipv6Address);
+        }
+
+        if (IPAddress.TryParse(trimmed, out var address))
+        {
+            return IPAddress.IsLoopback(address);
+        }
+
+        return false;
     }
 
 }

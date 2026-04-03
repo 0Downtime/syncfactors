@@ -4,20 +4,21 @@ namespace SyncFactors.Infrastructure;
 
 internal static class ExternalSystemExceptionFactory
 {
-    public static InvalidOperationException CreateActiveDirectoryException(string operation, string server, Exception exception)
-        => CreateActiveDirectoryException(operation, server, exception, details: null);
+    public static InvalidOperationException CreateActiveDirectoryException(string operation, ActiveDirectoryConfig config, Exception exception)
+        => CreateActiveDirectoryException(operation, config, exception, details: null);
 
-    public static InvalidOperationException CreateActiveDirectoryException(string operation, string server, Exception exception, string? details)
+    public static InvalidOperationException CreateActiveDirectoryException(string operation, ActiveDirectoryConfig config, Exception exception, string? details)
     {
+        var server = config.Server;
         var summary = exception switch
         {
-            LdapException ldapException => DescribeLdapFailure(ldapException),
+            LdapException ldapException => DescribeLdapFailure(ldapException, config),
             DirectoryOperationException directoryOperationException => directoryOperationException.Message,
             _ => exception.Message
         };
         var guidance = exception switch
         {
-            LdapException ldapException => GetActiveDirectoryGuidance(ldapException),
+            LdapException ldapException => GetActiveDirectoryGuidance(ldapException, config),
             DirectoryOperationException => "Check the target OU, manager resolution, and whether the account already exists with unexpected state.",
             _ => "Verify the configured LDAP server, bind account, and network reachability from this machine."
         };
@@ -42,7 +43,7 @@ internal static class ExternalSystemExceptionFactory
             innerException);
     }
 
-    private static string DescribeLdapFailure(LdapException exception)
+    private static string DescribeLdapFailure(LdapException exception, ActiveDirectoryConfig config)
     {
         if (string.Equals(exception.Message, "The supplied credential is invalid.", StringComparison.OrdinalIgnoreCase))
         {
@@ -51,7 +52,7 @@ internal static class ExternalSystemExceptionFactory
 
         if (string.Equals(exception.Message, "The LDAP server is unavailable.", StringComparison.OrdinalIgnoreCase))
         {
-            return "The LDAP server could not be reached.";
+            return $"The LDAP server could not be reached. Connection settings: host='{config.Server}', port={config.Port ?? GetDefaultPort(config.Transport.Mode)}, transport={config.Transport.Mode}.";
         }
 
         if (exception.ServerErrorMessage?.Contains("stronger", StringComparison.OrdinalIgnoreCase) == true ||
@@ -63,7 +64,7 @@ internal static class ExternalSystemExceptionFactory
         return exception.Message;
     }
 
-    private static string GetActiveDirectoryGuidance(LdapException exception)
+    private static string GetActiveDirectoryGuidance(LdapException exception, ActiveDirectoryConfig config)
     {
         if (string.Equals(exception.Message, "The supplied credential is invalid.", StringComparison.OrdinalIgnoreCase))
         {
@@ -72,7 +73,12 @@ internal static class ExternalSystemExceptionFactory
 
         if (string.Equals(exception.Message, "The LDAP server is unavailable.", StringComparison.OrdinalIgnoreCase))
         {
-            return "Confirm the server name, port, VPN/network path, and whether LDAPS or LDAP signing is required.";
+            var defaultPort = GetDefaultPort(config.Transport.Mode);
+            var configuredPort = config.Port ?? defaultPort;
+            var hostPortHint = LooksLikeHostAndPort(config.Server)
+                ? " The configured AD server appears to include a port in the host field; set the host in SF_AD_SYNC_AD_SERVER/ad.server and set the port separately in ad.port."
+                : string.Empty;
+            return $"Confirm the server name, port, VPN/network path, and whether LDAPS or LDAP signing is required. Current config: host='{config.Server}', port={configuredPort}, transport={config.Transport.Mode}.{hostPortHint}";
         }
 
         if (exception.ServerErrorMessage?.Contains("stronger", StringComparison.OrdinalIgnoreCase) == true ||
@@ -116,5 +122,25 @@ internal static class ExternalSystemExceptionFactory
         return string.IsNullOrWhiteSpace(details)
             ? " "
             : $" Details: {details} ";
+    }
+
+    private static int GetDefaultPort(string mode) =>
+        string.Equals(mode, "starttls", StringComparison.OrdinalIgnoreCase) ? 389 : 636;
+
+    private static bool LooksLikeHostAndPort(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return false;
+        }
+
+        var trimmed = value.Trim();
+        if (trimmed.StartsWith("[", StringComparison.Ordinal) && trimmed.Contains("]:", StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        var colonCount = trimmed.Count(character => character == ':');
+        return colonCount == 1;
     }
 }

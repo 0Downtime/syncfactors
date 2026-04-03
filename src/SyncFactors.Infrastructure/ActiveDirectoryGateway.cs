@@ -42,12 +42,12 @@ public sealed class ActiveDirectoryGateway(
         catch (LdapException ex)
         {
             logger.LogError(ex, "AD lookup failed with LDAP exception.");
-            throw ExternalSystemExceptionFactory.CreateActiveDirectoryException("lookup", config.Server, ex);
+            throw ExternalSystemExceptionFactory.CreateActiveDirectoryException("lookup", config, ex);
         }
         catch (DirectoryOperationException ex)
         {
             logger.LogError(ex, "AD lookup failed with directory operation exception.");
-            throw ExternalSystemExceptionFactory.CreateActiveDirectoryException("lookup", config.Server, ex);
+            throw ExternalSystemExceptionFactory.CreateActiveDirectoryException("lookup", config, ex);
         }
     }
 
@@ -88,12 +88,12 @@ public sealed class ActiveDirectoryGateway(
         catch (LdapException ex)
         {
             logger.LogError(ex, "AD email local-part lookup failed with LDAP exception.");
-            throw ExternalSystemExceptionFactory.CreateActiveDirectoryException("email local-part lookup", config.Server, ex);
+            throw ExternalSystemExceptionFactory.CreateActiveDirectoryException("email local-part lookup", config, ex);
         }
         catch (DirectoryOperationException ex)
         {
             logger.LogError(ex, "AD email local-part lookup failed with directory operation exception.");
-            throw ExternalSystemExceptionFactory.CreateActiveDirectoryException("email local-part lookup", config.Server, ex);
+            throw ExternalSystemExceptionFactory.CreateActiveDirectoryException("email local-part lookup", config, ex);
         }
     }
 
@@ -121,12 +121,12 @@ public sealed class ActiveDirectoryGateway(
         catch (LdapException ex)
         {
             logger.LogError(ex, "AD manager DN lookup failed with LDAP exception.");
-            throw ExternalSystemExceptionFactory.CreateActiveDirectoryException("manager lookup", config.Server, ex);
+            throw ExternalSystemExceptionFactory.CreateActiveDirectoryException("manager lookup", config, ex);
         }
         catch (DirectoryOperationException ex)
         {
             logger.LogError(ex, "AD manager DN lookup failed with directory operation exception.");
-            throw ExternalSystemExceptionFactory.CreateActiveDirectoryException("manager lookup", config.Server, ex);
+            throw ExternalSystemExceptionFactory.CreateActiveDirectoryException("manager lookup", config, ex);
         }
     }
 
