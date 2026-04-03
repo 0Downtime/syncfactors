@@ -40,6 +40,8 @@
 - `docs/architecture.md`: target architecture
 - `config/*`: tracked sample config, local config, and scaffold configuration
 
+I am also toying around with Razor Pages versus the Vite-based frontend spike in `frontend-spike/`. The current direction still favors Razor Pages for the operator UI, but that comparison is active and not fully settled yet.
+
 ## Codex Worktrees On macOS
 Codex app worktrees can bootstrap this repository automatically through the checked-in local environment at [`.codex/environments/environment.toml`](/Users/chrisbrien/.codex/worktrees/be52/syncfactors/.codex/environments/environment.toml). Open the project in the Codex app, choose the local environment when starting a worktree thread, and Codex will run [`scripts/codex/setup-worktree-macos.sh`](/Users/chrisbrien/.codex/worktrees/be52/syncfactors/scripts/codex/setup-worktree-macos.sh) on worktree creation. That macOS wrapper now delegates to the shared PowerShell bootstrap script so the setup behavior matches Windows.
 
