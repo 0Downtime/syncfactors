@@ -1,0 +1,3 @@
+# Require trusted review for privileged CI/CD workflow changes.
+/.github/workflows/ @0Downtime
+/.github/workflows/** @0Downtime
