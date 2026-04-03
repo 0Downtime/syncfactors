@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidateSet('api', 'worker', 'mock', 'stack')]
+    [ValidateSet('api', 'worker', 'mock', 'web', 'stack')]
     [string]$Service = 'stack',
     [ValidateSet('mock', 'real')]
     [string]$Profile = 'mock',
@@ -18,7 +18,7 @@ $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 function Show-Usage {
     @'
 Usage:
-  pwsh ./scripts/codex/run.ps1 -Service <api|worker|mock|stack> [-Profile <mock|real>] [-Restart] [-SkipBuild]
+  pwsh ./scripts/codex/run.ps1 -Service <api|worker|mock|web|stack> [-Profile <mock|real>] [-Restart] [-SkipBuild]
   pwsh ./scripts/codex/run.ps1 -Help
   pwsh ./scripts/codex/run.ps1
 
@@ -26,6 +26,7 @@ Services:
   api      Start the SyncFactors .NET API.
   worker   Start the SyncFactors worker service.
   mock     Start the mock SuccessFactors API.
+  web      Start the Vite web UI.
   stack    Start the full local stack in separate terminals.
 
 Options:
@@ -311,7 +312,7 @@ function Restart-SelectedServices {
     $mockProjectPath = Join-Path $RepositoryRoot 'src/SyncFactors.MockSuccessFactors/SyncFactors.MockSuccessFactors.csproj'
 
     $servicesToRestart = switch ($RequestedService) {
-        'stack' { @('mock', 'api', 'worker') }
+        'stack' { @('mock', 'api', 'worker', 'web') }
         default { @($RequestedService) }
     }
 
@@ -335,6 +336,13 @@ function Restart-SelectedServices {
                 ) | Sort-Object -Unique
                 Stop-LocalProcesses -Name 'SyncFactors mock API' -ProcessIds $mockPids
             }
+            'web' {
+                $webPids = @(
+                    Get-ListeningProcessIds -Port $env:SYNCFACTORS_WEB_PORT
+                    Get-ProcessIdsByCommandPattern -Patterns @('web/server/index.ts', 'npm run web:dev', 'tsx web/server/index.ts')
+                ) | Sort-Object -Unique
+                Stop-LocalProcesses -Name 'SyncFactors web UI' -ProcessIds $webPids
+            }
         }
     }
 
@@ -343,6 +351,7 @@ function Restart-SelectedServices {
             'api' { 'SyncFactors .NET API' }
             'worker' { 'SyncFactors worker' }
             'mock' { 'SyncFactors mock API' }
+            'web' { 'SyncFactors web UI' }
         }
     }
 
@@ -414,6 +423,17 @@ switch ($Service) {
         & pwsh @arguments
         exit $LASTEXITCODE
     }
+    'web' {
+        Push-Location $repoRoot
+        try {
+            $env:PORT = $env:SYNCFACTORS_WEB_PORT
+            npm run web:dev
+            exit $LASTEXITCODE
+        }
+        finally {
+            Pop-Location
+        }
+    }
     'stack' {
         $sharedArguments = @()
         $sharedArguments += @('-Profile', $Profile)
@@ -432,8 +452,10 @@ switch ($Service) {
 
         $terminalScriptPath = Join-Path $scriptDir 'Open-TerminalCommand.ps1'
         $workerArguments = @('-Service', 'worker') + $sharedArguments
+        $webArguments = @('-Service', 'web') + $sharedArguments
         $startMockApi = $activeProfile -eq 'mock'
         $startSyncFactorsApi = $true
+        $startWebUi = $true
 
         if ($startMockApi) {
             $mockArguments = @('-Service', 'mock') + $sharedArguments
@@ -446,5 +468,9 @@ switch ($Service) {
         }
 
         & $terminalScriptPath 'SyncFactors worker' './scripts/codex/run.ps1' $workerArguments
+
+        if ($startWebUi) {
+            & $terminalScriptPath 'SyncFactors web UI' './scripts/codex/run.ps1' $webArguments
+        }
     }
 }

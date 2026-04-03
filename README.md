@@ -102,6 +102,7 @@ SYNCFACTORS_CONFIG_PATH=
 SYNCFACTORS_MAPPING_CONFIG_PATH=./config/local.syncfactors.mapping-config.json
 SYNCFACTORS_SQLITE_PATH=state/runtime/syncfactors.db
 SYNCFACTORS_API_PORT=5087
+SYNCFACTORS_WEB_PORT=4280
 MOCK_SF_PORT=18080
 MOCK_SF_SYNTHETIC_POPULATION_ENABLED=true
 MOCK_SF_TARGET_WORKER_COUNT=1000
@@ -198,6 +199,7 @@ pwsh ./scripts/codex/setup-worktree.ps1
 pwsh ./scripts/codex/run.ps1 -Service mock
 pwsh ./scripts/codex/run.ps1 -Service api
 pwsh ./scripts/codex/run.ps1 -Service worker
+pwsh ./scripts/codex/run.ps1 -Service web
 ```
 
 If you are using Windows Credential Manager, import values before launching services:
