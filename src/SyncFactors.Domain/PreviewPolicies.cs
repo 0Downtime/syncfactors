@@ -79,13 +79,7 @@ public sealed class AttributeDiffService : IAttributeDiffService
             var changed = !string.Equals(before, after, StringComparison.Ordinal);
 
             _logger.LogDebug(
-                "Evaluated attribute mapping. WorkerId={WorkerId} Target={Target} Source={Source} SourceValue={SourceValue} CurrentValue={CurrentValue} ProposedValue={ProposedValue} Changed={Changed}",
-                worker.WorkerId,
-                mapping.Target,
-                mapping.Source,
-                string.IsNullOrWhiteSpace(sourceValue) ? "(unset)" : sourceValue,
-                string.IsNullOrWhiteSpace(currentValue) ? "(unset)" : currentValue,
-                string.IsNullOrWhiteSpace(proposedValue) ? "(unset)" : proposedValue,
+                "Evaluated attribute mapping. Changed={Changed}",
                 changed);
 
             if (!string.IsNullOrWhiteSpace(logPath))
@@ -138,10 +132,9 @@ public sealed class AttributeDiffService : IAttributeDiffService
             changed: isCreate && !string.Equals(currentMail, proposedEmailAddress, StringComparison.Ordinal));
 
         _logger.LogDebug(
-            "Attribute diff completed. WorkerId={WorkerId} EnabledMappings={EnabledMappings} ChangedMappings={ChangedMappings}",
-            worker.WorkerId,
+            "Attribute diff completed. EnabledMappings={EnabledMappings} ChangedMappings={ChangedMappings}",
             enabledMappings.Count,
-            changes.Count);
+            changes.Count(change => change.Changed));
 
         if (!string.IsNullOrWhiteSpace(logPath))
         {

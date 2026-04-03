@@ -99,7 +99,9 @@ public sealed class LocalAuthServiceTests
                 IsActive: true,
                 CreatedAt: DateTimeOffset.UtcNow,
                 UpdatedAt: DateTimeOffset.UtcNow,
-                LastLoginAt: null);
+                LastLoginAt: null,
+                FailedLoginCount: 0,
+                LockoutEndAt: null);
 
             await store.CreateAsync(user, CancellationToken.None);
             await store.UpdateLastLoginAsync("user-1", DateTimeOffset.Parse("2026-04-02T15:00:00Z"), CancellationToken.None);
@@ -268,13 +270,21 @@ public sealed class LocalAuthServiceTests
             new PasswordHasher<LocalUserRecord>(),
             Options.Create(new LocalAuthOptions
             {
+                Mode = "local-break-glass",
                 BootstrapAdmin = new BootstrapAdminOptions
                 {
                     Username = username,
                     Password = password
+                },
+                LocalBreakGlass = new LocalBreakGlassOptions
+                {
+                    Enabled = true,
+                    MaxFailedAttempts = 5,
+                    LockoutMinutes = 15
                 }
             }),
-            TimeProvider.System);
+            TimeProvider.System,
+            new NoOpSecurityAuditService());
     }
 
     private static async Task<SqliteLocalUserStore> CreateStoreAsync(string databasePath)
@@ -283,5 +293,15 @@ public sealed class LocalAuthServiceTests
         var initializer = new SqliteDatabaseInitializer(pathResolver);
         await initializer.InitializeAsync(CancellationToken.None);
         return new SqliteLocalUserStore(pathResolver);
+    }
+
+    private sealed class NoOpSecurityAuditService : ISecurityAuditService
+    {
+        public void Write(string eventType, string outcome, params (string Key, object? Value)[] fields)
+        {
+            _ = eventType;
+            _ = outcome;
+            _ = fields;
+        }
     }
 }

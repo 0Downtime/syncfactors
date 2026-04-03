@@ -16,7 +16,7 @@ public sealed class AdminUsersModelTests
         {
             Users =
             [
-                new LocalUserSummary("user-1", "alice", "Operator", true, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow, null)
+                new LocalUserSummary("user-1", "alice", "Operator", true, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow, null, 0, null)
             ]
         };
         var model = CreateModel(service);
@@ -106,6 +106,8 @@ public sealed class AdminUsersModelTests
 
     private sealed class StubAdminAuthService : ILocalAuthService
     {
+        public bool IsLocalAuthenticationEnabled => true;
+
         public IReadOnlyList<LocalUserSummary> Users { get; set; } = [];
 
         public string? LastCreateUsername { get; private set; }

@@ -31,6 +31,51 @@ public sealed class ActiveDirectoryGatewayTests
         Assert.Equal("john.smith4", result);
     }
 
+    [Fact]
+    public void BuildEqualityFilter_EscapesAttributeNameAndValue()
+    {
+        var method = typeof(ActiveDirectoryGateway).GetMethod(
+            "BuildEqualityFilter",
+            BindingFlags.NonPublic | BindingFlags.Static);
+        Assert.NotNull(method);
+
+        var filter = Assert.IsType<string>(method!.Invoke(null, ["employeeId", "user*)(test)\\name"]));
+
+        Assert.Equal("(employeeId=user\\2a\\29\\28test\\29\\5cname)", filter);
+    }
+
+    [Fact]
+    public void BuildEqualityFilter_RejectsInvalidAttributeName()
+    {
+        var method = typeof(ActiveDirectoryGateway).GetMethod(
+            "BuildEqualityFilter",
+            BindingFlags.NonPublic | BindingFlags.Static);
+        Assert.NotNull(method);
+
+        var exception = Assert.Throws<TargetInvocationException>(() => method!.Invoke(null, ["employee)(Id", "worker-10001"]));
+
+        Assert.IsType<InvalidOperationException>(exception.InnerException);
+    }
+
+    [Fact]
+    public void BuildAnyOfEqualityFilter_EscapesEachClause()
+    {
+        var method = typeof(ActiveDirectoryGateway).GetMethod(
+            "BuildAnyOfEqualityFilter",
+            BindingFlags.NonPublic | BindingFlags.Static);
+        Assert.NotNull(method);
+
+        var clauses = new (string Attribute, string Value)[]
+        {
+            ("userPrincipalName", "user*)(test)"),
+            ("mail", "user@example.com")
+        };
+
+        var filter = Assert.IsType<string>(method!.Invoke(null, [clauses]));
+
+        Assert.Equal("(|(userPrincipalName=user\\2a\\29\\28test\\29)(mail=user@example.com))", filter);
+    }
+
     private static string InvokeResolver(string baseLocalPart, Func<string, bool> candidateExists)
     {
         var method = typeof(ActiveDirectoryGateway).GetMethod(

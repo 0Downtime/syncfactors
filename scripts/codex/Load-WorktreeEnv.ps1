@@ -117,12 +117,20 @@ if ([string]::IsNullOrWhiteSpace($env:MOCK_SF_PORT)) {
     $variableSources['MOCK_SF_PORT'] = 'built-in default'
 }
 
+if ([string]::IsNullOrWhiteSpace($env:NUGET_HTTP_CACHE_PATH)) {
+    $env:NUGET_HTTP_CACHE_PATH = 'state/nuget/http-cache'
+    $variableSources['NUGET_HTTP_CACHE_PATH'] = 'built-in default'
+}
+
 $env:REPO_ROOT = $repoRoot
 $env:SYNCFACTORS_CONFIG_PATH_ABS = Resolve-RepoPath $env:SYNCFACTORS_CONFIG_PATH
 $env:SYNCFACTORS_MAPPING_CONFIG_PATH_ABS = Resolve-RepoPath $env:SYNCFACTORS_MAPPING_CONFIG_PATH
 $env:SYNCFACTORS_SQLITE_PATH_ABS = Resolve-RepoPath $env:SYNCFACTORS_SQLITE_PATH
+$env:NUGET_HTTP_CACHE_PATH = Resolve-RepoPath $env:NUGET_HTTP_CACHE_PATH
 $env:SYNCFACTORS_MOCK_CONFIG_PATH_ABS = Join-Path $repoRoot 'config/local.mock-successfactors.real-ad.sync-config.json'
 $env:SYNCFACTORS_REAL_CONFIG_PATH_ABS = Join-Path $repoRoot 'config/local.real-successfactors.real-ad.sync-config.json'
+
+[System.IO.Directory]::CreateDirectory($env:NUGET_HTTP_CACHE_PATH) | Out-Null
 
 switch ($env:SYNCFACTORS_RUN_PROFILE.ToLowerInvariant()) {
     'mock' {

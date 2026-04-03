@@ -140,6 +140,14 @@ On Windows, you can import worktree values into Windows Credential Manager with:
 pwsh ./scripts/codex/Save-WorktreeEnvToWindowsCredentialManager.ps1
 ```
 
+Before starting the API on a new admin workstation, run:
+
+```powershell
+pwsh ./scripts/Install-SyncFactorsHttpsCertificate.ps1
+```
+
+That script generates, trusts, and exports the local HTTPS certificate used by the API launcher. `scripts/Start-SyncFactorsNextApi.ps1` and `scripts/codex/run.ps1 -Service api` now bind `https://127.0.0.1:<port>` only and refuse `http://` URLs. If `SYNCFACTORS_TLS_CERT_PATH` and `SYNCFACTORS_TLS_CERT_PASSWORD` are not set explicitly, the launcher uses the exported certificate from that install step.
+
 Use `--remove-empty-values` on macOS or `-RemoveEmptyValues` on Windows if blank entries in `.env.worktree` should delete the corresponding stored credentials instead of saving empty strings.
 
 Set `SYNCFACTORS_RUN_PROFILE=mock` or `real` to switch the active SuccessFactors config. Leave `SYNCFACTORS_CONFIG_PATH` empty for profile-based resolution, or set it only when you want an explicit one-off override.

@@ -32,6 +32,17 @@ public sealed class FileWorkerPreviewLogWriter(SyncFactorsConfigurationLoader co
     private string GetOutputDirectory()
     {
         var config = configLoader.GetSyncConfig();
+        if (Path.IsPathRooted(config.Reporting.OutputDirectory))
+        {
+            return Path.GetFullPath(config.Reporting.OutputDirectory);
+        }
+
+        var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        if (!string.IsNullOrWhiteSpace(localAppData))
+        {
+            return Path.Combine(localAppData, "SyncFactors", "reports");
+        }
+
         return Path.GetFullPath(config.Reporting.OutputDirectory);
     }
 

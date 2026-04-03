@@ -5,7 +5,7 @@ namespace SyncFactors.Infrastructure;
 
 public sealed class SqliteDatabaseInitializer(SqlitePathResolver pathResolver)
 {
-    private const int CurrentSchemaVersion = 7;
+    private const int CurrentSchemaVersion = 8;
 
     public async Task InitializeAsync(CancellationToken cancellationToken)
     {
@@ -80,6 +80,12 @@ public sealed class SqliteDatabaseInitializer(SqlitePathResolver pathResolver)
         {
             await ApplyVersion7Async(connection, transaction, cancellationToken);
             await InsertVersionAsync(connection, transaction, 7, cancellationToken);
+        }
+
+        if (!appliedVersions.Contains(8))
+        {
+            await ApplyVersion8Async(connection, transaction, cancellationToken);
+            await InsertVersionAsync(connection, transaction, 8, cancellationToken);
         }
 
         await transaction.CommitAsync(cancellationToken);
@@ -401,6 +407,43 @@ public sealed class SqliteDatabaseInitializer(SqlitePathResolver pathResolver)
               ON local_users (normalized_username);
             """;
         await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task ApplyVersion8Async(
+        SqliteConnection connection,
+        DbTransaction transaction,
+        CancellationToken cancellationToken)
+    {
+        var hasLocalUsersTable = await TableExistsAsync(connection, transaction, "local_users", cancellationToken);
+        if (!hasLocalUsersTable)
+        {
+            return;
+        }
+
+        var columns = await GetTableColumnsAsync(connection, transaction, "local_users", cancellationToken);
+        if (!columns.Contains("failed_login_count"))
+        {
+            await using var failedLoginCountCommand = connection.CreateCommand();
+            failedLoginCountCommand.Transaction = (SqliteTransaction)transaction;
+            failedLoginCountCommand.CommandText =
+                """
+                ALTER TABLE local_users
+                ADD COLUMN failed_login_count INTEGER NOT NULL DEFAULT 0;
+                """;
+            await failedLoginCountCommand.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        if (!columns.Contains("lockout_end_at"))
+        {
+            await using var lockoutEndCommand = connection.CreateCommand();
+            lockoutEndCommand.Transaction = (SqliteTransaction)transaction;
+            lockoutEndCommand.CommandText =
+                """
+                ALTER TABLE local_users
+                ADD COLUMN lockout_end_at TEXT NULL;
+                """;
+            await lockoutEndCommand.ExecuteNonQueryAsync(cancellationToken);
+        }
     }
 
     private static async Task<HashSet<int>> GetAppliedVersionsAsync(

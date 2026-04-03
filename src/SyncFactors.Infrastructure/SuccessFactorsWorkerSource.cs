@@ -61,16 +61,11 @@ public sealed class SuccessFactorsWorkerSource(
         if (worker is not null)
         {
             worker = NormalizeWorkerIdentity(worker, config.SuccessFactors.Query.IdentityField);
-            logger.LogInformation(
-                "Resolved worker from SuccessFactors. RequestedWorkerId={RequestedWorkerId} ResolvedWorkerId={ResolvedWorkerId}",
-                workerId,
-                worker.WorkerId);
+            logger.LogInformation("Resolved worker from SuccessFactors.");
             return worker;
         }
 
-        logger.LogWarning(
-            "No worker was returned from SuccessFactors. Falling back to scaffold worker source. WorkerId={WorkerId}",
-            workerId);
+        logger.LogWarning("No worker was returned from SuccessFactors. Falling back to scaffold worker source.");
 
         return await fallbackSource.GetWorkerAsync(workerId, cancellationToken);
     }
@@ -94,11 +89,9 @@ public sealed class SuccessFactorsWorkerSource(
         {
             logger.LogError(
                 ex,
-                "SuccessFactors returned non-JSON or invalid JSON. WorkerId={WorkerId} ContentType={ContentType} Uri={Uri} BodyPreview={BodyPreview}",
-                workerId,
-                responsePayload.ContentType,
-                requestUri,
-                TrimForLog(rawBody));
+                "SuccessFactors returned non-JSON or invalid JSON. StatusCode={StatusCode} ContentType={ContentType}",
+                responsePayload.StatusCode,
+                responsePayload.ContentType);
             throw ExternalSystemExceptionFactory.CreateSuccessFactorsException(
                 operation: "response parsing",
                 endpoint: requestUri,
@@ -346,7 +339,7 @@ public sealed class SuccessFactorsWorkerSource(
             case "basic" when auth.Basic is not null:
                 var basicToken = Convert.ToBase64String(Encoding.UTF8.GetBytes($"{auth.Basic.Username}:{auth.Basic.Password}"));
                 request.Headers.Authorization = new AuthenticationHeaderValue("Basic", basicToken);
-                logger.LogDebug("Using basic authentication for SuccessFactors request.");
+        logger.LogDebug("Using basic authentication for SuccessFactors request.");
                 break;
 
             case "oauth" when auth.OAuth is not null:
@@ -364,18 +357,16 @@ public sealed class SuccessFactorsWorkerSource(
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
         request.Headers.AcceptEncoding.Add(new StringWithQualityHeaderValue("gzip"));
         request.Headers.AcceptEncoding.Add(new StringWithQualityHeaderValue("deflate"));
-        logger.LogDebug("Requesting SuccessFactors OAuth token from {TokenUrl}", oauth.TokenUrl);
+        logger.LogDebug("Requesting SuccessFactors OAuth token.");
 
         using var response = await httpClient.SendAsync(request, cancellationToken);
         if (!response.IsSuccessStatusCode)
         {
             var body = await response.Content.ReadAsStringAsync(cancellationToken);
             logger.LogError(
-                "SuccessFactors OAuth token request failed. StatusCode={StatusCode} ContentType={ContentType} TokenUrl={TokenUrl} BodyPreview={BodyPreview}",
+                "SuccessFactors OAuth token request failed. StatusCode={StatusCode} ContentType={ContentType}",
                 (int)response.StatusCode,
-                response.Content.Headers.ContentType?.MediaType ?? "(none)",
-                oauth.TokenUrl,
-                TrimForLog(body));
+                response.Content.Headers.ContentType?.MediaType ?? "(none)");
 
             throw CreateDetailedSuccessFactorsException(
                 messagePrefix: "SuccessFactors OAuth token request failed.",
@@ -405,8 +396,7 @@ public sealed class SuccessFactorsWorkerSource(
             return "(empty)";
         }
 
-        var flattened = value.ReplaceLineEndings(" ").Trim();
-        return flattened.Length <= 240 ? flattened : flattened[..240];
+        return LogSafety.SingleLine(value);
     }
 
     private static InvalidOperationException CreateDetailedSuccessFactorsException(
@@ -455,8 +445,7 @@ public sealed class SuccessFactorsWorkerSource(
             var requestUri = BuildRequestUri(config, activeQuery, workerId);
 
             logger.LogInformation(
-                "Fetching worker preview data from SuccessFactors. WorkerId={WorkerId} EntitySet={EntitySet} AuthMode={AuthMode} SelectedFieldCount={SelectedFieldCount}",
-                workerId,
+                "Fetching worker preview data from SuccessFactors. EntitySet={EntitySet} AuthMode={AuthMode} SelectedFieldCount={SelectedFieldCount}",
                 query.EntitySet,
                 config.SuccessFactors.Auth.Mode,
                 activeQuery.Select.Count);
@@ -486,20 +475,14 @@ public sealed class SuccessFactorsWorkerSource(
                 activeSelect.Remove(queryPath))
             {
                 logger.LogWarning(
-                    "SuccessFactors rejected configured property path. WorkerId={WorkerId} InvalidProperty={InvalidProperty} QueryPath={QueryPath}. Retrying without it.",
-                    workerId,
-                    invalidPropertyPath,
-                    queryPath);
+                    "SuccessFactors rejected a configured property path. Retrying without the rejected field.");
                 continue;
             }
 
             logger.LogError(
-                "SuccessFactors request failed. WorkerId={WorkerId} StatusCode={StatusCode} ContentType={ContentType} Uri={Uri} BodyPreview={BodyPreview}",
-                workerId,
+                "SuccessFactors request failed. StatusCode={StatusCode} ContentType={ContentType}",
                 (int)response.StatusCode,
-                response.Content.Headers.ContentType?.MediaType ?? "(none)",
-                requestUri,
-                TrimForLog(body));
+                response.Content.Headers.ContentType?.MediaType ?? "(none)");
 
             throw CreateDetailedSuccessFactorsException(
                 messagePrefix: "SuccessFactors request failed.",
@@ -542,11 +525,9 @@ public sealed class SuccessFactorsWorkerSource(
         }
 
         logger.LogError(
-            "SuccessFactors full sync request failed. StatusCode={StatusCode} ContentType={ContentType} Uri={Uri} BodyPreview={BodyPreview}",
+            "SuccessFactors full sync request failed. StatusCode={StatusCode} ContentType={ContentType}",
             (int)response.StatusCode,
-            response.Content.Headers.ContentType?.MediaType ?? "(none)",
-            requestUri,
-            TrimForLog(body));
+            response.Content.Headers.ContentType?.MediaType ?? "(none)");
 
         throw CreateDetailedSuccessFactorsException(
             messagePrefix: "SuccessFactors full sync request failed.",
@@ -957,9 +938,8 @@ public sealed class SuccessFactorsWorkerSource(
         {
             var pagingMode = TryGetHeaderValue(response.Headers, "X-SF-Paging");
             logger.LogInformation(
-                "SuccessFactors list page returned successfully. PagingMode={PagingMode} RequestUri={RequestUri}",
-                string.IsNullOrWhiteSpace(pagingMode) ? "(none)" : pagingMode,
-                requestUri);
+                "SuccessFactors list page returned successfully. PagingMode={PagingMode}",
+                string.IsNullOrWhiteSpace(pagingMode) ? "(none)" : pagingMode);
             return new SuccessFactorsResponsePayload(
                 RequestUri: requestUri,
                 Body: body,

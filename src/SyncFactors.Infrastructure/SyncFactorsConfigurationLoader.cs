@@ -76,6 +76,7 @@ public sealed class SyncFactorsConfigurationLoader
                     fallbackJsonValue: document.GetRequiredObject("ad").TryGetString("server"),
                     configPath: "secrets.adServerEnv",
                     secretLabel: "AD server"),
+                Port: TryGetInt32(document.GetRequiredObject("ad"), "port"),
                 Username: GetOptionalSecretValue(
                     environmentVariableName: secrets.AdUsernameEnv,
                     fallbackJsonValue: document.GetRequiredObject("ad").TryGetString("username")),
@@ -86,6 +87,7 @@ public sealed class SyncFactorsConfigurationLoader
                 DefaultActiveOu: document.GetRequiredObject("ad").GetRequiredString("defaultActiveOu"),
                 PrehireOu: document.GetRequiredObject("ad").GetRequiredString("prehireOu"),
                 GraveyardOu: document.GetRequiredObject("ad").GetRequiredString("graveyardOu"),
+                Transport: LoadActiveDirectoryTransport(document.GetRequiredObject("ad")),
                 IdentityPolicy: LoadActiveDirectoryIdentityPolicy(document.GetRequiredObject("ad"))),
             Sync: new SyncPolicyConfig(
                 EnableBeforeStartDays: document.GetRequiredObject("sync").GetRequiredInt32("enableBeforeStartDays"),
@@ -244,5 +246,23 @@ public sealed class SyncFactorsConfigurationLoader
 
         return new ActiveDirectoryIdentityPolicyConfig(
             ResolveCreateConflictingUpnAndMail: identityPolicy.TryGetBoolean("resolveCreateConflictingUpnAndMail") ?? false);
+    }
+
+    private static ActiveDirectoryTransportConfig LoadActiveDirectoryTransport(JsonElement ad)
+    {
+        if (!ad.TryGetObject("transport", out var transport))
+        {
+            return new ActiveDirectoryTransportConfig(
+                Mode: "ldaps",
+                RequireCertificateValidation: true,
+                RequireSigning: true,
+                TrustedCertificateThumbprints: []);
+        }
+
+        return new ActiveDirectoryTransportConfig(
+            Mode: transport.TryGetString("mode") ?? "ldaps",
+            RequireCertificateValidation: transport.TryGetBoolean("requireCertificateValidation") ?? true,
+            RequireSigning: transport.TryGetBoolean("requireSigning") ?? true,
+            TrustedCertificateThumbprints: transport.TryGetStringArray("trustedCertificateThumbprints") ?? []);
     }
 }
