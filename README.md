@@ -1,6 +1,6 @@
 # [Alpha] SyncFactors
 
-`SyncFactors` is the primary SyncFactors implementation and repository root.
+`SyncFactors` is the current .NET-based SyncFactors implementation and repository root.
 
 > [!WARNING]
 > [Alpha] This software is in active development, has a high risk of failure, and is not ready for production use.
@@ -8,51 +8,93 @@
 
 ## Current State
 
-- The repository root is now the .NET-based `SyncFactors` implementation.
-- The current stack is local-first and centered on ASP.NET Core, background workers, and SQLite-backed runtime state.
-- Production readiness is not implied by the current feature set, repository layout, or available scripts.
+- The active implementation is a local-first .NET 10 solution built around ASP.NET Core, a background worker, and SQLite-backed runtime state.
+- The repository already contains operator-facing UI flows, run history, scheduling, dependency health probes, worker preview/apply flows, and local authentication.
+- Production readiness is not implied by the current feature set, repository layout, sample config, or helper scripts.
 
 ## Goals
 
-- Consolidate the runtime into a single modern .NET stack.
 - Keep the product local-first and operator-friendly.
 - Preserve dry-run, review, approvals, rollback, and auditability as first-class capabilities.
-- Replace shell-driven orchestration with typed domain services and explicit job/state models.
-- Create a path from a single-tenant Windows admin tool to a future hosted control plane if needed.
+- Replace shell-driven orchestration with typed domain services and explicit job/state models where practical.
+- Maintain a path from a single-tenant Windows admin tool to a future hosted control plane if that becomes necessary.
 
-## Proposed Stack
+## Current Stack
 
-- Backend/API: ASP.NET Core
-- Background execution: .NET hosted services
-- UI: Razor Pages first, with light progressive enhancement
-- Data: SQLite
-- Directory integration: .NET + PowerShell seam only where necessary
-- Tests: xUnit + approval/fixture-style scenario tests
+- Runtime: .NET 10
+- Operator UI: ASP.NET Core Razor Pages
+- Background execution: .NET hosted worker service
+- Runtime state: SQLite
+- Directory integration: .NET plus PowerShell seams where needed
+- Tests: xUnit across API, domain, infrastructure, and mock SuccessFactors projects
 
 ## Solution Shape
 
-- `src/SyncFactors.Api`: local operator UI and HTTP API
-- `src/SyncFactors.Worker`: background sync execution host
-- `src/SyncFactors.Domain`: core lifecycle rules and orchestration contracts
-- `src/SyncFactors.Infrastructure`: SQLite, AD, SuccessFactors, email, filesystem, process adapters
-- `src/SyncFactors.Contracts`: shared DTOs and events
-- `tests/*`: unit and integration test projects
-- `docs/architecture.md`: target architecture
-- `config/*`: tracked sample config, local config, and scaffold configuration
+- `src/SyncFactors.Api`: local operator UI plus authenticated JSON endpoints for status, dashboard, health, runs, and schedule management
+- `src/SyncFactors.Worker`: background host that claims queued runs, executes sync work, records heartbeats, and processes recurring schedules
+- `src/SyncFactors.MockSuccessFactors`: local SuccessFactors-like API plus fixture generation tooling for development and testing
+- `src/SyncFactors.Domain`: run orchestration, preview/apply behavior, lifecycle rules, scheduling, and sync coordination
+- `src/SyncFactors.Infrastructure`: SQLite persistence, Active Directory access, SuccessFactors client logic, local auth, filesystem helpers, and config loading
+- `src/SyncFactors.Contracts`: shared runtime DTOs and status models
+- `tests/*`: unit and integration test projects aligned to the runtime components above
+- `config/*`: tracked sample config, mock fixture data, and scaffold data
+- `docs/architecture.md`: architecture direction and system boundaries
+- `docs/empjob-ad-mapping.md`: current field mapping notes for the `EmpJob` flow
 
-I am also toying around with Razor Pages versus the Vite-based frontend spike in `frontend-spike/`. The current direction still favors Razor Pages for the operator UI, but that comparison is active and not fully settled yet.
+I am also comparing Razor Pages with the Vite-based UI spike in `frontend-spike/`. The current operator surface is still Razor Pages first.
 
-## Codex Worktrees On macOS
-Codex app worktrees can bootstrap this repository automatically through the checked-in local environment at [`.codex/environments/environment.toml`](/Users/chrisbrien/.codex/worktrees/be52/syncfactors/.codex/environments/environment.toml). Open the project in the Codex app, choose the local environment when starting a worktree thread, and Codex will run [`scripts/codex/setup-worktree-macos.sh`](/Users/chrisbrien/.codex/worktrees/be52/syncfactors/scripts/codex/setup-worktree-macos.sh) on worktree creation. That macOS wrapper now delegates to the shared PowerShell bootstrap script so the setup behavior matches Windows.
+## What Works Today
 
-This setup is macOS-only in v1 and is intentionally scoped to the core local dev loop:
-- prepare local config files for the .NET rewrite when missing
-- copy ignored local runtime files from the primary checkout when missing
-- fall back to tracked `config/sample*.json` files when local config files are still missing
-- create runtime/report directories used by the .NET API and worker
-- fall back to [`.env.worktree.example`](/Users/chrisbrien/.codex/worktrees/be52/syncfactors/.env.worktree.example) when `.env.worktree` is still missing
+- Operator dashboard with current runtime status, recent runs, active run summary, and dependency health
+- Ad hoc run queueing for dry-run and live syncs
+- Recurring full-sync schedule configuration backed by SQLite
+- Run history and run detail pages
+- Worker preview flow that stages one worker, persists the preview, and supports explicit apply from the saved fingerprint
+- Local username/password authentication with cookie auth and an admin-only user management page
+- Mock SuccessFactors API for local development, fixture playback, and synthetic worker population
+- Delete-all testing reset flow from the Sync page
 
-The per-worktree runtime contract is `.env.worktree`. Keep auth, profile selection, ports, and local overrides there rather than in tracked JSON or tracked `.codex` files. JSON remains the structural config layer. On Windows, `scripts/codex/Load-WorktreeEnv.ps1` now checks Windows Credential Manager first for each variable and falls back to `.env.worktree` when no stored value exists. The default local test path is fake SuccessFactors plus real Active Directory, so fill in the AD values there before starting the rewrite services. The default values are:
+> [!CAUTION]
+> The delete-all/testing reset flow is destructive. It exists for controlled testing and operator workflows and should be treated as dangerous even in non-production environments.
+
+## Status
+
+The solution builds from the repository root against the locally installed .NET 10 SDK.
+
+The repository is still alpha. The implementation is concrete enough to document current operator flows, but APIs, config shape, storage details, and operational behavior may still change materially.
+
+## Local Development
+
+Primary commands from the repository root:
+
+```powershell
+dotnet build ./SyncFactors.Next.sln
+dotnet test ./SyncFactors.Next.sln
+```
+
+The helper scripts under `scripts/` and `scripts/codex/` are the current supported launch path for the local stack.
+
+## Config Model
+
+The rewrite keeps tracked samples and ignored local config under `config/`.
+
+- `config/sample.mock-successfactors.real-ad.sync-config.json`: sample config for mock SuccessFactors plus real Active Directory
+- `config/sample.real-successfactors.real-ad.sync-config.json`: sample config for real SuccessFactors plus real Active Directory
+- `config/sample.empjob-confirmed.mapping-config.json`: sample mapping config for the current `EmpJob`-driven flow
+- `config/local*.json`: local editable copies created by the worktree bootstrap script when missing
+
+Sync config resolution currently works like this:
+
+1. `.env.worktree` sets `SYNCFACTORS_RUN_PROFILE` to `mock` or `real`
+2. If `SYNCFACTORS_CONFIG_PATH` is set, that explicit path wins
+3. Otherwise the active profile resolves to `config/local.mock-successfactors.real-ad.sync-config.json` or `config/local.real-successfactors.real-ad.sync-config.json`
+4. Mapping config resolves from `SYNCFACTORS_MAPPING_CONFIG_PATH`, or defaults to `config/local.syncfactors.mapping-config.json`
+
+`.env.worktree` is the main per-worktree environment contract. Keep auth, profile selection, ports, and local overrides there rather than in tracked JSON or tracked `.codex` files.
+
+On Windows, `scripts/codex/Load-WorktreeEnv.ps1` checks the worktree-scoped Windows Credential Manager entry for each variable first, then falls back to `.env.worktree`, then `.env.worktree.example`, and finally built-in defaults where applicable.
+
+The checked-in example currently includes:
 
 ```bash
 SYNCFACTORS_RUN_PROFILE=mock
@@ -61,76 +103,140 @@ SYNCFACTORS_MAPPING_CONFIG_PATH=./config/local.syncfactors.mapping-config.json
 SYNCFACTORS_SQLITE_PATH=state/runtime/syncfactors.db
 SYNCFACTORS_API_PORT=5087
 MOCK_SF_PORT=18080
+MOCK_SF_SYNTHETIC_POPULATION_ENABLED=true
+MOCK_SF_TARGET_WORKER_COUNT=1000
+SYNCFACTORS_KEYCHAIN_SERVICE=syncfactors
+SF_AD_SYNC_SF_USERNAME=
+SF_AD_SYNC_SF_PASSWORD=
+SF_AD_SYNC_SF_CLIENT_ID=mock-client-id
+SF_AD_SYNC_SF_CLIENT_SECRET=mock-client-secret
+SF_AD_SYNC_AD_SERVER=
+SF_AD_SYNC_AD_USERNAME=
+SF_AD_SYNC_AD_BIND_PASSWORD=
+SF_AD_SYNC_AD_DEFAULT_PASSWORD=
 ```
 
-On macOS, you can keep sensitive `SF_AD_SYNC_*` values out of `.env.worktree` entirely and store them in the login Keychain instead. The launchers now fall back to the Keychain service named by `SYNCFACTORS_KEYCHAIN_SERVICE` (default `syncfactors`) when those variables are blank in `.env.worktree`. To store one:
+On macOS, you can keep sensitive `SF_AD_SYNC_*` values out of `.env.worktree` entirely and store them in the login Keychain instead. The launchers fall back to the Keychain service named by `SYNCFACTORS_KEYCHAIN_SERVICE` when those variables are blank in `.env.worktree`. To store one:
 
 ```bash
 ./scripts/codex/set-macos-keychain-secret.sh SF_AD_SYNC_AD_BIND_PASSWORD
 ```
 
-The helper stores the secret under account name equal to the environment variable name, so blank values in `.env.worktree` will be filled automatically on macOS launches.
+On Windows, you can import worktree values into Windows Credential Manager with:
 
-Set `SYNCFACTORS_RUN_PROFILE=mock` or `real` to switch the active SuccessFactors config. Leave `SYNCFACTORS_CONFIG_PATH` empty for profile-based resolution, or set it only when you want an explicit one-off override. In secondary worktrees, the setup script first seeds `.env.worktree` and root `config/local*` or `config/*.variables` files from the primary checkout when they exist. It then falls back to tracked sample files for anything still missing. Existing local files stay untouched, so it is safe to rerun. It prepares local files and directories only; it does not start long-running services. The primary launcher is PowerShell so the same commands work on macOS and Windows. On macOS, the Codex helper actions still open dedicated terminal windows through the local shell helper.
+```powershell
+pwsh ./scripts/codex/Save-WorktreeEnvToWindowsCredentialManager.ps1
+```
 
-The intended local test loop is:
-- run `pwsh ./scripts/codex/setup-worktree.ps1`
-- fill in `.env.worktree` with your real AD credentials and any local overrides
-- on Windows, import those values with `pwsh ./scripts/codex/Save-WorktreeEnvToWindowsCredentialManager.ps1`
-- start one service with `pwsh ./scripts/codex/run.ps1 -Service mock|api|worker`
-- or open the profile-aware local stack with `pwsh ./scripts/codex/run.ps1 -Service stack`
-- use `-Profile real` to override the profile for a single run without editing `.env.worktree`
+Use `-RemoveEmptyValues` if blank entries in `.env.worktree` should delete the corresponding stored credentials instead of saving empty strings.
 
-On Windows, the effective lookup order is:
-- the worktree-scoped Windows Credential Manager entry for that variable
-- the value in `.env.worktree`
-- the fallback default from `.env.worktree.example` where one exists
-
-Use `pwsh ./scripts/codex/Save-WorktreeEnvToWindowsCredentialManager.ps1 -RemoveEmptyValues` if you want blank entries in `.env.worktree` to delete the corresponding stored credentials instead of saving empty strings.
-
-When you run `-Service stack`, the launched services depend on the active profile:
-- `mock`: starts the mock SuccessFactors API, the SyncFactors .NET API, and the worker
-- `real`: starts the SyncFactors .NET API and the worker
-
-On macOS, `./scripts/codex/setup-worktree-macos.sh` remains available as a wrapper. On Windows, use the PowerShell commands directly.
-
-For project-scoped `.codex` settings to load, this repo or one of its parent paths must be marked trusted in `~/.codex/config.toml`. Codex skips project-scoped `.codex` layers for untrusted projects.
-
-## Status
-
-The solution now builds from the repository root against the locally installed .NET 10 SDK.
-
-This repository is still in alpha. Design direction is clearer than operational maturity. Expect APIs, config shapes, workflows, and storage details to change while the rewrite settles.
-
-## Local Config
-
-The rewrite keeps its tracked and local config files under `config`. Use the `sample.*.json` files there as templates and keep machine-specific values in the ignored `local.*.json` files in the same folder. The local JSON files are editable copies, not the primary environment selector. The active sync config is chosen from `.env.worktree` via `SYNCFACTORS_RUN_PROFILE` unless you explicitly override `SYNCFACTORS_CONFIG_PATH`.
+Set `SYNCFACTORS_RUN_PROFILE=mock` or `real` to switch the active SuccessFactors config. Leave `SYNCFACTORS_CONFIG_PATH` empty for profile-based resolution, or set it only when you want an explicit one-off override.
 
 For Active Directory binds, the current .NET LDAP integration uses simple bind semantics. Set `SF_AD_SYNC_AD_USERNAME` to a UPN such as `svc_successfactors@example.local`, not a down-level logon name such as `EXAMPLE\svc_successfactors`, or AD may reject the credentials even when the password is correct.
 
 For full-sync `EmpJob` queries, `successFactors.query.inactiveRetentionDays` can extend the source filter to keep recently inactive workers in scope without hand-writing the date cutoff in `baseFilter`. With the default fields, a config like `"baseFilter": "emplStatus in 'A','U'"` plus `"inactiveRetentionDays": 180` expands to include terminated (`emplStatus eq 'T'`) workers whose `endDate` is within the last 180 days. Override `inactiveStatusField`, `inactiveStatusValues`, or `inactiveDateField` if your tenant uses different fields or status codes.
 
+## Local Auth
+
+The API uses local username/password authentication backed by SQLite.
+
+- Cookie auth protects the operator UI and authenticated API routes
+- The admin user management page lives under `/Admin/Users`
+- Admin accounts can create users, reset passwords, change roles, deactivate accounts, and delete users
+
+On first startup, if no local users exist, the API requires bootstrap admin credentials to be configured through `SyncFactors:Auth:BootstrapAdmin:Username` and `SyncFactors:Auth:BootstrapAdmin:Password`. If those values are missing and the user store is empty, startup fails intentionally.
+
+## Running The Local Stack
+
+Bootstrap a checkout or worktree first:
+
+```powershell
+pwsh ./scripts/codex/setup-worktree.ps1
+```
+
+That script:
+
+- creates runtime/report directories when missing
+- creates `config/local.mock-successfactors.real-ad.sync-config.json` when missing
+- creates `config/local.real-successfactors.real-ad.sync-config.json` when missing
+- creates `config/local.syncfactors.mapping-config.json` when missing
+- creates `.env.worktree` from `.env.worktree.example` when missing
+- copies ignored local config from the primary worktree first when available
+
+The intended local loop is:
+
+```powershell
+pwsh ./scripts/codex/setup-worktree.ps1
+pwsh ./scripts/codex/run.ps1 -Service mock
+pwsh ./scripts/codex/run.ps1 -Service api
+pwsh ./scripts/codex/run.ps1 -Service worker
+```
+
+If you are using Windows Credential Manager, import values before launching services:
+
+```powershell
+pwsh ./scripts/codex/Save-WorktreeEnvToWindowsCredentialManager.ps1
+```
+
+Or start the profile-aware stack in one command:
+
+```powershell
+pwsh ./scripts/codex/run.ps1 -Service stack
+```
+
+Useful variants:
+
+- `pwsh ./scripts/codex/run.ps1 -Service stack -Profile mock`
+- `pwsh ./scripts/codex/run.ps1 -Service stack -Profile real`
+- `pwsh ./scripts/codex/run.ps1 -Service stack -Restart`
+- `pwsh ./scripts/codex/run.ps1 -Service api -SkipBuild`
+
+When you run `-Service stack`, the launched services depend on the active profile:
+
+- `mock`: starts the mock SuccessFactors API, the SyncFactors API, and the worker
+- `real`: starts the SyncFactors API and the worker
+
+The lower-level start scripts remain available if you need to launch individual components directly:
+
+- `scripts/Start-SyncFactorsMockSuccessFactors.ps1`
+- `scripts/Start-SyncFactorsNextApi.ps1`
+- `scripts/Start-SyncFactorsWorker.ps1`
+
+## Codex Worktrees On macOS
+
+Codex app worktrees can bootstrap this repository through the checked-in local environment at `.codex/environments/environment.toml`. Open the project in the Codex app, choose the local environment when starting a worktree thread, and Codex will run `scripts/codex/setup-worktree-macos.sh` on worktree creation. That macOS wrapper delegates to the shared PowerShell bootstrap script so the setup behavior matches Windows.
+
+This setup is intentionally scoped to the core local dev loop:
+
+- prepare local config files for the .NET rewrite when missing
+- copy ignored local runtime files from the primary checkout when missing
+- fall back to tracked `config/sample*.json` files when local config files are still missing
+- create runtime/report directories used by the API and worker
+- fall back to `.env.worktree.example` when `.env.worktree` is still missing
+
+For project-scoped `.codex` settings to load, this repo or one of its parent paths must be marked trusted in `~/.codex/config.toml`. Codex skips project-scoped `.codex` layers for untrusted projects.
+
 ## Mock SuccessFactors
 
 Use `src/SyncFactors.MockSuccessFactors` to run a local SuccessFactors-like API for development.
 
-- Preferred local launcher: `scripts/Start-SyncFactorsMockSuccessFactors.ps1`
-- Start the mock server with `DOTNET_CLI_HOME=/tmp dotnet run --project src/SyncFactors.MockSuccessFactors`
-- Point the sync config at `http://127.0.0.1:18080/odata/v2` using `config/sample.mock-successfactors.real-ad.sync-config.json`
-- Baseline fixture data lives in `config/mock-successfactors/baseline-fixtures.json`
-- Sample import data for sanitization lives in `config/mock-successfactors/sample-export.json`
+- Preferred launcher: `scripts/Start-SyncFactorsMockSuccessFactors.ps1`
+- Direct run: `dotnet run --project src/SyncFactors.MockSuccessFactors --no-launch-profile`
+- Default URL: `http://127.0.0.1:18080`
+- Baseline fixture data: `config/mock-successfactors/baseline-fixtures.json`
+- Sample import data for sanitization: `config/mock-successfactors/sample-export.json`
 
 Generate sanitized fixtures from exported OData payloads with:
 
 ```bash
-DOTNET_CLI_HOME=/tmp dotnet run --project src/SyncFactors.MockSuccessFactors -- \
+dotnet run --project src/SyncFactors.MockSuccessFactors -- \
   generate-fixtures \
   --input config/mock-successfactors/sample-export.json \
   --output /tmp/sanitized-fixtures.json \
   --manifest /tmp/sanitized-fixtures.manifest.json
 ```
 
-The mock intentionally supports only the current SyncFactors query shapes: OAuth or Basic auth, `PerPerson` for preview, `EmpJob` for the main worker query, `$format=json`, `$filter` on `personIdExternal` or `userId`, plus the existing `$select` and `$expand` paths used by the client.
+The mock intentionally supports the query shapes used by the current SyncFactors client: OAuth or Basic auth, `PerPerson` for preview, `EmpJob` for the main worker query, `$format=json`, `$filter` on `personIdExternal` or `userId`, and the current `$select` and `$expand` paths used by the client.
 
 If you need to capture a real `PerPerson` payload before sanitizing it, use:
 
@@ -139,7 +245,7 @@ If you need to capture a real `PerPerson` payload before sanitizing it, use:
 
 If you need an admin-safe handoff file, use `scripts/Export-SfPerPerson-Sanitized.ps1`. It fetches the response, sanitizes it in memory, and writes only the sanitized JSON to disk. Add `-AliasOrgValues` if company, department, or location labels should also be anonymized, and `-KeepPersonIdExternal` if you need to preserve the source worker ID.
 
-If your tenant rejects one of the optional fields in the hard-coded query, all three export scripts now support `-ExcludeSelectPath` and `-ExcludeExpandPath`. For example, to skip business unit:
+If your tenant rejects one of the optional fields in the hard-coded query, all three export scripts support `-ExcludeSelectPath` and `-ExcludeExpandPath`. For example, to skip business unit:
 
 ```powershell
 -ExcludeSelectPath "employmentNav/jobInfoNav/businessUnitNav/businessUnit" `
