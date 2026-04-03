@@ -142,11 +142,6 @@ if ([string]::IsNullOrWhiteSpace($env:SYNCFACTORS_API_PORT)) {
     $variableSources['SYNCFACTORS_API_PORT'] = 'built-in default'
 }
 
-if ([string]::IsNullOrWhiteSpace($env:SYNCFACTORS_WEB_PORT)) {
-    $env:SYNCFACTORS_WEB_PORT = '4280'
-    $variableSources['SYNCFACTORS_WEB_PORT'] = 'built-in default'
-}
-
 if ([string]::IsNullOrWhiteSpace($env:MOCK_SF_PORT)) {
     $env:MOCK_SF_PORT = '18080'
     $variableSources['MOCK_SF_PORT'] = 'built-in default'
