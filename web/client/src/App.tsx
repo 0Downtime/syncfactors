@@ -328,7 +328,7 @@ function DashboardPage(props: { onOpenRun: (runId: string) => void; onOpenSync: 
               <p className="eyebrow">Active Run</p>
               {dashboard?.activeRun ? (
                 <>
-                  <p><strong>{dashboard.activeRun.runId}</strong></p>
+                  <p className="run-health-id"><strong>{dashboard.activeRun.runId}</strong></p>
                   <p className="muted">{dashboard.activeRun.mode} · {dashboard.activeRun.processedWorkers} / {dashboard.activeRun.totalWorkers} workers</p>
                   <p><button type="button" className="inline-link" onClick={() => props.onOpenRun(dashboard.activeRun!.runId)}>Open active run</button></p>
                 </>
@@ -338,7 +338,7 @@ function DashboardPage(props: { onOpenRun: (runId: string) => void; onOpenSync: 
               <p className="eyebrow">Last Completed</p>
               {dashboard?.lastCompletedRun ? (
                 <>
-                  <p><strong>{dashboard.lastCompletedRun.runId}</strong></p>
+                  <p className="run-health-id"><strong>{dashboard.lastCompletedRun.runId}</strong></p>
                   <p className="muted">{dashboard.lastCompletedRun.status} · {dashboard.lastCompletedRun.mode} · {dashboard.lastCompletedRun.totalWorkers} workers</p>
                   <p><button type="button" className="inline-link" onClick={() => props.onOpenRun(dashboard.lastCompletedRun!.runId)}>Review last run</button></p>
                 </>
