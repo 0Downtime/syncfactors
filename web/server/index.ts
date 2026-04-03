@@ -16,6 +16,7 @@ async function main(): Promise<void> {
   const port = Number.parseInt(args.port ?? process.env.PORT ?? '4280', 10);
   const apiPort = Number.parseInt(process.env.SYNCFACTORS_API_PORT ?? '5087', 10);
   const apiBaseUrl = args.apiBaseUrl ?? process.env.SYNCFACTORS_API_BASE_URL ?? `https://127.0.0.1:${apiPort}`;
+  configureLocalApiTls(apiBaseUrl);
   const app = createApp({
     apiBaseUrl,
     distRoot: process.env.NODE_ENV === 'production' ? distRoot : undefined,
@@ -65,6 +66,21 @@ function parseArgs(argv: string[]): Record<string, string> {
   }
 
   return result;
+}
+
+function configureLocalApiTls(apiBaseUrl: string) {
+  if (process.env.NODE_ENV === 'production') {
+    return;
+  }
+
+  const url = new URL(apiBaseUrl);
+  const isLocalHttps =
+    url.protocol === 'https:' &&
+    (url.hostname === '127.0.0.1' || url.hostname === 'localhost');
+
+  if (isLocalHttps) {
+    process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+  }
 }
 
 main().catch((error) => {
