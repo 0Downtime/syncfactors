@@ -223,8 +223,8 @@ Useful variants:
 
 When you run `-Service stack`, the launched services depend on the active profile:
 
-- `mock`: starts the mock SuccessFactors API, the SyncFactors API, and the worker
-- `real`: starts the SyncFactors API and the worker
+- `mock`: starts the mock SuccessFactors API, the SyncFactors API, the worker, and the Vite web UI
+- `real`: starts the SyncFactors API, the worker, and the Vite web UI
 
 The lower-level start scripts remain available if you need to launch individual components directly:
 
