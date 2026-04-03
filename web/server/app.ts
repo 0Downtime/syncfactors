@@ -12,7 +12,13 @@ export function createApp(dependencies: AppDependencies): Express {
   const app = express();
 
   app.use('/api', async (request, response) => {
-    await proxyRequest(request, response, dependencies.apiBaseUrl);
+    try {
+      await proxyRequest(request, response, dependencies.apiBaseUrl);
+    } catch {
+      response.status(502).json({
+        error: `Unable to reach the SyncFactors API at ${dependencies.apiBaseUrl}.`,
+      });
+    }
   });
 
   if (dependencies.distRoot) {
