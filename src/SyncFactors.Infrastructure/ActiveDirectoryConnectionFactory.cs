@@ -9,8 +9,50 @@ namespace SyncFactors.Infrastructure;
 internal static class ActiveDirectoryConnectionFactory
 {
     public static LdapConnection CreateConnection(ActiveDirectoryConfig config, ILogger logger, TimeSpan timeout)
+        => CreateConnectionWithTransport(config, logger, timeout).Connection;
+
+    public static ActiveDirectoryConnectionResult CreateConnectionWithTransport(ActiveDirectoryConfig config, ILogger logger, TimeSpan timeout)
     {
-        var identifier = new LdapDirectoryIdentifier(config.Server, config.Port ?? GetDefaultPort(config.Transport.Mode));
+        var primaryMode = config.Transport.Mode;
+
+        try
+        {
+            return new ActiveDirectoryConnectionResult(
+                CreateConnectionForMode(config, logger, timeout, primaryMode),
+                RequestedTransport: primaryMode,
+                EffectiveTransport: primaryMode,
+                UsedFallback: false);
+        }
+        catch (LdapException primaryException) when (ShouldTryPlainLdapFallback(config, primaryMode))
+        {
+            var fallbackPort = GetPortForMode(config.Port, "ldap", primaryMode);
+            logger.LogWarning(
+                primaryException,
+                "AD bind failed over {PrimaryTransport}. Retrying with plain LDAP. FallbackPort={Port}",
+                primaryMode,
+                fallbackPort);
+
+            try
+            {
+                return new ActiveDirectoryConnectionResult(
+                    CreateConnectionForMode(config, logger, timeout, "ldap"),
+                    RequestedTransport: primaryMode,
+                    EffectiveTransport: "ldap",
+                    UsedFallback: true);
+            }
+            catch (LdapException fallbackException)
+            {
+                fallbackException.Data["LdapAttemptSummary"] =
+                    $"attempted transport='{primaryMode}' on port {GetPortForMode(config.Port, primaryMode, primaryMode)}, then fallback transport='ldap' on port {fallbackPort}";
+                throw;
+            }
+        }
+    }
+
+    private static LdapConnection CreateConnectionForMode(ActiveDirectoryConfig config, ILogger logger, TimeSpan timeout, string mode)
+    {
+        var port = GetPortForMode(config.Port, mode, config.Transport.Mode);
+        var identifier = new LdapDirectoryIdentifier(config.Server, port);
         var connection = new LdapConnection(identifier)
         {
             AuthType = string.IsNullOrWhiteSpace(config.Username) ? AuthType.Anonymous : AuthType.Basic,
@@ -25,9 +67,13 @@ internal static class ActiveDirectoryConnectionFactory
         connection.SessionOptions.ProtocolVersion = 3;
         connection.SessionOptions.Signing = config.Transport.RequireSigning;
         connection.SessionOptions.Sealing = config.Transport.RequireSigning;
-        connection.SessionOptions.VerifyServerCertificate += (_, certificate) => ValidateServerCertificate(certificate, config.Transport);
 
-        if (string.Equals(config.Transport.Mode, "ldaps", StringComparison.OrdinalIgnoreCase))
+        if (!string.Equals(mode, "ldap", StringComparison.OrdinalIgnoreCase))
+        {
+            connection.SessionOptions.VerifyServerCertificate += (_, certificate) => ValidateServerCertificate(certificate, config.Transport);
+        }
+
+        if (string.Equals(mode, "ldaps", StringComparison.OrdinalIgnoreCase))
         {
             connection.SessionOptions.SecureSocketLayer = true;
         }
@@ -35,18 +81,19 @@ internal static class ActiveDirectoryConnectionFactory
         var stopwatch = Stopwatch.StartNew();
         logger.LogInformation(
             "Starting AD bind. Port={Port} Transport={Transport}",
-            config.Port ?? GetDefaultPort(config.Transport.Mode),
-            config.Transport.Mode);
+            port,
+            mode);
 
-        if (string.Equals(config.Transport.Mode, "starttls", StringComparison.OrdinalIgnoreCase))
+        if (string.Equals(mode, "starttls", StringComparison.OrdinalIgnoreCase))
         {
             connection.SessionOptions.StartTransportLayerSecurity(null);
         }
 
         connection.Bind();
         logger.LogInformation(
-            "Completed AD bind. DurationMs={DurationMs}",
-            stopwatch.ElapsedMilliseconds);
+            "Completed AD bind. DurationMs={DurationMs} Transport={Transport}",
+            stopwatch.ElapsedMilliseconds,
+            mode);
         return connection;
     }
 
@@ -80,8 +127,28 @@ internal static class ActiveDirectoryConnectionFactory
         return chain.Build(certificate2);
     }
 
+    private static bool ShouldTryPlainLdapFallback(ActiveDirectoryConfig config, string mode) =>
+        config.Transport.AllowLdapFallback &&
+        !string.Equals(mode, "ldap", StringComparison.OrdinalIgnoreCase);
+
+    private static int GetPortForMode(int? configuredPort, string requestedMode, string configuredMode)
+    {
+        if (configuredPort is null)
+        {
+            return GetDefaultPort(requestedMode);
+        }
+
+        if (string.Equals(requestedMode, "ldap", StringComparison.OrdinalIgnoreCase) &&
+            configuredPort.Value == GetDefaultPort(configuredMode))
+        {
+            return GetDefaultPort("ldap");
+        }
+
+        return configuredPort.Value;
+    }
+
     private static int GetDefaultPort(string mode) =>
-        string.Equals(mode, "starttls", StringComparison.OrdinalIgnoreCase) ? 389 : 636;
+        string.Equals(mode, "ldaps", StringComparison.OrdinalIgnoreCase) ? 636 : 389;
 
     private static string NormalizeThumbprint(string? thumbprint) =>
         string.IsNullOrWhiteSpace(thumbprint)
@@ -90,3 +157,9 @@ internal static class ActiveDirectoryConnectionFactory
                 .Replace(" ", string.Empty, StringComparison.Ordinal)
                 .Trim();
 }
+
+internal sealed record ActiveDirectoryConnectionResult(
+    LdapConnection Connection,
+    string RequestedTransport,
+    string EffectiveTransport,
+    bool UsedFallback);

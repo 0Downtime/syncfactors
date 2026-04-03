@@ -28,6 +28,7 @@ public sealed class ExternalSystemExceptionFactoryTests
             GraveyardOu: "OU=Graveyard,DC=example,DC=com",
             Transport: new ActiveDirectoryTransportConfig(
                 Mode: "ldaps",
+                AllowLdapFallback: false,
                 RequireCertificateValidation: true,
                 RequireSigning: true,
                 TrustedCertificateThumbprints: []),

@@ -163,6 +163,8 @@ Set `SYNCFACTORS_RUN_PROFILE=mock` or `real` to switch the active SuccessFactors
 
 For Active Directory binds, the current .NET LDAP integration uses simple bind semantics. Set `SF_AD_SYNC_AD_USERNAME` to a UPN such as `svc_successfactors@example.local`, not a down-level logon name such as `EXAMPLE\svc_successfactors`, or AD may reject the credentials even when the password is correct.
 
+If your primary AD transport is `ldaps` or `starttls` and you need an explicit downgrade path for troubleshooting, set `ad.transport.allowLdapFallback` to `true`. SyncFactors will try the configured secure transport first and only retry plain LDAP on port `389` when the configured port was the secure default. Leave this disabled unless you intentionally want that behavior.
+
 For full-sync `EmpJob` queries, `successFactors.query.inactiveRetentionDays` can extend the source filter to keep recently inactive workers in scope without hand-writing the date cutoff in `baseFilter`. With the default fields, a config like `"baseFilter": "emplStatus in 'A','U'"` plus `"inactiveRetentionDays": 180` expands to include terminated (`emplStatus eq 'T'`) workers whose `endDate` is within the last 180 days. Override `inactiveStatusField`, `inactiveStatusValues`, or `inactiveDateField` if your tenant uses different fields or status codes.
 
 ## Local Auth

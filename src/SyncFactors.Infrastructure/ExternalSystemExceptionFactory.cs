@@ -52,7 +52,7 @@ internal static class ExternalSystemExceptionFactory
 
         if (string.Equals(exception.Message, "The LDAP server is unavailable.", StringComparison.OrdinalIgnoreCase))
         {
-            return $"The LDAP server could not be reached. Connection settings: host='{config.Server}', port={config.Port ?? GetDefaultPort(config.Transport.Mode)}, transport={config.Transport.Mode}.";
+            return $"The LDAP server could not be reached. Connection settings: host='{config.Server}', port={config.Port ?? GetDefaultPort(config.Transport.Mode)}, transport={config.Transport.Mode}.{FormatAttemptSummary(exception)}";
         }
 
         if (exception.ServerErrorMessage?.Contains("stronger", StringComparison.OrdinalIgnoreCase) == true ||
@@ -78,7 +78,7 @@ internal static class ExternalSystemExceptionFactory
             var hostPortHint = LooksLikeHostAndPort(config.Server)
                 ? " The configured AD server appears to include a port in the host field; set the host in SF_AD_SYNC_AD_SERVER/ad.server and set the port separately in ad.port."
                 : string.Empty;
-            return $"Confirm the server name, port, VPN/network path, and whether LDAPS or LDAP signing is required. Current config: host='{config.Server}', port={configuredPort}, transport={config.Transport.Mode}.{hostPortHint}";
+            return $"Confirm the server name, port, VPN/network path, and whether LDAPS or LDAP signing is required. Current config: host='{config.Server}', port={configuredPort}, transport={config.Transport.Mode}.{FormatAttemptSummary(exception)}{hostPortHint}";
         }
 
         if (exception.ServerErrorMessage?.Contains("stronger", StringComparison.OrdinalIgnoreCase) == true ||
@@ -124,8 +124,15 @@ internal static class ExternalSystemExceptionFactory
             : $" Details: {details} ";
     }
 
+    private static string FormatAttemptSummary(LdapException exception)
+    {
+        return exception.Data["LdapAttemptSummary"] is string attemptSummary && !string.IsNullOrWhiteSpace(attemptSummary)
+            ? $" Attempt summary: {attemptSummary}."
+            : string.Empty;
+    }
+
     private static int GetDefaultPort(string mode) =>
-        string.Equals(mode, "starttls", StringComparison.OrdinalIgnoreCase) ? 389 : 636;
+        string.Equals(mode, "ldaps", StringComparison.OrdinalIgnoreCase) ? 636 : 389;
 
     private static bool LooksLikeHostAndPort(string value)
     {

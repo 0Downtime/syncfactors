@@ -69,6 +69,7 @@ public sealed record ActiveDirectoryConfig(
 
 public sealed record ActiveDirectoryTransportConfig(
     string Mode,
+    bool AllowLdapFallback,
     bool RequireCertificateValidation,
     bool RequireSigning,
     IReadOnlyList<string> TrustedCertificateThumbprints);

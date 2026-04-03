@@ -260,6 +260,7 @@ public sealed class SyncFactorsConfigurationLoader
         {
             return new ActiveDirectoryTransportConfig(
                 Mode: "ldaps",
+                AllowLdapFallback: false,
                 RequireCertificateValidation: true,
                 RequireSigning: true,
                 TrustedCertificateThumbprints: []);
@@ -267,6 +268,7 @@ public sealed class SyncFactorsConfigurationLoader
 
         return new ActiveDirectoryTransportConfig(
             Mode: transport.TryGetString("mode") ?? "ldaps",
+            AllowLdapFallback: transport.TryGetBoolean("allowLdapFallback") ?? false,
             RequireCertificateValidation: transport.TryGetBoolean("requireCertificateValidation") ?? true,
             RequireSigning: transport.TryGetBoolean("requireSigning") ?? true,
             TrustedCertificateThumbprints: transport.TryGetStringArray("trustedCertificateThumbprints") ?? []);
