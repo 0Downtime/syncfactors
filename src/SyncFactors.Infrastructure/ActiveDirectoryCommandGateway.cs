@@ -55,7 +55,7 @@ public sealed class ActiveDirectoryCommandGateway(
 
     private static DirectoryCommandResult ExecuteCommand(DirectoryMutationCommand command, ActiveDirectoryConfig config, ILogger logger)
     {
-        using var connection = CreateConnection(config, logger, $"command {command.Action} for worker {command.WorkerId}");
+        using var connection = CreateConnection(config, logger);
         var operations = command.Operations.Count > 0
             ? command.Operations
             : [new SyncFactors.Contracts.DirectoryOperation(command.Action, command.TargetOu)];
@@ -411,8 +411,8 @@ public sealed class ActiveDirectoryCommandGateway(
         return -1;
     }
 
-    private static LdapConnection CreateConnection(ActiveDirectoryConfig config, ILogger logger, string purpose)
-        => ActiveDirectoryConnectionFactory.CreateConnection(config, logger, purpose, LdapOperationTimeout);
+    private static LdapConnection CreateConnection(ActiveDirectoryConfig config, ILogger logger)
+        => ActiveDirectoryConnectionFactory.CreateConnection(config, logger, LdapOperationTimeout);
 
     private static async Task<T> ExecuteWithTimeoutAsync<T>(
         Func<T> operation,

@@ -530,7 +530,7 @@ public sealed class DependencyHealthService(
     }
 
     private static LdapConnection CreateLdapConnection(ActiveDirectoryConfig config)
-        => ActiveDirectoryConnectionFactory.CreateConnection(config, NullLogger<DependencyHealthService>.Instance, "dependency health probe", ActiveDirectoryTimeout);
+        => ActiveDirectoryConnectionFactory.CreateConnection(config, NullLogger<DependencyHealthService>.Instance, ActiveDirectoryTimeout);
 
     private static DependencyProbeResult BuildProbe(
         string dependency,

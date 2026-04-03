@@ -8,7 +8,7 @@ namespace SyncFactors.Infrastructure;
 
 internal static class ActiveDirectoryConnectionFactory
 {
-    public static LdapConnection CreateConnection(ActiveDirectoryConfig config, ILogger logger, string purpose, TimeSpan timeout)
+    public static LdapConnection CreateConnection(ActiveDirectoryConfig config, ILogger logger, TimeSpan timeout)
     {
         var identifier = new LdapDirectoryIdentifier(config.Server, config.Port ?? GetDefaultPort(config.Transport.Mode));
         var connection = new LdapConnection(identifier)
@@ -34,8 +34,7 @@ internal static class ActiveDirectoryConnectionFactory
 
         var stopwatch = Stopwatch.StartNew();
         logger.LogInformation(
-            "Starting AD bind. Purpose={Purpose} Port={Port} Transport={Transport}",
-            purpose,
+            "Starting AD bind. Port={Port} Transport={Transport}",
             config.Port ?? GetDefaultPort(config.Transport.Mode),
             config.Transport.Mode);
 
@@ -46,8 +45,7 @@ internal static class ActiveDirectoryConnectionFactory
 
         connection.Bind();
         logger.LogInformation(
-            "Completed AD bind. Purpose={Purpose} DurationMs={DurationMs}",
-            purpose,
+            "Completed AD bind. DurationMs={DurationMs}",
             stopwatch.ElapsedMilliseconds);
         return connection;
     }
