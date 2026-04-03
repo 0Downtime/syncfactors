@@ -24,6 +24,9 @@ import {
   setUserRole,
   startRun,
 } from './api.js';
+import { ApplyResultDetails, DiagnosticsSection, RunEntryDiagnostics, SourceConfidenceSections } from './components.js';
+import { buildRiskCallouts } from './preview-risk.js';
+import { buildLoginPath, buildRunPath, navigate, parseRoute } from './router.js';
 import type {
   DashboardSnapshot,
   DependencyHealthSnapshot,
@@ -37,18 +40,11 @@ import type {
   WorkerPreviewHistoryItem,
   WorkerPreviewResult,
 } from './types.js';
+import { badgeClass, displayBool, enableTransition, formatTimestamp, getInitialTheme, getSavedPreviewRunId, runSummary, THEME_KEY } from './ui-utils.js';
 
 type Theme = 'light' | 'dark';
 type Flash = { tone: 'good' | 'danger' | 'warn'; message: string } | null;
-type Route =
-  | { kind: 'login'; returnUrl: string | null }
-  | { kind: 'dashboard' }
-  | { kind: 'sync'; page: number }
-  | { kind: 'preview'; runId: string | null; workerId: string | null; showAllAttributes: boolean }
-  | { kind: 'run'; runId: string; bucket: string; workerId: string; filter: string; page: number }
-  | { kind: 'users' };
-
-const THEME_KEY = 'syncfactors-next-theme';
+type Route = import('./router.js').Route;
 const RUNS_PAGE_SIZE = 25;
 const ENTRY_PAGE_SIZE = 50;
 const DELETE_ALL_CONFIRMATION = 'DELETE ALL USERS';
@@ -749,6 +745,7 @@ function PreviewPage(props: { route: Extract<Route, { kind: 'preview' }>; onNavi
     () => (props.route.showAllAttributes ? preview?.diffRows ?? [] : (preview?.diffRows ?? []).filter((row) => row.changed)),
     [preview, props.route.showAllAttributes],
   );
+  const riskCallouts = useMemo(() => (preview ? buildRiskCallouts(preview) : []), [preview]);
 
   return (
     <>
@@ -805,18 +802,12 @@ function PreviewPage(props: { route: Extract<Route, { kind: 'preview' }>; onNavi
         </form>
       </section>
 
-      {error ? <section className="panel"><p className="callout danger">{error}</p></section> : null}
+      {error ? <DiagnosticsSection message={error} tone="danger" /> : null}
 
       {applyResult ? (
-        <section className="panel">
-          <p className={`callout ${applyResult.succeeded ? 'good' : 'danger'}`}>{applyResult.message}</p>
-          <dl className="kv preview-meta">
-            <div><dt>Action</dt><dd>{applyResult.action}</dd></div>
-            <div><dt>SAM</dt><dd>{applyResult.samAccountName}</dd></div>
-            <div><dt>Distinguished Name</dt><dd>{applyResult.distinguishedName ?? 'n/a'}</dd></div>
-            <div><dt>Run</dt><dd>{applyResult.runId ?? 'n/a'}</dd></div>
-          </dl>
-        </section>
+        <DiagnosticsSection message={applyResult.message} tone={applyResult.succeeded ? 'good' : 'danger'}>
+          <ApplyResultDetails result={applyResult} />
+        </DiagnosticsSection>
       ) : null}
 
       {preview ? (
@@ -854,6 +845,13 @@ function PreviewPage(props: { route: Extract<Route, { kind: 'preview' }>; onNavi
             <article className="panel">
               <h2>Apply Guardrail</h2>
               <p className="muted">Applying uses the saved preview snapshot, not a silent re-run. This action writes to real Active Directory.</p>
+              {!riskCallouts.length ? (
+                <p className="callout good">No high-risk fields changed in this preview.</p>
+              ) : (
+                <div className="risk-list">
+                  {riskCallouts.map((callout) => <p key={callout} className="callout warn">{callout}</p>)}
+                </div>
+              )}
               <form
                 className="apply-preview-form"
                 onSubmit={async (event) => {
@@ -983,6 +981,8 @@ function PreviewPage(props: { route: Extract<Route, { kind: 'preview' }>; onNavi
               </div>
             )}
           </section>
+
+          <SourceConfidenceSections preview={preview} />
         </>
       ) : null}
     </>
@@ -1138,10 +1138,13 @@ function RunDetailPage(props: { route: Extract<Route, { kind: 'run' }>; onNaviga
                       {entry.primarySummary ? <p className="entry-summary">{entry.primarySummary}</p> : null}
                       {entry.failureSummary ? <p className="callout warn">{entry.failureSummary}</p> : null}
                       {entry.reason || entry.reviewCaseType ? (
-                        <dl className="kv preview-meta">
-                          <div><dt>Reason</dt><dd>{entry.reason ?? 'n/a'}</dd></div>
-                          <div><dt>Review Case</dt><dd>{entry.reviewCaseType ?? 'n/a'}</dd></div>
-                        </dl>
+                        <>
+                          <dl className="kv preview-meta">
+                            <div><dt>Reason</dt><dd>{entry.reason ?? 'n/a'}</dd></div>
+                            <div><dt>Review Case</dt><dd>{entry.reviewCaseType ?? 'n/a'}</dd></div>
+                          </dl>
+                          <RunEntryDiagnostics entry={entry} />
+                        </>
                       ) : null}
                       {entry.operationSummary ? <p><strong>{entry.operationSummary.action}</strong>{entry.operationSummary.effect ? ` · ${entry.operationSummary.effect}` : ''}</p> : null}
                       {entry.topChangedAttributes.length ? <p className="muted">Top changes: {entry.topChangedAttributes.join(', ')}</p> : null}
@@ -1415,162 +1418,4 @@ function UsersPage(props: { currentUserId: string | null; onFlash: (flash: Flash
       </section>
     </>
   );
-}
-
-function parseRoute(location: Location): Route {
-  const url = new URL(location.href);
-  const path = url.pathname;
-  if (path === '/login') {
-    return { kind: 'login', returnUrl: url.searchParams.get('returnUrl') };
-  }
-  if (path === '/sync') {
-    return { kind: 'sync', page: parsePositiveInt(url.searchParams.get('page'), 1) };
-  }
-  if (path === '/preview') {
-    return {
-      kind: 'preview',
-      runId: url.searchParams.get('runId'),
-      workerId: url.searchParams.get('workerId'),
-      showAllAttributes: url.searchParams.get('showAllAttributes') === 'true',
-    };
-  }
-  if (path.startsWith('/runs/')) {
-    return {
-      kind: 'run',
-      runId: decodeURIComponent(path.slice('/runs/'.length)),
-      bucket: url.searchParams.get('bucket') ?? '',
-      workerId: url.searchParams.get('workerId') ?? '',
-      filter: url.searchParams.get('filter') ?? '',
-      page: parsePositiveInt(url.searchParams.get('page'), 1),
-    };
-  }
-  if (path === '/admin/users') {
-    return { kind: 'users' };
-  }
-  return { kind: 'dashboard' };
-}
-
-function parsePositiveInt(value: string | null, fallback: number) {
-  const parsed = Number.parseInt(value ?? '', 10);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
-}
-
-function navigate(path: string, setRoute: (route: Route) => void, replace = false) {
-  const method = replace ? 'replaceState' : 'pushState';
-  window.history[method](null, '', path);
-  setRoute(parseRoute(window.location));
-}
-
-function buildLoginPath(returnUrl: string) {
-  return `/login?returnUrl=${encodeURIComponent(returnUrl)}`;
-}
-
-function buildRunPath(runId: string, route: { bucket: string; workerId: string; filter: string; page: number }) {
-  const params = new URLSearchParams();
-  if (route.bucket) {
-    params.set('bucket', route.bucket);
-  }
-  if (route.workerId) {
-    params.set('workerId', route.workerId);
-  }
-  if (route.filter) {
-    params.set('filter', route.filter);
-  }
-  if (route.page > 1) {
-    params.set('page', String(route.page));
-  }
-  return `/runs/${encodeURIComponent(runId)}${params.toString() ? `?${params.toString()}` : ''}`;
-}
-
-function getInitialTheme(): Theme {
-  try {
-    const stored = window.localStorage.getItem(THEME_KEY);
-    if (stored === 'light' || stored === 'dark') {
-      return stored;
-    }
-  } catch {
-    // Ignore storage errors.
-  }
-  return typeof window.matchMedia === 'function' && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-}
-
-function badgeClass(status: string | null | undefined) {
-  switch ((status ?? '').toLowerCase()) {
-    case 'healthy':
-    case 'succeeded':
-    case 'good':
-      return 'good';
-    case 'degraded':
-    case 'warning':
-    case 'warn':
-    case 'cancelrequested':
-    case 'pending':
-    case 'planned':
-    case 'inprogress':
-      return 'warn';
-    case 'unhealthy':
-    case 'failed':
-    case 'bad':
-      return 'bad';
-    case 'info':
-    case 'admin':
-      return 'info';
-    case 'inactive':
-    case 'canceled':
-      return 'dim';
-    default:
-      return 'neutral';
-  }
-}
-
-function formatTimestamp(value: string | null | undefined) {
-  if (!value) {
-    return 'Unknown';
-  }
-
-  const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime()) ? 'Unknown' : parsed.toLocaleString();
-}
-
-function displayBool(value: boolean | null) {
-  if (value === null) {
-    return 'Unknown';
-  }
-  return value ? 'Yes' : 'No';
-}
-
-function enableTransition(currentEnabled: boolean | null, proposedEnable: boolean | null) {
-  if (currentEnabled === null || proposedEnable === null) {
-    return 'Unknown';
-  }
-  if (currentEnabled === proposedEnable) {
-    return proposedEnable ? 'Enabled' : 'Disabled';
-  }
-  return `${currentEnabled ? 'Enabled' : 'Disabled'} → ${proposedEnable ? 'Enabled' : 'Disabled'}`;
-}
-
-function runSummary(run: DashboardSnapshot['runs'][number]) {
-  const parts: string[] = [];
-  if (run.creates) {
-    parts.push(`${run.creates} creates`);
-  }
-  if (run.updates) {
-    parts.push(`${run.updates} updates`);
-  }
-  if (run.disables) {
-    parts.push(`${run.disables} disables`);
-  }
-  if (run.deletions) {
-    parts.push(`${run.deletions} deletions`);
-  }
-  return parts.length ? parts.join(', ') : 'No changes';
-}
-
-function getSavedPreviewRunId(entry: RunEntriesResponse['entries'][number]) {
-  if (entry.artifactType.toLowerCase() === 'workerpreview') {
-    return entry.runId;
-  }
-
-  const sourcePreviewRunId = entry.item.sourcePreviewRunId;
-  return typeof sourcePreviewRunId === 'string' ? sourcePreviewRunId : null;
 }
