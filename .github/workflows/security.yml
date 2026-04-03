@@ -10,8 +10,7 @@ on:
     - cron: '23 6 * * 1'
   workflow_dispatch:
 
-permissions:
-  contents: read
+permissions: {}
 
 concurrency:
   group: security-${{ github.workflow }}-${{ github.ref }}
