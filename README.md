@@ -122,13 +122,25 @@ On macOS, you can keep sensitive `SF_AD_SYNC_*` values out of `.env.worktree` en
 ./scripts/codex/set-macos-keychain-secret.sh SF_AD_SYNC_AD_BIND_PASSWORD
 ```
 
+To import the full worktree secret set in one pass:
+
+```bash
+./scripts/codex/save-worktree-env-to-macos-keychain.sh
+```
+
+To enter selected values interactively and verify each save succeeded:
+
+```bash
+./scripts/codex/save-worktree-env-to-macos-keychain.sh --interactive SF_AD_SYNC_AD_BIND_PASSWORD SF_AD_SYNC_AD_DEFAULT_PASSWORD
+```
+
 On Windows, you can import worktree values into Windows Credential Manager with:
 
 ```powershell
 pwsh ./scripts/codex/Save-WorktreeEnvToWindowsCredentialManager.ps1
 ```
 
-Use `-RemoveEmptyValues` if blank entries in `.env.worktree` should delete the corresponding stored credentials instead of saving empty strings.
+Use `--remove-empty-values` on macOS or `-RemoveEmptyValues` on Windows if blank entries in `.env.worktree` should delete the corresponding stored credentials instead of saving empty strings.
 
 Set `SYNCFACTORS_RUN_PROFILE=mock` or `real` to switch the active SuccessFactors config. Leave `SYNCFACTORS_CONFIG_PATH` empty for profile-based resolution, or set it only when you want an explicit one-off override.
 
