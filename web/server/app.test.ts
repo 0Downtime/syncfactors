@@ -1,212 +1,33 @@
+// @vitest-environment node
+import express from 'express';
 import request from 'supertest';
-import { describe, expect, it, vi } from 'vitest';
-import { createApp, createMockStatusProvider, extractFirstJsonPayload, normalizeWorkerPreview } from './app.js';
-import { ReportService } from './report-service.js';
+import { createApp } from './app.js';
 
-const dashboardStatus = {
-  configPath: '/tmp/config.json',
-  latestRun: {
-    runId: 'run-1',
-    path: '/tmp/run-1.json',
-    artifactType: 'WorkerPreview',
-    mode: 'Review',
-    dryRun: true,
-    status: 'Succeeded',
-    startedAt: '2026-03-20T10:00:00Z',
-    completedAt: '2026-03-20T10:05:00Z',
-    durationSeconds: 300,
-    reversibleOperations: 1,
-    creates: 0,
-    updates: 1,
-    enables: 0,
-    disables: 0,
-    graveyardMoves: 0,
-    deletions: 0,
-    quarantined: 1,
-    conflicts: 0,
-    guardrailFailures: 0,
-    manualReview: 1,
-    unchanged: 0,
-  },
-  currentRun: {
-    status: 'Idle',
-    stage: 'Completed',
-    processedWorkers: 0,
-    totalWorkers: 0,
-    currentWorkerId: null,
-    lastAction: 'No active sync run.',
-  },
-  recentRuns: [],
-  summary: {
-    lastCheckpoint: '2026-03-20T10:00:00Z',
-    totalTrackedWorkers: 3,
-    suppressedWorkers: 1,
-    pendingDeletionWorkers: 0,
-  },
-  health: {
-    successFactors: { status: 'OK', detail: 'oauth' },
-    activeDirectory: { status: 'OK', detail: 'dc01' },
-  },
-  trackedWorkers: [],
-  context: {},
-  paths: {
-    configPath: '/tmp/config.json',
-    statePath: '/tmp/state.json',
-    reportDirectory: '/tmp/reports',
-    reviewReportDirectory: '/tmp/review',
-    reportDirectories: ['/tmp/reports', '/tmp/review'],
-    runtimeStatusPath: '/tmp/runtime-status.json',
-  },
-  warnings: [],
-};
-
-describe('web api', () => {
-  it('extracts the first complete json payload from mixed PowerShell output', () => {
-    const payload = extractFirstJsonPayload(`
-[2026-03-23 12:00:00][INFO] Starting sync
-{
-  "status": "Succeeded",
-  "message": "Line one\\nLine two",
-  "items": [
-    1,
-    2
-  ]
-}
-[2026-03-23 12:00:02][INFO] Finished sync
-`);
-
-    expect(JSON.parse(payload)).toEqual({
-      status: 'Succeeded',
-      message: 'Line one\nLine two',
-      items: [1, 2],
-    });
-  });
-
-  it('returns dashboard status and new queue/worker endpoints', async () => {
-    const workerActionRunner = vi.fn(async () => ({
-      reportPath: '/tmp/run-2.json',
-      runId: 'run-2',
-      mode: 'Review',
-      status: 'Succeeded',
-      artifactType: 'WorkerPreview',
-      previewMode: 'full',
-      workerScope: { workerId: '1001' },
-    }));
-    const reportService = {
-      listRuns: vi.fn(async () => ({ items: [], total: 0, page: 1, pageSize: 25, warnings: [] })),
-      getRun: vi.fn(async () => ({ run: dashboardStatus.latestRun, report: {}, bucketCounts: {}, warnings: [], reviewExplorer: { created: 0, changed: 0, deleted: 0 } })),
-      getRunEntries: vi.fn(async () => ({ run: dashboardStatus.latestRun, entries: [], total: 0, warnings: [] })),
-      getQueue: vi.fn(async () => ({ queueName: 'manual-review', entries: [], total: 0, page: 1, pageSize: 25, reasonGroups: [], reviewCaseGroups: [], artifactGroups: [], warnings: [] })),
-      getWorkerHistory: vi.fn(async () => ({ workerId: '1001', entries: [], warnings: [] })),
-      getWorkerDetail: vi.fn(async () => ({ workerId: '1001', trackedWorker: null, latestEntry: null, relatedEntries: [], relatedRuns: [], warnings: [] })),
-    } as unknown as ReportService;
-
-    const app = createApp({
-      configPath: '/tmp/config.json',
-      statusProvider: createMockStatusProvider({
-        ...dashboardStatus,
-        recentRuns: [{ ...dashboardStatus.latestRun, mappingConfigPath: '/tmp/mapping.json' }],
-      }),
-      reportService,
-      workerActionRunner,
+describe('createApp', () => {
+  it('proxies api requests to the configured backend', async () => {
+    const upstream = express();
+    upstream.use(express.json());
+    upstream.post('/api/session/login', (req, res) => {
+      res.cookie('SyncFactors.Auth', 'cookie-value');
+      res.json({ username: req.body.username });
     });
 
-    const statusResponse = await request(app).get('/api/status');
-    const queueResponse = await request(app).get('/api/queues/manual-review');
-    const workerResponse = await request(app).get('/api/workers/1001');
-    const workerActionResponse = await request(app)
-      .post('/api/workers/1001/actions')
-      .send({ action: 'review-sync' });
-
-    expect(statusResponse.status).toBe(200);
-    expect(statusResponse.body.status.latestRun.runId).toBe('run-1');
-    expect(queueResponse.status).toBe(200);
-    expect(workerResponse.status).toBe(200);
-    expect(workerActionResponse.status).toBe(200);
-    expect(workerActionResponse.body.result.runId).toBe('run-2');
-    expect(workerActionRunner).toHaveBeenCalledWith(expect.objectContaining({
-      action: 'review-sync',
-      workerId: '1001',
-      mappingConfigPath: '/tmp/mapping.json',
-    }));
-  });
-
-  it('uses preview entry attribute rows when changedAttributes is empty', () => {
-    const preview = normalizeWorkerPreview('full', {
-      reportPath: '/tmp/preview.json',
-      runId: 'preview-1',
-      mode: 'Review',
-      status: 'Succeeded',
-      artifactType: 'WorkerPreview',
-      changedAttributes: [],
-      operations: [],
-      preview: {
-        workerId: '1001',
-        buckets: ['disables'],
-      },
-      entries: [
-        {
-          bucket: 'disables',
-          item: {
-            workerId: '1001',
-            attributeRows: [
-              {
-                sourceField: 'status',
-                targetAttribute: 'enabled',
-                currentAdValue: 'unable',
-                proposedValue: 'disabled',
-                changed: true,
-              },
-            ],
-          },
-        },
-      ],
+    const server = await new Promise<ReturnType<typeof upstream.listen>>((resolve) => {
+      const nextServer = upstream.listen(0, '127.0.0.1', () => resolve(nextServer));
     });
+    const address = server.address();
+    if (!address || typeof address === 'string') {
+      throw new Error('Upstream server did not bind a port.');
+    }
 
-    expect(preview.diffRows).toEqual([
-      {
-        attribute: 'enabled',
-        source: 'status',
-        before: 'unable',
-        after: 'disabled',
-        changed: true,
-      },
-    ]);
-  });
+    const app = createApp({ apiBaseUrl: `http://127.0.0.1:${address.port}` });
+    const response = await request(app)
+      .post('/api/session/login')
+      .send({ username: 'operator' })
+      .expect(200);
 
-  it('synthesizes enabled diff rows for disable previews when lifecycle fields are present', () => {
-    const preview = normalizeWorkerPreview('full', {
-      reportPath: '/tmp/preview.json',
-      runId: 'preview-2',
-      mode: 'Review',
-      status: 'Succeeded',
-      artifactType: 'WorkerPreview',
-      changedAttributes: [],
-      operations: [],
-      preview: {
-        workerId: '40618',
-        buckets: ['disables'],
-      },
-      entries: [
-        {
-          bucket: 'disables',
-          item: {
-            workerId: '40618',
-            currentEnabled: true,
-            proposedEnable: false,
-          },
-        },
-      ],
-    });
-
-    expect(preview.diffRows).toEqual([
-      {
-        attribute: 'enabled',
-        source: null,
-        before: 'true',
-        after: 'false',
-        changed: true,
-      },
-    ]);
+    expect(response.body).toEqual({ username: 'operator' });
+    expect(response.headers['set-cookie']).toBeDefined();
+    server.close();
   });
 });

@@ -1,83 +1,98 @@
-export type HealthStatus = {
+export type Session = {
+  isAuthenticated: boolean;
+  userId: string | null;
+  username: string | null;
+  role: string | null;
+  isAdmin: boolean;
+};
+
+export type RuntimeStatus = {
   status: string;
-  detail: string;
+  stage: string;
+  runId: string | null;
+  mode: string | null;
+  dryRun: boolean;
+  processedWorkers: number;
+  totalWorkers: number;
+  currentWorkerId: string | null;
+  lastAction: string | null;
+  startedAt: string | null;
+  lastUpdatedAt: string | null;
+  completedAt: string | null;
+  errorMessage: string | null;
 };
 
 export type RunSummary = {
-  runId: string | null;
+  runId: string;
   path: string | null;
   artifactType: string;
-  workerScope?: { workerId?: string | null; identityField?: string | null } | null;
-  mode: string | null;
+  configPath: string | null;
+  mappingConfigPath: string | null;
+  mode: string;
   dryRun: boolean;
-  status: string | null;
-  errorMessage?: string | null;
-  startedAt: string | null;
-  completedAt?: string | null;
+  status: string;
+  startedAt: string;
+  completedAt: string | null;
   durationSeconds: number | null;
+  processedWorkers: number;
+  totalWorkers: number;
   creates: number;
   updates: number;
   enables: number;
   disables: number;
-  graveyardMoves?: number;
+  graveyardMoves: number;
   deletions: number;
   quarantined: number;
   conflicts: number;
   guardrailFailures: number;
   manualReview: number;
   unchanged: number;
-  reviewSummary?: Record<string, unknown> | null;
+  syncScope: string;
+  runTrigger: string;
+  requestedBy: string | null;
 };
 
-export type TrackedWorker = {
-  workerId: string;
-  adObjectGuid?: string | null;
-  distinguishedName?: string | null;
-  suppressed?: boolean;
-  firstDisabledAt?: string | null;
-  deleteAfter?: string | null;
-  lastSeenStatus?: string | null;
+export type DashboardSnapshot = {
+  status: RuntimeStatus;
+  runs: RunSummary[];
+  activeRun: RunSummary | null;
+  lastCompletedRun: RunSummary | null;
+  requiresAttention: boolean;
+  attentionMessage: string | null;
+  checkedAt: string;
 };
 
-export type DashboardStatus = {
-  latestRun: RunSummary;
-  currentRun: Record<string, unknown>;
-  recentRuns: RunSummary[];
-  summary: {
-    lastCheckpoint: string | null;
-    totalTrackedWorkers: number;
-    suppressedWorkers: number;
-    pendingDeletionWorkers: number;
-  };
-  health: {
-    successFactors: HealthStatus;
-    activeDirectory: HealthStatus;
-  };
-  trackedWorkers: TrackedWorker[];
-  context: Record<string, unknown>;
-  paths: {
-    configPath: string;
-    statePath: string;
-    reportDirectory: string;
-    reviewReportDirectory: string;
-    reportDirectories: string[];
-    runtimeStatusPath: string;
-  };
-  warnings?: string[];
+export type DependencyProbe = {
+  dependency: string;
+  status: string;
+  summary: string;
+  details: string | null;
+  checkedAt: string;
+  durationMilliseconds: number;
+  observedAt: string | null;
+  isStale: boolean;
 };
 
-export type OperatorAction = {
-  code?: string;
-  label?: string;
-  description?: string;
+export type DependencyHealthSnapshot = {
+  status: string;
+  checkedAt: string;
+  probes: DependencyProbe[];
 };
 
-export type DiffRow = {
-  attribute: string;
-  source: string | null;
-  before: string;
-  after: string;
-  changed: boolean;
+export type SyncScheduleStatus = {
+  enabled: boolean;
+  intervalMinutes: number;
+  nextRunAt: string | null;
+  lastScheduledRunAt: string | null;
+  lastEnqueueAttemptAt: string | null;
+  lastEnqueueError: string | null;
+};
+
+export type RunsResponse = {
+  runs: RunSummary[];
+  total: number;
+  page: number;
+  pageSize: number;
 };
 
 export type OperationSummary = {
@@ -88,160 +103,130 @@ export type OperationSummary = {
   toOu: string | null;
 };
 
-export type EntryRecord = {
+export type DiffRow = {
+  attribute: string;
+  source: string | null;
+  before: string;
+  after: string;
+  changed: boolean;
+};
+
+export type RunEntry = {
   entryId: string;
-  runId: string | null;
-  reportPath: string | null;
+  runId: string;
   artifactType: string;
-  mode: string | null;
+  mode: string;
   bucket: string;
   bucketLabel: string;
-  queueName: QueueName | null;
   workerId: string | null;
   samAccountName: string | null;
   reason: string | null;
   reviewCategory: string | null;
   reviewCaseType: string | null;
-  groupKey: string;
-  groupLabel: string;
-  operatorActionSummary: string | null;
-  operatorActions: OperatorAction[];
-  targetOu: string | null;
-  currentDistinguishedName: string | null;
-  currentEnabled: boolean | null;
-  proposedEnable: boolean | null;
-  matchedExistingUser: boolean | null;
-  changeCount: number;
   startedAt: string | null;
-  staleDays: number | null;
+  changeCount: number;
   operationSummary: OperationSummary | null;
+  failureSummary: string | null;
+  primarySummary: string | null;
+  topChangedAttributes: string[];
   diffRows: DiffRow[];
   item: Record<string, unknown>;
 };
 
-export type RunDetailResponse = {
+export type RunDetail = {
   run: RunSummary;
   report: Record<string, unknown>;
   bucketCounts: Record<string, number>;
-  warnings: string[];
-  reviewExplorer: {
-    created: number;
-    changed: number;
-    deleted: number;
-  };
 };
 
-export type EntryListResponse = {
+export type RunEntriesResponse = {
   run: RunSummary;
-  entries: EntryRecord[];
-  total: number;
-  warnings: string[];
-};
-
-export type QueueName = 'manual-review' | 'quarantined' | 'conflicts' | 'guardrails';
-
-export type QueueGroup = {
-  key: string;
-  label: string;
-  count: number;
-};
-
-export type QueueResponse = {
-  queueName: QueueName;
-  entries: EntryRecord[];
+  entries: RunEntry[];
   total: number;
   page: number;
   pageSize: number;
-  reasonGroups: QueueGroup[];
-  reviewCaseGroups: QueueGroup[];
-  artifactGroups: QueueGroup[];
-  warnings: string[];
 };
 
-export type WorkerHistoryResponse = {
-  workerId: string;
-  entries: EntryRecord[];
-  warnings: string[];
+export type SourceAttributeRow = {
+  attribute: string;
+  value: string;
 };
 
-export type WorkerDetailResponse = {
-  workerId: string;
-  trackedWorker: TrackedWorker | null;
-  latestEntry: EntryRecord | null;
-  relatedEntries: EntryRecord[];
-  relatedRuns: RunSummary[];
-  warnings: string[];
+export type MissingSourceAttributeRow = {
+  attribute: string;
+  reason: string;
 };
 
-export type WorkerActionKind = 'test-sync' | 'review-sync' | 'real-sync';
-
-export type OperatorActionKind = 'delta-dry-run' | 'delta-sync' | 'full-dry-run' | 'full-sync' | 'review-run';
-
-export type WorkerPreviewMode = 'minimal' | 'full';
-
-export type ConfirmationDescriptor = {
-  title: string;
-  message: string;
-  requiredText: string;
-  riskLevel: 'low' | 'medium' | 'high' | 'critical';
+export type WorkerPreviewEntry = {
+  bucket: string;
+  item: Record<string, unknown>;
 };
 
-export type OperatorCommandResult = {
-  status: 'accepted' | 'completed';
-  started: boolean;
-  completed: boolean;
-  message: string;
-  commandSummary: string[];
-  runId: string | null;
-  reportPath: string | null;
-  outputLines: string[];
-  confirmation?: ConfirmationDescriptor | null;
-};
-
-export type WorkerPreviewResponse = {
+export type WorkerPreviewResult = {
   reportPath: string | null;
   runId: string | null;
+  previousRunId: string | null;
+  fingerprint: string;
   mode: string | null;
   status: string | null;
-  errorMessage?: string | null;
+  errorMessage: string | null;
   artifactType: string | null;
-  successFactorsAuth?: string | null;
-  previewMode: WorkerPreviewMode;
-  workerScope?: { workerId?: string | null; identityField?: string | null } | null;
-  reviewSummary?: Record<string, unknown> | null;
-  preview: {
-    workerId: string;
-    buckets: string[];
-    matchedExistingUser: boolean | null;
-    reviewCategory?: string | null;
-    reviewCaseType?: string | null;
-    reason?: string | null;
-    operatorActionSummary?: string | null;
-    operatorActions?: OperatorAction[];
-    samAccountName?: string | null;
-    targetOu?: string | null;
-    currentDistinguishedName?: string | null;
-    currentEnabled?: boolean | null;
-    proposedEnable?: boolean | null;
-  };
-  diffRows: DiffRow[];
+  successFactorsAuth: string | null;
+  workerId: string;
+  buckets: string[];
+  matchedExistingUser: boolean | null;
+  reviewCategory: string | null;
+  reviewCaseType: string | null;
+  reason: string | null;
+  operatorActionSummary: string | null;
+  samAccountName: string | null;
+  managerDistinguishedName: string | null;
+  targetOu: string | null;
+  currentDistinguishedName: string | null;
+  currentEnabled: boolean | null;
+  proposedEnable: boolean | null;
   operationSummary: OperationSummary | null;
-  entries: Array<{ bucket: string; item: Record<string, unknown> }>;
-  rawWorker?: Record<string, unknown> | null;
-  rawPropertyNames?: string[];
+  diffRows: DiffRow[];
+  sourceAttributes: SourceAttributeRow[];
+  usedSourceAttributes: SourceAttributeRow[];
+  unusedSourceAttributes: SourceAttributeRow[];
+  missingSourceAttributes: MissingSourceAttributeRow[];
+  entries: WorkerPreviewEntry[];
 };
 
-export type WorkerActionResponse = {
-  action: WorkerActionKind;
+export type WorkerPreviewHistoryItem = {
+  runId: string;
   workerId: string;
-  result: {
-    reportPath: string | null;
-    runId: string | null;
-    mode: string | null;
-    status: string | null;
-    artifactType: string | null;
-    previewMode?: string | null;
-    successFactorsAuth?: string | null;
-    workerScope?: { workerId?: string | null; identityField?: string | null } | null;
-  };
+  samAccountName: string | null;
+  bucket: string;
+  status: string | null;
+  startedAt: string;
+  changeCount: number;
+  action: string | null;
+  reason: string | null;
+  fingerprint: string;
+};
+
+export type DirectoryCommandResult = {
+  succeeded: boolean;
+  action: string;
+  samAccountName: string;
+  distinguishedName: string | null;
+  message: string;
+  runId: string | null;
+};
+
+export type LocalUserSummary = {
+  userId: string;
+  username: string;
+  role: string;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+  lastLoginAt: string | null;
+};
+
+export type LocalUserCommandResult = {
+  succeeded: boolean;
+  message: string;
 };

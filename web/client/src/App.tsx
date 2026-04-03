@@ -1,318 +1,1025 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useState } from 'react';
 import {
-  applyWorker,
-  copyRunReportPath,
-  exportRunBucket,
-  getQueue,
+  applyPreview,
+  cancelRun,
+  createPreview,
+  createUser,
+  deleteUser,
+  getDashboard,
+  getHealth,
+  getPreview,
+  getPreviewHistory,
   getRun,
   getRunEntries,
-  getStatus,
-  getWorkerDetail,
-  openLocalPath,
-  openRunReport,
-  previewWorker,
-  runFreshReset,
-  runOperatorAction,
-  runPreflight,
-  runWorkerAction,
+  getSession,
+  getSyncSchedule,
+  listRuns,
+  listUsers,
+  login,
+  logout,
+  queueDeleteAllUsers,
+  resetUserPassword,
+  saveSyncSchedule,
+  setUserActive,
+  setUserRole,
+  startRun,
 } from './api.js';
-import {
-  BUCKET_ORDER,
-  chooseSelectedEntry,
-  getRouteState,
-  mapEntryToReportCategory,
-  mapReviewExplorerToBucket,
-  normalizeRoute,
-  resolveActiveBucket,
-  stepSelection,
-  syncRouteState,
-} from './route-state.js';
-import type { RouteState } from './route-state.js';
-import {
-  CommandResultPanel,
-  ConfirmationDialog,
-  StatusNote,
-  WarningPanel,
-  WorkerPreviewPanel,
-} from './triage-components.js';
-import { DashboardView, OperationsView, QueueView, ReportExplorerView, WorkerView } from './triage-views.js';
 import type {
-  ConfirmationDescriptor,
-  DashboardStatus,
-  EntryListResponse,
-  OperatorActionKind,
-  OperatorCommandResult,
-  QueueResponse,
-  RunDetailResponse,
-  WorkerActionKind,
-  WorkerActionResponse,
-  WorkerDetailResponse,
-  WorkerPreviewMode,
-  WorkerPreviewResponse,
+  DashboardSnapshot,
+  DependencyHealthSnapshot,
+  DirectoryCommandResult,
+  LocalUserSummary,
+  RunDetail,
+  RunSummary,
+  RunEntriesResponse,
+  Session,
+  SyncScheduleStatus,
+  WorkerPreviewHistoryItem,
+  WorkerPreviewResult,
 } from './types.js';
 
-type ThemeMode = 'light' | 'dark';
-type PendingConfirmation =
-  | { kind: 'worker-apply'; descriptor: ConfirmationDescriptor; confirmText: string; workerId: string }
-  | { kind: 'run-open'; descriptor: ConfirmationDescriptor; confirmText: string }
-  | { kind: 'run-copy'; descriptor: ConfirmationDescriptor; confirmText: string }
-  | { kind: 'run-export'; descriptor: ConfirmationDescriptor; confirmText: string }
-  | { kind: 'fresh-reset'; descriptor: ConfirmationDescriptor; confirmText: string; countText: string; destructiveText: string };
+type Theme = 'light' | 'dark';
+type Flash = { tone: 'good' | 'danger' | 'warn'; message: string } | null;
+type Route =
+  | { kind: 'login'; returnUrl: string | null }
+  | { kind: 'dashboard' }
+  | { kind: 'sync'; page: number }
+  | { kind: 'preview'; runId: string | null; workerId: string | null; showAllAttributes: boolean }
+  | { kind: 'run'; runId: string; bucket: string; workerId: string; filter: string; page: number }
+  | { kind: 'users' };
 
-const THEME_STORAGE_KEY = 'syncfactors-theme';
-const NON_WINDOWS_AD_WARNING = 'Active Directory health probe is skipped on non-Windows hosts for the web dashboard.';
-const RUN_LAUNCH_MONITOR_TIMEOUT_MS = 30000;
-const RUN_LAUNCH_MONITOR_POLL_MS = 1000;
-
-declare global {
-  interface Window {
-    __SYNCFACTORS_TEST_CONFIG__?: {
-      runLaunchMonitorTimeoutMs?: number;
-      runLaunchMonitorPollMs?: number;
-    };
-  }
-}
-
-function createPendingCurrentRun(action: OperatorActionKind, message: string): Record<string, unknown> {
-  const mode = action.startsWith('full') ? 'Full' : action.startsWith('delta') ? 'Delta' : 'Review';
-  return {
-    runId: null,
-    status: 'InProgress',
-    stage: 'Launching',
-    mode,
-    dryRun: action.endsWith('dry-run') || action === 'review-run',
-    startedAt: new Date().toISOString(),
-    completedAt: null,
-    currentWorkerId: null,
-    lastAction: message,
-    processedWorkers: 0,
-    totalWorkers: 0,
-    creates: 0,
-    updates: 0,
-    enables: 0,
-    disables: 0,
-    graveyardMoves: 0,
-    deletions: 0,
-    quarantined: 0,
-    conflicts: 0,
-    guardrailFailures: 0,
-    manualReview: 0,
-    unchanged: 0,
-    errorMessage: null,
-  };
-}
-
-function getRunLaunchMonitorTiming() {
-  const config = typeof window !== 'undefined' ? window.__SYNCFACTORS_TEST_CONFIG__ : undefined;
-  return {
-    timeoutMs: config?.runLaunchMonitorTimeoutMs ?? RUN_LAUNCH_MONITOR_TIMEOUT_MS,
-    pollMs: config?.runLaunchMonitorPollMs ?? RUN_LAUNCH_MONITOR_POLL_MS,
-  };
-}
-
-function formatRunLaunchTimeout(timeoutMs: number) {
-  if (timeoutMs < 1000) {
-    return `${timeoutMs} ms`;
-  }
-
-  const seconds = Math.round(timeoutMs / 1000);
-  return `${seconds} second${seconds === 1 ? '' : 's'}`;
-}
+const THEME_KEY = 'syncfactors-next-theme';
+const RUNS_PAGE_SIZE = 25;
+const ENTRY_PAGE_SIZE = 50;
+const DELETE_ALL_CONFIRMATION = 'DELETE ALL USERS';
 
 export function App() {
-  const [status, setStatus] = useState<DashboardStatus | null>(null);
-  const [route, setRoute] = useState<RouteState>(() => getRouteState());
-  const [runDetail, setRunDetail] = useState<RunDetailResponse | null>(null);
-  const [entryResponse, setEntryResponse] = useState<EntryListResponse | null>(null);
-  const [queueResponse, setQueueResponse] = useState<QueueResponse | null>(null);
-  const [workerDetail, setWorkerDetail] = useState<WorkerDetailResponse | null>(null);
-  const [workerActionState, setWorkerActionState] = useState<{ pendingAction: WorkerActionKind | null; result: WorkerActionResponse | null }>({
-    pendingAction: null,
-    result: null,
-  });
-  const [workerPreview, setWorkerPreview] = useState<WorkerPreviewResponse | null>(null);
-  const [pendingConfirmation, setPendingConfirmation] = useState<PendingConfirmation | null>(null);
-  const [commandResult, setCommandResult] = useState<OperatorCommandResult | null>(null);
-  const [recentCommandResults, setRecentCommandResults] = useState<OperatorCommandResult[]>([]);
-  const [pendingOperatorActionLabel, setPendingOperatorActionLabel] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [streamConnected, setStreamConnected] = useState(false);
-  const [operationsWorkerId, setOperationsWorkerId] = useState('');
-  const [hasEditedOperationsWorkerId, setHasEditedOperationsWorkerId] = useState(false);
-  const [operationsPreviewMode, setOperationsPreviewMode] = useState<WorkerPreviewMode>('full');
-  const [theme, setTheme] = useState<ThemeMode>(() => getInitialTheme());
-  const filterInputRef = useRef<HTMLInputElement | null>(null);
-  const reportMenuRef = useRef<HTMLDetailsElement | null>(null);
-  const streamConnectedRef = useRef(false);
-  const launchMonitorTokenRef = useRef(0);
-
-  function applyStatus(nextStatus: DashboardStatus) {
-    setStatus(nextStatus);
-    setRoute((current) => {
-      const nextRunId = current.runId ?? nextStatus.recentRuns[0]?.runId ?? null;
-      const nextWorkerId = current.workerId ?? nextStatus.recentRuns[0]?.workerScope?.workerId ?? null;
-      const next = normalizeRoute({ ...current, runId: nextRunId, workerId: nextWorkerId }, nextStatus);
-      syncRouteState(next);
-      return next;
-    });
-  }
-
-  function cancelLaunchMonitor() {
-    launchMonitorTokenRef.current += 1;
-  }
-
-  function isBackendRunActive(nextStatus: DashboardStatus) {
-    return `${nextStatus.currentRun?.status ?? ''}` !== 'Idle';
-  }
-
-  function monitorPendingRunLaunch(actionLabel: string) {
-    const { timeoutMs, pollMs } = getRunLaunchMonitorTiming();
-    const token = launchMonitorTokenRef.current + 1;
-    launchMonitorTokenRef.current = token;
-    const deadline = Date.now() + timeoutMs;
-    const timeoutMessage = `Run launch did not publish runtime status within ${formatRunLaunchTimeout(timeoutMs)} for ${actionLabel}. The PowerShell process may have exited before writing its first snapshot.`;
-
-    const checkStatus = async () => {
-      if (launchMonitorTokenRef.current !== token) {
-        return;
-      }
-
-      try {
-        const nextStatus = await getStatus();
-        if (launchMonitorTokenRef.current !== token) {
-          return;
-        }
-
-        if (isBackendRunActive(nextStatus)) {
-          applyStatus(nextStatus);
-          setError((current) => current?.startsWith('Run launch did not publish runtime status') ? null : current);
-          cancelLaunchMonitor();
-          return;
-        }
-
-        if (Date.now() >= deadline) {
-          applyStatus(nextStatus);
-          setError(timeoutMessage);
-          cancelLaunchMonitor();
-          return;
-        }
-      } catch {
-        if (Date.now() >= deadline) {
-          setError(timeoutMessage);
-          cancelLaunchMonitor();
-          return;
-        }
-      }
-
-      window.setTimeout(() => {
-        void checkStatus();
-      }, pollMs);
-    };
-
-    void checkStatus();
-  }
+  const [route, setRoute] = useState<Route>(() => parseRoute(window.location));
+  const [session, setSession] = useState<Session | null>(null);
+  const [sessionReady, setSessionReady] = useState(false);
+  const [theme, setTheme] = useState<Theme>(() => getInitialTheme());
+  const [flash, setFlash] = useState<Flash>(null);
 
   useEffect(() => {
-    streamConnectedRef.current = streamConnected;
-  }, [streamConnected]);
-
-  useEffect(() => () => {
-    cancelLaunchMonitor();
-  }, []);
-
-  useEffect(() => {
-    document.documentElement.dataset.theme = theme;
-    document.documentElement.style.colorScheme = theme;
-    if (hasStorageAccess()) {
-      window.localStorage.setItem(THEME_STORAGE_KEY, theme);
-    }
-  }, [theme]);
-
-  useEffect(() => {
-    const onPopState = () => setRoute(getRouteState());
+    const onPopState = () => setRoute(parseRoute(window.location));
     window.addEventListener('popstate', onPopState);
     return () => window.removeEventListener('popstate', onPopState);
   }, []);
 
   useEffect(() => {
-    let cancelled = false;
-
-    const loadStatus = async () => {
-      try {
-        const nextStatus = await getStatus();
-        if (!cancelled) {
-          applyStatus(nextStatus);
-        }
-      } catch (loadError) {
-        if (!cancelled) {
-          setError(loadError instanceof Error ? loadError.message : 'Failed to load dashboard status.');
-        }
-      }
-    };
-
-    void loadStatus();
-
-    let stream: EventSource | null = null;
-    if (typeof window !== 'undefined' && 'EventSource' in window) {
-      stream = new window.EventSource('/api/status/stream');
-      stream.addEventListener('status', (event) => {
-        const message = event as MessageEvent<string>;
-        try {
-          const payload = JSON.parse(message.data) as { status?: DashboardStatus };
-          if (payload.status && !cancelled) {
-            setStreamConnected(true);
-            applyStatus(payload.status);
-            setError((current) => current?.includes('Failed to load dashboard status.') ? null : current);
-          }
-        } catch {
-          if (!cancelled) {
-            setError('Failed to parse streamed dashboard status.');
-          }
-        }
-      });
-      stream.addEventListener('error', () => {
-        if (!cancelled) {
-          setStreamConnected(false);
-        }
-      });
+    document.documentElement.dataset.theme = theme;
+    document.documentElement.style.colorScheme = theme;
+    try {
+      window.localStorage.setItem(THEME_KEY, theme);
+    } catch {
+      // Ignore storage errors.
     }
+  }, [theme]);
 
-    const interval = window.setInterval(() => {
-      if (!streamConnectedRef.current) {
-        void loadStatus();
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const nextSession = await getSession();
+        if (!cancelled) {
+          setSession(nextSession);
+        }
+      } catch {
+        if (!cancelled) {
+          setSession({
+            isAuthenticated: false,
+            userId: null,
+            username: null,
+            role: null,
+            isAdmin: false,
+          });
+        }
+      } finally {
+        if (!cancelled) {
+          setSessionReady(true);
+        }
       }
-    }, 10000);
+    })();
 
     return () => {
       cancelled = true;
-      window.clearInterval(interval);
-      stream?.close();
     };
   }, []);
 
   useEffect(() => {
-    if (!route.runId) {
-      setRunDetail(null);
-      setEntryResponse(null);
+    if (!sessionReady || !session) {
       return;
     }
 
+    if (!session.isAuthenticated && route.kind !== 'login') {
+      navigate(buildLoginPath(window.location.pathname + window.location.search), setRoute);
+      return;
+    }
+
+    if (session.isAuthenticated && route.kind === 'login') {
+      navigate(route.returnUrl || '/', setRoute, true);
+    }
+  }, [route, session, sessionReady]);
+
+  if (!sessionReady || !session) {
+    return <div className="shell"><main className="content"><section className="panel"><p className="muted">Loading session…</p></section></main></div>;
+  }
+
+  if (!session.isAuthenticated || route.kind === 'login') {
+    return (
+      <LoginPage
+        returnUrl={route.kind === 'login' ? route.returnUrl : null}
+        onLoggedIn={(nextSession, returnUrl) => {
+          setSession(nextSession);
+          setFlash({ tone: 'good', message: 'Signed in.' });
+          navigate(returnUrl || '/', setRoute, true);
+        }}
+      />
+    );
+  }
+
+  return (
+    <div className="shell">
+      <header className="topbar">
+        <div className="topbar-brand">
+          <div className="brand-row">
+            <button className="brand brand-button" type="button" onClick={() => navigate('/', setRoute)}>SyncFactors</button>
+            <span className="brand-badge">Portal</span>
+          </div>
+          <p className="subtitle">Operator dashboard for the .NET 10 rewrite</p>
+        </div>
+        <div className="topbar-actions">
+          <nav className="nav">
+            <button type="button" className={route.kind === 'dashboard' ? 'active' : ''} onClick={() => navigate('/', setRoute)}>Dashboard</button>
+            <button type="button" className={route.kind === 'sync' ? 'active' : ''} onClick={() => navigate('/sync', setRoute)}>Sync</button>
+            <button type="button" className={route.kind === 'preview' ? 'active' : ''} onClick={() => navigate('/preview', setRoute)}>Worker Preview</button>
+            {session.isAdmin ? (
+              <button type="button" className={route.kind === 'users' ? 'active' : ''} onClick={() => navigate('/admin/users', setRoute)}>Users</button>
+            ) : null}
+          </nav>
+          <div className="auth-actions">
+            <span className="muted auth-user">Signed in as <strong>{session.username}</strong></span>
+            <button
+              type="button"
+              className="link-button"
+              onClick={async () => {
+                await logout();
+                setSession({
+                  isAuthenticated: false,
+                  userId: null,
+                  username: null,
+                  role: null,
+                  isAdmin: false,
+                });
+                setFlash(null);
+                navigate('/login', setRoute, true);
+              }}
+            >
+              Logout
+            </button>
+          </div>
+          <button
+            className="theme-toggle"
+            type="button"
+            aria-pressed={theme === 'dark'}
+            onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+          >
+            {theme === 'dark' ? 'Dark' : 'Light'}
+          </button>
+        </div>
+      </header>
+      <main className="content">
+        {flash ? <p className={`callout ${flash.tone}`}>{flash.message}</p> : null}
+        {route.kind === 'dashboard' ? <DashboardPage onOpenRun={(runId) => navigate(`/runs/${encodeURIComponent(runId)}`, setRoute)} onOpenSync={() => navigate('/sync', setRoute)} /> : null}
+        {route.kind === 'sync' ? (
+          <SyncPage
+            page={route.page}
+            onNavigatePage={(page) => navigate(`/sync?page=${page}`, setRoute)}
+            onOpenRun={(runId) => navigate(`/runs/${encodeURIComponent(runId)}`, setRoute)}
+            onFlash={setFlash}
+          />
+        ) : null}
+        {route.kind === 'preview' ? (
+          <PreviewPage
+            route={route}
+            onNavigate={(nextPath) => navigate(nextPath, setRoute)}
+            onOpenRun={(runId) => navigate(`/runs/${encodeURIComponent(runId)}`, setRoute)}
+            onFlash={setFlash}
+          />
+        ) : null}
+        {route.kind === 'run' ? (
+          <RunDetailPage
+            route={route}
+            onNavigate={(nextPath) => navigate(nextPath, setRoute)}
+          />
+        ) : null}
+        {route.kind === 'users' ? <UsersPage currentUserId={session.userId} onFlash={setFlash} /> : null}
+      </main>
+    </div>
+  );
+}
+
+function LoginPage(props: { returnUrl: string | null; onLoggedIn: (session: Session, returnUrl: string | null) => void }) {
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [rememberMe, setRememberMe] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [pending, setPending] = useState(false);
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setPending(true);
+    setError(null);
+    try {
+      const session = await login(username, password, rememberMe, props.returnUrl);
+      props.onLoggedIn(session, props.returnUrl);
+    } catch (submitError) {
+      setError(submitError instanceof Error ? submitError.message : 'Sign-in failed.');
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return (
+    <div className="shell">
+      <main className="content">
+        <section className="hero hero-compact auth-hero">
+          <div>
+            <p className="eyebrow">Local Access</p>
+            <h1>Sign in</h1>
+            <p className="lede">Use a local operator account to access the SyncFactors portal.</p>
+          </div>
+        </section>
+
+        <section className="panel auth-panel">
+          {error ? <p className="callout danger">{error}</p> : null}
+          <form className="filters auth-form" onSubmit={handleSubmit}>
+            <label>
+              <span>Username</span>
+              <input value={username} onChange={(event) => setUsername(event.target.value)} autoComplete="username" />
+            </label>
+            <label>
+              <span>Password</span>
+              <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" />
+            </label>
+            <label className="filter-check auth-remember">
+              <span>Remember my login</span>
+              <input type="checkbox" checked={rememberMe} onChange={(event) => setRememberMe(event.target.checked)} />
+            </label>
+            <div className="filter-actions">
+              <button type="submit" disabled={pending}>{pending ? 'Signing in…' : 'Sign in'}</button>
+            </div>
+          </form>
+        </section>
+      </main>
+    </div>
+  );
+}
+
+function DashboardPage(props: { onOpenRun: (runId: string) => void; onOpenSync: () => void }) {
+  const [dashboard, setDashboard] = useState<DashboardSnapshot | null>(null);
+  const [health, setHealth] = useState<DependencyHealthSnapshot | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const load = async () => {
+      try {
+        const [nextDashboard, nextHealth] = await Promise.all([getDashboard(), getHealth()]);
+        if (!cancelled) {
+          setDashboard(nextDashboard);
+          setHealth(nextHealth);
+          setError(null);
+        }
+      } catch (loadError) {
+        if (!cancelled) {
+          setError(loadError instanceof Error ? loadError.message : 'Failed to load dashboard.');
+        }
+      }
+    };
+
+    void load();
+    const timer = window.setInterval(() => void load(), 15000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, []);
+
+  const healthByName = useMemo(() => new Map((health?.probes ?? []).map((probe) => [probe.dependency, probe])), [health]);
+
+  return (
+    <>
+      <section className="hero">
+        <div className="hero-main">
+          <div>
+            <p className="eyebrow">Current Runtime</p>
+            <h1>Operator Dashboard</h1>
+            <p className="lede">This page reads runtime status and recent runs from the configured operational store for the .NET rewrite.</p>
+          </div>
+          <div className="hero-actions">
+            <button type="button" className="link-button" onClick={props.onOpenSync}>Manage sync</button>
+          </div>
+        </div>
+        <aside className="hero-run-health">
+          <div className="hero-run-health-header">
+            <p className="eyebrow">Run Health</p>
+            <span className="badge neutral">Live</span>
+          </div>
+          <div className="run-health-stack run-health-stack-compact">
+            <section className="run-health-card">
+              <p className="eyebrow">Active Run</p>
+              {dashboard?.activeRun ? (
+                <>
+                  <p><strong>{dashboard.activeRun.runId}</strong></p>
+                  <p className="muted">{dashboard.activeRun.mode} · {dashboard.activeRun.processedWorkers} / {dashboard.activeRun.totalWorkers} workers</p>
+                  <p><button type="button" className="inline-link" onClick={() => props.onOpenRun(dashboard.activeRun!.runId)}>Open active run</button></p>
+                </>
+              ) : <p className="muted">No run is active.</p>}
+            </section>
+            <section className="run-health-card">
+              <p className="eyebrow">Last Completed</p>
+              {dashboard?.lastCompletedRun ? (
+                <>
+                  <p><strong>{dashboard.lastCompletedRun.runId}</strong></p>
+                  <p className="muted">{dashboard.lastCompletedRun.status} · {dashboard.lastCompletedRun.mode} · {dashboard.lastCompletedRun.totalWorkers} workers</p>
+                  <p><button type="button" className="inline-link" onClick={() => props.onOpenRun(dashboard.lastCompletedRun!.runId)}>Review last run</button></p>
+                </>
+              ) : <p className="muted">No completed runs yet.</p>}
+            </section>
+          </div>
+        </aside>
+      </section>
+
+      {error ? <section className="panel"><p className="callout danger">{error}</p></section> : null}
+      {dashboard?.requiresAttention ? <section className="panel"><p className="callout danger">{dashboard.attentionMessage ?? 'Operator attention is required.'}</p></section> : null}
+
+      <section className="panel-grid dashboard-grid">
+        <article className="panel">
+          <h2>Status</h2>
+          <dl className="kv">
+            <div><dt>Status</dt><dd>{dashboard?.status.status ?? 'Loading'}</dd></div>
+            <div><dt>Stage</dt><dd>{dashboard?.status.stage ?? 'Loading'}</dd></div>
+            <div><dt>Run Id</dt><dd>{dashboard?.status.runId ?? 'None'}</dd></div>
+            <div><dt>Worker</dt><dd>{dashboard?.status.currentWorkerId ?? 'None'}</dd></div>
+            <div><dt>Progress</dt><dd>{dashboard ? `${dashboard.status.processedWorkers} / ${dashboard.status.totalWorkers}` : '0 / 0'}</dd></div>
+            <div><dt>Last Action</dt><dd>{dashboard?.status.lastAction ?? 'None'}</dd></div>
+            <div><dt>Last Updated</dt><dd>{formatTimestamp(dashboard?.status.lastUpdatedAt)}</dd></div>
+          </dl>
+          {dashboard?.status.errorMessage ? <p className="callout danger">{dashboard.status.errorMessage}</p> : null}
+
+          <section className="connection-section">
+            <div className="section-heading">
+              <div>
+                <p className="eyebrow">Connection</p>
+                <h3>Dependency Health</h3>
+              </div>
+              <div className="connection-overview">
+                <span className={`badge ${badgeClass(health?.status)}`}>{health?.status ?? 'Loading'}</span>
+                <span className="muted">{health ? `Last checked ${formatTimestamp(health.checkedAt)}` : 'Probe has not run yet.'}</span>
+              </div>
+            </div>
+            <div className="connection-list">
+              {['SuccessFactors', 'Active Directory', 'Worker Service', 'SQLite'].map((name) => {
+                const probe = healthByName.get(name);
+                return (
+                  <article className="connection-card" key={name}>
+                    <header className="connection-head">
+                      <h4>{name}</h4>
+                      <span className={`badge ${badgeClass(probe?.status)}`}>{probe?.status ?? 'Waiting'}</span>
+                    </header>
+                    <p className="connection-summary">{probe?.summary ?? 'Probe pending.'}</p>
+                    <p className="connection-detail muted">{probe?.details ?? 'The dashboard will run this check after the page settles.'}</p>
+                  </article>
+                );
+              })}
+            </div>
+          </section>
+        </article>
+
+        <article className="panel recent-runs-panel">
+          <h2>Recent Runs</h2>
+          <p className="muted dashboard-refresh-note">Live data is refreshed automatically while this page is open.</p>
+          {!dashboard?.runs.length ? (
+            <p className="muted">No run data is configured yet. Set <code>SyncFactors__SqlitePath</code> to point the rewrite UI at an operational SQLite store.</p>
+          ) : (
+            <div className="table-scroll">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Started</th>
+                    <th>Trigger</th>
+                    <th>Mode</th>
+                    <th>Status</th>
+                    <th>Dry Run</th>
+                    <th>Workers</th>
+                    <th>Summary</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {dashboard.runs.map((run) => (
+                    <tr key={run.runId}>
+                      <td>{formatTimestamp(run.startedAt)}</td>
+                      <td>{run.runTrigger}</td>
+                      <td>{run.mode}</td>
+                      <td><span className={`badge ${badgeClass(run.status)}`}>{run.status}</span></td>
+                      <td>{run.dryRun ? 'Yes' : 'No'}</td>
+                      <td>{run.totalWorkers}</td>
+                      <td>{runSummary(run)}</td>
+                      <td><button type="button" className="inline-link" onClick={() => props.onOpenRun(run.runId)}>Open</button></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </article>
+      </section>
+    </>
+  );
+}
+
+function SyncPage(props: { page: number; onNavigatePage: (page: number) => void; onOpenRun: (runId: string) => void; onFlash: (flash: Flash) => void }) {
+  const [dashboard, setDashboard] = useState<DashboardSnapshot | null>(null);
+  const [schedule, setSchedule] = useState<SyncScheduleStatus | null>(null);
+  const [runs, setRuns] = useState<RunSummary[]>([]);
+  const [totalRuns, setTotalRuns] = useState(0);
+  const [error, setError] = useState<string | null>(null);
+  const [scheduleEnabled, setScheduleEnabled] = useState(false);
+  const [intervalMinutes, setIntervalMinutes] = useState(30);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deleteConfirmation, setDeleteConfirmation] = useState('');
+
+  useEffect(() => {
     let cancelled = false;
     void (async () => {
       try {
-        const [nextRunDetail, nextEntries] = await Promise.all([
-          getRun(route.runId!),
-          getRunEntries(route.runId!, {
-            bucket: route.view === 'report' ? mapReportCategoryToBucket(route.reportCategory) : resolveActiveBucket(route.bucket, route.reviewExplorer),
-            filter: route.filter || undefined,
+        const [dashboardSnapshot, scheduleResponse, runResponse] = await Promise.all([
+          getDashboard(),
+          getSyncSchedule(),
+          listRuns(props.page, RUNS_PAGE_SIZE),
+        ]);
+        if (!cancelled) {
+          setDashboard(dashboardSnapshot);
+          setSchedule(scheduleResponse.schedule);
+          setScheduleEnabled(scheduleResponse.schedule.enabled);
+          setIntervalMinutes(scheduleResponse.schedule.intervalMinutes);
+          setRuns(runResponse.runs);
+          setTotalRuns(runResponse.total);
+          setError(null);
+        }
+      } catch (loadError) {
+        if (!cancelled) {
+          setError(loadError instanceof Error ? loadError.message : 'Failed to load sync page.');
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [props.page]);
+
+  const totalPages = Math.max(1, Math.ceil(totalRuns / RUNS_PAGE_SIZE));
+  const hasPendingOrActiveRun = dashboard?.status.status === 'InProgress';
+
+  async function refresh() {
+    const [dashboardSnapshot, scheduleResponse, runResponse] = await Promise.all([
+      getDashboard(),
+      getSyncSchedule(),
+      listRuns(props.page, RUNS_PAGE_SIZE),
+    ]);
+    setDashboard(dashboardSnapshot);
+    setSchedule(scheduleResponse.schedule);
+    setScheduleEnabled(scheduleResponse.schedule.enabled);
+    setIntervalMinutes(scheduleResponse.schedule.intervalMinutes);
+    setRuns(runResponse.runs);
+    setTotalRuns(runResponse.total);
+  }
+
+  async function handleStartRun(nextMode: 'DryRun' | 'LiveRun') {
+    try {
+      await startRun(nextMode !== 'LiveRun');
+      props.onFlash({ tone: 'good', message: nextMode === 'LiveRun' ? 'Live provisioning run queued.' : 'Dry-run sync queued.' });
+      await refresh();
+    } catch (runError) {
+      setError(runError instanceof Error ? runError.message : 'Failed to queue run.');
+    }
+  }
+
+  return (
+    <>
+      <section className="hero hero-compact">
+        <div>
+          <p className="eyebrow">Provisioning Control</p>
+          <h1>Sync</h1>
+          <p className="lede">Queue ad hoc AD provisioning runs and manage the recurring full-sync schedule.</p>
+        </div>
+        <div className="hero-actions">
+          <button type="button" className="link-button danger-button" disabled={hasPendingOrActiveRun} onClick={() => setDeleteDialogOpen(true)}>Testing Reset</button>
+        </div>
+      </section>
+
+      {error ? <section className="panel"><p className="callout danger">{error}</p></section> : null}
+
+      <section className="panel-grid">
+        <article className="panel">
+          <h2>Current Runtime</h2>
+          <dl className="kv">
+            <div><dt>Status</dt><dd>{dashboard?.status.status ?? 'Loading'}</dd></div>
+            <div><dt>Stage</dt><dd>{dashboard?.status.stage ?? 'Loading'}</dd></div>
+            <div><dt>Run Id</dt><dd>{dashboard?.status.runId ?? 'None'}</dd></div>
+            <div><dt>Worker</dt><dd>{dashboard?.status.currentWorkerId ?? 'None'}</dd></div>
+            <div><dt>Progress</dt><dd>{dashboard ? `${dashboard.status.processedWorkers} / ${dashboard.status.totalWorkers}` : '0 / 0'}</dd></div>
+          </dl>
+
+          <div className="filter-actions">
+            <button type="button" onClick={() => void handleStartRun('DryRun')} disabled={hasPendingOrActiveRun}>Queue dry run</button>
+            <button type="button" onClick={() => void handleStartRun('LiveRun')} disabled={hasPendingOrActiveRun}>Queue live run</button>
+            <button
+              type="button"
+              className="link-button"
+              onClick={async () => {
+                try {
+                  await cancelRun();
+                  props.onFlash({ tone: 'good', message: 'Run cancellation requested.' });
+                  await refresh();
+                } catch (cancelError) {
+                  setError(cancelError instanceof Error ? cancelError.message : 'Failed to cancel run.');
+                }
+              }}
+            >
+              Cancel run
+            </button>
+          </div>
+        </article>
+
+        <article className="panel">
+          <h2>Recurring Schedule</h2>
+          <dl className="kv">
+            <div><dt>Enabled</dt><dd>{schedule?.enabled ? 'Yes' : 'No'}</dd></div>
+            <div><dt>Interval</dt><dd>{schedule?.intervalMinutes ?? 30} minutes</dd></div>
+            <div><dt>Next Run</dt><dd>{formatTimestamp(schedule?.nextRunAt)}</dd></div>
+            <div><dt>Last Scheduled</dt><dd>{formatTimestamp(schedule?.lastScheduledRunAt)}</dd></div>
+            <div><dt>Last Enqueue Attempt</dt><dd>{formatTimestamp(schedule?.lastEnqueueAttemptAt)}</dd></div>
+          </dl>
+          {schedule?.lastEnqueueError ? <p className="callout warn">{schedule.lastEnqueueError}</p> : null}
+          <form
+            className="filters"
+            onSubmit={async (event) => {
+              event.preventDefault();
+              try {
+                const response = await saveSyncSchedule(scheduleEnabled, intervalMinutes);
+                setSchedule(response.schedule);
+                props.onFlash({
+                  tone: 'good',
+                  message: response.schedule.enabled ? `Recurring sync enabled every ${response.schedule.intervalMinutes} minutes.` : 'Recurring sync disabled.',
+                });
+              } catch (saveError) {
+                setError(saveError instanceof Error ? saveError.message : 'Failed to save schedule.');
+              }
+            }}
+          >
+            <label>
+              <span>Enabled</span>
+              <input type="checkbox" checked={scheduleEnabled} onChange={(event) => setScheduleEnabled(event.target.checked)} />
+            </label>
+            <label>
+              <span>Interval minutes</span>
+              <input type="number" min={5} max={1440} step={1} value={intervalMinutes} onChange={(event) => setIntervalMinutes(Number(event.target.value))} />
+            </label>
+            <div className="filter-actions">
+              <button type="submit">Save schedule</button>
+            </div>
+          </form>
+        </article>
+      </section>
+
+      {deleteDialogOpen ? (
+        <div className="dialog-backdrop">
+          <section className="confirm-dialog__surface">
+            <div className="section-heading">
+              <div>
+                <p className="eyebrow">Danger Zone</p>
+                <h2>Delete All Users</h2>
+              </div>
+            </div>
+            <p className="muted">This queues a live delete job against all users currently returned by the worker source. Type <strong>{DELETE_ALL_CONFIRMATION}</strong> to continue.</p>
+            <label>
+              <span>Confirmation text</span>
+              <input value={deleteConfirmation} onChange={(event) => setDeleteConfirmation(event.target.value)} autoComplete="off" />
+            </label>
+            <div className="filter-actions">
+              <button type="button" className="link-button" onClick={() => setDeleteDialogOpen(false)}>Cancel</button>
+              <button
+                type="button"
+                className="danger-button"
+                disabled={deleteConfirmation.trim() !== DELETE_ALL_CONFIRMATION}
+                onClick={async () => {
+                  try {
+                    await queueDeleteAllUsers(deleteConfirmation);
+                    props.onFlash({ tone: 'good', message: 'Delete-all test run queued.' });
+                    setDeleteDialogOpen(false);
+                    setDeleteConfirmation('');
+                    await refresh();
+                  } catch (deleteError) {
+                    setError(deleteError instanceof Error ? deleteError.message : 'Failed to queue delete-all run.');
+                  }
+                }}
+              >
+                Queue delete-all run
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
+
+      <section className="panel">
+        <div className="section-heading">
+          <div>
+            <p className="eyebrow">History</p>
+            <h2>Recent Runs</h2>
+          </div>
+        </div>
+        {!runs.length ? (
+          <p className="muted">No runs have been recorded yet.</p>
+        ) : (
+          <>
+            <div className="table-scroll">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Started</th>
+                    <th>Trigger</th>
+                    <th>Status</th>
+                    <th>Scope</th>
+                    <th>Dry Run</th>
+                    <th>Workers</th>
+                    <th>Requested By</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {runs.map((run) => (
+                    <tr key={run.runId}>
+                      <td>{formatTimestamp(run.startedAt)}</td>
+                      <td>{run.runTrigger}</td>
+                      <td><span className={`badge ${badgeClass(run.status)}`}>{run.status}</span></td>
+                      <td>{run.syncScope}</td>
+                      <td>{run.dryRun ? 'Yes' : 'No'}</td>
+                      <td>{run.totalWorkers}</td>
+                      <td>{run.requestedBy ?? 'n/a'}</td>
+                      <td><button type="button" className="inline-link" onClick={() => props.onOpenRun(run.runId)}>Open</button></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="table-pagination">
+              <p className="muted">Showing page {props.page} of {totalPages} ({totalRuns} total runs).</p>
+              <div className="filter-actions">
+                {props.page > 1 ? <button type="button" className="link-button" onClick={() => props.onNavigatePage(props.page - 1)}>Previous</button> : null}
+                {props.page < totalPages ? <button type="button" className="link-button" onClick={() => props.onNavigatePage(props.page + 1)}>Next</button> : null}
+              </div>
+            </div>
+          </>
+        )}
+      </section>
+    </>
+  );
+}
+
+function PreviewPage(props: { route: Extract<Route, { kind: 'preview' }>; onNavigate: (path: string) => void; onOpenRun: (runId: string) => void; onFlash: (flash: Flash) => void }) {
+  const [lookupWorkerId, setLookupWorkerId] = useState(props.route.workerId ?? '');
+  const [preview, setPreview] = useState<WorkerPreviewResult | null>(null);
+  const [previousPreview, setPreviousPreview] = useState<WorkerPreviewResult | null>(null);
+  const [history, setHistory] = useState<WorkerPreviewHistoryItem[]>([]);
+  const [applyResult, setApplyResult] = useState<DirectoryCommandResult | null>(null);
+  const [acknowledgeRealSync, setAcknowledgeRealSync] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setLookupWorkerId(props.route.workerId ?? '');
+  }, [props.route.workerId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setApplyResult(null);
+
+    void (async () => {
+      if (!props.route.runId && !props.route.workerId) {
+        setPreview(null);
+        setHistory([]);
+        setPreviousPreview(null);
+        setError(null);
+        return;
+      }
+
+      try {
+        const nextPreview = props.route.runId
+          ? await getPreview(props.route.runId)
+          : await createPreview(props.route.workerId ?? '');
+
+        const historyResponse = await getPreviewHistory(nextPreview.workerId);
+        const nextPrevious = nextPreview.previousRunId ? await getPreview(nextPreview.previousRunId) : null;
+        if (!cancelled) {
+          setPreview(nextPreview);
+          setHistory(historyResponse.previews);
+          setPreviousPreview(nextPrevious);
+          setError(nextPreview.errorMessage);
+        }
+      } catch (loadError) {
+        if (!cancelled) {
+          setPreview(null);
+          setHistory([]);
+          setPreviousPreview(null);
+          setError(loadError instanceof Error ? loadError.message : 'Failed to load preview.');
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [props.route.runId, props.route.workerId]);
+
+  const visibleDiffRows = useMemo(
+    () => (props.route.showAllAttributes ? preview?.diffRows ?? [] : (preview?.diffRows ?? []).filter((row) => row.changed)),
+    [preview, props.route.showAllAttributes],
+  );
+
+  return (
+    <>
+      <section className="hero hero-compact">
+        <div>
+          <p className="eyebrow">Staging Sync</p>
+          <h1>Worker Preview</h1>
+          <p className="lede">Enter a worker ID to fetch the worker from SuccessFactors, compare it to Active Directory, and inspect the staged operations before a real sync.</p>
+        </div>
+      </section>
+
+      <section className="panel">
+        <form
+          className="filters preview-form"
+          onSubmit={(event) => {
+            event.preventDefault();
+            const params = new URLSearchParams();
+            if (lookupWorkerId.trim()) {
+              params.set('workerId', lookupWorkerId.trim());
+            }
+            if (props.route.showAllAttributes) {
+              params.set('showAllAttributes', 'true');
+            }
+            props.onNavigate(`/preview${params.toString() ? `?${params.toString()}` : ''}`);
+          }}
+        >
+          <label className="filter-search">
+            <span>Worker Id</span>
+            <input value={lookupWorkerId} onChange={(event) => setLookupWorkerId(event.target.value)} placeholder="1000123" />
+          </label>
+          <label className="filter-check">
+            <span>Show all attributes</span>
+            <input
+              type="checkbox"
+              checked={props.route.showAllAttributes}
+              onChange={(event) => {
+                const params = new URLSearchParams();
+                if (props.route.runId) {
+                  params.set('runId', props.route.runId);
+                }
+                if (!props.route.runId && lookupWorkerId.trim()) {
+                  params.set('workerId', lookupWorkerId.trim());
+                }
+                if (event.target.checked) {
+                  params.set('showAllAttributes', 'true');
+                }
+                props.onNavigate(`/preview${params.toString() ? `?${params.toString()}` : ''}`);
+              }}
+            />
+          </label>
+          <div className="filter-actions">
+            <button type="submit">Preview Worker</button>
+          </div>
+        </form>
+      </section>
+
+      {error ? <section className="panel"><p className="callout danger">{error}</p></section> : null}
+
+      {applyResult ? (
+        <section className="panel">
+          <p className={`callout ${applyResult.succeeded ? 'good' : 'danger'}`}>{applyResult.message}</p>
+          <dl className="kv preview-meta">
+            <div><dt>Action</dt><dd>{applyResult.action}</dd></div>
+            <div><dt>SAM</dt><dd>{applyResult.samAccountName}</dd></div>
+            <div><dt>Distinguished Name</dt><dd>{applyResult.distinguishedName ?? 'n/a'}</dd></div>
+            <div><dt>Run</dt><dd>{applyResult.runId ?? 'n/a'}</dd></div>
+          </dl>
+        </section>
+      ) : null}
+
+      {preview ? (
+        <>
+          <section className="panel-grid preview-summary-grid">
+            <article className="panel">
+              <div className="section-heading">
+                <div>
+                  <h2>Decision Summary</h2>
+                  <p className="muted">This preview was persisted as {preview.runId ? <button type="button" className="inline-link" onClick={() => props.onOpenRun(preview.runId!)}>{preview.runId}</button> : 'n/a'}.</p>
+                </div>
+                <div className="decision-badges">
+                  {preview.buckets.map((bucket) => <span key={bucket} className="bucket-card">{bucket}</span>)}
+                </div>
+              </div>
+              <dl className="kv">
+                <div><dt>Action</dt><dd>{preview.operationSummary?.action ?? 'No operation'}</dd></div>
+                <div><dt>Changed Attributes</dt><dd>{preview.diffRows.filter((row) => row.changed).length}</dd></div>
+                <div><dt>Target OU</dt><dd>{preview.targetOu ?? 'n/a'}</dd></div>
+                <div><dt>Manager</dt><dd>{preview.managerDistinguishedName ?? 'Unresolved'}</dd></div>
+                <div><dt>Enable State</dt><dd>{enableTransition(preview.currentEnabled, preview.proposedEnable)}</dd></div>
+                <div><dt>Matched Existing User</dt><dd>{displayBool(preview.matchedExistingUser)}</dd></div>
+                <div><dt>SAM</dt><dd>{preview.samAccountName ?? 'n/a'}</dd></div>
+                <div><dt>Current DN</dt><dd>{preview.currentDistinguishedName ?? 'n/a'}</dd></div>
+              </dl>
+              {preview.operationSummary?.effect ? <p className="callout">{preview.operationSummary.effect}</p> : null}
+              {preview.reason || preview.reviewCaseType ? (
+                <dl className="kv preview-meta">
+                  <div><dt>Reason</dt><dd>{preview.reason ?? 'n/a'}</dd></div>
+                  <div><dt>Review Case</dt><dd>{preview.reviewCaseType ?? 'n/a'}</dd></div>
+                </dl>
+              ) : null}
+            </article>
+
+            <article className="panel">
+              <h2>Apply Guardrail</h2>
+              <p className="muted">Applying uses the saved preview snapshot, not a silent re-run. This action writes to real Active Directory.</p>
+              <form
+                className="apply-preview-form"
+                onSubmit={async (event) => {
+                  event.preventDefault();
+                  if (!preview.runId) {
+                    return;
+                  }
+                  try {
+                    const result = await applyPreview(preview.workerId, preview.runId, preview.fingerprint, acknowledgeRealSync);
+                    setApplyResult(result);
+                    props.onFlash({ tone: result.succeeded ? 'good' : 'danger', message: result.message });
+                  } catch (applyError) {
+                    setError(applyError instanceof Error ? applyError.message : 'Failed to apply preview.');
+                  }
+                }}
+              >
+                <label className="filter-check">
+                  <span>I understand this will perform a real sync to AD using the saved preview.</span>
+                  <input type="checkbox" checked={acknowledgeRealSync} onChange={(event) => setAcknowledgeRealSync(event.target.checked)} />
+                </label>
+                <p className="callout warn">Real sync uses the reviewed preview fingerprint shown in this page and will fail if the saved snapshot is stale.</p>
+                <div className="filter-actions">
+                  <button type="submit" disabled={!acknowledgeRealSync}>Real Sync To AD</button>
+                </div>
+              </form>
+            </article>
+          </section>
+
+          {previousPreview ? (
+            <section className="panel">
+              <h2>Previous Preview Comparison</h2>
+              <p className="muted">Comparing this saved preview to {previousPreview.runId ? <button type="button" className="inline-link" onClick={() => props.onOpenRun(previousPreview.runId!)}>{previousPreview.runId}</button> : 'n/a'}.</p>
+              <dl className="kv preview-meta">
+                <div><dt>Previous Action</dt><dd>{previousPreview.operationSummary?.action ?? 'Unknown'}</dd></div>
+                <div><dt>Previous Changes</dt><dd>{previousPreview.diffRows.filter((row) => row.changed).length}</dd></div>
+                <div><dt>Plan Changed</dt><dd>{preview.fingerprint === previousPreview.fingerprint ? 'No' : 'Yes'}</dd></div>
+              </dl>
+              {preview.fingerprint !== previousPreview.fingerprint ? <p className="callout warn">The planned action or changed attributes differ from the previous saved preview for this worker.</p> : null}
+            </section>
+          ) : null}
+
+          {history.length > 1 ? (
+            <section className="panel">
+              <h2>Preview History</h2>
+              <div className="table-scroll">
+                <table className="data-table compact">
+                  <thead>
+                    <tr>
+                      <th>Started</th>
+                      <th>Run</th>
+                      <th>Action</th>
+                      <th>Status</th>
+                      <th>Changes</th>
+                      <th>Reason</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {history.map((item) => (
+                      <tr key={item.runId}>
+                        <td>{formatTimestamp(item.startedAt)}</td>
+                        <td><button type="button" className="inline-link" onClick={() => props.onNavigate(`/preview?runId=${encodeURIComponent(item.runId)}`)}>{item.runId}</button></td>
+                        <td>{item.action ?? item.bucket}</td>
+                        <td>{item.status ?? 'Unknown'}</td>
+                        <td>{item.changeCount}</td>
+                        <td>{item.reason ?? 'n/a'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          ) : null}
+
+          <section className="panel">
+            <div className="section-heading">
+              <div>
+                <h2>Attribute Diff</h2>
+                <p className="muted">{props.route.showAllAttributes ? 'Showing every synced attribute.' : 'Showing changed attributes only.'}</p>
+              </div>
+              <div className="diff-toggle">
+                <button
+                  type="button"
+                  className="inline-link"
+                  onClick={() => {
+                    const params = new URLSearchParams();
+                    if (preview.runId) {
+                      params.set('runId', preview.runId);
+                    } else {
+                      params.set('workerId', preview.workerId);
+                    }
+                    if (!props.route.showAllAttributes) {
+                      params.set('showAllAttributes', 'true');
+                    }
+                    props.onNavigate(`/preview?${params.toString()}`);
+                  }}
+                >
+                  {props.route.showAllAttributes ? 'Show changed only' : 'Show all attributes'}
+                </button>
+              </div>
+            </div>
+            {!visibleDiffRows.length ? (
+              <p className="muted">No synced attributes were recorded for this preview.</p>
+            ) : (
+              <div className="table-scroll preview-diff-scroll">
+                <table className="data-table preview-diff-table">
+                  <thead>
+                    <tr>
+                      <th>Attribute</th>
+                      <th>Source</th>
+                      <th>Status</th>
+                      <th>Current</th>
+                      <th>Proposed</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {visibleDiffRows.map((row) => (
+                      <tr key={`${row.attribute}-${row.source ?? 'none'}`}>
+                        <td>{row.attribute}</td>
+                        <td>{row.source ?? 'n/a'}</td>
+                        <td>{row.changed ? 'Changed' : 'Same'}</td>
+                        <td>{row.before}</td>
+                        <td>{row.after}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
+        </>
+      ) : null}
+    </>
+  );
+}
+
+function RunDetailPage(props: { route: Extract<Route, { kind: 'run' }>; onNavigate: (path: string) => void }) {
+  const [run, setRun] = useState<RunDetail | null>(null);
+  const [response, setResponse] = useState<RunEntriesResponse | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [workerIdInput, setWorkerIdInput] = useState(props.route.workerId);
+  const [filterInput, setFilterInput] = useState(props.route.filter);
+
+  useEffect(() => {
+    setWorkerIdInput(props.route.workerId);
+    setFilterInput(props.route.filter);
+  }, [props.route.workerId, props.route.filter]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const [runDetail, entriesResponse] = await Promise.all([
+          getRun(props.route.runId),
+          getRunEntries(props.route.runId, {
+            bucket: props.route.bucket || undefined,
+            workerId: props.route.workerId || undefined,
+            filter: props.route.filter || undefined,
+            page: props.route.page,
+            pageSize: ENTRY_PAGE_SIZE,
           }),
         ]);
-        if (cancelled) {
-          return;
+        if (!cancelled) {
+          setRun(runDetail);
+          setResponse(entriesResponse);
+          setError(null);
         }
-
-        setRunDetail(nextRunDetail);
-        setEntryResponse(nextEntries);
       } catch (loadError) {
         if (!cancelled) {
           setError(loadError instanceof Error ? loadError.message : 'Failed to load run detail.');
@@ -323,718 +1030,547 @@ export function App() {
     return () => {
       cancelled = true;
     };
-  }, [route.runId, route.bucket, route.filter, route.reviewExplorer, route.view, route.reportCategory]);
+  }, [props.route]);
 
-  useEffect(() => {
-    if (route.view !== 'queues') {
-      setQueueResponse(null);
-      return;
-    }
-
-    let cancelled = false;
-    void (async () => {
-      try {
-        const nextQueue = await getQueue(route.queueName, {
-          reason: route.reason || undefined,
-          reviewCaseType: route.reviewCaseType || undefined,
-          workerId: route.workerId || undefined,
-          filter: route.filter || undefined,
-          page: route.page,
-          pageSize: route.pageSize,
-        });
-        if (!cancelled) {
-          setQueueResponse(nextQueue);
-        }
-      } catch (loadError) {
-        if (!cancelled) {
-          setError(loadError instanceof Error ? loadError.message : 'Failed to load queue.');
-        }
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [route.view, route.queueName, route.reason, route.reviewCaseType, route.workerId, route.filter, route.page, route.pageSize]);
-
-  useEffect(() => {
-    if (route.view !== 'worker' || !route.workerId) {
-      setWorkerDetail(null);
-      return;
-    }
-
-    let cancelled = false;
-    void (async () => {
-      try {
-        const nextWorker = await getWorkerDetail(route.workerId!);
-        if (!cancelled) {
-          setWorkerDetail(nextWorker);
-        }
-      } catch (loadError) {
-        if (!cancelled) {
-          setError(loadError instanceof Error ? loadError.message : 'Failed to load worker detail.');
-        }
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [route.view, route.workerId]);
-
-  useEffect(() => {
-    if (route.view !== 'operations') {
-      setHasEditedOperationsWorkerId(false);
-      return;
-    }
-
-    if (operationsWorkerId || hasEditedOperationsWorkerId) {
-      return;
-    }
-
-    const currentWorkerId =
-      typeof status?.currentRun?.currentWorkerId === 'string' && status.currentRun.currentWorkerId
-        ? status.currentRun.currentWorkerId
-        : null;
-    const suggestedWorkerId =
-      route.workerId
-      ?? currentWorkerId
-      ?? status?.recentRuns?.[0]?.workerScope?.workerId
-      ?? '';
-    if (suggestedWorkerId) {
-      setOperationsWorkerId(suggestedWorkerId);
-    }
-  }, [route.view, route.workerId, status, operationsWorkerId, hasEditedOperationsWorkerId]);
-
-  const visibleEntries = useMemo(
-    () => getVisibleEntries(entryResponse?.entries ?? [], route),
-    [entryResponse?.entries, route],
-  );
-
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === '/') {
-        event.preventDefault();
-        filterInputRef.current?.focus();
-        filterInputRef.current?.select();
-        return;
-      }
-
-      if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement || event.target instanceof HTMLSelectElement) {
-        return;
-      }
-
-      if (event.key === 'g') {
-        event.preventDefault();
-        navigateTo({ ...route, view: 'dashboard' });
-      } else if (event.key === 'q') {
-        event.preventDefault();
-        navigateTo({ ...route, view: 'queues' });
-      } else if (event.key === 'w' && route.workerId) {
-        event.preventDefault();
-        navigateTo({ ...route, view: 'worker' });
-      } else if (event.key === 'o') {
-        event.preventDefault();
-        navigateTo({ ...route, view: 'operations' });
-      } else if ((event.key === 'j' || event.key === 'k') && visibleEntries.length) {
-        event.preventDefault();
-        const nextEntry = stepSelection(visibleEntries, route.entryId, event.key === 'j' ? 1 : -1);
-        if (nextEntry) {
-          navigateTo({ ...route, entryId: nextEntry.entryId, workerId: nextEntry.workerId ?? route.workerId }, false);
-        }
-      }
-    };
-
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [route, visibleEntries]);
-
-  const selectedEntry = useMemo(
-    () => chooseSelectedEntry(visibleEntries, route.entryId),
-    [visibleEntries, route.entryId],
-  );
-
-  useEffect(() => {
-    if (!selectedEntry) {
-      return;
-    }
-
-    setRoute((current) => {
-      const nextWorkerId = selectedEntry.workerId ?? current.workerId;
-      if (selectedEntry.entryId === current.entryId && nextWorkerId === current.workerId) {
-        return current;
-      }
-
-      const normalized = normalizeRoute(
-        {
-          ...current,
-          entryId: selectedEntry.entryId,
-          workerId: nextWorkerId,
-        },
-        status,
-      );
-      syncRouteState(normalized, false);
-      return normalized;
-    });
-  }, [selectedEntry, status]);
-
-  const runBuckets = useMemo(() => {
-    if (!runDetail) {
-      return [];
-    }
-
-    return BUCKET_ORDER.filter((bucket) => (runDetail.bucketCounts[bucket] ?? 0) > 0).map((bucket) => ({
-      bucket,
-      count: runDetail.bucketCounts[bucket] ?? 0,
-    }));
-  }, [runDetail]);
-
-  const dashboardWarnings = status?.warnings ?? [];
-  const statusWarnings = dashboardWarnings.filter((warning) => warning !== NON_WINDOWS_AD_WARNING);
-  const showAdProbeNote = dashboardWarnings.includes(NON_WINDOWS_AD_WARNING);
-  const reportLinks = useMemo(() => buildReportLinks(status), [status]);
-  const currentViewLabel = getCurrentViewLabel(route.view);
+  const availableBuckets = Object.entries(run?.bucketCounts ?? {}).filter(([, count]) => count > 0);
+  const totalPages = Math.max(1, Math.ceil((response?.total ?? 0) / ENTRY_PAGE_SIZE));
 
   return (
-    <div className="app-shell">
-      <header className="hero">
-        <div className="portal-breadcrumbs" aria-label="Breadcrumb">
-          <span>Home</span>
-          <span aria-hidden="true">/</span>
-          <span>SyncFactors</span>
-          <span aria-hidden="true">/</span>
-          <span>{currentViewLabel}</span>
-        </div>
-        <div className="hero-topbar">
-          <div className="hero-copy">
-            <div className="hero-title-row">
-              <h1>SyncFactors</h1>
+    <>
+      {error ? <section className="panel"><p className="callout danger">{error}</p></section> : null}
+      {!run ? null : (
+        <>
+          <section className="hero hero-compact">
+            <div>
+              <p className="eyebrow">Run Detail</p>
+              <h1>{run.run.runId}</h1>
+              <p className="lede">{run.run.mode} · {run.run.syncScope} · {run.run.status} · {run.run.dryRun ? 'Dry Run' : 'Live Run'}</p>
             </div>
-          </div>
-          <div className="hero-meta">
-            <details className="report-menu" ref={reportMenuRef}>
-              <summary className="hero-path">
-                <span className="hero-path-label">Reports</span>
-                <span aria-hidden="true" className="report-menu-caret">▾</span>
-              </summary>
-              <div className="report-menu-list">
-                {reportLinks.map((link) => (
-                  <button
-                    key={`${link.label}:${link.path}`}
-                    className="report-menu-item"
-                    onClick={() => {
-                      void handleOpenPath(link.path);
-                    }}
-                    type="button"
-                  >
-                    <span className="report-menu-item-label">{link.label}</span>
-                    <span className="report-menu-item-path" title={link.path}>{link.path}</span>
+          </section>
+
+          <section className="panel-grid">
+            <article className="panel">
+              <h2>Summary</h2>
+              <dl className="kv">
+                <div><dt>Started</dt><dd>{formatTimestamp(run.run.startedAt)}</dd></div>
+                <div><dt>Completed</dt><dd>{formatTimestamp(run.run.completedAt)}</dd></div>
+                <div><dt>Artifact</dt><dd>{run.run.artifactType}</dd></div>
+                <div><dt>Scope</dt><dd>{run.run.syncScope}</dd></div>
+                <div><dt>Trigger</dt><dd>{run.run.runTrigger}</dd></div>
+                <div><dt>Requested By</dt><dd>{run.run.requestedBy ?? 'n/a'}</dd></div>
+                <div><dt>Status</dt><dd><span className={`badge ${badgeClass(run.run.status)}`}>{run.run.status}</span></dd></div>
+                <div><dt>Processed</dt><dd>{run.run.processedWorkers}</dd></div>
+                <div><dt>Total</dt><dd>{run.run.totalWorkers}</dd></div>
+              </dl>
+            </article>
+
+            <article className="panel">
+              <h2>Bucket Counts</h2>
+              <div className="bucket-grid">
+                {Object.entries(run.bucketCounts).map(([bucket, count]) => (
+                  <button key={bucket} type="button" className="bucket-card" onClick={() => props.onNavigate(buildRunPath(props.route.runId, { ...props.route, bucket, page: 1 }))}>
+                    <span className="bucket-name">{bucket}</span>
+                    <strong>{count}</strong>
                   </button>
                 ))}
               </div>
-            </details>
-            <button
-              aria-label={`Switch to ${theme === 'light' ? 'dark' : 'light'} theme`}
-              aria-pressed={theme === 'dark'}
-              className="theme-switch"
-              onClick={() => setTheme((current) => (current === 'light' ? 'dark' : 'light'))}
-              type="button"
+            </article>
+          </section>
+
+          <section className="panel">
+            <h2>Filters</h2>
+            <form
+              className="filters"
+              onSubmit={(event) => {
+                event.preventDefault();
+                props.onNavigate(buildRunPath(props.route.runId, { ...props.route, workerId: workerIdInput, filter: filterInput, page: 1 }));
+              }}
             >
-              <span aria-hidden="true" className={`theme-switch-icon ${theme === 'light' ? 'active' : ''}`}>☀</span>
-              <span className="theme-switch-track" data-enabled={theme === 'dark'}>
-                <span className="theme-switch-thumb" />
-              </span>
-              <span aria-hidden="true" className={`theme-switch-icon ${theme === 'dark' ? 'active' : ''}`}>●</span>
-            </button>
-          </div>
-        </div>
-        <div className="hero-toolbar">
-          <nav className="view-nav" aria-label="Primary">
-            <button className={route.view === 'dashboard' ? 'active' : ''} onClick={() => navigateTo({ ...route, view: 'dashboard' })} type="button">Dashboard</button>
-            <button className={route.view === 'report' ? 'active' : ''} onClick={() => navigateTo({ ...route, view: 'report' })} type="button" disabled={!route.runId}>Report</button>
-            <button className={route.view === 'queues' ? 'active' : ''} onClick={() => navigateTo({ ...route, view: 'queues' })} type="button">Queues</button>
-            <button className={route.view === 'worker' ? 'active' : ''} onClick={() => navigateTo({ ...route, view: 'worker' })} type="button" disabled={!route.workerId}>Worker Detail</button>
-            <button className={route.view === 'operations' ? 'active' : ''} onClick={() => navigateTo({ ...route, view: 'operations' })} type="button">Operations</button>
-          </nav>
-          <div className="portal-command-meta">
-            <span>Context: {currentViewLabel}</span>
-          </div>
-        </div>
-      </header>
+              <label>
+                <span>Worker search</span>
+                <input value={workerIdInput} onChange={(event) => setWorkerIdInput(event.target.value)} placeholder="worker id or samAccountName" />
+              </label>
+              <label className="filter-search">
+                <span>Text search</span>
+                <input value={filterInput} onChange={(event) => setFilterInput(event.target.value)} placeholder="reason, reviewCaseType, raw entry text..." />
+              </label>
+              <div className="filter-actions">
+                <button type="submit">Apply</button>
+                <button type="button" className="link-button" onClick={() => props.onNavigate(`/runs/${encodeURIComponent(props.route.runId)}`)}>Clear</button>
+              </div>
+            </form>
+            <div className="bucket-chip-row">
+              <button type="button" className={`bucket-card ${props.route.bucket ? '' : 'active'}`} onClick={() => props.onNavigate(buildRunPath(props.route.runId, { ...props.route, bucket: '', page: 1 }))}>All buckets</button>
+              {availableBuckets.map(([bucket, count]) => (
+                <button
+                  key={bucket}
+                  type="button"
+                  className={`bucket-card ${props.route.bucket === bucket ? 'active' : ''}`}
+                  onClick={() => props.onNavigate(buildRunPath(props.route.runId, { ...props.route, bucket, page: 1 }))}
+                >
+                  <span className="bucket-name">{bucket}</span>
+                  <strong>{count}</strong>
+                </button>
+              ))}
+            </div>
+          </section>
 
-      {error ? <section className="error-banner">{error}</section> : null}
-      {statusWarnings.length ? <WarningPanel title="Status warnings" warnings={statusWarnings} /> : null}
-      {showAdProbeNote ? <StatusNote>Active Directory health is unavailable on this macOS host.</StatusNote> : null}
+          <section className="panel">
+            <h2>Entries {props.route.bucket ? `· ${props.route.bucket}` : ''}</h2>
+            <p className="muted">Showing page {props.route.page} of {totalPages} · {response?.total ?? 0} total entries · {ENTRY_PAGE_SIZE} per page.</p>
+            {!response?.entries.length ? (
+              <p className="muted">No entries matched this run.</p>
+            ) : (
+              <div className="entry-list">
+                {response.entries.map((entry) => {
+                  const savedPreviewRunId = getSavedPreviewRunId(entry);
+                  return (
+                    <article className="entry-card" key={entry.entryId}>
+                      <header className="entry-head">
+                        <div>
+                          <h3>{entry.bucketLabel}</h3>
+                          <p className="muted">{entry.workerId ?? 'n/a'} / {entry.samAccountName ?? 'n/a'}</p>
+                        </div>
+                        <div className="entry-meta">
+                          <span className="badge neutral">{entry.changeCount} changes</span>
+                        </div>
+                      </header>
+                      {entry.primarySummary ? <p className="entry-summary">{entry.primarySummary}</p> : null}
+                      {entry.failureSummary ? <p className="callout warn">{entry.failureSummary}</p> : null}
+                      {entry.reason || entry.reviewCaseType ? (
+                        <dl className="kv preview-meta">
+                          <div><dt>Reason</dt><dd>{entry.reason ?? 'n/a'}</dd></div>
+                          <div><dt>Review Case</dt><dd>{entry.reviewCaseType ?? 'n/a'}</dd></div>
+                        </dl>
+                      ) : null}
+                      {entry.operationSummary ? <p><strong>{entry.operationSummary.action}</strong>{entry.operationSummary.effect ? ` · ${entry.operationSummary.effect}` : ''}</p> : null}
+                      {entry.topChangedAttributes.length ? <p className="muted">Top changes: {entry.topChangedAttributes.join(', ')}</p> : null}
+                      {entry.workerId ? (
+                        <p>
+                          <button
+                            type="button"
+                            className="inline-link"
+                            onClick={() => props.onNavigate(savedPreviewRunId ? `/preview?runId=${encodeURIComponent(savedPreviewRunId)}` : `/preview?workerId=${encodeURIComponent(entry.workerId!)}`)}
+                          >
+                            {savedPreviewRunId ? 'Open saved preview' : 'Open worker preview'}
+                          </button>
+                        </p>
+                      ) : null}
+                      {entry.diffRows.length ? (
+                        <table className="data-table compact">
+                          <thead>
+                            <tr>
+                              <th>Attribute</th>
+                              <th>Before</th>
+                              <th>After</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {entry.diffRows.map((diff) => (
+                              <tr key={`${entry.entryId}-${diff.attribute}`}>
+                                <td>{diff.attribute}</td>
+                                <td>{diff.before}</td>
+                                <td>{diff.after}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      ) : <p className="muted">No detailed attribute diff was recorded for this entry.</p>}
+                    </article>
+                  );
+                })}
+              </div>
+            )}
 
-      {route.view === 'dashboard' ? (
-        <DashboardView
-          status={status}
-          route={route}
-          runDetail={runDetail}
-          entryResponse={entryResponse}
-          selectedEntry={selectedEntry}
-          runBuckets={runBuckets}
-          filterInputRef={filterInputRef}
-          onSelectRun={(runId) => navigateTo({ ...route, view: 'dashboard', runId, entryId: null })}
-          onSelectBucket={(bucket) => navigateTo({
-            ...route,
-            bucket,
-            reviewExplorer: bucket === 'creates' ? 'created' : bucket === 'deletions' ? 'deleted' : 'changed',
-            entryId: null,
-          })}
-          onFilterChange={(filter) => navigateTo({ ...route, filter })}
-          onSelectEntry={(entry) => navigateTo({ ...route, entryId: entry.entryId, workerId: entry.workerId ?? route.workerId }, false)}
-          onChangeDiffMode={(diffMode) => navigateTo({ ...route, diffMode }, false)}
-          onChangeReviewExplorer={(reviewExplorer) =>
-            navigateTo({ ...route, reviewExplorer, bucket: mapReviewExplorerToBucket(reviewExplorer), entryId: null })
-          }
-          onOpenWorker={(workerId) => navigateTo({ ...route, view: 'worker', workerId })}
-          onOpenReport={() => navigateTo({ ...route, view: 'report' })}
-        />
-      ) : null}
-
-      {route.view === 'report' ? (
-        <ReportExplorerView
-          route={route}
-          runDetail={runDetail}
-          entryResponse={entryResponse}
-          selectedEntry={selectedEntry}
-          filterInputRef={filterInputRef}
-          onCategoryChange={(reportCategory) => navigateTo({ ...route, reportCategory, entryId: null })}
-          onFilterChange={(filter) => navigateTo({ ...route, filter })}
-          onSelectEntry={(entry) => navigateTo({ ...route, entryId: entry.entryId, workerId: entry.workerId ?? route.workerId }, false)}
-          onDiffModeChange={(diffMode) => navigateTo({ ...route, diffMode }, false)}
-          onOpenWorker={(workerId) => navigateTo({ ...route, view: 'worker', workerId })}
-          onOpenPath={() => setPendingConfirmation({
-            kind: 'run-open',
-            descriptor: { title: 'Open report path', message: 'Open the selected report path in the default app.', requiredText: 'YES', riskLevel: 'low' },
-            confirmText: '',
-          })}
-          onCopyPath={() => setPendingConfirmation({
-            kind: 'run-copy',
-            descriptor: { title: 'Copy report path', message: 'Copy the selected report path to the clipboard.', requiredText: 'YES', riskLevel: 'medium' },
-            confirmText: '',
-          })}
-          onExport={() => setPendingConfirmation({
-            kind: 'run-export',
-            descriptor: { title: 'Export bucket selection', message: 'Export the selected bucket and active filter to a JSON file in the temp directory.', requiredText: 'YES', riskLevel: 'medium' },
-            confirmText: '',
-          })}
-        />
-      ) : null}
-
-      {route.view === 'queues' ? (
-        <QueueView
-          route={route}
-          queueResponse={queueResponse}
-          filterInputRef={filterInputRef}
-          onQueueChange={(queueName) => navigateTo({ ...route, queueName, reason: '', reviewCaseType: '', workerId: null, page: 1 })}
-          onFilterChange={(filter) => navigateTo({ ...route, filter, page: 1 })}
-          onReasonChange={(reason) => navigateTo({ ...route, reason, page: 1 })}
-          onReviewCaseChange={(reviewCaseType) => navigateTo({ ...route, reviewCaseType, page: 1 })}
-          onPageChange={(page) => navigateTo({ ...route, page })}
-          onPageSizeChange={(pageSize) => navigateTo({ ...route, pageSize, page: 1 })}
-          onOpenWorker={(workerId) => navigateTo({ ...route, view: 'worker', workerId })}
-          onOpenRun={(entry) => navigateTo({
-            ...route,
-            view: 'report',
-            runId: entry.runId,
-            bucket: entry.bucket,
-            entryId: entry.entryId,
-            workerId: entry.workerId,
-            reportCategory: mapEntryToReportCategory(entry),
-          })}
-        />
-      ) : null}
-
-      {route.view === 'worker' ? (
-        <WorkerView
-          route={route}
-          workerDetail={workerDetail}
-          workerActionState={workerActionState}
-          onRunWorkerAction={(action) => void handleRunWorkerAction(action)}
-          onOpenRun={(runId, entry) => navigateTo({
-            ...route,
-            view: 'report',
-            runId,
-            bucket: entry?.bucket ?? route.bucket,
-            entryId: entry?.entryId ?? null,
-            workerId: entry?.workerId ?? route.workerId,
-            reportCategory: entry ? mapEntryToReportCategory(entry) : route.reportCategory,
-          })}
-        />
-      ) : null}
-
-      {route.view === 'operations' ? (
-        <OperationsView
-          status={status}
-          pendingActionLabel={pendingOperatorActionLabel}
-          latestResult={commandResult}
-          recentResults={recentCommandResults}
-          streamConnected={streamConnected}
-          workerLauncherId={operationsWorkerId}
-          workerLauncherMode={operationsPreviewMode}
-          onRunAction={(action) => void handleRunOperatorAction(action)}
-          onRunPreflight={() => void handleRunPreflight()}
-          onRunFreshReset={() => setPendingConfirmation({
-            kind: 'fresh-reset',
-            descriptor: {
-              title: 'Fresh sync reset',
-              message: 'Delete managed AD user objects and reset local sync state.',
-              requiredText: 'DELETE',
-              riskLevel: 'critical',
-            },
-            confirmText: '',
-            countText: '',
-            destructiveText: '',
-          })}
-          onOpenLatestRun={(runId) => {
-            if (runId) {
-              navigateTo({ ...route, view: 'report', runId, entryId: null });
-            }
-          }}
-          onWorkerLauncherIdChange={(workerId) => {
-            setHasEditedOperationsWorkerId(true);
-            setOperationsWorkerId(workerId);
-          }}
-          onWorkerLauncherModeChange={setOperationsPreviewMode}
-          onPreviewWorker={() => void handlePreviewWorker(operationsWorkerId.trim(), operationsPreviewMode)}
-          onOpenWorker={() => navigateTo({ ...route, view: 'worker', workerId: operationsWorkerId.trim() || route.workerId })}
-        />
-      ) : null}
-
-      {workerPreview ? (
-        <WorkerPreviewPanel
-          preview={workerPreview}
-          onApply={() => setPendingConfirmation({
-            kind: 'worker-apply',
-            descriptor: { title: 'Apply worker sync', message: `Apply worker sync for ${workerPreview.preview.workerId}.`, requiredText: 'YES', riskLevel: 'high' },
-            confirmText: '',
-            workerId: workerPreview.preview.workerId,
-          })}
-          onOpenRun={() => {
-            if (workerPreview.runId) {
-              navigateTo({ ...route, view: 'report', runId: workerPreview.runId, workerId: workerPreview.preview.workerId, entryId: null });
-              setWorkerPreview(null);
-            }
-          }}
-          onClose={() => setWorkerPreview(null)}
-        />
-      ) : null}
-
-      {pendingConfirmation ? renderConfirmationDialog(pendingConfirmation) : null}
-      <CommandResultPanel result={commandResult} onClose={() => setCommandResult(null)} onCopyPath={(value) => void navigator.clipboard?.writeText(value)} />
-    </div>
+            {totalPages > 1 ? (
+              <div className="filter-actions">
+                {props.route.page > 1 ? <button type="button" className="link-button" onClick={() => props.onNavigate(buildRunPath(props.route.runId, { ...props.route, page: props.route.page - 1 }))}>Previous</button> : null}
+                {props.route.page < totalPages ? <button type="button" className="link-button" onClick={() => props.onNavigate(buildRunPath(props.route.runId, { ...props.route, page: props.route.page + 1 }))}>Next</button> : null}
+              </div>
+            ) : null}
+          </section>
+        </>
+      )}
+    </>
   );
-
-  function renderConfirmationDialog(confirmation: PendingConfirmation) {
-    if (confirmation.kind === 'fresh-reset') {
-      return (
-        <ConfirmationDialog
-          descriptor={confirmation.descriptor}
-          value={confirmation.confirmText}
-          onChange={(confirmText) => setPendingConfirmation({ ...confirmation, confirmText })}
-          extraFields={[
-            { label: 'Object count', value: confirmation.countText, onChange: (countText) => setPendingConfirmation({ ...confirmation, countText }) },
-            { label: 'Final phrase', value: confirmation.destructiveText, onChange: (destructiveText) => setPendingConfirmation({ ...confirmation, destructiveText }) },
-          ]}
-          onConfirm={() => void confirmPendingAction()}
-          onClose={() => setPendingConfirmation(null)}
-        />
-      );
-    }
-
-    return (
-      <ConfirmationDialog
-        descriptor={confirmation.descriptor}
-        value={confirmation.confirmText}
-        onChange={(confirmText) => setPendingConfirmation({ ...confirmation, confirmText })}
-        onConfirm={() => void confirmPendingAction()}
-        onClose={() => setPendingConfirmation(null)}
-      />
-    );
-  }
-
-  function navigateTo(nextRoute: RouteState, push = true) {
-    setRouteAndUrl(nextRoute, push);
-  }
-
-  function setRouteAndUrl(nextRoute: RouteState, push: boolean) {
-    const normalized = normalizeRoute(nextRoute, status);
-    setRoute(normalized);
-    syncRouteState(normalized, push);
-  }
-
-  async function handleOpenPath(path: string) {
-    try {
-      await openLocalPath(path);
-      reportMenuRef.current?.removeAttribute('open');
-    } catch (openError) {
-      setError(openError instanceof Error ? openError.message : 'Failed to open the selected path.');
-    }
-  }
-
-  async function refreshAfterAction(workerId = route.workerId) {
-    cancelLaunchMonitor();
-    const nextStatus = await getStatus();
-    applyStatus(nextStatus);
-    if (workerId) {
-      const nextWorkerDetail = await getWorkerDetail(workerId);
-      setWorkerDetail(nextWorkerDetail);
-    }
-  }
-
-  async function handleRunWorkerAction(action: WorkerActionKind) {
-    if (!route.workerId || workerActionState.pendingAction) {
-      return;
-    }
-
-    setError(null);
-    setWorkerActionState({ pendingAction: action, result: null });
-
-    try {
-      if (action === 'test-sync' || action === 'review-sync') {
-        const previewMode: WorkerPreviewMode = action === 'test-sync' ? 'minimal' : 'full';
-        const preview = await previewWorker(route.workerId, previewMode);
-        if (preview.status === 'Failed') {
-          setWorkerPreview(null);
-          if (preview.runId) {
-            navigateTo({ ...route, view: 'report', runId: preview.runId, workerId: route.workerId, entryId: null });
-          }
-          setError(preview.errorMessage ?? `Worker preview failed for ${route.workerId}.`);
-        } else {
-          setWorkerPreview(preview);
-        }
-      } else {
-        const result = await runWorkerAction(route.workerId, action);
-        setWorkerActionState({ pendingAction: null, result });
-        if (result.result.runId) {
-          navigateTo({ ...route, view: 'report', runId: result.result.runId, workerId: route.workerId, entryId: null });
-        }
-        await refreshAfterAction(route.workerId);
-        return;
-      }
-
-      setWorkerActionState({ pendingAction: null, result: null });
-      await refreshAfterAction(route.workerId);
-    } catch (actionError) {
-      setWorkerActionState({ pendingAction: null, result: null });
-      setError(actionError instanceof Error ? actionError.message : 'Failed to run worker action.');
-    }
-  }
-
-  async function handleRunOperatorAction(action: OperatorActionKind) {
-    try {
-      setError(null);
-      setPendingOperatorActionLabel(getOperatorActionLabel(action));
-      const result = await runOperatorAction(action);
-      recordCommandResult(result);
-      if (result.runId) {
-        navigateTo({ ...route, view: 'report', runId: result.runId, entryId: null }, false);
-      }
-      if (result.started && !result.completed) {
-        setStatus((current) => current ? { ...current, currentRun: createPendingCurrentRun(action, result.message) } : current);
-        void monitorPendingRunLaunch(getOperatorActionLabel(action));
-        return;
-      }
-      await refreshAfterAction();
-    } catch (actionError) {
-      setError(actionError instanceof Error ? actionError.message : 'Failed to run operator action.');
-    } finally {
-      setPendingOperatorActionLabel(null);
-    }
-  }
-
-  async function handleRunPreflight() {
-    try {
-      setError(null);
-      setPendingOperatorActionLabel('Preflight');
-      const result = await runPreflight();
-      recordCommandResult(result);
-    } catch (actionError) {
-      setError(actionError instanceof Error ? actionError.message : 'Failed to run preflight.');
-    } finally {
-      setPendingOperatorActionLabel(null);
-    }
-  }
-
-  async function handlePreviewWorker(workerId: string, previewMode: WorkerPreviewMode) {
-    if (!workerId) {
-      return;
-    }
-
-    try {
-      setError(null);
-      setPendingOperatorActionLabel(`Worker preview ${workerId}`);
-      const preview = await previewWorker(workerId, previewMode);
-      if (preview.status === 'Failed') {
-        setWorkerPreview(null);
-        if (preview.runId) {
-          navigateTo({ ...route, view: 'report', runId: preview.runId, workerId, entryId: null });
-        }
-        setError(preview.errorMessage ?? `Worker preview failed for ${workerId}.`);
-      } else {
-        setWorkerPreview(preview);
-      }
-      setOperationsWorkerId(workerId);
-      await refreshAfterAction(workerId);
-    } catch (previewError) {
-      setError(previewError instanceof Error ? previewError.message : 'Failed to preview worker.');
-    } finally {
-      setPendingOperatorActionLabel(null);
-    }
-  }
-
-  async function confirmPendingAction() {
-    if (!pendingConfirmation) {
-      return;
-    }
-
-    try {
-      setError(null);
-      if (pendingConfirmation.kind === 'worker-apply') {
-        const result = await applyWorker(pendingConfirmation.workerId, pendingConfirmation.confirmText);
-        setWorkerActionState({ pendingAction: null, result });
-        setPendingConfirmation(null);
-        setWorkerPreview(null);
-        await refreshAfterAction(pendingConfirmation.workerId);
-        return;
-      }
-
-      if (pendingConfirmation.kind === 'run-open' && route.runId) {
-        const result = await openRunReport(route.runId, pendingConfirmation.confirmText);
-        recordCommandResult(result);
-      } else if (pendingConfirmation.kind === 'run-copy' && route.runId) {
-        const result = await copyRunReportPath(route.runId, pendingConfirmation.confirmText);
-        recordCommandResult(result);
-        if (result.reportPath) {
-          await navigator.clipboard?.writeText(result.reportPath);
-        }
-      } else if (pendingConfirmation.kind === 'run-export' && route.runId) {
-        const result = await exportRunBucket(route.runId, route.bucket, route.filter, pendingConfirmation.confirmText);
-        recordCommandResult(result);
-      } else if (pendingConfirmation.kind === 'fresh-reset') {
-        const result = await runFreshReset(
-          pendingConfirmation.confirmText,
-          [pendingConfirmation.countText, pendingConfirmation.destructiveText],
-        );
-        recordCommandResult(result);
-        await refreshAfterAction();
-      }
-
-      setPendingConfirmation(null);
-    } catch (actionError) {
-      setError(actionError instanceof Error ? actionError.message : 'Confirmation action failed.');
-    }
-  }
-
-  function recordCommandResult(result: OperatorCommandResult) {
-    setCommandResult(result);
-    setRecentCommandResults((current) => [result, ...current].slice(0, 8));
-  }
 }
 
-function getInitialTheme(): ThemeMode {
-  if (typeof window === 'undefined') {
-    return 'light';
+function UsersPage(props: { currentUserId: string | null; onFlash: (flash: Flash) => void }) {
+  const [users, setUsers] = useState<LocalUserSummary[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [createUsername, setCreateUsername] = useState('');
+  const [createPassword, setCreatePassword] = useState('');
+  const [createPasswordConfirmation, setCreatePasswordConfirmation] = useState('');
+  const [createIsAdmin, setCreateIsAdmin] = useState(false);
+  const [resetPasswords, setResetPasswords] = useState<Record<string, { password: string; confirmation: string }>>({});
+
+  async function refresh() {
+    const response = await listUsers();
+    setUsers(response.users);
   }
 
-  if (!hasStorageAccess()) {
-    return 'light';
-  }
+  useEffect(() => {
+    void refresh().catch((loadError) => {
+      setError(loadError instanceof Error ? loadError.message : 'Failed to load users.');
+    });
+  }, []);
 
-  const storedTheme = window.localStorage.getItem(THEME_STORAGE_KEY);
-  if (storedTheme === 'light' || storedTheme === 'dark') {
-    return storedTheme;
-  }
+  return (
+    <>
+      <section className="hero hero-compact">
+        <div>
+          <p className="eyebrow">Administration</p>
+          <h1>User Access</h1>
+          <p className="lede">Create operator accounts, promote admins, reset passwords, and disable or delete local logins.</p>
+        </div>
+      </section>
 
-  return 'light';
+      {error ? <section className="panel"><p className="callout danger">{error}</p></section> : null}
+
+      <section className="panel-grid admin-user-grid">
+        <article className="panel">
+          <h2>Create User</h2>
+          <form
+            className="filters admin-user-form"
+            onSubmit={async (event) => {
+              event.preventDefault();
+              if (createPassword !== createPasswordConfirmation) {
+                setError('Create password and confirmation must match.');
+                return;
+              }
+
+              try {
+                const result = await createUser(createUsername, createPassword, createIsAdmin);
+                props.onFlash({ tone: result.succeeded ? 'good' : 'danger', message: result.message });
+                setCreateUsername('');
+                setCreatePassword('');
+                setCreatePasswordConfirmation('');
+                setCreateIsAdmin(false);
+                setError(null);
+                await refresh();
+              } catch (createError) {
+                setError(createError instanceof Error ? createError.message : 'Failed to create user.');
+              }
+            }}
+          >
+            <label>
+              <span>Username</span>
+              <input value={createUsername} onChange={(event) => setCreateUsername(event.target.value)} autoComplete="off" />
+            </label>
+            <label>
+              <span>Password</span>
+              <input type="password" value={createPassword} onChange={(event) => setCreatePassword(event.target.value)} autoComplete="new-password" />
+            </label>
+            <label>
+              <span>Confirm password</span>
+              <input type="password" value={createPasswordConfirmation} onChange={(event) => setCreatePasswordConfirmation(event.target.value)} autoComplete="new-password" />
+            </label>
+            <label className="filter-check">
+              <span>Create as admin</span>
+              <input type="checkbox" checked={createIsAdmin} onChange={(event) => setCreateIsAdmin(event.target.checked)} />
+            </label>
+            <div className="filter-actions">
+              <button type="submit">Create user</button>
+            </div>
+          </form>
+        </article>
+
+        <article className="panel">
+          <h2>Security Notes</h2>
+          <div className="risk-list">
+            <p className="callout">Passwords are stored as one-way hashes.</p>
+            <p className="callout">New passwords must be at least 12 characters and include uppercase, lowercase, and numeric characters.</p>
+            <p className="callout warn">This page cannot disable or delete your own account, and it will not remove the last active admin.</p>
+          </div>
+        </article>
+      </section>
+
+      <section className="panel">
+        <div className="section-heading">
+          <div>
+            <p className="eyebrow">Directory</p>
+            <h2>Local Users</h2>
+          </div>
+        </div>
+        <div className="table-scroll">
+          <table className="data-table admin-user-table">
+            <thead>
+              <tr>
+                <th>Username</th>
+                <th>Role</th>
+                <th>Status</th>
+                <th>Created</th>
+                <th>Last Login</th>
+                <th>Reset Password</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {users.map((user) => {
+                const resetState = resetPasswords[user.userId] ?? { password: '', confirmation: '' };
+                return (
+                  <tr key={user.userId}>
+                    <td>{user.username}</td>
+                    <td>
+                      <div className="admin-user-role-form">
+                        <span className={`badge ${user.role.toLowerCase() === 'admin' ? 'info' : 'neutral'}`}>{user.role}</span>
+                        <button
+                          type="button"
+                          className="link-button admin-user-compact-button"
+                          onClick={async () => {
+                            try {
+                              const result = await setUserRole(user.userId, user.role.toLowerCase() !== 'admin');
+                              props.onFlash({ tone: result.succeeded ? 'good' : 'danger', message: result.message });
+                              await refresh();
+                            } catch (roleError) {
+                              setError(roleError instanceof Error ? roleError.message : 'Failed to change role.');
+                            }
+                          }}
+                        >
+                          {user.role.toLowerCase() === 'admin' ? 'Set regular' : 'Set admin'}
+                        </button>
+                      </div>
+                    </td>
+                    <td><span className={`badge ${user.isActive ? 'good' : 'dim'}`}>{user.isActive ? 'Active' : 'Inactive'}</span></td>
+                    <td>{formatTimestamp(user.createdAt)}</td>
+                    <td>{formatTimestamp(user.lastLoginAt)}</td>
+                    <td>
+                      <div className="admin-user-inline-form">
+                        <input
+                          type="password"
+                          value={resetState.password}
+                          onChange={(event) => setResetPasswords((current) => ({ ...current, [user.userId]: { ...resetState, password: event.target.value } }))}
+                          placeholder="New"
+                          autoComplete="new-password"
+                        />
+                        <input
+                          type="password"
+                          value={resetState.confirmation}
+                          onChange={(event) => setResetPasswords((current) => ({ ...current, [user.userId]: { ...resetState, confirmation: event.target.value } }))}
+                          placeholder="Confirm"
+                          autoComplete="new-password"
+                        />
+                        <button
+                          type="button"
+                          className="admin-user-compact-button"
+                          onClick={async () => {
+                            if (resetState.password !== resetState.confirmation) {
+                              setError('Reset password and confirmation must match.');
+                              return;
+                            }
+                            try {
+                              const result = await resetUserPassword(user.userId, resetState.password);
+                              props.onFlash({ tone: result.succeeded ? 'good' : 'danger', message: result.message });
+                              setResetPasswords((current) => ({ ...current, [user.userId]: { password: '', confirmation: '' } }));
+                            } catch (passwordError) {
+                              setError(passwordError instanceof Error ? passwordError.message : 'Failed to reset password.');
+                            }
+                          }}
+                        >
+                          Reset
+                        </button>
+                      </div>
+                    </td>
+                    <td>
+                      <div className="admin-user-actions">
+                        <button
+                          type="button"
+                          className="link-button admin-user-compact-button"
+                          onClick={async () => {
+                            try {
+                              const result = await setUserActive(user.userId, !user.isActive);
+                              props.onFlash({ tone: result.succeeded ? 'good' : 'danger', message: result.message });
+                              await refresh();
+                            } catch (activeError) {
+                              setError(activeError instanceof Error ? activeError.message : 'Failed to update user state.');
+                            }
+                          }}
+                        >
+                          {user.isActive ? 'Disable' : 'Enable'}
+                        </button>
+                        <button
+                          type="button"
+                          className="link-button danger-button admin-user-compact-button"
+                          disabled={props.currentUserId === user.userId}
+                          onClick={async () => {
+                            try {
+                              const result = await deleteUser(user.userId);
+                              props.onFlash({ tone: result.succeeded ? 'good' : 'danger', message: result.message });
+                              await refresh();
+                            } catch (deleteError) {
+                              setError(deleteError instanceof Error ? deleteError.message : 'Failed to delete user.');
+                            }
+                          }}
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </>
+  );
 }
 
-function hasStorageAccess(): boolean {
-  return typeof window !== 'undefined'
-    && typeof window.localStorage !== 'undefined'
-    && typeof window.localStorage.getItem === 'function'
-    && typeof window.localStorage.setItem === 'function';
+function parseRoute(location: Location): Route {
+  const url = new URL(location.href);
+  const path = url.pathname;
+  if (path === '/login') {
+    return { kind: 'login', returnUrl: url.searchParams.get('returnUrl') };
+  }
+  if (path === '/sync') {
+    return { kind: 'sync', page: parsePositiveInt(url.searchParams.get('page'), 1) };
+  }
+  if (path === '/preview') {
+    return {
+      kind: 'preview',
+      runId: url.searchParams.get('runId'),
+      workerId: url.searchParams.get('workerId'),
+      showAllAttributes: url.searchParams.get('showAllAttributes') === 'true',
+    };
+  }
+  if (path.startsWith('/runs/')) {
+    return {
+      kind: 'run',
+      runId: decodeURIComponent(path.slice('/runs/'.length)),
+      bucket: url.searchParams.get('bucket') ?? '',
+      workerId: url.searchParams.get('workerId') ?? '',
+      filter: url.searchParams.get('filter') ?? '',
+      page: parsePositiveInt(url.searchParams.get('page'), 1),
+    };
+  }
+  if (path === '/admin/users') {
+    return { kind: 'users' };
+  }
+  return { kind: 'dashboard' };
 }
 
-function buildReportLinks(status: DashboardStatus | null): Array<{ label: string; path: string }> {
-  if (!status) {
-    return [];
+function parsePositiveInt(value: string | null, fallback: number) {
+  const parsed = Number.parseInt(value ?? '', 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function navigate(path: string, setRoute: (route: Route) => void, replace = false) {
+  const method = replace ? 'replaceState' : 'pushState';
+  window.history[method](null, '', path);
+  setRoute(parseRoute(window.location));
+}
+
+function buildLoginPath(returnUrl: string) {
+  return `/login?returnUrl=${encodeURIComponent(returnUrl)}`;
+}
+
+function buildRunPath(runId: string, route: { bucket: string; workerId: string; filter: string; page: number }) {
+  const params = new URLSearchParams();
+  if (route.bucket) {
+    params.set('bucket', route.bucket);
   }
+  if (route.workerId) {
+    params.set('workerId', route.workerId);
+  }
+  if (route.filter) {
+    params.set('filter', route.filter);
+  }
+  if (route.page > 1) {
+    params.set('page', String(route.page));
+  }
+  return `/runs/${encodeURIComponent(runId)}${params.toString() ? `?${params.toString()}` : ''}`;
+}
 
-  const candidates = [
-    { label: 'Output dir', path: status.paths.reportDirectory },
-    { label: 'Review dir', path: status.paths.reviewReportDirectory },
-    { label: 'Runtime', path: status.paths.runtimeStatusPath },
-    { label: 'State', path: status.paths.statePath },
-    { label: 'Config', path: status.paths.configPath },
-    ...status.recentRuns
-      .filter((run) => Boolean(run.path))
-      .slice(0, 5)
-      .map((run, index) => ({
-        label: index === 0 ? 'Latest run' : `Run ${index + 1}`,
-        path: run.path!,
-      })),
-  ];
-
-  const seen = new Set<string>();
-  return candidates.filter((candidate) => {
-    if (!candidate.path || seen.has(candidate.path)) {
-      return false;
+function getInitialTheme(): Theme {
+  try {
+    const stored = window.localStorage.getItem(THEME_KEY);
+    if (stored === 'light' || stored === 'dark') {
+      return stored;
     }
-
-    seen.add(candidate.path);
-    return true;
-  });
+  } catch {
+    // Ignore storage errors.
+  }
+  return typeof window.matchMedia === 'function' && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
 }
 
-function getCurrentViewLabel(view: RouteState['view']): string {
-  switch (view) {
-    case 'queues':
-      return 'Queues';
-    case 'worker':
-      return 'Worker Detail';
-    case 'report':
-      return 'Report Explorer';
-    case 'worker-preview':
-      return 'Worker Preview';
-    case 'operations':
-      return 'Operations';
+function badgeClass(status: string | null | undefined) {
+  switch ((status ?? '').toLowerCase()) {
+    case 'healthy':
+    case 'succeeded':
+    case 'good':
+      return 'good';
+    case 'degraded':
+    case 'warning':
+    case 'warn':
+    case 'cancelrequested':
+    case 'pending':
+    case 'planned':
+    case 'inprogress':
+      return 'warn';
+    case 'unhealthy':
+    case 'failed':
+    case 'bad':
+      return 'bad';
+    case 'info':
+    case 'admin':
+      return 'info';
+    case 'inactive':
+    case 'canceled':
+      return 'dim';
     default:
-      return 'Dashboard';
+      return 'neutral';
   }
 }
 
-function getVisibleEntries(entries: EntryListResponse['entries'], route: RouteState): EntryListResponse['entries'] {
-  if (route.view !== 'report') {
-    return entries;
+function formatTimestamp(value: string | null | undefined) {
+  if (!value) {
+    return 'Unknown';
   }
 
-  return entries.filter((entry) => mapEntryToReportCategory(entry) === route.reportCategory);
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? 'Unknown' : parsed.toLocaleString();
 }
 
-function mapReportCategoryToBucket(category: 'Changed' | 'Created' | 'Deleted'): string | undefined {
-  if (category === 'Created') {
-    return 'creates';
+function displayBool(value: boolean | null) {
+  if (value === null) {
+    return 'Unknown';
   }
-  if (category === 'Deleted') {
-    return 'deletions';
-  }
-  return undefined;
+  return value ? 'Yes' : 'No';
 }
 
-function getOperatorActionLabel(action: OperatorActionKind): string {
-  switch (action) {
-    case 'delta-dry-run':
-      return 'Delta dry-run';
-    case 'delta-sync':
-      return 'Delta sync';
-    case 'full-dry-run':
-      return 'Full dry-run';
-    case 'full-sync':
-      return 'Full sync';
-    case 'review-run':
-      return 'First-sync review';
+function enableTransition(currentEnabled: boolean | null, proposedEnable: boolean | null) {
+  if (currentEnabled === null || proposedEnable === null) {
+    return 'Unknown';
   }
+  if (currentEnabled === proposedEnable) {
+    return proposedEnable ? 'Enabled' : 'Disabled';
+  }
+  return `${currentEnabled ? 'Enabled' : 'Disabled'} → ${proposedEnable ? 'Enabled' : 'Disabled'}`;
+}
+
+function runSummary(run: DashboardSnapshot['runs'][number]) {
+  const parts: string[] = [];
+  if (run.creates) {
+    parts.push(`${run.creates} creates`);
+  }
+  if (run.updates) {
+    parts.push(`${run.updates} updates`);
+  }
+  if (run.disables) {
+    parts.push(`${run.disables} disables`);
+  }
+  if (run.deletions) {
+    parts.push(`${run.deletions} deletions`);
+  }
+  return parts.length ? parts.join(', ') : 'No changes';
+}
+
+function getSavedPreviewRunId(entry: RunEntriesResponse['entries'][number]) {
+  if (entry.artifactType.toLowerCase() === 'workerpreview') {
+    return entry.runId;
+  }
+
+  const sourcePreviewRunId = entry.item.sourcePreviewRunId;
+  return typeof sourcePreviewRunId === 'string' ? sourcePreviewRunId : null;
 }

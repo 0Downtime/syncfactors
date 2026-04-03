@@ -13,23 +13,15 @@ const distRoot = path.resolve(repoRoot, 'web/dist');
 
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
-  const configPath = args.config ?? process.env.SYNCFACTORS_CONFIG_PATH;
-  if (!configPath) {
-    throw new Error('Missing --config <path>. Example: npm run web:dev -- --config ./config/local.real-successfactors.real-ad.sync-config.json');
-  }
-
   const port = Number.parseInt(args.port ?? process.env.PORT ?? '4280', 10);
+  const apiPort = Number.parseInt(process.env.SYNCFACTORS_API_PORT ?? '5087', 10);
+  const apiBaseUrl = args.apiBaseUrl ?? process.env.SYNCFACTORS_API_BASE_URL ?? `http://127.0.0.1:${apiPort}`;
   const app = createApp({
-    configPath: path.resolve(process.cwd(), configPath),
-    historyLimit: Number.parseInt(args.historyLimit ?? '25', 10),
+    apiBaseUrl,
+    distRoot: process.env.NODE_ENV === 'production' ? distRoot : undefined,
   });
 
-  if (process.env.NODE_ENV === 'production') {
-    app.use(express.static(distRoot));
-    app.get('/{*path}', async (_request, response) => {
-      response.sendFile(path.join(distRoot, 'index.html'));
-    });
-  } else {
+  if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
       root: clientRoot,
       server: { middlewareMode: true },
@@ -39,8 +31,7 @@ async function main(): Promise<void> {
     app.use(vite.middlewares);
     app.get('/{*path}', async (request, response, next) => {
       try {
-        const templatePath = path.join(clientRoot, 'index.html');
-        const template = await fs.readFile(templatePath, 'utf8');
+        const template = await fs.readFile(path.join(clientRoot, 'index.html'), 'utf8');
         const html = await vite.transformIndexHtml(request.originalUrl, template);
         response.status(200).set({ 'Content-Type': 'text/html' }).end(html);
       } catch (error) {
@@ -50,7 +41,7 @@ async function main(): Promise<void> {
   }
 
   app.listen(port, '127.0.0.1', () => {
-    process.stdout.write(`SyncFactors web dashboard listening on http://127.0.0.1:${port}\n`);
+    process.stdout.write(`SyncFactors web UI listening on http://127.0.0.1:${port} proxying ${apiBaseUrl}\n`);
   });
 }
 

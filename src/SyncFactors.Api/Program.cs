@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.HttpOverrides;
+using SyncFactors.Api;
 using SyncFactors.Contracts;
 using SyncFactors.Domain;
 using SyncFactors.Infrastructure;
@@ -208,6 +209,43 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 var api = app.MapGroup("/api");
+var sessionApi = app.MapGroup("/api/session");
+
+sessionApi.MapGet(string.Empty, async (HttpContext httpContext, ILocalAuthService authService, CancellationToken cancellationToken) =>
+{
+    var session = await LocalSessionManager.BuildSessionResponseAsync(httpContext, authService, cancellationToken);
+    return Results.Ok(session);
+}).AllowAnonymous();
+
+sessionApi.MapPost("/login", async (
+    SessionLoginRequest request,
+    HttpContext httpContext,
+    ILocalAuthService authService,
+    Microsoft.Extensions.Options.IOptions<LocalAuthOptions> authOptions,
+    CancellationToken cancellationToken) =>
+{
+    if (!authService.IsLocalAuthenticationEnabled)
+    {
+        return Results.BadRequest(new { error = "Local sign-in is disabled for this environment." });
+    }
+
+    var result = await authService.AuthenticateAsync(request.Username, request.Password, cancellationToken);
+    if (!result.Succeeded || result.User is null)
+    {
+        return Results.BadRequest(new { error = "Invalid username or password." });
+    }
+
+    await LocalSessionManager.SignInAsync(httpContext, result.User, request.RememberMe, authOptions.Value);
+    await authService.RecordSuccessfulLoginAsync(result.User.UserId, cancellationToken);
+    var session = await LocalSessionManager.BuildSessionResponseAsync(httpContext, authService, cancellationToken);
+    return Results.Ok(session);
+}).AllowAnonymous();
+
+sessionApi.MapPost("/logout", async (HttpContext httpContext) =>
+{
+    await LocalSessionManager.SignOutAsync(httpContext);
+    return Results.Ok(LocalSessionManager.AnonymousSession);
+}).AllowAnonymous();
 
 var readApi = api.MapGroup(string.Empty)
     .RequireAuthorization(ViewerPolicy);
@@ -249,10 +287,24 @@ readApi.MapGet("/health", async (IDependencyHealthService healthService, Cancell
     return Results.Ok(snapshot);
 });
 
-readApi.MapGet("/runs", async (IRunRepository repository, CancellationToken cancellationToken) =>
+readApi.MapGet("/runs", async (int? page, int? pageSize, IRunRepository repository, CancellationToken cancellationToken) =>
 {
     var runs = await repository.ListRunsAsync(cancellationToken);
-    return Results.Ok(new { runs });
+    var resolvedPageSize = Math.Clamp(pageSize ?? runs.Count, 1, 200);
+    var total = runs.Count;
+    var totalPages = Math.Max(1, (int)Math.Ceiling(total / (double)resolvedPageSize));
+    var resolvedPage = Math.Clamp(page ?? 1, 1, totalPages);
+    var pagedRuns = runs
+        .Skip((resolvedPage - 1) * resolvedPageSize)
+        .Take(resolvedPageSize)
+        .ToArray();
+    return Results.Ok(new
+    {
+        runs = pagedRuns,
+        total,
+        page = resolvedPage,
+        pageSize = resolvedPageSize
+    });
 });
 
 readApi.MapGet("/runs/queue", async (IRunQueueStore queueStore, CancellationToken cancellationToken) =>
@@ -313,6 +365,27 @@ readApi.MapGet("/previews/{runId}", async (string runId, IRunRepository reposito
 {
     var preview = await repository.GetWorkerPreviewAsync(runId, cancellationToken);
     return preview is null ? Results.NotFound() : Results.Ok(preview);
+});
+
+operatorApi.MapPost("/previews", async (
+    CreatePreviewRequest request,
+    IWorkerPreviewPlanner previewPlanner,
+    CancellationToken cancellationToken) =>
+{
+    if (string.IsNullOrWhiteSpace(request.WorkerId))
+    {
+        return Results.BadRequest(new { error = "Worker ID is required." });
+    }
+
+    try
+    {
+        var preview = await previewPlanner.PreviewAsync(request.WorkerId, cancellationToken);
+        return Results.Ok(preview);
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
 });
 
 readApi.MapGet("/workers/{workerId}/previews", async (string workerId, int? take, IRunRepository repository, CancellationToken cancellationToken) =>
@@ -384,6 +457,122 @@ operatorApi.MapPost("/runs/full", async (
     return string.Equals(result.Status, "Succeeded", StringComparison.OrdinalIgnoreCase)
         ? Results.Ok(result)
         : Results.BadRequest(result);
+});
+
+operatorApi.MapPost("/runs/delete-all", async (
+    DeleteAllUsersRequest request,
+    ClaimsPrincipal user,
+    IRunQueueStore queueStore,
+    ISecurityAuditService audit,
+    CancellationToken cancellationToken) =>
+{
+    if (await queueStore.HasPendingOrActiveRunAsync(cancellationToken))
+    {
+        return Results.Conflict(new { error = "A run is already pending or in progress." });
+    }
+
+    if (!string.Equals(request.ConfirmationText?.Trim(), SyncFactors.Api.Pages.SyncModel.DeleteAllUsersConfirmationPhrase, StringComparison.Ordinal))
+    {
+        return Results.BadRequest(new { error = $"Type {SyncFactors.Api.Pages.SyncModel.DeleteAllUsersConfirmationPhrase} to queue the delete-all test run." });
+    }
+
+    var queued = await queueStore.EnqueueAsync(
+        new StartRunRequest(
+            DryRun: false,
+            Mode: "DeleteAllUsers",
+            RunTrigger: "DeleteAllUsers",
+            RequestedBy: ResolveRequestedBy(user, "API")),
+        cancellationToken);
+
+    audit.Write("DeleteAllUsersQueued", "Success", ("RequestedBy", ResolveRequestedBy(user, "API")));
+    return Results.Accepted($"/api/runs/{queued.RequestId}", queued);
+});
+
+adminApi.MapGet("/admin/users", async (ILocalAuthService authService, CancellationToken cancellationToken) =>
+{
+    var users = await authService.ListUsersAsync(cancellationToken);
+    return Results.Ok(new { users });
+});
+
+adminApi.MapPost("/admin/users", async (
+    CreateLocalUserRequest request,
+    ClaimsPrincipal user,
+    ILocalAuthService authService,
+    ISecurityAuditService audit,
+    CancellationToken cancellationToken) =>
+{
+    var result = await authService.CreateUserAsync(request.Username, request.Password, request.IsAdmin, cancellationToken);
+    audit.Write(
+        "LocalUserCreated",
+        result.Succeeded ? "Success" : "Failure",
+        ("RequestedBy", ResolveRequestedBy(user, "API")),
+        ("Username", request.Username),
+        ("Role", request.IsAdmin ? SecurityRoles.Admin : SecurityRoles.Viewer));
+    return result.Succeeded ? Results.Ok(result) : Results.BadRequest(result);
+});
+
+adminApi.MapPost("/admin/users/{userId}/password", async (
+    string userId,
+    ResetLocalUserPasswordRequest request,
+    ClaimsPrincipal user,
+    ILocalAuthService authService,
+    ISecurityAuditService audit,
+    CancellationToken cancellationToken) =>
+{
+    var result = await authService.ResetPasswordAsync(userId, request.NewPassword, cancellationToken);
+    audit.Write("LocalUserPasswordReset", result.Succeeded ? "Success" : "Failure", ("RequestedBy", ResolveRequestedBy(user, "API")), ("UserId", userId));
+    return result.Succeeded ? Results.Ok(result) : Results.BadRequest(result);
+});
+
+adminApi.MapPost("/admin/users/{userId}/role", async (
+    string userId,
+    SetLocalUserRoleRequest request,
+    ClaimsPrincipal user,
+    ILocalAuthService authService,
+    ISecurityAuditService audit,
+    CancellationToken cancellationToken) =>
+{
+    var actingUserId = user.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
+    var result = await authService.SetUserRoleAsync(userId, request.IsAdmin, actingUserId, cancellationToken);
+    audit.Write(
+        "LocalUserRoleUpdated",
+        result.Succeeded ? "Success" : "Failure",
+        ("RequestedBy", ResolveRequestedBy(user, "API")),
+        ("UserId", userId),
+        ("Role", request.IsAdmin ? SecurityRoles.Admin : SecurityRoles.Viewer));
+    return result.Succeeded ? Results.Ok(result) : Results.BadRequest(result);
+});
+
+adminApi.MapPost("/admin/users/{userId}/active", async (
+    string userId,
+    SetLocalUserActiveStateRequest request,
+    ClaimsPrincipal user,
+    ILocalAuthService authService,
+    ISecurityAuditService audit,
+    CancellationToken cancellationToken) =>
+{
+    var actingUserId = user.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
+    var result = await authService.SetUserActiveStateAsync(userId, request.IsActive, actingUserId, cancellationToken);
+    audit.Write(
+        "LocalUserActiveStateUpdated",
+        result.Succeeded ? "Success" : "Failure",
+        ("RequestedBy", ResolveRequestedBy(user, "API")),
+        ("UserId", userId),
+        ("IsActive", request.IsActive));
+    return result.Succeeded ? Results.Ok(result) : Results.BadRequest(result);
+});
+
+adminApi.MapDelete("/admin/users/{userId}", async (
+    string userId,
+    ClaimsPrincipal user,
+    ILocalAuthService authService,
+    ISecurityAuditService audit,
+    CancellationToken cancellationToken) =>
+{
+    var actingUserId = user.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
+    var result = await authService.DeleteUserAsync(userId, actingUserId, cancellationToken);
+    audit.Write("LocalUserDeleted", result.Succeeded ? "Success" : "Failure", ("RequestedBy", ResolveRequestedBy(user, "API")), ("UserId", userId));
+    return result.Succeeded ? Results.Ok(result) : Results.BadRequest(result);
 });
 
 app.MapRazorPages();
