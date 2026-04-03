@@ -155,7 +155,12 @@ export function RunDetailPage() {
   if (loading && !runDetail) {
     return (
       <section className="vf-panel">
-        <p className="vf-muted-text">Loading run detail...</p>
+        <div className="vf-skeleton-panel">
+          <div className="vf-skeleton-line" data-width="lg" />
+          <div className="vf-skeleton-line" data-width="md" />
+          <div className="vf-skeleton-line" />
+          <div className="vf-skeleton-line" />
+        </div>
       </section>
     )
   }

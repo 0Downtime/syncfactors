@@ -234,6 +234,17 @@ export function SyncPage() {
         </section>
       ) : null}
 
+      {state.loading && !state.dashboard ? (
+        <section className="vf-panel">
+          <div className="vf-skeleton-panel">
+            <div className="vf-skeleton-line" data-width="lg" />
+            <div className="vf-skeleton-line" data-width="md" />
+            <div className="vf-skeleton-line" />
+            <div className="vf-skeleton-line" />
+          </div>
+        </section>
+      ) : null}
+
       <section className="vf-sync-control-grid">
         <div className="vf-section-stack">
           <article className="vf-panel">

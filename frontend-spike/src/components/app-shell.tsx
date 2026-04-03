@@ -62,6 +62,17 @@ export function AppShell({ children }: PropsWithChildren) {
             </Button>
           </div>
         </div>
+        <div className="vf-mobile-nav md:hidden">
+          <NavLink className={({ isActive }) => `vf-nav-link${isActive ? ' active' : ''}`} to="/">
+            Dashboard
+          </NavLink>
+          <NavLink className={({ isActive }) => `vf-nav-link${isActive ? ' active' : ''}`} to="/sync">
+            Sync
+          </NavLink>
+          <NavLink className={({ isActive }) => `vf-nav-link${isActive ? ' active' : ''}`} to="/preview">
+            Worker Preview
+          </NavLink>
+        </div>
       </div>
 
       <div className="vf-page">{children}</div>
