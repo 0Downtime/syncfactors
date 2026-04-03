@@ -62,4 +62,25 @@ builder.Services.AddHostedService<Worker>();
 var host = builder.Build();
 await host.Services.GetRequiredService<SqliteDatabaseInitializer>().InitializeAsync(CancellationToken.None);
 host.Services.GetRequiredService<SyncFactorsConfigurationValidator>().Validate();
+LogConfiguredWorkerStartup(host);
 host.Run();
+
+static void LogConfiguredWorkerStartup(IHost host)
+{
+    var configLoader = host.Services.GetRequiredService<SyncFactorsConfigurationLoader>();
+    var config = configLoader.GetSyncConfig();
+    var environment = host.Services.GetRequiredService<IHostEnvironment>();
+    var configPathResolver = host.Services.GetRequiredService<SyncFactorsConfigPathResolver>();
+    var logger = host.Services.GetRequiredService<Microsoft.Extensions.Logging.ILoggerFactory>()
+        .CreateLogger("Startup");
+
+    logger.LogInformation(
+        "Worker startup configuration. Environment={Environment} SyncConfigPath={SyncConfigPath} MappingConfigPath={MappingConfigPath} ActiveDirectoryServer={ActiveDirectoryServer} ActiveDirectoryAccount={ActiveDirectoryAccount} ActiveDirectoryTransport={ActiveDirectoryTransport} SuccessFactorsBaseUrl={SuccessFactorsBaseUrl}",
+        environment.EnvironmentName,
+        configLoader.GetResolvedSyncConfigPath(),
+        configPathResolver.ResolveMappingConfigPath(),
+        config.Ad.Server,
+        string.IsNullOrWhiteSpace(config.Ad.Username) ? "anonymous" : config.Ad.Username,
+        config.Ad.Transport.Mode,
+        config.SuccessFactors.BaseUrl);
+}

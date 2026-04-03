@@ -631,9 +631,15 @@ static void ValidateHttpsOnlyBindings(ConfigurationManager configuration)
 static void LogConfiguredEndpoints(WebApplication app)
 {
     var config = app.Services.GetRequiredService<SyncFactorsConfigurationLoader>().GetSyncConfig();
+    var configLoader = app.Services.GetRequiredService<SyncFactorsConfigurationLoader>();
     var authOptions = app.Services.GetRequiredService<Microsoft.Extensions.Options.IOptions<LocalAuthOptions>>().Value;
+    var environment = app.Services.GetRequiredService<Microsoft.Extensions.Hosting.IHostEnvironment>();
+    var configPathResolver = app.Services.GetRequiredService<SyncFactorsConfigPathResolver>();
     app.Logger.LogInformation(
-        "Configured endpoints. ActiveDirectoryServer={ActiveDirectoryServer} ActiveDirectoryAccount={ActiveDirectoryAccount} ActiveDirectoryTransport={ActiveDirectoryTransport} SuccessFactorsBaseUrl={SuccessFactorsBaseUrl} SuccessFactorsAccount={SuccessFactorsAccount} AuthMode={AuthMode}",
+        "Configured endpoints. Environment={Environment} SyncConfigPath={SyncConfigPath} MappingConfigPath={MappingConfigPath} ActiveDirectoryServer={ActiveDirectoryServer} ActiveDirectoryAccount={ActiveDirectoryAccount} ActiveDirectoryTransport={ActiveDirectoryTransport} SuccessFactorsBaseUrl={SuccessFactorsBaseUrl} SuccessFactorsAccount={SuccessFactorsAccount} AuthMode={AuthMode}",
+        environment.EnvironmentName,
+        configLoader.GetResolvedSyncConfigPath(),
+        configPathResolver.ResolveMappingConfigPath(),
         config.Ad.Server,
         string.IsNullOrWhiteSpace(config.Ad.Username) ? "anonymous" : config.Ad.Username,
         config.Ad.Transport.Mode,
