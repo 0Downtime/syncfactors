@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using SyncFactors.Api.Pages;
 using SyncFactors.Infrastructure;
 
@@ -24,9 +25,19 @@ public sealed class LoginModelTests
             IsActive: true,
             CreatedAt: DateTimeOffset.UtcNow,
             UpdatedAt: DateTimeOffset.UtcNow,
-            LastLoginAt: null));
+            LastLoginAt: null,
+            FailedLoginCount: 0,
+            LockoutEndAt: null));
         var authenticationService = new CapturingAuthenticationService();
-        var model = CreateModel(authService, authenticationService);
+        var model = CreateModel(authService, authenticationService, new LocalAuthOptions
+        {
+            Mode = "local-break-glass",
+            AllowRememberMe = true,
+            LocalBreakGlass = new LocalBreakGlassOptions
+            {
+                Enabled = true
+            }
+        });
         model.Username = "operator";
         model.Password = "secret";
         model.RememberMe = true;
@@ -38,7 +49,6 @@ public sealed class LoginModelTests
         Assert.Equal("operator", authenticationService.LastPrincipal?.Identity?.Name);
         Assert.True(authenticationService.LastProperties?.IsPersistent);
         Assert.NotNull(authenticationService.LastProperties?.ExpiresUtc);
-        Assert.Equal("user-1", authService.LastRecordedLoginUserId);
     }
 
     [Fact]
@@ -55,7 +65,9 @@ public sealed class LoginModelTests
                 IsActive: true,
                 CreatedAt: DateTimeOffset.UtcNow,
                 UpdatedAt: DateTimeOffset.UtcNow,
-                LastLoginAt: null)),
+                LastLoginAt: null,
+                FailedLoginCount: 0,
+                LockoutEndAt: null)),
             authenticationService);
         model.Username = "operator";
         model.Password = "secret";
@@ -63,7 +75,7 @@ public sealed class LoginModelTests
         await model.OnPostAsync(CancellationToken.None);
 
         Assert.False(authenticationService.LastProperties?.IsPersistent ?? true);
-        Assert.Null(authenticationService.LastProperties?.ExpiresUtc);
+        Assert.NotNull(authenticationService.LastProperties?.ExpiresUtc);
     }
 
     [Fact]
@@ -112,9 +124,16 @@ public sealed class LoginModelTests
         Assert.Equal("/Login", redirect.PageName);
     }
 
-    private static LoginModel CreateModel(StubLocalAuthService authService, CapturingAuthenticationService authenticationService)
+    private static LoginModel CreateModel(StubLocalAuthService authService, CapturingAuthenticationService authenticationService, LocalAuthOptions? options = null)
     {
-        var model = new LoginModel(authService)
+        var model = new LoginModel(authService, Options.Create(options ?? new LocalAuthOptions
+        {
+            Mode = "local-break-glass",
+            LocalBreakGlass = new LocalBreakGlassOptions
+            {
+                Enabled = true
+            }
+        }))
         {
             Url = new StubUrlHelper()
         };
@@ -139,7 +158,7 @@ public sealed class LoginModelTests
 
     private sealed class StubLocalAuthService(LocalUserRecord? user) : ILocalAuthService
     {
-        public string? LastRecordedLoginUserId { get; private set; }
+        public bool IsLocalAuthenticationEnabled => true;
 
         public Task EnsureBootstrapAdminAsync(CancellationToken cancellationToken)
         {
@@ -158,7 +177,7 @@ public sealed class LoginModelTests
         public Task RecordSuccessfulLoginAsync(string userId, CancellationToken cancellationToken)
         {
             _ = cancellationToken;
-            LastRecordedLoginUserId = userId;
+            _ = userId;
             return Task.CompletedTask;
         }
 

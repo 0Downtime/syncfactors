@@ -119,12 +119,19 @@
   },
   "ad": {
     "server": "",
+    "port": 636,
     "username": "",
     "bindPassword": "",
     "identityAttribute": "employeeID",
     "defaultActiveOu": "OU=LabUsers,DC=example,DC=com",
     "prehireOu": "OU=Prehire,DC=example,DC=com",
     "graveyardOu": "OU=LabGraveyard,DC=example,DC=com",
+    "transport": {
+      "mode": "ldaps",
+      "requireCertificateValidation": true,
+      "requireSigning": true,
+      "trustedCertificateThumbprints": []
+    },
     "identityPolicy": {
       "resolveCreateConflictingUpnAndMail": false
     },

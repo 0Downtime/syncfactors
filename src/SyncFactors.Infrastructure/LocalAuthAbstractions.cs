@@ -25,6 +25,8 @@ public interface ILocalAuthService
 {
     Task EnsureBootstrapAdminAsync(CancellationToken cancellationToken);
 
+    bool IsLocalAuthenticationEnabled { get; }
+
     Task<LocalAuthenticationResult> AuthenticateAsync(string username, string password, CancellationToken cancellationToken);
 
     Task RecordSuccessfulLoginAsync(string userId, CancellationToken cancellationToken);

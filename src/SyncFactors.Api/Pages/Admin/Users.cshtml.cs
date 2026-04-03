@@ -6,7 +6,7 @@ using SyncFactors.Infrastructure;
 
 namespace SyncFactors.Api.Pages.Admin;
 
-[Authorize(Roles = "Admin")]
+[Authorize(Roles = "Admin,BreakGlassAdmin")]
 public sealed class UsersModel(ILocalAuthService localAuthService) : PageModel
 {
     [BindProperty]

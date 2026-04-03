@@ -6,6 +6,10 @@ public sealed class SyncFactorsConfigurationValidator(SyncFactorsConfigurationLo
     {
         var sync = loader.GetSyncConfig();
         var mapping = loader.GetMappingConfig();
+        var environmentName = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT")
+            ?? Environment.GetEnvironmentVariable("DOTNET_ENVIRONMENT")
+            ?? "Production";
+        var isDevelopment = string.Equals(environmentName, "Development", StringComparison.OrdinalIgnoreCase);
 
         if (!Uri.TryCreate(sync.SuccessFactors.BaseUrl, UriKind.Absolute, out _))
         {
@@ -22,6 +26,22 @@ public sealed class SyncFactorsConfigurationValidator(SyncFactorsConfigurationLo
             string.IsNullOrWhiteSpace(sync.Ad.GraveyardOu))
         {
             throw new InvalidOperationException("SyncFactors AD active, prehire, and graveyard OUs must be configured.");
+        }
+
+        if (!string.Equals(sync.Ad.Transport.Mode, "ldaps", StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(sync.Ad.Transport.Mode, "starttls", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("SyncFactors AD transport.mode must be either 'ldaps' or 'starttls'.");
+        }
+
+        if (!isDevelopment && !sync.Ad.Transport.RequireCertificateValidation)
+        {
+            throw new InvalidOperationException("SyncFactors AD transport.requireCertificateValidation must be enabled outside Development.");
+        }
+
+        if (!isDevelopment && !sync.Ad.Transport.RequireSigning)
+        {
+            throw new InvalidOperationException("SyncFactors AD transport.requireSigning must be enabled outside Development.");
         }
 
         if (sync.Sync.EnableBeforeStartDays < 0 || sync.Sync.DeletionRetentionDays < 0)
@@ -48,5 +68,53 @@ public sealed class SyncFactorsConfigurationValidator(SyncFactorsConfigurationLo
         {
             throw new InvalidOperationException("SyncFactors mapping config must contain at least one enabled mapping.");
         }
+
+        if (!isDevelopment)
+        {
+            ValidateNoProductionLiteralSecrets(sync);
+        }
+    }
+
+    private static void ValidateNoProductionLiteralSecrets(SyncFactorsConfigDocument sync)
+    {
+        if (!string.IsNullOrWhiteSpace(sync.SuccessFactors.Auth.Basic?.Username) &&
+            !HasEnvironmentReference(sync.Secrets.SuccessFactorsUsernameEnv))
+        {
+            throw new InvalidOperationException("Production config must not include a literal SuccessFactors username.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(sync.SuccessFactors.Auth.Basic?.Password))
+        {
+            throw new InvalidOperationException("Production config must not include a literal SuccessFactors password.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(sync.SuccessFactors.Auth.OAuth?.ClientId) &&
+            !HasEnvironmentReference(sync.Secrets.SuccessFactorsClientIdEnv))
+        {
+            throw new InvalidOperationException("Production config must not include a literal SuccessFactors OAuth client ID.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(sync.SuccessFactors.Auth.OAuth?.ClientSecret))
+        {
+            throw new InvalidOperationException("Production config must not include a literal SuccessFactors OAuth client secret.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(sync.Ad.BindPassword))
+        {
+            throw new InvalidOperationException("Production config must not include a literal AD bind password.");
+        }
+
+        if (string.Equals(sync.SuccessFactors.Auth.Basic?.Username, "replace-me", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(sync.SuccessFactors.Auth.Basic?.Password, "replace-me", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(sync.Ad.BindPassword, "replace-me", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(sync.Ad.BindPassword, "Replace-This-Password123!", StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("Production config contains placeholder credentials.");
+        }
+    }
+
+    private static bool HasEnvironmentReference(string? environmentVariableName)
+    {
+        return !string.IsNullOrWhiteSpace(environmentVariableName);
     }
 }

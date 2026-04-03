@@ -2,6 +2,7 @@ namespace SyncFactors.Infrastructure;
 
 public sealed class SqlitePathResolver
 {
+    private const string DefaultRelativeStatePath = "state/runtime/syncfactors.db";
     private readonly string? _configuredPath;
 
     public SqlitePathResolver(string? configuredPath = null)
@@ -16,16 +17,25 @@ public sealed class SqlitePathResolver
             return PathResolution.ResolveExistingFile(_configuredPath);
         }
 
-        return null;
+        return ResolveConfiguredPath();
     }
 
     public string? ResolveConfiguredPath()
     {
-        if (string.IsNullOrWhiteSpace(_configuredPath))
+        var configured = string.IsNullOrWhiteSpace(_configuredPath)
+            ? GetDefaultRuntimePath()
+            : _configuredPath;
+        return PathResolution.ResolveConfiguredPath(configured);
+    }
+
+    private static string GetDefaultRuntimePath()
+    {
+        var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        if (!string.IsNullOrWhiteSpace(localAppData))
         {
-            return null;
+            return Path.Combine(localAppData, "SyncFactors", "state", "syncfactors.db");
         }
 
-        return PathResolution.ResolveConfiguredPath(_configuredPath);
+        return DefaultRelativeStatePath;
     }
 }
