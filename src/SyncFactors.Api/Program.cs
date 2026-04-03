@@ -181,6 +181,12 @@ api.MapGet("/runs", async (IRunRepository repository, CancellationToken cancella
     return Results.Ok(new { runs });
 });
 
+api.MapGet("/runs/queue", async (IRunQueueStore queueStore, CancellationToken cancellationToken) =>
+{
+    var request = await queueStore.GetPendingOrActiveAsync(cancellationToken);
+    return Results.Ok(new { request });
+});
+
 api.MapPost("/runs", async (StartRunRequest request, ClaimsPrincipal user, IRunQueueStore queueStore, CancellationToken cancellationToken) =>
 {
     if (await queueStore.HasPendingOrActiveRunAsync(cancellationToken))
@@ -230,6 +236,12 @@ api.MapGet("/workers/{workerId}/previews", async (string workerId, int? take, IR
 {
     var history = await repository.ListWorkerPreviewHistoryAsync(workerId, take ?? 6, cancellationToken);
     return Results.Ok(new { workerId, previews = history });
+});
+
+api.MapGet("/workers/{workerId}/preview", async (string workerId, IWorkerPreviewPlanner previewPlanner, CancellationToken cancellationToken) =>
+{
+    var preview = await previewPlanner.PreviewAsync(workerId, cancellationToken);
+    return Results.Ok(preview);
 });
 
 api.MapGet("/runs/{runId}/entries", async (

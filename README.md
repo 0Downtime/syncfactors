@@ -61,6 +61,14 @@ SYNCFACTORS_API_PORT=5087
 MOCK_SF_PORT=18080
 ```
 
+On macOS, you can keep sensitive `SF_AD_SYNC_*` values out of `.env.worktree` entirely and store them in the login Keychain instead. The launchers now fall back to the Keychain service named by `SYNCFACTORS_KEYCHAIN_SERVICE` (default `syncfactors`) when those variables are blank in `.env.worktree`. To store one:
+
+```bash
+./scripts/codex/set-macos-keychain-secret.sh SF_AD_SYNC_AD_BIND_PASSWORD
+```
+
+The helper stores the secret under account name equal to the environment variable name, so blank values in `.env.worktree` will be filled automatically on macOS launches.
+
 Set `SYNCFACTORS_RUN_PROFILE=mock` or `real` to switch the active SuccessFactors config. Leave `SYNCFACTORS_CONFIG_PATH` empty for profile-based resolution, or set it only when you want an explicit one-off override. In secondary worktrees, the setup script first seeds `.env.worktree` and root `config/local*` or `config/*.variables` files from the primary checkout when they exist. It then falls back to tracked sample files for anything still missing. Existing local files stay untouched, so it is safe to rerun. It prepares local files and directories only; it does not start long-running services. The primary launcher is PowerShell so the same commands work on macOS and Windows. On macOS, the Codex helper actions still open dedicated terminal windows through the local shell helper.
 
 The intended local test loop is:
