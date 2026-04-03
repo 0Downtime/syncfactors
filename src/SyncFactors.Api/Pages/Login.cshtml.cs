@@ -86,7 +86,7 @@ public sealed class LoginModel(ILocalAuthService localAuthService, IOptions<Loca
                     ? Math.Max(1, authOptions.Value.RememberMeSessionHours)
                     : Math.Clamp(authOptions.Value.AbsoluteSessionHours, 8, 12))
             });
-
+        await localAuthService.RecordSuccessfulLoginAsync(result.User.UserId, cancellationToken);
         return LocalRedirect(ResolveReturnUrl());
     }
 
