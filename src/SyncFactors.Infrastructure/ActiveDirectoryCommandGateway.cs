@@ -44,12 +44,12 @@ public sealed class ActiveDirectoryCommandGateway(
         catch (LdapException ex)
         {
             logger.LogError(ex, "AD command failed with LDAP exception. Action={Action} WorkerId={WorkerId} Server={Server}", command.Action, command.WorkerId, config.Server);
-            throw ExternalSystemExceptionFactory.CreateActiveDirectoryException($"command '{command.Action}'", config.Server, ex);
+            throw ExternalSystemExceptionFactory.CreateActiveDirectoryException($"command '{command.Action}'", config, ex);
         }
         catch (DirectoryOperationException ex)
         {
             logger.LogError(ex, "AD command failed with directory operation exception. Action={Action} WorkerId={WorkerId} Server={Server}", command.Action, command.WorkerId, config.Server);
-            throw ExternalSystemExceptionFactory.CreateActiveDirectoryException($"command '{command.Action}'", config.Server, ex);
+            throw ExternalSystemExceptionFactory.CreateActiveDirectoryException($"command '{command.Action}'", config, ex);
         }
     }
 
@@ -167,7 +167,7 @@ public sealed class ActiveDirectoryCommandGateway(
                 {
                     throw ExternalSystemExceptionFactory.CreateActiveDirectoryException(
                         "command 'UpdateUser'",
-                        config.Server,
+                        config,
                         ex,
                         BuildUpdateRenameFailureDetails(command, distinguishedName, currentCn));
                 }
@@ -217,7 +217,7 @@ public sealed class ActiveDirectoryCommandGateway(
             {
                 throw ExternalSystemExceptionFactory.CreateActiveDirectoryException(
                     "command 'UpdateUser'",
-                    config.Server,
+                    config,
                     ex,
                     BuildUpdateModifyFailureDetails(command, distinguishedName, request.Modifications));
             }
@@ -228,7 +228,7 @@ public sealed class ActiveDirectoryCommandGateway(
         {
             throw ExternalSystemExceptionFactory.CreateActiveDirectoryException(
                 "command 'UpdateUser'",
-                config.Server,
+                config,
                 ex,
                 BuildUpdateStepFailureDetails(command, distinguishedName, currentCn, modifications, step));
         }

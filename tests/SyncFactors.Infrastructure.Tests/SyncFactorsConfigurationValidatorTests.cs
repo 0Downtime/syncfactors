@@ -79,6 +79,50 @@ public sealed class SyncFactorsConfigurationValidatorTests
         }
     }
 
+    [Theory]
+    [InlineData("localhost")]
+    [InlineData("127.0.0.1")]
+    [InlineData("::1")]
+    public async Task Validate_RejectsLoopbackAdServerOutsideDevelopment(string adServer)
+    {
+        var tempRoot = CreateTempRoot();
+        var configPath = await WriteConfigAsync(
+            tempRoot,
+            successFactorsUsernameLiteral: "",
+            successFactorsPasswordLiteral: "",
+            adBindPasswordLiteral: "",
+            adServer: adServer);
+        var mappingConfigPath = await WriteMappingConfigAsync(tempRoot);
+
+        var originalDotnetEnvironment = Environment.GetEnvironmentVariable("DOTNET_ENVIRONMENT");
+        var originalSfUsername = Environment.GetEnvironmentVariable("SF_AD_SYNC_SF_USERNAME");
+        var originalSfPassword = Environment.GetEnvironmentVariable("SF_AD_SYNC_SF_PASSWORD");
+        var originalAdBindPassword = Environment.GetEnvironmentVariable("SF_AD_SYNC_AD_BIND_PASSWORD");
+
+        try
+        {
+            Environment.SetEnvironmentVariable("DOTNET_ENVIRONMENT", "Production");
+            Environment.SetEnvironmentVariable("SF_AD_SYNC_SF_USERNAME", "env-backed-user");
+            Environment.SetEnvironmentVariable("SF_AD_SYNC_SF_PASSWORD", "env-backed-password");
+            Environment.SetEnvironmentVariable("SF_AD_SYNC_AD_BIND_PASSWORD", "env-backed-bind-password");
+
+            var loader = new SyncFactorsConfigurationLoader(new SyncFactorsConfigPathResolver(configPath, mappingConfigPath));
+            var validator = new SyncFactorsConfigurationValidator(loader);
+
+            var exception = Assert.Throws<InvalidOperationException>(() => validator.Validate());
+
+            Assert.Equal("SyncFactors AD server must not resolve to localhost or a loopback address outside Development.", exception.Message);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("DOTNET_ENVIRONMENT", originalDotnetEnvironment);
+            Environment.SetEnvironmentVariable("SF_AD_SYNC_SF_USERNAME", originalSfUsername);
+            Environment.SetEnvironmentVariable("SF_AD_SYNC_SF_PASSWORD", originalSfPassword);
+            Environment.SetEnvironmentVariable("SF_AD_SYNC_AD_BIND_PASSWORD", originalAdBindPassword);
+            Directory.Delete(tempRoot, recursive: true);
+        }
+    }
+
     private static string CreateTempRoot()
     {
         var tempRoot = Path.Combine(Path.GetTempPath(), "syncfactors-config-validator", Guid.NewGuid().ToString("N"));
@@ -90,7 +134,8 @@ public sealed class SyncFactorsConfigurationValidatorTests
         string tempRoot,
         string successFactorsUsernameLiteral,
         string successFactorsPasswordLiteral,
-        string adBindPasswordLiteral)
+        string adBindPasswordLiteral,
+        string adServer = "ldap.example.test")
     {
         var configPath = Path.Combine(tempRoot, "sync-config.json");
 
@@ -121,7 +166,7 @@ public sealed class SyncFactorsConfigurationValidatorTests
             }
           },
           "ad": {
-            "server": "ldap.example.test",
+            "server": "{{adServer}}",
             "username": "",
             "bindPassword": "{{adBindPasswordLiteral}}",
             "identityAttribute": "employeeID",
