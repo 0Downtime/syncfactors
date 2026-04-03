@@ -202,8 +202,10 @@ a {
 }
 
 .topbar-brand {
-  display: grid;
-  gap: 2px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
   min-width: 0;
 }
 
@@ -259,6 +261,7 @@ a {
   font-size: 0.75rem;
   line-height: 1.33;
   letter-spacing: -0.01em;
+  max-width: 280px;
 }
 
 .topbar-actions,
@@ -394,8 +397,8 @@ input:disabled {
 .hero {
   display: grid;
   gap: 24px;
-  min-height: 360px;
-  padding: 40px clamp(24px, 4vw, 56px);
+  min-height: 320px;
+  padding: 36px clamp(24px, 4vw, 56px);
   background: var(--hero);
   color: var(--ink-inverse);
 }
@@ -409,7 +412,7 @@ input:disabled {
 }
 
 .hero-compact {
-  min-height: 260px;
+  min-height: 220px;
 }
 
 .hero-main,
@@ -430,7 +433,7 @@ input:disabled {
 .hero-main > div:first-child,
 .hero-compact > div:first-child {
   display: grid;
-  gap: 12px;
+  gap: 10px;
   max-width: 720px;
 }
 
@@ -505,8 +508,8 @@ input:disabled {
 
 .hero-run-health {
   display: grid;
-  gap: 16px;
-  padding: 24px;
+  gap: 14px;
+  padding: 22px;
   border: 1px solid rgba(255, 255, 255, 0.08);
   backdrop-filter: saturate(160%) blur(16px);
   -webkit-backdrop-filter: saturate(160%) blur(16px);
@@ -528,8 +531,8 @@ input:disabled {
 .connection-card,
 .entry-card {
   display: grid;
-  gap: 14px;
-  padding: 24px;
+  gap: 12px;
+  padding: 22px;
   background: var(--panel-alt);
 }
 
@@ -537,6 +540,26 @@ input:disabled {
   font-size: 1.3125rem;
   line-height: 1.19;
   letter-spacing: 0.011em;
+}
+
+.hero .run-health-card,
+.hero .run-health-card p,
+.hero .run-health-card strong,
+.hero .run-health-card .muted {
+  color: var(--ink);
+}
+
+.hero .run-health-card .muted {
+  color: var(--muted);
+}
+
+.hero .run-health-card .inline-link {
+  color: var(--accent);
+}
+
+.run-health-id,
+.run-health-id strong {
+  color: var(--ink) !important;
 }
 
 .callout {
@@ -817,6 +840,11 @@ code {
     width: 100%;
   }
 
+  .topbar-brand {
+    display: grid;
+    gap: 6px;
+  }
+
   .kv > div {
     grid-template-columns: 1fr;
   }
@@ -856,14 +884,18 @@ code {
     border-radius: 24px;
   }
 
+  .subtitle {
+    max-width: none;
+  }
+
   .hero {
     min-height: 300px;
-    padding-top: 28px;
-    padding-bottom: 28px;
+    padding-top: 24px;
+    padding-bottom: 24px;
   }
 
   .hero-compact {
-    min-height: 220px;
+    min-height: 200px;
   }
 
   .run-health-card,
