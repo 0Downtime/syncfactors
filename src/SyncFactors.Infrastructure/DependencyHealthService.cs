@@ -184,9 +184,14 @@ public sealed class DependencyHealthService(
                 return BuildProbe("Active Directory", DependencyHealthStates.Unhealthy, "Server is not configured.", checkedAt, stopwatch.ElapsedMilliseconds);
             }
 
-            var transportResult = await (activeDirectoryProbe is null
-                ? ProbeActiveDirectoryTransportAsync(config, cancellationToken)
-                : activeDirectoryProbe(config, cancellationToken));
+            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeoutCts.CancelAfter(ActiveDirectoryTimeout);
+
+            var transportTask = activeDirectoryProbe is null
+                ? ProbeActiveDirectoryTransportAsync(config, timeoutCts.Token)
+                : activeDirectoryProbe(config, timeoutCts.Token);
+
+            var transportResult = await transportTask.WaitAsync(ActiveDirectoryTimeout, cancellationToken);
 
             return BuildProbe(
                 "Active Directory",
@@ -199,6 +204,24 @@ public sealed class DependencyHealthService(
                 details: transportResult.UsedFallback && !isProduction
                     ? $"Requested transport '{transportResult.RequestedTransport}' failed and the probe bound over fallback '{transportResult.EffectiveTransport}'."
                     : null);
+        }
+        catch (TimeoutException ex)
+        {
+            logger.LogWarning(ex, "Active Directory health probe timed out.");
+            return BuildActiveDirectoryTimeoutProbe(
+                configLoader.GetSyncConfig().Ad.Server,
+                checkedAt,
+                stopwatch.ElapsedMilliseconds,
+                ex);
+        }
+        catch (OperationCanceledException ex) when (!cancellationToken.IsCancellationRequested)
+        {
+            logger.LogWarning(ex, "Active Directory health probe timed out.");
+            return BuildActiveDirectoryTimeoutProbe(
+                configLoader.GetSyncConfig().Ad.Server,
+                checkedAt,
+                stopwatch.ElapsedMilliseconds,
+                ex);
         }
         catch (Exception ex)
         {
@@ -580,6 +603,28 @@ public sealed class DependencyHealthService(
             checkedAt,
             durationMilliseconds);
     }
+
+    private static DependencyProbeResult BuildActiveDirectoryTimeoutProbe(
+        string server,
+        DateTimeOffset checkedAt,
+        long durationMilliseconds,
+        Exception? innerException = null)
+    {
+        var exception = ExternalSystemExceptionFactory.CreateActiveDirectoryTimeoutException(
+            "health probe",
+            server,
+            ActiveDirectoryTimeout,
+            innerException);
+
+        return BuildProbe(
+            "Active Directory",
+            DependencyHealthStates.Unhealthy,
+            $"LDAP bind or base search timed out after {Math.Max(1, (int)ActiveDirectoryTimeout.TotalSeconds)}s.",
+            checkedAt,
+            durationMilliseconds,
+            details: exception.Message);
+    }
+
     private static string CalculateOverallStatus(IReadOnlyList<DependencyProbeResult> probes)
     {
         if (probes.Any(probe => string.Equals(probe.Status, DependencyHealthStates.Unhealthy, StringComparison.OrdinalIgnoreCase)))
