@@ -30,4 +30,16 @@ describe('createApp', () => {
     expect(response.headers['set-cookie']).toBeDefined();
     server.close();
   });
+
+  it('returns 502 when the configured backend is unreachable', async () => {
+    const app = createApp({ apiBaseUrl: 'http://127.0.0.1:1' });
+
+    const response = await request(app)
+      .get('/api/session')
+      .expect(502);
+
+    expect(response.body).toEqual({
+      error: 'Unable to reach the SyncFactors API at http://127.0.0.1:1.',
+    });
+  });
 });

@@ -15,7 +15,7 @@ async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
   const port = Number.parseInt(args.port ?? process.env.PORT ?? '4280', 10);
   const apiPort = Number.parseInt(process.env.SYNCFACTORS_API_PORT ?? '5087', 10);
-  const apiBaseUrl = args.apiBaseUrl ?? process.env.SYNCFACTORS_API_BASE_URL ?? `http://127.0.0.1:${apiPort}`;
+  const apiBaseUrl = args.apiBaseUrl ?? process.env.SYNCFACTORS_API_BASE_URL ?? `https://127.0.0.1:${apiPort}`;
   const app = createApp({
     apiBaseUrl,
     distRoot: process.env.NODE_ENV === 'production' ? distRoot : undefined,
