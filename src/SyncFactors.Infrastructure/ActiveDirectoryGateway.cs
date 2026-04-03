@@ -1,9 +1,10 @@
 using SyncFactors.Contracts;
 using SyncFactors.Domain;
 using Microsoft.Extensions.Logging;
+using Microsoft.Security.Application;
 using System.DirectoryServices.Protocols;
-using System.Net;
 using System.Diagnostics;
+using System.Text.RegularExpressions;
 
 namespace SyncFactors.Infrastructure;
 
@@ -12,6 +13,7 @@ public sealed class ActiveDirectoryGateway(
     ILogger<ActiveDirectoryGateway> logger) : IDirectoryGateway
 {
     private static readonly TimeSpan LdapOperationTimeout = TimeSpan.FromSeconds(10);
+    private static readonly Regex LdapAttributeNamePattern = new("^[A-Za-z][A-Za-z0-9-]*$", RegexOptions.Compiled);
 
     public async Task<DirectoryUserSnapshot?> FindByWorkerAsync(WorkerSnapshot worker, CancellationToken cancellationToken)
     {
@@ -30,21 +32,21 @@ public sealed class ActiveDirectoryGateway(
                 cancellationToken: cancellationToken);
             if (directoryUser is not null)
             {
-                logger.LogInformation("Resolved directory user from AD. WorkerId={WorkerId} SamAccountName={SamAccountName}", worker.WorkerId, directoryUser.SamAccountName);
+                logger.LogInformation("Resolved directory user from AD.");
                 return directoryUser;
             }
 
-            logger.LogInformation("No AD user matched worker. WorkerId={WorkerId}", worker.WorkerId);
+            logger.LogInformation("No AD user matched the requested worker.");
             return null;
         }
         catch (LdapException ex)
         {
-            logger.LogError(ex, "AD lookup failed with LDAP exception. WorkerId={WorkerId} Server={Server}", worker.WorkerId, config.Server);
+            logger.LogError(ex, "AD lookup failed with LDAP exception.");
             throw ExternalSystemExceptionFactory.CreateActiveDirectoryException("lookup", config.Server, ex);
         }
         catch (DirectoryOperationException ex)
         {
-            logger.LogError(ex, "AD lookup failed with directory operation exception. WorkerId={WorkerId} Server={Server}", worker.WorkerId, config.Server);
+            logger.LogError(ex, "AD lookup failed with directory operation exception.");
             throw ExternalSystemExceptionFactory.CreateActiveDirectoryException("lookup", config.Server, ex);
         }
     }
@@ -85,12 +87,12 @@ public sealed class ActiveDirectoryGateway(
         }
         catch (LdapException ex)
         {
-            logger.LogError(ex, "AD email local part lookup failed with LDAP exception. WorkerId={WorkerId} Server={Server}", worker.WorkerId, config.Server);
+            logger.LogError(ex, "AD email local-part lookup failed with LDAP exception.");
             throw ExternalSystemExceptionFactory.CreateActiveDirectoryException("email local-part lookup", config.Server, ex);
         }
         catch (DirectoryOperationException ex)
         {
-            logger.LogError(ex, "AD email local part lookup failed with directory operation exception. WorkerId={WorkerId} Server={Server}", worker.WorkerId, config.Server);
+            logger.LogError(ex, "AD email local-part lookup failed with directory operation exception.");
             throw ExternalSystemExceptionFactory.CreateActiveDirectoryException("email local-part lookup", config.Server, ex);
         }
     }
@@ -118,28 +120,27 @@ public sealed class ActiveDirectoryGateway(
         }
         catch (LdapException ex)
         {
-            logger.LogError(ex, "AD manager DN lookup failed with LDAP exception. ManagerId={ManagerId} Server={Server}", managerId, config.Server);
+            logger.LogError(ex, "AD manager DN lookup failed with LDAP exception.");
             throw ExternalSystemExceptionFactory.CreateActiveDirectoryException("manager lookup", config.Server, ex);
         }
         catch (DirectoryOperationException ex)
         {
-            logger.LogError(ex, "AD manager DN lookup failed with directory operation exception. ManagerId={ManagerId} Server={Server}", managerId, config.Server);
+            logger.LogError(ex, "AD manager DN lookup failed with directory operation exception.");
             throw ExternalSystemExceptionFactory.CreateActiveDirectoryException("manager lookup", config.Server, ex);
         }
     }
 
     private static DirectoryUserSnapshot? QueryDirectory(WorkerSnapshot worker, ActiveDirectoryConfig config, ILogger logger)
     {
-        using var connection = CreateConnection(config, logger, $"lookup worker {worker.WorkerId}");
+        using var connection = CreateConnection(config, logger);
         var entry = FindFirstEntry(
             connection,
             GetSearchBases(config),
-            $"({EscapeLdapFilter(config.IdentityAttribute)}={EscapeLdapFilter(worker.WorkerId)})",
+            searchAttribute: config.IdentityAttribute,
+            searchValue: worker.WorkerId,
             config.IdentityAttribute,
             logger,
-            "worker lookup search",
-            ("WorkerId", worker.WorkerId),
-            ("IdentityAttribute", config.IdentityAttribute));
+            "worker lookup search");
         if (entry is null)
         {
             return null;
@@ -160,16 +161,15 @@ public sealed class ActiveDirectoryGateway(
 
     private static string? ResolveDistinguishedName(string workerId, ActiveDirectoryConfig config, ILogger logger)
     {
-        using var connection = CreateConnection(config, logger, $"resolve manager {workerId}");
+        using var connection = CreateConnection(config, logger);
         var entry = FindFirstEntry(
             connection,
             GetSearchBases(config),
-            $"({EscapeLdapFilter(config.IdentityAttribute)}={EscapeLdapFilter(workerId)})",
+            searchAttribute: config.IdentityAttribute,
+            searchValue: workerId,
             "distinguishedName",
             logger,
-            "manager DN search",
-            ("ManagerId", workerId),
-            ("IdentityAttribute", config.IdentityAttribute));
+            "manager DN search");
         return entry is null ? null : GetAttribute(entry, "distinguishedName");
     }
 
@@ -186,7 +186,7 @@ public sealed class ActiveDirectoryGateway(
             return baseLocalPart;
         }
 
-        using var connection = CreateConnection(config, logger, $"resolve email local-part for worker {worker.WorkerId}");
+        using var connection = CreateConnection(config, logger);
         return ResolveAvailableEmailLocalPart(
             worker.WorkerId,
             baseLocalPart,
@@ -219,15 +219,13 @@ public sealed class ActiveDirectoryGateway(
         string workerId)
     {
         var userPrincipalName = DirectoryIdentityFormatter.BuildEmailAddress(localPart);
-        var entry = FindFirstEntry(
+        var entry = FindFirstEntryMatchingAny(
             connection,
             GetSearchBases(config),
-            $"(|(userPrincipalName={EscapeLdapFilter(userPrincipalName)})(mail={EscapeLdapFilter(userPrincipalName)}))",
+            [("userPrincipalName", userPrincipalName), ("mail", userPrincipalName)],
             "mail",
             logger,
-            "email local-part search",
-            ("WorkerId", workerId),
-            ("CandidateUserPrincipalName", userPrincipalName));
+            "email local-part search");
 
         if (entry is null)
         {
@@ -241,47 +239,25 @@ public sealed class ActiveDirectoryGateway(
     private static SearchResultEntry? FindFirstEntry(
         LdapConnection connection,
         IReadOnlyList<string> searchBases,
-        string filter,
+        string searchAttribute,
+        string searchValue,
         string additionalAttribute,
         ILogger logger,
-        string operation,
-        params (string Key, object? Value)[] context)
+        string operation)
     {
         foreach (var searchBase in searchBases)
         {
-            var request = new SearchRequest(
+            var request = CreateSearchRequest(
                 searchBase,
-                filter,
-                SearchScope.Subtree,
-                "sAMAccountName",
-                "distinguishedName",
-                "displayName",
-                "userAccountControl",
-                additionalAttribute,
-                "givenName",
-                "sn",
-                "userPrincipalName",
-                "mail",
-                "department",
-                "company",
-                "physicalDeliveryOfficeName",
-                "streetAddress",
-                "l",
-                "postalCode",
-                "title",
-                "division",
-                "employeeType",
-                "extensionAttribute1",
-                "extensionAttribute2",
-                "extensionAttribute3",
-                "extensionAttribute4");
+                searchAttribute,
+                searchValue,
+                additionalAttribute);
 
             var response = ExecuteSearch(
                 connection,
                 request,
                 logger,
-                operation,
-                [.. context, ("SearchBase", searchBase)]);
+                operation);
             var entry = response.Entries.Cast<SearchResultEntry>().FirstOrDefault();
             if (entry is not null)
             {
@@ -292,6 +268,103 @@ public sealed class ActiveDirectoryGateway(
         return null;
     }
 
+    private static SearchResultEntry? FindFirstEntryMatchingAny(
+        LdapConnection connection,
+        IReadOnlyList<string> searchBases,
+        IReadOnlyList<(string Attribute, string Value)> searchClauses,
+        string additionalAttribute,
+        ILogger logger,
+        string operation)
+    {
+        foreach (var searchBase in searchBases)
+        {
+            var request = CreateSearchRequest(
+                searchBase,
+                searchClauses,
+                additionalAttribute);
+
+            var response = ExecuteSearch(
+                connection,
+                request,
+                logger,
+                operation);
+            var entry = response.Entries.Cast<SearchResultEntry>().FirstOrDefault();
+            if (entry is not null)
+            {
+                return entry;
+            }
+        }
+
+        return null;
+    }
+
+    private static SearchRequest CreateSearchRequest(
+        string searchBase,
+        string searchAttribute,
+        string searchValue,
+        string additionalAttribute)
+    {
+        return new SearchRequest(
+            searchBase,
+            BuildEqualityFilter(searchAttribute, searchValue),
+            SearchScope.Subtree,
+            "sAMAccountName",
+            "distinguishedName",
+            "displayName",
+            "userAccountControl",
+            additionalAttribute,
+            "givenName",
+            "sn",
+            "userPrincipalName",
+            "mail",
+            "department",
+            "company",
+            "physicalDeliveryOfficeName",
+            "streetAddress",
+            "l",
+            "postalCode",
+            "title",
+            "division",
+            "employeeType",
+            "extensionAttribute1",
+            "extensionAttribute2",
+            "extensionAttribute3",
+            "extensionAttribute4");
+    }
+
+    private static SearchRequest CreateSearchRequest(
+        string searchBase,
+        IReadOnlyList<(string Attribute, string Value)> searchClauses,
+        string additionalAttribute)
+    {
+        return new SearchRequest(
+            searchBase,
+            BuildAnyOfEqualityFilter(searchClauses),
+            SearchScope.Subtree,
+            "sAMAccountName",
+            "distinguishedName",
+            "displayName",
+            "userAccountControl",
+            additionalAttribute,
+            "givenName",
+            "sn",
+            "userPrincipalName",
+            "mail",
+            "department",
+            "company",
+            "physicalDeliveryOfficeName",
+            "streetAddress",
+            "l",
+            "postalCode",
+            "title",
+            "division",
+            "employeeType",
+            "extensionAttribute1",
+            "extensionAttribute2",
+            "extensionAttribute3",
+            "extensionAttribute4");
+    }
+
     private static IReadOnlyList<string> GetSearchBases(ActiveDirectoryConfig config)
     {
         return new[] { config.DefaultActiveOu, config.PrehireOu, config.GraveyardOu }
@@ -300,35 +373,8 @@ public sealed class ActiveDirectoryGateway(
             .ToArray();
     }
 
-    private static LdapConnection CreateConnection(ActiveDirectoryConfig config, ILogger logger, string purpose)
-    {
-        var identifier = new LdapDirectoryIdentifier(config.Server);
-        var connection = new LdapConnection(identifier)
-        {
-            AuthType = string.IsNullOrWhiteSpace(config.Username) ? AuthType.Anonymous : AuthType.Basic,
-            Timeout = LdapOperationTimeout
-        };
-
-        if (!string.IsNullOrWhiteSpace(config.Username))
-        {
-            connection.Credential = new NetworkCredential(config.Username, config.BindPassword);
-        }
-
-        connection.SessionOptions.ProtocolVersion = 3;
-        var stopwatch = Stopwatch.StartNew();
-        logger.LogInformation(
-            "Starting AD bind. Purpose={Purpose} Server={Server} Username={Username}",
-            purpose,
-            config.Server,
-            string.IsNullOrWhiteSpace(config.Username) ? "anonymous" : config.Username);
-        connection.Bind();
-        logger.LogInformation(
-            "Completed AD bind. Purpose={Purpose} Server={Server} DurationMs={DurationMs}",
-            purpose,
-            config.Server,
-            stopwatch.ElapsedMilliseconds);
-        return connection;
-    }
+    private static LdapConnection CreateConnection(ActiveDirectoryConfig config, ILogger logger)
+        => ActiveDirectoryConnectionFactory.CreateConnection(config, logger, LdapOperationTimeout);
 
     private static string? GetAttribute(SearchResultEntry entry, string attributeName)
     {
@@ -406,36 +452,43 @@ public sealed class ActiveDirectoryGateway(
         LdapConnection connection,
         SearchRequest request,
         ILogger logger,
-        string operation,
-        params (string Key, object? Value)[] context)
+        string operation)
     {
         var stopwatch = Stopwatch.StartNew();
-        logger.LogInformation(
-            "Starting AD search. Operation={Operation} Context={Context}",
-            operation,
-            FormatContext(context));
+        logger.LogInformation("Starting AD search. Operation={Operation}", operation);
         var response = (SearchResponse)connection.SendRequest(request);
         logger.LogInformation(
-            "Completed AD search. Operation={Operation} DurationMs={DurationMs} Entries={Entries} Context={Context}",
+            "Completed AD search. Operation={Operation} DurationMs={DurationMs} Entries={Entries}",
             operation,
             stopwatch.ElapsedMilliseconds,
-            response.Entries.Count,
-            FormatContext(context));
+            response.Entries.Count);
         return response;
     }
 
-    private static string FormatContext((string Key, object? Value)[] context)
+    private static string BuildEqualityFilter(string attributeName, string value)
     {
-        return string.Join(", ", context.Select(item => $"{item.Key}={item.Value ?? "(null)"}"));
+        return $"({ValidateLdapAttributeName(attributeName)}={Encoder.LdapFilterEncode(value)})";
     }
 
-    private static string EscapeLdapFilter(string value)
+    private static string BuildAnyOfEqualityFilter(IReadOnlyList<(string Attribute, string Value)> clauses)
     {
-        return value
-            .Replace("\\", "\\5c", StringComparison.Ordinal)
-            .Replace("*", "\\2a", StringComparison.Ordinal)
-            .Replace("(", "\\28", StringComparison.Ordinal)
-            .Replace(")", "\\29", StringComparison.Ordinal)
-            .Replace("\0", "\\00", StringComparison.Ordinal);
+        if (clauses.Count == 0)
+        {
+            throw new InvalidOperationException("At least one LDAP search clause is required.");
+        }
+
+        return clauses.Count == 1
+            ? BuildEqualityFilter(clauses[0].Attribute, clauses[0].Value)
+            : $"(|{string.Concat(clauses.Select(clause => BuildEqualityFilter(clause.Attribute, clause.Value)))})";
+    }
+
+    private static string ValidateLdapAttributeName(string value)
+    {
+        if (!LdapAttributeNamePattern.IsMatch(value))
+        {
+            throw new InvalidOperationException($"Invalid LDAP attribute name '{value}'.");
+        }
+
+        return value;
     }
 }

@@ -348,7 +348,7 @@ switch ($Service) {
             '-ConfigPath', $env:SYNCFACTORS_RESOLVED_CONFIG_PATH_ABS,
             '-MappingConfigPath', $env:SYNCFACTORS_MAPPING_CONFIG_PATH_ABS,
             '-SqlitePath', $env:SYNCFACTORS_SQLITE_PATH_ABS,
-            '-Urls', "http://127.0.0.1:$($env:SYNCFACTORS_API_PORT)"
+            '-Urls', "https://127.0.0.1:$($env:SYNCFACTORS_API_PORT)"
         )
 
         if ($SkipBuild) {

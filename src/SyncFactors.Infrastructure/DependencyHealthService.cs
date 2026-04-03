@@ -1,5 +1,6 @@
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using SyncFactors.Contracts;
 using SyncFactors.Domain;
 using System.Diagnostics;
@@ -529,22 +530,7 @@ public sealed class DependencyHealthService(
     }
 
     private static LdapConnection CreateLdapConnection(ActiveDirectoryConfig config)
-    {
-        var connection = new LdapConnection(new LdapDirectoryIdentifier(config.Server))
-        {
-            AuthType = string.IsNullOrWhiteSpace(config.Username) ? AuthType.Anonymous : AuthType.Basic,
-            Timeout = ActiveDirectoryTimeout
-        };
-
-        if (!string.IsNullOrWhiteSpace(config.Username))
-        {
-            connection.Credential = new NetworkCredential(config.Username, config.BindPassword);
-        }
-
-        connection.SessionOptions.ProtocolVersion = 3;
-        connection.Bind();
-        return connection;
-    }
+        => ActiveDirectoryConnectionFactory.CreateConnection(config, NullLogger<DependencyHealthService>.Instance, ActiveDirectoryTimeout);
 
     private static DependencyProbeResult BuildProbe(
         string dependency,

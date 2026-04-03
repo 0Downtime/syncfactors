@@ -57,13 +57,21 @@ public sealed record SuccessFactorsQueryConfig(
 
 public sealed record ActiveDirectoryConfig(
     string Server,
+    int? Port,
     string? Username,
     string? BindPassword,
     string IdentityAttribute,
     string DefaultActiveOu,
     string PrehireOu,
     string GraveyardOu,
+    ActiveDirectoryTransportConfig Transport,
     ActiveDirectoryIdentityPolicyConfig IdentityPolicy);
+
+public sealed record ActiveDirectoryTransportConfig(
+    string Mode,
+    bool RequireCertificateValidation,
+    bool RequireSigning,
+    IReadOnlyList<string> TrustedCertificateThumbprints);
 
 public sealed record ActiveDirectoryIdentityPolicyConfig(
     bool ResolveCreateConflictingUpnAndMail);

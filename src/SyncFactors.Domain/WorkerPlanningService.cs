@@ -64,8 +64,7 @@ public sealed class WorkerPlanningService(
         var canAutoApply = operations.Count > 0;
 
         logger.LogInformation(
-            "Planned worker action. WorkerId={WorkerId} Bucket={Bucket} AutoApply={CanAutoApply} MissingRequiredCount={MissingRequiredCount}",
-            worker.WorkerId,
+            "Planned worker action. Bucket={Bucket} AutoApply={CanAutoApply} MissingRequiredCount={MissingRequiredCount}",
             bucket,
             canAutoApply,
             missingSourceAttributes.Count);

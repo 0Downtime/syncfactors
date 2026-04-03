@@ -6,9 +6,9 @@
 
 <section class="hero hero-compact auth-hero">
     <div>
-        <p class="eyebrow">Local Access</p>
+        <p class="eyebrow">Secure Access</p>
         <h1>Sign in</h1>
-        <p class="lede">Use a local operator account to access the SyncFactors portal.</p>
+        <p class="lede">Use enterprise SSO where configured. Local sign-in is reserved for break-glass administration.</p>
     </div>
 </section>
 
@@ -18,22 +18,38 @@
         <p class="callout danger">@Model.ErrorMessage</p>
     }
 
-    <form method="post" class="filters auth-form">
-        <input type="hidden" asp-for="ReturnUrl" />
-        <label>
-            <span>Username</span>
-            <input asp-for="Username" type="text" autocomplete="username" />
-        </label>
-        <label>
-            <span>Password</span>
-            <input asp-for="Password" type="password" autocomplete="current-password" />
-        </label>
-        <label class="filter-check auth-remember">
-            <span>Remember my login</span>
-            <input asp-for="RememberMe" type="checkbox" />
-        </label>
-        <div class="filter-actions">
-            <button type="submit">Sign in</button>
-        </div>
-    </form>
+    @if (Model.IsOidcEnabled)
+    {
+        <form method="post" asp-page-handler="Sso" class="filters auth-form">
+            <input type="hidden" asp-for="ReturnUrl" />
+            <div class="filter-actions">
+                <button type="submit">Sign in with SSO</button>
+            </div>
+        </form>
+    }
+
+    @if (Model.IsLocalLoginEnabled)
+    {
+        <form method="post" class="filters auth-form">
+            <input type="hidden" asp-for="ReturnUrl" />
+            <label>
+                <span>Username</span>
+                <input asp-for="Username" type="text" autocomplete="username" />
+            </label>
+            <label>
+                <span>Password</span>
+                <input asp-for="Password" type="password" autocomplete="current-password" />
+            </label>
+            @if (Model.CanRememberMe)
+            {
+                <label class="filter-check auth-remember">
+                    <span>Remember my login</span>
+                    <input asp-for="RememberMe" type="checkbox" />
+                </label>
+            }
+            <div class="filter-actions">
+                <button type="submit">Use break-glass sign-in</button>
+            </div>
+        </form>
+    }
 </section>
