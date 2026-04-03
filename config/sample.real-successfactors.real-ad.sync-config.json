@@ -130,6 +130,7 @@
     "graveyardOu": "OU=Graveyard,DC=example,DC=com",
     "transport": {
       "mode": "ldaps",
+      "allowLdapFallback": false,
       "requireCertificateValidation": true,
       "requireSigning": true,
       "trustedCertificateThumbprints": []

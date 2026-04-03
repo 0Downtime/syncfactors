@@ -18,7 +18,8 @@ public sealed class DependencyHealthService(
     IWorkerHeartbeatStore workerHeartbeatStore,
     HttpClient httpClient,
     TimeProvider timeProvider,
-    ILogger<DependencyHealthService> logger) : IDependencyHealthService
+    ILogger<DependencyHealthService> logger,
+    Func<ActiveDirectoryConfig, CancellationToken, Task<(string RequestedTransport, string EffectiveTransport, bool UsedFallback)>>? activeDirectoryProbe = null) : IDependencyHealthService
 {
     private static readonly TimeSpan ActiveDirectoryTimeout = TimeSpan.FromSeconds(10);
     private static readonly TimeSpan SuccessFactorsTimeout = TimeSpan.FromSeconds(10);
@@ -173,6 +174,7 @@ public sealed class DependencyHealthService(
     private async Task<DependencyProbeResult> ProbeActiveDirectoryAsync(DateTimeOffset checkedAt, CancellationToken cancellationToken)
     {
         var stopwatch = Stopwatch.StartNew();
+        var isProduction = IsProductionEnvironment();
 
         try
         {
@@ -182,23 +184,21 @@ public sealed class DependencyHealthService(
                 return BuildProbe("Active Directory", DependencyHealthStates.Unhealthy, "Server is not configured.", checkedAt, stopwatch.ElapsedMilliseconds);
             }
 
-            await Task.Run(() =>
-            {
-                using var connection = CreateLdapConnection(config);
-                var request = new SearchRequest(
-                    config.DefaultActiveOu,
-                    "(objectClass=*)",
-                    SearchScope.Base,
-                    "distinguishedName");
-                _ = (SearchResponse)connection.SendRequest(request);
-            }, cancellationToken);
+            var transportResult = await (activeDirectoryProbe is null
+                ? ProbeActiveDirectoryTransportAsync(config, cancellationToken)
+                : activeDirectoryProbe(config, cancellationToken));
 
             return BuildProbe(
                 "Active Directory",
                 DependencyHealthStates.Healthy,
-                "LDAP bind and base search succeeded.",
+                transportResult.UsedFallback && !isProduction
+                    ? "LDAP bind and base search succeeded via fallback LDAP."
+                    : "LDAP bind and base search succeeded.",
                 checkedAt,
-                stopwatch.ElapsedMilliseconds);
+                stopwatch.ElapsedMilliseconds,
+                details: transportResult.UsedFallback && !isProduction
+                    ? $"Requested transport '{transportResult.RequestedTransport}' failed and the probe bound over fallback '{transportResult.EffectiveTransport}'."
+                    : null);
         }
         catch (Exception ex)
         {
@@ -529,8 +529,26 @@ public sealed class DependencyHealthService(
         return currentSelectValues.FirstOrDefault(value => value.EndsWith($"/{propertyName}", StringComparison.Ordinal));
     }
 
-    private static LdapConnection CreateLdapConnection(ActiveDirectoryConfig config)
-        => ActiveDirectoryConnectionFactory.CreateConnection(config, NullLogger<DependencyHealthService>.Instance, ActiveDirectoryTimeout);
+    private static ActiveDirectoryConnectionResult CreateLdapConnection(ActiveDirectoryConfig config)
+        => ActiveDirectoryConnectionFactory.CreateConnectionWithTransport(config, NullLogger<DependencyHealthService>.Instance, ActiveDirectoryTimeout);
+
+    private static Task<(string RequestedTransport, string EffectiveTransport, bool UsedFallback)> ProbeActiveDirectoryTransportAsync(
+        ActiveDirectoryConfig config,
+        CancellationToken cancellationToken)
+    {
+        return Task.Run(() =>
+        {
+            var connectionResult = CreateLdapConnection(config);
+            using var connection = connectionResult.Connection;
+            var request = new SearchRequest(
+                config.DefaultActiveOu,
+                "(objectClass=*)",
+                SearchScope.Base,
+                "distinguishedName");
+            _ = (SearchResponse)connection.SendRequest(request);
+            return (connectionResult.RequestedTransport, connectionResult.EffectiveTransport, connectionResult.UsedFallback);
+        }, cancellationToken);
+    }
 
     private static DependencyProbeResult BuildProbe(
         string dependency,
@@ -577,6 +595,14 @@ public sealed class DependencyHealthService(
         }
 
         return DependencyHealthStates.Healthy;
+    }
+
+    private static bool IsProductionEnvironment()
+    {
+        var environmentName = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT")
+            ?? Environment.GetEnvironmentVariable("DOTNET_ENVIRONMENT")
+            ?? "Production";
+        return string.Equals(environmentName, "Production", StringComparison.OrdinalIgnoreCase);
     }
 
     private static string TrimForLog(string? value)

@@ -37,9 +37,16 @@ public sealed class SyncFactorsConfigurationValidator(SyncFactorsConfigurationLo
         }
 
         if (!string.Equals(sync.Ad.Transport.Mode, "ldaps", StringComparison.OrdinalIgnoreCase) &&
-            !string.Equals(sync.Ad.Transport.Mode, "starttls", StringComparison.OrdinalIgnoreCase))
+            !string.Equals(sync.Ad.Transport.Mode, "starttls", StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(sync.Ad.Transport.Mode, "ldap", StringComparison.OrdinalIgnoreCase))
         {
-            throw new InvalidOperationException("SyncFactors AD transport.mode must be either 'ldaps' or 'starttls'.");
+            throw new InvalidOperationException("SyncFactors AD transport.mode must be either 'ldaps', 'starttls', or 'ldap'.");
+        }
+
+        if (sync.Ad.Transport.AllowLdapFallback &&
+            string.Equals(sync.Ad.Transport.Mode, "ldap", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("SyncFactors AD transport.allowLdapFallback cannot be enabled when transport.mode is already 'ldap'.");
         }
 
         if (!isDevelopment && !sync.Ad.Transport.RequireCertificateValidation)
