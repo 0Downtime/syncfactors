@@ -246,7 +246,8 @@ public sealed class ActiveDirectoryGateway(
         {
             var request = CreateSearchRequest(
                 searchBase,
-                BuildEqualityFilter(searchAttribute, searchValue),
+                searchAttribute,
+                searchValue,
                 additionalAttribute);
 
             var response = ExecuteSearch(
@@ -276,7 +277,7 @@ public sealed class ActiveDirectoryGateway(
         {
             var request = CreateSearchRequest(
                 searchBase,
-                BuildAnyOfEqualityFilter(searchClauses),
+                searchClauses,
                 additionalAttribute);
 
             var response = ExecuteSearch(
@@ -294,11 +295,48 @@ public sealed class ActiveDirectoryGateway(
         return null;
     }
 
-    private static SearchRequest CreateSearchRequest(string searchBase, string filter, string additionalAttribute)
+    private static SearchRequest CreateSearchRequest(
+        string searchBase,
+        string searchAttribute,
+        string searchValue,
+        string additionalAttribute)
     {
         return new SearchRequest(
             searchBase,
-            filter,
+            BuildEqualityFilter(searchAttribute, searchValue),
+            SearchScope.Subtree,
+            "sAMAccountName",
+            "distinguishedName",
+            "displayName",
+            "userAccountControl",
+            additionalAttribute,
+            "givenName",
+            "sn",
+            "userPrincipalName",
+            "mail",
+            "department",
+            "company",
+            "physicalDeliveryOfficeName",
+            "streetAddress",
+            "l",
+            "postalCode",
+            "title",
+            "division",
+            "employeeType",
+            "extensionAttribute1",
+            "extensionAttribute2",
+            "extensionAttribute3",
+            "extensionAttribute4");
+    }
+
+    private static SearchRequest CreateSearchRequest(
+        string searchBase,
+        IReadOnlyList<(string Attribute, string Value)> searchClauses,
+        string additionalAttribute)
+    {
+        return new SearchRequest(
+            searchBase,
+            BuildAnyOfEqualityFilter(searchClauses),
             SearchScope.Subtree,
             "sAMAccountName",
             "distinguishedName",
