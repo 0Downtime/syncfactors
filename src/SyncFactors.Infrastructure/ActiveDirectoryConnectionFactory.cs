@@ -34,11 +34,9 @@ internal static class ActiveDirectoryConnectionFactory
 
         var stopwatch = Stopwatch.StartNew();
         logger.LogInformation(
-            "Starting AD bind. Purpose={Purpose} Server={Server} Port={Port} Username={Username} Transport={Transport}",
+            "Starting AD bind. Purpose={Purpose} Port={Port} Transport={Transport}",
             purpose,
-            config.Server,
             config.Port ?? GetDefaultPort(config.Transport.Mode),
-            string.IsNullOrWhiteSpace(config.Username) ? "anonymous" : config.Username,
             config.Transport.Mode);
 
         if (string.Equals(config.Transport.Mode, "starttls", StringComparison.OrdinalIgnoreCase))
@@ -48,9 +46,8 @@ internal static class ActiveDirectoryConnectionFactory
 
         connection.Bind();
         logger.LogInformation(
-            "Completed AD bind. Purpose={Purpose} Server={Server} DurationMs={DurationMs}",
+            "Completed AD bind. Purpose={Purpose} DurationMs={DurationMs}",
             purpose,
-            config.Server,
             stopwatch.ElapsedMilliseconds);
         return connection;
     }

@@ -14,20 +14,19 @@ public sealed class WorkerPreviewPlanner(
 {
     public async Task<WorkerPreviewResult> PreviewAsync(string workerId, CancellationToken cancellationToken)
     {
-        logger.LogInformation("Starting worker preview. WorkerId={WorkerId}", workerId);
+        logger.LogInformation("Starting worker preview.");
         var startedAt = DateTimeOffset.UtcNow;
         var worker = await workerSource.GetWorkerAsync(workerId, cancellationToken);
         if (worker is null)
         {
-            logger.LogWarning("Worker preview could not resolve worker. WorkerId={WorkerId}", workerId);
+            logger.LogWarning("Worker preview could not resolve worker.");
             throw new InvalidOperationException($"Worker {workerId} could not be resolved.");
         }
 
         var logPath = previewLogWriter.CreateLogPath(workerId, startedAt);
         var plan = await planningService.PlanAsync(worker, logPath, cancellationToken);
         logger.LogInformation(
-            "Worker preview completed planning. WorkerId={WorkerId} Bucket={Bucket} MatchedExistingUser={MatchedExistingUser} DiffCount={DiffCount}",
-            plan.Worker.WorkerId,
+            "Worker preview completed planning. Bucket={Bucket} MatchedExistingUser={MatchedExistingUser} DiffCount={DiffCount}",
             plan.Bucket,
             plan.Identity.MatchedExistingUser,
             plan.AttributeChanges.Count(change => change.Changed));
