@@ -563,9 +563,18 @@ export function PreviewPage() {
         </>
       ) : (
         <section className="vf-panel">
-          <div className="vf-empty-state">
-            Search for a worker ID or open a saved preview run to begin the review flow.
-          </div>
+          {loading ? (
+            <div className="vf-skeleton-panel">
+              <div className="vf-skeleton-line" data-width="lg" />
+              <div className="vf-skeleton-line" data-width="md" />
+              <div className="vf-skeleton-line" />
+              <div className="vf-skeleton-line" />
+            </div>
+          ) : (
+            <div className="vf-empty-state">
+              Search for a worker ID or open a saved preview run to begin the review flow.
+            </div>
+          )}
         </section>
       )}
     </>
