@@ -512,11 +512,9 @@ input:disabled {
   -webkit-backdrop-filter: saturate(160%) blur(16px);
 }
 
-.hero-run-health .eyebrow,
-.hero-run-health .muted,
-.hero-run-health p,
-.hero-run-health strong,
-.hero-run-health .badge {
+.hero-run-health > .hero-run-health-header .eyebrow,
+.hero-run-health > .hero-run-health-header .badge,
+.hero-run-health > .hero-run-health-header .muted {
   color: inherit;
 }
 
