@@ -41,8 +41,6 @@
 - `docs/architecture.md`: architecture direction and system boundaries
 - `docs/empjob-ad-mapping.md`: current field mapping notes for the `EmpJob` flow
 
-I am also comparing Razor Pages with the Vite-based UI spike in `frontend-spike/`. The current operator surface is still Razor Pages first.
-
 ## What Works Today
 
 - Operator dashboard with current runtime status, recent runs, active run summary, and dependency health
@@ -225,8 +223,8 @@ Useful variants:
 
 When you run `-Service stack`, the launched services depend on the active profile:
 
-- `mock`: starts the mock SuccessFactors API, the SyncFactors API, the worker, and the Vite web UI
-- `real`: starts the SyncFactors API, the worker, and the Vite web UI
+- `mock`: starts the mock SuccessFactors API, the SyncFactors API, and the worker
+- `real`: starts the SyncFactors API and the worker
 
 The lower-level start scripts remain available if you need to launch individual components directly:
 
