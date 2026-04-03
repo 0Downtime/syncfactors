@@ -39,9 +39,22 @@ public sealed class ActiveDirectoryGatewayTests
             BindingFlags.NonPublic | BindingFlags.Static);
         Assert.NotNull(method);
 
-        var filter = Assert.IsType<string>(method!.Invoke(null, ["employee)(Id", "user*)(test)\\name"]));
+        var filter = Assert.IsType<string>(method!.Invoke(null, ["employeeId", "user*)(test)\\name"]));
 
-        Assert.Equal("(employee\\29\\28Id=user\\2a\\29\\28test\\29\\5cname)", filter);
+        Assert.Equal("(employeeId=user\\2a\\29\\28test\\29\\5cname)", filter);
+    }
+
+    [Fact]
+    public void BuildEqualityFilter_RejectsInvalidAttributeName()
+    {
+        var method = typeof(ActiveDirectoryGateway).GetMethod(
+            "BuildEqualityFilter",
+            BindingFlags.NonPublic | BindingFlags.Static);
+        Assert.NotNull(method);
+
+        var exception = Assert.Throws<TargetInvocationException>(() => method!.Invoke(null, ["employee)(Id", "worker-10001"]));
+
+        Assert.IsType<InvalidOperationException>(exception.InnerException);
     }
 
     [Fact]

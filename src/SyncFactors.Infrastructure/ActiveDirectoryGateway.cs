@@ -1,8 +1,10 @@
 using SyncFactors.Contracts;
 using SyncFactors.Domain;
 using Microsoft.Extensions.Logging;
+using Microsoft.Security.Application;
 using System.DirectoryServices.Protocols;
 using System.Diagnostics;
+using System.Text.RegularExpressions;
 
 namespace SyncFactors.Infrastructure;
 
@@ -11,6 +13,7 @@ public sealed class ActiveDirectoryGateway(
     ILogger<ActiveDirectoryGateway> logger) : IDirectoryGateway
 {
     private static readonly TimeSpan LdapOperationTimeout = TimeSpan.FromSeconds(10);
+    private static readonly Regex LdapAttributeNamePattern = new("^[A-Za-z][A-Za-z0-9-]*$", RegexOptions.Compiled);
 
     public async Task<DirectoryUserSnapshot?> FindByWorkerAsync(WorkerSnapshot worker, CancellationToken cancellationToken)
     {
@@ -464,7 +467,7 @@ public sealed class ActiveDirectoryGateway(
 
     private static string BuildEqualityFilter(string attributeName, string value)
     {
-        return $"({EscapeLdapFilter(attributeName)}={EscapeLdapFilter(value)})";
+        return $"({ValidateLdapAttributeName(attributeName)}={Encoder.LdapFilterEncode(value)})";
     }
 
     private static string BuildAnyOfEqualityFilter(IReadOnlyList<(string Attribute, string Value)> clauses)
@@ -479,13 +482,13 @@ public sealed class ActiveDirectoryGateway(
             : $"(|{string.Concat(clauses.Select(clause => BuildEqualityFilter(clause.Attribute, clause.Value)))})";
     }
 
-    private static string EscapeLdapFilter(string value)
+    private static string ValidateLdapAttributeName(string value)
     {
-        return value
-            .Replace("\\", "\\5c", StringComparison.Ordinal)
-            .Replace("*", "\\2a", StringComparison.Ordinal)
-            .Replace("(", "\\28", StringComparison.Ordinal)
-            .Replace(")", "\\29", StringComparison.Ordinal)
-            .Replace("\0", "\\00", StringComparison.Ordinal);
+        if (!LdapAttributeNamePattern.IsMatch(value))
+        {
+            throw new InvalidOperationException($"Invalid LDAP attribute name '{value}'.");
+        }
+
+        return value;
     }
 }
