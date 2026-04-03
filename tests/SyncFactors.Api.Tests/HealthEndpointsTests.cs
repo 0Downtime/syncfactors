@@ -3,14 +3,13 @@ using System.Net.Http.Json;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
-using SyncFactors.Contracts;
 
 namespace SyncFactors.Api.Tests;
 
 public sealed class HealthEndpointsTests
 {
     [Fact]
-    public async Task ApiHealth_AllowsAnonymousAccess()
+    public async Task ApiHealth_RejectsAnonymousAccess()
     {
         await using var factory = new SyncFactorsApiFactory();
         using var client = factory.CreateClient(new WebApplicationFactoryClientOptions
@@ -21,10 +20,7 @@ public sealed class HealthEndpointsTests
 
         using var response = await client.GetAsync("/api/health");
 
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        var snapshot = await response.Content.ReadFromJsonAsync<DependencyHealthSnapshot>();
-        Assert.NotNull(snapshot);
-        Assert.NotEmpty(snapshot.Probes);
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
     [Fact]
