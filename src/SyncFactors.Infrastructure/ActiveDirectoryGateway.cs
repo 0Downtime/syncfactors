@@ -129,7 +129,7 @@ public sealed class ActiveDirectoryGateway(
 
     private static DirectoryUserSnapshot? QueryDirectory(WorkerSnapshot worker, ActiveDirectoryConfig config, ILogger logger)
     {
-        using var connection = CreateConnection(config, logger, "lookup worker");
+        using var connection = CreateConnection(config, logger);
         var entry = FindFirstEntry(
             connection,
             GetSearchBases(config),
@@ -158,7 +158,7 @@ public sealed class ActiveDirectoryGateway(
 
     private static string? ResolveDistinguishedName(string workerId, ActiveDirectoryConfig config, ILogger logger)
     {
-        using var connection = CreateConnection(config, logger, "resolve manager");
+        using var connection = CreateConnection(config, logger);
         var entry = FindFirstEntry(
             connection,
             GetSearchBases(config),
@@ -183,7 +183,7 @@ public sealed class ActiveDirectoryGateway(
             return baseLocalPart;
         }
 
-        using var connection = CreateConnection(config, logger, "resolve email local-part");
+        using var connection = CreateConnection(config, logger);
         return ResolveAvailableEmailLocalPart(
             worker.WorkerId,
             baseLocalPart,
@@ -242,58 +242,12 @@ public sealed class ActiveDirectoryGateway(
         ILogger logger,
         string operation)
     {
-        var filter = BuildEqualityFilter(searchAttribute, searchValue);
-        return FindFirstEntry(connection, searchBases, filter, additionalAttribute, logger, operation);
-    }
-
-    private static SearchResultEntry? FindFirstEntryMatchingAny(
-        LdapConnection connection,
-        IReadOnlyList<string> searchBases,
-        IReadOnlyList<(string Attribute, string Value)> searchClauses,
-        string additionalAttribute,
-        ILogger logger,
-        string operation)
-    {
-        var filter = BuildAnyOfEqualityFilter(searchClauses);
-        return FindFirstEntry(connection, searchBases, filter, additionalAttribute, logger, operation);
-    }
-
-    private static SearchResultEntry? FindFirstEntry(
-        LdapConnection connection,
-        IReadOnlyList<string> searchBases,
-        string filter,
-        string additionalAttribute,
-        ILogger logger,
-        string operation)
-    {
         foreach (var searchBase in searchBases)
         {
-            var request = new SearchRequest(
+            var request = CreateSearchRequest(
                 searchBase,
-                filter,
-                SearchScope.Subtree,
-                "sAMAccountName",
-                "distinguishedName",
-                "displayName",
-                "userAccountControl",
-                additionalAttribute,
-                "givenName",
-                "sn",
-                "userPrincipalName",
-                "mail",
-                "department",
-                "company",
-                "physicalDeliveryOfficeName",
-                "streetAddress",
-                "l",
-                "postalCode",
-                "title",
-                "division",
-                "employeeType",
-                "extensionAttribute1",
-                "extensionAttribute2",
-                "extensionAttribute3",
-                "extensionAttribute4");
+                BuildEqualityFilter(searchAttribute, searchValue),
+                additionalAttribute);
 
             var response = ExecuteSearch(
                 connection,
@@ -310,6 +264,66 @@ public sealed class ActiveDirectoryGateway(
         return null;
     }
 
+    private static SearchResultEntry? FindFirstEntryMatchingAny(
+        LdapConnection connection,
+        IReadOnlyList<string> searchBases,
+        IReadOnlyList<(string Attribute, string Value)> searchClauses,
+        string additionalAttribute,
+        ILogger logger,
+        string operation)
+    {
+        foreach (var searchBase in searchBases)
+        {
+            var request = CreateSearchRequest(
+                searchBase,
+                BuildAnyOfEqualityFilter(searchClauses),
+                additionalAttribute);
+
+            var response = ExecuteSearch(
+                connection,
+                request,
+                logger,
+                operation);
+            var entry = response.Entries.Cast<SearchResultEntry>().FirstOrDefault();
+            if (entry is not null)
+            {
+                return entry;
+            }
+        }
+
+        return null;
+    }
+
+    private static SearchRequest CreateSearchRequest(string searchBase, string filter, string additionalAttribute)
+    {
+        return new SearchRequest(
+            searchBase,
+            filter,
+            SearchScope.Subtree,
+            "sAMAccountName",
+            "distinguishedName",
+            "displayName",
+            "userAccountControl",
+            additionalAttribute,
+            "givenName",
+            "sn",
+            "userPrincipalName",
+            "mail",
+            "department",
+            "company",
+            "physicalDeliveryOfficeName",
+            "streetAddress",
+            "l",
+            "postalCode",
+            "title",
+            "division",
+            "employeeType",
+            "extensionAttribute1",
+            "extensionAttribute2",
+            "extensionAttribute3",
+            "extensionAttribute4");
+    }
+
     private static IReadOnlyList<string> GetSearchBases(ActiveDirectoryConfig config)
     {
         return new[] { config.DefaultActiveOu, config.PrehireOu, config.GraveyardOu }
@@ -318,8 +332,8 @@ public sealed class ActiveDirectoryGateway(
             .ToArray();
     }
 
-    private static LdapConnection CreateConnection(ActiveDirectoryConfig config, ILogger logger, string purpose)
-        => ActiveDirectoryConnectionFactory.CreateConnection(config, logger, purpose, LdapOperationTimeout);
+    private static LdapConnection CreateConnection(ActiveDirectoryConfig config, ILogger logger)
+        => ActiveDirectoryConnectionFactory.CreateConnection(config, logger, LdapOperationTimeout);
 
     private static string? GetAttribute(SearchResultEntry entry, string attributeName)
     {
