@@ -132,17 +132,40 @@
 
         runs.forEach(function (run) {
             var row = document.createElement("tr");
-            row.innerHTML =
-                "<td>" + formatTimestamp(run.startedAt) + "</td>" +
-                "<td>" + textOrFallback(run.runTrigger, "AdHoc") + "</td>" +
-                "<td>" + textOrFallback(run.mode, "Unknown") + "</td>" +
-                "<td><span class=\"badge " + runStatusClass(run.status) + "\">" + textOrFallback(run.status, "Unknown") + "</span></td>" +
-                "<td>" + (run.dryRun ? "Yes" : "No") + "</td>" +
-                "<td>" + (run.totalWorkers || 0) + "</td>" +
-                "<td>" + runSummary(run) + "</td>" +
-                "<td><a href=\"" + runDetailHref(run.runId) + "\">Open</a></td>";
+            appendCell(row, formatTimestamp(run.startedAt));
+            appendCell(row, textOrFallback(run.runTrigger, "AdHoc"));
+            appendCell(row, textOrFallback(run.mode, "Unknown"));
+            appendStatusCell(row, textOrFallback(run.status, "Unknown"));
+            appendCell(row, run.dryRun ? "Yes" : "No");
+            appendCell(row, String(run.totalWorkers || 0));
+            appendCell(row, runSummary(run));
+            appendLinkCell(row, runDetailHref(run.runId), "Open");
             runsBody.appendChild(row);
         });
+    }
+
+    function appendCell(row, text) {
+        var cell = document.createElement("td");
+        cell.textContent = text;
+        row.appendChild(cell);
+    }
+
+    function appendStatusCell(row, status) {
+        var cell = document.createElement("td");
+        var badge = document.createElement("span");
+        badge.className = "badge " + runStatusClass(status);
+        badge.textContent = status;
+        cell.appendChild(badge);
+        row.appendChild(cell);
+    }
+
+    function appendLinkCell(row, href, text) {
+        var cell = document.createElement("td");
+        var link = document.createElement("a");
+        link.setAttribute("href", href);
+        link.textContent = text;
+        cell.appendChild(link);
+        row.appendChild(cell);
     }
 
     function renderStatus(snapshot) {
