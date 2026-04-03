@@ -1,8 +1,17 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
+import {
+  ArrowRight,
+  ChevronDown,
+  Clock3,
+  Filter,
+  Search,
+  ShieldAlert,
+  UserRoundSearch,
+} from 'lucide-react'
 
 import { api } from '@/lib/api'
-import { formatDate, statusTone } from '@/lib/format'
+import { formatDate, runSummaryLine, statusTone } from '@/lib/format'
 import type { RunDetail, RunEntry } from '@/lib/types'
 
 type EntriesResponse = {
@@ -11,6 +20,32 @@ type EntriesResponse = {
   total: number
   page: number
   pageSize: number
+}
+
+function formatDuration(seconds: number | null) {
+  if (seconds == null || seconds < 0) return 'n/a'
+  if (seconds < 60) return `${seconds}s`
+
+  const minutes = Math.floor(seconds / 60)
+  const remainingSeconds = seconds % 60
+  if (minutes < 60) return remainingSeconds ? `${minutes}m ${remainingSeconds}s` : `${minutes}m`
+
+  const hours = Math.floor(minutes / 60)
+  const remainingMinutes = minutes % 60
+  return remainingMinutes ? `${hours}h ${remainingMinutes}m` : `${hours}h`
+}
+
+function progressPercent(processedWorkers: number, totalWorkers: number) {
+  if (totalWorkers <= 0) return 0
+  return Math.max(0, Math.min(100, Math.round((processedWorkers / totalWorkers) * 100)))
+}
+
+function savedPreviewRunId(entry: RunEntry) {
+  if (entry.artifactType === 'WorkerPreview') {
+    return entry.runId
+  }
+
+  return typeof entry.item.sourcePreviewRunId === 'string' ? entry.item.sourcePreviewRunId : null
 }
 
 export function RunDetailPage() {
@@ -43,10 +78,7 @@ export function RunDetailPage() {
         params.set('page', String(pageNumber))
         params.set('pageSize', '50')
 
-        const [detail, entries] = await Promise.all([
-          api.runDetail(runId),
-          api.runEntries(runId, params),
-        ])
+        const [detail, entries] = await Promise.all([api.runDetail(runId), api.runEntries(runId, params)])
 
         if (mounted) {
           setRunDetail(detail)
@@ -74,7 +106,7 @@ export function RunDetailPage() {
     () =>
       Object.entries(runDetail?.bucketCounts ?? {})
         .filter(([, value]) => value > 0)
-        .map(([key]) => key),
+        .sort((a, b) => b[1] - a[1]),
     [runDetail],
   )
 
@@ -83,23 +115,32 @@ export function RunDetailPage() {
     return Math.max(1, Math.ceil(entriesResponse.total / entriesResponse.pageSize))
   }, [entriesResponse])
 
+  const selectedBucketCount = bucket ? runDetail?.bucketCounts[bucket] ?? 0 : entriesResponse?.total ?? 0
+  const run = runDetail?.run ?? null
+  const percentComplete = run ? progressPercent(run.processedWorkers, run.totalWorkers) : 0
+
   function setFilters(next: { bucket?: string; workerId?: string; filter?: string; page?: number }) {
     const params = new URLSearchParams(searchParams)
+
     if (next.bucket !== undefined) {
       if (next.bucket) params.set('bucket', next.bucket)
       else params.delete('bucket')
     }
+
     if (next.workerId !== undefined) {
       if (next.workerId) params.set('workerId', next.workerId)
       else params.delete('workerId')
     }
+
     if (next.filter !== undefined) {
       if (next.filter) params.set('filter', next.filter)
       else params.delete('filter')
     }
+
     if (next.page !== undefined) {
       params.set('page', String(next.page))
     }
+
     setSearchParams(params)
   }
 
@@ -114,15 +155,20 @@ export function RunDetailPage() {
   if (loading && !runDetail) {
     return (
       <section className="vf-panel">
-        <p className="text-[17px] leading-[1.47] tracking-[-0.022em] text-black/62">Loading run detail...</p>
+        <div className="vf-skeleton-panel">
+          <div className="vf-skeleton-line" data-width="lg" />
+          <div className="vf-skeleton-line" data-width="md" />
+          <div className="vf-skeleton-line" />
+          <div className="vf-skeleton-line" />
+        </div>
       </section>
     )
   }
 
-  if (!runDetail) {
+  if (!runDetail || !run) {
     return (
       <section className="vf-panel">
-        <p className="text-[17px] leading-[1.47] tracking-[-0.022em] text-black/62">Run not found.</p>
+        <p className="vf-muted-text">Run not found.</p>
       </section>
     )
   }
@@ -130,204 +176,389 @@ export function RunDetailPage() {
   return (
     <>
       <section className="vf-hero vf-hero-compact">
-        <div>
-          <p className="vf-eyebrow vf-eyebrow-dark">Run Detail</p>
-          <h1 className="vf-hero-title">{runDetail.run.runId}</h1>
+        <div className="max-w-[54rem]">
+          <p className="vf-eyebrow vf-eyebrow-dark">Run Investigation</p>
+          <h1 className="vf-hero-title">{run.runId}</h1>
           <p className="vf-hero-lede">
-            {runDetail.run.mode} · {runDetail.run.syncScope} · {runDetail.run.status} · {runDetail.run.dryRun ? 'Dry Run' : 'Live Run'}
+            {run.mode} · {run.syncScope} · {run.status} · {run.dryRun ? 'Dry Run' : 'Live Run'}
           </p>
+          <div className="vf-runtime-progress mt-6 max-w-[34rem]">
+            <div className="vf-progress-row">
+              <span>Worker progress</span>
+              <strong className="text-white">{percentComplete}%</strong>
+            </div>
+            <div className="vf-progress-track">
+              <span className="vf-progress-bar" style={{ width: `${percentComplete}%` }} />
+            </div>
+            <p className="text-[14px] leading-[1.43] tracking-[-0.016em] text-white/70">
+              {run.processedWorkers} of {run.totalWorkers} workers processed · {formatDuration(run.durationSeconds)}
+            </p>
+          </div>
         </div>
         <div className="flex flex-wrap gap-3">
-          <Link className="vf-primary-link" to="/">
+          <Link className="vf-secondary-button" to="/">
             Back to dashboard
+          </Link>
+          <Link className="vf-primary-link" to="/preview">
+            Open preview
           </Link>
         </div>
       </section>
 
-      <section className="vf-panel-grid">
-        <article className="vf-panel">
-          <h2 className="vf-panel-title">Summary</h2>
-          <dl className="vf-kv mt-5">
-            <div><dt>Started</dt><dd>{formatDate(runDetail.run.startedAt)}</dd></div>
-            <div><dt>Completed</dt><dd>{formatDate(runDetail.run.completedAt)}</dd></div>
-            <div><dt>Artifact</dt><dd>{runDetail.run.artifactType}</dd></div>
-            <div><dt>Scope</dt><dd>{runDetail.run.syncScope}</dd></div>
-            <div><dt>Trigger</dt><dd>{runDetail.run.runTrigger}</dd></div>
-            <div><dt>Requested By</dt><dd>{runDetail.run.requestedBy ?? 'n/a'}</dd></div>
-            <div><dt>Status</dt><dd><span className={`vf-badge ${statusTone(runDetail.run.status)}`}>{runDetail.run.status}</span></dd></div>
-            <div><dt>Processed</dt><dd>{runDetail.run.processedWorkers}</dd></div>
-            <div><dt>Total</dt><dd>{runDetail.run.totalWorkers}</dd></div>
-          </dl>
+      <section className="vf-summary-grid">
+        <article className="vf-stat-card">
+          <p className="vf-stat-label">Status</p>
+          <p className="vf-stat-value">{run.status}</p>
+          <p className="vf-stat-meta">{run.runTrigger} · {run.requestedBy ?? 'Unassigned operator'}</p>
         </article>
-
-        <article className="vf-panel">
-          <h2 className="vf-panel-title">Bucket Counts</h2>
-          <div className="vf-bucket-grid mt-5">
-            {Object.entries(runDetail.bucketCounts).map(([name, count]) => (
-              <button
-                key={name}
-                className="vf-bucket-card text-left"
-                type="button"
-                onClick={() => setFilters({ bucket: name, page: 1 })}
-              >
-                <span className="vf-bucket-name">{name}</span>
-                <strong>{count}</strong>
-              </button>
-            ))}
-          </div>
+        <article className="vf-stat-card">
+          <p className="vf-stat-label">Duration</p>
+          <p className="vf-stat-value">{formatDuration(run.durationSeconds)}</p>
+          <p className="vf-stat-meta">{formatDate(run.startedAt)} to {formatDate(run.completedAt)}</p>
+        </article>
+        <article className="vf-stat-card">
+          <p className="vf-stat-label">Materialized Summary</p>
+          <p className="vf-stat-value">{entriesResponse?.total ?? 0}</p>
+          <p className="vf-stat-meta">{runSummaryLine(run)}</p>
         </article>
       </section>
 
-      <section className="vf-panel">
-        <h2 className="vf-panel-title">Filters</h2>
-        <form
-          className="vf-form-grid mt-5"
-          onSubmit={(event) => {
-            event.preventDefault()
-            const form = new FormData(event.currentTarget)
-            setFilters({
-              workerId: String(form.get('workerId') ?? ''),
-              filter: String(form.get('filter') ?? ''),
-              page: 1,
-            })
-          }}
-        >
-          <label>
-            <span>Worker search</span>
-            <input className="vf-input" defaultValue={workerId} name="workerId" placeholder="worker id or samAccountName" type="text" />
-          </label>
-          <label className="vf-filter-search">
-            <span>Text search</span>
-            <input className="vf-input" defaultValue={filter} name="filter" placeholder="reason, reviewCaseType, raw entry text..." type="text" />
-          </label>
-          <div className="vf-filter-actions">
-            <button className="vf-primary-button" type="submit">Apply</button>
-            <button className="vf-secondary-button" type="button" onClick={() => setSearchParams(new URLSearchParams())}>Clear</button>
-          </div>
-        </form>
-        <div className="vf-chip-row mt-5">
-          <button className={`vf-chip-button${!bucket ? ' active' : ''}`} type="button" onClick={() => setFilters({ bucket: '', page: 1 })}>
-            All buckets
-          </button>
-          {availableBuckets.map((name) => (
-            <button
-              key={name}
-              className={`vf-chip-button${bucket === name ? ' active' : ''}`}
-              type="button"
-              onClick={() => setFilters({ bucket: name, page: 1 })}
-            >
-              <span className="vf-bucket-name">{name}</span>
-              <strong>{runDetail.bucketCounts[name]}</strong>
-            </button>
-          ))}
+      <section className="vf-run-detail-grid">
+        <div className="vf-panel-stack">
+          <article className="vf-panel">
+            <div className="vf-section-heading">
+              <div>
+                <p className="vf-panel-kicker">Run posture</p>
+                <h2 className="vf-panel-title">Summary</h2>
+              </div>
+              <span className={`vf-badge ${statusTone(run.status)}`}>{run.status}</span>
+            </div>
+
+            <div className="vf-run-stats mt-5">
+              <div className="vf-run-stat-row">
+                <strong>Scope</strong>
+                <span>{run.syncScope}</span>
+              </div>
+              <div className="vf-run-stat-row">
+                <strong>Artifact</strong>
+                <span>{run.artifactType}</span>
+              </div>
+              <div className="vf-run-stat-row">
+                <strong>Requested by</strong>
+                <span>{run.requestedBy ?? 'n/a'}</span>
+              </div>
+              <div className="vf-run-stat-row">
+                <strong>Processed workers</strong>
+                <span>{run.processedWorkers} / {run.totalWorkers}</span>
+              </div>
+            </div>
+
+            <div className="vf-mini-grid">
+              <dl className="vf-mini-card">
+                <dt>Creates</dt>
+                <dd>{run.creates}</dd>
+              </dl>
+              <dl className="vf-mini-card">
+                <dt>Updates</dt>
+                <dd>{run.updates}</dd>
+              </dl>
+              <dl className="vf-mini-card">
+                <dt>Conflicts</dt>
+                <dd>{run.conflicts}</dd>
+              </dl>
+              <dl className="vf-mini-card">
+                <dt>Guardrails</dt>
+                <dd>{run.guardrailFailures}</dd>
+              </dl>
+            </div>
+          </article>
+
+          <article className="vf-panel">
+            <div className="vf-section-heading">
+              <div>
+                <p className="vf-panel-kicker">Entry surface</p>
+                <h2 className="vf-panel-title">
+                  Entries {bucket ? `· ${bucket}` : ''}
+                </h2>
+              </div>
+              <span className="vf-caption">
+                Page {entriesResponse?.page ?? 1} of {totalPages}
+              </span>
+            </div>
+
+            <p className="vf-muted-text mt-3">
+              {selectedBucketCount} matching entries · 50 per page. Expand an entry only when you
+              need full attribute-level detail.
+            </p>
+
+            {!entriesResponse || entriesResponse.entries.length === 0 ? (
+              <div className="vf-empty-state">No entries matched the current filter set.</div>
+            ) : (
+              <div className="vf-entry-shell mt-5">
+                {entriesResponse.entries.map((entry) => {
+                  const previewRunId = savedPreviewRunId(entry)
+                  const hasRisk = Boolean(entry.failureSummary || entry.reviewCaseType || entry.reason)
+
+                  return (
+                    <article key={entry.entryId} className="vf-entry-card">
+                      <header className="vf-entry-head">
+                        <div>
+                          <h3 className="vf-subtitle">{entry.bucketLabel}</h3>
+                          <p className="vf-list-meta">
+                            {entry.workerId ?? 'n/a'} / {entry.samAccountName ?? 'n/a'}
+                          </p>
+                        </div>
+                        <div className="vf-entry-meta">
+                          <span className={`vf-badge ${hasRisk ? 'warn' : 'neutral'}`}>
+                            {entry.changeCount} changes
+                          </span>
+                        </div>
+                      </header>
+
+                      {entry.primarySummary ? (
+                        <p className="vf-entry-summary">{entry.primarySummary}</p>
+                      ) : null}
+
+                      <div className="vf-entry-topline">
+                        {entry.operationSummary ? (
+                          <span className={`vf-badge ${hasRisk ? 'warn' : 'good'}`}>
+                            {entry.operationSummary.action}
+                          </span>
+                        ) : null}
+                        {entry.reviewCaseType ? (
+                          <span className="vf-badge warn">{entry.reviewCaseType}</span>
+                        ) : null}
+                        {entry.reason ? <span className="vf-badge neutral">{entry.reason}</span> : null}
+                      </div>
+
+                      {entry.failureSummary ? (
+                        <p className="vf-callout vf-callout-warn mt-4">{entry.failureSummary}</p>
+                      ) : null}
+
+                      {entry.topChangedAttributes.length > 0 ? (
+                        <p className="vf-muted-text mt-4">
+                          Top changes: {entry.topChangedAttributes.join(', ')}
+                        </p>
+                      ) : null}
+
+                      {(previewRunId || entry.workerId) ? (
+                        <div className="vf-entry-links">
+                          {previewRunId ? (
+                            <Link className="vf-inline-link" to={`/preview?runId=${previewRunId}`}>
+                              Open saved preview <ArrowRight className="ml-1 inline size-4" />
+                            </Link>
+                          ) : null}
+                          {!previewRunId && entry.workerId ? (
+                            <Link className="vf-inline-link" to={`/preview?workerId=${entry.workerId}`}>
+                              Open worker preview <ArrowRight className="ml-1 inline size-4" />
+                            </Link>
+                          ) : null}
+                        </div>
+                      ) : null}
+
+                      <details className="vf-entry-details">
+                        <summary>
+                          <ChevronDown className="size-4" />
+                          Inspect entry detail
+                        </summary>
+
+                        {entry.reviewCaseType || entry.reason ? (
+                          <dl className="vf-kv">
+                            <div><dt>Reason</dt><dd>{entry.reason ?? 'n/a'}</dd></div>
+                            <div><dt>Review Case</dt><dd>{entry.reviewCaseType ?? 'n/a'}</dd></div>
+                          </dl>
+                        ) : null}
+
+                        {entry.operationSummary ? (
+                          <p className="mt-4 text-[17px] leading-[1.47] tracking-[-0.022em] text-[color:var(--vf-ink)]">
+                            <strong>{entry.operationSummary.action}</strong>
+                            {entry.operationSummary.effect ? ` · ${entry.operationSummary.effect}` : ''}
+                          </p>
+                        ) : null}
+
+                        {entry.diffRows.length > 0 ? (
+                          <div className="mt-5 overflow-x-auto">
+                            <table className="vf-table vf-table-compact">
+                              <thead>
+                                <tr>
+                                  <th>Attribute</th>
+                                  <th>Before</th>
+                                  <th>After</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {entry.diffRows.map((diff) => (
+                                  <tr key={`${entry.entryId}-${diff.attribute}`}>
+                                    <td>{diff.attribute}</td>
+                                    <td>{diff.before}</td>
+                                    <td>{diff.after}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        ) : (
+                          <p className="vf-muted-text mt-4">
+                            No detailed attribute diff was recorded for this entry.
+                          </p>
+                        )}
+                      </details>
+                    </article>
+                  )
+                })}
+              </div>
+            )}
+
+            {entriesResponse && totalPages > 1 ? (
+              <div className="vf-table-pagination">
+                <p className="vf-muted-text">
+                  Showing page {entriesResponse.page} of {totalPages}
+                </p>
+                <div className="vf-filter-actions">
+                  {entriesResponse.page > 1 ? (
+                    <button
+                      className="vf-secondary-button"
+                      type="button"
+                      onClick={() => setFilters({ page: entriesResponse.page - 1 })}
+                    >
+                      Previous
+                    </button>
+                  ) : null}
+                  {entriesResponse.page < totalPages ? (
+                    <button
+                      className="vf-secondary-button"
+                      type="button"
+                      onClick={() => setFilters({ page: entriesResponse.page + 1 })}
+                    >
+                      Next
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
+          </article>
         </div>
-      </section>
 
-      <section className="vf-panel">
-        <h2 className="vf-panel-title">
-          Entries {bucket ? `· ${bucket}` : ''}
-        </h2>
-        <p className="mt-3 text-[14px] leading-[1.43] tracking-[-0.016em] text-black/62">
-          Showing page {entriesResponse?.page ?? 1} of {totalPages} · {entriesResponse?.total ?? 0} total entries · 50 per page.
-        </p>
-        {!entriesResponse || entriesResponse.entries.length === 0 ? (
-          <p className="mt-5 text-[17px] leading-[1.47] tracking-[-0.022em] text-black/62">No entries matched this run.</p>
-        ) : (
-          <div className="vf-entry-list mt-5">
-            {entriesResponse.entries.map((entry) => {
-              const savedPreviewRunId =
-                entry.artifactType === 'WorkerPreview'
-                  ? entry.runId
-                  : typeof entry.item.sourcePreviewRunId === 'string'
-                    ? entry.item.sourcePreviewRunId
-                    : null
+        <div className="vf-panel-stack">
+          <article className="vf-panel vf-sticky-panel">
+            <div className="vf-filters-panel">
+              <div className="vf-section-heading">
+                <div>
+                  <p className="vf-panel-kicker">Investigation tools</p>
+                  <h2 className="vf-panel-title">Filters</h2>
+                </div>
+                <Filter className="size-5 text-[color:var(--vf-neutral)]" />
+              </div>
 
-              return (
-                <article key={entry.entryId} className="vf-entry-card">
-                  <header className="vf-entry-head">
-                    <div>
-                      <h3 className="vf-subtitle">{entry.bucketLabel}</h3>
-                      <p className="mt-1 text-[14px] leading-[1.43] tracking-[-0.016em] text-black/62">
-                        {entry.workerId ?? 'n/a'} / {entry.samAccountName ?? 'n/a'}
-                      </p>
-                    </div>
-                    <div className="vf-entry-meta">
-                      <span className="vf-badge neutral">{entry.changeCount} changes</span>
-                    </div>
-                  </header>
-                  {entry.primarySummary ? <p className="vf-entry-summary">{entry.primarySummary}</p> : null}
-                  {entry.failureSummary ? <p className="vf-callout vf-callout-warn">{entry.failureSummary}</p> : null}
-                  {entry.reviewCaseType || entry.reason ? (
-                    <dl className="vf-kv mt-5">
-                      <div><dt>Reason</dt><dd>{entry.reason ?? 'n/a'}</dd></div>
-                      <div><dt>Review Case</dt><dd>{entry.reviewCaseType ?? 'n/a'}</dd></div>
-                    </dl>
-                  ) : null}
-                  {entry.operationSummary ? (
-                    <p className="mt-4 text-[17px] leading-[1.47] tracking-[-0.022em] text-[#1d1d1f]">
-                      <strong>{entry.operationSummary.action}</strong>
-                      {entry.operationSummary.effect ? ` · ${entry.operationSummary.effect}` : ''}
+              <form
+                className="vf-form-grid"
+                onSubmit={(event) => {
+                  event.preventDefault()
+                  const form = new FormData(event.currentTarget)
+                  setFilters({
+                    workerId: String(form.get('workerId') ?? ''),
+                    filter: String(form.get('filter') ?? ''),
+                    page: 1,
+                  })
+                }}
+              >
+                <label>
+                  <span>Worker search</span>
+                  <input
+                    className="vf-input"
+                    defaultValue={workerId}
+                    name="workerId"
+                    placeholder="worker id or samAccountName"
+                    type="text"
+                  />
+                </label>
+                <label className="vf-filter-search">
+                  <span>Text search</span>
+                  <input
+                    className="vf-input"
+                    defaultValue={filter}
+                    name="filter"
+                    placeholder="reason, reviewCaseType, raw entry text..."
+                    type="text"
+                  />
+                </label>
+                <div className="vf-filter-actions">
+                  <button className="vf-primary-button" type="submit">
+                    Apply filters
+                  </button>
+                  <button
+                    className="vf-secondary-button"
+                    type="button"
+                    onClick={() => setSearchParams(new URLSearchParams())}
+                  >
+                    Clear
+                  </button>
+                </div>
+              </form>
+
+              <div className="vf-list">
+                <article className="vf-list-row">
+                  <div>
+                    <p className="vf-list-title">Focused bucket</p>
+                    <p className="vf-list-meta">
+                      {bucket ? `${bucket} selected` : 'All buckets visible'}
                     </p>
-                  ) : null}
-                  {entry.topChangedAttributes.length > 0 ? (
-                    <p className="mt-3 text-[14px] leading-[1.43] tracking-[-0.016em] text-black/62">
-                      Top changes: {entry.topChangedAttributes.join(', ')}
-                    </p>
-                  ) : null}
-                  {entry.workerId ? (
-                    <p className="mt-3">
-                      {savedPreviewRunId ? (
-                        <Link className="vf-inline-link" to={`/preview?runId=${savedPreviewRunId}`}>
-                          Open saved preview
-                        </Link>
-                      ) : (
-                        <Link className="vf-inline-link" to={`/preview?workerId=${entry.workerId}`}>
-                          Open worker preview
-                        </Link>
-                      )}
-                    </p>
-                  ) : null}
-                  {entry.diffRows.length > 0 ? (
-                    <div className="mt-5 overflow-x-auto">
-                      <table className="vf-table vf-table-compact">
-                        <thead>
-                          <tr><th>Attribute</th><th>Before</th><th>After</th></tr>
-                        </thead>
-                        <tbody>
-                          {entry.diffRows.map((diff) => (
-                            <tr key={`${entry.entryId}-${diff.attribute}`}>
-                              <td>{diff.attribute}</td>
-                              <td>{diff.before}</td>
-                              <td>{diff.after}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  ) : (
-                    <p className="mt-4 text-[14px] leading-[1.43] tracking-[-0.016em] text-black/62">
-                      No detailed attribute diff was recorded for this entry.
-                    </p>
-                  )}
+                  </div>
+                  <ShieldAlert className="size-5 text-[color:var(--vf-warn)]" />
                 </article>
-              )
-            })}
-          </div>
-        )}
-        {entriesResponse && totalPages > 1 ? (
-          <div className="vf-filter-actions mt-5">
-            {entriesResponse.page > 1 ? (
-              <button className="vf-secondary-button" type="button" onClick={() => setFilters({ page: entriesResponse.page - 1 })}>
-                Previous
-              </button>
-            ) : null}
-            {entriesResponse.page < totalPages ? (
-              <button className="vf-secondary-button" type="button" onClick={() => setFilters({ page: entriesResponse.page + 1 })}>
-                Next
-              </button>
-            ) : null}
-          </div>
-        ) : null}
+                <article className="vf-list-row">
+                  <div>
+                    <p className="vf-list-title">Worker targeting</p>
+                    <p className="vf-list-meta">
+                      {workerId ? `Searching for "${workerId}"` : 'No worker search applied'}
+                    </p>
+                  </div>
+                  <UserRoundSearch className="size-5 text-[color:var(--vf-neutral)]" />
+                </article>
+                <article className="vf-list-row">
+                  <div>
+                    <p className="vf-list-title">Free-text filter</p>
+                    <p className="vf-list-meta">
+                      {filter ? `Searching for "${filter}"` : 'No free-text filter applied'}
+                    </p>
+                  </div>
+                  <Search className="size-5 text-[color:var(--vf-ink-faint)]" />
+                </article>
+                <article className="vf-list-row">
+                  <div>
+                    <p className="vf-list-title">Started</p>
+                    <p className="vf-list-meta">{formatDate(run.startedAt)}</p>
+                  </div>
+                  <Clock3 className="size-5 text-[color:var(--vf-ink-faint)]" />
+                </article>
+              </div>
+
+              <div>
+                <p className="vf-panel-kicker">Bucket counts</p>
+                <div className="vf-chip-row">
+                  <button
+                    className={`vf-chip-button${!bucket ? ' active' : ''}`}
+                    type="button"
+                    onClick={() => setFilters({ bucket: '', page: 1 })}
+                  >
+                    All buckets
+                  </button>
+                  {availableBuckets.map(([name, count]) => (
+                    <button
+                      key={name}
+                      className={`vf-chip-button${bucket === name ? ' active' : ''}`}
+                      type="button"
+                      onClick={() => setFilters({ bucket: name, page: 1 })}
+                    >
+                      <span className="vf-bucket-name">{name}</span>
+                      <strong>{count}</strong>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </article>
+        </div>
       </section>
     </>
   )
