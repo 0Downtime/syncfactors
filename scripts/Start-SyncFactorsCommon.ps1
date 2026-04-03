@@ -89,7 +89,7 @@ function Get-SyncFactorsTlsPassword {
     )
 
     if (-not (Test-Path $PasswordPath)) {
-        throw "Missing TLS certificate password file '$PasswordPath'. Run pwsh ./scripts/Install-SyncFactorsHttpsCertificate.ps1 first."
+        throw "Missing TLS certificate password file '$PasswordPath'. Run pwsh ./scripts/Install-SyncFactorsHttpsCertificate.ps1 or pwsh ./scripts/Install-SyncFactorsHttpsCertificateFromPfx.ps1 first."
     }
 
     return (Get-Content -Path $PasswordPath -Raw).Trim()
@@ -123,7 +123,7 @@ function Initialize-SyncFactorsHttpsEnvironment {
     }
 
     if (-not (Test-Path $certificatePath)) {
-        throw "Missing TLS certificate '$certificatePath'. Run pwsh ./scripts/Install-SyncFactorsHttpsCertificate.ps1 first."
+        throw "Missing TLS certificate '$certificatePath'. Run pwsh ./scripts/Install-SyncFactorsHttpsCertificate.ps1 or pwsh ./scripts/Install-SyncFactorsHttpsCertificateFromPfx.ps1 first."
     }
 
     $env:ASPNETCORE_Kestrel__Certificates__Default__Path = $certificatePath
