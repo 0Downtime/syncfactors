@@ -42,6 +42,36 @@ function Resolve-RepoPath {
     return [System.IO.Path]::GetFullPath((Join-Path $repoRoot $trimmedPath))
 }
 
+function Resolve-ProfileConfigPath {
+    param(
+        [Parameter(Mandatory)]
+        [string]$Profile,
+        [Parameter(Mandatory)]
+        [string]$MockConfigPath,
+        [Parameter(Mandatory)]
+        [string]$RealConfigPath
+    )
+
+    $normalizedProfile = $Profile.ToLowerInvariant()
+    $preferredPath = switch ($normalizedProfile) {
+        'real' { $RealConfigPath }
+        'mock' { $MockConfigPath }
+        default { throw "Unsupported SYNCFACTORS_RUN_PROFILE '$Profile'. Expected 'mock' or 'real'." }
+    }
+
+    $fallbackPath = if ($preferredPath -eq $MockConfigPath) { $RealConfigPath } else { $MockConfigPath }
+
+    if (Test-Path $preferredPath) {
+        return $preferredPath
+    }
+
+    if (Test-Path $fallbackPath) {
+        return $fallbackPath
+    }
+
+    return $preferredPath
+}
+
 $exampleValues = Read-WorktreeEnvFile -Path $envExampleFile
 $fileValues = Read-WorktreeEnvFile -Path $envFile
 $variableNames = [System.Collections.Generic.List[string]]::new()
@@ -132,17 +162,10 @@ $env:SYNCFACTORS_REAL_CONFIG_PATH_ABS = Join-Path $repoRoot 'config/local.real-s
 
 [System.IO.Directory]::CreateDirectory($env:NUGET_HTTP_CACHE_PATH) | Out-Null
 
-switch ($env:SYNCFACTORS_RUN_PROFILE.ToLowerInvariant()) {
-    'mock' {
-        $profileConfigPath = $env:SYNCFACTORS_MOCK_CONFIG_PATH_ABS
-    }
-    'real' {
-        $profileConfigPath = $env:SYNCFACTORS_REAL_CONFIG_PATH_ABS
-    }
-    default {
-        throw "Unsupported SYNCFACTORS_RUN_PROFILE '$($env:SYNCFACTORS_RUN_PROFILE)'. Expected 'mock' or 'real'."
-    }
-}
+$profileConfigPath = Resolve-ProfileConfigPath `
+    -Profile $env:SYNCFACTORS_RUN_PROFILE `
+    -MockConfigPath $env:SYNCFACTORS_MOCK_CONFIG_PATH_ABS `
+    -RealConfigPath $env:SYNCFACTORS_REAL_CONFIG_PATH_ABS
 
 if ([string]::IsNullOrWhiteSpace($env:SYNCFACTORS_CONFIG_PATH)) {
     $resolvedSyncConfigPath = $profileConfigPath

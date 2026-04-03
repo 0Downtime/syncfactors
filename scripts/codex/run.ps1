@@ -51,6 +51,36 @@ if ($Help) {
 . (Join-Path $scriptDir 'Load-WorktreeEnv.ps1')
 . (Join-Path $scriptDir '..' 'Start-SyncFactorsCommon.ps1')
 
+function Resolve-ProfileConfigPath {
+    param(
+        [Parameter(Mandatory)]
+        [string]$Profile,
+        [Parameter(Mandatory)]
+        [string]$MockConfigPath,
+        [Parameter(Mandatory)]
+        [string]$RealConfigPath
+    )
+
+    $normalizedProfile = $Profile.ToLowerInvariant()
+    $preferredPath = switch ($normalizedProfile) {
+        'real' { $RealConfigPath }
+        'mock' { $MockConfigPath }
+        default { throw "Unsupported profile '$Profile'. Expected 'mock' or 'real'." }
+    }
+
+    $fallbackPath = if ($preferredPath -eq $MockConfigPath) { $RealConfigPath } else { $MockConfigPath }
+
+    if (Test-Path $preferredPath) {
+        return $preferredPath
+    }
+
+    if (Test-Path $fallbackPath) {
+        return $fallbackPath
+    }
+
+    return $preferredPath
+}
+
 function Get-ListeningProcessIds {
     param(
         [Parameter(Mandatory)]
@@ -321,12 +351,10 @@ function Restart-SelectedServices {
 
 $env:SYNCFACTORS_RUN_PROFILE = $Profile
 if ([string]::IsNullOrWhiteSpace($env:SYNCFACTORS_CONFIG_PATH)) {
-    $env:SYNCFACTORS_PROFILE_CONFIG_PATH_ABS = if ($Profile -eq 'real') {
-        $env:SYNCFACTORS_REAL_CONFIG_PATH_ABS
-    }
-    else {
-        $env:SYNCFACTORS_MOCK_CONFIG_PATH_ABS
-    }
+    $env:SYNCFACTORS_PROFILE_CONFIG_PATH_ABS = Resolve-ProfileConfigPath `
+        -Profile $Profile `
+        -MockConfigPath $env:SYNCFACTORS_MOCK_CONFIG_PATH_ABS `
+        -RealConfigPath $env:SYNCFACTORS_REAL_CONFIG_PATH_ABS
 
     $env:SYNCFACTORS_RESOLVED_CONFIG_PATH_ABS = $env:SYNCFACTORS_PROFILE_CONFIG_PATH_ABS
 }
