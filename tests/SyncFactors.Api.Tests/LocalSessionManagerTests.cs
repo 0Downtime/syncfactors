@@ -84,6 +84,8 @@ public sealed class LocalSessionManagerTests
 
     private sealed class StubLocalAuthService(LocalUserRecord? user) : ILocalAuthService
     {
+        public bool IsLocalAuthenticationEnabled => true;
+
         public Task EnsureBootstrapAdminAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
         public Task<LocalAuthenticationResult> AuthenticateAsync(string username, string password, CancellationToken cancellationToken) =>
