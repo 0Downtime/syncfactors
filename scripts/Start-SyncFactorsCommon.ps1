@@ -46,6 +46,90 @@ function Set-StandardLoggingEnvironment {
     }
 }
 
+function Get-SyncFactorsRuntimeRoot {
+    param(
+        [Parameter(Mandatory)]
+        [string]$ProjectRoot
+    )
+
+    if ([OperatingSystem]::IsWindows()) {
+        $basePath = [Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData)
+    }
+    else {
+        $basePath = $env:XDG_DATA_HOME
+        if ([string]::IsNullOrWhiteSpace($basePath)) {
+            $basePath = Join-Path $HOME '.local/share'
+        }
+    }
+
+    return Join-Path $basePath 'SyncFactors'
+}
+
+function Get-SyncFactorsTlsAssetPaths {
+    param(
+        [Parameter(Mandatory)]
+        [string]$ProjectRoot
+    )
+
+    $runtimeRoot = Get-SyncFactorsRuntimeRoot -ProjectRoot $ProjectRoot
+    $certDirectory = Join-Path $runtimeRoot 'certs'
+
+    return [pscustomobject]@{
+        RuntimeRoot = $runtimeRoot
+        CertificateDirectory = $certDirectory
+        CertificatePath = Join-Path $certDirectory 'syncfactors-api-devcert.pfx'
+        PasswordPath = Join-Path $certDirectory 'syncfactors-api-devcert.password'
+    }
+}
+
+function Get-SyncFactorsTlsPassword {
+    param(
+        [Parameter(Mandatory)]
+        [string]$PasswordPath
+    )
+
+    if (-not (Test-Path $PasswordPath)) {
+        throw "Missing TLS certificate password file '$PasswordPath'. Run pwsh ./scripts/Install-SyncFactorsHttpsCertificate.ps1 first."
+    }
+
+    return (Get-Content -Path $PasswordPath -Raw).Trim()
+}
+
+function Initialize-SyncFactorsHttpsEnvironment {
+    param(
+        [Parameter(Mandatory)]
+        [string]$ProjectRoot,
+        [Parameter(Mandatory)]
+        [string]$Urls
+    )
+
+    if ($Urls -match '(^|;)http://') {
+        throw "SyncFactors launch scripts enforce HTTPS-only bindings. Use https:// URLs only."
+    }
+
+    $tlsAssets = Get-SyncFactorsTlsAssetPaths -ProjectRoot $ProjectRoot
+    $certificatePath = if ([string]::IsNullOrWhiteSpace($env:SYNCFACTORS_TLS_CERT_PATH)) {
+        $tlsAssets.CertificatePath
+    }
+    else {
+        $env:SYNCFACTORS_TLS_CERT_PATH
+    }
+
+    $certificatePassword = if ([string]::IsNullOrWhiteSpace($env:SYNCFACTORS_TLS_CERT_PASSWORD)) {
+        Get-SyncFactorsTlsPassword -PasswordPath $tlsAssets.PasswordPath
+    }
+    else {
+        $env:SYNCFACTORS_TLS_CERT_PASSWORD
+    }
+
+    if (-not (Test-Path $certificatePath)) {
+        throw "Missing TLS certificate '$certificatePath'. Run pwsh ./scripts/Install-SyncFactorsHttpsCertificate.ps1 first."
+    }
+
+    $env:ASPNETCORE_Kestrel__Certificates__Default__Path = $certificatePath
+    $env:ASPNETCORE_Kestrel__Certificates__Default__Password = $certificatePassword
+}
+
 function Invoke-SolutionBuild {
     param(
         [Parameter(Mandatory)]

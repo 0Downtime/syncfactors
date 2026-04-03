@@ -32,8 +32,24 @@ jobs:
       - name: Restore solution
         run: dotnet restore ./SyncFactors.Next.sln
 
+      - name: Build solution
+        run: dotnet build ./SyncFactors.Next.sln --configuration Release --no-restore
+
       - name: Run .NET test suite
-        run: dotnet test ./SyncFactors.Next.sln --configuration Release --no-restore --logger "trx;LogFileName=test-results.trx" --results-directory ./artifacts/test-results
+        run: dotnet test ./SyncFactors.Next.sln --configuration Release --no-build --logger "trx;LogFileName=test-results.trx" --results-directory ./artifacts/test-results
+
+      - name: Install CycloneDX
+        run: dotnet tool install --global CycloneDX --version 5.5.0
+
+      - name: Generate SBOM
+        run: ~/.dotnet/tools/dotnet-CycloneDX ./SyncFactors.Next.sln --output ./artifacts/sbom --json
+
+      - name: Upload SBOM
+        if: always() && hashFiles('artifacts/sbom/*') != ''
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: sbom
+          path: artifacts/sbom/*
 
       - name: Upload .NET test results
         if: always() && hashFiles('artifacts/test-results/*.trx') != ''

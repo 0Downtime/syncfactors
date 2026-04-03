@@ -3,7 +3,6 @@ using SyncFactors.Domain;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using System.DirectoryServices.Protocols;
-using System.Net;
 using System.Diagnostics;
 
 namespace SyncFactors.Infrastructure;
@@ -413,34 +412,7 @@ public sealed class ActiveDirectoryCommandGateway(
     }
 
     private static LdapConnection CreateConnection(ActiveDirectoryConfig config, ILogger logger, string purpose)
-    {
-        var identifier = new LdapDirectoryIdentifier(config.Server);
-        var connection = new LdapConnection(identifier)
-        {
-            AuthType = string.IsNullOrWhiteSpace(config.Username) ? AuthType.Anonymous : AuthType.Basic,
-            Timeout = LdapOperationTimeout
-        };
-
-        if (!string.IsNullOrWhiteSpace(config.Username))
-        {
-            connection.Credential = new NetworkCredential(config.Username, config.BindPassword);
-        }
-
-        connection.SessionOptions.ProtocolVersion = 3;
-        var stopwatch = Stopwatch.StartNew();
-        logger.LogInformation(
-            "Starting AD bind. Purpose={Purpose} Server={Server} Username={Username}",
-            purpose,
-            config.Server,
-            string.IsNullOrWhiteSpace(config.Username) ? "anonymous" : config.Username);
-        connection.Bind();
-        logger.LogInformation(
-            "Completed AD bind. Purpose={Purpose} Server={Server} DurationMs={DurationMs}",
-            purpose,
-            config.Server,
-            stopwatch.ElapsedMilliseconds);
-        return connection;
-    }
+        => ActiveDirectoryConnectionFactory.CreateConnection(config, logger, purpose, LdapOperationTimeout);
 
     private static async Task<T> ExecuteWithTimeoutAsync<T>(
         Func<T> operation,

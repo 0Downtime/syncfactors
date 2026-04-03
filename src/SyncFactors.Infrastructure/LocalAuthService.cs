@@ -7,12 +7,23 @@ public sealed class LocalAuthService(
     ILocalUserStore userStore,
     IPasswordHasher<LocalUserRecord> passwordHasher,
     IOptions<LocalAuthOptions> options,
-    TimeProvider timeProvider) : ILocalAuthService
+    TimeProvider timeProvider,
+    ISecurityAuditService securityAuditService) : ILocalAuthService
 {
     private const int MinimumPasswordLength = 12;
 
+    public bool IsLocalAuthenticationEnabled =>
+        string.Equals(options.Value.Mode, "local-break-glass", StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(options.Value.Mode, "hybrid", StringComparison.OrdinalIgnoreCase) ||
+        options.Value.LocalBreakGlass.Enabled;
+
     public async Task EnsureBootstrapAdminAsync(CancellationToken cancellationToken)
     {
+        if (!IsLocalAuthenticationEnabled)
+        {
+            return;
+        }
+
         var bootstrap = options.Value.BootstrapAdmin;
         var hasUsers = await userStore.AnyUsersAsync(cancellationToken);
 
@@ -39,47 +50,96 @@ public sealed class LocalAuthService(
             Username: bootstrap.Username.Trim(),
             NormalizedUsername: SqliteLocalUserStore.NormalizeUsername(bootstrap.Username),
             PasswordHash: string.Empty,
-            Role: "Admin",
+            Role: SecurityRoles.BreakGlassAdmin,
             IsActive: true,
             CreatedAt: now,
             UpdatedAt: now,
-            LastLoginAt: null);
+            LastLoginAt: null,
+            FailedLoginCount: 0,
+            LockoutEndAt: null);
         var passwordHash = passwordHasher.HashPassword(user, bootstrap.Password);
         await userStore.CreateAsync(user with { PasswordHash = passwordHash }, cancellationToken);
+        securityAuditService.Write(
+            "BootstrapAdminProvisioned",
+            "Success",
+            ("Username", user.Username),
+            ("Role", user.Role));
     }
 
     public async Task<LocalAuthenticationResult> AuthenticateAsync(string username, string password, CancellationToken cancellationToken)
     {
+        if (!IsLocalAuthenticationEnabled)
+        {
+            return new LocalAuthenticationResult(false, null, "Local sign-in is disabled.");
+        }
+
         if (string.IsNullOrWhiteSpace(username) || string.IsNullOrWhiteSpace(password))
         {
-            return LocalAuthenticationResult.Failed;
+            return new LocalAuthenticationResult(false, null, "Username and password are required.");
         }
 
         var user = await userStore.FindByUsernameAsync(username, cancellationToken);
         if (user is null || !user.IsActive)
         {
+            securityAuditService.Write(
+                "LocalAuthenticationFailed",
+                "UnknownUser",
+                ("Username", username.Trim()));
             return LocalAuthenticationResult.Failed;
+        }
+
+        var now = timeProvider.GetUtcNow();
+        if (user.LockoutEndAt is not null && user.LockoutEndAt > now)
+        {
+            securityAuditService.Write(
+                "LocalAuthenticationBlocked",
+                "LockedOut",
+                ("Username", user.Username),
+                ("LockoutEndAt", user.LockoutEndAt));
+            return new LocalAuthenticationResult(false, null, $"This account is locked until {user.LockoutEndAt:O}.");
         }
 
         var verification = passwordHasher.VerifyHashedPassword(user, user.PasswordHash, password);
         if (verification == PasswordVerificationResult.Failed)
         {
-            return LocalAuthenticationResult.Failed;
+            var updatedUser = ApplyFailedLogin(user, now);
+            await userStore.UpdateAsync(updatedUser, cancellationToken);
+            securityAuditService.Write(
+                "LocalAuthenticationFailed",
+                updatedUser.LockoutEndAt is null ? "BadPassword" : "LockedOut",
+                ("UserId", updatedUser.UserId),
+                ("Username", updatedUser.Username),
+                ("FailedLoginCount", updatedUser.FailedLoginCount),
+                ("LockoutEndAt", updatedUser.LockoutEndAt));
+            return updatedUser.LockoutEndAt is null
+                ? LocalAuthenticationResult.Failed
+                : new LocalAuthenticationResult(false, null, $"This account is locked until {updatedUser.LockoutEndAt:O}.");
         }
+
+        var authenticatedUser = user with
+        {
+            LastLoginAt = now,
+            UpdatedAt = now,
+            FailedLoginCount = 0,
+            LockoutEndAt = null
+        };
 
         if (verification == PasswordVerificationResult.SuccessRehashNeeded)
         {
-            var now = timeProvider.GetUtcNow();
-            var updatedUser = user with
+            authenticatedUser = authenticatedUser with
             {
-                PasswordHash = passwordHasher.HashPassword(user, password),
-                UpdatedAt = now
+                PasswordHash = passwordHasher.HashPassword(authenticatedUser, password)
             };
-            await userStore.UpdateAsync(updatedUser, cancellationToken);
-            user = updatedUser;
         }
 
-        return new LocalAuthenticationResult(true, user);
+        await userStore.UpdateAsync(authenticatedUser, cancellationToken);
+        securityAuditService.Write(
+            "LocalAuthenticationSucceeded",
+            "Success",
+            ("UserId", authenticatedUser.UserId),
+            ("Username", authenticatedUser.Username),
+            ("Role", authenticatedUser.Role));
+        return new LocalAuthenticationResult(true, authenticatedUser);
     }
 
     public Task RecordSuccessfulLoginAsync(string userId, CancellationToken cancellationToken) =>
@@ -122,8 +182,11 @@ public sealed class LocalAuthService(
             IsActive: true,
             CreatedAt: now,
             UpdatedAt: now,
-            LastLoginAt: null);
+            LastLoginAt: null,
+            FailedLoginCount: 0,
+            LockoutEndAt: null);
         await userStore.CreateAsync(user with { PasswordHash = passwordHasher.HashPassword(user, password) }, cancellationToken);
+        securityAuditService.Write("LocalUserCreated", "Success", ("UserId", user.UserId), ("Username", user.Username), ("Role", user.Role));
         return LocalUserCommandResult.Success($"{role} user '{user.Username}' created.");
     }
 
@@ -145,9 +208,12 @@ public sealed class LocalAuthService(
         var updatedUser = user with
         {
             PasswordHash = passwordHasher.HashPassword(user, newPassword),
-            UpdatedAt = now
+            UpdatedAt = now,
+            FailedLoginCount = 0,
+            LockoutEndAt = null
         };
         await userStore.UpdateAsync(updatedUser, cancellationToken);
+        securityAuditService.Write("LocalPasswordReset", "Success", ("UserId", user.UserId), ("Username", user.Username));
         return LocalUserCommandResult.Success($"Password reset for '{user.Username}'.");
     }
 
@@ -185,6 +251,7 @@ public sealed class LocalAuthService(
             Role = targetRole,
             UpdatedAt = now
         }, cancellationToken);
+        securityAuditService.Write("LocalUserRoleChanged", "Success", ("UserId", user.UserId), ("Username", user.Username), ("Role", targetRole));
 
         return LocalUserCommandResult.Success($"User '{user.Username}' role changed to {targetRole}.");
     }
@@ -222,6 +289,7 @@ public sealed class LocalAuthService(
             IsActive = isActive,
             UpdatedAt = now
         }, cancellationToken);
+        securityAuditService.Write("LocalUserStateChanged", "Success", ("UserId", user.UserId), ("Username", user.Username), ("IsActive", isActive));
 
         return LocalUserCommandResult.Success($"User '{user.Username}' {(isActive ? "reactivated" : "deactivated")}.");
     }
@@ -246,12 +314,15 @@ public sealed class LocalAuthService(
         }
 
         await userStore.DeleteAsync(userId, cancellationToken);
+        securityAuditService.Write("LocalUserDeleted", "Success", ("UserId", user.UserId), ("Username", user.Username));
         return LocalUserCommandResult.Success($"User '{user.Username}' deleted.");
     }
 
     private async Task<LocalUserCommandResult?> ValidateAdminProtectionAsync(LocalUserRecord user, CancellationToken cancellationToken)
     {
-        if (!user.IsActive || !string.Equals(user.Role, "Admin", StringComparison.OrdinalIgnoreCase))
+        if (!user.IsActive ||
+            (!string.Equals(user.Role, SecurityRoles.Admin, StringComparison.OrdinalIgnoreCase) &&
+             !string.Equals(user.Role, SecurityRoles.BreakGlassAdmin, StringComparison.OrdinalIgnoreCase)))
         {
             return null;
         }
@@ -289,5 +360,20 @@ public sealed class LocalAuthService(
         }
 
         return null;
+    }
+
+    private LocalUserRecord ApplyFailedLogin(LocalUserRecord user, DateTimeOffset now)
+    {
+        var failedLoginCount = user.FailedLoginCount + 1;
+        DateTimeOffset? lockoutEndAt = failedLoginCount >= Math.Max(1, options.Value.LocalBreakGlass.MaxFailedAttempts)
+            ? now.AddMinutes(Math.Max(1, options.Value.LocalBreakGlass.LockoutMinutes))
+            : null;
+
+        return user with
+        {
+            FailedLoginCount = failedLoginCount,
+            LockoutEndAt = lockoutEndAt,
+            UpdatedAt = now
+        };
     }
 }

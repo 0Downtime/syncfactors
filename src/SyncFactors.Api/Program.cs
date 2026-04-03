@@ -1,14 +1,23 @@
+using System.Security.Claims;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Mvc.Authorization;
-using System.Security.Claims;
+using Microsoft.AspNetCore.HttpOverrides;
 using SyncFactors.Contracts;
 using SyncFactors.Domain;
 using SyncFactors.Infrastructure;
 using System.Net;
 
+const string ViewerPolicy = "Viewer";
+const string OperatorPolicy = "Operator";
+const string AdminPolicy = "Admin";
+
 var builder = WebApplication.CreateBuilder(args);
+var authSettings = builder.Configuration.GetSection("SyncFactors:Auth").Get<LocalAuthOptions>() ?? new LocalAuthOptions();
+var oidcEnabled = IsOidcEnabled(authSettings);
+
+ValidateHttpsOnlyBindings(builder.Configuration);
 
 builder.Services.AddSingleton(new SqlitePathResolver(builder.Configuration["SyncFactors:SqlitePath"]));
 builder.Services.AddSingleton(new SyncFactorsConfigPathResolver(
@@ -16,9 +25,16 @@ builder.Services.AddSingleton(new SyncFactorsConfigPathResolver(
     builder.Configuration["SyncFactors:MappingConfigPath"]));
 builder.Services.AddSingleton(new ScaffoldDataPathResolver(builder.Configuration["SyncFactors:ScaffoldDataPath"]));
 builder.Services.Configure<LocalAuthOptions>(builder.Configuration.GetSection("SyncFactors:Auth"));
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+    options.KnownIPNetworks.Clear();
+    options.KnownProxies.Clear();
+});
 builder.Services.AddSingleton<SqliteDatabaseInitializer>();
 builder.Services.AddSingleton<SyncFactorsConfigurationLoader>();
 builder.Services.AddSingleton<SyncFactorsConfigurationValidator>();
+builder.Services.AddSingleton<ISecurityAuditService, SecurityAuditService>();
 builder.Services.AddSingleton<ILocalUserStore, SqliteLocalUserStore>();
 builder.Services.AddSingleton<ILocalAuthService, LocalAuthService>();
 builder.Services.AddSingleton<Microsoft.AspNetCore.Identity.IPasswordHasher<LocalUserRecord>, Microsoft.AspNetCore.Identity.PasswordHasher<LocalUserRecord>>();
@@ -73,8 +89,16 @@ builder.Services.AddSingleton<IRunQueueStore, SqliteRunQueueStore>();
 builder.Services.AddSingleton<ISyncScheduleStore, SqliteSyncScheduleStore>();
 builder.Services.AddTransient<IWorkerPlanningService, WorkerPlanningService>();
 builder.Services.AddSingleton<IDirectoryMutationCommandBuilder, DirectoryMutationCommandBuilder>();
-builder.Services
-    .AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
+
+var authenticationBuilder = builder.Services.AddAuthentication(options =>
+{
+    options.DefaultScheme = CookieAuthenticationDefaults.AuthenticationScheme;
+    options.DefaultAuthenticateScheme = CookieAuthenticationDefaults.AuthenticationScheme;
+    options.DefaultSignInScheme = CookieAuthenticationDefaults.AuthenticationScheme;
+    options.DefaultChallengeScheme = oidcEnabled
+        ? OpenIdConnectDefaults.AuthenticationScheme
+        : CookieAuthenticationDefaults.AuthenticationScheme;
+})
     .AddCookie(options =>
     {
         options.LoginPath = "/Login";
@@ -86,45 +110,71 @@ builder.Services
             ? CookieSecurePolicy.SameAsRequest
             : CookieSecurePolicy.Always;
         options.SlidingExpiration = true;
-        options.ExpireTimeSpan = TimeSpan.FromDays(30);
+        options.ExpireTimeSpan = TimeSpan.FromMinutes(Math.Clamp(authSettings.IdleTimeoutMinutes, 15, 30));
         options.Events = new CookieAuthenticationEvents
         {
             OnRedirectToLogin = context => HandleAuthRedirectAsync(context, StatusCodes.Status401Unauthorized),
             OnRedirectToAccessDenied = context => HandleAuthRedirectAsync(context, StatusCodes.Status403Forbidden),
-            OnValidatePrincipal = async context =>
+            OnValidatePrincipal = context => ValidateCookiePrincipalAsync(context, authSettings)
+        };
+    });
+
+if (oidcEnabled)
+{
+    authenticationBuilder.AddOpenIdConnect(OpenIdConnectDefaults.AuthenticationScheme, options =>
+    {
+        options.SignInScheme = CookieAuthenticationDefaults.AuthenticationScheme;
+        options.Authority = authSettings.Oidc.Authority;
+        options.ClientId = authSettings.Oidc.ClientId;
+        options.ClientSecret = authSettings.Oidc.ClientSecret;
+        options.CallbackPath = authSettings.Oidc.CallbackPath;
+        options.SignedOutCallbackPath = authSettings.Oidc.SignedOutCallbackPath;
+        options.ResponseType = "code";
+        options.SaveTokens = false;
+        options.GetClaimsFromUserInfoEndpoint = true;
+        options.MapInboundClaims = false;
+        options.Scope.Clear();
+        options.Scope.Add("openid");
+        options.Scope.Add("profile");
+        options.Scope.Add("email");
+        options.TokenValidationParameters.NameClaimType = authSettings.Oidc.DisplayNameClaimType;
+        options.Events = new OpenIdConnectEvents
+        {
+            OnTokenValidated = context =>
             {
-                var userId = context.Principal?.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-                if (string.IsNullOrWhiteSpace(userId))
+                if (context.Principal?.Identity is ClaimsIdentity identity)
                 {
-                    context.RejectPrincipal();
-                    await context.HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
-                    return;
+                    ApplyOidcIdentity(identity, authSettings);
                 }
 
-                var authService = context.HttpContext.RequestServices.GetRequiredService<ILocalAuthService>();
-                var currentUser = await authService.FindUserByIdAsync(userId, context.HttpContext.RequestAborted);
-                if (currentUser is null || !currentUser.IsActive)
-                {
-                    context.RejectPrincipal();
-                    await context.HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
-                    return;
-                }
-
-                var identity = context.Principal?.Identity as ClaimsIdentity;
-                if (identity is null)
-                {
-                    return;
-                }
-
-                ReplaceClaim(identity, ClaimTypes.Name, currentUser.Username);
-                ReplaceClaim(identity, ClaimTypes.Role, currentUser.Role);
+                return Task.CompletedTask;
             }
         };
     });
-builder.Services.AddAuthorization();
+}
+
+builder.Services.AddAuthorization(options =>
+{
+    options.AddPolicy(ViewerPolicy, policy => policy.RequireRole(
+        SecurityRoles.Viewer,
+        SecurityRoles.Operator,
+        SecurityRoles.Admin,
+        SecurityRoles.BreakGlassAdmin));
+    options.AddPolicy(OperatorPolicy, policy => policy.RequireRole(
+        SecurityRoles.Operator,
+        SecurityRoles.Admin,
+        SecurityRoles.BreakGlassAdmin));
+    options.AddPolicy(AdminPolicy, policy => policy.RequireRole(
+        SecurityRoles.Admin,
+        SecurityRoles.BreakGlassAdmin));
+});
+
 builder.Services.AddRazorPages(options =>
 {
-    options.Conventions.AuthorizeFolder("/");
+    options.Conventions.AuthorizeFolder("/", ViewerPolicy);
+    options.Conventions.AuthorizePage("/Sync", OperatorPolicy);
+    options.Conventions.AuthorizePage("/Preview", OperatorPolicy);
+    options.Conventions.AuthorizeFolder("/Admin", AdminPolicy);
     options.Conventions.AllowAnonymousToPage("/Login");
 });
 
@@ -133,16 +183,40 @@ var app = builder.Build();
 await app.Services.GetRequiredService<SqliteDatabaseInitializer>().InitializeAsync(CancellationToken.None);
 await app.Services.GetRequiredService<ILocalAuthService>().EnsureBootstrapAdminAsync(CancellationToken.None);
 app.Services.GetRequiredService<SyncFactorsConfigurationValidator>().Validate();
+ValidateAuthConfiguration(app);
 LogConfiguredEndpoints(app);
+
+app.UseForwardedHeaders();
+if (!app.Environment.IsDevelopment())
+{
+    app.UseHsts();
+}
+
+app.UseHttpsRedirection();
+app.Use(async (context, next) =>
+{
+    context.Response.Headers["Content-Security-Policy"] =
+        "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; script-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'";
+    context.Response.Headers["X-Frame-Options"] = "DENY";
+    context.Response.Headers["X-Content-Type-Options"] = "nosniff";
+    context.Response.Headers["Referrer-Policy"] = "strict-origin-when-cross-origin";
+    await next();
+});
 
 app.UseStaticFiles();
 app.UseAuthentication();
 app.UseAuthorization();
 
-var api = app.MapGroup("/api")
-    .RequireAuthorization();
+var api = app.MapGroup("/api");
 
-api.MapGet("/status", async (IRuntimeStatusStore store, CancellationToken cancellationToken) =>
+var readApi = api.MapGroup(string.Empty)
+    .RequireAuthorization(ViewerPolicy);
+var operatorApi = api.MapGroup(string.Empty)
+    .RequireAuthorization(OperatorPolicy);
+var adminApi = api.MapGroup(string.Empty)
+    .RequireAuthorization(AdminPolicy);
+
+readApi.MapGet("/status", async (IRuntimeStatusStore store, CancellationToken cancellationToken) =>
 {
     var status = await store.GetCurrentAsync(cancellationToken)
         ?? new RuntimeStatus(
@@ -163,88 +237,97 @@ api.MapGet("/status", async (IRuntimeStatusStore store, CancellationToken cancel
     return Results.Ok(new { status });
 });
 
-api.MapGet("/dashboard", async (IDashboardSnapshotService dashboardSnapshotService, CancellationToken cancellationToken) =>
+readApi.MapGet("/dashboard", async (IDashboardSnapshotService dashboardSnapshotService, CancellationToken cancellationToken) =>
 {
     var snapshot = await dashboardSnapshotService.GetSnapshotAsync(cancellationToken);
     return Results.Ok(snapshot);
 });
 
-api.MapGet("/health", async (IDependencyHealthService healthService, CancellationToken cancellationToken) =>
+readApi.MapGet("/health", async (IDependencyHealthService healthService, CancellationToken cancellationToken) =>
 {
     var snapshot = await healthService.GetSnapshotAsync(cancellationToken);
     return Results.Ok(snapshot);
 });
 
-api.MapGet("/runs", async (IRunRepository repository, CancellationToken cancellationToken) =>
+readApi.MapGet("/runs", async (IRunRepository repository, CancellationToken cancellationToken) =>
 {
     var runs = await repository.ListRunsAsync(cancellationToken);
     return Results.Ok(new { runs });
 });
 
-api.MapGet("/runs/queue", async (IRunQueueStore queueStore, CancellationToken cancellationToken) =>
+readApi.MapGet("/runs/queue", async (IRunQueueStore queueStore, CancellationToken cancellationToken) =>
 {
     var request = await queueStore.GetPendingOrActiveAsync(cancellationToken);
     return Results.Ok(new { request });
 });
 
-api.MapPost("/runs", async (StartRunRequest request, ClaimsPrincipal user, IRunQueueStore queueStore, CancellationToken cancellationToken) =>
+operatorApi.MapPost("/runs", async (StartRunRequest request, ClaimsPrincipal user, IRunQueueStore queueStore, ISecurityAuditService audit, CancellationToken cancellationToken) =>
 {
     if (await queueStore.HasPendingOrActiveRunAsync(cancellationToken))
     {
         return Results.Conflict(new { error = "A run is already pending or in progress." });
     }
 
+    var requestedBy = ResolveRequestedBy(user, request.RequestedBy ?? "API");
     var queued = await queueStore.EnqueueAsync(
-        request with { RequestedBy = ResolveRequestedBy(user, request.RequestedBy ?? "API") },
+        request with { RequestedBy = requestedBy },
         cancellationToken);
+    audit.Write("RunQueued", "Success", ("RequestedBy", requestedBy), ("Mode", queued.Mode), ("DryRun", queued.DryRun));
     return Results.Accepted($"/api/runs/{queued.RequestId}", queued);
 });
 
-api.MapPost("/runs/cancel", async (ClaimsPrincipal user, IRunQueueStore queueStore, CancellationToken cancellationToken) =>
+operatorApi.MapPost("/runs/cancel", async (ClaimsPrincipal user, IRunQueueStore queueStore, ISecurityAuditService audit, CancellationToken cancellationToken) =>
 {
-    var canceled = await queueStore.CancelPendingOrActiveAsync(ResolveRequestedBy(user, "API"), cancellationToken);
+    var requestedBy = ResolveRequestedBy(user, "API");
+    var canceled = await queueStore.CancelPendingOrActiveAsync(requestedBy, cancellationToken);
+    if (canceled)
+    {
+        audit.Write("RunCancelled", "Success", ("RequestedBy", requestedBy));
+    }
+
     return canceled
         ? Results.Ok(new { status = "CancellationRequested" })
         : Results.NotFound(new { error = "No queued or active run was available to cancel." });
 });
 
-api.MapGet("/sync/schedule", async (ISyncScheduleStore scheduleStore, CancellationToken cancellationToken) =>
+readApi.MapGet("/sync/schedule", async (ISyncScheduleStore scheduleStore, CancellationToken cancellationToken) =>
 {
     var schedule = await scheduleStore.GetCurrentAsync(cancellationToken);
     return Results.Ok(new { schedule });
 });
 
-api.MapPut("/sync/schedule", async (UpdateSyncScheduleRequest request, ISyncScheduleStore scheduleStore, CancellationToken cancellationToken) =>
+adminApi.MapPut("/sync/schedule", async (UpdateSyncScheduleRequest request, ClaimsPrincipal user, ISyncScheduleStore scheduleStore, ISecurityAuditService audit, CancellationToken cancellationToken) =>
 {
     var schedule = await scheduleStore.UpdateAsync(request, cancellationToken);
+    audit.Write("SyncScheduleUpdated", "Success", ("RequestedBy", ResolveRequestedBy(user, "API")), ("Enabled", schedule.Enabled), ("IntervalMinutes", schedule.IntervalMinutes));
     return Results.Ok(new { schedule });
 });
 
-api.MapGet("/runs/{runId}", async (string runId, IRunRepository repository, CancellationToken cancellationToken) =>
+readApi.MapGet("/runs/{runId}", async (string runId, IRunRepository repository, CancellationToken cancellationToken) =>
 {
     var run = await repository.GetRunAsync(runId, cancellationToken);
     return run is null ? Results.NotFound() : Results.Ok(run);
 });
 
-api.MapGet("/previews/{runId}", async (string runId, IRunRepository repository, CancellationToken cancellationToken) =>
+readApi.MapGet("/previews/{runId}", async (string runId, IRunRepository repository, CancellationToken cancellationToken) =>
 {
     var preview = await repository.GetWorkerPreviewAsync(runId, cancellationToken);
     return preview is null ? Results.NotFound() : Results.Ok(preview);
 });
 
-api.MapGet("/workers/{workerId}/previews", async (string workerId, int? take, IRunRepository repository, CancellationToken cancellationToken) =>
+readApi.MapGet("/workers/{workerId}/previews", async (string workerId, int? take, IRunRepository repository, CancellationToken cancellationToken) =>
 {
     var history = await repository.ListWorkerPreviewHistoryAsync(workerId, take ?? 6, cancellationToken);
     return Results.Ok(new { workerId, previews = history });
 });
 
-api.MapGet("/workers/{workerId}/preview", async (string workerId, IWorkerPreviewPlanner previewPlanner, CancellationToken cancellationToken) =>
+operatorApi.MapGet("/workers/{workerId}/preview", async (string workerId, IWorkerPreviewPlanner previewPlanner, CancellationToken cancellationToken) =>
 {
     var preview = await previewPlanner.PreviewAsync(workerId, cancellationToken);
     return Results.Ok(preview);
 });
 
-api.MapGet("/runs/{runId}/entries", async (
+readApi.MapGet("/runs/{runId}/entries", async (
     string runId,
     string? bucket,
     string? workerId,
@@ -269,10 +352,12 @@ api.MapGet("/runs/{runId}/entries", async (
     return Results.Ok(new { run = run.Run, entries, total, page = resolvedPage, pageSize = resolvedPageSize });
 });
 
-api.MapPost("/preview/{workerId}/apply", async (
+operatorApi.MapPost("/preview/{workerId}/apply", async (
     string workerId,
     ApplyPreviewRequest request,
+    ClaimsPrincipal user,
     IApplyPreviewService applyPreviewService,
+    ISecurityAuditService audit,
     CancellationToken cancellationToken) =>
 {
     if (!string.Equals(workerId, request.WorkerId, StringComparison.Ordinal))
@@ -281,17 +366,21 @@ api.MapPost("/preview/{workerId}/apply", async (
     }
 
     var result = await applyPreviewService.ApplyAsync(request, cancellationToken);
+    audit.Write("PreviewApplied", result.Succeeded ? "Success" : "Failure", ("RequestedBy", ResolveRequestedBy(user, "API")), ("WorkerId", request.WorkerId), ("PreviewRunId", request.PreviewRunId));
     return result.Succeeded
         ? Results.Ok(result)
         : Results.BadRequest(result);
 });
 
-api.MapPost("/runs/full", async (
+operatorApi.MapPost("/runs/full", async (
     LaunchFullRunRequest request,
+    ClaimsPrincipal user,
     IFullSyncRunService fullSyncRunService,
+    ISecurityAuditService audit,
     CancellationToken cancellationToken) =>
 {
     var result = await fullSyncRunService.LaunchAsync(request, cancellationToken);
+    audit.Write("FullRunLaunched", string.Equals(result.Status, "Succeeded", StringComparison.OrdinalIgnoreCase) ? "Success" : "Failure", ("RequestedBy", ResolveRequestedBy(user, "API")), ("DryRun", request.DryRun), ("RunId", result.RunId));
     return string.Equals(result.Status, "Succeeded", StringComparison.OrdinalIgnoreCase)
         ? Results.Ok(result)
         : Results.BadRequest(result);
@@ -301,32 +390,178 @@ app.MapRazorPages();
 
 app.Run();
 
+static void ValidateAuthConfiguration(WebApplication app)
+{
+    var authOptions = app.Services.GetRequiredService<Microsoft.Extensions.Options.IOptions<LocalAuthOptions>>().Value;
+    var oidcEnabled = IsOidcEnabled(authOptions);
+    var mode = authOptions.Mode ?? "local-break-glass";
+
+    if (string.Equals(mode, "oidc", StringComparison.OrdinalIgnoreCase) && !oidcEnabled)
+    {
+        throw new InvalidOperationException("SyncFactors:Auth mode 'oidc' requires OIDC authority and client ID.");
+    }
+
+    if (authOptions.IdleTimeoutMinutes is < 15 or > 30)
+    {
+        throw new InvalidOperationException("SyncFactors:Auth:IdleTimeoutMinutes must be between 15 and 30.");
+    }
+
+    if (authOptions.AbsoluteSessionHours is < 8 or > 12)
+    {
+        throw new InvalidOperationException("SyncFactors:Auth:AbsoluteSessionHours must be between 8 and 12.");
+    }
+}
+
+static bool IsOidcEnabled(LocalAuthOptions options) =>
+    (string.Equals(options.Mode, "oidc", StringComparison.OrdinalIgnoreCase) ||
+     string.Equals(options.Mode, "hybrid", StringComparison.OrdinalIgnoreCase)) &&
+    !string.IsNullOrWhiteSpace(options.Oidc.Authority) &&
+    !string.IsNullOrWhiteSpace(options.Oidc.ClientId);
+
+static void ValidateHttpsOnlyBindings(ConfigurationManager configuration)
+{
+    var urls = configuration["urls"] ?? Environment.GetEnvironmentVariable("ASPNETCORE_URLS");
+    if (string.IsNullOrWhiteSpace(urls))
+    {
+        return;
+    }
+
+    var configuredUrls = urls
+        .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+        .Select(url => new Uri(url, UriKind.Absolute))
+        .ToArray();
+
+    if (configuredUrls.Any(uri => string.Equals(uri.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase)))
+    {
+        throw new InvalidOperationException("SyncFactors.Api is configured for HTTPS-only operation and will not bind HTTP endpoints.");
+    }
+}
+
 static void LogConfiguredEndpoints(WebApplication app)
 {
     var config = app.Services.GetRequiredService<SyncFactorsConfigurationLoader>().GetSyncConfig();
+    var authOptions = app.Services.GetRequiredService<Microsoft.Extensions.Options.IOptions<LocalAuthOptions>>().Value;
     app.Logger.LogInformation(
-        "Configured external endpoints. ActiveDirectoryServer={ActiveDirectoryServer} ActiveDirectoryAccount={ActiveDirectoryAccount} SuccessFactorsBaseUrl={SuccessFactorsBaseUrl} SuccessFactorsAccount={SuccessFactorsAccount}",
+        "Configured endpoints. ActiveDirectoryServer={ActiveDirectoryServer} ActiveDirectoryAccount={ActiveDirectoryAccount} ActiveDirectoryTransport={ActiveDirectoryTransport} SuccessFactorsBaseUrl={SuccessFactorsBaseUrl} SuccessFactorsAccount={SuccessFactorsAccount} AuthMode={AuthMode}",
         config.Ad.Server,
         string.IsNullOrWhiteSpace(config.Ad.Username) ? "anonymous" : config.Ad.Username,
+        config.Ad.Transport.Mode,
         config.SuccessFactors.BaseUrl,
-        DescribeSuccessFactorsAccount(config.SuccessFactors.Auth));
+        DescribeSuccessFactorsAccount(config.SuccessFactors.Auth),
+        authOptions.Mode);
+}
 
-    if (!string.IsNullOrWhiteSpace(config.Ad.Username) &&
-        config.Ad.Username.Contains('\\', StringComparison.Ordinal))
+static Task ValidateCookiePrincipalAsync(Microsoft.AspNetCore.Authentication.Cookies.CookieValidatePrincipalContext context, LocalAuthOptions authSettings)
+{
+    var identity = context.Principal?.Identity as ClaimsIdentity;
+    if (identity is null)
     {
-        app.Logger.LogWarning(
-            "Active Directory is using LDAP simple bind with username '{ActiveDirectoryAccount}' in domain\\user format. If binds fail, prefer a UPN such as 'user@domain.example' for simple LDAP authentication.",
-            config.Ad.Username);
+        return Task.CompletedTask;
     }
 
-    if (!string.IsNullOrWhiteSpace(config.Ad.Username) &&
-        config.Ad.Server.EndsWith(":389", StringComparison.Ordinal))
+    var issuedAtValue = identity.FindFirst(SecurityClaimTypes.SessionIssuedAt)?.Value;
+    if (!DateTimeOffset.TryParse(issuedAtValue, out var issuedAt) ||
+        DateTimeOffset.UtcNow - issuedAt > TimeSpan.FromHours(authSettings.AbsoluteSessionHours))
     {
-        app.Logger.LogWarning(
-            "Active Directory is configured for authenticated LDAP on port 389 at '{ActiveDirectoryServer}'. If the directory requires LDAPS or LDAP signing, binds may fail until the connection settings are updated.",
-            config.Ad.Server);
+        context.RejectPrincipal();
+        return context.HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+    }
+
+    var authSource = identity.FindFirst(SecurityClaimTypes.AuthSource)?.Value;
+    if (!string.Equals(authSource, "local", StringComparison.Ordinal))
+    {
+        return Task.CompletedTask;
+    }
+
+    var userId = context.Principal?.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+    if (string.IsNullOrWhiteSpace(userId))
+    {
+        context.RejectPrincipal();
+        return context.HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+    }
+
+    return RefreshLocalPrincipalAsync(context, userId);
+}
+
+static async Task RefreshLocalPrincipalAsync(Microsoft.AspNetCore.Authentication.Cookies.CookieValidatePrincipalContext context, string userId)
+{
+    var authService = context.HttpContext.RequestServices.GetRequiredService<ILocalAuthService>();
+    var currentUser = await authService.FindUserByIdAsync(userId, context.HttpContext.RequestAborted);
+    if (currentUser is null || !currentUser.IsActive)
+    {
+        context.RejectPrincipal();
+        await context.HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+        return;
+    }
+
+    if (currentUser.LockoutEndAt is not null && currentUser.LockoutEndAt > DateTimeOffset.UtcNow)
+    {
+        context.RejectPrincipal();
+        await context.HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+        return;
+    }
+
+    if (context.Principal?.Identity is not ClaimsIdentity identity)
+    {
+        return;
+    }
+
+    ReplaceClaim(identity, ClaimTypes.Name, currentUser.Username);
+    ReplaceClaim(identity, ClaimTypes.Role, currentUser.Role);
+}
+
+static void ApplyOidcIdentity(ClaimsIdentity identity, LocalAuthOptions authSettings)
+{
+    ReplaceClaim(identity, SecurityClaimTypes.AuthSource, "oidc");
+    ReplaceClaim(identity, SecurityClaimTypes.SessionIssuedAt, DateTimeOffset.UtcNow.ToString("O"));
+
+    var preferredUsername = identity.FindFirst(authSettings.Oidc.UsernameClaimType)?.Value
+        ?? identity.FindFirst(authSettings.Oidc.DisplayNameClaimType)?.Value
+        ?? identity.FindFirst("sub")?.Value
+        ?? "oidc-user";
+    ReplaceClaim(identity, ClaimTypes.Name, preferredUsername);
+
+    var subject = identity.FindFirst("sub")?.Value;
+    if (!string.IsNullOrWhiteSpace(subject))
+    {
+        ReplaceClaim(identity, ClaimTypes.NameIdentifier, subject);
+    }
+
+    RemoveClaims(identity, ClaimTypes.Role);
+    foreach (var role in ResolveOidcRoles(identity, authSettings))
+    {
+        identity.AddClaim(new Claim(ClaimTypes.Role, role));
     }
 }
+
+static IReadOnlyList<string> ResolveOidcRoles(ClaimsIdentity identity, LocalAuthOptions authSettings)
+{
+    var groups = identity.FindAll(authSettings.Oidc.RolesClaimType)
+        .Select(claim => claim.Value)
+        .Where(value => !string.IsNullOrWhiteSpace(value))
+        .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+    var roles = new List<string>();
+    if (MatchesAny(groups, authSettings.Oidc.AdminGroups))
+    {
+        roles.Add(SecurityRoles.Admin);
+    }
+
+    if (MatchesAny(groups, authSettings.Oidc.OperatorGroups))
+    {
+        roles.Add(SecurityRoles.Operator);
+    }
+
+    if (MatchesAny(groups, authSettings.Oidc.ViewerGroups) || roles.Count == 0)
+    {
+        roles.Add(SecurityRoles.Viewer);
+    }
+
+    return roles.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+}
+
+static bool MatchesAny(HashSet<string> groups, IEnumerable<string> candidates) =>
+    candidates.Any(candidate => groups.Contains(candidate));
 
 static Task HandleAuthRedirectAsync(Microsoft.AspNetCore.Authentication.RedirectContext<CookieAuthenticationOptions> context, int statusCode)
 {
@@ -359,6 +594,14 @@ static void ReplaceClaim(ClaimsIdentity identity, string claimType, string value
     }
 
     identity.AddClaim(new Claim(claimType, value));
+}
+
+static void RemoveClaims(ClaimsIdentity identity, string claimType)
+{
+    foreach (var claim in identity.FindAll(claimType).ToArray())
+    {
+        identity.RemoveClaim(claim);
+    }
 }
 
 static string DescribeSuccessFactorsAccount(SuccessFactorsAuthConfig auth)
