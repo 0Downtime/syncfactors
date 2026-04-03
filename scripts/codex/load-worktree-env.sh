@@ -69,4 +69,36 @@ fi
 export SYNCFACTORS_PROFILE_CONFIG_PATH_ABS="${profile_config_path}"
 export SYNCFACTORS_RESOLVED_CONFIG_PATH_ABS="${resolved_sync_config_path}"
 
+keychain_service="${SYNCFACTORS_KEYCHAIN_SERVICE:-syncfactors}"
+
+load_keychain_secret() {
+  local name="$1"
+  local current_value="${!name:-}"
+  if [[ -n "${current_value}" ]]; then
+    return
+  fi
+
+  if [[ "$(uname -s)" != "Darwin" ]]; then
+    return
+  fi
+
+  local secret
+  if secret="$(security find-generic-password -s "${keychain_service}" -a "${name}" -w 2>/dev/null)"; then
+    export "${name}=${secret}"
+  fi
+}
+
+for secret_name in \
+  SF_AD_SYNC_SF_USERNAME \
+  SF_AD_SYNC_SF_PASSWORD \
+  SF_AD_SYNC_SF_CLIENT_ID \
+  SF_AD_SYNC_SF_CLIENT_SECRET \
+  SF_AD_SYNC_AD_SERVER \
+  SF_AD_SYNC_AD_USERNAME \
+  SF_AD_SYNC_AD_BIND_PASSWORD \
+  SF_AD_SYNC_AD_DEFAULT_PASSWORD
+do
+  load_keychain_secret "${secret_name}"
+done
+
 cd "${repo_root}"
