@@ -31,9 +31,9 @@ $password = if (Test-Path $paths.PasswordPath) {
     (Get-Content -Path $paths.PasswordPath -Raw).Trim()
 }
 else {
-    [Convert]::ToBase64String((1..48 | ForEach-Object { Get-Random -Minimum 0 -Maximum 256 }))
-        .Replace('/', 'A')
-        .Replace('+', 'B')
+    (
+        [Convert]::ToBase64String((1..48 | ForEach-Object { Get-Random -Minimum 0 -Maximum 256 }))
+    ).Replace('/', 'A').Replace('+', 'B')
 }
 
 Set-Content -Path $paths.PasswordPath -Value $password -NoNewline
