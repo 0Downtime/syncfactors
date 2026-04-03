@@ -712,7 +712,6 @@ public sealed class WorkerPreviewPlannerTests
                 PrehireOu: "OU=Prehire,DC=example,DC=com",
                 GraveyardOu: "OU=Graveyard,DC=example,DC=com",
                 InactiveStatusField: "emplStatus",
-                InactiveStatusValues: ["T"]),
-            TimeProvider.System);
+                InactiveStatusValues: ["T"]));
     }
 }

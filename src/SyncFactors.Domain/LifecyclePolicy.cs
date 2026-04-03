@@ -3,8 +3,7 @@ using SyncFactors.Contracts;
 namespace SyncFactors.Domain;
 
 public sealed class LifecyclePolicy(
-    LifecyclePolicySettings settings,
-    TimeProvider timeProvider) : ILifecyclePolicy
+    LifecyclePolicySettings settings) : ILifecyclePolicy
 {
     public LifecycleDecision Evaluate(WorkerSnapshot worker, DirectoryUserSnapshot directoryUser)
     {
