@@ -19,7 +19,7 @@ public sealed class SyncFactorsConfigurationLoader
 
     public MappingConfigDocument GetMappingConfig() => _mappingConfig.Value;
 
-    private SyncFactorsConfigDocument LoadSyncConfig()
+    public string GetResolvedSyncConfigPath()
     {
         var path = _pathResolver.ResolveConfigPath();
         if (string.IsNullOrWhiteSpace(path))
@@ -27,6 +27,12 @@ public sealed class SyncFactorsConfigurationLoader
             throw new InvalidOperationException("SyncFactors config path could not be resolved.");
         }
 
+        return path;
+    }
+
+    private SyncFactorsConfigDocument LoadSyncConfig()
+    {
+        var path = GetResolvedSyncConfigPath();
         var json = File.ReadAllText(path);
         var document = JsonDocument.Parse(json).RootElement;
         var secrets = LoadSecrets(document);

@@ -1,3 +1,5 @@
+using System.Text.Json;
+
 namespace SyncFactors.Infrastructure;
 
 public sealed class SyncFactorsConfigurationValidator(SyncFactorsConfigurationLoader loader)
@@ -71,50 +73,58 @@ public sealed class SyncFactorsConfigurationValidator(SyncFactorsConfigurationLo
 
         if (!isDevelopment)
         {
-            ValidateNoProductionLiteralSecrets(sync);
+            ValidateNoProductionLiteralSecrets(loader.GetResolvedSyncConfigPath());
         }
     }
 
-    private static void ValidateNoProductionLiteralSecrets(SyncFactorsConfigDocument sync)
+    private static void ValidateNoProductionLiteralSecrets(string configPath)
     {
-        if (!string.IsNullOrWhiteSpace(sync.SuccessFactors.Auth.Basic?.Username) &&
-            !HasEnvironmentReference(sync.Secrets.SuccessFactorsUsernameEnv))
+        var document = JsonDocument.Parse(File.ReadAllText(configPath)).RootElement;
+        var auth = document.GetRequiredObject("successFactors").GetRequiredObject("auth");
+        var basic = auth.TryGetObject("basic", out var basicAuth) ? basicAuth : default;
+        var oauth = auth.TryGetObject("oauth", out var oauthAuth) ? oauthAuth : default;
+        var ad = document.GetRequiredObject("ad");
+
+        var basicUsernameLiteral = basic.ValueKind == JsonValueKind.Object ? basic.TryGetString("username") : null;
+        var basicPasswordLiteral = basic.ValueKind == JsonValueKind.Object ? basic.TryGetString("password") : null;
+        var oauthClientIdLiteral = oauth.ValueKind == JsonValueKind.Object ? oauth.TryGetString("clientId") : null;
+        var oauthClientSecretLiteral = oauth.ValueKind == JsonValueKind.Object ? oauth.TryGetString("clientSecret") : null;
+        var adBindPasswordLiteral = ad.TryGetString("bindPassword");
+
+        if (!string.IsNullOrWhiteSpace(basicUsernameLiteral))
         {
             throw new InvalidOperationException("Production config must not include a literal SuccessFactors username.");
         }
 
-        if (!string.IsNullOrWhiteSpace(sync.SuccessFactors.Auth.Basic?.Password))
+        if (!string.IsNullOrWhiteSpace(basicPasswordLiteral))
         {
             throw new InvalidOperationException("Production config must not include a literal SuccessFactors password.");
         }
 
-        if (!string.IsNullOrWhiteSpace(sync.SuccessFactors.Auth.OAuth?.ClientId) &&
-            !HasEnvironmentReference(sync.Secrets.SuccessFactorsClientIdEnv))
+        if (!string.IsNullOrWhiteSpace(oauthClientIdLiteral))
         {
             throw new InvalidOperationException("Production config must not include a literal SuccessFactors OAuth client ID.");
         }
 
-        if (!string.IsNullOrWhiteSpace(sync.SuccessFactors.Auth.OAuth?.ClientSecret))
+        if (!string.IsNullOrWhiteSpace(oauthClientSecretLiteral))
         {
             throw new InvalidOperationException("Production config must not include a literal SuccessFactors OAuth client secret.");
         }
 
-        if (!string.IsNullOrWhiteSpace(sync.Ad.BindPassword))
+        if (!string.IsNullOrWhiteSpace(adBindPasswordLiteral))
         {
             throw new InvalidOperationException("Production config must not include a literal AD bind password.");
         }
 
-        if (string.Equals(sync.SuccessFactors.Auth.Basic?.Username, "replace-me", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(sync.SuccessFactors.Auth.Basic?.Password, "replace-me", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(sync.Ad.BindPassword, "replace-me", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(sync.Ad.BindPassword, "Replace-This-Password123!", StringComparison.Ordinal))
+        if (string.Equals(basicUsernameLiteral, "replace-me", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(basicPasswordLiteral, "replace-me", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(oauthClientIdLiteral, "replace-me", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(oauthClientSecretLiteral, "replace-me", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(adBindPasswordLiteral, "replace-me", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(adBindPasswordLiteral, "Replace-This-Password123!", StringComparison.Ordinal))
         {
             throw new InvalidOperationException("Production config contains placeholder credentials.");
         }
     }
 
-    private static bool HasEnvironmentReference(string? environmentVariableName)
-    {
-        return !string.IsNullOrWhiteSpace(environmentVariableName);
-    }
 }
