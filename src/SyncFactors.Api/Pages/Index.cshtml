@@ -65,7 +65,13 @@
 
 <section class="panel-grid dashboard-grid">
     <article class="panel">
-        <h2>Status</h2>
+        <div class="panel-heading panel-heading-tight">
+            <h2>Status</h2>
+            <button class="icon-button" type="button" data-dashboard-refresh aria-label="Refresh page" title="Refresh page">
+                <span class="icon-button-glyph" aria-hidden="true">↻</span>
+                <span class="icon-button-label">Refresh</span>
+            </button>
+        </div>
         <dl class="kv" data-dashboard-status>
             <div><dt>Status</dt><dd data-status-value>@Model.Status.Status</dd></div>
             <div><dt>Stage</dt><dd data-stage-value>@Model.Status.Stage</dd></div>
