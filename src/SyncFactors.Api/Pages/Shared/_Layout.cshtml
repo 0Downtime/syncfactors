@@ -29,11 +29,21 @@
                 </nav>
                 @if (User.Identity?.IsAuthenticated == true)
                 {
+                    var role = User.IsInRole("BreakGlassAdmin")
+                        ? "BreakGlassAdmin"
+                        : User.IsInRole("Admin")
+                            ? "Admin"
+                            : User.IsInRole("Operator")
+                                ? "Operator"
+                                : User.IsInRole("Viewer")
+                                    ? "Viewer"
+                                    : "Unknown";
                     <div class="auth-actions">
-                        <span class="muted auth-user">Signed in as <strong>@User.Identity.Name</strong></span>
-                        <form method="post" asp-page="/Logout">
-                            <button type="submit" class="link-button">Logout</button>
-                        </form>
+                        <div class="muted auth-user">
+                            <span>Signed in as <strong>@User.Identity.Name</strong></span>
+                            <span class="auth-role">Role: @role</span>
+                        </div>
+                        <a class="link-button" asp-page="/Logout">Logout</a>
                     </div>
                 }
                 <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Toggle dark mode" aria-pressed="false">

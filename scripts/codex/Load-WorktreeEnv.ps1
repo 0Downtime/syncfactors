@@ -179,6 +179,8 @@ $env:SYNCFACTORS_RESOLVED_CONFIG_PATH_ABS = $resolvedSyncConfigPath
 
 $keychainService = if ([string]::IsNullOrWhiteSpace($env:SYNCFACTORS_KEYCHAIN_SERVICE)) { 'syncfactors' } else { $env:SYNCFACTORS_KEYCHAIN_SERVICE }
 $secretNames = @(
+    'SYNCFACTORS__AUTH__OIDC__CLIENTSECRET',
+    'SYNCFACTORS__AUTH__BOOTSTRAPADMIN__PASSWORD',
     'SF_AD_SYNC_SF_USERNAME',
     'SF_AD_SYNC_SF_PASSWORD',
     'SF_AD_SYNC_SF_CLIENT_ID',

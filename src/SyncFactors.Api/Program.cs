@@ -16,6 +16,8 @@ const string AdminPolicy = "Admin";
 
 var builder = WebApplication.CreateBuilder(args);
 var authSettings = builder.Configuration.GetSection("SyncFactors:Auth").Get<LocalAuthOptions>() ?? new LocalAuthOptions();
+var cspEnabled = builder.Configuration.GetValue<bool?>("SyncFactors:SecurityHeaders:EnableContentSecurityPolicy")
+    ?? !builder.Environment.IsDevelopment();
 var oidcEnabled = IsOidcEnabled(authSettings);
 
 ValidateHttpsOnlyBindings(builder.Configuration);
@@ -103,7 +105,7 @@ var authenticationBuilder = builder.Services.AddAuthentication(options =>
     .AddCookie(options =>
     {
         options.LoginPath = "/Login";
-        options.AccessDeniedPath = "/Login";
+        options.AccessDeniedPath = "/AccessDenied";
         options.Cookie.Name = "SyncFactors.Auth";
         options.Cookie.HttpOnly = true;
         options.Cookie.SameSite = SameSiteMode.Lax;
@@ -130,8 +132,9 @@ if (oidcEnabled)
         options.ClientSecret = authSettings.Oidc.ClientSecret;
         options.CallbackPath = authSettings.Oidc.CallbackPath;
         options.SignedOutCallbackPath = authSettings.Oidc.SignedOutCallbackPath;
+        options.SignedOutRedirectUri = "/Login?LoggedOut=true";
         options.ResponseType = "code";
-        options.SaveTokens = false;
+        options.SaveTokens = true;
         options.GetClaimsFromUserInfoEndpoint = true;
         options.MapInboundClaims = false;
         options.Scope.Clear();
@@ -146,6 +149,16 @@ if (oidcEnabled)
                 if (context.Principal?.Identity is ClaimsIdentity identity)
                 {
                     ApplyOidcIdentity(identity, authSettings);
+                }
+
+                return Task.CompletedTask;
+            },
+            OnRedirectToIdentityProviderForSignOut = context =>
+            {
+                var idToken = context.Properties?.GetTokenValue("id_token");
+                if (!string.IsNullOrWhiteSpace(idToken))
+                {
+                    context.ProtocolMessage.IdTokenHint = idToken;
                 }
 
                 return Task.CompletedTask;
@@ -176,6 +189,7 @@ builder.Services.AddRazorPages(options =>
     options.Conventions.AuthorizePage("/Sync", OperatorPolicy);
     options.Conventions.AuthorizePage("/Preview", OperatorPolicy);
     options.Conventions.AuthorizeFolder("/Admin", AdminPolicy);
+    options.Conventions.AllowAnonymousToPage("/AccessDenied");
     options.Conventions.AllowAnonymousToPage("/Login");
 });
 
@@ -196,8 +210,13 @@ if (!app.Environment.IsDevelopment())
 app.UseHttpsRedirection();
 app.Use(async (context, next) =>
 {
-    context.Response.Headers["Content-Security-Policy"] =
-        "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; script-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'";
+    if (cspEnabled)
+    {
+        context.Response.Headers["Content-Security-Policy"] =
+            "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; script-src 'self'; frame-ancestors 'none'; base-uri 'self'";
+        context.Response.Headers["X-SyncFactors-Csp-Version"] = "2";
+    }
+
     context.Response.Headers["X-Frame-Options"] = "DENY";
     context.Response.Headers["X-Content-Type-Options"] = "nosniff";
     context.Response.Headers["Referrer-Policy"] = "strict-origin-when-cross-origin";

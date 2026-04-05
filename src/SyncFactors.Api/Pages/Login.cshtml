@@ -13,6 +13,11 @@
 </section>
 
 <section class="panel auth-panel">
+    @if (Model.LoggedOut)
+    {
+        <p class="callout good">You have been signed out. Use SSO to sign in again when you are ready.</p>
+    }
+
     @if (!string.IsNullOrWhiteSpace(Model.ErrorMessage))
     {
         <p class="callout danger">@Model.ErrorMessage</p>

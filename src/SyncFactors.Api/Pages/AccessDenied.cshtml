@@ -1,0 +1,26 @@
+@page
+@model SyncFactors.Api.Pages.AccessDeniedModel
+@{
+    ViewData["Title"] = "Access Denied";
+}
+
+<section class="hero hero-compact auth-hero">
+    <div>
+        <p class="eyebrow">Access Control</p>
+        <h1>Access denied</h1>
+        <p class="lede">Your account is signed in, but it does not have the SyncFactors role required for this page.</p>
+    </div>
+</section>
+
+<section class="panel auth-panel">
+    <p class="callout warn">If you expected access here, update the Entra group mappings in your OIDC config or sign in with an account in the correct role group.</p>
+
+    <dl class="kv preview-meta">
+        <div><dt>Signed in as</dt><dd>@(User.Identity?.Name ?? "Unknown")</dd></div>
+        <div><dt>Requested page</dt><dd>@(Model.ReturnUrl ?? "/")</dd></div>
+    </dl>
+
+    <div class="filter-actions">
+        <a class="link-button" asp-page="/Index">Return to dashboard</a>
+    </div>
+</section>
