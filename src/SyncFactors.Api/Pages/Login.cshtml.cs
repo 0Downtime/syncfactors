@@ -25,6 +25,9 @@ public sealed class LoginModel(ILocalAuthService localAuthService, IOptions<Loca
     [BindProperty(SupportsGet = true)]
     public string? ReturnUrl { get; set; }
 
+    [BindProperty(SupportsGet = true)]
+    public bool LoggedOut { get; set; }
+
     public bool IsLocalLoginEnabled => localAuthService.IsLocalAuthenticationEnabled;
 
     public bool IsOidcEnabled =>
@@ -42,7 +45,7 @@ public sealed class LoginModel(ILocalAuthService localAuthService, IOptions<Loca
             return LocalRedirect(ResolveReturnUrl());
         }
 
-        if (!IsLocalLoginEnabled && IsOidcEnabled)
+        if (!LoggedOut && !IsLocalLoginEnabled && IsOidcEnabled)
         {
             return BuildSsoChallenge();
         }

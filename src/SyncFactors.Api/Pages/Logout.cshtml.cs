@@ -9,21 +9,22 @@ namespace SyncFactors.Api.Pages;
 
 public sealed class LogoutModel : PageModel
 {
-    public async Task<IActionResult> OnPostAsync()
+    public Task<IActionResult> OnGetAsync() => SignOutAsync();
+
+    public Task<IActionResult> OnPostAsync() => SignOutAsync();
+
+    private async Task<IActionResult> SignOutAsync()
     {
         var authSource = User.FindFirst(SecurityClaimTypes.AuthSource)?.Value;
         await HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
         if (string.Equals(authSource, "oidc", StringComparison.Ordinal))
         {
             return SignOut(
-                new AuthenticationProperties
-                {
-                    RedirectUri = Url.Page("/Login")
-                },
+                new AuthenticationProperties(),
                 CookieAuthenticationDefaults.AuthenticationScheme,
                 OpenIdConnectDefaults.AuthenticationScheme);
         }
 
-        return RedirectToPage("/Login");
+        return RedirectToPage("/Login", new { LoggedOut = true });
     }
 }

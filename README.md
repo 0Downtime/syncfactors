@@ -158,6 +158,170 @@ Use `--remove-empty-values` on macOS or `-RemoveEmptyValues` on Windows if blank
 
 Set `SYNCFACTORS_RUN_PROFILE=mock` or `real` to switch the active SuccessFactors config. Leave `SYNCFACTORS_CONFIG_PATH` empty for profile-based resolution, or set it only when you want an explicit one-off override.
 
+For Microsoft Entra ID OIDC in local development, add the ASP.NET config-bound environment variables below to `.env.worktree` once your app registration exists:
+
+```bash
+SYNCFACTORS__AUTH__MODE=oidc
+SYNCFACTORS__AUTH__OIDC__AUTHORITY=https://login.microsoftonline.com/<tenant-id>/v2.0
+SYNCFACTORS__AUTH__OIDC__CLIENTID=<application-client-id>
+SYNCFACTORS__AUTH__OIDC__CLIENTSECRET=<client-secret>
+SYNCFACTORS__AUTH__OIDC__VIEWERGROUPS__0=<entra-group-object-id>
+SYNCFACTORS__AUTH__OIDC__OPERATORGROUPS__0=<entra-group-object-id>
+SYNCFACTORS__AUTH__OIDC__ADMINGROUPS__0=<entra-group-object-id>
+```
+
+Use tenant-specific authorities, not `common`, so group and issuer checks stay deterministic for a single-tenant admin tool. Configure the Entra app registration with these redirect URIs for the default local port:
+
+```text
+https://127.0.0.1:5087/signin-oidc
+https://127.0.0.1:5087/signout-callback-oidc
+```
+
+If you change `SYNCFACTORS_API_PORT`, the redirect URIs must match that exact HTTPS port. On macOS, you can keep the OIDC secret out of `.env.worktree` and store only `SYNCFACTORS__AUTH__OIDC__CLIENTSECRET` in Keychain with `./scripts/codex/set-macos-keychain-secret.sh SYNCFACTORS__AUTH__OIDC__CLIENTSECRET`.
+
+If you want the app registration provisioned for you, use [`scripts/Configure-EntraOidcAppRegistration.ps1`](/Users/chrisbrien/dev/github.com/syncfactors/scripts/Configure-EntraOidcAppRegistration.ps1). It connects to Microsoft Graph using your current/default tenant when `-TenantId` is omitted, creates or updates a single-tenant app registration, ensures the enterprise app exists, creates missing security groups for viewer/operator/admin roles, assigns those groups to the enterprise app, optionally creates a client secret, writes the resolved auth and OIDC settings back into `.env.worktree`, and then prints the same values in the terminal summary. Set `-AuthMode oidc` for Entra-only auth or `-AuthMode hybrid` to keep local break-glass enabled. In `hybrid` mode the script also sets `SYNCFACTORS__AUTH__LOCALBREAKGLASS__ENABLED=true`, writes the bootstrap admin username, and generates a bootstrap admin password automatically if you do not supply one. On Windows it stores the OIDC client secret and bootstrap admin password in Windows Credential Manager; on macOS it stores those secrets in the login Keychain using `SYNCFACTORS_KEYCHAIN_SERVICE` from the env file when present, otherwise `syncfactors`. In those cases the env file keeps the password/secret entries blank so the repo loaders pull them from the secure store. Use `-EnvFilePath` if you want to target a different env file.
+
+## Entra Env Setup
+
+Use the provisioning script when you want the app registration and local auth env configured together. The script updates `.env.worktree` for you, so you should not need to hand-edit the OIDC values afterward unless you want to override something manually.
+
+End-to-end flow:
+
+1. Bootstrap the worktree if you have not already:
+
+```powershell
+pwsh ./scripts/codex/setup-worktree.ps1
+```
+
+2. Run the Entra provisioning script against your tenant. Pick one of the modes below.
+
+OIDC only:
+
+```powershell
+pwsh ./scripts/Configure-EntraOidcAppRegistration.ps1 `
+  -TenantId '<tenant-guid>' `
+  -AppDisplayName 'SyncFactors Local Dev' `
+  -ViewerGroupName 'SyncFactors Viewers' `
+  -OperatorGroupName 'SyncFactors Operators' `
+  -AdminGroupName 'SyncFactors Admins' `
+  -AuthMode oidc `
+  -RequireAssignment `
+  -InstallModules
+```
+
+Hybrid OIDC plus local break-glass admin:
+
+```powershell
+pwsh ./scripts/Configure-EntraOidcAppRegistration.ps1 `
+  -TenantId '<tenant-guid>' `
+  -AppDisplayName 'SyncFactors Local Dev' `
+  -ViewerGroupName 'SyncFactors Viewers' `
+  -OperatorGroupName 'SyncFactors Operators' `
+  -AdminGroupName 'SyncFactors Admins' `
+  -AuthMode hybrid `
+  -BootstrapAdminUsername 'admin' `
+  -RequireAssignment `
+  -InstallModules
+```
+
+If the Entra app already exists, target it directly instead of locating it by display name:
+
+```powershell
+pwsh ./scripts/Configure-EntraOidcAppRegistration.ps1 `
+  -TenantId '<tenant-guid>' `
+  -ClientId '<existing-app-client-id>' `
+  -AppDisplayName 'SyncFactors Local Dev' `
+  -ViewerGroupName 'SyncFactors Viewers' `
+  -OperatorGroupName 'SyncFactors Operators' `
+  -AdminGroupName 'SyncFactors Admins' `
+  -AuthMode oidc `
+  -RequireAssignment
+```
+
+3. Confirm the env file values. After a successful run, `.env.worktree` will contain or update these keys:
+
+- `SYNCFACTORS__AUTH__MODE`
+- `SYNCFACTORS__AUTH__LOCALBREAKGLASS__ENABLED`
+- `SYNCFACTORS__AUTH__OIDC__AUTHORITY`
+- `SYNCFACTORS__AUTH__OIDC__CLIENTID`
+- `SYNCFACTORS__AUTH__OIDC__VIEWERGROUPS__0`
+- `SYNCFACTORS__AUTH__OIDC__OPERATORGROUPS__0`
+- `SYNCFACTORS__AUTH__OIDC__ADMINGROUPS__0`
+- `SYNCFACTORS__AUTH__BOOTSTRAPADMIN__USERNAME` in `hybrid` mode
+
+The script also manages these secrets:
+
+- `SYNCFACTORS__AUTH__OIDC__CLIENTSECRET`
+- `SYNCFACTORS__AUTH__BOOTSTRAPADMIN__PASSWORD` in `hybrid` mode
+
+On Windows, those secrets are stored in Windows Credential Manager. On macOS, they are stored in the login Keychain. In those cases the `.env.worktree` entries are intentionally left blank and loaded at runtime by the repo launchers. On other platforms, the script writes the secret values directly into the env file.
+
+4. Start the app:
+
+```powershell
+pwsh ./scripts/codex/run.ps1 -Service api
+```
+
+Or the full stack:
+
+```powershell
+pwsh ./scripts/codex/run.ps1 -Service stack
+```
+
+5. Open the login page:
+
+- [https://127.0.0.1:5087/Login](https://127.0.0.1:5087/Login)
+
+Mode behavior:
+
+- `oidc`: Entra sign-in only. The script sets `SYNCFACTORS__AUTH__LOCALBREAKGLASS__ENABLED=false`.
+- `hybrid`: Entra sign-in plus local break-glass auth. The script sets `SYNCFACTORS__AUTH__LOCALBREAKGLASS__ENABLED=true` and provisions the bootstrap admin credentials.
+
+If startup fails because the app is still asking for bootstrap admin credentials while you expected Entra-only auth, check that `.env.worktree` contains `SYNCFACTORS__AUTH__MODE=oidc` and `SYNCFACTORS__AUTH__LOCALBREAKGLASS__ENABLED=false`.
+
+If the app registration already exists, pass either `-ApplicationObjectId` or `-ClientId` and the script will reconcile that existing app to the desired state instead of locating one by display name.
+
+Example:
+
+```powershell
+pwsh ./scripts/Configure-EntraOidcAppRegistration.ps1 `
+  -AppDisplayName 'SyncFactors Local Dev' `
+  -ViewerGroupName 'SyncFactors Viewers' `
+  -OperatorGroupName 'SyncFactors Operators' `
+  -AdminGroupName 'SyncFactors Admins' `
+  -AuthMode oidc `
+  -RequireAssignment `
+  -InstallModules
+```
+
+Existing app example:
+
+```powershell
+pwsh ./scripts/Configure-EntraOidcAppRegistration.ps1 `
+  -TenantId '<tenant-guid>' `
+  -ClientId '<existing-app-client-id>' `
+  -AppDisplayName 'SyncFactors Local Dev' `
+  -ViewerGroupName 'SyncFactors Viewers' `
+  -OperatorGroupName 'SyncFactors Operators' `
+  -AdminGroupName 'SyncFactors Admins' `
+  -RequireAssignment
+```
+
+Hybrid auth example with local break-glass bootstrap admin:
+
+```powershell
+pwsh ./scripts/Configure-EntraOidcAppRegistration.ps1 `
+  -TenantId '<tenant-guid>' `
+  -ClientId '<existing-app-client-id>' `
+  -AppDisplayName 'SyncFactors Local Dev' `
+  -ViewerGroupName 'SyncFactors Viewers' `
+  -OperatorGroupName 'SyncFactors Operators' `
+  -AdminGroupName 'SyncFactors Admins' `
+  -AuthMode hybrid `
+  -BootstrapAdminUsername 'admin' `
+  -RequireAssignment
+```
+
 For Active Directory binds, the current .NET LDAP integration uses simple bind semantics. Set `SF_AD_SYNC_AD_USERNAME` to a UPN such as `svc_successfactors@example.local`, not a down-level logon name such as `EXAMPLE\svc_successfactors`, or AD may reject the credentials even when the password is correct.
 
 If your primary AD transport is `ldaps` or `starttls` and you need an explicit downgrade path for troubleshooting, set `ad.transport.allowLdapFallback` to `true`. SyncFactors will try the configured secure transport first and only retry plain LDAP on port `389` when the configured port was the secure default. Leave this disabled unless you intentionally want that behavior.

@@ -211,6 +211,15 @@ a:focus-visible {
   color: var(--ink);
 }
 
+.auth-user {
+  display: grid;
+  gap: 2px;
+}
+
+.auth-role {
+  font-size: 0.85rem;
+}
+
 .nav {
   display: flex;
   gap: 6px;
