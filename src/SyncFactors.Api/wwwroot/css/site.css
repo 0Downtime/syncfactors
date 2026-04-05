@@ -415,6 +415,17 @@ a:focus-visible {
   margin: 0;
 }
 
+.panel-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+}
+
+.panel-heading-tight {
+  margin-bottom: 14px;
+}
+
 .hero-compact,
 .entry-head,
 .section-heading,
@@ -433,6 +444,42 @@ a:focus-visible {
 .hero-actions {
   display: flex;
   gap: 10px;
+}
+
+.icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-width: 112px;
+  height: 40px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--panel);
+  color: var(--ink);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18);
+}
+
+.icon-button:hover {
+  border-color: var(--line-strong);
+  background: var(--panel-alt);
+  transform: translateY(-1px);
+}
+
+.icon-button-glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.2rem;
+  height: 1.2rem;
+  font-size: 1.2rem;
+  line-height: 1;
+}
+
+.icon-button-label {
+  font-weight: 600;
+  line-height: 1;
 }
 
 .auth-hero,
@@ -1203,6 +1250,15 @@ a:focus-visible {
   .link-button,
   .filters button {
     width: 100%;
+  }
+
+  .panel-heading {
+    width: 100%;
+    align-items: flex-start;
+  }
+
+  .icon-button {
+    width: 40px;
   }
 
   .preview-form {

@@ -12,6 +12,7 @@
     var activeRunCard = document.querySelector("[data-active-run-card]");
     var lastRunEmpty = document.querySelector("[data-last-run-empty]");
     var lastRunCard = document.querySelector("[data-last-run-card]");
+    var refreshButton = document.querySelector("[data-dashboard-refresh]");
 
     var root = document.querySelector("[data-connection-health]");
     if (!root) {
@@ -27,6 +28,12 @@
     var timerId = null;
     var isLoading = false;
     var isDashboardLoading = false;
+
+    if (refreshButton) {
+        refreshButton.addEventListener("click", function () {
+            window.location.reload();
+        });
+    }
 
     function statusClass(status) {
         switch ((status || "").toLowerCase()) {

@@ -206,6 +206,90 @@ function Get-ProcessIdsByCommandPattern {
     return $matches | Sort-Object -Unique
 }
 
+function Get-ProcessIdsByCommandFragments {
+    param(
+        [Parameter(Mandatory)]
+        [string[]]$Fragments
+    )
+
+    $requiredFragments = @($Fragments | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+    if ($requiredFragments.Count -eq 0) {
+        return @()
+    }
+
+    if ([OperatingSystem]::IsWindows()) {
+        $getCimInstance = Get-Command 'Get-CimInstance' -ErrorAction SilentlyContinue
+        if ($null -eq $getCimInstance) {
+            Write-Warning 'Get-CimInstance is unavailable; command-line-based restart matching may be incomplete on Windows.'
+            return @()
+        }
+
+        try {
+            $processes = @( Get-CimInstance -ClassName Win32_Process -ErrorAction SilentlyContinue )
+        }
+        catch {
+            return @()
+        }
+
+        $matches = foreach ($process in $processes) {
+            $command = $process.CommandLine
+            if ([string]::IsNullOrWhiteSpace($command)) {
+                continue
+            }
+
+            $isMatch = $true
+            foreach ($fragment in $requiredFragments) {
+                if (-not $command.Contains($fragment, [StringComparison]::OrdinalIgnoreCase)) {
+                    $isMatch = $false
+                    break
+                }
+            }
+
+            if ($isMatch) {
+                [int]$process.ProcessId
+            }
+        }
+
+        return $matches | Sort-Object -Unique
+    }
+
+    try {
+        $lines = @( & ps "-ax" "-o" "pid=" "-o" "command=" 2>$null )
+    }
+    catch {
+        return @()
+    }
+
+    $matches = foreach ($line in $lines) {
+        if ([string]::IsNullOrWhiteSpace($line)) {
+            continue
+        }
+
+        $trimmed = $line.Trim()
+        $firstSpace = $trimmed.IndexOf(' ')
+        if ($firstSpace -lt 0) {
+            continue
+        }
+
+        $pidText = $trimmed.Substring(0, $firstSpace).Trim()
+        $command = $trimmed.Substring($firstSpace + 1).Trim()
+
+        $isMatch = $true
+        foreach ($fragment in $requiredFragments) {
+            if (-not $command.Contains($fragment, [StringComparison]::OrdinalIgnoreCase)) {
+                $isMatch = $false
+                break
+            }
+        }
+
+        if ($isMatch) {
+            [int]$pidText
+        }
+    }
+
+    return $matches | Sort-Object -Unique
+}
+
 function Stop-LocalProcesses {
     param(
         [Parameter(Mandatory)]
@@ -237,8 +321,19 @@ function Stop-LocalProcesses {
 function Close-HostedTerminals {
     param(
         [Parameter(Mandatory)]
-        [string[]]$Labels
+        [string[]]$Labels,
+        [AllowNull()]
+        [int[]]$HostProcessIds = @()
     )
+
+    $hostTargets = @($HostProcessIds | Where-Object { $null -ne $_ -and $_ -ne $PID } | Sort-Object -Unique)
+    if ([OperatingSystem]::IsWindows()) {
+        if ($hostTargets.Count -gt 0) {
+            Stop-LocalProcesses -Name 'hosted terminal window' -ProcessIds $hostTargets
+        }
+
+        return
+    }
 
     if (-not [OperatingSystem]::IsMacOS()) {
         return
@@ -303,7 +398,8 @@ function Restart-SelectedServices {
         [Parameter(Mandatory)]
         [string]$RequestedService,
         [Parameter(Mandatory)]
-        [string]$RepositoryRoot
+        [string]$RepositoryRoot,
+        [switch]$PreserveHostedTerminals
     )
 
     $apiProjectPath = Join-Path $RepositoryRoot 'src/SyncFactors.Api/SyncFactors.Api.csproj'
@@ -313,6 +409,26 @@ function Restart-SelectedServices {
     $servicesToRestart = switch ($RequestedService) {
         'stack' { @('mock', 'api', 'worker') }
         default { @($RequestedService) }
+    }
+
+    $terminalLabels = $servicesToRestart | ForEach-Object {
+        switch ($_) {
+            'api' { 'SyncFactors .NET API' }
+            'worker' { 'SyncFactors worker' }
+            'mock' { 'SyncFactors mock API' }
+        }
+    }
+
+    $hostedTerminalProcessIds = foreach ($serviceName in $servicesToRestart) {
+        Get-ProcessIdsByCommandFragments -Fragments @(
+            'scripts/codex/run.ps1',
+            '-Service',
+            $serviceName
+        )
+    }
+
+    if (-not $PreserveHostedTerminals) {
+        Close-HostedTerminals -Labels $terminalLabels -HostProcessIds $hostedTerminalProcessIds
     }
 
     foreach ($serviceName in $servicesToRestart) {
@@ -337,16 +453,6 @@ function Restart-SelectedServices {
             }
         }
     }
-
-    $terminalLabels = $servicesToRestart | ForEach-Object {
-        switch ($_) {
-            'api' { 'SyncFactors .NET API' }
-            'worker' { 'SyncFactors worker' }
-            'mock' { 'SyncFactors mock API' }
-        }
-    }
-
-    Close-HostedTerminals -Labels $terminalLabels
 }
 
 $env:SYNCFACTORS_RUN_PROFILE = $Profile
@@ -366,7 +472,8 @@ $activeProfile = $env:SYNCFACTORS_RUN_PROFILE.ToLowerInvariant()
 $repoRoot = Resolve-ProjectRoot
 
 if ($Restart) {
-    Restart-SelectedServices -RequestedService $Service -RepositoryRoot $repoRoot
+    $preserveHostedTerminals = [OperatingSystem]::IsMacOS() -and $Service -eq 'stack'
+    Restart-SelectedServices -RequestedService $Service -RepositoryRoot $repoRoot -PreserveHostedTerminals:$preserveHostedTerminals
 }
 
 switch ($Service) {
@@ -431,20 +538,21 @@ switch ($Service) {
         }
 
         $terminalScriptPath = Join-Path $scriptDir 'Open-TerminalCommand.ps1'
+        $reuseHostedTerminals = [OperatingSystem]::IsMacOS() -and $Restart
         $workerArguments = @('-Service', 'worker') + $sharedArguments
         $startMockApi = $activeProfile -eq 'mock'
         $startSyncFactorsApi = $true
 
         if ($startMockApi) {
             $mockArguments = @('-Service', 'mock') + $sharedArguments
-            & $terminalScriptPath 'SyncFactors mock API' './scripts/codex/run.ps1' $mockArguments
+            & $terminalScriptPath 'SyncFactors mock API' './scripts/codex/run.ps1' $mockArguments -ReuseIfExists:$reuseHostedTerminals
         }
 
         if ($startSyncFactorsApi) {
             $apiArguments = @('-Service', 'api') + $sharedArguments
-            & $terminalScriptPath 'SyncFactors .NET API' './scripts/codex/run.ps1' $apiArguments
+            & $terminalScriptPath 'SyncFactors .NET API' './scripts/codex/run.ps1' $apiArguments -ReuseIfExists:$reuseHostedTerminals
         }
 
-        & $terminalScriptPath 'SyncFactors worker' './scripts/codex/run.ps1' $workerArguments
+        & $terminalScriptPath 'SyncFactors worker' './scripts/codex/run.ps1' $workerArguments -ReuseIfExists:$reuseHostedTerminals
     }
 }

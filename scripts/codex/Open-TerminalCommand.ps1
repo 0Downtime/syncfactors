@@ -4,7 +4,8 @@ param(
     [string]$Label,
     [Parameter(Mandatory)]
     [string]$Command,
-    [string[]]$Arguments = @()
+    [string[]]$Arguments = @(),
+    [switch]$ReuseIfExists
 )
 
 Set-StrictMode -Version Latest
@@ -14,11 +15,16 @@ $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $repoRoot = (Resolve-Path (Join-Path $scriptDir '../..')).ProviderPath
 
 if ([OperatingSystem]::IsMacOS()) {
+    $terminalArguments = @()
+    if ($ReuseIfExists) {
+        $terminalArguments += '--reuse-existing'
+    }
+
     if ($Command.EndsWith('.ps1', [StringComparison]::OrdinalIgnoreCase)) {
-        & (Join-Path $scriptDir 'open-terminal-command.sh') $Label 'pwsh' '-File' $Command @Arguments
+        & (Join-Path $scriptDir 'open-terminal-command.sh') @terminalArguments $Label 'pwsh' '-File' $Command @Arguments
     }
     else {
-        & (Join-Path $scriptDir 'open-terminal-command.sh') $Label $Command @Arguments
+        & (Join-Path $scriptDir 'open-terminal-command.sh') @terminalArguments $Label $Command @Arguments
     }
 
     exit $LASTEXITCODE
