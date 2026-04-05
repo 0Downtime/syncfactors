@@ -663,6 +663,69 @@ a:focus-visible {
   min-width: 0;
 }
 
+.recent-runs-table {
+  table-layout: fixed;
+}
+
+.recent-runs-table th,
+.recent-runs-table td {
+  padding: 7px 8px;
+  font-size: 0.88rem;
+}
+
+.recent-runs-table .badge {
+  padding: 3px 8px;
+  font-size: 0.72rem;
+}
+
+.recent-runs-table__started,
+.recent-runs-table__trigger,
+.recent-runs-table__mode,
+.recent-runs-table__status,
+.recent-runs-table__dry-run,
+.recent-runs-table__workers,
+.recent-runs-table__actions {
+  white-space: nowrap;
+}
+
+.recent-runs-table__started {
+  width: 9rem;
+}
+
+.recent-runs-table__trigger {
+  width: 6.5rem;
+}
+
+.recent-runs-table__mode {
+  width: 5.5rem;
+}
+
+.recent-runs-table__status {
+  width: 7rem;
+}
+
+.recent-runs-table__dry-run {
+  width: 5rem;
+}
+
+.recent-runs-table__workers {
+  width: 4.5rem;
+}
+
+.recent-runs-table__actions {
+  width: 4rem;
+}
+
+.recent-runs-table__summary {
+  min-width: 0;
+}
+
+@media (max-width: 1280px) {
+  .recent-runs-table__dry-run {
+    display: none;
+  }
+}
+
 .dashboard-refresh-note,
 .confirmation-line {
   margin: 0 0 14px;
