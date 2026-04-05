@@ -987,6 +987,33 @@ a:focus-visible {
   border-color: rgba(196, 49, 75, 0.24);
 }
 
+.sso-access-box {
+  margin-top: 18px;
+  padding: 18px 20px;
+  border: 1px solid color-mix(in srgb, var(--accent) 16%, var(--line) 84%);
+  border-radius: 10px;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--accent-soft) 70%, transparent) 0%, transparent 100%),
+    var(--panel-alt);
+}
+
+.sso-access-lead {
+  margin: 0;
+  font-size: 1.02rem;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.sso-access-list {
+  margin: 14px 0 0;
+  padding-left: 1.2rem;
+  color: var(--muted);
+}
+
+.sso-access-list li + li {
+  margin-top: 10px;
+}
+
 .bucket-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
