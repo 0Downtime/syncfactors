@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 220" role="img" aria-labelledby="logoTitle logoDesc">
+  <title id="logoTitle">SyncFactors logo</title>
+  <desc id="logoDesc">Orange and blue SyncFactors logo with sync arrows, an identity badge, and the SyncFactors wordmark.</desc>
+  <defs>
+    <linearGradient id="sfOrange" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ffb13a" />
+      <stop offset="100%" stop-color="#ff7a00" />
+    </linearGradient>
+    <linearGradient id="sfBlue" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#2c7cff" />
+      <stop offset="100%" stop-color="#0f55cf" />
+    </linearGradient>
+    <linearGradient id="sfNavy" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#1962de" />
+      <stop offset="100%" stop-color="#061d58" />
+    </linearGradient>
+  </defs>
+
+  <g transform="translate(8 8)">
+    <path d="M122 16 68 47v62l54 31 54-31V47z" fill="url(#sfOrange)" stroke="#ef7d00" stroke-width="3"/>
+    <circle cx="122" cy="64" r="15" fill="#fff"/>
+    <path d="M102 113c0-16 9-26 20-26s20 10 20 26v10l-18 10V108l4-15h-12l4 15v25l-18-10z" fill="#fff"/>
+
+    <path d="M214 65c-18-8-42-9-62-4l11 8c16-3 31-3 44 0l-6 11 31-1-17-26-6 12z" fill="url(#sfOrange)"/>
+    <path d="M118 142c18 8 42 9 62 4l-11-8c-16 3-31 3-44 0l6-11-31 1 17 26 6-12z" fill="url(#sfBlue)"/>
+
+    <rect x="176" y="50" width="84" height="84" rx="10" fill="url(#sfBlue)" stroke="#0f55cf" stroke-width="3"/>
+    <rect x="196" y="70" width="24" height="24" fill="#fff"/>
+    <rect x="224" y="70" width="24" height="24" fill="#fff"/>
+    <rect x="196" y="98" width="24" height="24" fill="#fff"/>
+    <rect x="224" y="98" width="24" height="24" fill="#fff"/>
+  </g>
+
+  <text x="302" y="138" fill="url(#sfNavy)" font-size="96" font-weight="700" font-family="Segoe UI, Arial, sans-serif">SyncFactors</text>
+</svg>

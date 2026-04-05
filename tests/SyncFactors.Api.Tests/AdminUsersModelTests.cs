@@ -2,6 +2,7 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
+using Microsoft.Extensions.Options;
 using SyncFactors.Api.Pages.Admin;
 using SyncFactors.Infrastructure;
 
@@ -85,9 +86,44 @@ public sealed class AdminUsersModelTests
         Assert.Equal("admin-1", service.LastActingUserId);
     }
 
-    private static UsersModel CreateModel(StubAdminAuthService service, string actingUserId = "admin-1")
+    [Fact]
+    public async Task OnPostCreateAsync_RejectsChangesWhenLocalUserManagementIsDisabled()
     {
-        return new UsersModel(service)
+        var service = new StubAdminAuthService
+        {
+            IsLocalAuthenticationEnabled = false
+        };
+        var model = CreateModel(service, mode: "oidc");
+        model.CreateUsername = "alice";
+        model.CreatePassword = "Password1234";
+        model.CreatePasswordConfirmation = "Password1234";
+
+        var result = await model.OnPostCreateAsync(CancellationToken.None);
+
+        Assert.IsType<RedirectToPageResult>(result);
+        Assert.Equal("Local break-glass user management is disabled while SSO-only mode is active.", model.ErrorMessage);
+        Assert.Null(service.LastCreateUsername);
+    }
+
+    [Fact]
+    public async Task ModeProperties_ReflectConfiguredAuthenticationMode()
+    {
+        var model = CreateModel(new StubAdminAuthService(), mode: "hybrid");
+
+        Assert.Equal("hybrid", model.AuthenticationMode);
+        Assert.Equal("SSO + Break-Glass", model.AuthenticationModeLabel);
+        Assert.Equal("good", model.AuthenticationModeBadgeClass);
+        Assert.True(model.IsLocalUserManagementEnabled);
+    }
+
+    private static UsersModel CreateModel(StubAdminAuthService service, string actingUserId = "admin-1", string mode = "local-break-glass")
+    {
+        return new UsersModel(
+            service,
+            Options.Create(new LocalAuthOptions
+            {
+                Mode = mode
+            }))
         {
             PageContext = new PageContext
             {
@@ -106,7 +142,7 @@ public sealed class AdminUsersModelTests
 
     private sealed class StubAdminAuthService : ILocalAuthService
     {
-        public bool IsLocalAuthenticationEnabled => true;
+        public bool IsLocalAuthenticationEnabled { get; set; } = true;
 
         public IReadOnlyList<LocalUserSummary> Users { get; set; } = [];
 

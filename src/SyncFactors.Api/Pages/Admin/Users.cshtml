@@ -8,7 +8,9 @@
     <div>
         <p class="eyebrow">Administration</p>
         <h1>User Access</h1>
-        <p class="lede">Create operator accounts, promote admins, reset passwords, and disable or delete local logins.</p>
+        <p class="lede">@Model.AccountManagementDescription</p>
+        <p><span class="badge @Model.AuthenticationModeBadgeClass">@Model.AuthenticationModeLabel</span></p>
+        <p class="callout">@Model.AuthenticationModeDescription</p>
     </div>
 </section>
 
@@ -26,110 +28,134 @@
     </section>
 }
 
-<section class="panel-grid admin-user-grid">
-    <article class="panel">
-        <h2>Create User</h2>
-        <form method="post" asp-page-handler="Create" class="filters admin-user-form">
-            <label>
-                <span>Username</span>
-                <input asp-for="CreateUsername" type="text" autocomplete="off" />
-            </label>
-            <label>
-                <span>Password</span>
-                <input asp-for="CreatePassword" type="password" autocomplete="new-password" />
-            </label>
-            <label>
-                <span>Confirm password</span>
-                <input asp-for="CreatePasswordConfirmation" type="password" autocomplete="new-password" />
-            </label>
-            <label class="filter-check">
-                <span>Create as admin</span>
-                <input asp-for="CreateIsAdmin" type="checkbox" />
-            </label>
-            <div class="filter-actions">
-                <button type="submit">Create user</button>
+@if (Model.IsLocalUserManagementEnabled)
+{
+    <section class="panel-grid admin-user-grid">
+        <article class="panel">
+            <h2>Create User</h2>
+            <form method="post" asp-page-handler="Create" class="filters admin-user-form">
+                <label>
+                    <span>Username</span>
+                    <input asp-for="CreateUsername" type="text" autocomplete="off" />
+                </label>
+                <label>
+                    <span>Password</span>
+                    <input asp-for="CreatePassword" type="password" autocomplete="new-password" />
+                </label>
+                <label>
+                    <span>Confirm password</span>
+                    <input asp-for="CreatePasswordConfirmation" type="password" autocomplete="new-password" />
+                </label>
+                <label class="filter-check">
+                    <span>Create as admin</span>
+                    <input asp-for="CreateIsAdmin" type="checkbox" />
+                </label>
+                <div class="filter-actions">
+                    <button type="submit">Create user</button>
+                </div>
+            </form>
+        </article>
+
+        <article class="panel">
+            <h2>Security Notes</h2>
+            <div class="risk-list">
+                <p class="callout">Passwords are stored as one-way hashes.</p>
+                <p class="callout">New passwords must be at least 12 characters and include uppercase, lowercase, and numeric characters.</p>
+                <p class="callout warn">This page cannot disable or delete your own account, and it will not remove the last active admin.</p>
             </div>
-        </form>
-    </article>
+        </article>
+    </section>
 
-    <article class="panel">
-        <h2>Security Notes</h2>
-        <div class="risk-list">
-            <p class="callout">Passwords are stored as one-way hashes.</p>
-            <p class="callout">New passwords must be at least 12 characters and include uppercase, lowercase, and numeric characters.</p>
-            <p class="callout warn">This page cannot disable or delete your own account, and it will not remove the last active admin.</p>
+    <section class="panel">
+        <div class="section-heading">
+            <div>
+                <p class="eyebrow">Directory</p>
+                <h2>Local Users</h2>
+            </div>
         </div>
-    </article>
-</section>
+        <div class="table-scroll">
+            <table class="data-table admin-user-table">
+                <thead>
+                    <tr>
+                        <th>Username</th>
+                        <th>Role</th>
+                        <th>Status</th>
+                        <th>Created</th>
+                        <th>Last Login</th>
+                        <th>Reset Password</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                @foreach (var user in Model.Users)
+                {
+                    <tr>
+                        <td>@user.Username</td>
+                        <td>
+                            <form method="post" asp-page-handler="ChangeRole" class="admin-user-role-form">
+                                <input type="hidden" name="userId" value="@user.UserId" />
+                                <input type="hidden" name="makeAdmin" value="@(string.Equals(user.Role, "Admin", StringComparison.OrdinalIgnoreCase) ? "false" : "true")" />
+                                <span class="badge @(string.Equals(user.Role, "Admin", StringComparison.OrdinalIgnoreCase) ? "info" : "neutral")">@user.Role</span>
+                                <button type="submit" class="link-button admin-user-compact-button">@(string.Equals(user.Role, "Admin", StringComparison.OrdinalIgnoreCase) ? "Set regular" : "Set admin")</button>
+                            </form>
+                        </td>
+                        <td>
+                            <span class="badge @(user.IsActive ? "good" : "dim")">@(user.IsActive ? "Active" : "Inactive")</span>
+                        </td>
+                        <td>@user.CreatedAt.ToString("u")</td>
+                        <td>@(user.LastLoginAt?.ToString("u") ?? "Never")</td>
+                        <td>
+                            <form method="post" asp-page-handler="ResetPassword" class="admin-user-inline-form">
+                                <input type="hidden" name="userId" value="@user.UserId" />
+                                <label>
+                                    <span class="sr-only">New password for @user.Username</span>
+                                    <input type="password" name="newPassword" autocomplete="new-password" placeholder="New" />
+                                </label>
+                                <label>
+                                    <span class="sr-only">Confirm password for @user.Username</span>
+                                    <input type="password" name="confirmPassword" autocomplete="new-password" placeholder="Confirm" />
+                                </label>
+                                <button type="submit" class="admin-user-compact-button">Reset</button>
+                            </form>
+                        </td>
+                        <td>
+                            <div class="admin-user-actions">
+                                <form method="post" asp-page-handler="ToggleActive">
+                                    <input type="hidden" name="userId" value="@user.UserId" />
+                                    <input type="hidden" name="makeActive" value="@(user.IsActive ? "false" : "true")" />
+                                    <button type="submit" class="link-button admin-user-compact-button">@(user.IsActive ? "Disable" : "Enable")</button>
+                                </form>
+                                <form method="post" asp-page-handler="Delete">
+                                    <input type="hidden" name="userId" value="@user.UserId" />
+                                    <button type="submit" class="link-button danger-button admin-user-compact-button">Delete</button>
+                                </form>
+                            </div>
+                        </td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+    </section>
+}
+else
+{
+    <section class="panel-grid admin-user-grid">
+        <article class="panel">
+            <h2>SSO-Managed Access</h2>
+            <div class="risk-list">
+                <p class="callout">User sign-in is handled by enterprise SSO for this deployment.</p>
+                <p class="callout">Create, disable, and delete accounts in your identity provider instead of this portal.</p>
+                <p class="callout">Admin, operator, and viewer access should come from your configured group mappings.</p>
+            </div>
+        </article>
 
-<section class="panel">
-    <div class="section-heading">
-        <div>
-            <p class="eyebrow">Directory</p>
-            <h2>Local Users</h2>
-        </div>
-    </div>
-    <div class="table-scroll">
-        <table class="data-table admin-user-table">
-            <thead>
-                <tr>
-                    <th>Username</th>
-                    <th>Role</th>
-                    <th>Status</th>
-                    <th>Created</th>
-                    <th>Last Login</th>
-                    <th>Reset Password</th>
-                    <th>Actions</th>
-                </tr>
-            </thead>
-            <tbody>
-            @foreach (var user in Model.Users)
-            {
-                <tr>
-                    <td>@user.Username</td>
-                    <td>
-                        <form method="post" asp-page-handler="ChangeRole" class="admin-user-role-form">
-                            <input type="hidden" name="userId" value="@user.UserId" />
-                            <input type="hidden" name="makeAdmin" value="@(string.Equals(user.Role, "Admin", StringComparison.OrdinalIgnoreCase) ? "false" : "true")" />
-                            <span class="badge @(string.Equals(user.Role, "Admin", StringComparison.OrdinalIgnoreCase) ? "info" : "neutral")">@user.Role</span>
-                            <button type="submit" class="link-button admin-user-compact-button">@(string.Equals(user.Role, "Admin", StringComparison.OrdinalIgnoreCase) ? "Set regular" : "Set admin")</button>
-                        </form>
-                    </td>
-                    <td>
-                        <span class="badge @(user.IsActive ? "good" : "dim")">@(user.IsActive ? "Active" : "Inactive")</span>
-                    </td>
-                    <td>@user.CreatedAt.ToString("u")</td>
-                    <td>@(user.LastLoginAt?.ToString("u") ?? "Never")</td>
-                    <td>
-                        <form method="post" asp-page-handler="ResetPassword" class="admin-user-inline-form">
-                            <input type="hidden" name="userId" value="@user.UserId" />
-                            <label>
-                                <span class="sr-only">New password for @user.Username</span>
-                                <input type="password" name="newPassword" autocomplete="new-password" placeholder="New" />
-                            </label>
-                            <label>
-                                <span class="sr-only">Confirm password for @user.Username</span>
-                                <input type="password" name="confirmPassword" autocomplete="new-password" placeholder="Confirm" />
-                            </label>
-                            <button type="submit" class="admin-user-compact-button">Reset</button>
-                        </form>
-                    </td>
-                    <td>
-                        <div class="admin-user-actions">
-                            <form method="post" asp-page-handler="ToggleActive">
-                                <input type="hidden" name="userId" value="@user.UserId" />
-                                <input type="hidden" name="makeActive" value="@(user.IsActive ? "false" : "true")" />
-                                <button type="submit" class="link-button admin-user-compact-button">@(user.IsActive ? "Disable" : "Enable")</button>
-                            </form>
-                            <form method="post" asp-page-handler="Delete">
-                                <input type="hidden" name="userId" value="@user.UserId" />
-                                <button type="submit" class="link-button danger-button admin-user-compact-button">Delete</button>
-                            </form>
-                        </div>
-                    </td>
-                </tr>
-            }
-            </tbody>
-        </table>
-    </div>
-</section>
+        <article class="panel">
+            <h2>Security Notes</h2>
+            <div class="risk-list">
+                <p class="callout">Break-glass local passwords are disabled while this portal is in SSO-only mode.</p>
+                <p class="callout warn">If you need emergency local access, switch the deployment to hybrid mode and provision a break-glass admin.</p>
+            </div>
+        </article>
+    </section>
+}
