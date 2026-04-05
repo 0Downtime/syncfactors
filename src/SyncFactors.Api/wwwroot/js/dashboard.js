@@ -74,7 +74,15 @@
         }
 
         var parsed = new Date(value);
-        return isNaN(parsed.getTime()) ? "Unknown" : parsed.toLocaleString();
+        return isNaN(parsed.getTime())
+            ? "Unknown"
+            : parsed.toLocaleString([], {
+                year: "numeric",
+                month: "numeric",
+                day: "numeric",
+                hour: "numeric",
+                minute: "2-digit"
+            });
     }
 
     function setBadge(element, text, status) {
@@ -139,26 +147,30 @@
 
         runs.forEach(function (run) {
             var row = document.createElement("tr");
-            appendCell(row, formatTimestamp(run.startedAt));
-            appendCell(row, textOrFallback(run.runTrigger, "AdHoc"));
-            appendCell(row, textOrFallback(run.mode, "Unknown"));
+            appendCell(row, formatTimestamp(run.startedAt), "recent-runs-table__started");
+            appendCell(row, textOrFallback(run.runTrigger, "AdHoc"), "recent-runs-table__trigger");
+            appendCell(row, textOrFallback(run.mode, "Unknown"), "recent-runs-table__mode");
             appendStatusCell(row, textOrFallback(run.status, "Unknown"));
-            appendCell(row, run.dryRun ? "Yes" : "No");
-            appendCell(row, String(run.totalWorkers || 0));
-            appendCell(row, runSummary(run));
+            appendCell(row, run.dryRun ? "Yes" : "No", "recent-runs-table__dry-run");
+            appendCell(row, String(run.totalWorkers || 0), "recent-runs-table__workers");
+            appendSummaryCell(row, runSummary(run));
             appendLinkCell(row, runDetailHref(run.runId), "Open");
             runsBody.appendChild(row);
         });
     }
 
-    function appendCell(row, text) {
+    function appendCell(row, text, className) {
         var cell = document.createElement("td");
         cell.textContent = text;
+        if (className) {
+            cell.className = className;
+        }
         row.appendChild(cell);
     }
 
     function appendStatusCell(row, status) {
         var cell = document.createElement("td");
+        cell.className = "recent-runs-table__status";
         var badge = document.createElement("span");
         badge.className = "badge " + runStatusClass(status);
         badge.textContent = status;
@@ -166,8 +178,20 @@
         row.appendChild(cell);
     }
 
+    function appendSummaryCell(row, text) {
+        var cell = document.createElement("td");
+        var content = document.createElement("span");
+        cell.className = "recent-runs-table__summary";
+        cell.title = text;
+        content.className = "summary-value";
+        content.textContent = text;
+        cell.appendChild(content);
+        row.appendChild(cell);
+    }
+
     function appendLinkCell(row, href, text) {
         var cell = document.createElement("td");
+        cell.className = "recent-runs-table__actions";
         var link = document.createElement("a");
         link.setAttribute("href", href);
         link.textContent = text;

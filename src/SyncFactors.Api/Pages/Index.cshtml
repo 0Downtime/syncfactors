@@ -125,31 +125,31 @@
             <p class="muted">No run data is configured yet. Set <code>SyncFactors__SqlitePath</code> to point the rewrite UI at an operational SQLite store.</p>
         </div>
         <div class="table-scroll @(Model.Runs.Count == 0 ? "is-hidden" : null)">
-            <table class="data-table" data-runs-table>
+            <table class="data-table compact recent-runs-table" data-runs-table>
                 <thead>
                     <tr>
-                        <th>Started</th>
-                        <th>Trigger</th>
-                        <th>Mode</th>
-                        <th>Status</th>
-                        <th>Dry Run</th>
-                        <th>Workers</th>
-                        <th>Summary</th>
-                        <th>Actions</th>
+                        <th class="recent-runs-table__started">Started</th>
+                        <th class="recent-runs-table__trigger">Trigger</th>
+                        <th class="recent-runs-table__mode">Mode</th>
+                        <th class="recent-runs-table__status">Status</th>
+                        <th class="recent-runs-table__dry-run">Dry Run</th>
+                        <th class="recent-runs-table__workers">Workers</th>
+                        <th class="recent-runs-table__summary">Summary</th>
+                        <th class="recent-runs-table__actions">Actions</th>
                     </tr>
                 </thead>
                 <tbody data-runs-body>
                 @foreach (var run in Model.Runs)
                 {
                     <tr>
-                        <td>@run.StartedAt.ToString("u")</td>
-                        <td>@run.RunTrigger</td>
-                        <td>@run.Mode</td>
-                        <td><span class="badge @StatusClass(run.Status)">@run.Status</span></td>
-                        <td>@(run.DryRun ? "Yes" : "No")</td>
-                        <td>@run.TotalWorkers</td>
-                        <td>@RunSummaryLine(run)</td>
-                        <td><a asp-page="/Runs/Detail" asp-route-runId="@run.RunId">Open</a></td>
+                        <td class="recent-runs-table__started">@run.StartedAt.ToLocalTime().ToString("g")</td>
+                        <td class="recent-runs-table__trigger">@run.RunTrigger</td>
+                        <td class="recent-runs-table__mode">@run.Mode</td>
+                        <td class="recent-runs-table__status"><span class="badge @StatusClass(run.Status)">@run.Status</span></td>
+                        <td class="recent-runs-table__dry-run">@(run.DryRun ? "Yes" : "No")</td>
+                        <td class="recent-runs-table__workers">@run.TotalWorkers</td>
+                        <td class="recent-runs-table__summary" title="@RunSummaryLine(run)"><span class="summary-value">@RunSummaryLine(run)</span></td>
+                        <td class="recent-runs-table__actions"><a asp-page="/Runs/Detail" asp-route-runId="@run.RunId">Open</a></td>
                     </tr>
                 }
                 </tbody>
