@@ -1,5 +1,9 @@
 # [Alpha] SyncFactors
 
+<p>
+  <img src="src/SyncFactors.Api/wwwroot/images/syncfactors-logo-black.png" alt="SyncFactors" width="420" />
+</p>
+
 `SyncFactors` is the current .NET-based SyncFactors implementation and repository root.
 
 > [!WARNING]
