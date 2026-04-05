@@ -135,6 +135,7 @@ a:focus-visible {
 .topbar-brand {
   display: grid;
   gap: 4px;
+  min-width: 0;
 }
 
 .eyebrow {
@@ -149,14 +150,21 @@ a:focus-visible {
 .brand-row {
   display: flex;
   align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
+  min-width: 0;
 }
 
 .brand {
-  font-size: 1.6rem;
-  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  max-width: min(100%, 540px);
   color: var(--ink);
+}
+
+.brand-logo {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 64px;
 }
 
 .brand-badge,
@@ -1164,6 +1172,14 @@ a:focus-visible {
   .nav,
   .filter-actions {
     width: 100%;
+  }
+
+  .brand {
+    max-width: min(100%, 380px);
+  }
+
+  .brand-logo {
+    max-height: 48px;
   }
 
   .theme-toggle,

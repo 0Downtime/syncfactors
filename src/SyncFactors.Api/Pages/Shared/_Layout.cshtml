@@ -12,10 +12,10 @@
         <header class="topbar">
             <div class="topbar-brand">
                 <div class="brand-row">
-                    <a class="brand" asp-page="/Index">SyncFactors</a>
-                    <span class="brand-badge">Portal</span>
+                    <a class="brand" asp-page="/Index" aria-label="SyncFactors home">
+                        <img class="brand-logo" src="~/images/syncfactors-logo.png" alt="SyncFactors" />
+                    </a>
                 </div>
-                <p class="subtitle">Operator dashboard for the .NET 10 rewrite</p>
             </div>
             <div class="topbar-actions">
                 <nav class="nav">
@@ -39,11 +39,11 @@
                                     ? "Viewer"
                                     : "Unknown";
                     <div class="auth-actions">
+                        <a class="link-button" asp-page="/Logout">Logout</a>
                         <div class="muted auth-user">
                             <span>Signed in as <strong>@User.Identity.Name</strong></span>
                             <span class="auth-role">Role: @role</span>
                         </div>
-                        <a class="link-button" asp-page="/Logout">Logout</a>
                     </div>
                 }
                 <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Toggle dark mode" aria-pressed="false">
