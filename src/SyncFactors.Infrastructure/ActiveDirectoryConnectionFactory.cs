@@ -64,9 +64,11 @@ internal static class ActiveDirectoryConnectionFactory
             connection.Credential = new NetworkCredential(config.Username, config.BindPassword);
         }
 
-        connection.SessionOptions.ProtocolVersion = 3;
-        connection.SessionOptions.Signing = config.Transport.RequireSigning;
-        connection.SessionOptions.Sealing = config.Transport.RequireSigning;
+        ConfigureSessionOptions(
+            value => connection.SessionOptions.ProtocolVersion = value,
+            value => connection.SessionOptions.Signing = value,
+            value => connection.SessionOptions.Sealing = value,
+            config.Transport.RequireSigning);
 
         if (!string.Equals(mode, "ldap", StringComparison.OrdinalIgnoreCase))
         {
@@ -95,6 +97,22 @@ internal static class ActiveDirectoryConnectionFactory
             stopwatch.ElapsedMilliseconds,
             mode);
         return connection;
+    }
+
+    internal static void ConfigureSessionOptions(
+        Action<int> setProtocolVersion,
+        Action<bool> setSigning,
+        Action<bool> setSealing,
+        bool requireSigning)
+    {
+        setProtocolVersion(3);
+        if (!requireSigning)
+        {
+            return;
+        }
+
+        setSigning(true);
+        setSealing(true);
     }
 
     private static bool ValidateServerCertificate(X509Certificate? certificate, ActiveDirectoryTransportConfig transport)
