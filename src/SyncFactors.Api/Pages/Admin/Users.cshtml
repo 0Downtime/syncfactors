@@ -143,10 +143,12 @@ else
     <section class="panel-grid admin-user-grid">
         <article class="panel">
             <h2>SSO-Managed Access</h2>
-            <div class="risk-list">
-                <p class="callout">User sign-in is handled by enterprise SSO for this deployment.</p>
-                <p class="callout">Create, disable, and delete accounts in your identity provider instead of this portal.</p>
-                <p class="callout">Admin, operator, and viewer access should come from your configured group mappings.</p>
+            <div class="sso-access-box">
+                <p class="sso-access-lead">User sign-in is managed by your enterprise SSO provider for this deployment.</p>
+                <ul class="sso-access-list">
+                    <li>Create, disable, and delete accounts in your identity provider, not in this portal.</li>
+                    <li>Admin, operator, and viewer access should come from your configured group mappings.</li>
+                </ul>
             </div>
         </article>
 
