@@ -72,6 +72,18 @@
                 <span class="icon-button-label">Refresh</span>
             </button>
         </div>
+        <section class="dashboard-status-signal" data-dashboard-signal data-signal-state="@StatusVisualState(Model.Status)" aria-label="Runtime signal">
+            <div class="dashboard-status-visual" aria-hidden="true">
+                <span class="dashboard-status-orbit dashboard-status-orbit-outer"></span>
+                <span class="dashboard-status-orbit dashboard-status-orbit-inner"></span>
+                <span class="dashboard-status-core"></span>
+            </div>
+            <div class="dashboard-status-copy">
+                <p class="eyebrow">Runtime Signal</p>
+                <p class="dashboard-status-line" data-status-line>@StatusLine(Model.Status)</p>
+                <p class="dashboard-status-caption muted" data-status-caption>@StatusCaption(Model.Status)</p>
+            </div>
+        </section>
         <dl class="kv" data-dashboard-status>
             <div><dt>Status</dt><dd data-status-value>@Model.Status.Status</dd></div>
             <div><dt>Stage</dt><dd data-stage-value>@Model.Status.Stage</dd></div>
@@ -182,4 +194,91 @@
         if (run.GuardrailFailures > 0) parts.Add($"{run.GuardrailFailures} guardrails");
         return parts.Count == 0 ? "No materialized bucket counts yet" : string.Join(" · ", parts);
     }
+
+    private static string StatusVisualState(SyncFactors.Contracts.RuntimeStatus status)
+    {
+        var currentStatus = status.Status?.Trim() ?? string.Empty;
+        var currentStage = status.Stage?.Trim() ?? string.Empty;
+
+        if (currentStatus.Equals("Failed", StringComparison.OrdinalIgnoreCase))
+        {
+            return "failed";
+        }
+
+        if (currentStatus.Equals("Canceled", StringComparison.OrdinalIgnoreCase) ||
+            currentStatus.Equals("Cancelled", StringComparison.OrdinalIgnoreCase))
+        {
+            return "idle";
+        }
+
+        if (currentStatus.Equals("Planned", StringComparison.OrdinalIgnoreCase) ||
+            currentStatus.Equals("Pending", StringComparison.OrdinalIgnoreCase) ||
+            currentStatus.Equals("CancelRequested", StringComparison.OrdinalIgnoreCase))
+        {
+            return "queued";
+        }
+
+        if (currentStatus.Equals("InProgress", StringComparison.OrdinalIgnoreCase))
+        {
+            return "syncing";
+        }
+
+        if ((currentStatus.Equals("Idle", StringComparison.OrdinalIgnoreCase) || currentStatus.Equals("Succeeded", StringComparison.OrdinalIgnoreCase)) &&
+            currentStage.Equals("Completed", StringComparison.OrdinalIgnoreCase) &&
+            status.TotalWorkers > 0)
+        {
+            return "complete";
+        }
+
+        return "idle";
+    }
+
+    private static string StatusLine(SyncFactors.Contracts.RuntimeStatus status)
+    {
+        var visualState = StatusVisualState(status);
+
+        return visualState switch
+        {
+            "syncing" => status.TotalWorkers > 0
+                ? $"Syncing worker {Math.Min(status.ProcessedWorkers + (string.IsNullOrWhiteSpace(status.CurrentWorkerId) ? 0 : 1), status.TotalWorkers)} of {status.TotalWorkers}"
+                : "Syncing directory changes",
+            "queued" => "Sync queued and waiting to start",
+            "failed" => $"Sync stopped during {DisplayStage(status.Stage)}",
+            "complete" => "Last sync completed successfully",
+            _ => "Idle and ready for the next sync",
+        };
+    }
+
+    private static string StatusCaption(SyncFactors.Contracts.RuntimeStatus status)
+    {
+        var visualState = StatusVisualState(status);
+        var stage = DisplayStage(status.Stage);
+
+        return visualState switch
+        {
+            "syncing" when !string.IsNullOrWhiteSpace(status.CurrentWorkerId) =>
+                $"{stage} on worker {status.CurrentWorkerId}. {status.ProcessedWorkers} of {status.TotalWorkers} processed.",
+            "syncing" =>
+                $"{stage}. {status.ProcessedWorkers} of {status.TotalWorkers} workers processed.",
+            "queued" =>
+                string.IsNullOrWhiteSpace(status.RunId)
+                    ? "The runtime is waiting for the worker service to begin the next run."
+                    : $"Run {status.RunId} is staged and waiting for execution.",
+            "failed" =>
+                string.IsNullOrWhiteSpace(status.ErrorMessage)
+                    ? "Review the last error and recent runs for the failure cause."
+                    : status.ErrorMessage!,
+            "complete" =>
+                $"{status.ProcessedWorkers} of {status.TotalWorkers} workers were processed in the last completed run.",
+            _ =>
+                status.LastUpdatedAt is null
+                    ? "No active sync is running."
+                    : $"Last activity was {DisplayStage(status.Stage)}.",
+        };
+    }
+
+    private static string DisplayStage(string? stage) =>
+        string.IsNullOrWhiteSpace(stage) || stage.Equals("NotStarted", StringComparison.OrdinalIgnoreCase)
+            ? "standby"
+            : stage.Replace("InProgress", "in progress", StringComparison.OrdinalIgnoreCase).ToLowerInvariant();
 }

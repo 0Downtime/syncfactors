@@ -13,6 +13,9 @@
     var lastRunEmpty = document.querySelector("[data-last-run-empty]");
     var lastRunCard = document.querySelector("[data-last-run-card]");
     var refreshButton = document.querySelector("[data-dashboard-refresh]");
+    var signalRoot = document.querySelector("[data-dashboard-signal]");
+    var statusLine = document.querySelector("[data-status-line]");
+    var statusCaption = document.querySelector("[data-status-caption]");
 
     var root = document.querySelector("[data-connection-health]");
     if (!root) {
@@ -96,6 +99,109 @@
 
     function textOrFallback(value, fallback) {
         return value ? value : fallback;
+    }
+
+    function displayStage(stage) {
+        if (!stage || stage.toLowerCase() === "notstarted") {
+            return "standby";
+        }
+
+        return stage.replace(/inprogress/ig, "in progress").toLowerCase();
+    }
+
+    function visualState(status) {
+        var currentStatus = (status && status.status ? status.status : "").toLowerCase();
+        var currentStage = (status && status.stage ? status.stage : "").toLowerCase();
+
+        if (currentStatus === "failed") {
+            return "failed";
+        }
+
+        if (currentStatus === "canceled" || currentStatus === "cancelled") {
+            return "idle";
+        }
+
+        if (currentStatus === "planned" || currentStatus === "pending" || currentStatus === "cancelrequested") {
+            return "queued";
+        }
+
+        if (currentStatus === "inprogress") {
+            return "syncing";
+        }
+
+        if ((currentStatus === "idle" || currentStatus === "succeeded") &&
+            currentStage === "completed" &&
+            (status.totalWorkers || 0) > 0) {
+            return "complete";
+        }
+
+        return "idle";
+    }
+
+    function buildStatusLine(status) {
+        var state = visualState(status);
+        var processedWorkers = status.processedWorkers || 0;
+        var totalWorkers = status.totalWorkers || 0;
+        var activeWorkerOffset = status.currentWorkerId ? 1 : 0;
+
+        switch (state) {
+            case "syncing":
+                return totalWorkers > 0
+                    ? "Syncing worker " + Math.min(processedWorkers + activeWorkerOffset, totalWorkers) + " of " + totalWorkers
+                    : "Syncing directory changes";
+            case "queued":
+                return "Sync queued and waiting to start";
+            case "failed":
+                return "Sync stopped during " + displayStage(status.stage);
+            case "complete":
+                return "Last sync completed successfully";
+            default:
+                return "Idle and ready for the next sync";
+        }
+    }
+
+    function buildStatusCaption(status) {
+        var state = visualState(status);
+        var stage = displayStage(status.stage);
+        var processedWorkers = status.processedWorkers || 0;
+        var totalWorkers = status.totalWorkers || 0;
+
+        switch (state) {
+            case "syncing":
+                if (status.currentWorkerId) {
+                    return stage + " on worker " + status.currentWorkerId + ". " + processedWorkers + " of " + totalWorkers + " processed.";
+                }
+
+                return stage + ". " + processedWorkers + " of " + totalWorkers + " workers processed.";
+            case "queued":
+                return status.runId
+                    ? "Run " + status.runId + " is staged and waiting for execution."
+                    : "The runtime is waiting for the worker service to begin the next run.";
+            case "failed":
+                return textOrFallback(status.errorMessage, "Review the last error and recent runs for the failure cause.");
+            case "complete":
+                return processedWorkers + " of " + totalWorkers + " workers were processed in the last completed run.";
+            default:
+                return status.lastUpdatedAt
+                    ? "Last activity was " + stage + "."
+                    : "No active sync is running.";
+        }
+    }
+
+    function renderSignal(status) {
+        if (!signalRoot) {
+            return;
+        }
+
+        signalRoot.setAttribute("data-signal-state", visualState(status));
+
+        if (statusLine) {
+            statusLine.textContent = buildStatusLine(status);
+        }
+
+        if (statusCaption) {
+            statusCaption.textContent = buildStatusCaption(status);
+        }
     }
 
     function runDetailHref(runId) {
@@ -205,6 +311,7 @@
         }
 
         var status = snapshot.status;
+        renderSignal(status);
         statusRoot.querySelector("[data-status-value]").textContent = textOrFallback(status.status, "Unknown");
         statusRoot.querySelector("[data-stage-value]").textContent = textOrFallback(status.stage, "Unknown");
         statusRoot.querySelector("[data-run-id-value]").textContent = textOrFallback(status.runId, "None");
