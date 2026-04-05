@@ -731,6 +731,170 @@ a:focus-visible {
   margin: 0 0 14px;
 }
 
+.dashboard-status-signal {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 18px;
+  align-items: center;
+  margin: 18px 0 10px;
+  padding: 18px 20px;
+  border: 1px solid color-mix(in srgb, var(--accent) 14%, var(--line) 86%);
+  border-radius: 16px;
+  background:
+    radial-gradient(circle at top left, color-mix(in srgb, var(--accent-soft) 78%, transparent) 0, transparent 58%),
+    linear-gradient(180deg, color-mix(in srgb, var(--panel-strong) 68%, var(--panel) 32%), var(--panel-alt));
+  overflow: hidden;
+}
+
+.dashboard-status-visual {
+  position: relative;
+  width: 72px;
+  aspect-ratio: 1;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+
+.dashboard-status-orbit,
+.dashboard-status-core {
+  position: absolute;
+  border-radius: 999px;
+}
+
+.dashboard-status-orbit {
+  inset: 0;
+  border: 1.5px solid transparent;
+}
+
+.dashboard-status-orbit-outer {
+  border-top-color: color-mix(in srgb, var(--accent) 78%, transparent);
+  border-right-color: color-mix(in srgb, var(--accent) 28%, transparent);
+  animation: dashboard-status-spin 3.6s linear infinite;
+}
+
+.dashboard-status-orbit-inner {
+  inset: 10px;
+  border-bottom-color: color-mix(in srgb, var(--accent) 72%, transparent);
+  border-left-color: color-mix(in srgb, var(--accent) 24%, transparent);
+  animation: dashboard-status-spin-reverse 2.4s linear infinite;
+}
+
+.dashboard-status-core {
+  width: 24px;
+  height: 24px;
+  background: radial-gradient(circle at 30% 30%, rgba(255, 255, 255, 0.92), color-mix(in srgb, var(--accent) 82%, white 18%));
+  box-shadow:
+    0 0 0 8px color-mix(in srgb, var(--accent-soft) 70%, transparent),
+    0 10px 22px color-mix(in srgb, var(--accent) 18%, transparent);
+  animation: dashboard-status-pulse 2.4s ease-in-out infinite;
+}
+
+.dashboard-status-copy {
+  min-width: 0;
+}
+
+.dashboard-status-copy .eyebrow {
+  margin-bottom: 6px;
+}
+
+.dashboard-status-line,
+.dashboard-status-caption {
+  margin: 0;
+}
+
+.dashboard-status-line {
+  font-size: 1.12rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.dashboard-status-caption {
+  margin-top: 6px;
+}
+
+.dashboard-status-signal[data-signal-state="idle"] .dashboard-status-orbit-outer {
+  border-top-color: color-mix(in srgb, var(--line-strong) 64%, transparent);
+  border-right-color: transparent;
+  animation-duration: 12s;
+}
+
+.dashboard-status-signal[data-signal-state="idle"] .dashboard-status-orbit-inner {
+  border-bottom-color: color-mix(in srgb, var(--line-strong) 38%, transparent);
+  border-left-color: transparent;
+  animation-duration: 16s;
+}
+
+.dashboard-status-signal[data-signal-state="idle"] .dashboard-status-core {
+  background: radial-gradient(circle at 30% 30%, rgba(255, 255, 255, 0.94), color-mix(in srgb, var(--muted) 76%, white 24%));
+  box-shadow:
+    0 0 0 8px color-mix(in srgb, var(--dim-bg) 85%, transparent),
+    0 8px 18px color-mix(in srgb, var(--line-strong) 24%, transparent);
+  animation-duration: 4.2s;
+}
+
+.dashboard-status-signal[data-signal-state="queued"] .dashboard-status-orbit-outer,
+.dashboard-status-signal[data-signal-state="queued"] .dashboard-status-orbit-inner {
+  border-color: transparent;
+  border-top-color: color-mix(in srgb, var(--warn) 80%, transparent);
+  border-right-color: color-mix(in srgb, var(--warn) 34%, transparent);
+}
+
+.dashboard-status-signal[data-signal-state="queued"] .dashboard-status-core {
+  background: radial-gradient(circle at 30% 30%, rgba(255, 255, 255, 0.94), color-mix(in srgb, var(--warn) 80%, white 20%));
+  box-shadow:
+    0 0 0 8px color-mix(in srgb, var(--warn-bg) 88%, transparent),
+    0 10px 22px color-mix(in srgb, var(--warn) 20%, transparent);
+  animation-duration: 1.6s;
+}
+
+.dashboard-status-signal[data-signal-state="syncing"] .dashboard-status-orbit-outer {
+  border-top-color: color-mix(in srgb, var(--accent) 88%, transparent);
+  border-right-color: color-mix(in srgb, var(--info) 38%, transparent);
+  animation-duration: 1.2s;
+}
+
+.dashboard-status-signal[data-signal-state="syncing"] .dashboard-status-orbit-inner {
+  border-bottom-color: color-mix(in srgb, var(--info) 82%, transparent);
+  border-left-color: color-mix(in srgb, var(--accent) 30%, transparent);
+  animation-duration: 0.9s;
+}
+
+.dashboard-status-signal[data-signal-state="syncing"] .dashboard-status-core {
+  background: radial-gradient(circle at 30% 30%, rgba(255, 255, 255, 0.98), color-mix(in srgb, var(--accent) 90%, white 10%));
+  box-shadow:
+    0 0 0 10px color-mix(in srgb, var(--accent-soft) 90%, transparent),
+    0 12px 28px color-mix(in srgb, var(--accent) 24%, transparent);
+  animation-duration: 1.2s;
+}
+
+.dashboard-status-signal[data-signal-state="complete"] .dashboard-status-orbit-outer,
+.dashboard-status-signal[data-signal-state="complete"] .dashboard-status-orbit-inner {
+  border-color: color-mix(in srgb, var(--good) 22%, transparent);
+  animation-play-state: paused;
+}
+
+.dashboard-status-signal[data-signal-state="complete"] .dashboard-status-core {
+  background: radial-gradient(circle at 30% 30%, rgba(255, 255, 255, 0.96), color-mix(in srgb, var(--good) 86%, white 14%));
+  box-shadow:
+    0 0 0 10px color-mix(in srgb, var(--good-bg) 88%, transparent),
+    0 10px 24px color-mix(in srgb, var(--good) 18%, transparent);
+}
+
+.dashboard-status-signal[data-signal-state="failed"] .dashboard-status-orbit-outer,
+.dashboard-status-signal[data-signal-state="failed"] .dashboard-status-orbit-inner {
+  border-color: transparent;
+  border-top-color: color-mix(in srgb, var(--bad) 82%, transparent);
+  border-right-color: color-mix(in srgb, var(--bad) 32%, transparent);
+  animation-duration: 4.8s;
+}
+
+.dashboard-status-signal[data-signal-state="failed"] .dashboard-status-core {
+  background: radial-gradient(circle at 30% 30%, rgba(255, 255, 255, 0.96), color-mix(in srgb, var(--bad) 84%, white 16%));
+  box-shadow:
+    0 0 0 10px color-mix(in srgb, var(--bad-bg) 90%, transparent),
+    0 10px 24px color-mix(in srgb, var(--bad) 18%, transparent);
+}
+
 .decision-badges,
 .bucket-chip-row {
   display: flex;
@@ -811,6 +975,55 @@ a:focus-visible {
   margin: 0;
   text-align: right;
   color: var(--muted);
+}
+
+@keyframes dashboard-status-spin {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes dashboard-status-spin-reverse {
+  from {
+    transform: rotate(360deg);
+  }
+
+  to {
+    transform: rotate(0deg);
+  }
+}
+
+@keyframes dashboard-status-pulse {
+  0%,
+  100% {
+    transform: scale(0.94);
+  }
+
+  50% {
+    transform: scale(1.04);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dashboard-status-orbit,
+  .dashboard-status-core {
+    animation: none !important;
+  }
+}
+
+@media (max-width: 720px) {
+  .dashboard-status-signal {
+    grid-template-columns: 1fr;
+    justify-items: start;
+  }
+
+  .dashboard-status-visual {
+    width: 60px;
+  }
 }
 
 .summary-value {
