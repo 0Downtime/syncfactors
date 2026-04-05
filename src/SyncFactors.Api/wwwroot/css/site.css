@@ -167,6 +167,22 @@ a:focus-visible {
   max-height: 64px;
 }
 
+.brand-logo-light {
+  display: block;
+}
+
+.brand-logo-dark {
+  display: none;
+}
+
+:root[data-theme="dark"] .brand-logo-light {
+  display: none;
+}
+
+:root[data-theme="dark"] .brand-logo-dark {
+  display: block;
+}
+
 .brand-badge,
 .badge {
   display: inline-flex;
