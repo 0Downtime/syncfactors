@@ -235,6 +235,43 @@ public sealed class WorkerPreviewPlannerTests
     }
 
     [Fact]
+    public async Task PreviewAsync_DoesNotRequireReviewWhenManagerLookupThrows()
+    {
+        var worker = new WorkerSnapshot(
+            WorkerId: "44522",
+            PreferredName: "Christopher",
+            LastName: "Brien",
+            Department: "Infrastructure & Security",
+            TargetOu: "OU=Employees,DC=example,DC=com",
+            IsPrehire: false,
+            Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["company"] = "Example Services, Inc.",
+                ["department"] = "Infrastructure & Security",
+                ["managerId"] = "10004"
+            });
+
+        var planner = new WorkerPreviewPlanner(
+            new StubWorkerSource(worker),
+            new WorkerPlanningService(
+                new ThrowingManagerDirectoryGateway(),
+                new StubIdentityMatcher(),
+                CreateLifecyclePolicy(),
+                new StubAttributeDiffService(),
+                new StubAttributeMappingProvider(),
+                NullLogger<WorkerPlanningService>.Instance),
+            new StubAttributeMappingProvider(),
+            new StubWorkerPreviewLogWriter(),
+            new StubRunRepository(),
+            NullLogger<WorkerPreviewPlanner>.Instance);
+
+        var preview = await planner.PreviewAsync("44522", CancellationToken.None);
+
+        Assert.Null(preview.ReviewCaseType);
+        Assert.Null(preview.ReviewCategory);
+    }
+
+    [Fact]
     public async Task PreviewAsync_ForExistingUsers_PreservesCurrentEmailTargets()
     {
         var worker = new WorkerSnapshot(
@@ -552,6 +589,31 @@ public sealed class WorkerPreviewPlannerTests
             _ = isCreate;
             _ = cancellationToken;
             return Task.FromResult("christopher.brien2");
+        }
+    }
+
+    private sealed class ThrowingManagerDirectoryGateway : IDirectoryGateway
+    {
+        public Task<DirectoryUserSnapshot?> FindByWorkerAsync(WorkerSnapshot worker, CancellationToken cancellationToken)
+        {
+            _ = worker;
+            _ = cancellationToken;
+            return Task.FromResult<DirectoryUserSnapshot?>(null);
+        }
+
+        public Task<string?> ResolveManagerDistinguishedNameAsync(string managerId, CancellationToken cancellationToken)
+        {
+            _ = managerId;
+            _ = cancellationToken;
+            throw new InvalidOperationException("AD manager lookup failed.");
+        }
+
+        public Task<string> ResolveAvailableEmailLocalPartAsync(WorkerSnapshot worker, bool isCreate, CancellationToken cancellationToken)
+        {
+            _ = worker;
+            _ = isCreate;
+            _ = cancellationToken;
+            return Task.FromResult("christopher.brien");
         }
     }
 
