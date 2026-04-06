@@ -8,6 +8,7 @@ public sealed class Worker(
     ILogger<Worker> logger,
     IRunQueueStore runQueueStore,
     SyncScheduleCoordinator syncScheduleCoordinator,
+    GraveyardRetentionReportCoordinator graveyardRetentionReportCoordinator,
     BulkRunCoordinator bulkRunCoordinator,
     DeleteAllUsersCoordinator deleteAllUsersCoordinator,
     IWorkerHeartbeatStore workerHeartbeatStore,
@@ -27,6 +28,7 @@ public sealed class Worker(
         do
         {
             await syncScheduleCoordinator.TryEnqueueDueRunAsync(stoppingToken);
+            await graveyardRetentionReportCoordinator.TrySendDueReportAsync(stoppingToken);
             var claimed = await runQueueStore.ClaimNextPendingAsync("SyncFactors.Worker", stoppingToken);
             if (claimed is not null)
             {

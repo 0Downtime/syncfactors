@@ -199,7 +199,10 @@ public sealed record LifecyclePolicySettings(
     string PrehireOu,
     string GraveyardOu,
     string InactiveStatusField,
-    IReadOnlyList<string> InactiveStatusValues);
+    IReadOnlyList<string> InactiveStatusValues,
+    string? LeaveOu = null,
+    IReadOnlyList<string>? LeaveStatusValues = null,
+    string DirectoryIdentityAttribute = "employeeID");
 
 public sealed record WorkerSnapshot(
     string WorkerId,
@@ -299,6 +302,28 @@ public sealed record OperationSummary(
     string? TargetOu,
     string? FromOu,
     string? ToOu);
+
+public sealed record GraveyardRetentionRecord(
+    string WorkerId,
+    string? SamAccountName,
+    string? DisplayName,
+    string? DistinguishedName,
+    string Status,
+    DateTimeOffset? EndDateUtc,
+    DateTimeOffset LastObservedAtUtc,
+    bool Active);
+
+public sealed record GraveyardRetentionReportStatus(
+    DateTimeOffset? LastSentAtUtc,
+    DateTimeOffset? LastAttemptedAtUtc,
+    string? LastError);
+
+public sealed record GraveyardRetentionNotificationSettings(
+    bool Enabled,
+    int IntervalDays,
+    int RetentionDays,
+    string SubjectPrefix,
+    IReadOnlyList<string> Recipients);
 
 public sealed record ApplyPreviewRequest(
     string WorkerId,

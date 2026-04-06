@@ -22,11 +22,13 @@ public sealed class BulkRunCoordinatorTests
             new StubWorkerSource(workers),
             deltaSyncService,
             new StubRunQueueStore(),
+            new StubGraveyardRetentionStore(),
             new StubWorkerPlanningService(),
             new StubDirectoryMutationCommandBuilder(),
             new StubDirectoryCommandGateway(),
             new CapturingRunLifecycleService(),
             new WorkerRunSettings(MaxCreatesPerRun: 10),
+            CreateLifecycleSettings(),
             NullLogger<BulkRunCoordinator>.Instance,
             TimeProvider.System);
 
@@ -63,11 +65,13 @@ public sealed class BulkRunCoordinatorTests
             new StubWorkerSource([CreateWorker("10001")]),
             deltaSyncService,
             new StubRunQueueStore(),
+            new StubGraveyardRetentionStore(),
             new StubWorkerPlanningService(),
             new StubDirectoryMutationCommandBuilder(),
             new SuccessfulDirectoryCommandGateway(),
             new CapturingRunLifecycleService(),
             new WorkerRunSettings(MaxCreatesPerRun: 10),
+            CreateLifecycleSettings(),
             NullLogger<BulkRunCoordinator>.Instance,
             TimeProvider.System);
 
@@ -100,11 +104,13 @@ public sealed class BulkRunCoordinatorTests
             new StubWorkerSource([CreateWorker("10001")]),
             deltaSyncService,
             new StubRunQueueStore(),
+            new StubGraveyardRetentionStore(),
             new StubWorkerPlanningService(includeChangedAttribute: true),
             new StubDirectoryMutationCommandBuilder(),
             new FailingDirectoryCommandGateway(),
             new CapturingRunLifecycleService(),
             new WorkerRunSettings(MaxCreatesPerRun: 10),
+            CreateLifecycleSettings(),
             NullLogger<BulkRunCoordinator>.Instance,
             TimeProvider.System);
 
@@ -137,11 +143,13 @@ public sealed class BulkRunCoordinatorTests
             new StubWorkerSource([CreateWorker("10001"), CreateWorker("10002")]),
             deltaSyncService,
             new StubRunQueueStore(),
+            new StubGraveyardRetentionStore(),
             new CreateWorkerPlanningService(),
             new StubDirectoryMutationCommandBuilder(),
             new SuccessfulDirectoryCommandGateway(),
             new CapturingRunLifecycleService(),
             new WorkerRunSettings(MaxCreatesPerRun: 1),
+            CreateLifecycleSettings(),
             NullLogger<BulkRunCoordinator>.Instance,
             TimeProvider.System);
 
@@ -168,8 +176,61 @@ public sealed class BulkRunCoordinatorTests
         Assert.Contains(CapturingRunLifecycleService.Entries, entry => entry.WorkerId == "10002" && entry.Bucket == "guardrailFailures");
     }
 
-    private static WorkerSnapshot CreateWorker(string workerId)
+    [Fact]
+    public async Task ExecuteAsync_LiveRun_TracksObservedGraveyardUsers()
     {
+        CapturingRunLifecycleService.Entries.Clear();
+        CapturingRunLifecycleService.Reset();
+        var retentionStore = new StubGraveyardRetentionStore();
+        var coordinator = new BulkRunCoordinator(
+            new StubWorkerSource([CreateWorker("10001", "64308", "/Date(1777772800000)/")]),
+            new CapturingDeltaSyncService(),
+            new StubRunQueueStore(),
+            retentionStore,
+            new GraveyardWorkerPlanningService(),
+            new StubDirectoryMutationCommandBuilder(),
+            new SuccessfulDirectoryCommandGateway(),
+            new CapturingRunLifecycleService(),
+            new WorkerRunSettings(MaxCreatesPerRun: 10, MaxDeletionsPerRun: 5),
+            CreateLifecycleSettings(),
+            NullLogger<BulkRunCoordinator>.Instance,
+            TimeProvider.System);
+
+        await coordinator.ExecuteAsync(
+            new RunQueueRequest(
+                RequestId: "req-delete",
+                Mode: "BulkSync",
+                DryRun: false,
+                RunTrigger: "AdHoc",
+                RequestedBy: "test",
+                Status: "Pending",
+                RequestedAt: DateTimeOffset.UtcNow,
+                StartedAt: null,
+                CompletedAt: null,
+                RunId: null,
+                ErrorMessage: null),
+            maxDegreeOfParallelism: 1,
+            CancellationToken.None);
+
+        var record = Assert.Single(retentionStore.Observed);
+        Assert.Equal("10001", record.WorkerId);
+        Assert.Equal("64308", record.Status);
+        Assert.Equal(DateTimeOffset.FromUnixTimeMilliseconds(1777772800000), record.EndDateUtc);
+    }
+
+    private static WorkerSnapshot CreateWorker(string workerId, string? status = null, string? endDate = null)
+    {
+        var attributes = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
+        if (status is not null)
+        {
+            attributes["emplStatus"] = status;
+        }
+
+        if (endDate is not null)
+        {
+            attributes["endDate"] = endDate;
+        }
+
         return new WorkerSnapshot(
             WorkerId: workerId,
             PreferredName: $"Worker{workerId}",
@@ -177,7 +238,20 @@ public sealed class BulkRunCoordinatorTests
             Department: "IT",
             TargetOu: "OU=LabUsers,DC=example,DC=com",
             IsPrehire: false,
-            Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase));
+            Attributes: attributes);
+    }
+
+    private static LifecyclePolicySettings CreateLifecycleSettings()
+    {
+        return new LifecyclePolicySettings(
+            ActiveOu: "OU=LabUsers,DC=example,DC=com",
+            PrehireOu: "OU=Prehire,DC=example,DC=com",
+            GraveyardOu: "OU=Graveyard,DC=example,DC=com",
+            InactiveStatusField: "emplStatus",
+            InactiveStatusValues: ["64307", "64308"],
+            LeaveOu: "OU=Leave Users,DC=example,DC=com",
+            LeaveStatusValues: ["64303", "64304"],
+            DirectoryIdentityAttribute: "employeeID");
     }
 
     private sealed class StubWorkerSource(IReadOnlyList<WorkerSnapshot> workers) : IWorkerSource
@@ -198,6 +272,29 @@ public sealed class BulkRunCoordinatorTests
                 await Task.Yield();
             }
         }
+    }
+
+    private sealed class StubDirectoryGateway(IReadOnlyList<DirectoryUserSnapshot>? graveyardUsers = null) : IDirectoryGateway
+    {
+        public Task<DirectoryUserSnapshot?> FindByWorkerAsync(WorkerSnapshot worker, CancellationToken cancellationToken) =>
+            Task.FromResult<DirectoryUserSnapshot?>(null);
+
+        public Task<IReadOnlyList<DirectoryUserSnapshot>> ListUsersInOuAsync(string ouDistinguishedName, CancellationToken cancellationToken)
+        {
+            _ = cancellationToken;
+            if (!string.Equals(ouDistinguishedName, "OU=Graveyard,DC=example,DC=com", StringComparison.OrdinalIgnoreCase))
+            {
+                return Task.FromResult<IReadOnlyList<DirectoryUserSnapshot>>([]);
+            }
+
+            return Task.FromResult<IReadOnlyList<DirectoryUserSnapshot>>(graveyardUsers ?? []);
+        }
+
+        public Task<string?> ResolveManagerDistinguishedNameAsync(string managerId, CancellationToken cancellationToken) =>
+            Task.FromResult<string?>(null);
+
+        public Task<string> ResolveAvailableEmailLocalPartAsync(WorkerSnapshot worker, bool isCreate, CancellationToken cancellationToken) =>
+            Task.FromResult(DirectoryIdentityFormatter.BuildBaseEmailLocalPart(worker.PreferredName, worker.LastName));
     }
 
     private sealed class StubWorkerPlanningService(bool includeChangedAttribute = false) : IWorkerPlanningService
@@ -230,6 +327,41 @@ public sealed class BulkRunCoordinatorTests
                     TargetEnabled: true,
                     PrimaryAction: "UpdateUser",
                     Operations: [new DirectoryOperation("UpdateUser")],
+                    ReviewCategory: null,
+                    ReviewCaseType: null,
+                    Reason: null,
+                    CanAutoApply: true));
+        }
+    }
+
+    private sealed class GraveyardWorkerPlanningService : IWorkerPlanningService
+    {
+        public Task<PlannedWorkerAction> PlanAsync(WorkerSnapshot worker, string? logPath, CancellationToken cancellationToken)
+        {
+            _ = logPath;
+            _ = cancellationToken;
+
+            return Task.FromResult(
+                new PlannedWorkerAction(
+                    Worker: worker,
+                    DirectoryUser: new DirectoryUserSnapshot(
+                        SamAccountName: worker.WorkerId,
+                        DistinguishedName: $"CN={worker.WorkerId},OU=Employees,DC=example,DC=com",
+                        Enabled: true,
+                        DisplayName: $"Worker {worker.WorkerId}",
+                        Attributes: new Dictionary<string, string?>()),
+                    Identity: new IdentityMatchResult("graveyardMoves", true, worker.WorkerId, null, null),
+                    ManagerDistinguishedName: null,
+                    ProposedEmailAddress: $"{worker.WorkerId}@example.com",
+                    AttributeChanges: [],
+                    MissingSourceAttributes: [],
+                    Bucket: "graveyardMoves",
+                    CurrentOu: "OU=Employees,DC=example,DC=com",
+                    TargetOu: "OU=Graveyard,DC=example,DC=com",
+                    CurrentEnabled: true,
+                    TargetEnabled: false,
+                    PrimaryAction: "MoveUser",
+                    Operations: [new DirectoryOperation("MoveUser", "OU=Graveyard,DC=example,DC=com"), new DirectoryOperation("DisableUser")],
                     ReviewCategory: null,
                     ReviewCaseType: null,
                     Reason: null,
@@ -300,12 +432,65 @@ public sealed class BulkRunCoordinatorTests
         }
     }
 
+    private sealed class CapturingDirectoryCommandGateway : IDirectoryCommandGateway
+    {
+        public List<DirectoryMutationCommand> Commands { get; } = [];
+
+        public Task<DirectoryCommandResult> ExecuteAsync(DirectoryMutationCommand command, CancellationToken cancellationToken)
+        {
+            _ = cancellationToken;
+            Commands.Add(command);
+            return Task.FromResult(new DirectoryCommandResult(true, command.Action, command.SamAccountName, command.CurrentDistinguishedName, "Applied", null));
+        }
+    }
+
     private sealed class FailingDirectoryCommandGateway : IDirectoryCommandGateway
     {
         public Task<DirectoryCommandResult> ExecuteAsync(DirectoryMutationCommand command, CancellationToken cancellationToken)
         {
             _ = cancellationToken;
             return Task.FromResult(new DirectoryCommandResult(false, command.Action, command.SamAccountName, null, "Failed", null));
+        }
+    }
+
+    private sealed class StubGraveyardRetentionStore : IGraveyardRetentionStore
+    {
+        public List<GraveyardRetentionRecord> Observed { get; } = [];
+        public List<string> ResolvedWorkerIds { get; } = [];
+
+        public Task UpsertObservedAsync(GraveyardRetentionRecord record, CancellationToken cancellationToken)
+        {
+            _ = cancellationToken;
+            Observed.Add(record);
+            return Task.CompletedTask;
+        }
+
+        public Task ResolveAsync(string workerId, CancellationToken cancellationToken)
+        {
+            _ = cancellationToken;
+            ResolvedWorkerIds.Add(workerId);
+            return Task.CompletedTask;
+        }
+
+        public Task<IReadOnlyList<GraveyardRetentionRecord>> ListActiveAsync(CancellationToken cancellationToken)
+        {
+            _ = cancellationToken;
+            return Task.FromResult<IReadOnlyList<GraveyardRetentionRecord>>(Observed);
+        }
+
+        public Task<GraveyardRetentionReportStatus> GetReportStatusAsync(CancellationToken cancellationToken)
+        {
+            _ = cancellationToken;
+            return Task.FromResult(new GraveyardRetentionReportStatus(null, null, null));
+        }
+
+        public Task RecordReportAttemptAsync(DateTimeOffset attemptedAt, string? error, DateTimeOffset? sentAtUtc, CancellationToken cancellationToken)
+        {
+            _ = attemptedAt;
+            _ = error;
+            _ = sentAtUtc;
+            _ = cancellationToken;
+            return Task.CompletedTask;
         }
     }
 
