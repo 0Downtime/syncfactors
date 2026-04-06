@@ -50,6 +50,7 @@ builder.Services.AddSingleton<IDeltaSyncService, SuccessFactorsDeltaSyncService>
 builder.Services.AddSingleton<IWorkerHeartbeatStore, SqliteWorkerHeartbeatStore>();
 builder.Services.AddSingleton<IRunRepository, SqliteRunRepository>();
 builder.Services.AddSingleton<IRunQueueStore, SqliteRunQueueStore>();
+builder.Services.AddSingleton<RunQueueRecoveryService>();
 builder.Services.AddSingleton<ISyncScheduleStore, SqliteSyncScheduleStore>();
 builder.Services.AddSingleton<IGraveyardRetentionStore, SqliteGraveyardRetentionStore>();
 builder.Services.AddHttpClient<SuccessFactorsWorkerSource>()
@@ -78,4 +79,5 @@ builder.Services.AddHostedService<Worker>();
 var host = builder.Build();
 await host.Services.GetRequiredService<SqliteDatabaseInitializer>().InitializeAsync(CancellationToken.None);
 host.Services.GetRequiredService<SyncFactorsConfigurationValidator>().Validate();
+await host.Services.GetRequiredService<RunQueueRecoveryService>().RecoverIfNeededAsync("worker startup", CancellationToken.None);
 host.Run();
