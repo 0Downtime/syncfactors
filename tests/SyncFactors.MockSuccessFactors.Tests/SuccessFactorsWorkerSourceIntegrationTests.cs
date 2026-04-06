@@ -673,16 +673,18 @@ public sealed class SuccessFactorsWorkerSourceIntegrationTests
             },
             "previewQuery": {
               "entitySet": "PerPerson",
-              "identityField": "personIdExternal",
+              "identityField": "employmentNav/userId",
               "deltaField": "lastModifiedDateTime",
               "pageSize": 2,
               "select": [
                 "personIdExternal",
+                "employmentNav/userId",
                 "personalInfoNav/firstName",
                 "personalInfoNav/lastName"
               ],
               "expand": [
-                "personalInfoNav"
+                "personalInfoNav",
+                "employmentNav"
               ]
             }
           },
