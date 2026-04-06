@@ -619,7 +619,7 @@ public sealed class SuccessFactorsWorkerSourceIntegrationTests
     }
 
     [Fact]
-    public async Task WorkerSource_ListWorkersAsync_PrefersPreviewQueryWhenConfigured()
+    public async Task WorkerSource_ListWorkersAsync_UsesProvisioningQueryAndEnrichesWithPreviewQuery()
     {
         var fixturePath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "config", "mock-successfactors", "baseline-fixtures.json"));
         var fixtureStore = new MockFixtureStore(Options.Create(new MockSuccessFactorsOptions
@@ -666,7 +666,8 @@ public sealed class SuccessFactorsWorkerSourceIntegrationTests
               "deltaField": "lastModifiedDateTime",
               "pageSize": 2,
               "select": [
-                "userId"
+                "userId",
+                "personIdExternal"
               ],
               "expand": []
             },
@@ -719,7 +720,9 @@ public sealed class SuccessFactorsWorkerSourceIntegrationTests
         await using var enumerator = workerSource.ListWorkersAsync(WorkerListingMode.DeltaPreferred, CancellationToken.None).GetAsyncEnumerator();
         Assert.True(await enumerator.MoveNextAsync());
 
+        Assert.Contains(handler.RequestUris, uri => uri.Contains("/EmpJob?", StringComparison.Ordinal));
         Assert.Contains(handler.RequestUris, uri => uri.Contains("/PerPerson?", StringComparison.Ordinal));
+        Assert.Equal("user.10001", enumerator.Current.WorkerId);
     }
 
     [Fact]

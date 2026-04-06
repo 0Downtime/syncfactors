@@ -35,28 +35,10 @@ public sealed class SuccessFactorsWorkerSource(
         }
 
         var config = configLoader.GetSyncConfig();
-        var previewQuery = config.SuccessFactors.PreviewQuery;
-        WorkerSnapshot? worker = null;
-        if (previewQuery is not null &&
-            !string.Equals(previewQuery.IdentityField, config.SuccessFactors.Query.IdentityField, StringComparison.OrdinalIgnoreCase))
-        {
-            var canonicalWorker = await TryResolveWorkerAsync(config, config.SuccessFactors.Query, workerId, cancellationToken);
-            if (canonicalWorker is not null)
-            {
-                var previewIdentity = ResolveIdentityValue(previewQuery.IdentityField, canonicalWorker);
-                if (!string.IsNullOrWhiteSpace(previewIdentity))
-                {
-                    worker = await TryResolveWorkerAsync(config, previewQuery, previewIdentity, cancellationToken, canonicalWorker.WorkerId);
-                }
-
-                worker ??= canonicalWorker;
-            }
-        }
-        else
-        {
-            var query = previewQuery ?? config.SuccessFactors.Query;
-            worker = await TryResolveWorkerAsync(config, query, workerId, cancellationToken);
-        }
+        var canonicalWorker = await TryResolveWorkerAsync(config, config.SuccessFactors.Query, workerId, cancellationToken);
+        var worker = canonicalWorker is null
+            ? null
+            : await EnrichWorkerAsync(config, canonicalWorker, cancellationToken);
 
         if (worker is not null)
         {
@@ -129,7 +111,7 @@ public sealed class SuccessFactorsWorkerSource(
     public async IAsyncEnumerable<WorkerSnapshot> ListWorkersAsync(WorkerListingMode mode, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
     {
         var config = configLoader.GetSyncConfig();
-        var query = config.SuccessFactors.PreviewQuery ?? config.SuccessFactors.Query;
+        var query = config.SuccessFactors.Query;
         var effectiveQuery = await BuildEffectiveListQueryAsync(query, mode, cancellationToken);
         var pageSize = Math.Max(1, effectiveQuery.PageSize);
         var firstRequestUri = BuildServerPagedListRequestUri(config, effectiveQuery, pageSize);
@@ -254,7 +236,7 @@ public sealed class SuccessFactorsWorkerSource(
             foreach (var worker in workers)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                yield return worker;
+                yield return await EnrichWorkerAsync(config, worker, cancellationToken);
             }
 
             if (string.IsNullOrWhiteSpace(nextRequestUri))
@@ -317,7 +299,7 @@ public sealed class SuccessFactorsWorkerSource(
             foreach (var worker in workers)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                yield return worker;
+                yield return await EnrichWorkerAsync(config, worker, cancellationToken);
             }
 
             if (workers.Length < pageSize)
@@ -348,6 +330,59 @@ public sealed class SuccessFactorsWorkerSource(
                 logger.LogDebug("Using OAuth bearer authentication for SuccessFactors request.");
                 break;
         }
+    }
+
+    private async Task<WorkerSnapshot> EnrichWorkerAsync(
+        SyncFactorsConfigDocument config,
+        WorkerSnapshot canonicalWorker,
+        CancellationToken cancellationToken)
+    {
+        var previewQuery = config.SuccessFactors.PreviewQuery;
+        if (previewQuery is null)
+        {
+            return canonicalWorker;
+        }
+
+        var previewIdentity = ResolveIdentityValue(previewQuery.IdentityField, canonicalWorker) ?? canonicalWorker.WorkerId;
+        if (string.IsNullOrWhiteSpace(previewIdentity))
+        {
+            return canonicalWorker;
+        }
+
+        var previewWorker = await TryResolveWorkerAsync(
+            config,
+            previewQuery,
+            previewIdentity,
+            cancellationToken,
+            canonicalWorker.WorkerId);
+
+        return previewWorker is null
+            ? canonicalWorker
+            : MergeWorkerSnapshots(canonicalWorker, previewWorker);
+    }
+
+    private static WorkerSnapshot MergeWorkerSnapshots(WorkerSnapshot canonicalWorker, WorkerSnapshot previewWorker)
+    {
+        var attributes = new Dictionary<string, string?>(canonicalWorker.Attributes, StringComparer.OrdinalIgnoreCase);
+        foreach (var pair in previewWorker.Attributes)
+        {
+            attributes[pair.Key] = pair.Value;
+        }
+
+        return canonicalWorker with
+        {
+            PreferredName = MergePreferredValue(canonicalWorker.PreferredName, previewWorker.PreferredName, "Unknown"),
+            LastName = MergePreferredValue(canonicalWorker.LastName, previewWorker.LastName, "Worker"),
+            Department = MergePreferredValue(canonicalWorker.Department, previewWorker.Department, "Unknown"),
+            Attributes = attributes
+        };
+    }
+
+    private static string MergePreferredValue(string canonicalValue, string previewValue, string previewFallback)
+    {
+        return string.IsNullOrWhiteSpace(previewValue) || string.Equals(previewValue, previewFallback, StringComparison.OrdinalIgnoreCase)
+            ? canonicalValue
+            : previewValue;
     }
 
     private async Task<string> GetOAuthTokenAsync(SuccessFactorsOAuthConfig oauth, CancellationToken cancellationToken)
