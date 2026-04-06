@@ -1,19 +1,19 @@
-import { type PropsWithChildren, useEffect, useState } from 'react'
+import type { PropsWithChildren } from 'react'
 import { NavLink } from 'react-router-dom'
-import { Activity, RefreshCcw } from 'lucide-react'
+import { Activity } from 'lucide-react'
 
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { formatDate } from '@/lib/format'
+import type { Session } from '@/lib/types'
 
-export function AppShell({ children }: PropsWithChildren) {
-  const [lastRefreshAt, setLastRefreshAt] = useState(() => new Date().toISOString())
-
-  useEffect(() => {
-    const timer = window.setInterval(() => setLastRefreshAt(new Date().toISOString()), 30000)
-    return () => window.clearInterval(timer)
-  }, [])
-
+export function AppShell({
+  children,
+  session,
+  flash,
+  onLogout,
+}: PropsWithChildren<{
+  session: Session
+  flash: { tone: 'good' | 'danger' | 'warn'; message: string } | null
+  onLogout: () => Promise<void>
+}>) {
   return (
     <div className="vf-app-shell">
       <div className="vf-topbar-wrap">
@@ -23,7 +23,7 @@ export function AppShell({ children }: PropsWithChildren) {
               <NavLink className="text-[13px] font-medium tracking-[-0.01em] text-white no-underline" to="/">
                 SyncFactors
               </NavLink>
-              <Badge className="vf-nav-badge">Ops Console</Badge>
+              <span className="vf-nav-badge">Ops Console</span>
               <div className="vf-topbar-copy">
                 <p className="vf-topbar-title">Runtime cockpit</p>
                 <p className="vf-topbar-subtitle">Live visibility for sync, preview, and operator actions</p>
@@ -39,6 +39,11 @@ export function AppShell({ children }: PropsWithChildren) {
               <NavLink className={({ isActive }) => `vf-nav-link${isActive ? ' active' : ''}`} to="/preview">
                 Worker Preview
               </NavLink>
+              {session.isAdmin ? (
+                <NavLink className={({ isActive }) => `vf-nav-link${isActive ? ' active' : ''}`} to="/admin/users">
+                  Users
+                </NavLink>
+              ) : null}
             </div>
           </div>
 
@@ -46,20 +51,13 @@ export function AppShell({ children }: PropsWithChildren) {
             <div className="vf-topbar-status">
               <span className="vf-status-dot good" aria-hidden="true" />
               <Activity className="size-3.5" />
-              <span>Console live</span>
+              <span>Signed in as {session.username ?? 'unknown'}</span>
               <span className="text-white/40">·</span>
-              <span>Refreshed {formatDate(lastRefreshAt)}</span>
+              <span>{session.isAdmin ? 'Admin' : 'Operator'}</span>
             </div>
-            <Button
-              className="vf-nav-button"
-              onClick={() => {
-                setLastRefreshAt(new Date().toISOString())
-                window.location.reload()
-              }}
-            >
-              <RefreshCcw className="size-4" />
-              Refresh
-            </Button>
+            <button className="vf-nav-button" type="button" onClick={() => void onLogout()}>
+              Logout
+            </button>
           </div>
         </div>
         <div className="vf-mobile-nav md:hidden">
@@ -72,10 +70,24 @@ export function AppShell({ children }: PropsWithChildren) {
           <NavLink className={({ isActive }) => `vf-nav-link${isActive ? ' active' : ''}`} to="/preview">
             Worker Preview
           </NavLink>
+          {session.isAdmin ? (
+            <NavLink className={({ isActive }) => `vf-nav-link${isActive ? ' active' : ''}`} to="/admin/users">
+              Users
+            </NavLink>
+          ) : null}
         </div>
       </div>
 
-      <div className="vf-page">{children}</div>
+      <div className="vf-page">
+        {flash ? (
+          <section className="vf-panel">
+            <p className={`vf-callout vf-callout-${flash.tone === 'danger' ? 'danger' : flash.tone === 'warn' ? 'warn' : 'good'}`}>
+              {flash.message}
+            </p>
+          </section>
+        ) : null}
+        {children}
+      </div>
     </div>
   )
 }

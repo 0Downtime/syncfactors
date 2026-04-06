@@ -1,32 +1,43 @@
-import type { RunSummary, WorkerPreviewResult } from '@/lib/types'
+import type { RunEntry, RunSummary, WorkerPreviewResult } from '@/lib/types'
 
-export function formatDate(value: string | null) {
+export function formatDate(value: string | null | undefined) {
   if (!value) {
     return 'Unknown'
   }
 
-  return new Intl.DateTimeFormat(undefined, {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  }).format(new Date(value))
+  const parsed = new Date(value)
+  return Number.isNaN(parsed.getTime()) ? 'Unknown' : parsed.toLocaleString()
 }
 
-export function statusTone(status: string) {
-  switch (status.toLowerCase()) {
+export function statusTone(status: string | null | undefined) {
+  switch ((status ?? '').toLowerCase()) {
     case 'healthy':
     case 'succeeded':
     case 'completed':
+    case 'good':
     case 'idle':
       return 'good'
     case 'degraded':
+    case 'warning':
+    case 'warn':
+    case 'cancelrequested':
+    case 'pending':
+    case 'planned':
     case 'queued':
     case 'running':
     case 'inprogress':
       return 'warn'
-    case 'failed':
     case 'unhealthy':
+    case 'failed':
+    case 'bad':
     case 'error':
       return 'bad'
+    case 'inactive':
+    case 'canceled':
+      return 'dim'
+    case 'info':
+    case 'admin':
+      return 'info'
     default:
       return 'neutral'
   }
@@ -34,13 +45,13 @@ export function statusTone(status: string) {
 
 export function runSummaryLine(run: RunSummary) {
   const parts: string[] = []
-
   if (run.creates) parts.push(`${run.creates} creates`)
   if (run.updates) parts.push(`${run.updates} updates`)
+  if (run.disables) parts.push(`${run.disables} disables`)
+  if (run.deletions) parts.push(`${run.deletions} deletions`)
   if (run.conflicts) parts.push(`${run.conflicts} conflicts`)
   if (run.manualReview) parts.push(`${run.manualReview} manual review`)
   if (run.guardrailFailures) parts.push(`${run.guardrailFailures} guardrails`)
-
   return parts.length ? parts.join(' • ') : 'No materialized bucket counts yet'
 }
 
@@ -50,15 +61,13 @@ export function displayBool(value: boolean | null) {
 }
 
 export function enableTransition(current: boolean | null, proposed: boolean | null) {
-  if (current == null && proposed != null) {
-    return proposed ? 'Enabled on create' : 'Disabled on create'
+  if (current === null || proposed === null) {
+    return 'Unknown'
   }
-
-  if (current != null && proposed != null) {
-    return `${current ? 'Enabled' : 'Disabled'} -> ${proposed ? 'Enabled' : 'Disabled'}`
+  if (current === proposed) {
+    return proposed ? 'Enabled' : 'Disabled'
   }
-
-  return 'Unknown'
+  return `${current ? 'Enabled' : 'Disabled'} -> ${proposed ? 'Enabled' : 'Disabled'}`
 }
 
 export function isPathLikeAttribute(attribute: string) {
@@ -66,35 +75,49 @@ export function isPathLikeAttribute(attribute: string) {
 }
 
 export function buildRiskCallouts(preview: WorkerPreviewResult) {
-  const callouts = new Set<string>()
-
-  for (const row of preview.diffRows.filter((item) => item.changed)) {
-    if (row.attribute === 'userPrincipalName' || row.attribute === 'mail') {
-      callouts.add(`${row.attribute} will change from '${row.before}' to '${row.after}'.`)
+  const callouts: string[] = []
+  for (const row of preview.diffRows.filter((diff) => diff.changed)) {
+    if (equalsIgnoreCase(row.attribute, 'userPrincipalName') || equalsIgnoreCase(row.attribute, 'mail')) {
+      callouts.push(`${row.attribute} will change from '${row.before}' to '${row.after}'.`)
     }
 
-    if (row.attribute === 'manager') {
-      callouts.add(`Manager assignment will change to '${row.after}'.`)
+    if (equalsIgnoreCase(row.attribute, 'manager')) {
+      callouts.push(`Manager assignment will change to '${row.after}'.`)
     }
   }
 
   if (
     preview.operationSummary?.fromOu &&
-    preview.operationSummary.toOu &&
-    preview.operationSummary.fromOu !== preview.operationSummary.toOu
+    preview.operationSummary?.toOu &&
+    !equalsIgnoreCase(preview.operationSummary.fromOu, preview.operationSummary.toOu)
   ) {
-    callouts.add(
+    callouts.push(
       `The account will move from '${preview.operationSummary.fromOu}' to '${preview.operationSummary.toOu}'.`,
     )
   }
 
-  if (preview.currentEnabled !== preview.proposedEnable && preview.proposedEnable != null) {
-    callouts.add(preview.proposedEnable ? 'The account will be enabled.' : 'The account will be disabled.')
+  if (preview.currentEnabled !== preview.proposedEnable && preview.proposedEnable !== null) {
+    callouts.push(preview.proposedEnable ? 'The account will be enabled.' : 'The account will be disabled.')
   }
 
-  if (!preview.managerDistinguishedName && preview.diffRows.some((item) => item.source === 'managerId')) {
-    callouts.add('Manager resolution is still blank for a manager-linked preview.')
+  if (!preview.managerDistinguishedName && preview.diffRows.some((diff) => equalsIgnoreCase(diff.source, 'managerId'))) {
+    callouts.push('Manager resolution is still blank for a manager-linked preview.')
   }
 
-  return [...callouts]
+  return Array.from(new Set(callouts.map((value) => value.toLowerCase()))).map(
+    (lowered) => callouts.find((value) => value.toLowerCase() === lowered) ?? lowered,
+  )
+}
+
+export function getSavedPreviewRunId(entry: RunEntry) {
+  if (entry.artifactType.toLowerCase() === 'workerpreview') {
+    return entry.runId
+  }
+
+  const sourcePreviewRunId = entry.item.sourcePreviewRunId
+  return typeof sourcePreviewRunId === 'string' ? sourcePreviewRunId : null
+}
+
+function equalsIgnoreCase(left: string | null | undefined, right: string | null | undefined) {
+  return (left ?? '').localeCompare(right ?? '', undefined, { sensitivity: 'accent' }) === 0
 }

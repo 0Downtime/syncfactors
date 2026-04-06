@@ -1,3 +1,11 @@
+export type Session = {
+  isAuthenticated: boolean
+  userId: string | null
+  username: string | null
+  role: string | null
+  isAdmin: boolean
+}
+
 export type RuntimeStatus = {
   status: string
   stage: string
@@ -94,10 +102,25 @@ export type SyncScheduleStatus = {
   lastEnqueueError: string | null
 }
 
+export type RunsResponse = {
+  runs: RunSummary[]
+  total: number
+  page: number
+  pageSize: number
+}
+
 export type RunDetail = {
   run: RunSummary
-  report: unknown
+  report: Record<string, unknown>
   bucketCounts: Record<string, number>
+}
+
+export type RunEntriesResponse = {
+  run: RunSummary
+  entries: RunEntry[]
+  total: number
+  page: number
+  pageSize: number
 }
 
 export type OperationSummary = {
@@ -141,7 +164,7 @@ export type WorkerPreviewHistoryItem = {
 
 export type WorkerPreviewEntry = {
   bucket: string
-  item: unknown
+  item: Record<string, unknown>
 }
 
 export type WorkerPreviewResult = {
@@ -183,6 +206,21 @@ export type DirectoryCommandResult = {
   distinguishedName: string | null
   message: string
   runId: string | null
+}
+
+export type LocalUserSummary = {
+  userId: string
+  username: string
+  role: string
+  isActive: boolean
+  createdAt: string
+  updatedAt: string
+  lastLoginAt: string | null
+}
+
+export type LocalUserCommandResult = {
+  succeeded: boolean
+  message: string
 }
 
 export type RunEntry = {
