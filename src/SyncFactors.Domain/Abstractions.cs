@@ -152,6 +152,8 @@ public interface IRunQueueStore
     Task CompleteAsync(string requestId, string runId, CancellationToken cancellationToken);
     Task CancelAsync(string requestId, string? runId, string? errorMessage, CancellationToken cancellationToken);
     Task FailAsync(string requestId, string? runId, string errorMessage, CancellationToken cancellationToken);
+    Task<int> RecoverOrphanedActiveRunsAsync(string? errorMessage, CancellationToken cancellationToken) =>
+        Task.FromResult(0);
 }
 
 public interface ISyncScheduleStore

@@ -279,6 +279,33 @@ public sealed class SqliteRunQueueStore(SqlitePathResolver pathResolver) : IRunQ
         await UpdateTerminalStatusAsync(requestId, "Failed", runId, errorMessage, cancellationToken);
     }
 
+    public async Task<int> RecoverOrphanedActiveRunsAsync(string? errorMessage, CancellationToken cancellationToken)
+    {
+        var databasePath = pathResolver.ResolveConfiguredPath() ?? pathResolver.Resolve();
+        if (string.IsNullOrWhiteSpace(databasePath))
+        {
+            return 0;
+        }
+
+        await using var connection = new SqliteConnection($"Data Source={databasePath}");
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            UPDATE run_queue
+            SET status = CASE status
+                    WHEN 'CancelRequested' THEN 'Canceled'
+                    ELSE 'Failed'
+                END,
+                completed_at = $completedAt,
+                error_message = COALESCE(error_message, $errorMessage)
+            WHERE status IN ('InProgress', 'CancelRequested');
+            """;
+        command.Parameters.AddWithValue("$completedAt", DateTimeOffset.UtcNow.ToString("O"));
+        command.Parameters.AddWithValue("$errorMessage", (object?)errorMessage ?? DBNull.Value);
+        return await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
     private async Task UpdateTerminalStatusAsync(string requestId, string status, string? runId, string? errorMessage, CancellationToken cancellationToken)
     {
         var databasePath = pathResolver.ResolveConfiguredPath() ?? pathResolver.Resolve();
