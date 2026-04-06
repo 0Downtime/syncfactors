@@ -23,9 +23,22 @@ public sealed class WorkerPlanningService(
                 Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase));
 
         var managerId = worker.Attributes.TryGetValue("managerId", out var resolvedManagerId) ? resolvedManagerId : null;
-        var managerDistinguishedName = managerId is null
-            ? null
-            : await directoryGateway.ResolveManagerDistinguishedNameAsync(managerId, cancellationToken);
+        string? managerDistinguishedName = null;
+        if (!string.IsNullOrWhiteSpace(managerId))
+        {
+            try
+            {
+                managerDistinguishedName = await directoryGateway.ResolveManagerDistinguishedNameAsync(managerId, cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(
+                    ex,
+                    "Manager lookup failed during worker planning. WorkerId={WorkerId} ManagerId={ManagerId}",
+                    worker.WorkerId,
+                    managerId);
+            }
+        }
 
         var identity = identityMatcher.Match(worker, directoryUser);
         var lifecycle = lifecyclePolicy.Evaluate(worker, directoryUser);
