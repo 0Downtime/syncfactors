@@ -9,11 +9,13 @@ public sealed class BulkRunCoordinator(
     IWorkerSource workerSource,
     IDeltaSyncService deltaSyncService,
     IRunQueueStore runQueueStore,
+    IGraveyardRetentionStore graveyardRetentionStore,
     IWorkerPlanningService planningService,
     IDirectoryMutationCommandBuilder mutationCommandBuilder,
     IDirectoryCommandGateway directoryCommandGateway,
     IRunLifecycleService runLifecycleService,
     WorkerRunSettings settings,
+    LifecyclePolicySettings lifecycleSettings,
     ILogger<BulkRunCoordinator> logger,
     TimeProvider timeProvider)
 {
@@ -189,7 +191,7 @@ public sealed class BulkRunCoordinator(
                             action = plan.PrimaryAction;
                         }
 
-                        if (!request.DryRun && action is not null && (string.Equals(bucket, "creates", StringComparison.OrdinalIgnoreCase) || string.Equals(bucket, "updates", StringComparison.OrdinalIgnoreCase)))
+                        if (!request.DryRun && action is not null)
                         {
                             try
                             {
@@ -213,6 +215,7 @@ public sealed class BulkRunCoordinator(
                         }
 
                         var item = BuildEntryItem(plan, request.DryRun, bucket, action, applied, succeeded, reason);
+                        await UpdateGraveyardRetentionAsync(plan, ct);
                         await channel.Writer.WriteAsync(
                             new WorkerRunResult(
                                 WorkerId: worker.WorkerId,
@@ -555,6 +558,67 @@ public sealed class BulkRunCoordinator(
               "changedAttributeDetails": []
             }
             """);
+    }
+
+    private async Task UpdateGraveyardRetentionAsync(PlannedWorkerAction plan, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(plan.Worker.WorkerId))
+        {
+            return;
+        }
+
+        if (string.Equals(plan.TargetOu, lifecycleSettings.GraveyardOu, StringComparison.OrdinalIgnoreCase) &&
+            !plan.TargetEnabled &&
+            !string.IsNullOrWhiteSpace(plan.DirectoryUser.SamAccountName))
+        {
+            await graveyardRetentionStore.UpsertObservedAsync(
+                new GraveyardRetentionRecord(
+                    WorkerId: plan.Worker.WorkerId,
+                    SamAccountName: plan.DirectoryUser.SamAccountName ?? plan.Identity.SamAccountName,
+                    DisplayName: plan.DirectoryUser.DisplayName ?? $"{plan.Worker.PreferredName} {plan.Worker.LastName}".Trim(),
+                    DistinguishedName: plan.DirectoryUser.DistinguishedName,
+                    Status: ResolveSourceAttribute(plan.Worker.Attributes, lifecycleSettings.InactiveStatusField) ?? string.Empty,
+                    EndDateUtc: ParseSourceDate(ResolveSourceAttribute(plan.Worker.Attributes, "endDate")),
+                    LastObservedAtUtc: timeProvider.GetUtcNow(),
+                    Active: true),
+                cancellationToken);
+            return;
+        }
+
+        await graveyardRetentionStore.ResolveAsync(plan.Worker.WorkerId, cancellationToken);
+    }
+
+    private static string? ResolveSourceAttribute(IReadOnlyDictionary<string, string?> attributes, string key)
+    {
+        if (attributes.TryGetValue(key, out var value))
+        {
+            return value;
+        }
+
+        var normalized = SourceAttributePathNormalizer.Normalize(key);
+        return attributes.TryGetValue(normalized, out value) ? value : null;
+    }
+
+    private static DateTimeOffset? ParseSourceDate(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        if (DateTimeOffset.TryParse(value, out var parsed))
+        {
+            return parsed;
+        }
+
+        if (value.StartsWith("/Date(", StringComparison.Ordinal) &&
+            value.EndsWith(")/", StringComparison.Ordinal) &&
+            long.TryParse(value[6..^2], out var milliseconds))
+        {
+            return DateTimeOffset.FromUnixTimeMilliseconds(milliseconds);
+        }
+
+        return null;
     }
 }
 

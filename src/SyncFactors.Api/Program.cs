@@ -56,7 +56,10 @@ builder.Services.AddSingleton(serviceProvider =>
         config.Ad.PrehireOu,
         config.Ad.GraveyardOu,
         config.SuccessFactors.Query.InactiveStatusField,
-        config.SuccessFactors.Query.InactiveStatusValues);
+        config.SuccessFactors.Query.InactiveStatusValues,
+        config.Ad.LeaveOu,
+        config.Sync.LeaveStatusValues,
+        config.Ad.IdentityAttribute);
 });
 builder.Services.AddSingleton<ScaffoldDirectoryGateway>();
 builder.Services.AddSingleton<ScaffoldDirectoryCommandGateway>();

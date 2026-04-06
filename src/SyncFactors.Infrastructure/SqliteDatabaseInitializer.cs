@@ -5,7 +5,7 @@ namespace SyncFactors.Infrastructure;
 
 public sealed class SqliteDatabaseInitializer(SqlitePathResolver pathResolver)
 {
-    private const int CurrentSchemaVersion = 8;
+    private const int CurrentSchemaVersion = 9;
 
     public async Task InitializeAsync(CancellationToken cancellationToken)
     {
@@ -86,6 +86,12 @@ public sealed class SqliteDatabaseInitializer(SqlitePathResolver pathResolver)
         {
             await ApplyVersion8Async(connection, transaction, cancellationToken);
             await InsertVersionAsync(connection, transaction, 8, cancellationToken);
+        }
+
+        if (!appliedVersions.Contains(9))
+        {
+            await ApplyVersion9Async(connection, transaction, cancellationToken);
+            await InsertVersionAsync(connection, transaction, 9, cancellationToken);
         }
 
         await transaction.CommitAsync(cancellationToken);
@@ -282,6 +288,39 @@ public sealed class SqliteDatabaseInitializer(SqlitePathResolver pathResolver)
             dropCommand.CommandText = "DROP TABLE runtime_status_legacy;";
             await dropCommand.ExecuteNonQueryAsync(cancellationToken);
         }
+    }
+
+    private static async Task ApplyVersion9Async(
+        SqliteConnection connection,
+        DbTransaction transaction,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = (SqliteTransaction)transaction;
+        command.CommandText =
+            """
+            CREATE TABLE IF NOT EXISTS graveyard_retention (
+              worker_id TEXT NOT NULL PRIMARY KEY,
+              sam_account_name TEXT NULL,
+              display_name TEXT NULL,
+              distinguished_name TEXT NULL,
+              status TEXT NOT NULL,
+              end_date_utc TEXT NULL,
+              last_observed_at_utc TEXT NOT NULL,
+              active INTEGER NOT NULL DEFAULT 1
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_graveyard_retention_active
+              ON graveyard_retention (active, end_date_utc);
+
+            CREATE TABLE IF NOT EXISTS graveyard_retention_report_state (
+              report_key TEXT NOT NULL PRIMARY KEY,
+              last_sent_at_utc TEXT NULL,
+              last_attempted_at_utc TEXT NULL,
+              last_error TEXT NULL
+            );
+            """;
+        await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     private static async Task ApplyVersion4Async(
