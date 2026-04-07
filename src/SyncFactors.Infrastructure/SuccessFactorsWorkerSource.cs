@@ -391,10 +391,20 @@ public sealed class SuccessFactorsWorkerSource(
         if (firstPayload is not null)
         {
             await PopulatePreviewLookupServerPagedAsync(config, previewQuery, firstPayload, pageSize, lookup, cancellationToken);
+            logger.LogDebug(
+                "Built SuccessFactors preview lookup. EntitySet={EntitySet} PageSize={PageSize} KeyCount={KeyCount}",
+                previewQuery.EntitySet,
+                pageSize,
+                lookup.Count);
             return lookup;
         }
 
         await PopulatePreviewLookupLegacyPagedAsync(config, previewQuery, pageSize, lookup, cancellationToken);
+        logger.LogDebug(
+            "Built SuccessFactors preview lookup using legacy paging. EntitySet={EntitySet} PageSize={PageSize} KeyCount={KeyCount}",
+            previewQuery.EntitySet,
+            pageSize,
+            lookup.Count);
         return lookup;
     }
 
@@ -500,7 +510,7 @@ public sealed class SuccessFactorsWorkerSource(
         }
     }
 
-    private static WorkerSnapshot EnrichWorker(
+    private WorkerSnapshot EnrichWorker(
         WorkerSnapshot canonicalWorker,
         IReadOnlyDictionary<string, WorkerSnapshot>? previewLookup,
         SuccessFactorsQueryConfig? previewQuery)
@@ -510,14 +520,35 @@ public sealed class SuccessFactorsWorkerSource(
             return canonicalWorker;
         }
 
-        foreach (var key in EnumeratePreviewMatchKeys(canonicalWorker, previewQuery))
+        var attemptedKeys = EnumeratePreviewMatchKeys(canonicalWorker, previewQuery).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        foreach (var key in attemptedKeys)
         {
             if (previewLookup.TryGetValue(key, out var previewWorker))
             {
-                return MergeWorkerSnapshots(canonicalWorker, previewWorker);
+                var merged = MergeWorkerSnapshots(canonicalWorker, previewWorker);
+                logger.LogDebug(
+                    "Matched SuccessFactors preview enrichment. WorkerId={WorkerId} MatchKey={MatchKey} PreviewWorkerId={PreviewWorkerId} FirstName={FirstName} LastName={LastName} Department={Department} Company={Company} Location={Location}",
+                    canonicalWorker.WorkerId,
+                    key,
+                    previewWorker.WorkerId,
+                    GetAttributeValue(merged, "firstName") ?? "(unset)",
+                    GetAttributeValue(merged, "lastName") ?? "(unset)",
+                    GetAttributeValue(merged, "department") ?? "(unset)",
+                    GetAttributeValue(merged, "company") ?? "(unset)",
+                    GetAttributeValue(merged, "location") ?? "(unset)");
+                return merged;
             }
         }
 
+        logger.LogDebug(
+            "No SuccessFactors preview enrichment match found. WorkerId={WorkerId} AttemptedKeys={AttemptedKeys} CanonicalFirstName={FirstName} CanonicalLastName={LastName} Department={Department} Company={Company} Location={Location}",
+            canonicalWorker.WorkerId,
+            string.Join(",", attemptedKeys),
+            GetAttributeValue(canonicalWorker, "firstName") ?? "(unset)",
+            GetAttributeValue(canonicalWorker, "lastName") ?? "(unset)",
+            GetAttributeValue(canonicalWorker, "department") ?? "(unset)",
+            GetAttributeValue(canonicalWorker, "company") ?? "(unset)",
+            GetAttributeValue(canonicalWorker, "location") ?? "(unset)");
         return canonicalWorker;
     }
 
