@@ -200,6 +200,7 @@ public sealed class ActiveDirectoryGateway(
             "(&(objectCategory=person)(objectClass=user))",
             SearchScope.Subtree,
             "sAMAccountName",
+            "cn",
             "distinguishedName",
             "displayName",
             "userAccountControl",
@@ -217,10 +218,17 @@ public sealed class ActiveDirectoryGateway(
             "title",
             "division",
             "employeeType",
+            "manager",
             "extensionAttribute1",
             "extensionAttribute2",
             "extensionAttribute3",
-            "extensionAttribute4");
+            "extensionAttribute4",
+            "extensionAttribute5",
+            "extensionAttribute6",
+            "extensionAttribute7",
+            "extensionAttribute8",
+            "extensionAttribute9",
+            "extensionAttribute10");
 
         var response = ExecuteSearch(connection, request, logger, "ou listing");
         return response.Entries.Cast<SearchResultEntry>()
@@ -408,10 +416,17 @@ public sealed class ActiveDirectoryGateway(
             "title",
             "division",
             "employeeType",
+            "manager",
             "extensionAttribute1",
             "extensionAttribute2",
             "extensionAttribute3",
-            "extensionAttribute4");
+            "extensionAttribute4",
+            "extensionAttribute5",
+            "extensionAttribute6",
+            "extensionAttribute7",
+            "extensionAttribute8",
+            "extensionAttribute9",
+            "extensionAttribute10");
     }
 
     private static SearchRequest CreateSearchRequest(
@@ -442,10 +457,17 @@ public sealed class ActiveDirectoryGateway(
             "title",
             "division",
             "employeeType",
+            "manager",
             "extensionAttribute1",
             "extensionAttribute2",
             "extensionAttribute3",
-            "extensionAttribute4");
+            "extensionAttribute4",
+            "extensionAttribute5",
+            "extensionAttribute6",
+            "extensionAttribute7",
+            "extensionAttribute8",
+            "extensionAttribute9",
+            "extensionAttribute10");
     }
 
     private static IReadOnlyList<string> GetSearchBases(ActiveDirectoryConfig config)
@@ -504,10 +526,17 @@ public sealed class ActiveDirectoryGateway(
             ["title"] = GetAttribute(entry, "title"),
             ["division"] = GetAttribute(entry, "division"),
             ["employeeType"] = GetAttribute(entry, "employeeType"),
+            ["manager"] = GetAttribute(entry, "manager"),
             ["extensionAttribute1"] = GetAttribute(entry, "extensionAttribute1"),
             ["extensionAttribute2"] = GetAttribute(entry, "extensionAttribute2"),
             ["extensionAttribute3"] = GetAttribute(entry, "extensionAttribute3"),
-            ["extensionAttribute4"] = GetAttribute(entry, "extensionAttribute4")
+            ["extensionAttribute4"] = GetAttribute(entry, "extensionAttribute4"),
+            ["extensionAttribute5"] = GetAttribute(entry, "extensionAttribute5"),
+            ["extensionAttribute6"] = GetAttribute(entry, "extensionAttribute6"),
+            ["extensionAttribute7"] = GetAttribute(entry, "extensionAttribute7"),
+            ["extensionAttribute8"] = GetAttribute(entry, "extensionAttribute8"),
+            ["extensionAttribute9"] = GetAttribute(entry, "extensionAttribute9"),
+            ["extensionAttribute10"] = GetAttribute(entry, "extensionAttribute10")
         };
 
         if (!string.IsNullOrWhiteSpace(identityAttribute))
