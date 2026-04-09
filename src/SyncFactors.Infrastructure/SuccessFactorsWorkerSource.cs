@@ -38,7 +38,7 @@ public sealed class SuccessFactorsWorkerSource(
         var canonicalWorker = await TryResolveWorkerAsync(config, config.SuccessFactors.Query, workerId, cancellationToken);
         var worker = canonicalWorker is null
             ? null
-            : await EnrichWorkerAsync(config, canonicalWorker, cancellationToken);
+            : await EnrichWorkerAsync(config, canonicalWorker, previewLookup: null, cancellationToken);
 
         if (worker is not null)
         {
@@ -103,6 +103,16 @@ public sealed class SuccessFactorsWorkerSource(
             return attributeValue;
         }
 
+        if (identityField.Contains('/', StringComparison.Ordinal))
+        {
+            var leafPropertyName = identityField.Split('/', StringSplitOptions.RemoveEmptyEntries)[^1];
+            if (worker.Attributes.TryGetValue(leafPropertyName, out var leafAttributeValue) &&
+                !string.IsNullOrWhiteSpace(leafAttributeValue))
+            {
+                return leafAttributeValue;
+            }
+        }
+
         return string.Equals(identityField, "workerId", StringComparison.OrdinalIgnoreCase)
             ? worker.WorkerId
             : null;
@@ -112,7 +122,9 @@ public sealed class SuccessFactorsWorkerSource(
     {
         var config = configLoader.GetSyncConfig();
         var query = config.SuccessFactors.Query;
-        var previewLookup = await BuildPreviewWorkerLookupAsync(config, cancellationToken);
+        var previewLookup = config.SuccessFactors.PreviewQuery is null
+            ? null
+            : await BuildPreviewLookupAsync(config, cancellationToken);
         var effectiveQuery = await BuildEffectiveListQueryAsync(query, mode, cancellationToken);
         var pageSize = Math.Max(1, effectiveQuery.PageSize);
         var firstRequestUri = BuildServerPagedListRequestUri(config, effectiveQuery, pageSize);
@@ -238,7 +250,7 @@ public sealed class SuccessFactorsWorkerSource(
             foreach (var worker in workers)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                yield return EnrichWorker(worker, previewLookup, config.SuccessFactors.PreviewQuery);
+                yield return await EnrichWorkerAsync(config, worker, previewLookup, cancellationToken);
             }
 
             if (string.IsNullOrWhiteSpace(nextRequestUri))
@@ -302,7 +314,7 @@ public sealed class SuccessFactorsWorkerSource(
             foreach (var worker in workers)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                yield return EnrichWorker(worker, previewLookup, config.SuccessFactors.PreviewQuery);
+                yield return await EnrichWorkerAsync(config, worker, previewLookup, cancellationToken);
             }
 
             if (workers.Length < pageSize)
@@ -338,12 +350,21 @@ public sealed class SuccessFactorsWorkerSource(
     private async Task<WorkerSnapshot> EnrichWorkerAsync(
         SyncFactorsConfigDocument config,
         WorkerSnapshot canonicalWorker,
+        IReadOnlyDictionary<string, WorkerSnapshot>? previewLookup,
         CancellationToken cancellationToken)
     {
         var previewQuery = config.SuccessFactors.PreviewQuery;
         if (previewQuery is null)
         {
             return canonicalWorker;
+        }
+
+        if (previewLookup is not null)
+        {
+            var matchedPreview = TryMatchPreviewWorker(canonicalWorker, previewLookup, previewQuery.IdentityField);
+            return matchedPreview is null
+                ? canonicalWorker
+                : MergeWorkerSnapshots(canonicalWorker, matchedPreview);
         }
 
         var previewIdentity = ResolveIdentityValue(previewQuery.IdentityField, canonicalWorker) ?? canonicalWorker.WorkerId;
@@ -359,214 +380,16 @@ public sealed class SuccessFactorsWorkerSource(
             cancellationToken,
             canonicalWorker.WorkerId);
 
-        return previewWorker is null
+        if (previewWorker is not null)
+        {
+            return MergeWorkerSnapshots(canonicalWorker, previewWorker);
+        }
+
+        var fallbackPreviewLookup = await BuildPreviewLookupAsync(config, cancellationToken);
+        var fallbackPreview = TryMatchPreviewWorker(canonicalWorker, fallbackPreviewLookup, previewQuery.IdentityField);
+        return fallbackPreview is null
             ? canonicalWorker
-            : MergeWorkerSnapshots(canonicalWorker, previewWorker);
-    }
-
-    private async Task<IReadOnlyDictionary<string, WorkerSnapshot>?> BuildPreviewWorkerLookupAsync(
-        SyncFactorsConfigDocument config,
-        CancellationToken cancellationToken)
-    {
-        var previewQuery = config.SuccessFactors.PreviewQuery;
-        if (previewQuery is null)
-        {
-            return null;
-        }
-
-        var pageSize = Math.Max(1, previewQuery.PageSize);
-        var lookup = new Dictionary<string, WorkerSnapshot>(StringComparer.OrdinalIgnoreCase);
-        var firstRequestUri = BuildServerPagedListRequestUri(config, previewQuery, pageSize);
-        SuccessFactorsResponsePayload? firstPayload = null;
-
-        try
-        {
-            firstPayload = await ExecuteListRequestAsync(previewQuery, firstRequestUri, cancellationToken);
-        }
-        catch (InvalidOperationException ex) when (IsServerPagingCompatibilityFailure(ex, firstRequestUri))
-        {
-            firstPayload = null;
-        }
-
-        if (firstPayload is not null)
-        {
-            await PopulatePreviewLookupServerPagedAsync(config, previewQuery, firstPayload, pageSize, lookup, cancellationToken);
-            logger.LogDebug(
-                "Built SuccessFactors preview lookup. EntitySet={EntitySet} PageSize={PageSize} KeyCount={KeyCount}",
-                previewQuery.EntitySet,
-                pageSize,
-                lookup.Count);
-            return lookup;
-        }
-
-        await PopulatePreviewLookupLegacyPagedAsync(config, previewQuery, pageSize, lookup, cancellationToken);
-        logger.LogDebug(
-            "Built SuccessFactors preview lookup using legacy paging. EntitySet={EntitySet} PageSize={PageSize} KeyCount={KeyCount}",
-            previewQuery.EntitySet,
-            pageSize,
-            lookup.Count);
-        return lookup;
-    }
-
-    private async Task PopulatePreviewLookupServerPagedAsync(
-        SyncFactorsConfigDocument config,
-        SuccessFactorsQueryConfig query,
-        SuccessFactorsResponsePayload initialPayload,
-        int pageSize,
-        IDictionary<string, WorkerSnapshot> lookup,
-        CancellationToken cancellationToken)
-    {
-        var payload = initialPayload;
-        while (true)
-        {
-            using var document = JsonDocument.Parse(payload.Body);
-            var workers = ExtractWorkerArray(document.RootElement)
-                .Select(worker => TryParseWorkerElement(worker, config, query))
-                .Where(worker => worker is not null)
-                .Select(worker => worker!)
-                .ToArray();
-
-            foreach (var worker in workers)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                AddPreviewWorkerToLookup(lookup, worker);
-            }
-
-            var nextRequestUri = TryGetNextPageRequestUri(document.RootElement, payload.RequestUri);
-            if (string.IsNullOrWhiteSpace(nextRequestUri))
-            {
-                break;
-            }
-
-            payload = await ExecuteListRequestAsync(query, nextRequestUri, cancellationToken);
-        }
-    }
-
-    private async Task PopulatePreviewLookupLegacyPagedAsync(
-        SyncFactorsConfigDocument config,
-        SuccessFactorsQueryConfig query,
-        int pageSize,
-        IDictionary<string, WorkerSnapshot> lookup,
-        CancellationToken cancellationToken)
-    {
-        var skip = 0;
-        while (true)
-        {
-            var requestUri = BuildLegacyListRequestUri(config, query, skip, pageSize);
-            var payload = await ExecuteListRequestAsync(query, requestUri, cancellationToken);
-            using var document = JsonDocument.Parse(payload.Body);
-            var workers = ExtractWorkerArray(document.RootElement)
-                .Select(worker => TryParseWorkerElement(worker, config, query))
-                .Where(worker => worker is not null)
-                .Select(worker => worker!)
-                .ToArray();
-
-            if (workers.Length == 0)
-            {
-                break;
-            }
-
-            foreach (var worker in workers)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                AddPreviewWorkerToLookup(lookup, worker);
-            }
-
-            if (workers.Length < pageSize)
-            {
-                break;
-            }
-
-            skip += workers.Length;
-        }
-    }
-
-    private static void AddPreviewWorkerToLookup(IDictionary<string, WorkerSnapshot> lookup, WorkerSnapshot worker)
-    {
-        foreach (var key in EnumeratePreviewLookupKeys(worker))
-        {
-            lookup[key] = worker;
-        }
-    }
-
-    private static IEnumerable<string> EnumeratePreviewLookupKeys(WorkerSnapshot worker)
-    {
-        if (!string.IsNullOrWhiteSpace(worker.WorkerId))
-        {
-            yield return worker.WorkerId;
-        }
-
-        foreach (var key in new[]
-                 {
-                     GetAttributeValue(worker, "userId"),
-                     GetAttributeValue(worker, "personIdExternal"),
-                     GetAttributeValue(worker, "employmentNav/userId")
-                 })
-        {
-            if (!string.IsNullOrWhiteSpace(key))
-            {
-                yield return key!;
-            }
-        }
-    }
-
-    private WorkerSnapshot EnrichWorker(
-        WorkerSnapshot canonicalWorker,
-        IReadOnlyDictionary<string, WorkerSnapshot>? previewLookup,
-        SuccessFactorsQueryConfig? previewQuery)
-    {
-        if (previewLookup is null || previewQuery is null)
-        {
-            return canonicalWorker;
-        }
-
-        var attemptedKeys = EnumeratePreviewMatchKeys(canonicalWorker, previewQuery).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
-        foreach (var key in attemptedKeys)
-        {
-            if (previewLookup.TryGetValue(key, out var previewWorker))
-            {
-                var merged = MergeWorkerSnapshots(canonicalWorker, previewWorker);
-                logger.LogDebug(
-                    "Matched SuccessFactors preview enrichment. WorkerId={WorkerId} MatchKey={MatchKey} PreviewWorkerId={PreviewWorkerId} FirstName={FirstName} LastName={LastName} Department={Department} Company={Company} Location={Location}",
-                    canonicalWorker.WorkerId,
-                    key,
-                    previewWorker.WorkerId,
-                    GetAttributeValue(merged, "firstName") ?? "(unset)",
-                    GetAttributeValue(merged, "lastName") ?? "(unset)",
-                    GetAttributeValue(merged, "department") ?? "(unset)",
-                    GetAttributeValue(merged, "company") ?? "(unset)",
-                    GetAttributeValue(merged, "location") ?? "(unset)");
-                return merged;
-            }
-        }
-
-        logger.LogDebug(
-            "No SuccessFactors preview enrichment match found. WorkerId={WorkerId} AttemptedKeys={AttemptedKeys} CanonicalFirstName={FirstName} CanonicalLastName={LastName} Department={Department} Company={Company} Location={Location}",
-            canonicalWorker.WorkerId,
-            string.Join(",", attemptedKeys),
-            GetAttributeValue(canonicalWorker, "firstName") ?? "(unset)",
-            GetAttributeValue(canonicalWorker, "lastName") ?? "(unset)",
-            GetAttributeValue(canonicalWorker, "department") ?? "(unset)",
-            GetAttributeValue(canonicalWorker, "company") ?? "(unset)",
-            GetAttributeValue(canonicalWorker, "location") ?? "(unset)");
-        return canonicalWorker;
-    }
-
-    private static IEnumerable<string> EnumeratePreviewMatchKeys(WorkerSnapshot canonicalWorker, SuccessFactorsQueryConfig previewQuery)
-    {
-        foreach (var key in new[]
-                 {
-                     ResolveIdentityValue(previewQuery.IdentityField, canonicalWorker),
-                     canonicalWorker.WorkerId,
-                     GetAttributeValue(canonicalWorker, "userId"),
-                     GetAttributeValue(canonicalWorker, "personIdExternal")
-                 })
-        {
-            if (!string.IsNullOrWhiteSpace(key))
-            {
-                yield return key!;
-            }
-        }
+            : MergeWorkerSnapshots(canonicalWorker, fallbackPreview);
     }
 
     private static string? GetAttributeValue(WorkerSnapshot worker, string attributeName)
@@ -598,6 +421,236 @@ public sealed class SuccessFactorsWorkerSource(
         return string.IsNullOrWhiteSpace(previewValue) || string.Equals(previewValue, previewFallback, StringComparison.OrdinalIgnoreCase)
             ? canonicalValue
             : previewValue;
+    }
+
+    private async Task<IReadOnlyDictionary<string, WorkerSnapshot>> BuildPreviewLookupAsync(
+        SyncFactorsConfigDocument config,
+        CancellationToken cancellationToken)
+    {
+        var previewQuery = config.SuccessFactors.PreviewQuery;
+        if (previewQuery is null)
+        {
+            return new Dictionary<string, WorkerSnapshot>(StringComparer.OrdinalIgnoreCase);
+        }
+
+        var workers = await LoadWorkersForQueryAsync(config, previewQuery, cancellationToken);
+        var lookup = new Dictionary<string, WorkerSnapshot>(StringComparer.OrdinalIgnoreCase);
+        foreach (var worker in workers)
+        {
+            AddPreviewLookupEntry(lookup, worker.WorkerId, worker);
+            AddPreviewLookupEntry(lookup, GetAttributeValue(worker, "userId"), worker);
+            AddPreviewLookupEntry(lookup, GetAttributeValue(worker, "personIdExternal"), worker);
+        }
+
+        return lookup;
+    }
+
+    private async Task<IReadOnlyList<WorkerSnapshot>> LoadWorkersForQueryAsync(
+        SyncFactorsConfigDocument config,
+        SuccessFactorsQueryConfig query,
+        CancellationToken cancellationToken)
+    {
+        var pageSize = Math.Max(1, query.PageSize);
+        var firstRequestUri = BuildServerPagedListRequestUri(config, query, pageSize);
+        SuccessFactorsResponsePayload? firstPayload = null;
+
+        try
+        {
+            firstPayload = await ExecuteListRequestAsync(query, firstRequestUri, cancellationToken);
+        }
+        catch (InvalidOperationException ex) when (IsServerPagingCompatibilityFailure(ex, firstRequestUri))
+        {
+            logger.LogWarning(
+                "SuccessFactors rejected server-side pagination parameters while loading preview lookup. Falling back to legacy offset paging. EntitySet={EntitySet} PageSize={PageSize}",
+                query.EntitySet,
+                pageSize);
+            firstPayload = null;
+        }
+
+        var workers = new List<WorkerSnapshot>();
+        if (firstPayload is not null)
+        {
+            await LoadWorkersServerPagedAsync(config, query, firstPayload, workers, cancellationToken);
+            return workers;
+        }
+
+        await LoadWorkersLegacyPagedAsync(config, query, pageSize, workers, cancellationToken);
+        return workers;
+    }
+
+    private async Task LoadWorkersServerPagedAsync(
+        SyncFactorsConfigDocument config,
+        SuccessFactorsQueryConfig query,
+        SuccessFactorsResponsePayload initialPayload,
+        List<WorkerSnapshot> workers,
+        CancellationToken cancellationToken)
+    {
+        var payload = initialPayload;
+        while (true)
+        {
+            JsonDocument document;
+            try
+            {
+                document = JsonDocument.Parse(payload.Body);
+            }
+            catch (JsonException ex)
+            {
+                logger.LogError(
+                    ex,
+                    "SuccessFactors returned non-JSON or invalid JSON while loading preview lookup. ContentType={ContentType} Uri={Uri} BodyPreview={BodyPreview}",
+                    payload.ContentType,
+                    payload.RequestUri,
+                    TrimForLog(payload.Body));
+                throw ExternalSystemExceptionFactory.CreateSuccessFactorsException(
+                    operation: "preview lookup response parsing",
+                    endpoint: payload.RequestUri,
+                    summary: $"The API returned invalid JSON. Status={payload.StatusCode}, ContentType={payload.ContentType}, BodyPreview={TrimForLog(payload.Body)}",
+                    innerException: ex);
+            }
+
+            string? nextRequestUri;
+            using (document)
+            {
+                foreach (var worker in ExtractWorkerArray(document.RootElement)
+                             .Select(item => TryParseWorkerElement(item, config, query))
+                             .Where(item => item is not null)
+                             .Select(item => item!))
+                {
+                    workers.Add(worker);
+                }
+
+                nextRequestUri = TryGetNextPageRequestUri(document.RootElement, payload.RequestUri);
+            }
+
+            if (string.IsNullOrWhiteSpace(nextRequestUri))
+            {
+                return;
+            }
+
+            payload = await ExecuteListRequestAsync(query, nextRequestUri, cancellationToken);
+        }
+    }
+
+    private async Task LoadWorkersLegacyPagedAsync(
+        SyncFactorsConfigDocument config,
+        SuccessFactorsQueryConfig query,
+        int pageSize,
+        List<WorkerSnapshot> workers,
+        CancellationToken cancellationToken)
+    {
+        var skip = 0;
+        while (true)
+        {
+            var requestUri = BuildLegacyListRequestUri(config, query, skip, pageSize);
+            var payload = await ExecuteListRequestAsync(query, requestUri, cancellationToken);
+            JsonDocument document;
+            try
+            {
+                document = JsonDocument.Parse(payload.Body);
+            }
+            catch (JsonException ex)
+            {
+                logger.LogError(
+                    ex,
+                    "SuccessFactors returned non-JSON or invalid JSON while loading preview lookup. ContentType={ContentType} Uri={Uri} Skip={Skip} Top={Top} BodyPreview={BodyPreview}",
+                    payload.ContentType,
+                    payload.RequestUri,
+                    skip,
+                    pageSize,
+                    TrimForLog(payload.Body));
+                throw ExternalSystemExceptionFactory.CreateSuccessFactorsException(
+                    operation: "preview lookup response parsing",
+                    endpoint: payload.RequestUri,
+                    summary: $"The API returned invalid JSON. Status={payload.StatusCode}, ContentType={payload.ContentType}, BodyPreview={TrimForLog(payload.Body)}",
+                    innerException: ex);
+            }
+
+            WorkerSnapshot[] parsedWorkers;
+            using (document)
+            {
+                parsedWorkers = ExtractWorkerArray(document.RootElement)
+                    .Select(item => TryParseWorkerElement(item, config, query))
+                    .Where(item => item is not null)
+                    .Select(item => item!)
+                    .ToArray();
+            }
+
+            if (parsedWorkers.Length == 0)
+            {
+                return;
+            }
+
+            workers.AddRange(parsedWorkers);
+
+            if (parsedWorkers.Length < pageSize)
+            {
+                return;
+            }
+
+            skip += parsedWorkers.Length;
+        }
+    }
+
+    private static void AddPreviewLookupEntry(
+        IDictionary<string, WorkerSnapshot> lookup,
+        string? key,
+        WorkerSnapshot worker)
+    {
+        if (string.IsNullOrWhiteSpace(key))
+        {
+            return;
+        }
+
+        if (lookup.TryGetValue(key, out var existing))
+        {
+            if (CountPopulatedAttributes(worker) > CountPopulatedAttributes(existing))
+            {
+                lookup[key] = worker;
+            }
+
+            return;
+        }
+
+        lookup[key] = worker;
+    }
+
+    private static WorkerSnapshot? TryMatchPreviewWorker(
+        WorkerSnapshot canonicalWorker,
+        IReadOnlyDictionary<string, WorkerSnapshot> previewLookup,
+        string previewIdentityField)
+    {
+        foreach (var candidate in ResolvePreviewMatchCandidates(canonicalWorker, previewIdentityField))
+        {
+            if (previewLookup.TryGetValue(candidate, out var matchedPreview))
+            {
+                return matchedPreview;
+            }
+        }
+
+        return null;
+    }
+
+    private static IEnumerable<string> ResolvePreviewMatchCandidates(WorkerSnapshot worker, string previewIdentityField)
+    {
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var candidate in new[]
+                 {
+                     ResolveIdentityValue(previewIdentityField, worker),
+                     worker.WorkerId,
+                     GetAttributeValue(worker, "userId"),
+                     GetAttributeValue(worker, "personIdExternal")
+                 })
+        {
+            if (!string.IsNullOrWhiteSpace(candidate) && seen.Add(candidate))
+            {
+                yield return candidate;
+            }
+        }
+    }
+
+    private static int CountPopulatedAttributes(WorkerSnapshot worker)
+    {
+        return worker.Attributes.Count(pair => !string.IsNullOrWhiteSpace(pair.Value));
     }
 
     private async Task<string> GetOAuthTokenAsync(SuccessFactorsOAuthConfig oauth, CancellationToken cancellationToken)
@@ -1104,7 +1157,7 @@ public sealed class SuccessFactorsWorkerSource(
 
     private static WorkerSnapshot? TryParseWorkerElement(JsonElement worker, SyncFactorsConfigDocument config, SuccessFactorsQueryConfig query, string? fallbackWorkerId = null)
     {
-        var workerId = GetString(worker, query.IdentityField) ?? fallbackWorkerId ?? string.Empty;
+        var workerId = GetStringByPath(worker, query.IdentityField) ?? fallbackWorkerId ?? string.Empty;
         if (string.IsNullOrWhiteSpace(workerId))
         {
             return null;
@@ -1148,10 +1201,7 @@ public sealed class SuccessFactorsWorkerSource(
             GetString(worker, "startDate");
 
         return new WorkerSnapshot(
-            WorkerId: GetString(worker, query.IdentityField)
-                ?? GetString(employment, query.IdentityField)
-                ?? GetString(userNav, query.IdentityField)
-                ?? workerId,
+            WorkerId: GetStringByPath(worker, query.IdentityField) ?? workerId,
             PreferredName: preferredName,
             LastName: lastName,
             Department: department,
@@ -1231,6 +1281,57 @@ public sealed class SuccessFactorsWorkerSource(
             return null;
         }
 
+        return GetScalarString(property);
+    }
+
+    private static string? GetStringByPath(JsonElement element, string propertyPath)
+    {
+        if (string.IsNullOrWhiteSpace(propertyPath))
+        {
+            return null;
+        }
+
+        var directMatch = GetString(element, propertyPath);
+        if (!string.IsNullOrWhiteSpace(directMatch))
+        {
+            return directMatch;
+        }
+
+        if (!propertyPath.Contains('/', StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        var current = element;
+        foreach (var segment in propertyPath.Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            if (current.ValueKind != JsonValueKind.Object || !current.TryGetProperty(segment, out var property))
+            {
+                return null;
+            }
+
+            if (property.ValueKind == JsonValueKind.Object &&
+                property.TryGetProperty("results", out var results) &&
+                results.ValueKind == JsonValueKind.Array)
+            {
+                var firstResult = results.EnumerateArray().FirstOrDefault();
+                if (firstResult.ValueKind == JsonValueKind.Undefined)
+                {
+                    return null;
+                }
+
+                current = firstResult.Clone();
+                continue;
+            }
+
+            current = property.Clone();
+        }
+
+        return GetScalarString(current);
+    }
+
+    private static string? GetScalarString(JsonElement property)
+    {
         return property.ValueKind switch
         {
             JsonValueKind.String => property.GetString(),
