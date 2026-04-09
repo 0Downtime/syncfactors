@@ -218,6 +218,45 @@ public sealed class BulkRunCoordinatorTests
         Assert.Equal(DateTimeOffset.FromUnixTimeMilliseconds(1777772800000), record.EndDateUtc);
     }
 
+    [Fact]
+    public async Task ExecuteAsync_PersistsEmploymentStatusInEntryItem()
+    {
+        CapturingRunLifecycleService.Entries.Clear();
+        CapturingRunLifecycleService.Reset();
+        var coordinator = new BulkRunCoordinator(
+            new StubWorkerSource([CreateWorker("10001", "64304")]),
+            new CapturingDeltaSyncService(),
+            new StubRunQueueStore(),
+            new StubGraveyardRetentionStore(),
+            new StubWorkerPlanningService(),
+            new StubDirectoryMutationCommandBuilder(),
+            new SuccessfulDirectoryCommandGateway(),
+            new CapturingRunLifecycleService(),
+            new WorkerRunSettings(MaxCreatesPerRun: 10),
+            CreateLifecycleSettings(),
+            NullLogger<BulkRunCoordinator>.Instance,
+            TimeProvider.System);
+
+        await coordinator.ExecuteAsync(
+            new RunQueueRequest(
+                RequestId: "req-status",
+                Mode: "BulkSync",
+                DryRun: true,
+                RunTrigger: "AdHoc",
+                RequestedBy: "test",
+                Status: "Pending",
+                RequestedAt: DateTimeOffset.UtcNow,
+                StartedAt: null,
+                CompletedAt: null,
+                RunId: null,
+                ErrorMessage: null),
+            maxDegreeOfParallelism: 1,
+            CancellationToken.None);
+
+        var entry = Assert.Single(CapturingRunLifecycleService.Entries);
+        Assert.Equal("64304", entry.Item.GetProperty("emplStatus").GetString());
+    }
+
     private static WorkerSnapshot CreateWorker(string workerId, string? status = null, string? endDate = null)
     {
         var attributes = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);

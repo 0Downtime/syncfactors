@@ -102,6 +102,34 @@ public sealed class RunDetailModelTests
         Assert.Contains(diagnostics.Details, item => item.Label == "SAM" && item.Value == "winnie");
     }
 
+    [Fact]
+    public void GetEmploymentStatusDisplay_FormatsKnownCode()
+    {
+        var model = new DetailModel(new RunEntriesQueryService(new StubRunRepository()));
+        var entry = new RunEntry(
+            EntryId: "entry-status",
+            RunId: "bulk-1",
+            ArtifactType: "BulkRun",
+            Mode: "BulkSync",
+            Bucket: "updates",
+            BucketLabel: "Updates",
+            WorkerId: "10001",
+            SamAccountName: "winnie",
+            Reason: null,
+            ReviewCategory: null,
+            ReviewCaseType: null,
+            StartedAt: DateTimeOffset.UtcNow,
+            ChangeCount: 0,
+            OperationSummary: null,
+            FailureSummary: null,
+            PrimarySummary: null,
+            TopChangedAttributes: [],
+            DiffRows: [],
+            Item: JsonDocument.Parse("""{"emplStatus":"64304"}""").RootElement.Clone());
+
+        Assert.Equal("64304 - Paid Leave", model.GetEmploymentStatusDisplay(entry));
+    }
+
     private sealed class StubRunRepository : IRunRepository
     {
         public int LastSkip { get; private set; }

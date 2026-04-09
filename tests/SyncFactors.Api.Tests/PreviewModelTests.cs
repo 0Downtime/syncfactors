@@ -128,7 +128,21 @@ public sealed class PreviewModelTests
         Assert.Contains(diagnostics.Details, item => item.Label == "Current CN" && item.Value == "Old\\, Name");
     }
 
-    private static WorkerPreviewResult CreatePreview(string workerId)
+    [Fact]
+    public void GetEmploymentStatusDisplay_FormatsKnownCodeFromSourceAttributes()
+    {
+        var preview = CreatePreview(
+            workerId: "10001",
+            sourceAttributes:
+            [
+                new SourceAttributeRow("emplStatus", "64303")
+            ]);
+        var model = new PreviewModel(new CapturingWorkerPreviewPlanner(preview), new StubApplyPreviewService(), new StubRunRepository(preview));
+
+        Assert.Equal("64303 - Unpaid Leave", model.GetEmploymentStatusDisplay(preview));
+    }
+
+    private static WorkerPreviewResult CreatePreview(string workerId, IReadOnlyList<SourceAttributeRow>? sourceAttributes = null)
     {
         return new WorkerPreviewResult(
             ReportPath: "/tmp/preview.jsonl",
@@ -165,7 +179,7 @@ public sealed class PreviewModelTests
                 new DiffRow("UserPrincipalName", "resolved email local-part", "old.email@Exampleenergy.com", "preview.email@Exampleenergy.com", true),
                 new DiffRow("mail", "resolved email local-part", "old.email@Exampleenergy.com", "preview.email@Exampleenergy.com", true)
             ],
-            SourceAttributes: [],
+            SourceAttributes: sourceAttributes ?? [],
             UsedSourceAttributes: [],
             UnusedSourceAttributes: [],
             MissingSourceAttributes: [],
