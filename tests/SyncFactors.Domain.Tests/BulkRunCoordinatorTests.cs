@@ -403,13 +403,13 @@ public sealed class BulkRunCoordinatorTests
     {
         public DirectoryMutationCommand Build(PlannedWorkerAction plan)
         {
-            return new DirectoryMutationCommand("UpdateUser", plan.Worker.WorkerId, null, null, plan.Worker.WorkerId, $"{plan.Worker.WorkerId}@example.com", $"{plan.Worker.WorkerId}@example.com", plan.Worker.TargetOu, plan.Worker.WorkerId, null, true, [new DirectoryOperation("UpdateUser")], new Dictionary<string, string?>());
+            return new DirectoryMutationCommand("UpdateUser", plan.Worker.WorkerId, null, null, plan.Worker.WorkerId, plan.Worker.WorkerId, $"{plan.Worker.WorkerId}@example.com", $"{plan.Worker.WorkerId}@example.com", plan.Worker.TargetOu, plan.Worker.WorkerId, null, true, [new DirectoryOperation("UpdateUser")], new Dictionary<string, string?>());
         }
 
         public DirectoryMutationCommand Build(WorkerSnapshot worker, WorkerPreviewResult preview)
         {
             _ = preview;
-            return new DirectoryMutationCommand("UpdateUser", worker.WorkerId, null, null, worker.WorkerId, $"{worker.WorkerId}@example.com", $"{worker.WorkerId}@example.com", worker.TargetOu, worker.WorkerId, null, true, [new DirectoryOperation("UpdateUser")], new Dictionary<string, string?>());
+            return new DirectoryMutationCommand("UpdateUser", worker.WorkerId, null, null, worker.WorkerId, worker.WorkerId, $"{worker.WorkerId}@example.com", $"{worker.WorkerId}@example.com", worker.TargetOu, worker.WorkerId, null, true, [new DirectoryOperation("UpdateUser")], new Dictionary<string, string?>());
         }
     }
 

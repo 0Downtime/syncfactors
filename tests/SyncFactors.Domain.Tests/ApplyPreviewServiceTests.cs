@@ -86,6 +86,7 @@ public sealed class ApplyPreviewServiceTests
         Assert.Equal("Sample101, Winnie", command.Attributes["displayName"]);
         Assert.Equal("preview.email@Exampleenergy.com", command.Attributes["UserPrincipalName"]);
         Assert.Equal("preview.email@Exampleenergy.com", command.Attributes["mail"]);
+        Assert.Equal("10001", command.CommonName);
         Assert.Equal("Sample101, Winnie", command.DisplayName);
         Assert.Equal("preview.email@Exampleenergy.com", command.UserPrincipalName);
         Assert.Equal("preview.email@Exampleenergy.com", command.Mail);

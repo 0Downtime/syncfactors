@@ -30,6 +30,7 @@ public sealed class ActiveDirectoryCommandGatewayTests
             ManagerId: null,
             ManagerDistinguishedName: null,
             SamAccountName: "00004",
+            CommonName: "00004",
             UserPrincipalName: "tanya.willislivers@example.com",
             Mail: "tanya.willislivers@example.com",
             TargetOu: "OU=Users,DC=example,DC=com",
@@ -44,7 +45,7 @@ public sealed class ActiveDirectoryCommandGatewayTests
         Assert.Contains("Step=RenameUser", details, StringComparison.Ordinal);
         Assert.Contains("WorkerId=00004", details, StringComparison.Ordinal);
         Assert.Contains("CurrentCn=00004", details, StringComparison.Ordinal);
-        Assert.Contains("DesiredCn=Willis Livers, Tanya", details, StringComparison.Ordinal);
+        Assert.Contains("DesiredCn=00004", details, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -59,6 +60,7 @@ public sealed class ActiveDirectoryCommandGatewayTests
             ManagerId: "12345",
             ManagerDistinguishedName: null,
             SamAccountName: "00004",
+            CommonName: "00004",
             UserPrincipalName: "tanya.willislivers@example.com",
             Mail: "tanya.willislivers@example.com",
             TargetOu: "OU=Users,DC=example,DC=com",
@@ -94,6 +96,7 @@ public sealed class ActiveDirectoryCommandGatewayTests
             ManagerId: null,
             ManagerDistinguishedName: null,
             SamAccountName: "00225",
+            CommonName: "00225",
             UserPrincipalName: "tanya.willislivers@example.com",
             Mail: "tanya.willislivers@example.com",
             TargetOu: "OU=Users,DC=example,DC=com",

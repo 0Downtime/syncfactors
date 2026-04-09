@@ -309,6 +309,7 @@ public sealed class DeleteAllUsersCoordinator(
             ManagerId: null,
             ManagerDistinguishedName: null,
             SamAccountName: directoryUser.SamAccountName ?? worker.WorkerId,
+            CommonName: directoryUser.SamAccountName ?? worker.WorkerId,
             UserPrincipalName: directoryUser.Attributes.TryGetValue("UserPrincipalName", out var upn) ? upn ?? string.Empty : string.Empty,
             Mail: directoryUser.Attributes.TryGetValue("mail", out var mail) ? mail ?? string.Empty : string.Empty,
             TargetOu: DirectoryDistinguishedName.GetParentOu(directoryUser.DistinguishedName),
