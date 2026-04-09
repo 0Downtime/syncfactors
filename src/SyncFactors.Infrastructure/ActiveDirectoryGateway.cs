@@ -228,7 +228,12 @@ public sealed class ActiveDirectoryGateway(
             "extensionAttribute7",
             "extensionAttribute8",
             "extensionAttribute9",
-            "extensionAttribute10");
+            "extensionAttribute10",
+            "extensionAttribute11",
+            "extensionAttribute12",
+            "extensionAttribute13",
+            "extensionAttribute14",
+            "extensionAttribute15");
 
         var response = ExecuteSearch(connection, request, logger, "ou listing");
         return response.Entries.Cast<SearchResultEntry>()
@@ -426,7 +431,12 @@ public sealed class ActiveDirectoryGateway(
             "extensionAttribute7",
             "extensionAttribute8",
             "extensionAttribute9",
-            "extensionAttribute10");
+            "extensionAttribute10",
+            "extensionAttribute11",
+            "extensionAttribute12",
+            "extensionAttribute13",
+            "extensionAttribute14",
+            "extensionAttribute15");
     }
 
     private static SearchRequest CreateSearchRequest(
@@ -467,7 +477,12 @@ public sealed class ActiveDirectoryGateway(
             "extensionAttribute7",
             "extensionAttribute8",
             "extensionAttribute9",
-            "extensionAttribute10");
+            "extensionAttribute10",
+            "extensionAttribute11",
+            "extensionAttribute12",
+            "extensionAttribute13",
+            "extensionAttribute14",
+            "extensionAttribute15");
     }
 
     private static IReadOnlyList<string> GetSearchBases(ActiveDirectoryConfig config)
@@ -536,7 +551,12 @@ public sealed class ActiveDirectoryGateway(
             ["extensionAttribute7"] = GetAttribute(entry, "extensionAttribute7"),
             ["extensionAttribute8"] = GetAttribute(entry, "extensionAttribute8"),
             ["extensionAttribute9"] = GetAttribute(entry, "extensionAttribute9"),
-            ["extensionAttribute10"] = GetAttribute(entry, "extensionAttribute10")
+            ["extensionAttribute10"] = GetAttribute(entry, "extensionAttribute10"),
+            ["extensionAttribute11"] = GetAttribute(entry, "extensionAttribute11"),
+            ["extensionAttribute12"] = GetAttribute(entry, "extensionAttribute12"),
+            ["extensionAttribute13"] = GetAttribute(entry, "extensionAttribute13"),
+            ["extensionAttribute14"] = GetAttribute(entry, "extensionAttribute14"),
+            ["extensionAttribute15"] = GetAttribute(entry, "extensionAttribute15")
         };
 
         if (!string.IsNullOrWhiteSpace(identityAttribute))

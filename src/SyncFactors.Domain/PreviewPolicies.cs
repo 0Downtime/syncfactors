@@ -286,7 +286,7 @@ public sealed class AttributeDiffService : IAttributeDiffService
             "Trim" => value.Trim(),
             "Lower" => value.Trim().ToLowerInvariant(),
             "TrimStripCommasPeriods" => StripCharacters(value.Trim(), ',', '.'),
-            "DateOnly" => DateTimeOffset.TryParse(value, out var parsed)
+            "DateOnly" => SourceDateParser.TryParse(value, out var parsed)
                 ? parsed.ToString("yyyy-MM-dd")
                 : value,
             _ => value
