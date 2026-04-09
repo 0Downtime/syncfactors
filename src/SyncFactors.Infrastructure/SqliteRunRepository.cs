@@ -7,6 +7,25 @@ namespace SyncFactors.Infrastructure;
 
 public sealed class SqliteRunRepository(SqlitePathResolver pathResolver) : IRunRepository
 {
+    private const string RunEntryFilterPredicate =
+        """
+        WHERE e.run_id = $runId
+          AND ($bucket IS NULL OR e.bucket = $bucket)
+          AND (
+            $workerId IS NULL
+            OR LOWER(COALESCE(e.worker_id, '')) LIKE $workerId ESCAPE '\'
+            OR LOWER(COALESCE(e.sam_account_name, '')) LIKE $workerId ESCAPE '\'
+          )
+          AND ($reason IS NULL OR LOWER(COALESCE(e.reason, '')) = LOWER($reason))
+          AND ($entryId IS NULL OR e.entry_id = $entryId)
+          AND (
+            $filter IS NULL
+            OR LOWER(COALESCE(e.item_json, '')) LIKE $filter ESCAPE '\'
+            OR LOWER(COALESCE(e.reason, '')) LIKE $filter ESCAPE '\'
+            OR LOWER(COALESCE(e.review_case_type, '')) LIKE $filter ESCAPE '\'
+          )
+        """;
+
     private static readonly string[] BucketOrder =
     [
         "quarantined",
@@ -615,25 +634,12 @@ public sealed class SqliteRunRepository(SqlitePathResolver pathResolver) : IRunR
         await connection.OpenAsync(cancellationToken);
 
         await using var command = connection.CreateCommand();
-        command.Parameters.AddWithValue("$runId", runId);
-        command.Parameters.AddWithValue("$bucket", string.IsNullOrWhiteSpace(bucket) ? DBNull.Value : bucket);
-        command.Parameters.AddWithValue(
-            "$workerId",
-            string.IsNullOrWhiteSpace(workerId)
-                ? DBNull.Value
-                : $"%{EscapeLike(workerId.ToLowerInvariant())}%");
-        command.Parameters.AddWithValue("$reason", string.IsNullOrWhiteSpace(reason) ? DBNull.Value : reason);
-        command.Parameters.AddWithValue("$entryId", string.IsNullOrWhiteSpace(entryId) ? DBNull.Value : entryId);
+        AddRunEntryFilterParameters(command, runId, bucket, workerId, reason, filter, entryId);
         command.Parameters.AddWithValue("$skip", Math.Max(0, skip));
         command.Parameters.AddWithValue("$take", Math.Max(1, take));
-        command.Parameters.AddWithValue(
-            "$filter",
-            string.IsNullOrWhiteSpace(filter)
-                ? DBNull.Value
-                : $"%{EscapeLike(filter.ToLowerInvariant())}%");
 
         command.CommandText =
-            """
+            $"""
             SELECT
               e.entry_id,
               e.bucket,
@@ -651,22 +657,8 @@ public sealed class SqliteRunRepository(SqlitePathResolver pathResolver) : IRunR
               r.report_json
             FROM run_entries e
             JOIN runs r ON r.run_id = e.run_id
-            WHERE e.run_id = $runId
-              AND ($bucket IS NULL OR e.bucket = $bucket)
-              AND (
-                $workerId IS NULL
-                OR LOWER(COALESCE(e.worker_id, '')) LIKE $workerId ESCAPE '\'
-                OR LOWER(COALESCE(e.sam_account_name, '')) LIKE $workerId ESCAPE '\'
-              )
-              AND ($reason IS NULL OR LOWER(COALESCE(e.reason, '')) = LOWER($reason))
-              AND ($entryId IS NULL OR e.entry_id = $entryId)
-              AND (
-                $filter IS NULL
-                OR LOWER(COALESCE(e.item_json, '')) LIKE $filter ESCAPE '\'
-                OR LOWER(COALESCE(e.reason, '')) LIKE $filter ESCAPE '\'
-                OR LOWER(COALESCE(e.review_case_type, '')) LIKE $filter ESCAPE '\'
-              )
-            ORDER BY e.bucket ASC, e.bucket_index ASC, e.entry_id ASC;
+            {RunEntryFilterPredicate}
+            ORDER BY e.bucket ASC, e.bucket_index ASC, e.entry_id ASC
             LIMIT $take OFFSET $skip;
             """;
 
@@ -699,6 +691,106 @@ public sealed class SqliteRunRepository(SqlitePathResolver pathResolver) : IRunR
         await connection.OpenAsync(cancellationToken);
 
         await using var command = connection.CreateCommand();
+        AddRunEntryFilterParameters(command, runId, bucket, workerId, reason, filter, entryId);
+
+        command.CommandText =
+            $"""
+            SELECT COUNT(1)
+            FROM run_entries e
+            JOIN runs r ON r.run_id = e.run_id
+            {RunEntryFilterPredicate};
+            """;
+
+        var result = await command.ExecuteScalarAsync(cancellationToken);
+        return result is null || result is DBNull ? 0 : Convert.ToInt32(result);
+    }
+
+    public async Task<IReadOnlyList<ChangedAttributeTotal>> GetRunEntryAttributeTotalsAsync(
+        string runId,
+        string? bucket,
+        string? workerId,
+        string? reason,
+        string? filter,
+        string? entryId,
+        CancellationToken cancellationToken)
+    {
+        var databasePath = pathResolver.Resolve();
+        if (string.IsNullOrWhiteSpace(databasePath))
+        {
+            return [];
+        }
+
+        await using var connection = OpenConnection(databasePath);
+        await connection.OpenAsync(cancellationToken);
+
+        await using var command = connection.CreateCommand();
+        AddRunEntryFilterParameters(command, runId, bucket, workerId, reason, filter, entryId);
+        command.CommandText =
+            $"""
+            SELECT
+              e.entry_id,
+              e.bucket,
+              e.bucket_index,
+              e.worker_id,
+              e.sam_account_name,
+              e.reason,
+              e.review_category,
+              e.review_case_type,
+              e.started_at,
+              e.item_json,
+              r.run_id,
+              r.artifact_type,
+              r.mode,
+              r.report_json
+            FROM run_entries e
+            JOIN runs r ON r.run_id = e.run_id
+            {RunEntryFilterPredicate}
+            ORDER BY e.bucket ASC, e.bucket_index ASC, e.entry_id ASC;
+            """;
+
+        var firstSeenLabels = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var counts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var row = MapEntryRow(reader);
+            var item = string.IsNullOrWhiteSpace(row.ItemJson) ? EmptyObject() : ParseJson(row.ItemJson);
+            var report = string.IsNullOrWhiteSpace(row.ReportJson) ? EmptyObject() : ParseJson(row.ReportJson);
+            var operations = GetOperations(report);
+            var operation = FindOperation(operations, row.WorkerId, row.Bucket);
+
+            foreach (var diffRow in GetDiffRows(item, operation, row.WorkerId, row.Bucket ?? "unknown").Where(diffRow => diffRow.Changed))
+            {
+                if (!firstSeenLabels.ContainsKey(diffRow.Attribute))
+                {
+                    firstSeenLabels[diffRow.Attribute] = diffRow.Attribute;
+                }
+
+                counts[diffRow.Attribute] = counts.GetValueOrDefault(diffRow.Attribute) + 1;
+            }
+        }
+
+        return counts
+            .Select(pair => new ChangedAttributeTotal(
+                firstSeenLabels.TryGetValue(pair.Key, out var label) ? label : pair.Key,
+                pair.Value))
+            .OrderByDescending(total => total.Count)
+            .ThenBy(total => total.Attribute, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
+    private static int Sum(params int[] values) => values.Sum();
+
+    private static void AddRunEntryFilterParameters(
+        SqliteCommand command,
+        string runId,
+        string? bucket,
+        string? workerId,
+        string? reason,
+        string? filter,
+        string? entryId)
+    {
         command.Parameters.AddWithValue("$runId", runId);
         command.Parameters.AddWithValue("$bucket", string.IsNullOrWhiteSpace(bucket) ? DBNull.Value : bucket);
         command.Parameters.AddWithValue(
@@ -713,34 +805,7 @@ public sealed class SqliteRunRepository(SqlitePathResolver pathResolver) : IRunR
             string.IsNullOrWhiteSpace(filter)
                 ? DBNull.Value
                 : $"%{EscapeLike(filter.ToLowerInvariant())}%");
-
-        command.CommandText =
-            """
-            SELECT COUNT(1)
-            FROM run_entries e
-            JOIN runs r ON r.run_id = e.run_id
-            WHERE e.run_id = $runId
-              AND ($bucket IS NULL OR e.bucket = $bucket)
-              AND (
-                $workerId IS NULL
-                OR LOWER(COALESCE(e.worker_id, '')) LIKE $workerId ESCAPE '\'
-                OR LOWER(COALESCE(e.sam_account_name, '')) LIKE $workerId ESCAPE '\'
-              )
-              AND ($reason IS NULL OR LOWER(COALESCE(e.reason, '')) = LOWER($reason))
-              AND ($entryId IS NULL OR e.entry_id = $entryId)
-              AND (
-                $filter IS NULL
-                OR LOWER(COALESCE(e.item_json, '')) LIKE $filter ESCAPE '\'
-                OR LOWER(COALESCE(e.reason, '')) LIKE $filter ESCAPE '\'
-                OR LOWER(COALESCE(e.review_case_type, '')) LIKE $filter ESCAPE '\'
-              );
-            """;
-
-        var result = await command.ExecuteScalarAsync(cancellationToken);
-        return result is null || result is DBNull ? 0 : Convert.ToInt32(result);
     }
-
-    private static int Sum(params int[] values) => values.Sum();
 
     private static DateTimeOffset? ParseDate(string? value)
     {

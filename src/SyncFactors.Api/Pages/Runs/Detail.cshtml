@@ -84,6 +84,10 @@
 <section class="panel">
     <h2>Entries @if (!string.IsNullOrWhiteSpace(Model.Bucket)) { <text>· @Model.Bucket</text> }</h2>
     <p class="muted">Showing page @Model.PageNumber of @Model.TotalPages · @Model.TotalEntries total entries · 50 per page.</p>
+    @if (Model.AttributeTotals.Count > 0)
+    {
+        <p class="muted">Changed attributes: @string.Join(", ", Model.AttributeTotals.Select(total => $"{total.Attribute}: {total.Count}"))</p>
+    }
     @if (Model.Entries.Count == 0)
     {
         <p class="muted">No entries matched this run.</p>

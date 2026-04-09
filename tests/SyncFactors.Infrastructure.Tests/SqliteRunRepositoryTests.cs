@@ -111,6 +111,220 @@ public sealed class SqliteRunRepositoryTests
         }
     }
 
+    [Fact]
+    public async Task GetRunEntryAttributeTotalsAsync_CountsChangedAttributesAcrossMatchingEntries()
+    {
+        var databasePath = Path.Combine(Path.GetTempPath(), $"syncfactors-run-attribute-totals-{Guid.NewGuid():N}.db");
+
+        try
+        {
+            var repository = await CreateRepositoryAsync(databasePath);
+            var runId = "bulk-attrs-1";
+            var startedAt = DateTimeOffset.Parse("2026-04-02T14:15:00Z");
+
+            await repository.SaveRunAsync(
+                CreateRunRecord(runId, startedAt),
+                CancellationToken.None);
+
+            await repository.AppendRunEntryAsync(CreateEntry(
+                runId,
+                "updates",
+                0,
+                "10001",
+                item: new
+                {
+                    workerId = "10001",
+                    changedAttributeDetails = new[]
+                    {
+                        new { targetAttribute = "cn", sourceField = "preferredName", currentAdValue = "Old Name", proposedValue = "New Name" },
+                        new { targetAttribute = "mail", sourceField = "email", currentAdValue = "before@example.com", proposedValue = "after@example.com" }
+                    }
+                }),
+                CancellationToken.None);
+
+            await repository.AppendRunEntryAsync(CreateEntry(
+                runId,
+                "updates",
+                1,
+                "10002",
+                item: new
+                {
+                    workerId = "10002",
+                    changedAttributeDetails = new[]
+                    {
+                        new { targetAttribute = "mail", sourceField = "email", currentAdValue = "old@example.com", proposedValue = "new@example.com" }
+                    }
+                }),
+                CancellationToken.None);
+
+            await repository.AppendRunEntryAsync(CreateEntry(
+                runId,
+                "unchanged",
+                2,
+                "10003",
+                item: new
+                {
+                    workerId = "10003",
+                    attributeRows = new[]
+                    {
+                        new { targetAttribute = "department", sourceField = "department", currentAdValue = "IT", proposedValue = "IT", changed = false }
+                    }
+                }),
+                CancellationToken.None);
+
+            var totals = await repository.GetRunEntryAttributeTotalsAsync(runId, null, null, null, null, null, CancellationToken.None);
+
+            Assert.Collection(
+                totals,
+                total =>
+                {
+                    Assert.Equal("mail", total.Attribute);
+                    Assert.Equal(2, total.Count);
+                },
+                total =>
+                {
+                    Assert.Equal("cn", total.Attribute);
+                    Assert.Equal(1, total.Count);
+                });
+        }
+        finally
+        {
+            File.Delete(databasePath);
+        }
+    }
+
+    [Fact]
+    public async Task GetRunEntryAttributeTotalsAsync_HonorsBucketWorkerAndFilter()
+    {
+        var databasePath = Path.Combine(Path.GetTempPath(), $"syncfactors-run-attribute-filters-{Guid.NewGuid():N}.db");
+
+        try
+        {
+            var repository = await CreateRepositoryAsync(databasePath);
+            var runId = "bulk-attrs-2";
+            var startedAt = DateTimeOffset.Parse("2026-04-02T14:30:00Z");
+
+            await repository.SaveRunAsync(
+                CreateRunRecord(runId, startedAt),
+                CancellationToken.None);
+
+            await repository.AppendRunEntryAsync(CreateEntry(
+                runId,
+                "updates",
+                0,
+                "10001",
+                item: new
+                {
+                    workerId = "10001",
+                    note = "email sync",
+                    changedAttributeDetails = new[]
+                    {
+                        new { targetAttribute = "mail", sourceField = "email", currentAdValue = "before@example.com", proposedValue = "after@example.com" }
+                    }
+                }),
+                CancellationToken.None);
+
+            await repository.AppendRunEntryAsync(CreateEntry(
+                runId,
+                "updates",
+                1,
+                "20002",
+                item: new
+                {
+                    workerId = "20002",
+                    note = "email sync",
+                    changedAttributeDetails = new[]
+                    {
+                        new { targetAttribute = "mail", sourceField = "email", currentAdValue = "old@example.com", proposedValue = "new@example.com" },
+                        new { targetAttribute = "cn", sourceField = "preferredName", currentAdValue = "A", proposedValue = "B" }
+                    }
+                }),
+                CancellationToken.None);
+
+            await repository.AppendRunEntryAsync(CreateEntry(
+                runId,
+                "creates",
+                2,
+                "10003",
+                item: new
+                {
+                    workerId = "10003",
+                    note = "email sync",
+                    changedAttributeDetails = new[]
+                    {
+                        new { targetAttribute = "mail", sourceField = "email", currentAdValue = (string?)null, proposedValue = "create@example.com" }
+                    }
+                }),
+                CancellationToken.None);
+
+            var totals = await repository.GetRunEntryAttributeTotalsAsync(runId, "updates", "100", null, "email", null, CancellationToken.None);
+
+            var total = Assert.Single(totals);
+            Assert.Equal("mail", total.Attribute);
+            Assert.Equal(1, total.Count);
+        }
+        finally
+        {
+            File.Delete(databasePath);
+        }
+    }
+
+    [Fact]
+    public async Task GetRunEntryAttributeTotalsAsync_GroupsAttributeNamesCaseInsensitively()
+    {
+        var databasePath = Path.Combine(Path.GetTempPath(), $"syncfactors-run-attribute-case-{Guid.NewGuid():N}.db");
+
+        try
+        {
+            var repository = await CreateRepositoryAsync(databasePath);
+            var runId = "bulk-attrs-3";
+            var startedAt = DateTimeOffset.Parse("2026-04-02T14:45:00Z");
+
+            await repository.SaveRunAsync(
+                CreateRunRecord(runId, startedAt),
+                CancellationToken.None);
+
+            await repository.AppendRunEntryAsync(CreateEntry(
+                runId,
+                "updates",
+                0,
+                "10001",
+                item: new
+                {
+                    workerId = "10001",
+                    changedAttributeDetails = new[]
+                    {
+                        new { targetAttribute = "CN", sourceField = "preferredName", currentAdValue = "Old 1", proposedValue = "New 1" }
+                    }
+                }),
+                CancellationToken.None);
+
+            await repository.AppendRunEntryAsync(CreateEntry(
+                runId,
+                "updates",
+                1,
+                "10002",
+                item: new
+                {
+                    workerId = "10002",
+                    changedAttributeDetails = new[]
+                    {
+                        new { targetAttribute = "cn", sourceField = "preferredName", currentAdValue = "Old 2", proposedValue = "New 2" }
+                    }
+                }),
+                CancellationToken.None);
+
+            var total = Assert.Single(await repository.GetRunEntryAttributeTotalsAsync(runId, null, null, null, null, null, CancellationToken.None));
+
+            Assert.Equal("CN", total.Attribute);
+            Assert.Equal(2, total.Count);
+        }
+        finally
+        {
+            File.Delete(databasePath);
+        }
+    }
+
     private static async Task<SqliteRunRepository> CreateRepositoryAsync(string databasePath)
     {
         var pathResolver = new SqlitePathResolver(databasePath);
@@ -153,7 +367,7 @@ public sealed class SqliteRunRepositoryTests
             RequestedBy: "test");
     }
 
-    private static RunEntryRecord CreateEntry(string runId, string bucket, int bucketIndex, string workerId)
+    private static RunEntryRecord CreateEntry(string runId, string bucket, int bucketIndex, string workerId, object? item = null)
     {
         return new RunEntryRecord(
             EntryId: $"{runId}:{bucket}:{workerId}:{bucketIndex}",
@@ -166,7 +380,7 @@ public sealed class SqliteRunRepositoryTests
             ReviewCategory: null,
             ReviewCaseType: null,
             StartedAt: DateTimeOffset.UtcNow,
-            Item: JsonSerializer.SerializeToElement(new
+            Item: JsonSerializer.SerializeToElement(item ?? new
             {
                 workerId,
                 bucket,

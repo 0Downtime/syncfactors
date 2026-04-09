@@ -6,7 +6,7 @@ using SyncFactors.Domain;
 
 namespace SyncFactors.Api.Pages.Runs;
 
-public sealed class DetailModel(IRunRepository runRepository) : PageModel
+public sealed class DetailModel(RunEntriesQueryService queryService) : PageModel
 {
     public const int EntriesPerPage = 50;
 
@@ -29,6 +29,8 @@ public sealed class DetailModel(IRunRepository runRepository) : PageModel
 
     public IReadOnlyList<RunEntry> Entries { get; private set; } = [];
 
+    public IReadOnlyList<ChangedAttributeTotal> AttributeTotals { get; private set; } = [];
+
     public IReadOnlyList<string> AvailableBuckets { get; private set; } = [];
 
     public int TotalEntries { get; private set; }
@@ -49,35 +51,24 @@ public sealed class DetailModel(IRunRepository runRepository) : PageModel
             return NotFound();
         }
 
-        Run = await runRepository.GetRunAsync(RunId, cancellationToken);
-        if (Run is null)
+        var result = await queryService.LoadAsync(RunId, Bucket, WorkerId, null, Filter, null, PageNumber, EntriesPerPage, cancellationToken);
+        if (result is null)
         {
             return NotFound();
         }
+
+        Run = result.Run;
 
         AvailableBuckets = Run.BucketCounts
             .Where(pair => pair.Value > 0)
             .Select(pair => pair.Key)
             .ToArray();
 
-        PageNumber = Math.Max(1, PageNumber);
-        TotalEntries = await runRepository.CountRunEntriesAsync(RunId, Bucket, WorkerId, null, Filter, null, cancellationToken);
+        TotalEntries = result.Total;
+        AttributeTotals = result.AttributeTotals;
+        Entries = result.Entries;
+        PageNumber = result.Page;
         TotalPages = Math.Max(1, (int)Math.Ceiling(TotalEntries / (double)EntriesPerPage));
-        if (PageNumber > TotalPages)
-        {
-            PageNumber = TotalPages;
-        }
-
-        Entries = await runRepository.GetRunEntriesAsync(
-            RunId,
-            Bucket,
-            WorkerId,
-            null,
-            Filter,
-            null,
-            (PageNumber - 1) * EntriesPerPage,
-            EntriesPerPage,
-            cancellationToken);
         return Page();
     }
 }
