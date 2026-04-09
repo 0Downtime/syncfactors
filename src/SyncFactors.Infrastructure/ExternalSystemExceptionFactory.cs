@@ -13,13 +13,13 @@ internal static class ExternalSystemExceptionFactory
         var summary = exception switch
         {
             LdapException ldapException => DescribeLdapFailure(ldapException, config),
-            DirectoryOperationException directoryOperationException => directoryOperationException.Message,
+            DirectoryOperationException directoryOperationException => DescribeDirectoryOperationFailure(directoryOperationException, config),
             _ => exception.Message
         };
         var guidance = exception switch
         {
             LdapException ldapException => GetActiveDirectoryGuidance(ldapException, config),
-            DirectoryOperationException => "Check the target OU, manager resolution, and whether the account already exists with unexpected state.",
+            DirectoryOperationException directoryOperationException => GetDirectoryOperationGuidance(directoryOperationException, config),
             _ => "Verify the configured LDAP server, bind account, and network reachability from this machine."
         };
 
@@ -45,6 +45,11 @@ internal static class ExternalSystemExceptionFactory
 
     private static string DescribeLdapFailure(LdapException exception, ActiveDirectoryConfig config)
     {
+        if (TryDescribeMissingOu(exception.Message, out var missingOuDescription))
+        {
+            return missingOuDescription;
+        }
+
         if (string.Equals(exception.Message, "The supplied credential is invalid.", StringComparison.OrdinalIgnoreCase))
         {
             return "The configured bind credentials were rejected by the directory server.";
@@ -64,8 +69,25 @@ internal static class ExternalSystemExceptionFactory
         return exception.Message;
     }
 
+    private static string DescribeDirectoryOperationFailure(DirectoryOperationException exception, ActiveDirectoryConfig config)
+    {
+        _ = config;
+
+        if (TryDescribeMissingOu(exception.Message, out var missingOuDescription))
+        {
+            return missingOuDescription;
+        }
+
+        return exception.Message;
+    }
+
     private static string GetActiveDirectoryGuidance(LdapException exception, ActiveDirectoryConfig config)
     {
+        if (TryDescribeMissingOu(exception.Message, out _))
+        {
+            return GetMissingOuGuidance(config);
+        }
+
         if (string.Equals(exception.Message, "The supplied credential is invalid.", StringComparison.OrdinalIgnoreCase))
         {
             return "Confirm the bind username format and password. For simple bind, prefer a UPN such as user@example.local.";
@@ -88,6 +110,16 @@ internal static class ExternalSystemExceptionFactory
         }
 
         return "Review the LDAP error detail, target OU, and manager lookup inputs before retrying.";
+    }
+
+    private static string GetDirectoryOperationGuidance(DirectoryOperationException exception, ActiveDirectoryConfig config)
+    {
+        if (TryDescribeMissingOu(exception.Message, out _))
+        {
+            return GetMissingOuGuidance(config);
+        }
+
+        return "Check the target OU, manager resolution, and whether the account already exists with unexpected state.";
     }
 
     private static string GetSuccessFactorsGuidance(string summary)
@@ -133,6 +165,44 @@ internal static class ExternalSystemExceptionFactory
 
     private static int GetDefaultPort(string mode) =>
         string.Equals(mode, "ldaps", StringComparison.OrdinalIgnoreCase) ? 636 : 389;
+
+    private static bool TryDescribeMissingOu(string? message, out string description)
+    {
+        if (!string.IsNullOrWhiteSpace(message) &&
+            message.Contains("problem 2001 (NO_OBJECT)", StringComparison.OrdinalIgnoreCase))
+        {
+            var bestMatchMarker = "best match of:";
+            var bestMatchIndex = message.IndexOf(bestMatchMarker, StringComparison.OrdinalIgnoreCase);
+            if (bestMatchIndex >= 0)
+            {
+                var bestMatch = message[(bestMatchIndex + bestMatchMarker.Length)..]
+                    .Trim()
+                    .Trim('\'', '"');
+                description = $"The directory search base does not exist or is misconfigured. Best match in AD was '{bestMatch}'.";
+                return true;
+            }
+
+            description = "The directory search base does not exist or is misconfigured.";
+            return true;
+        }
+
+        description = string.Empty;
+        return false;
+    }
+
+    private static string GetMissingOuGuidance(ActiveDirectoryConfig config)
+    {
+        var configuredOus = new[]
+        {
+            $"defaultActiveOu='{config.DefaultActiveOu}'",
+            $"prehireOu='{config.PrehireOu}'",
+            $"graveyardOu='{config.GraveyardOu}'",
+            string.IsNullOrWhiteSpace(config.LeaveOu) ? null : $"leaveOu='{config.LeaveOu}'"
+        }
+        .Where(value => !string.IsNullOrWhiteSpace(value));
+
+        return $"Check that each configured AD OU exists exactly as specified and that the bind account can search it. Current OUs: {string.Join(", ", configuredOus)}.";
+    }
 
     private static bool LooksLikeHostAndPort(string value)
     {
