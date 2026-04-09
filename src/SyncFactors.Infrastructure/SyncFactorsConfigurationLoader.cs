@@ -94,14 +94,17 @@ public sealed class SyncFactorsConfigurationLoader
                 PrehireOu: document.GetRequiredObject("ad").GetRequiredString("prehireOu"),
                 GraveyardOu: document.GetRequiredObject("ad").GetRequiredString("graveyardOu"),
                 Transport: LoadActiveDirectoryTransport(document.GetRequiredObject("ad")),
-                IdentityPolicy: LoadActiveDirectoryIdentityPolicy(document.GetRequiredObject("ad"))),
+                IdentityPolicy: LoadActiveDirectoryIdentityPolicy(document.GetRequiredObject("ad")),
+                LeaveOu: document.GetRequiredObject("ad").TryGetString("leaveOu")),
             Sync: new SyncPolicyConfig(
                 EnableBeforeStartDays: document.GetRequiredObject("sync").GetRequiredInt32("enableBeforeStartDays"),
-                DeletionRetentionDays: document.GetRequiredObject("sync").GetRequiredInt32("deletionRetentionDays")),
+                DeletionRetentionDays: document.GetRequiredObject("sync").GetRequiredInt32("deletionRetentionDays"),
+                LeaveStatusValues: document.GetRequiredObject("sync").TryGetStringArray("leaveStatusValues") ?? []),
             Safety: new SafetyConfig(
                 MaxCreatesPerRun: document.GetRequiredObject("safety").GetRequiredInt32("maxCreatesPerRun"),
                 MaxDisablesPerRun: document.GetRequiredObject("safety").GetRequiredInt32("maxDisablesPerRun"),
                 MaxDeletionsPerRun: document.GetRequiredObject("safety").GetRequiredInt32("maxDeletionsPerRun")),
+            Alerts: LoadAlerts(document),
             Reporting: new ReportingConfig(
                 OutputDirectory: document.GetRequiredObject("reporting").GetRequiredString("outputDirectory")));
     }
@@ -216,6 +219,39 @@ public sealed class SyncFactorsConfigurationLoader
 
         var value = Environment.GetEnvironmentVariable(environmentVariableName);
         return string.IsNullOrWhiteSpace(value) ? null : value;
+    }
+
+    private static AlertingConfig LoadAlerts(JsonElement document)
+    {
+        if (!document.TryGetObject("alerts", out var alerts))
+        {
+            return new AlertingConfig(
+                Enabled: false,
+                SubjectPrefix: "[SyncFactors]",
+                GraveyardRetentionReport: new GraveyardRetentionReportConfig(Enabled: false, IntervalDays: 7),
+                Smtp: null);
+        }
+
+        var smtp = alerts.TryGetObject("smtp", out var smtpElement)
+            ? new SmtpConfig(
+                Host: smtpElement.GetRequiredString("host"),
+                Port: TryGetInt32(smtpElement, "port") ?? 25,
+                UseSsl: smtpElement.TryGetBoolean("useSsl") ?? false,
+                From: smtpElement.GetRequiredString("from"),
+                To: smtpElement.GetRequiredStringArray("to"))
+            : null;
+
+        var report = alerts.TryGetObject("graveyardRetentionReport", out var reportElement)
+            ? new GraveyardRetentionReportConfig(
+                Enabled: reportElement.TryGetBoolean("enabled") ?? false,
+                IntervalDays: TryGetInt32(reportElement, "intervalDays") ?? 7)
+            : new GraveyardRetentionReportConfig(Enabled: false, IntervalDays: 7);
+
+        return new AlertingConfig(
+            Enabled: alerts.TryGetBoolean("enabled") ?? false,
+            SubjectPrefix: alerts.TryGetString("subjectPrefix") ?? "[SyncFactors]",
+            GraveyardRetentionReport: report,
+            Smtp: smtp);
     }
 
     private static int? TryGetInt32(JsonElement element, string propertyName)

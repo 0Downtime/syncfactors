@@ -8,6 +8,105 @@ namespace SyncFactors.Infrastructure.Tests;
 public sealed class AttributeDiffServiceTests
 {
     [Fact]
+    public async Task BuildDiffAsync_FormatsODataDateLiteral_WhenConfiguredAsDateOnly()
+    {
+        var tempRoot = Path.Combine(Path.GetTempPath(), "syncfactors-attribute-diff", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempRoot);
+
+        var configPath = Path.Combine(tempRoot, "sync-config.json");
+        var mappingConfigPath = Path.Combine(tempRoot, "mapping-config.json");
+
+        await File.WriteAllTextAsync(configPath, """
+        {
+          "secrets": {
+            "adServerEnv": null,
+            "adUsernameEnv": null,
+            "adBindPasswordEnv": null
+          },
+          "successFactors": {
+            "baseUrl": "http://example.test/odata/v2",
+            "auth": {
+              "mode": "basic",
+              "basic": {
+                "username": "mock-user",
+                "password": "mock-password"
+              }
+            },
+            "query": {
+              "entitySet": "PerPerson",
+              "identityField": "personIdExternal",
+              "deltaField": "lastModifiedDateTime",
+              "select": ["personIdExternal"],
+              "expand": []
+            }
+          },
+          "ad": {
+            "server": "ldap.example.test",
+            "username": "",
+            "bindPassword": "",
+            "identityAttribute": "employeeID",
+            "defaultActiveOu": "OU=LabUsers,DC=example,DC=com",
+            "prehireOu": "OU=Prehire,DC=example,DC=com",
+            "graveyardOu": "OU=LabGraveyard,DC=example,DC=com"
+          },
+          "sync": {
+            "enableBeforeStartDays": 7,
+            "deletionRetentionDays": 90
+          },
+          "safety": {
+            "maxCreatesPerRun": 10,
+            "maxDisablesPerRun": 10,
+            "maxDeletionsPerRun": 10
+          },
+          "reporting": {
+            "outputDirectory": "/tmp"
+          }
+        }
+        """);
+
+        await File.WriteAllTextAsync(mappingConfigPath, """
+        {
+          "mappings": [
+            {
+              "source": "startDate",
+              "target": "extensionAttribute1",
+              "enabled": true,
+              "required": false,
+              "transform": "DateOnly"
+            }
+          ]
+        }
+        """);
+
+        var loader = new SyncFactorsConfigurationLoader(new SyncFactorsConfigPathResolver(configPath, mappingConfigPath));
+        var mappingProvider = new AttributeMappingProvider(loader, NullLogger<AttributeMappingProvider>.Instance);
+        var diffService = new AttributeDiffService(mappingProvider, new NoopWorkerPreviewLogWriter(), NullLogger<AttributeDiffService>.Instance);
+
+        var worker = new WorkerSnapshot(
+            WorkerId: "44522",
+            PreferredName: "Christopher",
+            LastName: "Brien",
+            Department: "Infrastructure & Security",
+            TargetOu: "OU=LabUsers,DC=example,DC=com",
+            IsPrehire: false,
+            Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["startDate"] = "/Date(1777772800000)/"
+            });
+
+        var changes = await diffService.BuildDiffAsync(
+            worker,
+            directoryUser: null,
+            proposedEmailAddress: null,
+            logPath: null,
+            CancellationToken.None);
+
+        var startDateChange = Assert.Single(changes, change => change.Attribute == "extensionAttribute1");
+        Assert.Equal("2026-05-03", startDateChange.After);
+        Assert.True(startDateChange.Changed);
+    }
+
+    [Fact]
     public async Task BuildDiffAsync_StripsCommasAndPeriods_WhenConfigured()
     {
         var tempRoot = Path.Combine(Path.GetTempPath(), "syncfactors-attribute-diff", Guid.NewGuid().ToString("N"));
@@ -733,6 +832,112 @@ public sealed class AttributeDiffServiceTests
                 Assert.Equal("old.email@spireenergy.com", change.After);
                 Assert.False(change.Changed);
             });
+    }
+
+    [Fact]
+    public async Task BuildDiffAsync_IncludesSamAccountNameAndCnSystemRows()
+    {
+        var tempRoot = Path.Combine(Path.GetTempPath(), "syncfactors-attribute-diff", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempRoot);
+
+        var configPath = Path.Combine(tempRoot, "sync-config.json");
+        var mappingConfigPath = Path.Combine(tempRoot, "mapping-config.json");
+
+        await File.WriteAllTextAsync(configPath, """
+        {
+          "secrets": {
+            "adServerEnv": null,
+            "adUsernameEnv": null,
+            "adBindPasswordEnv": null
+          },
+          "successFactors": {
+            "baseUrl": "http://example.test/odata/v2",
+            "auth": {
+              "mode": "basic",
+              "basic": {
+                "username": "mock-user",
+                "password": "mock-password"
+              }
+            },
+            "query": {
+              "entitySet": "PerPerson",
+              "identityField": "personIdExternal",
+              "deltaField": "lastModifiedDateTime",
+              "select": ["personIdExternal"],
+              "expand": []
+            }
+          },
+          "ad": {
+            "server": "ldap.example.test",
+            "username": "",
+            "bindPassword": "",
+            "identityAttribute": "employeeID",
+            "defaultActiveOu": "OU=LabUsers,DC=example,DC=com",
+            "prehireOu": "OU=Prehire,DC=example,DC=com",
+            "graveyardOu": "OU=LabGraveyard,DC=example,DC=com"
+          },
+          "sync": {
+            "enableBeforeStartDays": 7,
+            "deletionRetentionDays": 90
+          },
+          "safety": {
+            "maxCreatesPerRun": 10,
+            "maxDisablesPerRun": 10,
+            "maxDeletionsPerRun": 10
+          },
+          "reporting": {
+            "outputDirectory": "/tmp"
+          }
+        }
+        """);
+
+        await File.WriteAllTextAsync(mappingConfigPath, """
+        {
+          "mappings": []
+        }
+        """);
+
+        var loader = new SyncFactorsConfigurationLoader(new SyncFactorsConfigPathResolver(configPath, mappingConfigPath));
+        var mappingProvider = new AttributeMappingProvider(loader, NullLogger<AttributeMappingProvider>.Instance);
+        var diffService = new AttributeDiffService(mappingProvider, new NoopWorkerPreviewLogWriter(), NullLogger<AttributeDiffService>.Instance);
+
+        var worker = new WorkerSnapshot(
+            WorkerId: "00051",
+            PreferredName: "David",
+            LastName: "LaRussa",
+            Department: "IT",
+            TargetOu: "OU=LabUsers,DC=example,DC=com",
+            IsPrehire: false,
+            Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase));
+
+        var directoryUser = new DirectoryUserSnapshot(
+            SamAccountName: "00051",
+            DistinguishedName: "CN=LaRussa\\, David,OU=LabUsers,DC=example,DC=com",
+            Enabled: true,
+            DisplayName: "LaRussa, David",
+            Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["sAMAccountName"] = "00051",
+                ["cn"] = "LaRussa, David",
+                ["displayName"] = "LaRussa, David"
+            });
+
+        var changes = await diffService.BuildDiffAsync(
+            worker,
+            directoryUser,
+            proposedEmailAddress: "david.larussa@example.com",
+            logPath: null,
+            CancellationToken.None);
+
+        var samRow = Assert.Single(changes, change => change.Attribute == "sAMAccountName");
+        Assert.Equal("00051", samRow.Before);
+        Assert.Equal("00051", samRow.After);
+        Assert.False(samRow.Changed);
+
+        var cnRow = Assert.Single(changes, change => change.Attribute == "cn");
+        Assert.Equal("LaRussa, David", cnRow.Before);
+        Assert.Equal("00051", cnRow.After);
+        Assert.True(cnRow.Changed);
     }
 
     private sealed class NoopWorkerPreviewLogWriter : IWorkerPreviewLogWriter

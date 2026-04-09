@@ -56,7 +56,10 @@ builder.Services.AddSingleton(serviceProvider =>
         config.Ad.PrehireOu,
         config.Ad.GraveyardOu,
         config.SuccessFactors.Query.InactiveStatusField,
-        config.SuccessFactors.Query.InactiveStatusValues);
+        config.SuccessFactors.Query.InactiveStatusValues,
+        config.Ad.LeaveOu,
+        config.Sync.LeaveStatusValues,
+        config.Ad.IdentityAttribute);
 });
 builder.Services.AddSingleton<ScaffoldDirectoryGateway>();
 builder.Services.AddSingleton<ScaffoldDirectoryCommandGateway>();
@@ -89,6 +92,7 @@ builder.Services.AddSingleton<IDashboardSnapshotService, DashboardSnapshotServic
 builder.Services.AddSingleton<IRuntimeStatusStore, SqliteRuntimeStatusStore>();
 builder.Services.AddSingleton<IRunRepository, SqliteRunRepository>();
 builder.Services.AddSingleton<IRunQueueStore, SqliteRunQueueStore>();
+builder.Services.AddSingleton<RunQueueRecoveryService>();
 builder.Services.AddSingleton<ISyncScheduleStore, SqliteSyncScheduleStore>();
 builder.Services.AddTransient<IWorkerPlanningService, WorkerPlanningService>();
 builder.Services.AddSingleton<IDirectoryMutationCommandBuilder, DirectoryMutationCommandBuilder>();
@@ -198,6 +202,7 @@ var app = builder.Build();
 await app.Services.GetRequiredService<SqliteDatabaseInitializer>().InitializeAsync(CancellationToken.None);
 await app.Services.GetRequiredService<ILocalAuthService>().EnsureBootstrapAdminAsync(CancellationToken.None);
 app.Services.GetRequiredService<SyncFactorsConfigurationValidator>().Validate();
+await app.Services.GetRequiredService<RunQueueRecoveryService>().RecoverIfNeededAsync("api startup", CancellationToken.None);
 ValidateAuthConfiguration(app);
 LogConfiguredEndpoints(app);
 

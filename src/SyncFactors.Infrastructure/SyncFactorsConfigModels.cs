@@ -6,6 +6,7 @@ public sealed record SyncFactorsConfigDocument(
     ActiveDirectoryConfig Ad,
     SyncPolicyConfig Sync,
     SafetyConfig Safety,
+    AlertingConfig Alerts,
     ReportingConfig Reporting);
 
 public sealed record SecretsConfig(
@@ -65,7 +66,8 @@ public sealed record ActiveDirectoryConfig(
     string PrehireOu,
     string GraveyardOu,
     ActiveDirectoryTransportConfig Transport,
-    ActiveDirectoryIdentityPolicyConfig IdentityPolicy);
+    ActiveDirectoryIdentityPolicyConfig IdentityPolicy,
+    string? LeaveOu = null);
 
 public sealed record ActiveDirectoryTransportConfig(
     string Mode,
@@ -79,12 +81,30 @@ public sealed record ActiveDirectoryIdentityPolicyConfig(
 
 public sealed record SyncPolicyConfig(
     int EnableBeforeStartDays,
-    int DeletionRetentionDays);
+    int DeletionRetentionDays,
+    IReadOnlyList<string>? LeaveStatusValues = null);
 
 public sealed record SafetyConfig(
     int MaxCreatesPerRun,
     int MaxDisablesPerRun,
     int MaxDeletionsPerRun);
+
+public sealed record AlertingConfig(
+    bool Enabled,
+    string SubjectPrefix,
+    GraveyardRetentionReportConfig GraveyardRetentionReport,
+    SmtpConfig? Smtp);
+
+public sealed record GraveyardRetentionReportConfig(
+    bool Enabled,
+    int IntervalDays);
+
+public sealed record SmtpConfig(
+    string Host,
+    int Port,
+    bool UseSsl,
+    string From,
+    IReadOnlyList<string> To);
 
 public sealed record ReportingConfig(
     string OutputDirectory);

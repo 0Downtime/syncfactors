@@ -235,6 +235,43 @@ public sealed class WorkerPreviewPlannerTests
     }
 
     [Fact]
+    public async Task PreviewAsync_DoesNotRequireReviewWhenManagerLookupThrows()
+    {
+        var worker = new WorkerSnapshot(
+            WorkerId: "44522",
+            PreferredName: "Christopher",
+            LastName: "Brien",
+            Department: "Infrastructure & Security",
+            TargetOu: "OU=Employees,DC=example,DC=com",
+            IsPrehire: false,
+            Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["company"] = "Spire Services, Inc.",
+                ["department"] = "Infrastructure & Security",
+                ["managerId"] = "10004"
+            });
+
+        var planner = new WorkerPreviewPlanner(
+            new StubWorkerSource(worker),
+            new WorkerPlanningService(
+                new ThrowingManagerDirectoryGateway(),
+                new StubIdentityMatcher(),
+                CreateLifecyclePolicy(),
+                new StubAttributeDiffService(),
+                new StubAttributeMappingProvider(),
+                NullLogger<WorkerPlanningService>.Instance),
+            new StubAttributeMappingProvider(),
+            new StubWorkerPreviewLogWriter(),
+            new StubRunRepository(),
+            NullLogger<WorkerPreviewPlanner>.Instance);
+
+        var preview = await planner.PreviewAsync("44522", CancellationToken.None);
+
+        Assert.Null(preview.ReviewCaseType);
+        Assert.Null(preview.ReviewCategory);
+    }
+
+    [Fact]
     public async Task PreviewAsync_ForExistingUsers_PreservesCurrentEmailTargets()
     {
         var worker = new WorkerSnapshot(
@@ -343,6 +380,55 @@ public sealed class WorkerPreviewPlannerTests
         var preview = await planner.PreviewAsync("44522", CancellationToken.None);
 
         Assert.Equal("enables", preview.Buckets.Single());
+        var enabledRow = preview.DiffRows.Single(row => row.Attribute == "enabled");
+        Assert.True(enabledRow.Changed);
+        Assert.Equal("false", enabledRow.Before);
+        Assert.Equal("true", enabledRow.After);
+    }
+
+    [Fact]
+    public async Task PreviewAsync_WhenManagerChanges_IncludesManagerDiffAndPlansUpdate()
+    {
+        var worker = new WorkerSnapshot(
+            WorkerId: "44522",
+            PreferredName: "Christopher",
+            LastName: "Brien",
+            Department: "Infrastructure & Security",
+            TargetOu: "OU=Employees,DC=example,DC=com",
+            IsPrehire: false,
+            Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["company"] = "Spire Services, Inc.",
+                ["department"] = "Infrastructure & Security",
+                ["managerId"] = "10004"
+            });
+
+        var planner = new WorkerPreviewPlanner(
+            new StubWorkerSource(worker),
+            new WorkerPlanningService(
+                new ExistingUserWithChangedManagerDirectoryGateway(),
+                new ExistingUserIdentityMatcher(),
+                CreateLifecyclePolicy(),
+                new UnchangedAttributeDiffService(),
+                new StubAttributeMappingProvider(),
+                NullLogger<WorkerPlanningService>.Instance),
+            new StubAttributeMappingProvider(),
+            new StubWorkerPreviewLogWriter(),
+            new StubRunRepository(),
+            NullLogger<WorkerPreviewPlanner>.Instance);
+
+        var preview = await planner.PreviewAsync("44522", CancellationToken.None);
+
+        var managerRow = preview.DiffRows.Single(row => row.Attribute == "manager");
+        Assert.True(managerRow.Changed);
+        Assert.Equal("CN=Old Manager,OU=Employees,DC=example,DC=com", managerRow.Before);
+        Assert.Equal("CN=New Manager,OU=Employees,DC=example,DC=com", managerRow.After);
+
+        var operationKinds = preview.Entries
+            .SelectMany(entry => entry.Item.GetProperty("operations").EnumerateArray())
+            .Select(operation => operation.GetProperty("kind").GetString())
+            .ToArray();
+        Assert.Contains("UpdateUser", operationKinds);
     }
 
     private sealed class StubWorkerSource(WorkerSnapshot worker) : IWorkerSource
@@ -555,6 +641,31 @@ public sealed class WorkerPreviewPlannerTests
         }
     }
 
+    private sealed class ThrowingManagerDirectoryGateway : IDirectoryGateway
+    {
+        public Task<DirectoryUserSnapshot?> FindByWorkerAsync(WorkerSnapshot worker, CancellationToken cancellationToken)
+        {
+            _ = worker;
+            _ = cancellationToken;
+            return Task.FromResult<DirectoryUserSnapshot?>(null);
+        }
+
+        public Task<string?> ResolveManagerDistinguishedNameAsync(string managerId, CancellationToken cancellationToken)
+        {
+            _ = managerId;
+            _ = cancellationToken;
+            throw new InvalidOperationException("AD manager lookup failed.");
+        }
+
+        public Task<string> ResolveAvailableEmailLocalPartAsync(WorkerSnapshot worker, bool isCreate, CancellationToken cancellationToken)
+        {
+            _ = worker;
+            _ = isCreate;
+            _ = cancellationToken;
+            return Task.FromResult("christopher.brien");
+        }
+    }
+
     private sealed class DisabledExistingUserDirectoryGateway : IDirectoryGateway
     {
         public Task<DirectoryUserSnapshot?> FindByWorkerAsync(WorkerSnapshot worker, CancellationToken cancellationToken)
@@ -579,6 +690,42 @@ public sealed class WorkerPreviewPlannerTests
             _ = managerId;
             _ = cancellationToken;
             return Task.FromResult<string?>(null);
+        }
+
+        public Task<string> ResolveAvailableEmailLocalPartAsync(WorkerSnapshot worker, bool isCreate, CancellationToken cancellationToken)
+        {
+            _ = worker;
+            _ = isCreate;
+            _ = cancellationToken;
+            return Task.FromResult("christopher.brien2");
+        }
+    }
+
+    private sealed class ExistingUserWithChangedManagerDirectoryGateway : IDirectoryGateway
+    {
+        public Task<DirectoryUserSnapshot?> FindByWorkerAsync(WorkerSnapshot worker, CancellationToken cancellationToken)
+        {
+            _ = worker;
+            _ = cancellationToken;
+            return Task.FromResult<DirectoryUserSnapshot?>(new DirectoryUserSnapshot(
+                SamAccountName: "cbrien",
+                DistinguishedName: "CN=Brien\\, Christopher,OU=Employees,DC=example,DC=com",
+                Enabled: true,
+                DisplayName: "Brien, Christopher",
+                Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+                {
+                    ["department"] = "Infrastructure & Security",
+                    ["UserPrincipalName"] = "existing.upn@spireenergy.com",
+                    ["mail"] = "existing.mail@spireenergy.com",
+                    ["manager"] = "CN=Old Manager,OU=Employees,DC=example,DC=com"
+                }));
+        }
+
+        public Task<string?> ResolveManagerDistinguishedNameAsync(string managerId, CancellationToken cancellationToken)
+        {
+            _ = managerId;
+            _ = cancellationToken;
+            return Task.FromResult<string?>("CN=New Manager,OU=Employees,DC=example,DC=com");
         }
 
         public Task<string> ResolveAvailableEmailLocalPartAsync(WorkerSnapshot worker, bool isCreate, CancellationToken cancellationToken)

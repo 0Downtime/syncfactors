@@ -8,6 +8,7 @@ public sealed class DirectoryMutationCommandBuilder : IDirectoryMutationCommandB
     {
         var action = plan.PrimaryAction;
         var samAccountName = plan.Identity.SamAccountName;
+        var commonName = samAccountName;
         var displayName = DirectoryIdentityFormatter.BuildDisplayName(plan.Worker.PreferredName, plan.Worker.LastName);
         var userPrincipalName = plan.Identity.MatchedExistingUser
             ? plan.DirectoryUser.Attributes.TryGetValue("UserPrincipalName", out var existingUserPrincipalName) && !string.IsNullOrWhiteSpace(existingUserPrincipalName)
@@ -26,6 +27,7 @@ public sealed class DirectoryMutationCommandBuilder : IDirectoryMutationCommandB
             ManagerId: plan.Worker.Attributes.TryGetValue("managerId", out var managerId) ? managerId : null,
             ManagerDistinguishedName: plan.ManagerDistinguishedName,
             SamAccountName: samAccountName,
+            CommonName: commonName,
             UserPrincipalName: userPrincipalName,
             Mail: mail,
             TargetOu: plan.TargetOu,
@@ -40,6 +42,7 @@ public sealed class DirectoryMutationCommandBuilder : IDirectoryMutationCommandB
     {
         var action = ResolvePrimaryAction(preview);
         var samAccountName = preview.SamAccountName ?? throw new InvalidOperationException("Preview did not produce a SAM account name.");
+        var commonName = samAccountName;
         var displayName = GetPreviewAttributeValue(preview, "displayName")
             ?? DirectoryIdentityFormatter.BuildDisplayName(worker.PreferredName, worker.LastName);
         var emailAddress = GetPreviewAttributeValue(preview, "UserPrincipalName")
@@ -55,6 +58,7 @@ public sealed class DirectoryMutationCommandBuilder : IDirectoryMutationCommandB
             ManagerId: worker.Attributes.TryGetValue("managerId", out var managerId) ? managerId : null,
             ManagerDistinguishedName: preview.ManagerDistinguishedName,
             SamAccountName: samAccountName,
+            CommonName: commonName,
             UserPrincipalName: emailAddress,
             Mail: mailAddress,
             TargetOu: preview.TargetOu ?? worker.TargetOu,

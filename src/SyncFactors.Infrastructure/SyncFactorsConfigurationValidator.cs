@@ -36,6 +36,11 @@ public sealed class SyncFactorsConfigurationValidator(SyncFactorsConfigurationLo
             throw new InvalidOperationException("SyncFactors AD active, prehire, and graveyard OUs must be configured.");
         }
 
+        if ((sync.Sync.LeaveStatusValues?.Count ?? 0) > 0 && string.IsNullOrWhiteSpace(sync.Ad.LeaveOu))
+        {
+            throw new InvalidOperationException("SyncFactors AD leaveOu must be configured when sync.leaveStatusValues are set.");
+        }
+
         if (!string.Equals(sync.Ad.Transport.Mode, "ldaps", StringComparison.OrdinalIgnoreCase) &&
             !string.Equals(sync.Ad.Transport.Mode, "starttls", StringComparison.OrdinalIgnoreCase) &&
             !string.Equals(sync.Ad.Transport.Mode, "ldap", StringComparison.OrdinalIgnoreCase))
@@ -67,6 +72,24 @@ public sealed class SyncFactorsConfigurationValidator(SyncFactorsConfigurationLo
         if (sync.Safety.MaxCreatesPerRun <= 0 || sync.Safety.MaxDisablesPerRun <= 0 || sync.Safety.MaxDeletionsPerRun <= 0)
         {
             throw new InvalidOperationException("SyncFactors safety thresholds must be positive.");
+        }
+
+        if (sync.Alerts.GraveyardRetentionReport.IntervalDays <= 0)
+        {
+            throw new InvalidOperationException("SyncFactors alerts.graveyardRetentionReport.intervalDays must be positive.");
+        }
+
+        if (sync.Alerts.Enabled && sync.Alerts.GraveyardRetentionReport.Enabled)
+        {
+            if (sync.Alerts.Smtp is null)
+            {
+                throw new InvalidOperationException("SyncFactors alerts.smtp must be configured when graveyard retention reports are enabled.");
+            }
+
+            if (sync.Alerts.Smtp.To.Count == 0)
+            {
+                throw new InvalidOperationException("SyncFactors alerts.smtp.to must contain at least one recipient when graveyard retention reports are enabled.");
+            }
         }
 
         if (sync.SuccessFactors.Query.DeltaOverlapMinutes < 0)
