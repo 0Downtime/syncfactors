@@ -69,6 +69,9 @@ public sealed class AttributeDiffService : IAttributeDiffService
         }
 
         var changes = new List<AttributeChange>();
+        var proposedSamAccountName = string.IsNullOrWhiteSpace(directoryUser?.SamAccountName)
+            ? worker.WorkerId
+            : directoryUser.SamAccountName!;
         foreach (var mapping in enabledMappings)
         {
             var sourceValue = GetSourceValue(worker, mapping.Source, mapping.Target, proposedEmailAddress);
@@ -106,6 +109,20 @@ public sealed class AttributeDiffService : IAttributeDiffService
         }
 
         var proposedDisplayName = DirectoryIdentityFormatter.BuildDisplayName(worker.PreferredName, worker.LastName);
+        UpsertSystemAttributeChange(
+            changes,
+            attribute: "sAMAccountName",
+            source: "workerId",
+            before: FormatValue(directoryUser?.SamAccountName ?? GetDirectoryValue(currentAttributes, "sAMAccountName")),
+            after: FormatValue(proposedSamAccountName),
+            changed: !string.Equals(directoryUser?.SamAccountName ?? GetDirectoryValue(currentAttributes, "sAMAccountName"), proposedSamAccountName, StringComparison.OrdinalIgnoreCase));
+        UpsertSystemAttributeChange(
+            changes,
+            attribute: "cn",
+            source: "sAMAccountName",
+            before: FormatValue(GetDirectoryValue(currentAttributes, "cn")),
+            after: FormatValue(proposedSamAccountName),
+            changed: !string.Equals(GetDirectoryValue(currentAttributes, "cn"), proposedSamAccountName, StringComparison.Ordinal));
         UpsertSystemAttributeChange(
             changes,
             attribute: "displayName",

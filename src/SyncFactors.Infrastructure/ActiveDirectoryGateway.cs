@@ -486,6 +486,8 @@ public sealed class ActiveDirectoryGateway(
     {
         var attributes = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
         {
+            ["sAMAccountName"] = GetAttribute(entry, "sAMAccountName"),
+            ["cn"] = GetAttribute(entry, "cn"),
             ["displayName"] = displayName,
             ["GivenName"] = GetAttribute(entry, "givenName"),
             ["Surname"] = GetAttribute(entry, "sn"),
