@@ -98,6 +98,7 @@
         @foreach (var entry in Model.Entries)
         {
             var diagnostics = Model.GetFailureDiagnostics(entry);
+            var employmentStatus = Model.GetEmploymentStatusDisplay(entry);
             <article class="entry-card">
                 <header class="entry-head">
                     <div>
@@ -115,6 +116,12 @@
                 @if (!string.IsNullOrWhiteSpace(entry.FailureSummary))
                 {
                     <p class="callout warn">@entry.FailureSummary</p>
+                }
+                @if (!string.IsNullOrWhiteSpace(employmentStatus))
+                {
+                    <dl class="kv preview-meta">
+                        <div><dt>Employment Status</dt><dd>@employmentStatus</dd></div>
+                    </dl>
                 }
                 @if (!string.IsNullOrWhiteSpace(entry.ReviewCaseType) || !string.IsNullOrWhiteSpace(entry.Reason))
                 {

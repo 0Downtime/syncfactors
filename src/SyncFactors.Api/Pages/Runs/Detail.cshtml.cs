@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc.RazorPages;
 using SyncFactors.Api;
 using SyncFactors.Contracts;
 using SyncFactors.Domain;
+using System.Text.Json;
 
 namespace SyncFactors.Api.Pages.Runs;
 
@@ -44,6 +45,9 @@ public sealed class DetailModel(RunEntriesQueryService queryService) : PageModel
     public FailureDiagnostics? GetFailureDiagnostics(RunEntry entry)
         => ActiveDirectoryFailureDiagnostics.Parse(entry.Reason ?? entry.FailureSummary);
 
+    public string? GetEmploymentStatusDisplay(RunEntry entry)
+        => EmploymentStatusDisplay.Format(GetItemString(entry.Item, "emplStatus"));
+
     public async Task<IActionResult> OnGetAsync(CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(RunId))
@@ -70,5 +74,17 @@ public sealed class DetailModel(RunEntriesQueryService queryService) : PageModel
         PageNumber = result.Page;
         TotalPages = Math.Max(1, (int)Math.Ceiling(TotalEntries / (double)EntriesPerPage));
         return Page();
+    }
+
+    private static string? GetItemString(JsonElement item, string propertyName)
+    {
+        if (item.ValueKind != JsonValueKind.Object || !item.TryGetProperty(propertyName, out var property))
+        {
+            return null;
+        }
+
+        return property.ValueKind == JsonValueKind.String
+            ? property.GetString()
+            : null;
     }
 }

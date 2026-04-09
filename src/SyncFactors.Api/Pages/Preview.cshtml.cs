@@ -48,6 +48,12 @@ public sealed class PreviewModel(
             ? []
             : (ShowAllAttributes ? Preview.DiffRows : Preview.DiffRows.Where(row => row.Changed).ToArray());
 
+    public string? GetEmploymentStatusDisplay(WorkerPreviewResult preview)
+        => EmploymentStatusDisplay.Format(
+            preview.SourceAttributes
+                .FirstOrDefault(attribute => string.Equals(attribute.Attribute, "emplStatus", StringComparison.OrdinalIgnoreCase))
+                ?.Value);
+
     public async Task OnGetAsync(CancellationToken cancellationToken)
     {
         await LoadPreviewAsync(cancellationToken);
