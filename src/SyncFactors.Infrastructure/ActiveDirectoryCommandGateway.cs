@@ -252,12 +252,13 @@ public sealed class ActiveDirectoryCommandGateway(
         return new DirectoryUserSnapshot(
             SamAccountName: GetAttribute(entry, "sAMAccountName"),
             DistinguishedName: GetAttribute(entry, "distinguishedName"),
-            Enabled: null,
+            Enabled: ParseEnabled(GetAttribute(entry, "userAccountControl")),
             DisplayName: GetAttribute(entry, "displayName"),
             Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
             {
                 ["cn"] = GetAttribute(entry, "cn"),
-                ["displayName"] = GetAttribute(entry, "displayName")
+                ["displayName"] = GetAttribute(entry, "displayName"),
+                ["userAccountControl"] = GetAttribute(entry, "userAccountControl")
             });
     }
 
@@ -573,20 +574,38 @@ public sealed class ActiveDirectoryCommandGateway(
 
     private static IReadOnlyList<string> GetSearchBases(ActiveDirectoryConfig config)
     {
-        return new[] { config.DefaultActiveOu, config.PrehireOu, config.GraveyardOu }
+        return new[] { config.DefaultActiveOu, config.PrehireOu, config.GraveyardOu, config.LeaveOu }
             .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Select(value => value!)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
     }
 
     private static int ResolveUserAccountControl(DirectoryUserSnapshot? existing)
     {
+        if (existing?.Attributes.TryGetValue("userAccountControl", out var rawValue) == true &&
+            int.TryParse(rawValue, out var parsedValue))
+        {
+            return parsedValue;
+        }
+
         if (existing?.Enabled == false)
         {
             return 0x0202;
         }
 
         return 0x0200;
+    }
+
+    private static bool? ParseEnabled(string? userAccountControl)
+    {
+        if (!int.TryParse(userAccountControl, out var value))
+        {
+            return null;
+        }
+
+        const int AccountDisabledFlag = 0x0002;
+        return (value & AccountDisabledFlag) == 0;
     }
 
     private static string BuildCompletionMessage(DirectoryMutationCommand command, IReadOnlyList<SyncFactors.Contracts.DirectoryOperation> operations)

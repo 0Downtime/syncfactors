@@ -380,6 +380,10 @@ public sealed class WorkerPreviewPlannerTests
         var preview = await planner.PreviewAsync("44522", CancellationToken.None);
 
         Assert.Equal("enables", preview.Buckets.Single());
+        var enabledRow = preview.DiffRows.Single(row => row.Attribute == "enabled");
+        Assert.True(enabledRow.Changed);
+        Assert.Equal("false", enabledRow.Before);
+        Assert.Equal("true", enabledRow.After);
     }
 
     private sealed class StubWorkerSource(WorkerSnapshot worker) : IWorkerSource
