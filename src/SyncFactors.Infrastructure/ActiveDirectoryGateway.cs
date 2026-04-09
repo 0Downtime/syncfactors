@@ -281,10 +281,11 @@ public sealed class ActiveDirectoryGateway(
         }
 
         using var connection = CreateConnection(config, logger);
+        var searchBases = GetEmailUniquenessSearchBases(connection, config, logger);
         return ResolveAvailableEmailLocalPart(
             worker.WorkerId,
             baseLocalPart,
-            candidate => EmailLocalPartExists(connection, config, candidate, existingSamAccountName, logger, worker.WorkerId));
+            candidate => EmailLocalPartExists(connection, searchBases, candidate, existingSamAccountName, logger, worker.WorkerId));
     }
 
     private static string ResolveAvailableEmailLocalPart(
@@ -306,7 +307,7 @@ public sealed class ActiveDirectoryGateway(
 
     private static bool EmailLocalPartExists(
         LdapConnection connection,
-        ActiveDirectoryConfig config,
+        IReadOnlyList<string> searchBases,
         string localPart,
         string? existingSamAccountName,
         ILogger logger,
@@ -315,7 +316,7 @@ public sealed class ActiveDirectoryGateway(
         var userPrincipalName = DirectoryIdentityFormatter.BuildEmailAddress(localPart);
         var entry = FindFirstEntryMatchingAny(
             connection,
-            GetSearchBases(config),
+            searchBases,
             [("userPrincipalName", userPrincipalName), ("mail", userPrincipalName)],
             "mail",
             logger,
@@ -328,6 +329,38 @@ public sealed class ActiveDirectoryGateway(
 
         var matchedSamAccountName = GetAttribute(entry, "sAMAccountName");
         return !string.Equals(matchedSamAccountName, existingSamAccountName, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static IReadOnlyList<string> GetEmailUniquenessSearchBases(
+        LdapConnection connection,
+        ActiveDirectoryConfig config,
+        ILogger logger)
+    {
+        var defaultNamingContext = TryGetDefaultNamingContext(connection, logger);
+        return GetEmailUniquenessSearchBases(defaultNamingContext, config);
+    }
+
+    private static IReadOnlyList<string> GetEmailUniquenessSearchBases(string? defaultNamingContext, ActiveDirectoryConfig config)
+    {
+        if (!string.IsNullOrWhiteSpace(defaultNamingContext))
+        {
+            return [defaultNamingContext.Trim()];
+        }
+
+        return GetSearchBases(config);
+    }
+
+    private static string? TryGetDefaultNamingContext(LdapConnection connection, ILogger logger)
+    {
+        var request = new SearchRequest(
+            string.Empty,
+            "(objectClass=*)",
+            SearchScope.Base,
+            "defaultNamingContext");
+
+        var response = ExecuteSearch(connection, request, logger, "rootdse naming context search");
+        var entry = response.Entries.Cast<SearchResultEntry>().FirstOrDefault();
+        return entry is null ? null : GetAttribute(entry, "defaultNamingContext");
     }
 
     private static SearchResultEntry? FindFirstEntry(
