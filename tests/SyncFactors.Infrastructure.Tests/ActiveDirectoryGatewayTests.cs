@@ -92,6 +92,29 @@ public sealed class ActiveDirectoryGatewayTests
         Assert.Contains("cn", request.Attributes.Cast<string>());
     }
 
+    [Fact]
+    public void CreateSearchRequest_IncludesExtendedDirectoryAttributes()
+    {
+        var method = typeof(ActiveDirectoryGateway).GetMethod(
+            "CreateSearchRequest",
+            BindingFlags.NonPublic | BindingFlags.Static,
+            [typeof(string), typeof(string), typeof(string), typeof(string)]);
+        Assert.NotNull(method);
+
+        var request = Assert.IsType<System.DirectoryServices.Protocols.SearchRequest>(
+            method!.Invoke(null, ["OU=Users,DC=example,DC=com", "employeeID", "10001", "employeeID"]));
+
+        var attributes = request.Attributes.Cast<string>().ToArray();
+
+        Assert.Contains("manager", attributes);
+        Assert.Contains("extensionAttribute5", attributes);
+        Assert.Contains("extensionAttribute6", attributes);
+        Assert.Contains("extensionAttribute7", attributes);
+        Assert.Contains("extensionAttribute8", attributes);
+        Assert.Contains("extensionAttribute9", attributes);
+        Assert.Contains("extensionAttribute10", attributes);
+    }
+
     private static string InvokeResolver(string baseLocalPart, Func<string, bool> candidateExists)
     {
         var method = typeof(ActiveDirectoryGateway).GetMethod(
