@@ -847,6 +847,18 @@ public sealed class WorkerPreviewPlannerTests
             _ = cancellationToken;
             return Task.FromResult(0);
         }
+
+        public Task<IReadOnlyList<ChangedAttributeTotal>> GetRunEntryAttributeTotalsAsync(string runId, string? bucket, string? workerId, string? reason, string? filter, string? entryId, CancellationToken cancellationToken)
+        {
+            _ = runId;
+            _ = bucket;
+            _ = workerId;
+            _ = reason;
+            _ = filter;
+            _ = entryId;
+            _ = cancellationToken;
+            return Task.FromResult<IReadOnlyList<ChangedAttributeTotal>>([]);
+        }
     }
 
     private sealed class StubRunRepository : CapturingRunRepository;

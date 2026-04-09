@@ -120,6 +120,10 @@ public sealed record RunEntry(
     IReadOnlyList<DiffRow> DiffRows,
     JsonElement Item);
 
+public sealed record ChangedAttributeTotal(
+    string Attribute,
+    int Count);
+
 public sealed record RunEntryRecord(
     string EntryId,
     string RunId,

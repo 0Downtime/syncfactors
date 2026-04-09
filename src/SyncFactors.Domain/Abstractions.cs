@@ -126,6 +126,14 @@ public interface IRunRepository
         int skip,
         int take,
         CancellationToken cancellationToken);
+    Task<IReadOnlyList<ChangedAttributeTotal>> GetRunEntryAttributeTotalsAsync(
+        string runId,
+        string? bucket,
+        string? workerId,
+        string? reason,
+        string? filter,
+        string? entryId,
+        CancellationToken cancellationToken);
     Task<int> CountRunEntriesAsync(
         string runId,
         string? bucket,

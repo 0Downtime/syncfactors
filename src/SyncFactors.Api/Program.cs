@@ -91,6 +91,7 @@ builder.Services.AddTransient<IFullSyncRunService, FullSyncRunService>();
 builder.Services.AddSingleton<IDashboardSnapshotService, DashboardSnapshotService>();
 builder.Services.AddSingleton<IRuntimeStatusStore, SqliteRuntimeStatusStore>();
 builder.Services.AddSingleton<IRunRepository, SqliteRunRepository>();
+builder.Services.AddTransient<RunEntriesQueryService>();
 builder.Services.AddSingleton<IRunQueueStore, SqliteRunQueueStore>();
 builder.Services.AddSingleton<RunQueueRecoveryService>();
 builder.Services.AddSingleton<ISyncScheduleStore, SqliteSyncScheduleStore>();
@@ -435,20 +436,24 @@ readApi.MapGet("/runs/{runId}/entries", async (
     string? entryId,
     int? page,
     int? pageSize,
-    IRunRepository repository,
+    RunEntriesQueryService queryService,
     CancellationToken cancellationToken) =>
 {
-    var run = await repository.GetRunAsync(runId, cancellationToken);
-    if (run is null)
+    var result = await queryService.LoadAsync(runId, bucket, workerId, reason, filter, entryId, page, pageSize, cancellationToken);
+    if (result is null)
     {
         return Results.NotFound();
     }
 
-    var resolvedPageSize = Math.Clamp(pageSize ?? 50, 1, 200);
-    var resolvedPage = Math.Max(1, page ?? 1);
-    var total = await repository.CountRunEntriesAsync(runId, bucket, workerId, reason, filter, entryId, cancellationToken);
-    var entries = await repository.GetRunEntriesAsync(runId, bucket, workerId, reason, filter, entryId, (resolvedPage - 1) * resolvedPageSize, resolvedPageSize, cancellationToken);
-    return Results.Ok(new { run = run.Run, entries, total, page = resolvedPage, pageSize = resolvedPageSize });
+    return Results.Ok(new
+    {
+        run = result.Run.Run,
+        entries = result.Entries,
+        attributeTotals = result.AttributeTotals,
+        total = result.Total,
+        page = result.Page,
+        pageSize = result.PageSize
+    });
 });
 
 operatorApi.MapPost("/preview/{workerId}/apply", async (
