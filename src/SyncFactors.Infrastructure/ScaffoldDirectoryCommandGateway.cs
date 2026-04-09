@@ -14,7 +14,7 @@ public sealed class ScaffoldDirectoryCommandGateway : IDirectoryCommandGateway
                 Succeeded: true,
                 Action: command.Action,
                 SamAccountName: command.SamAccountName,
-                DistinguishedName: $"CN={command.DisplayName},{command.TargetOu}",
+                DistinguishedName: $"CN={command.CommonName},{command.TargetOu}",
                 Message: $"Scaffold {command.Action} completed for {command.SamAccountName}.",
                 RunId: null));
     }

@@ -147,14 +147,27 @@ public sealed class WorkerPreviewPlanner(
     {
         var diffRows = plan.AttributeChanges
             .Select(change => new DiffRow(change.Attribute, change.Source, change.Before, change.After, change.Changed))
-            .ToArray();
+            .ToList();
+        if (plan.CurrentEnabled.HasValue &&
+            plan.TargetEnabled != plan.CurrentEnabled.Value &&
+            diffRows.All(row => !string.Equals(row.Attribute, "enabled", StringComparison.OrdinalIgnoreCase)))
+        {
+            diffRows.Add(new DiffRow(
+                Attribute: "enabled",
+                Source: null,
+                Before: ToInlineBoolean(plan.CurrentEnabled.Value),
+                After: ToInlineBoolean(plan.TargetEnabled),
+                Changed: true));
+        }
+
+        var finalizedDiffRows = diffRows.ToArray();
         var sourceAttributes = plan.Worker.Attributes
             .Where(attribute => !string.IsNullOrWhiteSpace(attribute.Value))
             .Select(attribute => new SourceAttributeRow(attribute.Key, attribute.Value!))
             .OrderBy(attribute => IsPathLikeAttribute(attribute.Attribute) ? 1 : 0)
             .ThenBy(attribute => attribute.Attribute, StringComparer.OrdinalIgnoreCase)
             .ToArray();
-        var usedSources = BuildUsedSourceAttributes(sourceAttributes, diffRows);
+        var usedSources = BuildUsedSourceAttributes(sourceAttributes, finalizedDiffRows);
         var unusedSources = sourceAttributes
             .Where(attribute => usedSources.All(used => !string.Equals(used.Attribute, attribute.Attribute, StringComparison.OrdinalIgnoreCase)))
             .ToArray();
@@ -170,7 +183,7 @@ public sealed class WorkerPreviewPlanner(
             + $"\"targetOu\":\"{Escape(plan.Worker.TargetOu)}\","
             + $"\"matchedExistingUser\":{ToJsonBoolean(plan.Identity.MatchedExistingUser)},"
             + "\"changedAttributeDetails\":["
-            + string.Join(",", diffRows
+            + string.Join(",", finalizedDiffRows
                 .Where(row => row.Changed)
                 .Select(row => "{"
                     + $"\"targetAttribute\":\"{Escape(row.Attribute)}\","
@@ -206,11 +219,11 @@ public sealed class WorkerPreviewPlanner(
             ProposedEnable: plan.TargetEnabled,
             OperationSummary: new OperationSummary(
                 Action: DescribeOperation(plan),
-                Effect: DescribeEffect(plan, diffRows),
+                Effect: DescribeEffect(plan, finalizedDiffRows),
                 TargetOu: plan.TargetOu,
                 FromOu: plan.CurrentOu,
                 ToOu: plan.TargetOu),
-            DiffRows: diffRows,
+            DiffRows: finalizedDiffRows,
             SourceAttributes: sourceAttributes,
             UsedSourceAttributes: usedSources,
             UnusedSourceAttributes: unusedSources,
@@ -237,6 +250,8 @@ public sealed class WorkerPreviewPlanner(
             ? "unchanged"
             : bucket;
     }
+
+    private static string ToInlineBoolean(bool value) => value ? "true" : "false";
 
     private static string Escape(string value)
     {

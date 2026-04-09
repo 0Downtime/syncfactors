@@ -130,6 +130,39 @@ public sealed class ActiveDirectoryGateway(
         }
     }
 
+    public async Task<IReadOnlyList<DirectoryUserSnapshot>> ListUsersInOuAsync(string ouDistinguishedName, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(ouDistinguishedName))
+        {
+            return [];
+        }
+
+        var config = configLoader.GetSyncConfig().Ad;
+        if (string.IsNullOrWhiteSpace(config.Server))
+        {
+            throw new InvalidOperationException("AD server was not configured.");
+        }
+
+        try
+        {
+            return await ExecuteWithTimeoutAsync(
+                operation: () => QueryUsersInOu(ouDistinguishedName, config, logger),
+                operationName: "ou listing",
+                server: config.Server,
+                cancellationToken: cancellationToken);
+        }
+        catch (LdapException ex)
+        {
+            logger.LogError(ex, "AD OU listing failed with LDAP exception.");
+            throw ExternalSystemExceptionFactory.CreateActiveDirectoryException("ou listing", config, ex);
+        }
+        catch (DirectoryOperationException ex)
+        {
+            logger.LogError(ex, "AD OU listing failed with directory operation exception.");
+            throw ExternalSystemExceptionFactory.CreateActiveDirectoryException("ou listing", config, ex);
+        }
+    }
+
     private static DirectoryUserSnapshot? QueryDirectory(WorkerSnapshot worker, ActiveDirectoryConfig config, ILogger logger)
     {
         using var connection = CreateConnection(config, logger);
@@ -157,6 +190,67 @@ public sealed class ActiveDirectoryGateway(
             Enabled: ParseEnabled(userAccountControl),
             DisplayName: displayName,
             Attributes: BuildAttributes(entry, displayName, config.IdentityAttribute));
+    }
+
+    private static IReadOnlyList<DirectoryUserSnapshot> QueryUsersInOu(string ouDistinguishedName, ActiveDirectoryConfig config, ILogger logger)
+    {
+        using var connection = CreateConnection(config, logger);
+        var request = new SearchRequest(
+            ouDistinguishedName,
+            "(&(objectCategory=person)(objectClass=user))",
+            SearchScope.Subtree,
+            "sAMAccountName",
+            "cn",
+            "distinguishedName",
+            "displayName",
+            "userAccountControl",
+            config.IdentityAttribute,
+            "givenName",
+            "sn",
+            "userPrincipalName",
+            "mail",
+            "department",
+            "company",
+            "physicalDeliveryOfficeName",
+            "streetAddress",
+            "l",
+            "postalCode",
+            "title",
+            "division",
+            "employeeType",
+            "manager",
+            "extensionAttribute1",
+            "extensionAttribute2",
+            "extensionAttribute3",
+            "extensionAttribute4",
+            "extensionAttribute5",
+            "extensionAttribute6",
+            "extensionAttribute7",
+            "extensionAttribute8",
+            "extensionAttribute9",
+            "extensionAttribute10",
+            "extensionAttribute11",
+            "extensionAttribute12",
+            "extensionAttribute13",
+            "extensionAttribute14",
+            "extensionAttribute15");
+
+        var response = ExecuteSearch(connection, request, logger, "ou listing");
+        return response.Entries.Cast<SearchResultEntry>()
+            .Select(entry =>
+            {
+                var distinguishedName = GetAttribute(entry, "distinguishedName");
+                var displayName = GetAttribute(entry, "displayName");
+                var userAccountControl = GetAttribute(entry, "userAccountControl");
+
+                return new DirectoryUserSnapshot(
+                    SamAccountName: GetAttribute(entry, "sAMAccountName"),
+                    DistinguishedName: distinguishedName,
+                    Enabled: ParseEnabled(userAccountControl),
+                    DisplayName: displayName,
+                    Attributes: BuildAttributes(entry, displayName, config.IdentityAttribute));
+            })
+            .ToArray();
     }
 
     private static string? ResolveDistinguishedName(string workerId, ActiveDirectoryConfig config, ILogger logger)
@@ -309,6 +403,7 @@ public sealed class ActiveDirectoryGateway(
             BuildEqualityFilter(searchAttribute, searchValue),
             SearchScope.Subtree,
             "sAMAccountName",
+            "cn",
             "distinguishedName",
             "displayName",
             "userAccountControl",
@@ -326,10 +421,22 @@ public sealed class ActiveDirectoryGateway(
             "title",
             "division",
             "employeeType",
+            "manager",
             "extensionAttribute1",
             "extensionAttribute2",
             "extensionAttribute3",
-            "extensionAttribute4");
+            "extensionAttribute4",
+            "extensionAttribute5",
+            "extensionAttribute6",
+            "extensionAttribute7",
+            "extensionAttribute8",
+            "extensionAttribute9",
+            "extensionAttribute10",
+            "extensionAttribute11",
+            "extensionAttribute12",
+            "extensionAttribute13",
+            "extensionAttribute14",
+            "extensionAttribute15");
     }
 
     private static SearchRequest CreateSearchRequest(
@@ -342,6 +449,7 @@ public sealed class ActiveDirectoryGateway(
             BuildAnyOfEqualityFilter(searchClauses),
             SearchScope.Subtree,
             "sAMAccountName",
+            "cn",
             "distinguishedName",
             "displayName",
             "userAccountControl",
@@ -359,16 +467,29 @@ public sealed class ActiveDirectoryGateway(
             "title",
             "division",
             "employeeType",
+            "manager",
             "extensionAttribute1",
             "extensionAttribute2",
             "extensionAttribute3",
-            "extensionAttribute4");
+            "extensionAttribute4",
+            "extensionAttribute5",
+            "extensionAttribute6",
+            "extensionAttribute7",
+            "extensionAttribute8",
+            "extensionAttribute9",
+            "extensionAttribute10",
+            "extensionAttribute11",
+            "extensionAttribute12",
+            "extensionAttribute13",
+            "extensionAttribute14",
+            "extensionAttribute15");
     }
 
     private static IReadOnlyList<string> GetSearchBases(ActiveDirectoryConfig config)
     {
-        return new[] { config.DefaultActiveOu, config.PrehireOu, config.GraveyardOu }
+        return new[] { config.DefaultActiveOu, config.PrehireOu, config.GraveyardOu, config.LeaveOu }
             .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Select(value => value!)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
     }
@@ -404,6 +525,8 @@ public sealed class ActiveDirectoryGateway(
     {
         var attributes = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
         {
+            ["sAMAccountName"] = GetAttribute(entry, "sAMAccountName"),
+            ["cn"] = GetAttribute(entry, "cn"),
             ["displayName"] = displayName,
             ["GivenName"] = GetAttribute(entry, "givenName"),
             ["Surname"] = GetAttribute(entry, "sn"),
@@ -418,10 +541,22 @@ public sealed class ActiveDirectoryGateway(
             ["title"] = GetAttribute(entry, "title"),
             ["division"] = GetAttribute(entry, "division"),
             ["employeeType"] = GetAttribute(entry, "employeeType"),
+            ["manager"] = GetAttribute(entry, "manager"),
             ["extensionAttribute1"] = GetAttribute(entry, "extensionAttribute1"),
             ["extensionAttribute2"] = GetAttribute(entry, "extensionAttribute2"),
             ["extensionAttribute3"] = GetAttribute(entry, "extensionAttribute3"),
-            ["extensionAttribute4"] = GetAttribute(entry, "extensionAttribute4")
+            ["extensionAttribute4"] = GetAttribute(entry, "extensionAttribute4"),
+            ["extensionAttribute5"] = GetAttribute(entry, "extensionAttribute5"),
+            ["extensionAttribute6"] = GetAttribute(entry, "extensionAttribute6"),
+            ["extensionAttribute7"] = GetAttribute(entry, "extensionAttribute7"),
+            ["extensionAttribute8"] = GetAttribute(entry, "extensionAttribute8"),
+            ["extensionAttribute9"] = GetAttribute(entry, "extensionAttribute9"),
+            ["extensionAttribute10"] = GetAttribute(entry, "extensionAttribute10"),
+            ["extensionAttribute11"] = GetAttribute(entry, "extensionAttribute11"),
+            ["extensionAttribute12"] = GetAttribute(entry, "extensionAttribute12"),
+            ["extensionAttribute13"] = GetAttribute(entry, "extensionAttribute13"),
+            ["extensionAttribute14"] = GetAttribute(entry, "extensionAttribute14"),
+            ["extensionAttribute15"] = GetAttribute(entry, "extensionAttribute15")
         };
 
         if (!string.IsNullOrWhiteSpace(identityAttribute))

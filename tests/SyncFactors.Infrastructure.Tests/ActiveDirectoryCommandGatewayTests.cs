@@ -30,6 +30,7 @@ public sealed class ActiveDirectoryCommandGatewayTests
             ManagerId: null,
             ManagerDistinguishedName: null,
             SamAccountName: "00004",
+            CommonName: "00004",
             UserPrincipalName: "tanya.willislivers@example.com",
             Mail: "tanya.willislivers@example.com",
             TargetOu: "OU=Users,DC=example,DC=com",
@@ -44,7 +45,7 @@ public sealed class ActiveDirectoryCommandGatewayTests
         Assert.Contains("Step=RenameUser", details, StringComparison.Ordinal);
         Assert.Contains("WorkerId=00004", details, StringComparison.Ordinal);
         Assert.Contains("CurrentCn=00004", details, StringComparison.Ordinal);
-        Assert.Contains("DesiredCn=Willis Livers, Tanya", details, StringComparison.Ordinal);
+        Assert.Contains("DesiredCn=00004", details, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -59,6 +60,7 @@ public sealed class ActiveDirectoryCommandGatewayTests
             ManagerId: "12345",
             ManagerDistinguishedName: null,
             SamAccountName: "00004",
+            CommonName: "00004",
             UserPrincipalName: "tanya.willislivers@example.com",
             Mail: "tanya.willislivers@example.com",
             TargetOu: "OU=Users,DC=example,DC=com",
@@ -94,6 +96,7 @@ public sealed class ActiveDirectoryCommandGatewayTests
             ManagerId: null,
             ManagerDistinguishedName: null,
             SamAccountName: "00225",
+            CommonName: "00225",
             UserPrincipalName: "tanya.willislivers@example.com",
             Mail: "tanya.willislivers@example.com",
             TargetOu: "OU=Users,DC=example,DC=com",
@@ -109,6 +112,51 @@ public sealed class ActiveDirectoryCommandGatewayTests
         Assert.Contains("DistinguishedName=(unset)", details, StringComparison.Ordinal);
         Assert.Contains("CurrentCn=(unset)", details, StringComparison.Ordinal);
         Assert.Contains("Attributes=(none)", details, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ResolveUserAccountControl_PreservesExistingDirectoryFlags()
+    {
+        var method = typeof(ActiveDirectoryCommandGateway).GetMethod("ResolveUserAccountControl", BindingFlags.NonPublic | BindingFlags.Static);
+        Assert.NotNull(method);
+
+        var snapshot = new DirectoryUserSnapshot(
+            SamAccountName: "00051",
+            DistinguishedName: "CN=00051,OU=Users,DC=example,DC=com",
+            Enabled: false,
+            DisplayName: "Sample, User",
+            Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["userAccountControl"] = "66050"
+            });
+
+        var value = Assert.IsType<int>(method!.Invoke(null, [snapshot]));
+
+        Assert.Equal(66050, value);
+    }
+
+    [Fact]
+    public void GetSearchBases_IncludesLeaveOu()
+    {
+        var method = typeof(ActiveDirectoryCommandGateway).GetMethod("GetSearchBases", BindingFlags.NonPublic | BindingFlags.Static);
+        Assert.NotNull(method);
+
+        var config = new ActiveDirectoryConfig(
+            Server: "localhost",
+            Port: 389,
+            Username: "bind",
+            BindPassword: "secret",
+            IdentityAttribute: "employeeID",
+            DefaultActiveOu: "OU=Active,DC=example,DC=com",
+            PrehireOu: "OU=Prehire,DC=example,DC=com",
+            GraveyardOu: "OU=Graveyard,DC=example,DC=com",
+            Transport: new ActiveDirectoryTransportConfig("ldap", false, false, false, []),
+            IdentityPolicy: new ActiveDirectoryIdentityPolicyConfig(false),
+            LeaveOu: "OU=Leave,DC=example,DC=com");
+
+        var searchBases = Assert.IsAssignableFrom<IReadOnlyList<string>>(method!.Invoke(null, [config]));
+
+        Assert.Contains("OU=Leave,DC=example,DC=com", searchBases);
     }
 
     private static DirectoryAttributeModification CreateModification(string name)

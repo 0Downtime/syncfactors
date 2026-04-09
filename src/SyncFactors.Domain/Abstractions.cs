@@ -49,6 +49,8 @@ public interface IDeltaSyncStateStore
 public interface IDirectoryGateway
 {
     Task<DirectoryUserSnapshot?> FindByWorkerAsync(WorkerSnapshot worker, CancellationToken cancellationToken);
+    Task<IReadOnlyList<DirectoryUserSnapshot>> ListUsersInOuAsync(string ouDistinguishedName, CancellationToken cancellationToken) =>
+        Task.FromResult<IReadOnlyList<DirectoryUserSnapshot>>([]);
     Task<string?> ResolveManagerDistinguishedNameAsync(string managerId, CancellationToken cancellationToken);
     Task<string> ResolveAvailableEmailLocalPartAsync(WorkerSnapshot worker, bool isCreate, CancellationToken cancellationToken);
 }
@@ -87,6 +89,11 @@ public interface IWorkerPreviewLogWriter
 public interface IDirectoryCommandGateway
 {
     Task<DirectoryCommandResult> ExecuteAsync(DirectoryMutationCommand command, CancellationToken cancellationToken);
+}
+
+public interface IEmailSender
+{
+    Task SendAsync(string subject, string body, IReadOnlyList<string> recipients, CancellationToken cancellationToken);
 }
 
 public interface IWorkerPlanningService
@@ -145,6 +152,8 @@ public interface IRunQueueStore
     Task CompleteAsync(string requestId, string runId, CancellationToken cancellationToken);
     Task CancelAsync(string requestId, string? runId, string? errorMessage, CancellationToken cancellationToken);
     Task FailAsync(string requestId, string? runId, string errorMessage, CancellationToken cancellationToken);
+    Task<int> RecoverOrphanedActiveRunsAsync(string? errorMessage, CancellationToken cancellationToken) =>
+        Task.FromResult(0);
 }
 
 public interface ISyncScheduleStore
@@ -153,6 +162,15 @@ public interface ISyncScheduleStore
     Task<SyncScheduleStatus> UpdateAsync(UpdateSyncScheduleRequest request, CancellationToken cancellationToken);
     Task<SyncScheduleStatus> RecordSuccessfulEnqueueAsync(DateTimeOffset enqueuedAt, CancellationToken cancellationToken);
     Task<SyncScheduleStatus> RecordFailedEnqueueAsync(DateTimeOffset attemptedAt, string errorMessage, CancellationToken cancellationToken);
+}
+
+public interface IGraveyardRetentionStore
+{
+    Task UpsertObservedAsync(GraveyardRetentionRecord record, CancellationToken cancellationToken);
+    Task ResolveAsync(string workerId, CancellationToken cancellationToken);
+    Task<IReadOnlyList<GraveyardRetentionRecord>> ListActiveAsync(CancellationToken cancellationToken);
+    Task<GraveyardRetentionReportStatus> GetReportStatusAsync(CancellationToken cancellationToken);
+    Task RecordReportAttemptAsync(DateTimeOffset attemptedAt, string? error, DateTimeOffset? sentAtUtc, CancellationToken cancellationToken);
 }
 
 public interface IFullSyncRunService

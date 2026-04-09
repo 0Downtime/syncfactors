@@ -86,11 +86,11 @@ public sealed class ActiveDirectoryCommandGateway(
 
     private static DirectoryCommandResult CreateUser(LdapConnection connection, DirectoryMutationCommand command, ActiveDirectoryConfig config, ILogger logger)
     {
-        var dn = $"CN={EscapeDnComponent(command.DisplayName)},{command.TargetOu}";
+        var dn = $"CN={EscapeDnComponent(command.CommonName)},{command.TargetOu}";
         var attributes = new List<DirectoryAttribute>
         {
             new("objectClass", "top", "person", "organizationalPerson", "user"),
-            new("cn", command.DisplayName),
+            new("cn", command.CommonName),
             new("displayName", command.DisplayName),
             new("sAMAccountName", command.SamAccountName),
             new("userPrincipalName", command.UserPrincipalName),
@@ -155,13 +155,13 @@ public sealed class ActiveDirectoryCommandGateway(
             }
 
             currentCn = existing.Attributes.TryGetValue("cn", out var resolvedCn) ? resolvedCn : null;
-            if (!string.Equals(currentCn, command.DisplayName, StringComparison.Ordinal))
+            if (!string.Equals(currentCn, command.CommonName, StringComparison.Ordinal))
             {
                 step = "RenameUser";
                 try
                 {
-                    RenameUser(connection, distinguishedName, command.DisplayName, logger, command.WorkerId);
-                    distinguishedName = BuildRenamedDistinguishedName(distinguishedName, command.DisplayName);
+                    RenameUser(connection, distinguishedName, command.CommonName, logger, command.WorkerId);
+                    distinguishedName = BuildRenamedDistinguishedName(distinguishedName, command.CommonName);
                 }
                 catch (Exception ex) when (ex is LdapException or DirectoryOperationException)
                 {
@@ -252,12 +252,13 @@ public sealed class ActiveDirectoryCommandGateway(
         return new DirectoryUserSnapshot(
             SamAccountName: GetAttribute(entry, "sAMAccountName"),
             DistinguishedName: GetAttribute(entry, "distinguishedName"),
-            Enabled: null,
+            Enabled: ParseEnabled(GetAttribute(entry, "userAccountControl")),
             DisplayName: GetAttribute(entry, "displayName"),
             Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
             {
                 ["cn"] = GetAttribute(entry, "cn"),
-                ["displayName"] = GetAttribute(entry, "displayName")
+                ["displayName"] = GetAttribute(entry, "displayName"),
+                ["userAccountControl"] = GetAttribute(entry, "userAccountControl")
             });
     }
 
@@ -296,7 +297,7 @@ public sealed class ActiveDirectoryCommandGateway(
 
         var request = new ModifyDNRequest(distinguishedName, targetOu, null) { DeleteOldRdn = true };
         ExecuteModify(connection, request, logger, "move user modify-dn request", ("WorkerId", command.WorkerId), ("TargetOu", targetOu));
-        var movedDn = $"CN={EscapeDnComponent(command.DisplayName)},{targetOu}";
+        var movedDn = $"CN={EscapeDnComponent(command.CommonName)},{targetOu}";
         return new DirectoryCommandResult(true, command.Action, command.SamAccountName, movedDn, $"Moved AD user {command.SamAccountName}.", null);
     }
 
@@ -573,20 +574,38 @@ public sealed class ActiveDirectoryCommandGateway(
 
     private static IReadOnlyList<string> GetSearchBases(ActiveDirectoryConfig config)
     {
-        return new[] { config.DefaultActiveOu, config.PrehireOu, config.GraveyardOu }
+        return new[] { config.DefaultActiveOu, config.PrehireOu, config.GraveyardOu, config.LeaveOu }
             .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Select(value => value!)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
     }
 
     private static int ResolveUserAccountControl(DirectoryUserSnapshot? existing)
     {
+        if (existing?.Attributes.TryGetValue("userAccountControl", out var rawValue) == true &&
+            int.TryParse(rawValue, out var parsedValue))
+        {
+            return parsedValue;
+        }
+
         if (existing?.Enabled == false)
         {
             return 0x0202;
         }
 
         return 0x0200;
+    }
+
+    private static bool? ParseEnabled(string? userAccountControl)
+    {
+        if (!int.TryParse(userAccountControl, out var value))
+        {
+            return null;
+        }
+
+        const int AccountDisabledFlag = 0x0002;
+        return (value & AccountDisabledFlag) == 0;
     }
 
     private static string BuildCompletionMessage(DirectoryMutationCommand command, IReadOnlyList<SyncFactors.Contracts.DirectoryOperation> operations)
@@ -619,7 +638,7 @@ public sealed class ActiveDirectoryCommandGateway(
 
     private static string BuildUpdateRenameFailureDetails(DirectoryMutationCommand command, string distinguishedName, string? currentCn)
     {
-        return $"Step=RenameUser WorkerId={command.WorkerId} SamAccountName={command.SamAccountName} DistinguishedName={distinguishedName} CurrentCn={FormatDetailValue(currentCn)} DesiredCn={FormatDetailValue(command.DisplayName)}";
+        return $"Step=RenameUser WorkerId={command.WorkerId} SamAccountName={command.SamAccountName} DistinguishedName={distinguishedName} CurrentCn={FormatDetailValue(currentCn)} DesiredCn={FormatDetailValue(command.CommonName)}";
     }
 
     private static string BuildUpdateModifyFailureDetails(DirectoryMutationCommand command, string distinguishedName, DirectoryAttributeModificationCollection modifications)
@@ -634,7 +653,7 @@ public sealed class ActiveDirectoryCommandGateway(
         DirectoryAttributeModificationCollection? modifications,
         string step)
     {
-        return $"Step={step} WorkerId={command.WorkerId} SamAccountName={command.SamAccountName} DistinguishedName={FormatDetailValue(distinguishedName)} CurrentCn={FormatDetailValue(currentCn)} DesiredCn={FormatDetailValue(command.DisplayName)} Attributes={FormatModificationAttributeNames(modifications)} ManagerId={FormatDetailValue(command.ManagerId)}";
+        return $"Step={step} WorkerId={command.WorkerId} SamAccountName={command.SamAccountName} DistinguishedName={FormatDetailValue(distinguishedName)} CurrentCn={FormatDetailValue(currentCn)} DesiredCn={FormatDetailValue(command.CommonName)} Attributes={FormatModificationAttributeNames(modifications)} ManagerId={FormatDetailValue(command.ManagerId)}";
     }
 
     private static string FormatModificationAttributeNames(DirectoryAttributeModificationCollection? modifications)

@@ -10,7 +10,31 @@ public sealed class LifecyclePolicy(
         var currentOu = DirectoryDistinguishedName.GetParentOu(directoryUser.DistinguishedName);
         var hasExistingUser = !string.IsNullOrWhiteSpace(directoryUser.SamAccountName);
 
-        if (IsInactive(worker))
+        if (IsLeave(worker))
+        {
+            var leaveOu = string.IsNullOrWhiteSpace(settings.LeaveOu)
+                ? settings.ActiveOu
+                : settings.LeaveOu;
+
+            if (!hasExistingUser)
+            {
+                return new LifecycleDecision(
+                    Bucket: "creates",
+                    TargetOu: leaveOu,
+                    TargetEnabled: false,
+                    Reason: "Leave worker should remain disabled in the leave OU.");
+            }
+
+            return new LifecycleDecision(
+                Bucket: string.Equals(currentOu, leaveOu, StringComparison.OrdinalIgnoreCase)
+                    ? "disables"
+                    : "updates",
+                TargetOu: leaveOu,
+                TargetEnabled: false,
+                Reason: "Leave worker should remain disabled in the leave OU.");
+        }
+
+        if (IsGraveyard(worker))
         {
             if (!hasExistingUser)
             {
@@ -55,7 +79,7 @@ public sealed class LifecyclePolicy(
                 : "Active worker requires a new AD account in the active OU.");
     }
 
-    private bool IsInactive(WorkerSnapshot worker)
+    private bool IsGraveyard(WorkerSnapshot worker)
     {
         if (!TryResolveAttribute(worker.Attributes, settings.InactiveStatusField, out var status) ||
             string.IsNullOrWhiteSpace(status))
@@ -64,6 +88,18 @@ public sealed class LifecyclePolicy(
         }
 
         return settings.InactiveStatusValues.Any(value =>
+            string.Equals(value, status, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private bool IsLeave(WorkerSnapshot worker)
+    {
+        if (!TryResolveAttribute(worker.Attributes, settings.InactiveStatusField, out var status) ||
+            string.IsNullOrWhiteSpace(status))
+        {
+            return false;
+        }
+
+        return (settings.LeaveStatusValues ?? []).Any(value =>
             string.Equals(value, status, StringComparison.OrdinalIgnoreCase));
     }
 
@@ -89,7 +125,7 @@ public sealed class LifecyclePolicy(
     }
 }
 
-internal static class DirectoryDistinguishedName
+public static class DirectoryDistinguishedName
 {
     public static string GetParentOu(string? distinguishedName)
     {

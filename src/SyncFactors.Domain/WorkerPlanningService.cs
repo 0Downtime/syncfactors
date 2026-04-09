@@ -23,9 +23,22 @@ public sealed class WorkerPlanningService(
                 Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase));
 
         var managerId = worker.Attributes.TryGetValue("managerId", out var resolvedManagerId) ? resolvedManagerId : null;
-        var managerDistinguishedName = managerId is null
-            ? null
-            : await directoryGateway.ResolveManagerDistinguishedNameAsync(managerId, cancellationToken);
+        string? managerDistinguishedName = null;
+        if (!string.IsNullOrWhiteSpace(managerId))
+        {
+            try
+            {
+                managerDistinguishedName = await directoryGateway.ResolveManagerDistinguishedNameAsync(managerId, cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(
+                    ex,
+                    "Manager lookup failed during worker planning. WorkerId={WorkerId} ManagerId={ManagerId}",
+                    worker.WorkerId,
+                    managerId);
+            }
+        }
 
         var identity = identityMatcher.Match(worker, directoryUser);
         var lifecycle = lifecyclePolicy.Evaluate(worker, directoryUser);
@@ -38,7 +51,9 @@ public sealed class WorkerPlanningService(
                         await directoryGateway.ResolveAvailableEmailLocalPartAsync(worker, isCreate: false, cancellationToken))
             : DirectoryIdentityFormatter.BuildEmailAddress(
                 await directoryGateway.ResolveAvailableEmailLocalPartAsync(worker, isCreate: true, cancellationToken));
-        var attributeChanges = await attributeDiffService.BuildDiffAsync(worker, directoryUser, proposedEmailAddress, logPath, cancellationToken);
+        var attributeChanges = (await attributeDiffService.BuildDiffAsync(worker, directoryUser, proposedEmailAddress, logPath, cancellationToken))
+            .ToList();
+        UpsertManagerAttributeChange(attributeChanges, directoryUser, managerDistinguishedName);
         var missingSourceAttributes = BuildMissingSourceAttributes(
             worker.Attributes,
             attributeMappingProvider.GetEnabledMappings(),
@@ -88,6 +103,44 @@ public sealed class WorkerPlanningService(
             ReviewCaseType: reviewCaseType,
             Reason: reason,
             CanAutoApply: canAutoApply);
+    }
+
+    private static void UpsertManagerAttributeChange(
+        IList<AttributeChange> attributeChanges,
+        DirectoryUserSnapshot directoryUser,
+        string? proposedManagerDistinguishedName)
+    {
+        var currentManagerDistinguishedName = directoryUser.Attributes.TryGetValue("manager", out var managerValue)
+            ? managerValue
+            : null;
+        var normalizedCurrentManagerDistinguishedName = string.IsNullOrWhiteSpace(currentManagerDistinguishedName)
+            ? null
+            : currentManagerDistinguishedName;
+        var normalizedProposedManagerDistinguishedName = string.IsNullOrWhiteSpace(proposedManagerDistinguishedName)
+            ? null
+            : proposedManagerDistinguishedName;
+
+        if (normalizedCurrentManagerDistinguishedName is null && normalizedProposedManagerDistinguishedName is null)
+        {
+            return;
+        }
+
+        var before = normalizedCurrentManagerDistinguishedName ?? "(unset)";
+        var after = normalizedProposedManagerDistinguishedName ?? before;
+        var changed = normalizedProposedManagerDistinguishedName is not null
+            && !string.Equals(normalizedCurrentManagerDistinguishedName, normalizedProposedManagerDistinguishedName, StringComparison.OrdinalIgnoreCase);
+        var replacement = new AttributeChange("manager", "managerId", before, after, changed);
+
+        for (var index = 0; index < attributeChanges.Count; index++)
+        {
+            if (string.Equals(attributeChanges[index].Attribute, "manager", StringComparison.OrdinalIgnoreCase))
+            {
+                attributeChanges[index] = replacement;
+                return;
+            }
+        }
+
+        attributeChanges.Add(replacement);
     }
 
     private static IReadOnlyList<DirectoryOperation> BuildOperations(

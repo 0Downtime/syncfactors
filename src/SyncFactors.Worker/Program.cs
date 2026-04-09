@@ -28,7 +28,20 @@ builder.Services.AddSingleton(serviceProvider =>
         config.Ad.PrehireOu,
         config.Ad.GraveyardOu,
         config.SuccessFactors.Query.InactiveStatusField,
-        config.SuccessFactors.Query.InactiveStatusValues);
+        config.SuccessFactors.Query.InactiveStatusValues,
+        config.Ad.LeaveOu,
+        config.Sync.LeaveStatusValues,
+        config.Ad.IdentityAttribute);
+});
+builder.Services.AddSingleton(serviceProvider =>
+{
+    var config = serviceProvider.GetRequiredService<SyncFactorsConfigurationLoader>().GetSyncConfig();
+    return new SyncFactors.Contracts.GraveyardRetentionNotificationSettings(
+        Enabled: config.Alerts.Enabled && config.Alerts.GraveyardRetentionReport.Enabled,
+        IntervalDays: config.Alerts.GraveyardRetentionReport.IntervalDays,
+        RetentionDays: config.Sync.DeletionRetentionDays,
+        SubjectPrefix: config.Alerts.SubjectPrefix,
+        Recipients: config.Alerts.Smtp?.To ?? []);
 });
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<IRuntimeStatusStore, SqliteRuntimeStatusStore>();
@@ -37,7 +50,9 @@ builder.Services.AddSingleton<IDeltaSyncService, SuccessFactorsDeltaSyncService>
 builder.Services.AddSingleton<IWorkerHeartbeatStore, SqliteWorkerHeartbeatStore>();
 builder.Services.AddSingleton<IRunRepository, SqliteRunRepository>();
 builder.Services.AddSingleton<IRunQueueStore, SqliteRunQueueStore>();
+builder.Services.AddSingleton<RunQueueRecoveryService>();
 builder.Services.AddSingleton<ISyncScheduleStore, SqliteSyncScheduleStore>();
+builder.Services.AddSingleton<IGraveyardRetentionStore, SqliteGraveyardRetentionStore>();
 builder.Services.AddHttpClient<SuccessFactorsWorkerSource>()
     .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
     {
@@ -46,6 +61,7 @@ builder.Services.AddHttpClient<SuccessFactorsWorkerSource>()
 builder.Services.AddTransient<IWorkerSource>(serviceProvider => serviceProvider.GetRequiredService<SuccessFactorsWorkerSource>());
 builder.Services.AddTransient<IDirectoryGateway, ActiveDirectoryGateway>();
 builder.Services.AddTransient<IDirectoryCommandGateway, ActiveDirectoryCommandGateway>();
+builder.Services.AddTransient<IEmailSender, SmtpEmailSender>();
 builder.Services.AddSingleton<IAttributeMappingProvider, AttributeMappingProvider>();
 builder.Services.AddSingleton<IIdentityMatcher, IdentityMatcher>();
 builder.Services.AddSingleton<ILifecyclePolicy, LifecyclePolicy>();
@@ -56,10 +72,12 @@ builder.Services.AddSingleton<IDirectoryMutationCommandBuilder, DirectoryMutatio
 builder.Services.AddTransient<BulkRunCoordinator>();
 builder.Services.AddTransient<DeleteAllUsersCoordinator>();
 builder.Services.AddTransient<SyncScheduleCoordinator>();
+builder.Services.AddTransient<GraveyardRetentionReportCoordinator>();
 builder.Services.AddSingleton<IRunLifecycleService, RunLifecycleService>();
 builder.Services.AddHostedService<Worker>();
 
 var host = builder.Build();
 await host.Services.GetRequiredService<SqliteDatabaseInitializer>().InitializeAsync(CancellationToken.None);
 host.Services.GetRequiredService<SyncFactorsConfigurationValidator>().Validate();
+await host.Services.GetRequiredService<RunQueueRecoveryService>().RecoverIfNeededAsync("worker startup", CancellationToken.None);
 host.Run();
