@@ -203,7 +203,6 @@ var app = builder.Build();
 await app.Services.GetRequiredService<SqliteDatabaseInitializer>().InitializeAsync(CancellationToken.None);
 await app.Services.GetRequiredService<ILocalAuthService>().EnsureBootstrapAdminAsync(CancellationToken.None);
 app.Services.GetRequiredService<SyncFactorsConfigurationValidator>().Validate();
-await app.Services.GetRequiredService<RunQueueRecoveryService>().RecoverIfNeededAsync("api startup", CancellationToken.None);
 ValidateAuthConfiguration(app);
 LogConfiguredEndpoints(app);
 
