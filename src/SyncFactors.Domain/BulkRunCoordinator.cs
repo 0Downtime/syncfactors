@@ -601,24 +601,7 @@ public sealed class BulkRunCoordinator(
 
     private static DateTimeOffset? ParseSourceDate(string? value)
     {
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            return null;
-        }
-
-        if (DateTimeOffset.TryParse(value, out var parsed))
-        {
-            return parsed;
-        }
-
-        if (value.StartsWith("/Date(", StringComparison.Ordinal) &&
-            value.EndsWith(")/", StringComparison.Ordinal) &&
-            long.TryParse(value[6..^2], out var milliseconds))
-        {
-            return DateTimeOffset.FromUnixTimeMilliseconds(milliseconds);
-        }
-
-        return null;
+        return SourceDateParser.TryParse(value, out var parsed) ? parsed : null;
     }
 }
 

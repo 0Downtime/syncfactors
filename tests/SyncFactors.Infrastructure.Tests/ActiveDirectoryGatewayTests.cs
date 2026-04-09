@@ -113,6 +113,11 @@ public sealed class ActiveDirectoryGatewayTests
         Assert.Contains("extensionAttribute8", attributes);
         Assert.Contains("extensionAttribute9", attributes);
         Assert.Contains("extensionAttribute10", attributes);
+        Assert.Contains("extensionAttribute11", attributes);
+        Assert.Contains("extensionAttribute12", attributes);
+        Assert.Contains("extensionAttribute13", attributes);
+        Assert.Contains("extensionAttribute14", attributes);
+        Assert.Contains("extensionAttribute15", attributes);
     }
 
     private static string InvokeResolver(string baseLocalPart, Func<string, bool> candidateExists)

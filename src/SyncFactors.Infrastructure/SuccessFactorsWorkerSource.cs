@@ -1707,7 +1707,7 @@ public sealed class SuccessFactorsWorkerSource(
 
     private static bool IsPrehire(string? startDate)
     {
-        if (!DateTimeOffset.TryParse(startDate, out var parsedStart))
+        if (!SourceDateParser.TryParse(startDate, out var parsedStart))
         {
             return false;
         }
