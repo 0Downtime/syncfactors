@@ -264,6 +264,7 @@ public sealed record DirectoryMutationCommand(
     string? ManagerId,
     string? ManagerDistinguishedName,
     string SamAccountName,
+    string CommonName,
     string UserPrincipalName,
     string Mail,
     string TargetOu,

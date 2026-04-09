@@ -135,6 +135,7 @@ public sealed class DirectoryMutationCommandBuilderTests
         Assert.Equal(fullSyncCommand.ManagerId, previewApplyCommand.ManagerId);
         Assert.Equal(fullSyncCommand.ManagerDistinguishedName, previewApplyCommand.ManagerDistinguishedName);
         Assert.Equal(fullSyncCommand.SamAccountName, previewApplyCommand.SamAccountName);
+        Assert.Equal(fullSyncCommand.CommonName, previewApplyCommand.CommonName);
         Assert.Equal(fullSyncCommand.UserPrincipalName, previewApplyCommand.UserPrincipalName);
         Assert.Equal(fullSyncCommand.Mail, previewApplyCommand.Mail);
         Assert.Equal(fullSyncCommand.TargetOu, previewApplyCommand.TargetOu);
@@ -144,6 +145,8 @@ public sealed class DirectoryMutationCommandBuilderTests
         Assert.Equal(
             fullSyncCommand.Attributes.OrderBy(item => item.Key, StringComparer.OrdinalIgnoreCase),
             previewApplyCommand.Attributes.OrderBy(item => item.Key, StringComparer.OrdinalIgnoreCase));
+        Assert.Equal("00037", fullSyncCommand.CommonName);
+        Assert.Equal("LaRussa, David", fullSyncCommand.DisplayName);
     }
 
     private sealed class StubAttributeMappingProvider : IAttributeMappingProvider
