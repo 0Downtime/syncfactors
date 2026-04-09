@@ -1,0 +1,17 @@
+{
+  "name": "syncfactors-api-ui",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build:ui": "node esbuild.config.mjs",
+    "watch:ui": "node esbuild.config.mjs --watch"
+  },
+  "dependencies": {
+    "@microsoft/signalr": "10.0.0",
+    "echarts": "6.0.0",
+    "motion": "12.38.0"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.0"
+  }
+}

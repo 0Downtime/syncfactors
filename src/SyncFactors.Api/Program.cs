@@ -9,6 +9,7 @@ using SyncFactors.Contracts;
 using SyncFactors.Domain;
 using SyncFactors.Infrastructure;
 using System.Net;
+using System.Text.Json;
 
 const string ViewerPolicy = "Viewer";
 const string OperatorPolicy = "Operator";
@@ -19,6 +20,7 @@ var authSettings = builder.Configuration.GetSection("SyncFactors:Auth").Get<Loca
 var cspEnabled = builder.Configuration.GetValue<bool?>("SyncFactors:SecurityHeaders:EnableContentSecurityPolicy")
     ?? !builder.Environment.IsDevelopment();
 var oidcEnabled = IsOidcEnabled(authSettings);
+var realtimeEnabled = builder.Configuration.GetValue<bool?>("SyncFactors:Realtime:Enabled") ?? true;
 
 ValidateHttpsOnlyBindings(builder.Configuration);
 
@@ -95,8 +97,20 @@ builder.Services.AddTransient<RunEntriesQueryService>();
 builder.Services.AddSingleton<IRunQueueStore, SqliteRunQueueStore>();
 builder.Services.AddSingleton<RunQueueRecoveryService>();
 builder.Services.AddSingleton<ISyncScheduleStore, SqliteSyncScheduleStore>();
+builder.Services.AddSingleton<DashboardRealtimeConnectionTracker>();
 builder.Services.AddTransient<IWorkerPlanningService, WorkerPlanningService>();
 builder.Services.AddSingleton<IDirectoryMutationCommandBuilder, DirectoryMutationCommandBuilder>();
+builder.Services.AddSignalR()
+    .AddJsonProtocol(options =>
+    {
+        options.PayloadSerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
+        options.PayloadSerializerOptions.DictionaryKeyPolicy = JsonNamingPolicy.CamelCase;
+    });
+
+if (realtimeEnabled)
+{
+    builder.Services.AddHostedService<DashboardRealtimeService>();
+}
 
 var authenticationBuilder = builder.Services.AddAuthentication(options =>
 {
@@ -218,7 +232,7 @@ app.Use(async (context, next) =>
     if (cspEnabled)
     {
         context.Response.Headers["Content-Security-Policy"] =
-            "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; script-src 'self'; frame-ancestors 'none'; base-uri 'self'";
+            "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; script-src 'self'; connect-src 'self' ws: wss:; frame-ancestors 'none'; base-uri 'self'";
         context.Response.Headers["X-SyncFactors-Csp-Version"] = "2";
     }
 
@@ -604,6 +618,9 @@ adminApi.MapDelete("/admin/users/{userId}", async (
     audit.Write("LocalUserDeleted", result.Succeeded ? "Success" : "Failure", ("RequestedBy", ResolveRequestedBy(user, "API")), ("UserId", userId));
     return result.Succeeded ? Results.Ok(result) : Results.BadRequest(result);
 });
+
+app.MapHub<DashboardHub>("/hubs/dashboard")
+    .RequireAuthorization(ViewerPolicy);
 
 app.MapRazorPages();
 
