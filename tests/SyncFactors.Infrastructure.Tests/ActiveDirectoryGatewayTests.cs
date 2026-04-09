@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.Linq;
 using SyncFactors.Infrastructure;
 
 namespace SyncFactors.Infrastructure.Tests;
@@ -74,6 +75,21 @@ public sealed class ActiveDirectoryGatewayTests
         var filter = Assert.IsType<string>(method!.Invoke(null, [clauses]));
 
         Assert.Equal("(|(userPrincipalName=user\\2a\\29\\28test\\29)(mail=user@example.com))", filter);
+    }
+
+    [Fact]
+    public void CreateSearchRequest_IncludesCommonNameAttribute()
+    {
+        var method = typeof(ActiveDirectoryGateway).GetMethod(
+            "CreateSearchRequest",
+            BindingFlags.NonPublic | BindingFlags.Static,
+            [typeof(string), typeof(string), typeof(string), typeof(string)]);
+        Assert.NotNull(method);
+
+        var request = Assert.IsType<System.DirectoryServices.Protocols.SearchRequest>(
+            method!.Invoke(null, ["OU=Users,DC=example,DC=com", "employeeID", "10001", "employeeID"]));
+
+        Assert.Contains("cn", request.Attributes.Cast<string>());
     }
 
     private static string InvokeResolver(string baseLocalPart, Func<string, bool> candidateExists)
