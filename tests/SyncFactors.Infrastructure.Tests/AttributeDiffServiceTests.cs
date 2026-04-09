@@ -929,12 +929,12 @@ public sealed class AttributeDiffServiceTests
             logPath: null,
             CancellationToken.None);
 
-        var samRow = Assert.Single(changes.Where(change => change.Attribute == "sAMAccountName"));
+        var samRow = Assert.Single(changes, change => change.Attribute == "sAMAccountName");
         Assert.Equal("00051", samRow.Before);
         Assert.Equal("00051", samRow.After);
         Assert.False(samRow.Changed);
 
-        var cnRow = Assert.Single(changes.Where(change => change.Attribute == "cn"));
+        var cnRow = Assert.Single(changes, change => change.Attribute == "cn");
         Assert.Equal("LaRussa, David", cnRow.Before);
         Assert.Equal("00051", cnRow.After);
         Assert.True(cnRow.Changed);
