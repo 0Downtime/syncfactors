@@ -362,7 +362,7 @@ public sealed class DependencyHealthService(
             await using var connection = new SqliteConnection(new SqliteConnectionStringBuilder
             {
                 DataSource = databasePath,
-                Mode = SqliteOpenMode.ReadOnly,
+                Mode = SqliteOpenMode.ReadWriteCreate,
             }.ToString());
 
             await connection.OpenAsync(cancellationToken);

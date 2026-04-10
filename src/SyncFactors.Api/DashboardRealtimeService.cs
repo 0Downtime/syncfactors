@@ -36,12 +36,37 @@ public sealed class DashboardRealtimeService(
                     continue;
                 }
 
-                await PublishDashboardSnapshotIfChangedAsync(stoppingToken);
+                try
+                {
+                    await PublishDashboardSnapshotIfChangedAsync(stoppingToken);
+                }
+                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    _lastDashboardSignature = null;
+                    logger.LogWarning(ex, "Dashboard snapshot publish failed.");
+                }
 
                 var now = timeProvider.GetUtcNow();
                 if (now >= _nextHealthProbeAt)
                 {
-                    await PublishHealthSnapshotIfChangedAsync(stoppingToken);
+                    try
+                    {
+                        await PublishHealthSnapshotIfChangedAsync(stoppingToken);
+                    }
+                    catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                    {
+                        throw;
+                    }
+                    catch (Exception ex)
+                    {
+                        _lastHealthSignature = null;
+                        logger.LogWarning(ex, "Health snapshot publish failed.");
+                    }
+
                     _nextHealthProbeAt = now.Add(HealthInterval);
                 }
             }
