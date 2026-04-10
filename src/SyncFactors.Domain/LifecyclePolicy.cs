@@ -108,20 +108,132 @@ public sealed class LifecyclePolicy(
         string key,
         out string? value)
     {
-        if (attributes.TryGetValue(key, out value))
+        foreach (var candidate in BuildLookupCandidates(key))
         {
-            return true;
-        }
-
-        var normalized = SourceAttributePathNormalizer.Normalize(key);
-        if (!string.Equals(normalized, key, StringComparison.OrdinalIgnoreCase) &&
-            attributes.TryGetValue(normalized, out value))
-        {
-            return true;
+            if (attributes.TryGetValue(candidate, out value))
+            {
+                return true;
+            }
         }
 
         value = null;
         return false;
+    }
+
+    private static IEnumerable<string> BuildLookupCandidates(string key)
+    {
+        var candidates = new List<string>();
+        AddCandidate(candidates, key);
+
+        var normalized = SourceAttributePathNormalizer.Normalize(key);
+        AddCandidate(candidates, normalized);
+
+        var indexedPath = ToIndexedNavigationPath(key);
+        AddCandidate(candidates, indexedPath);
+        if (!string.IsNullOrWhiteSpace(indexedPath))
+        {
+            AddCandidate(candidates, SourceAttributePathNormalizer.Normalize(indexedPath));
+        }
+
+        var leafName = GetLeafName(key);
+        AddCandidate(candidates, leafName);
+        if (!string.IsNullOrWhiteSpace(leafName))
+        {
+            AddCandidate(candidates, SourceAttributePathNormalizer.Normalize(leafName));
+        }
+
+        var employmentStatusAliases = BuildEmploymentStatusAliases(key, normalized, leafName);
+        if (employmentStatusAliases.Count > 0)
+        {
+            foreach (var alias in employmentStatusAliases)
+            {
+                AddCandidate(candidates, alias);
+            }
+        }
+
+        return candidates;
+    }
+
+    private static IReadOnlyList<string> BuildEmploymentStatusAliases(string key, string normalized, string? leafName)
+    {
+        if (!IsEmploymentStatusKey(key) &&
+            !IsEmploymentStatusKey(normalized) &&
+            !IsEmploymentStatusKey(leafName))
+        {
+            return [];
+        }
+
+        return
+        [
+            "emplStatus",
+            "employeeStatus",
+            "employeestatus",
+            "employmentNav[0].jobInfoNav[0].emplStatus",
+            "employmentNav/jobInfoNav/emplStatus",
+            "employmentNav[0].jobInfoNav[0].employeeStatus",
+            "employmentNav/jobInfoNav/employeeStatus",
+            "employmentNav[0].jobInfoNav[0].employeestatus",
+            "employmentNav/jobInfoNav/employeestatus"
+        ];
+    }
+
+    private static bool IsEmploymentStatusKey(string? key)
+    {
+        return !string.IsNullOrWhiteSpace(key) &&
+               (string.Equals(key, "emplStatus", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(key, "employeeStatus", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(key, "employeestatus", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static string? ToIndexedNavigationPath(string key)
+    {
+        if (string.IsNullOrWhiteSpace(key) || !key.Contains('/', StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        var segments = key
+            .Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .ToArray();
+
+        if (segments.Length == 0)
+        {
+            return null;
+        }
+
+        for (var index = 0; index < segments.Length - 1; index++)
+        {
+            if (!segments[index].Contains('[', StringComparison.Ordinal) &&
+                segments[index].EndsWith("Nav", StringComparison.OrdinalIgnoreCase))
+            {
+                segments[index] = $"{segments[index]}[0]";
+            }
+        }
+
+        return string.Join(".", segments);
+    }
+
+    private static string? GetLeafName(string key)
+    {
+        if (string.IsNullOrWhiteSpace(key))
+        {
+            return null;
+        }
+
+        var segments = key
+            .Split(['/', '.'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        return segments.Length == 0 ? null : segments[^1];
+    }
+
+    private static void AddCandidate(ICollection<string> candidates, string? candidate)
+    {
+        if (string.IsNullOrWhiteSpace(candidate) ||
+            candidates.Contains(candidate, StringComparer.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        candidates.Add(candidate);
     }
 }
 
