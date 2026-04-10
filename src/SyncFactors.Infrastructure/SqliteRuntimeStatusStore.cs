@@ -231,7 +231,7 @@ public sealed class SqliteRuntimeStatusStore(SqlitePathResolver pathResolver) : 
         var connectionString = new SqliteConnectionStringBuilder
         {
             DataSource = databasePath,
-            Mode = SqliteOpenMode.ReadOnly,
+            Mode = SqliteOpenMode.ReadWriteCreate,
         }.ToString();
         return new SqliteConnection(connectionString);
     }

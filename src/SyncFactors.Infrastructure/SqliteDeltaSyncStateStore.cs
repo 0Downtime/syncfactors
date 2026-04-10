@@ -13,7 +13,7 @@ public sealed class SqliteDeltaSyncStateStore(SqlitePathResolver pathResolver) :
             return null;
         }
 
-        await using var connection = OpenConnection(databasePath, SqliteOpenMode.ReadOnly);
+        await using var connection = OpenConnection(databasePath, SqliteOpenMode.ReadWriteCreate);
         await connection.OpenAsync(cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText =

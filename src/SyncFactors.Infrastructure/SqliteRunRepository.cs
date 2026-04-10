@@ -1294,7 +1294,7 @@ public sealed class SqliteRunRepository(SqlitePathResolver pathResolver) : IRunR
         var connectionString = new SqliteConnectionStringBuilder
         {
             DataSource = databasePath,
-            Mode = SqliteOpenMode.ReadOnly,
+            Mode = SqliteOpenMode.ReadWriteCreate,
         }.ToString();
         return new SqliteConnection(connectionString);
     }
