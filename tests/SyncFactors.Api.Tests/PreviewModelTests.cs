@@ -128,7 +128,21 @@ public sealed class PreviewModelTests
         Assert.Contains(diagnostics.Details, item => item.Label == "Current CN" && item.Value == "Old\\, Name");
     }
 
-    private static WorkerPreviewResult CreatePreview(string workerId)
+    [Fact]
+    public void GetEmploymentStatusDisplay_FormatsKnownCodeFromSourceAttributes()
+    {
+        var preview = CreatePreview(
+            workerId: "10001",
+            sourceAttributes:
+            [
+                new SourceAttributeRow("emplStatus", "64303")
+            ]);
+        var model = new PreviewModel(new CapturingWorkerPreviewPlanner(preview), new StubApplyPreviewService(), new StubRunRepository(preview));
+
+        Assert.Equal("64303 - Unpaid Leave", model.GetEmploymentStatusDisplay(preview));
+    }
+
+    private static WorkerPreviewResult CreatePreview(string workerId, IReadOnlyList<SourceAttributeRow>? sourceAttributes = null)
     {
         return new WorkerPreviewResult(
             ReportPath: "/tmp/preview.jsonl",
@@ -165,7 +179,7 @@ public sealed class PreviewModelTests
                 new DiffRow("UserPrincipalName", "resolved email local-part", "old.email@spireenergy.com", "preview.email@spireenergy.com", true),
                 new DiffRow("mail", "resolved email local-part", "old.email@spireenergy.com", "preview.email@spireenergy.com", true)
             ],
-            SourceAttributes: [],
+            SourceAttributes: sourceAttributes ?? [],
             UsedSourceAttributes: [],
             UnusedSourceAttributes: [],
             MissingSourceAttributes: [],
@@ -295,6 +309,18 @@ public sealed class PreviewModelTests
             _ = entryId;
             _ = cancellationToken;
             return Task.FromResult(0);
+        }
+
+        public Task<IReadOnlyList<ChangedAttributeTotal>> GetRunEntryAttributeTotalsAsync(string runId, string? bucket, string? workerId, string? reason, string? filter, string? entryId, CancellationToken cancellationToken)
+        {
+            _ = runId;
+            _ = bucket;
+            _ = workerId;
+            _ = reason;
+            _ = filter;
+            _ = entryId;
+            _ = cancellationToken;
+            return Task.FromResult<IReadOnlyList<ChangedAttributeTotal>>([]);
         }
     }
 }

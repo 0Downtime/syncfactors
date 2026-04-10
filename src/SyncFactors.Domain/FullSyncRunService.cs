@@ -306,6 +306,7 @@ public sealed class FullSyncRunService(
                 workerId = plan.Worker.WorkerId,
                 samAccountName = plan.Identity.SamAccountName,
                 targetOu = plan.TargetOu,
+                emplStatus = ResolveSourceAttribute(plan.Worker.Attributes, "emplStatus"),
                 currentOu = plan.CurrentOu,
                 managerDistinguishedName = plan.ManagerDistinguishedName,
                 reason = message,
@@ -387,6 +388,7 @@ public sealed class FullSyncRunService(
                     {
                         workerId = worker.WorkerId,
                         bucket = "conflicts",
+                        emplStatus = ResolveSourceAttribute(worker.Attributes, "emplStatus"),
                         reason = ex.Message,
                         succeeded = false
                     })),
@@ -462,6 +464,17 @@ public sealed class FullSyncRunService(
     private static int GetBucketCount(IDictionary<string, int> tally, string bucket)
     {
         return tally.TryGetValue(bucket, out var count) ? count : 0;
+    }
+
+    private static string? ResolveSourceAttribute(IReadOnlyDictionary<string, string?> attributes, string key)
+    {
+        if (attributes.TryGetValue(key, out var value))
+        {
+            return value;
+        }
+
+        var normalized = SourceAttributePathNormalizer.Normalize(key);
+        return attributes.TryGetValue(normalized, out value) ? value : null;
     }
 
     private static JsonElement ToJsonElement<T>(T value)

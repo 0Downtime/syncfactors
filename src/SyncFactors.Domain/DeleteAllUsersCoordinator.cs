@@ -364,6 +364,7 @@ public sealed class DeleteAllUsersCoordinator(
               "workerId": "{{Escape(worker.WorkerId)}}",
               "samAccountName": {{ToJsonString(directoryUser?.SamAccountName)}},
               "targetOu": {{ToJsonString(worker.TargetOu)}},
+              "emplStatus": {{ToJsonString(ResolveSourceAttribute(worker.Attributes, "emplStatus"))}},
               "currentOu": {{ToJsonString(DirectoryDistinguishedName.GetParentOu(directoryUser?.DistinguishedName))}},
               "managerDistinguishedName": null,
               "reviewCategory": null,
@@ -431,4 +432,15 @@ public sealed class DeleteAllUsersCoordinator(
     private static string ToJsonString(string? value) => value is null ? "null" : $"\"{Escape(value)}\"";
 
     private static string ToJsonNullableBoolean(bool? value) => value.HasValue ? (value.Value ? "true" : "false") : "null";
+
+    private static string? ResolveSourceAttribute(IReadOnlyDictionary<string, string?> attributes, string key)
+    {
+        if (attributes.TryGetValue(key, out var value))
+        {
+            return value;
+        }
+
+        var normalized = SourceAttributePathNormalizer.Normalize(key);
+        return attributes.TryGetValue(normalized, out value) ? value : null;
+    }
 }
