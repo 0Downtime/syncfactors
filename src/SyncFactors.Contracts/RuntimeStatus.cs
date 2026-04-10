@@ -206,7 +206,10 @@ public sealed record LifecyclePolicySettings(
     IReadOnlyList<string> InactiveStatusValues,
     string? LeaveOu = null,
     IReadOnlyList<string>? LeaveStatusValues = null,
-    string DirectoryIdentityAttribute = "employeeID");
+    string DirectoryIdentityAttribute = "employeeID",
+    string InactiveDateField = "endDate",
+    int DeletionRetentionDays = 0,
+    bool SkipCreateIfPastDeletionRetention = false);
 
 public sealed record WorkerSnapshot(
     string WorkerId,

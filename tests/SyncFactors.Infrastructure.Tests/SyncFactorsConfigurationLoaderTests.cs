@@ -36,7 +36,27 @@ public sealed class SyncFactorsConfigurationLoaderTests
         Assert.False(config.Ad.IdentityPolicy.ResolveCreateConflictingUpnAndMail);
     }
 
-    private static async Task<SyncFactorsConfigDocument> LoadConfigAsync(string? identityPolicyJson)
+    [Fact]
+    public async Task GetSyncConfig_DefaultsSkipCreatePastDeletionRetentionToFalse_WhenOmitted()
+    {
+        var config = await LoadConfigAsync(identityPolicyJson: null, syncPolicyJson: null);
+
+        Assert.False(config.Sync.SkipCreateIfPastDeletionRetention);
+    }
+
+    [Fact]
+    public async Task GetSyncConfig_LoadsSkipCreatePastDeletionRetention_WhenExplicitlyTrue()
+    {
+        var config = await LoadConfigAsync(
+            identityPolicyJson: null,
+            syncPolicyJson: """
+              "skipCreateIfPastDeletionRetention": true
+            """);
+
+        Assert.True(config.Sync.SkipCreateIfPastDeletionRetention);
+    }
+
+    private static async Task<SyncFactorsConfigDocument> LoadConfigAsync(string? identityPolicyJson, string? syncPolicyJson = null)
     {
         var tempRoot = Path.Combine(Path.GetTempPath(), "syncfactors-config-loader", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(tempRoot);
@@ -81,7 +101,7 @@ public sealed class SyncFactorsConfigurationLoaderTests
           },
           "sync": {
             "enableBeforeStartDays": 7,
-            "deletionRetentionDays": 90
+            "deletionRetentionDays": 90{{(string.IsNullOrWhiteSpace(syncPolicyJson) ? string.Empty : "," + Environment.NewLine + syncPolicyJson)}}
           },
           "safety": {
             "maxCreatesPerRun": 10,

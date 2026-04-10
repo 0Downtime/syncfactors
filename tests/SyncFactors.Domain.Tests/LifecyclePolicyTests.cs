@@ -62,7 +62,53 @@ public sealed class LifecyclePolicyTests
         Assert.False(decision.TargetEnabled);
     }
 
-    private static LifecyclePolicy CreatePolicy()
+    [Fact]
+    public void Evaluate_DisabledCreatePastDeletionRetention_WhenToggleEnabled_SkipsCreate()
+    {
+        var policy = CreatePolicy(skipCreateIfPastDeletionRetention: true, deletionRetentionDays: 45);
+        var worker = CreateWorker(
+            workerId: "20004",
+            status: "64304",
+            inactiveDate: DateTimeOffset.UtcNow.Date.AddDays(-46).ToString("yyyy-MM-dd"));
+        var directoryUser = new DirectoryUserSnapshot(
+            SamAccountName: null,
+            DistinguishedName: null,
+            Enabled: null,
+            DisplayName: null,
+            Attributes: new Dictionary<string, string?>());
+
+        var decision = policy.Evaluate(worker, directoryUser);
+
+        Assert.Equal("unchanged", decision.Bucket);
+        Assert.Equal("OU=Leave Users,DC=example,DC=com", decision.TargetOu);
+        Assert.False(decision.TargetEnabled);
+    }
+
+    [Fact]
+    public void Evaluate_DisabledCreatePastDeletionRetention_WhenToggleDisabled_StillCreates()
+    {
+        var policy = CreatePolicy(skipCreateIfPastDeletionRetention: false, deletionRetentionDays: 45);
+        var worker = CreateWorker(
+            workerId: "20005",
+            status: "64304",
+            inactiveDate: DateTimeOffset.UtcNow.Date.AddDays(-46).ToString("yyyy-MM-dd"));
+        var directoryUser = new DirectoryUserSnapshot(
+            SamAccountName: null,
+            DistinguishedName: null,
+            Enabled: null,
+            DisplayName: null,
+            Attributes: new Dictionary<string, string?>());
+
+        var decision = policy.Evaluate(worker, directoryUser);
+
+        Assert.Equal("creates", decision.Bucket);
+        Assert.Equal("OU=Leave Users,DC=example,DC=com", decision.TargetOu);
+        Assert.False(decision.TargetEnabled);
+    }
+
+    private static LifecyclePolicy CreatePolicy(
+        bool skipCreateIfPastDeletionRetention = false,
+        int deletionRetentionDays = 0)
     {
         return new LifecyclePolicy(
             new LifecyclePolicySettings(
@@ -72,11 +118,23 @@ public sealed class LifecyclePolicyTests
                 InactiveStatusField: "emplStatus",
                 InactiveStatusValues: ["64307", "64308"],
                 LeaveOu: "OU=Leave Users,DC=example,DC=com",
-                LeaveStatusValues: ["64303", "64304"]));
+                LeaveStatusValues: ["64303", "64304"],
+                InactiveDateField: "endDate",
+                DeletionRetentionDays: deletionRetentionDays,
+                SkipCreateIfPastDeletionRetention: skipCreateIfPastDeletionRetention));
     }
 
-    private static WorkerSnapshot CreateWorker(string workerId, string status)
+    private static WorkerSnapshot CreateWorker(string workerId, string status, string? inactiveDate = null)
     {
+        var attributes = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["emplStatus"] = status
+        };
+        if (!string.IsNullOrWhiteSpace(inactiveDate))
+        {
+            attributes["endDate"] = inactiveDate;
+        }
+
         return new WorkerSnapshot(
             WorkerId: workerId,
             PreferredName: $"Worker{workerId}",
@@ -84,9 +142,6 @@ public sealed class LifecyclePolicyTests
             Department: "Operations",
             TargetOu: "OU=Employees,DC=example,DC=com",
             IsPrehire: false,
-            Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
-            {
-                ["emplStatus"] = status
-            });
+            Attributes: attributes);
     }
 }

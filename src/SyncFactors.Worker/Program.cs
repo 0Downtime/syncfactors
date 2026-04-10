@@ -31,7 +31,10 @@ builder.Services.AddSingleton(serviceProvider =>
         config.SuccessFactors.Query.InactiveStatusValues,
         config.Ad.LeaveOu,
         config.Sync.LeaveStatusValues,
-        config.Ad.IdentityAttribute);
+        config.Ad.IdentityAttribute,
+        config.SuccessFactors.Query.InactiveDateField,
+        config.Sync.DeletionRetentionDays,
+        config.Sync.SkipCreateIfPastDeletionRetention);
 });
 builder.Services.AddSingleton(serviceProvider =>
 {

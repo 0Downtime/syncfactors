@@ -82,7 +82,8 @@ public sealed record ActiveDirectoryIdentityPolicyConfig(
 public sealed record SyncPolicyConfig(
     int EnableBeforeStartDays,
     int DeletionRetentionDays,
-    IReadOnlyList<string>? LeaveStatusValues = null);
+    IReadOnlyList<string>? LeaveStatusValues = null,
+    bool SkipCreateIfPastDeletionRetention = false);
 
 public sealed record SafetyConfig(
     int MaxCreatesPerRun,

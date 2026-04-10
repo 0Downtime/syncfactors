@@ -18,49 +18,59 @@ public sealed class LifecyclePolicy(
 
             if (!hasExistingUser)
             {
-                return new LifecycleDecision(
-                    Bucket: "creates",
-                    TargetOu: leaveOu,
-                    TargetEnabled: false,
-                    Reason: "Leave worker should remain disabled in the leave OU.");
+                return CreateDecision(
+                    worker,
+                    hasExistingUser,
+                    bucket: "creates",
+                    targetOu: leaveOu,
+                    targetEnabled: false,
+                    reason: "Leave worker should remain disabled in the leave OU.");
             }
 
-            return new LifecycleDecision(
-                Bucket: string.Equals(currentOu, leaveOu, StringComparison.OrdinalIgnoreCase)
+            return CreateDecision(
+                worker,
+                hasExistingUser,
+                bucket: string.Equals(currentOu, leaveOu, StringComparison.OrdinalIgnoreCase)
                     ? "disables"
                     : "updates",
-                TargetOu: leaveOu,
-                TargetEnabled: false,
-                Reason: "Leave worker should remain disabled in the leave OU.");
+                targetOu: leaveOu,
+                targetEnabled: false,
+                reason: "Leave worker should remain disabled in the leave OU.");
         }
 
         if (IsGraveyard(worker))
         {
             if (!hasExistingUser)
             {
-                return new LifecycleDecision(
-                    Bucket: "unchanged",
-                    TargetOu: settings.GraveyardOu,
-                    TargetEnabled: false,
-                    Reason: "Inactive worker has no existing AD account.");
+                return CreateDecision(
+                    worker,
+                    hasExistingUser,
+                    bucket: "unchanged",
+                    targetOu: settings.GraveyardOu,
+                    targetEnabled: false,
+                    reason: "Inactive worker has no existing AD account.");
             }
 
-            return new LifecycleDecision(
-                Bucket: string.Equals(currentOu, settings.GraveyardOu, StringComparison.OrdinalIgnoreCase)
+            return CreateDecision(
+                worker,
+                hasExistingUser,
+                bucket: string.Equals(currentOu, settings.GraveyardOu, StringComparison.OrdinalIgnoreCase)
                     ? "disables"
                     : "graveyardMoves",
-                TargetOu: settings.GraveyardOu,
-                TargetEnabled: false,
-                Reason: "Inactive worker should be disabled and placed in the graveyard OU.");
+                targetOu: settings.GraveyardOu,
+                targetEnabled: false,
+                reason: "Inactive worker should be disabled and placed in the graveyard OU.");
         }
 
         if (worker.IsPrehire)
         {
-            return new LifecycleDecision(
-                Bucket: hasExistingUser ? "updates" : "creates",
-                TargetOu: settings.PrehireOu,
-                TargetEnabled: false,
-                Reason: "Prehire accounts remain disabled in the prehire OU until the start date.");
+            return CreateDecision(
+                worker,
+                hasExistingUser,
+                bucket: hasExistingUser ? "updates" : "creates",
+                targetOu: settings.PrehireOu,
+                targetEnabled: false,
+                reason: "Prehire accounts remain disabled in the prehire OU until the start date.");
         }
 
         var needsActivationMove = hasExistingUser &&
@@ -70,13 +80,64 @@ public sealed class LifecyclePolicy(
             ? needsActivationMove || needsEnable ? "enables" : "updates"
             : "creates";
 
-        return new LifecycleDecision(
-            Bucket: bucket,
-            TargetOu: settings.ActiveOu,
-            TargetEnabled: true,
-            Reason: hasExistingUser
+        return CreateDecision(
+            worker,
+            hasExistingUser,
+            bucket: bucket,
+            targetOu: settings.ActiveOu,
+            targetEnabled: true,
+            reason: hasExistingUser
                 ? "Active worker should be present and enabled in the active OU."
                 : "Active worker requires a new AD account in the active OU.");
+    }
+
+    private LifecycleDecision CreateDecision(
+        WorkerSnapshot worker,
+        bool hasExistingUser,
+        string bucket,
+        string targetOu,
+        bool targetEnabled,
+        string? reason)
+    {
+        if (!hasExistingUser &&
+            string.Equals(bucket, "creates", StringComparison.OrdinalIgnoreCase) &&
+            !targetEnabled &&
+            ShouldSkipDisabledCreate(worker))
+        {
+            return new LifecycleDecision(
+                Bucket: "unchanged",
+                TargetOu: targetOu,
+                TargetEnabled: false,
+                Reason: "Skipping disabled account creation because the worker is already past deletion retention.");
+        }
+
+        return new LifecycleDecision(
+            Bucket: bucket,
+            TargetOu: targetOu,
+            TargetEnabled: targetEnabled,
+            Reason: reason);
+    }
+
+    private bool ShouldSkipDisabledCreate(WorkerSnapshot worker)
+    {
+        if (!settings.SkipCreateIfPastDeletionRetention)
+        {
+            return false;
+        }
+
+        if (settings.DeletionRetentionDays < 0)
+        {
+            return false;
+        }
+
+        if (!TryResolveAttribute(worker.Attributes, settings.InactiveDateField, out var inactiveDateValue) ||
+            !SourceDateParser.TryParse(inactiveDateValue, out var inactiveDate))
+        {
+            return false;
+        }
+
+        var deletionEligibleDate = inactiveDate.Date.AddDays(settings.DeletionRetentionDays);
+        return deletionEligibleDate < DateTimeOffset.UtcNow.Date;
     }
 
     private bool IsGraveyard(WorkerSnapshot worker)
