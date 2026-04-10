@@ -7,69 +7,6 @@ namespace SyncFactors.Infrastructure;
 
 public sealed class SqliteRunRepository(SqlitePathResolver pathResolver) : IRunRepository
 {
-    private const string RunEntryFilterPredicate =
-        """
-        WHERE e.run_id = $runId
-          AND ($bucket IS NULL OR e.bucket = $bucket)
-          AND (
-            $workerId IS NULL
-            OR LOWER(COALESCE(e.worker_id, '')) LIKE $workerId ESCAPE '\'
-            OR LOWER(COALESCE(e.sam_account_name, '')) LIKE $workerId ESCAPE '\'
-          )
-          AND ($reason IS NULL OR LOWER(COALESCE(e.reason, '')) = LOWER($reason))
-          AND ($entryId IS NULL OR e.entry_id = $entryId)
-          AND (
-            $filter IS NULL
-            OR LOWER(COALESCE(e.item_json, '')) LIKE $filter ESCAPE '\'
-            OR LOWER(COALESCE(e.reason, '')) LIKE $filter ESCAPE '\'
-            OR LOWER(COALESCE(e.review_case_type, '')) LIKE $filter ESCAPE '\'
-          )
-        """;
-
-    private const string RunEntryProjection =
-        """
-        SELECT
-          e.entry_id,
-          e.bucket,
-          e.bucket_index,
-          e.worker_id,
-          e.sam_account_name,
-          e.reason,
-          e.review_category,
-          e.review_case_type,
-          e.started_at,
-          e.item_json,
-          r.run_id,
-          r.artifact_type,
-          r.mode,
-          r.report_json
-        FROM run_entries e
-        JOIN runs r ON r.run_id = e.run_id
-        """;
-
-    private const string GetRunEntriesSql =
-        RunEntryProjection +
-        "\n" +
-        RunEntryFilterPredicate +
-        "\nORDER BY e.bucket ASC, e.bucket_index ASC, e.entry_id ASC\nLIMIT $take OFFSET $skip;";
-
-    private const string CountRunEntriesSql =
-        """
-        SELECT COUNT(1)
-        FROM run_entries e
-        JOIN runs r ON r.run_id = e.run_id
-        """
-        +
-        "\n" +
-        RunEntryFilterPredicate +
-        ";";
-
-    private const string GetRunEntryAttributeTotalsSql =
-        RunEntryProjection +
-        "\n" +
-        RunEntryFilterPredicate +
-        "\nORDER BY e.bucket ASC, e.bucket_index ASC, e.entry_id ASC;";
-
     private static readonly string[] BucketOrder =
     [
         "quarantined",
@@ -682,8 +619,43 @@ public sealed class SqliteRunRepository(SqlitePathResolver pathResolver) : IRunR
         command.Parameters.AddWithValue("$skip", Math.Max(0, skip));
         command.Parameters.AddWithValue("$take", Math.Max(1, take));
 
-        // nosemgrep: csharp.lang.security.sqli.csharp-sqli.csharp-sqli
-        command.CommandText = GetRunEntriesSql;
+        command.CommandText =
+            """
+            SELECT
+              e.entry_id,
+              e.bucket,
+              e.bucket_index,
+              e.worker_id,
+              e.sam_account_name,
+              e.reason,
+              e.review_category,
+              e.review_case_type,
+              e.started_at,
+              e.item_json,
+              r.run_id,
+              r.artifact_type,
+              r.mode,
+              r.report_json
+            FROM run_entries e
+            JOIN runs r ON r.run_id = e.run_id
+            WHERE e.run_id = $runId
+              AND ($bucket IS NULL OR e.bucket = $bucket)
+              AND (
+                $workerId IS NULL
+                OR LOWER(COALESCE(e.worker_id, '')) LIKE $workerId ESCAPE '\'
+                OR LOWER(COALESCE(e.sam_account_name, '')) LIKE $workerId ESCAPE '\'
+              )
+              AND ($reason IS NULL OR LOWER(COALESCE(e.reason, '')) = LOWER($reason))
+              AND ($entryId IS NULL OR e.entry_id = $entryId)
+              AND (
+                $filter IS NULL
+                OR LOWER(COALESCE(e.item_json, '')) LIKE $filter ESCAPE '\'
+                OR LOWER(COALESCE(e.reason, '')) LIKE $filter ESCAPE '\'
+                OR LOWER(COALESCE(e.review_case_type, '')) LIKE $filter ESCAPE '\'
+              )
+            ORDER BY e.bucket ASC, e.bucket_index ASC, e.entry_id ASC
+            LIMIT $take OFFSET $skip;
+            """;
 
         var entries = new List<RunEntry>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -716,8 +688,27 @@ public sealed class SqliteRunRepository(SqlitePathResolver pathResolver) : IRunR
         await using var command = connection.CreateCommand();
         AddRunEntryFilterParameters(command, runId, bucket, workerId, reason, filter, entryId);
 
-        // nosemgrep: csharp.lang.security.sqli.csharp-sqli.csharp-sqli
-        command.CommandText = CountRunEntriesSql;
+        command.CommandText =
+            """
+            SELECT COUNT(1)
+            FROM run_entries e
+            JOIN runs r ON r.run_id = e.run_id
+            WHERE e.run_id = $runId
+              AND ($bucket IS NULL OR e.bucket = $bucket)
+              AND (
+                $workerId IS NULL
+                OR LOWER(COALESCE(e.worker_id, '')) LIKE $workerId ESCAPE '\'
+                OR LOWER(COALESCE(e.sam_account_name, '')) LIKE $workerId ESCAPE '\'
+              )
+              AND ($reason IS NULL OR LOWER(COALESCE(e.reason, '')) = LOWER($reason))
+              AND ($entryId IS NULL OR e.entry_id = $entryId)
+              AND (
+                $filter IS NULL
+                OR LOWER(COALESCE(e.item_json, '')) LIKE $filter ESCAPE '\'
+                OR LOWER(COALESCE(e.reason, '')) LIKE $filter ESCAPE '\'
+                OR LOWER(COALESCE(e.review_case_type, '')) LIKE $filter ESCAPE '\'
+              );
+            """;
 
         var result = await command.ExecuteScalarAsync(cancellationToken);
         return result is null || result is DBNull ? 0 : Convert.ToInt32(result);
@@ -743,8 +734,42 @@ public sealed class SqliteRunRepository(SqlitePathResolver pathResolver) : IRunR
 
         await using var command = connection.CreateCommand();
         AddRunEntryFilterParameters(command, runId, bucket, workerId, reason, filter, entryId);
-        // nosemgrep: csharp.lang.security.sqli.csharp-sqli.csharp-sqli
-        command.CommandText = GetRunEntryAttributeTotalsSql;
+        command.CommandText =
+            """
+            SELECT
+              e.entry_id,
+              e.bucket,
+              e.bucket_index,
+              e.worker_id,
+              e.sam_account_name,
+              e.reason,
+              e.review_category,
+              e.review_case_type,
+              e.started_at,
+              e.item_json,
+              r.run_id,
+              r.artifact_type,
+              r.mode,
+              r.report_json
+            FROM run_entries e
+            JOIN runs r ON r.run_id = e.run_id
+            WHERE e.run_id = $runId
+              AND ($bucket IS NULL OR e.bucket = $bucket)
+              AND (
+                $workerId IS NULL
+                OR LOWER(COALESCE(e.worker_id, '')) LIKE $workerId ESCAPE '\'
+                OR LOWER(COALESCE(e.sam_account_name, '')) LIKE $workerId ESCAPE '\'
+              )
+              AND ($reason IS NULL OR LOWER(COALESCE(e.reason, '')) = LOWER($reason))
+              AND ($entryId IS NULL OR e.entry_id = $entryId)
+              AND (
+                $filter IS NULL
+                OR LOWER(COALESCE(e.item_json, '')) LIKE $filter ESCAPE '\'
+                OR LOWER(COALESCE(e.reason, '')) LIKE $filter ESCAPE '\'
+                OR LOWER(COALESCE(e.review_case_type, '')) LIKE $filter ESCAPE '\'
+              )
+            ORDER BY e.bucket ASC, e.bucket_index ASC, e.entry_id ASC;
+            """;
 
         var firstSeenLabels = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         var counts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
