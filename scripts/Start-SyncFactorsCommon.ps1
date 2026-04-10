@@ -198,6 +198,9 @@ function Invoke-DotnetProjectRun {
             Invoke-SolutionBuild -ProjectRoot $ProjectRoot
             $dotnetRunArguments += '--no-restore'
         }
+        else {
+            $dotnetRunArguments += '--no-build'
+        }
 
         $dotnetRunArguments += @('--project', $ProjectPath)
         if ($Arguments.Count -gt 0) {
