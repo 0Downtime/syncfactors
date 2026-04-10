@@ -734,10 +734,50 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
         flashUpdate(card);
     }
 
+    function timelineCompletionLabel(status, dryRun) {
+        const prefix = dryRun ? "Dry run" : "Live sync";
+
+        switch ((status || "").toLowerCase()) {
+            case "succeeded":
+            case "idle":
+                return prefix + " completed";
+            case "failed":
+                return prefix + " failed";
+            case "canceled":
+            case "cancelled":
+                return prefix + " canceled";
+            default:
+                return textOrFallback(status, prefix + " completed");
+        }
+    }
+
+    function timelineProcessedDetail(processedWorkers, totalWorkers) {
+        if (!(totalWorkers > 0)) {
+            return null;
+        }
+
+        return processedWorkers + " of " + totalWorkers + " workers were processed.";
+    }
+
+    function pushProcessedWorkersStep(steps, stepTime, processedWorkers, totalWorkers) {
+        const detail = timelineProcessedDetail(processedWorkers || 0, totalWorkers || 0);
+        if (!detail) {
+            return;
+        }
+
+        steps.push({
+            label: "Processed workers",
+            time: stepTime,
+            detail: detail,
+            tone: "info"
+        });
+    }
+
     function buildTimelineSteps(snapshot, focusRun) {
         const steps = [];
         const status = snapshot.status;
         const isCurrentRun = focusRun && status && focusRun.runId && status.runId === focusRun.runId;
+        const runtimeState = status ? visualState(status) : "idle";
 
         if (!focusRun && status && status.runId) {
             if (status.startedAt) {
@@ -749,19 +789,27 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
                 });
             }
 
-            steps.push({
-                label: "Current stage",
-                time: status.lastUpdatedAt || status.startedAt || snapshot.checkedAt,
-                detail: buildStatusCaption(status),
-                tone: runStatusClass(status.status)
-            });
+            pushProcessedWorkersStep(
+                steps,
+                status.lastUpdatedAt || status.completedAt || status.startedAt || snapshot.checkedAt,
+                status.processedWorkers,
+                status.totalWorkers);
 
-            if (status.completedAt) {
+            if (runtimeState === "syncing" || (runtimeState === "queued" && focusRun.startedAt)) {
                 steps.push({
-                    label: status.status || "Completed",
-                    time: status.completedAt,
-                    detail: textOrFallback(status.errorMessage, buildStatusLine(status)),
+                    label: runtimeState === "queued" ? "Queued" : "Current stage",
+                    time: status.lastUpdatedAt || status.startedAt || snapshot.checkedAt,
+                    detail: buildStatusCaption(status),
                     tone: runStatusClass(status.status)
+                });
+            }
+
+            if (status.completedAt || runtimeState === "complete" || runtimeState === "failed") {
+                steps.push({
+                    label: timelineCompletionLabel(status.status, status.dryRun),
+                    time: status.completedAt || status.lastUpdatedAt || snapshot.checkedAt,
+                    detail: textOrFallback(status.errorMessage, buildStatusLine(status)),
+                    tone: runtimeState === "complete" ? "good" : runStatusClass(status.status)
                 });
             }
 
@@ -782,6 +830,12 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
         }
 
         if (isCurrentRun) {
+            pushProcessedWorkersStep(
+                steps,
+                status.lastUpdatedAt || status.completedAt || status.startedAt || snapshot.checkedAt,
+                status.processedWorkers,
+                status.totalWorkers);
+
             if (!focusRun.startedAt && status.runId && (status.status || "").match(/planned|pending|cancelrequested/i)) {
                 steps.push({
                     label: "Queued",
@@ -791,37 +845,47 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
                 });
             }
 
-            steps.push({
-                label: "Current stage",
-                time: status.lastUpdatedAt || status.startedAt || snapshot.checkedAt,
-                detail: buildStatusCaption(status),
-                tone: runStatusClass(status.status)
-            });
-
-            if (status.completedAt) {
+            if (runtimeState === "syncing" || runtimeState === "queued") {
                 steps.push({
-                    label: status.status || "Completed",
-                    time: status.completedAt,
-                    detail: textOrFallback(status.errorMessage, runSummary(focusRun)),
+                    label: runtimeState === "queued" ? "Queued" : "Current stage",
+                    time: status.lastUpdatedAt || status.startedAt || snapshot.checkedAt,
+                    detail: buildStatusCaption(status),
                     tone: runStatusClass(status.status)
+                });
+            }
+
+            if (status.completedAt || runtimeState === "complete" || runtimeState === "failed") {
+                steps.push({
+                    label: timelineCompletionLabel(status.status, focusRun.dryRun),
+                    time: status.completedAt || status.lastUpdatedAt || snapshot.checkedAt,
+                    detail: textOrFallback(status.errorMessage, runSummary(focusRun)),
+                    tone: runtimeState === "complete" ? "good" : runStatusClass(status.status)
                 });
             }
 
             return steps;
         }
 
+        pushProcessedWorkersStep(
+            steps,
+            focusRun.completedAt || focusRun.startedAt,
+            focusRun.processedWorkers,
+            focusRun.totalWorkers);
+
         if (focusRun.completedAt) {
             steps.push({
-                label: focusRun.status || "Completed",
+                label: timelineCompletionLabel(focusRun.status, focusRun.dryRun),
                 time: focusRun.completedAt,
                 detail: runSummary(focusRun),
-                tone: runStatusClass(focusRun.status)
+                tone: (focusRun.status || "").toLowerCase() === "succeeded" ? "good" : runStatusClass(focusRun.status)
             });
         } else {
             steps.push({
-                label: focusRun.status || "Recorded",
+                label: (focusRun.status || "").match(/planned|pending|cancelrequested/i) ? "Queued" : "Current stage",
                 time: focusRun.startedAt,
-                detail: runSummary(focusRun),
+                detail: focusRun.status
+                    ? focusRun.status + " · " + runSummary(focusRun)
+                    : runSummary(focusRun),
                 tone: runStatusClass(focusRun.status)
             });
         }
@@ -859,6 +923,7 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
         const focusRun = resolveTimelineRun(snapshot, filteredRuns);
         const steps = buildTimelineSteps(snapshot, focusRun);
         const hasRuntimeFocus = !focusRun && snapshot.status && snapshot.status.runId;
+        const runtimeState = snapshot.status ? visualState(snapshot.status) : "idle";
 
         elements.timelineList.innerHTML = "";
         toggleHidden(elements.timelineEmpty, !!steps.length);
@@ -879,7 +944,9 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
         } else if (hasRuntimeFocus) {
             elements.timelineSummary.textContent = "Following the live runtime state when a full run record is not yet available.";
         } else if (snapshot.activeRun && snapshot.activeRun.runId === focusRun.runId) {
-            elements.timelineSummary.textContent = "Following the active run in the sticky live rail.";
+            elements.timelineSummary.textContent = runtimeState === "syncing" || runtimeState === "queued"
+                ? "Following the active run in the sticky live rail."
+                : "Showing the latest run surfaced in the sticky live rail.";
         } else {
             elements.timelineSummary.textContent = "Showing the most recent completed run when no drill-down focus is selected.";
         }
