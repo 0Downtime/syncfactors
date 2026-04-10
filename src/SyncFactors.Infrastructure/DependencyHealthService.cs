@@ -700,10 +700,15 @@ public sealed class DependencyHealthService(
             return response.ResultCode switch
             {
                 ResultCode.Success => (true, null),
+                ResultCode.SizeLimitExceeded => (true, null),
                 ResultCode.Referral => (false, "referral"),
                 ResultCode.NoSuchObject => (false, "search base was not found"),
                 _ => (false, string.IsNullOrWhiteSpace(response.ErrorMessage) ? response.ResultCode.ToString() : TrimForLog(response.ErrorMessage))
             };
+        }
+        catch (DirectoryOperationException ex) when (ex.Response?.ResultCode == ResultCode.SizeLimitExceeded)
+        {
+            return (true, null);
         }
         catch (DirectoryOperationException ex) when (IsReferralLikeResult(ex.Response?.ResultCode))
         {
