@@ -12,6 +12,17 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
     const healthPollIntervalMs = 60000;
     const reduceMotionQuery = window.matchMedia ? window.matchMedia("(prefers-reduced-motion: reduce)") : null;
     const supportsViewTransitions = typeof document.startViewTransition === "function";
+    const bucketDefinitions = [
+        { key: "creates", label: "Creates", tone: "good" },
+        { key: "updates", label: "Updates", tone: "info" },
+        { key: "manualReview", label: "Manual Review", tone: "warn" },
+        { key: "conflicts", label: "Conflicts", tone: "bad" },
+        { key: "guardrailFailures", label: "Guardrails", tone: "dim" },
+        { key: "unchanged", label: "Unchanged", tone: "neutral" }
+    ];
+    const bucketLabelToDefinition = Object.fromEntries(bucketDefinitions.map(function (definition) {
+        return [definition.label, definition];
+    }));
 
     const elements = {
         root: document.querySelector("[data-connection-health]"),
@@ -19,6 +30,7 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
         runsBody: document.querySelector("[data-runs-body]"),
         runsTable: document.querySelector("[data-runs-table]"),
         runsEmpty: document.querySelector("[data-runs-empty]"),
+        runsEmptyMessage: document.querySelector("[data-runs-empty] p"),
         checkedMessage: document.querySelector("[data-dashboard-checked]"),
         statusError: document.querySelector("[data-status-error]"),
         attention: document.querySelector("[data-dashboard-attention]"),
@@ -39,7 +51,13 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
         runsChartEmpty: document.querySelector("[data-runs-chart-empty]"),
         bucketChart: document.querySelector("[data-buckets-chart]"),
         bucketChartEmpty: document.querySelector("[data-buckets-chart-empty]"),
-        bucketChartMeta: document.querySelector("[data-buckets-chart-meta]")
+        bucketChartMeta: document.querySelector("[data-buckets-chart-meta]"),
+        filterCaption: document.querySelector("[data-runs-filter-caption]"),
+        clearFilterButton: document.querySelector("[data-clear-runs-filter]"),
+        timelineTitle: document.querySelector("[data-run-timeline-title]"),
+        timelineSummary: document.querySelector("[data-run-timeline-summary]"),
+        timelineList: document.querySelector("[data-run-timeline]"),
+        timelineEmpty: document.querySelector("[data-run-timeline-empty]")
     };
 
     if (!elements.root || !elements.statusRoot) {
@@ -61,6 +79,8 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
         lastUpdated: elements.statusRoot.querySelector("[data-last-updated-value]")
     };
 
+    const defaultRunsEmptyMessage = elements.runsEmptyMessage ? elements.runsEmptyMessage.textContent : "";
+
     let healthTimerId = null;
     let dashboardTimerId = null;
     let reconnectTimerId = null;
@@ -73,6 +93,8 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
     let latestDashboardSnapshot = null;
     let latestHealthSnapshot = null;
     let latestProgressPercent = 0;
+    let selectedRunId = null;
+    let selectedBucketKey = null;
 
     if (elements.refreshButton) {
         elements.refreshButton.addEventListener("click", function () {
@@ -80,6 +102,12 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
                 void loadDashboard();
                 void loadHealth();
             });
+        });
+    }
+
+    if (elements.clearFilterButton) {
+        elements.clearFilterButton.addEventListener("click", function () {
+            clearRunsFilter();
         });
     }
 
@@ -120,6 +148,10 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
                 return "warn";
             case "unhealthy":
                 return "bad";
+            case "info":
+                return "info";
+            case "dim":
+                return "dim";
             default:
                 return "neutral";
         }
@@ -430,6 +462,134 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
         return "/Runs/Detail/" + encodeURIComponent(runId);
     }
 
+    function getThemePalette() {
+        const styles = getComputedStyle(document.documentElement);
+
+        return {
+            text: styles.getPropertyValue("--ink").trim(),
+            muted: styles.getPropertyValue("--muted").trim(),
+            line: styles.getPropertyValue("--line").trim(),
+            accent: styles.getPropertyValue("--accent").trim(),
+            info: styles.getPropertyValue("--info").trim(),
+            good: styles.getPropertyValue("--good").trim(),
+            warn: styles.getPropertyValue("--warn").trim(),
+            bad: styles.getPropertyValue("--bad").trim(),
+            dim: styles.getPropertyValue("--dim").trim()
+        };
+    }
+
+    function ensureCharts() {
+        if (elements.runsChart && !runsChartInstance) {
+            runsChartInstance = echarts.init(elements.runsChart, null, { renderer: "canvas" });
+        }
+
+        if (elements.bucketChart && !bucketChartInstance) {
+            bucketChartInstance = echarts.init(elements.bucketChart, null, { renderer: "canvas" });
+        }
+    }
+
+    function findRunById(runs, runId) {
+        return (runs || []).find(function (run) {
+            return run.runId === runId;
+        }) || null;
+    }
+
+    function getBucketDefinition(key) {
+        return bucketDefinitions.find(function (definition) {
+            return definition.key === key;
+        }) || null;
+    }
+
+    function getFilteredRuns(runs) {
+        if (selectedRunId) {
+            return runs.filter(function (run) {
+                return run.runId === selectedRunId;
+            });
+        }
+
+        if (selectedBucketKey) {
+            return runs.filter(function (run) {
+                return (run[selectedBucketKey] || 0) > 0;
+            });
+        }
+
+        return runs;
+    }
+
+    function syncFilterState(snapshot) {
+        const runs = Array.isArray(snapshot && snapshot.runs) ? snapshot.runs : [];
+
+        if (selectedRunId && !findRunById(runs, selectedRunId)) {
+            selectedRunId = null;
+        }
+
+        if (selectedBucketKey && !runs.some(function (run) { return (run[selectedBucketKey] || 0) > 0; })) {
+            selectedBucketKey = null;
+        }
+    }
+
+    function setSelectedRun(runId) {
+        selectedBucketKey = null;
+        selectedRunId = selectedRunId === runId ? null : runId;
+
+        if (latestDashboardSnapshot) {
+            renderDashboard(latestDashboardSnapshot);
+        }
+    }
+
+    function setSelectedBucket(bucketKey) {
+        selectedRunId = null;
+        selectedBucketKey = selectedBucketKey === bucketKey ? null : bucketKey;
+
+        if (latestDashboardSnapshot) {
+            renderDashboard(latestDashboardSnapshot);
+        }
+    }
+
+    function clearRunsFilter() {
+        selectedRunId = null;
+        selectedBucketKey = null;
+
+        if (latestDashboardSnapshot) {
+            renderDashboard(latestDashboardSnapshot);
+        }
+    }
+
+    function getFilterCaption(runs, filteredRuns) {
+        if (selectedRunId) {
+            const selectedRun = findRunById(runs, selectedRunId);
+            return selectedRun
+                ? "Focused on run " + selectedRun.runId + ". Table filtered to a single run."
+                : "The selected run is no longer present in the recent runs set.";
+        }
+
+        if (selectedBucketKey) {
+            const definition = getBucketDefinition(selectedBucketKey);
+            const label = definition ? definition.label : "the selected bucket";
+            return filteredRuns.length
+                ? "Filtered to runs with " + label.toLowerCase() + " activity."
+                : "No recent runs match the " + label.toLowerCase() + " drill-down filter.";
+        }
+
+        return "Showing all recent runs.";
+    }
+
+    function renderFilterState(runs, filteredRuns) {
+        if (elements.filterCaption) {
+            elements.filterCaption.textContent = getFilterCaption(runs, filteredRuns);
+        }
+
+        toggleHidden(elements.clearFilterButton, !selectedRunId && !selectedBucketKey);
+
+        if (!elements.runsEmptyMessage) {
+            return;
+        }
+
+        elements.runsEmptyMessage.textContent = filteredRuns.length || !runs.length
+            ? defaultRunsEmptyMessage
+            : "No recent runs match the current chart drill-down filter.";
+    }
+
     function appendCell(row, text, className) {
         const cell = document.createElement("td");
         cell.textContent = text;
@@ -493,6 +653,23 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
 
         runs.forEach(function (run) {
             const row = document.createElement("tr");
+            row.dataset.runId = run.runId;
+            row.classList.toggle("is-selected", selectedRunId === run.runId);
+            row.setAttribute("tabindex", "0");
+            row.addEventListener("click", function (event) {
+                if (event.target && event.target.closest("a")) {
+                    return;
+                }
+
+                setSelectedRun(run.runId);
+            });
+            row.addEventListener("keydown", function (event) {
+                if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    setSelectedRun(run.runId);
+                }
+            });
+
             appendCell(row, formatTimestamp(run.startedAt), "recent-runs-table__started");
             appendCell(row, textOrFallback(run.runTrigger, "AdHoc"), "recent-runs-table__trigger");
             appendCell(row, textOrFallback(run.mode, "Unknown"), "recent-runs-table__mode");
@@ -557,31 +734,226 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
         flashUpdate(card);
     }
 
-    function getThemePalette() {
-        const styles = getComputedStyle(document.documentElement);
+    function buildTimelineSteps(snapshot, focusRun) {
+        const steps = [];
+        const status = snapshot.status;
+        const isCurrentRun = focusRun && status && focusRun.runId && status.runId === focusRun.runId;
 
-        return {
-            text: styles.getPropertyValue("--ink").trim(),
-            muted: styles.getPropertyValue("--muted").trim(),
-            line: styles.getPropertyValue("--line").trim(),
-            panel: styles.getPropertyValue("--panel").trim(),
-            accent: styles.getPropertyValue("--accent").trim(),
-            info: styles.getPropertyValue("--info").trim(),
-            good: styles.getPropertyValue("--good").trim(),
-            warn: styles.getPropertyValue("--warn").trim(),
-            bad: styles.getPropertyValue("--bad").trim(),
-            dim: styles.getPropertyValue("--dim").trim()
-        };
+        if (!focusRun && status && status.runId) {
+            if (status.startedAt) {
+                steps.push({
+                    label: "Started",
+                    time: status.startedAt,
+                    detail: (status.mode || "Runtime") + (status.dryRun ? " dry run started." : " run started."),
+                    tone: "good"
+                });
+            }
+
+            steps.push({
+                label: "Current stage",
+                time: status.lastUpdatedAt || status.startedAt || snapshot.checkedAt,
+                detail: buildStatusCaption(status),
+                tone: runStatusClass(status.status)
+            });
+
+            if (status.completedAt) {
+                steps.push({
+                    label: status.status || "Completed",
+                    time: status.completedAt,
+                    detail: textOrFallback(status.errorMessage, buildStatusLine(status)),
+                    tone: runStatusClass(status.status)
+                });
+            }
+
+            return steps;
+        }
+
+        if (!focusRun) {
+            return steps;
+        }
+
+        if (focusRun.startedAt) {
+            steps.push({
+                label: "Started",
+                time: focusRun.startedAt,
+                detail: focusRun.mode + (focusRun.dryRun ? " dry run started." : " run started."),
+                tone: "good"
+            });
+        }
+
+        if (isCurrentRun) {
+            if (!focusRun.startedAt && status.runId && (status.status || "").match(/planned|pending|cancelrequested/i)) {
+                steps.push({
+                    label: "Queued",
+                    time: status.lastUpdatedAt || snapshot.checkedAt,
+                    detail: "Run " + status.runId + " is waiting for the worker service to begin execution.",
+                    tone: "warn"
+                });
+            }
+
+            steps.push({
+                label: "Current stage",
+                time: status.lastUpdatedAt || status.startedAt || snapshot.checkedAt,
+                detail: buildStatusCaption(status),
+                tone: runStatusClass(status.status)
+            });
+
+            if (status.completedAt) {
+                steps.push({
+                    label: status.status || "Completed",
+                    time: status.completedAt,
+                    detail: textOrFallback(status.errorMessage, runSummary(focusRun)),
+                    tone: runStatusClass(status.status)
+                });
+            }
+
+            return steps;
+        }
+
+        if (focusRun.completedAt) {
+            steps.push({
+                label: focusRun.status || "Completed",
+                time: focusRun.completedAt,
+                detail: runSummary(focusRun),
+                tone: runStatusClass(focusRun.status)
+            });
+        } else {
+            steps.push({
+                label: focusRun.status || "Recorded",
+                time: focusRun.startedAt,
+                detail: runSummary(focusRun),
+                tone: runStatusClass(focusRun.status)
+            });
+        }
+
+        return steps;
     }
 
-    function ensureCharts() {
-        if (elements.runsChart && !runsChartInstance) {
-            runsChartInstance = echarts.init(elements.runsChart, null, { renderer: "canvas" });
+    function resolveTimelineRun(snapshot, filteredRuns) {
+        const runs = snapshot.runs || [];
+
+        if (selectedRunId) {
+            return findRunById(runs, selectedRunId);
         }
 
-        if (elements.bucketChart && !bucketChartInstance) {
-            bucketChartInstance = echarts.init(elements.bucketChart, null, { renderer: "canvas" });
+        if (selectedBucketKey) {
+            if (snapshot.activeRun && (snapshot.activeRun[selectedBucketKey] || 0) > 0) {
+                return snapshot.activeRun;
+            }
+
+            if (snapshot.lastCompletedRun && (snapshot.lastCompletedRun[selectedBucketKey] || 0) > 0) {
+                return snapshot.lastCompletedRun;
+            }
+
+            return filteredRuns[0] || null;
         }
+
+        return snapshot.activeRun || snapshot.lastCompletedRun || runs[0] || null;
+    }
+
+    function renderTimeline(snapshot, filteredRuns) {
+        if (!elements.timelineList || !elements.timelineTitle || !elements.timelineSummary) {
+            return;
+        }
+
+        const focusRun = resolveTimelineRun(snapshot, filteredRuns);
+        const steps = buildTimelineSteps(snapshot, focusRun);
+        const hasRuntimeFocus = !focusRun && snapshot.status && snapshot.status.runId;
+
+        elements.timelineList.innerHTML = "";
+        toggleHidden(elements.timelineEmpty, !!steps.length);
+
+        if (!focusRun && !hasRuntimeFocus) {
+            elements.timelineTitle.textContent = "Runtime focus";
+            elements.timelineSummary.textContent = "Select a run from a chart or table row to focus its timeline.";
+            return;
+        }
+
+        elements.timelineTitle.textContent = focusRun ? "Run " + focusRun.runId : "Runtime focus";
+
+        if (selectedRunId) {
+            elements.timelineSummary.textContent = "Focused from the recent runs table or chart. Clear the filter to return to the full run list.";
+        } else if (selectedBucketKey) {
+            const definition = getBucketDefinition(selectedBucketKey);
+            elements.timelineSummary.textContent = "Focused on the first run matching the " + (definition ? definition.label.toLowerCase() : "selected") + " drill-down filter.";
+        } else if (hasRuntimeFocus) {
+            elements.timelineSummary.textContent = "Following the live runtime state when a full run record is not yet available.";
+        } else if (snapshot.activeRun && snapshot.activeRun.runId === focusRun.runId) {
+            elements.timelineSummary.textContent = "Following the active run in the sticky live rail.";
+        } else {
+            elements.timelineSummary.textContent = "Showing the most recent completed run when no drill-down focus is selected.";
+        }
+
+        if (!steps.length) {
+            return;
+        }
+
+        steps.forEach(function (step) {
+            const item = document.createElement("li");
+            item.className = "run-timeline-item " + (step.tone || "neutral");
+
+            const marker = document.createElement("span");
+            marker.className = "run-timeline-marker";
+            marker.setAttribute("aria-hidden", "true");
+            item.appendChild(marker);
+
+            const copy = document.createElement("div");
+            copy.className = "run-timeline-copy";
+
+            const head = document.createElement("div");
+            head.className = "run-timeline-head";
+
+            const label = document.createElement("p");
+            label.className = "run-timeline-label";
+            label.textContent = step.label;
+            head.appendChild(label);
+
+            const time = document.createElement("p");
+            time.className = "run-timeline-time";
+            time.textContent = formatTimestamp(step.time);
+            head.appendChild(time);
+
+            copy.appendChild(head);
+
+            const detail = document.createElement("p");
+            detail.className = "run-timeline-detail";
+            detail.textContent = step.detail;
+            copy.appendChild(detail);
+
+            item.appendChild(copy);
+            elements.timelineList.appendChild(item);
+        });
+    }
+
+    function buildSeriesData(runs, definition, palette) {
+        return runs.map(function (run) {
+            const isFocusedRun = selectedRunId && selectedRunId === run.runId;
+            const isRunDimmed = !!selectedRunId && selectedRunId !== run.runId;
+            const isBucketDimmed = !!selectedBucketKey && selectedBucketKey !== definition.key;
+
+            return {
+                value: run[definition.key] || 0,
+                itemStyle: {
+                    opacity: isRunDimmed ? 0.28 : (isBucketDimmed ? 0.38 : 1),
+                    borderColor: isFocusedRun ? palette.text : "transparent",
+                    borderWidth: isFocusedRun ? 2 : 0
+                }
+            };
+        });
+    }
+
+    function bindRunsChartEvents(displayRuns) {
+        if (!runsChartInstance) {
+            return;
+        }
+
+        runsChartInstance.off("click");
+        runsChartInstance.on("click", function (params) {
+            const run = displayRuns[params.dataIndex];
+            if (run) {
+                setSelectedRun(run.runId);
+            }
+        });
     }
 
     function renderRunsChart(runs) {
@@ -604,8 +976,8 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
         toggleHidden(elements.runsChartEmpty, true);
 
         const palette = getThemePalette();
-        const seriesRuns = runs.slice(0, 10).reverse();
-        const labels = seriesRuns.map(function (run) { return formatChartTimestamp(run.startedAt); });
+        const displayRuns = runs.slice(0, 10).reverse();
+        const labels = displayRuns.map(function (run) { return formatChartTimestamp(run.startedAt); });
 
         runsChartInstance.setOption({
             animationDuration: motionAllowed() ? 420 : 0,
@@ -629,13 +1001,29 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
                 splitLine: { lineStyle: { color: palette.line } }
             },
             series: [
-                { name: "Creates", type: "bar", stack: "runs", itemStyle: { color: palette.good }, data: seriesRuns.map(function (run) { return run.creates || 0; }) },
-                { name: "Updates", type: "bar", stack: "runs", itemStyle: { color: palette.accent }, data: seriesRuns.map(function (run) { return run.updates || 0; }) },
-                { name: "Manual Review", type: "bar", stack: "runs", itemStyle: { color: palette.warn }, data: seriesRuns.map(function (run) { return run.manualReview || 0; }) },
-                { name: "Conflicts", type: "bar", stack: "runs", itemStyle: { color: palette.bad }, data: seriesRuns.map(function (run) { return run.conflicts || 0; }) },
-                { name: "Guardrails", type: "bar", stack: "runs", itemStyle: { color: palette.dim }, data: seriesRuns.map(function (run) { return run.guardrailFailures || 0; }) }
+                { name: "Creates", type: "bar", stack: "runs", itemStyle: { color: palette.good }, data: buildSeriesData(displayRuns, bucketDefinitions[0], palette) },
+                { name: "Updates", type: "bar", stack: "runs", itemStyle: { color: palette.accent }, data: buildSeriesData(displayRuns, bucketDefinitions[1], palette) },
+                { name: "Manual Review", type: "bar", stack: "runs", itemStyle: { color: palette.warn }, data: buildSeriesData(displayRuns, bucketDefinitions[2], palette) },
+                { name: "Conflicts", type: "bar", stack: "runs", itemStyle: { color: palette.bad }, data: buildSeriesData(displayRuns, bucketDefinitions[3], palette) },
+                { name: "Guardrails", type: "bar", stack: "runs", itemStyle: { color: palette.dim }, data: buildSeriesData(displayRuns, bucketDefinitions[4], palette) }
             ]
         }, true);
+
+        bindRunsChartEvents(displayRuns);
+    }
+
+    function bindBucketChartEvents() {
+        if (!bucketChartInstance) {
+            return;
+        }
+
+        bucketChartInstance.off("click");
+        bucketChartInstance.on("click", function (params) {
+            const definition = bucketLabelToDefinition[params.name];
+            if (definition) {
+                setSelectedBucket(definition.key);
+            }
+        });
     }
 
     function renderBucketChart(snapshot) {
@@ -658,14 +1046,15 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
             return;
         }
 
-        const entries = [
-            { name: "Creates", value: focusRun.creates || 0 },
-            { name: "Updates", value: focusRun.updates || 0 },
-            { name: "Manual Review", value: focusRun.manualReview || 0 },
-            { name: "Conflicts", value: focusRun.conflicts || 0 },
-            { name: "Guardrails", value: focusRun.guardrailFailures || 0 },
-            { name: "Unchanged", value: focusRun.unchanged || 0 }
-        ].filter(function (entry) { return entry.value > 0; });
+        const entries = bucketDefinitions
+            .map(function (definition) {
+                return {
+                    name: definition.label,
+                    value: focusRun[definition.key] || 0,
+                    selected: selectedBucketKey === definition.key
+                };
+            })
+            .filter(function (entry) { return entry.value > 0; });
 
         if (!entries.length) {
             toggleHidden(elements.bucketChart, true);
@@ -684,8 +1073,8 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
 
         if (elements.bucketChartMeta) {
             elements.bucketChartMeta.textContent = snapshot.activeRun
-                ? "Showing live bucket composition for active run " + focusRun.runId + "."
-                : "Showing bucket composition for recent run " + focusRun.runId + ".";
+                ? "Click a slice to filter the table. Showing live bucket composition for active run " + focusRun.runId + "."
+                : "Click a slice to filter the table. Showing bucket composition for recent run " + focusRun.runId + ".";
         }
 
         const palette = getThemePalette();
@@ -706,12 +1095,15 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
                     radius: ["46%", "70%"],
                     center: ["36%", "54%"],
                     avoidLabelOverlap: true,
+                    selectedMode: "single",
                     label: { color: palette.text },
                     data: entries,
                     color: [palette.good, palette.accent, palette.warn, palette.bad, palette.dim, palette.info]
                 }
             ]
         }, true);
+
+        bindBucketChartEvents();
     }
 
     function refreshCharts() {
@@ -731,11 +1123,18 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
 
     function renderDashboard(snapshot) {
         latestDashboardSnapshot = snapshot;
+        syncFilterState(snapshot);
+
+        const allRuns = Array.isArray(snapshot.runs) ? snapshot.runs : [];
+        const filteredRuns = getFilteredRuns(allRuns);
+
         renderStatus(snapshot);
-        renderRuns(Array.isArray(snapshot.runs) ? snapshot.runs : []);
+        renderFilterState(allRuns, filteredRuns);
+        renderRuns(filteredRuns);
         renderRunCard(elements.activeRunCard, elements.activeRunEmpty, snapshot.activeRun, "[data-active-run-summary]", "[data-active-run-id]", "[data-active-run-link]", "No run is active.");
         renderRunCard(elements.lastRunCard, elements.lastRunEmpty, snapshot.lastCompletedRun, "[data-last-run-summary]", "[data-last-run-id]", "[data-last-run-link]", "No completed runs yet.");
-        renderRunsChart(snapshot.runs || []);
+        renderTimeline(snapshot, filteredRuns);
+        renderRunsChart(allRuns);
         renderBucketChart(snapshot);
 
         if (elements.checkedMessage) {
