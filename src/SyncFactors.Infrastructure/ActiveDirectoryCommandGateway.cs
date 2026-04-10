@@ -472,6 +472,17 @@ public sealed class ActiveDirectoryCommandGateway(
         return string.Join(", ", context.Select(item => $"{item.Key}={item.Value ?? "(null)"}"));
     }
 
+    private static bool IsReferralException(DirectoryOperationException exception)
+    {
+        return exception.Response?.ResultCode == ResultCode.Referral ||
+               exception.Message.Contains("referral", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsReferralException(LdapException exception)
+    {
+        return exception.Message.Contains("referral", StringComparison.OrdinalIgnoreCase);
+    }
+
     private static string? GetAttribute(SearchResultEntry entry, string attributeName)
     {
         if (!entry.Attributes.Contains(attributeName) || entry.Attributes[attributeName].Count == 0)
@@ -561,7 +572,22 @@ public sealed class ActiveDirectoryCommandGateway(
                 "distinguishedName",
                 "displayName",
                 "userAccountControl");
-            var response = ExecuteSearch(connection, request, logger, operation, [.. context, ("SearchBase", searchBase)]);
+            SearchResponse response;
+            try
+            {
+                response = ExecuteSearch(connection, request, logger, operation, [.. context, ("SearchBase", searchBase)]);
+            }
+            catch (DirectoryOperationException ex) when (IsReferralException(ex))
+            {
+                logger.LogWarning(ex, "Skipping AD command search base because the server returned a referral. SearchBase={SearchBase} Operation={Operation}", searchBase, operation);
+                continue;
+            }
+            catch (LdapException ex) when (IsReferralException(ex))
+            {
+                logger.LogWarning(ex, "Skipping AD command search base because the LDAP client encountered a referral. SearchBase={SearchBase} Operation={Operation}", searchBase, operation);
+                continue;
+            }
+
             var entry = response.Entries.Cast<SearchResultEntry>().FirstOrDefault();
             if (entry is not null)
             {
