@@ -18,7 +18,10 @@
     <aside class="hero-run-health" aria-label="Run health summary">
         <div class="hero-run-health-header">
             <p class="eyebrow">Run Health</p>
-            <span class="badge neutral">Live</span>
+            <div class="live-status-stack">
+                <span class="badge neutral" data-live-status-badge>Connecting</span>
+                <span class="muted live-status-caption" data-live-status-caption>Connecting to the live dashboard channel.</span>
+            </div>
         </div>
         <div class="run-health-stack run-health-stack-compact" data-run-health>
             <section class="run-health-card">
@@ -64,7 +67,7 @@
 }
 
 <section class="panel-grid dashboard-grid">
-    <article class="panel">
+    <article class="panel dashboard-rail">
         <div class="panel-heading panel-heading-tight">
             <h2>Status</h2>
             <button class="icon-button" type="button" data-dashboard-refresh aria-label="Refresh page" title="Refresh page">
@@ -83,6 +86,16 @@
                 <p class="dashboard-status-line" data-status-line>@StatusLine(Model.Status)</p>
                 <p class="dashboard-status-caption muted" data-status-caption>@StatusCaption(Model.Status)</p>
             </div>
+        </section>
+        <section class="dashboard-progress" aria-label="Run progress">
+            <div class="dashboard-progress-head">
+                <p class="eyebrow">Worker Progress</p>
+                <p class="dashboard-progress-value" data-progress-caption>@ProgressPercent(Model.Status)%</p>
+            </div>
+            <div class="dashboard-progress-track" aria-hidden="true">
+                <span class="dashboard-progress-fill" data-progress-fill style="width: @(ProgressPercent(Model.Status))%;"></span>
+            </div>
+            <p class="muted dashboard-progress-copy" data-progress-copy>@ProgressCopy(Model.Status)</p>
         </section>
         <dl class="kv" data-dashboard-status>
             <div><dt>Status</dt><dd data-status-value>@Model.Status.Status</dd></div>
@@ -133,6 +146,47 @@
     <article class="panel recent-runs-panel">
         <h2>Recent Runs</h2>
         <p class="muted dashboard-refresh-note" data-dashboard-checked>Live data is refreshed automatically while this page is open.</p>
+        <section class="dashboard-filter-bar" aria-label="Chart drill-down filter">
+            <div class="dashboard-filter-copy">
+                <p class="eyebrow">Chart Drill-Down</p>
+                <p class="muted dashboard-filter-caption" data-runs-filter-caption>Showing all recent runs.</p>
+            </div>
+            <button class="link-button subtle-button is-hidden" type="button" data-clear-runs-filter>Clear filter</button>
+        </section>
+        <section class="dashboard-timeline-card analytics-card" aria-label="Focused run timeline">
+            <div class="section-heading">
+                <div>
+                    <p class="eyebrow">Run Timeline</p>
+                    <h3 data-run-timeline-title>Runtime focus</h3>
+                </div>
+            </div>
+            <p class="muted analytics-meta" data-run-timeline-summary>Select a run from a chart or table row to focus its timeline.</p>
+            <ol class="run-timeline" data-run-timeline></ol>
+            <p class="muted analytics-empty is-hidden" data-run-timeline-empty>No timeline data is available yet.</p>
+        </section>
+        <section class="dashboard-analytics-grid" aria-label="Run analytics">
+            <article class="analytics-card">
+                <div class="section-heading">
+                    <div>
+                        <p class="eyebrow">Run Volume</p>
+                        <h3>Recent Run Mix</h3>
+                    </div>
+                </div>
+                <div class="analytics-chart" data-runs-chart role="img" aria-label="Recent run mix chart"></div>
+                <p class="muted analytics-empty is-hidden" data-runs-chart-empty>Recent runs will appear here once the dashboard has data to chart.</p>
+            </article>
+            <article class="analytics-card">
+                <div class="section-heading">
+                    <div>
+                        <p class="eyebrow">Bucket Focus</p>
+                        <h3>Run Composition</h3>
+                    </div>
+                </div>
+                <p class="muted analytics-meta" data-buckets-chart-meta>Run composition appears once a run summary is available.</p>
+                <div class="analytics-chart analytics-chart-compact" data-buckets-chart role="img" aria-label="Run composition chart"></div>
+                <p class="muted analytics-empty is-hidden" data-buckets-chart-empty>Run composition appears once a run summary is available.</p>
+            </article>
+        </section>
         <div data-runs-empty class="@(Model.Runs.Count == 0 ? null : "is-hidden")">
             <p class="muted">No run data is configured yet. Set <code>SyncFactors__SqlitePath</code> to point the rewrite UI at an operational SQLite store.</p>
         </div>
@@ -170,7 +224,7 @@
     </article>
 </section>
 
-<script src="~/js/dashboard.js" asp-append-version="true"></script>
+<script src="~/dist/dashboard.js" asp-append-version="true"></script>
 
 @functions {
     private static string StatusClass(string status) =>
@@ -281,4 +335,19 @@
         string.IsNullOrWhiteSpace(stage) || stage.Equals("NotStarted", StringComparison.OrdinalIgnoreCase)
             ? "standby"
             : stage.Replace("InProgress", "in progress", StringComparison.OrdinalIgnoreCase).ToLowerInvariant();
+
+    private static int ProgressPercent(SyncFactors.Contracts.RuntimeStatus status)
+    {
+        if (status.TotalWorkers <= 0)
+        {
+            return 0;
+        }
+
+        return (int)Math.Round((status.ProcessedWorkers / (double)status.TotalWorkers) * 100, MidpointRounding.AwayFromZero);
+    }
+
+    private static string ProgressCopy(SyncFactors.Contracts.RuntimeStatus status) =>
+        status.TotalWorkers <= 0
+            ? "No active worker progress has been recorded yet."
+            : $"{status.ProcessedWorkers} of {status.TotalWorkers} workers are accounted for in the current run.";
 }

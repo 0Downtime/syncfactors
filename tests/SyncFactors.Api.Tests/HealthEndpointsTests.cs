@@ -134,6 +134,7 @@ public sealed class HealthEndpointsTests
                     ["SyncFactors:SqlitePath"] = sqlitePath,
                     ["SyncFactors:ConfigPath"] = syncConfigPath,
                     ["SyncFactors:MappingConfigPath"] = mappingConfigPath,
+                    ["SyncFactors:Realtime:Enabled"] = "false",
                     ["SyncFactors:Auth:BootstrapAdmin:Username"] = "bootstrap-admin",
                     ["SyncFactors:Auth:BootstrapAdmin:Password"] = "BootstrapAdmin123!"
                 });

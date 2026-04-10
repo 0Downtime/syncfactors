@@ -97,7 +97,7 @@ public sealed class DependencyHealthServiceTests
                 new HttpClient(new SuccessMessageHandler()),
                 new FakeTimeProvider(DateTimeOffset.Parse("2026-03-27T12:00:30Z")),
                 NullLogger<DependencyHealthService>.Instance,
-                activeDirectoryProbe: (_, _) => Task.FromResult(("ldaps", "ldap", true)));
+                activeDirectoryProbe: (_, _) => Task.FromResult(("ldaps", "ldap", true, 3, 0, (string?)null)));
 
             var snapshot = await service.GetSnapshotAsync(CancellationToken.None);
 
@@ -200,13 +200,13 @@ public sealed class DependencyHealthServiceTests
                 new HttpClient(new SuccessMessageHandler()),
                 new FakeTimeProvider(DateTimeOffset.Parse("2026-03-27T12:00:30Z")),
                 NullLogger<DependencyHealthService>.Instance,
-                activeDirectoryProbe: (_, _) => Task.FromResult(("ldaps", "ldap", true)));
+                activeDirectoryProbe: (_, _) => Task.FromResult(("ldaps", "ldap", true, 3, 0, (string?)null)));
 
             var snapshot = await service.GetSnapshotAsync(CancellationToken.None);
 
             var activeDirectoryProbe = Assert.Single(snapshot.Probes, probe => probe.Dependency == "Active Directory");
             Assert.Equal(DependencyHealthStates.Healthy, activeDirectoryProbe.Status);
-            Assert.Equal("LDAP bind and base search succeeded.", activeDirectoryProbe.Summary);
+            Assert.Equal("LDAP bind and lookup probe succeeded.", activeDirectoryProbe.Summary);
             Assert.Null(activeDirectoryProbe.Details);
         }
         finally
@@ -381,7 +381,7 @@ public sealed class DependencyHealthServiceTests
             activeDirectoryProbe: static async (_, _) =>
             {
                 await Task.Delay(Timeout.InfiniteTimeSpan);
-                return ("ldaps", "ldaps", false);
+                return ("ldaps", "ldaps", false, 0, 0, (string?)null);
             });
 
         var snapshot = await service.GetSnapshotAsync(CancellationToken.None);

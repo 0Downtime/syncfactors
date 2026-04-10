@@ -15,6 +15,10 @@ $apiProjectPath = Join-Path $projectRoot 'src/SyncFactors.Api/SyncFactors.Api.cs
 $resolvedConfigPath = Resolve-RequiredPath -Path $ConfigPath -Label 'Sync config'
 $resolvedMappingConfigPath = Resolve-RequiredPath -Path $MappingConfigPath -Label 'Mapping config'
 
+if (-not $SkipBuild) {
+    Invoke-FrontendBuild -ProjectRoot $projectRoot
+}
+
 Initialize-SyncFactorsHttpsEnvironment -ProjectRoot $projectRoot -Urls $Urls
 $env:ASPNETCORE_URLS = $Urls
 $env:SyncFactors__ConfigPath = $resolvedConfigPath
