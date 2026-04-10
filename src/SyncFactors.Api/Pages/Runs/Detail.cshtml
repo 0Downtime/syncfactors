@@ -84,6 +84,10 @@
 <section class="panel">
     <h2>Entries @if (!string.IsNullOrWhiteSpace(Model.Bucket)) { <text>· @Model.Bucket</text> }</h2>
     <p class="muted">Showing page @Model.PageNumber of @Model.TotalPages · @Model.TotalEntries total entries · 50 per page.</p>
+    @if (Model.AttributeTotals.Count > 0)
+    {
+        <p class="muted">Changed attributes: @string.Join(", ", Model.AttributeTotals.Select(total => $"{total.Attribute}: {total.Count}"))</p>
+    }
     @if (Model.Entries.Count == 0)
     {
         <p class="muted">No entries matched this run.</p>
@@ -94,6 +98,7 @@
         @foreach (var entry in Model.Entries)
         {
             var diagnostics = Model.GetFailureDiagnostics(entry);
+            var employmentStatus = Model.GetEmploymentStatusDisplay(entry);
             <article class="entry-card">
                 <header class="entry-head">
                     <div>
@@ -111,6 +116,12 @@
                 @if (!string.IsNullOrWhiteSpace(entry.FailureSummary))
                 {
                     <p class="callout warn">@entry.FailureSummary</p>
+                }
+                @if (!string.IsNullOrWhiteSpace(employmentStatus))
+                {
+                    <dl class="kv preview-meta">
+                        <div><dt>Employment Status</dt><dd>@employmentStatus</dd></div>
+                    </dl>
                 }
                 @if (!string.IsNullOrWhiteSpace(entry.ReviewCaseType) || !string.IsNullOrWhiteSpace(entry.Reason))
                 {

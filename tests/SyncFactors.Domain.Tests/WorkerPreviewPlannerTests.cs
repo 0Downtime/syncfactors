@@ -120,6 +120,42 @@ public sealed class WorkerPreviewPlannerTests
     }
 
     [Fact]
+    public async Task PreviewAsync_PersistsEmploymentStatusInSavedEntryItem()
+    {
+        var worker = new WorkerSnapshot(
+            WorkerId: "44522",
+            PreferredName: "Christopher",
+            LastName: "Brien",
+            Department: "Infrastructure & Security",
+            TargetOu: "OU=Employees,DC=example,DC=com",
+            IsPrehire: false,
+            Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["emplStatus"] = "64300"
+            });
+
+        var runRepository = new CapturingRunRepository();
+        var planner = new WorkerPreviewPlanner(
+            new StubWorkerSource(worker),
+            new WorkerPlanningService(
+                new StubDirectoryGateway(),
+                new StubIdentityMatcher(),
+                CreateLifecyclePolicy(),
+                new StubAttributeDiffService(),
+                new StubAttributeMappingProvider(),
+                NullLogger<WorkerPlanningService>.Instance),
+            new StubAttributeMappingProvider(),
+            new StubWorkerPreviewLogWriter(),
+            runRepository,
+            NullLogger<WorkerPreviewPlanner>.Instance);
+
+        await planner.PreviewAsync("44522", CancellationToken.None);
+
+        var entry = runRepository.ReplacedEntries.Single().entries.Single();
+        Assert.Equal("64300", entry.Item.GetProperty("emplStatus").GetString());
+    }
+
+    [Fact]
     public async Task PreviewAsync_DoesNotRequireReviewWhenRequiredMappingsResolveThroughNormalizedSourcePaths()
     {
         var worker = new WorkerSnapshot(
@@ -846,6 +882,18 @@ public sealed class WorkerPreviewPlannerTests
             _ = entryId;
             _ = cancellationToken;
             return Task.FromResult(0);
+        }
+
+        public Task<IReadOnlyList<ChangedAttributeTotal>> GetRunEntryAttributeTotalsAsync(string runId, string? bucket, string? workerId, string? reason, string? filter, string? entryId, CancellationToken cancellationToken)
+        {
+            _ = runId;
+            _ = bucket;
+            _ = workerId;
+            _ = reason;
+            _ = filter;
+            _ = entryId;
+            _ = cancellationToken;
+            return Task.FromResult<IReadOnlyList<ChangedAttributeTotal>>([]);
         }
     }
 

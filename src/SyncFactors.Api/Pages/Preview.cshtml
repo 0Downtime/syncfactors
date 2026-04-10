@@ -5,6 +5,7 @@
     var preview = Model.Preview;
     var riskCallouts = preview is null ? [] : BuildRiskCallouts(preview);
     var managerDiff = preview?.DiffRows.FirstOrDefault(row => string.Equals(row.Attribute, "manager", StringComparison.OrdinalIgnoreCase));
+    var employmentStatus = preview is null ? null : Model.GetEmploymentStatusDisplay(preview);
 }
 
 <section class="hero hero-compact">
@@ -115,6 +116,10 @@
             <dl class="kv">
                 <div><dt>Action</dt><dd>@(preview.OperationSummary?.Action ?? "No operation")</dd></div>
                 <div><dt>Changed Attributes</dt><dd>@changedCount</dd></div>
+                @if (!string.IsNullOrWhiteSpace(employmentStatus))
+                {
+                    <div><dt>Employment Status</dt><dd>@employmentStatus</dd></div>
+                }
                 <div><dt>Target OU</dt><dd><span class="summary-value" title="@(preview.TargetOu ?? "n/a")" tabindex="0">@(preview.TargetOu ?? "n/a")</span></dd></div>
                 <div><dt>Current Manager</dt><dd><span class="summary-value" title="@(managerDiff?.Before ?? "Unresolved")" tabindex="0">@(managerDiff?.Before ?? "Unresolved")</span></dd></div>
                 <div><dt>Proposed Manager</dt><dd><span class="summary-value" title="@(preview.ManagerDistinguishedName ?? "Unresolved")" tabindex="0">@(preview.ManagerDistinguishedName ?? "Unresolved")</span></dd></div>

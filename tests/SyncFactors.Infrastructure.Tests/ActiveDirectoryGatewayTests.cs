@@ -120,6 +120,48 @@ public sealed class ActiveDirectoryGatewayTests
         Assert.Contains("extensionAttribute15", attributes);
     }
 
+    [Fact]
+    public void GetEmailUniquenessSearchBases_UsesDefaultNamingContextWhenAvailable()
+    {
+        var method = typeof(ActiveDirectoryGateway).GetMethod(
+            "GetEmailUniquenessSearchBases",
+            BindingFlags.NonPublic | BindingFlags.Static,
+            [typeof(string), typeof(ActiveDirectoryConfig)]);
+        Assert.NotNull(method);
+
+        var config = CreateConfig();
+
+        var bases = Assert.IsAssignableFrom<IReadOnlyList<string>>(
+            method!.Invoke(null, ["DC=example,DC=com", config]));
+
+        var searchBase = Assert.Single(bases);
+        Assert.Equal("DC=example,DC=com", searchBase);
+    }
+
+    [Fact]
+    public void GetEmailUniquenessSearchBases_FallsBackToManagedOusWhenNamingContextMissing()
+    {
+        var method = typeof(ActiveDirectoryGateway).GetMethod(
+            "GetEmailUniquenessSearchBases",
+            BindingFlags.NonPublic | BindingFlags.Static,
+            [typeof(string), typeof(ActiveDirectoryConfig)]);
+        Assert.NotNull(method);
+
+        var config = CreateConfig();
+
+        var bases = Assert.IsAssignableFrom<IReadOnlyList<string>>(
+            method!.Invoke(null, [null, config]));
+
+        Assert.Equal(
+            [
+                "OU=Active,DC=example,DC=com",
+                "OU=Prehire,DC=example,DC=com",
+                "OU=Graveyard,DC=example,DC=com",
+                "OU=Leave,DC=example,DC=com"
+            ],
+            bases);
+    }
+
     private static string InvokeResolver(string baseLocalPart, Func<string, bool> candidateExists)
     {
         var method = typeof(ActiveDirectoryGateway).GetMethod(
@@ -129,5 +171,21 @@ public sealed class ActiveDirectoryGatewayTests
         Assert.NotNull(method);
 
         return Assert.IsType<string>(method!.Invoke(null, ["10001", baseLocalPart, candidateExists]));
+    }
+
+    private static ActiveDirectoryConfig CreateConfig()
+    {
+        return new ActiveDirectoryConfig(
+            Server: "localhost",
+            Port: 389,
+            Username: "bind",
+            BindPassword: "secret",
+            IdentityAttribute: "employeeID",
+            DefaultActiveOu: "OU=Active,DC=example,DC=com",
+            PrehireOu: "OU=Prehire,DC=example,DC=com",
+            GraveyardOu: "OU=Graveyard,DC=example,DC=com",
+            Transport: new ActiveDirectoryTransportConfig("ldap", false, false, false, []),
+            IdentityPolicy: new ActiveDirectoryIdentityPolicyConfig(false),
+            LeaveOu: "OU=Leave,DC=example,DC=com");
     }
 }

@@ -188,6 +188,25 @@ public sealed class FullSyncRunServiceTests
         Assert.Equal(WorkerListingMode.Full, workerSource.LastMode);
     }
 
+    [Fact]
+    public async Task LaunchAsync_PersistsEmploymentStatusInEntryItem()
+    {
+        var worker = CreateWorker("10001", managerId: "90001", emplStatus: "64303");
+        var service = CreateService(
+            workers: [worker],
+            directoryGateway: new StubDirectoryGateway(managerDistinguishedName: "CN=Manager,OU=LabUsers,DC=example,DC=com"),
+            directoryCommandGateway: new CapturingDirectoryCommandGateway(),
+            runRepository: out var runRepository,
+            runtimeStatusStore: out _);
+
+        await service.LaunchAsync(
+            new LaunchFullRunRequest(DryRun: true, AcknowledgeRealSync: false),
+            CancellationToken.None);
+
+        var entry = runRepository.ReplacedEntries.Single().entries.Single();
+        Assert.Equal("64303", entry.Item.GetProperty("emplStatus").GetString());
+    }
+
     private static FullSyncRunService CreateService(
         IReadOnlyList<WorkerSnapshot> workers,
         IDirectoryGateway directoryGateway,
@@ -273,8 +292,17 @@ public sealed class FullSyncRunServiceTests
             NullLogger<FullSyncRunService>.Instance);
     }
 
-    private static WorkerSnapshot CreateWorker(string workerId, string? managerId)
+    private static WorkerSnapshot CreateWorker(string workerId, string? managerId, string? emplStatus = null)
     {
+        var attributes = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["firstName"] = "Winnie",
+            ["lastName"] = "Sample101",
+            ["department"] = "IT",
+            ["managerId"] = managerId,
+            ["emplStatus"] = emplStatus
+        };
+
         return new WorkerSnapshot(
             WorkerId: workerId,
             PreferredName: "Winnie",
@@ -282,13 +310,7 @@ public sealed class FullSyncRunServiceTests
             Department: "IT",
             TargetOu: "OU=LabUsers,DC=example,DC=com",
             IsPrehire: false,
-            Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
-            {
-                ["firstName"] = "Winnie",
-                ["lastName"] = "Sample101",
-                ["department"] = "IT",
-                ["managerId"] = managerId
-            });
+            Attributes: attributes);
     }
 
     private static LifecyclePolicy CreateLifecyclePolicy()
@@ -499,6 +521,18 @@ public sealed class FullSyncRunServiceTests
             _ = entryId;
             _ = cancellationToken;
             return Task.FromResult(0);
+        }
+
+        public Task<IReadOnlyList<ChangedAttributeTotal>> GetRunEntryAttributeTotalsAsync(string runId, string? bucket, string? workerId, string? reason, string? filter, string? entryId, CancellationToken cancellationToken)
+        {
+            _ = runId;
+            _ = bucket;
+            _ = workerId;
+            _ = reason;
+            _ = filter;
+            _ = entryId;
+            _ = cancellationToken;
+            return Task.FromResult<IReadOnlyList<ChangedAttributeTotal>>([]);
         }
     }
 

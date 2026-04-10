@@ -94,6 +94,7 @@ public sealed class WorkerPreviewPlanner(
             + $"\"workerId\":\"{Escape(preview.WorkerId)}\","
             + $"\"samAccountName\":{ToJsonString(preview.SamAccountName)},"
             + $"\"targetOu\":{ToJsonString(preview.TargetOu)},"
+            + $"\"emplStatus\":{ToJsonString(ResolveSourceAttribute(preview.SourceAttributes, "emplStatus"))},"
             + $"\"managerDistinguishedName\":{ToJsonString(preview.ManagerDistinguishedName)},"
             + $"\"reviewCaseType\":{ToJsonString(preview.ReviewCaseType)},"
             + $"\"reason\":{ToJsonString(preview.Reason)},"
@@ -181,6 +182,7 @@ public sealed class WorkerPreviewPlanner(
             + $"\"workerId\":\"{Escape(plan.Worker.WorkerId)}\","
             + $"\"samAccountName\":\"{Escape(plan.Identity.SamAccountName)}\","
             + $"\"targetOu\":\"{Escape(plan.Worker.TargetOu)}\","
+            + $"\"emplStatus\":{ToJsonString(ResolveSourceAttribute(plan.Worker.Attributes, "emplStatus"))},"
             + $"\"matchedExistingUser\":{ToJsonBoolean(plan.Identity.MatchedExistingUser)},"
             + "\"changedAttributeDetails\":["
             + string.Join(",", finalizedDiffRows
@@ -265,6 +267,24 @@ public sealed class WorkerPreviewPlanner(
 
     private static string ToJsonNullableBoolean(bool? value) => value.HasValue ? ToJsonBoolean(value.Value) : "null";
 
+    private static string? ResolveSourceAttribute(IReadOnlyDictionary<string, string?> attributes, string key)
+    {
+        if (attributes.TryGetValue(key, out var value))
+        {
+            return value;
+        }
+
+        var normalized = SourceAttributePathNormalizer.Normalize(key);
+        return attributes.TryGetValue(normalized, out value) ? value : null;
+    }
+
+    private static string? ResolveSourceAttribute(IReadOnlyList<SourceAttributeRow> sourceAttributes, string key)
+    {
+        return sourceAttributes
+            .FirstOrDefault(attribute => string.Equals(attribute.Attribute, key, StringComparison.OrdinalIgnoreCase))
+            ?.Value;
+    }
+
     private static string SerializePreview(WorkerPreviewResult preview)
     {
         return JsonSerializer.Serialize(preview);
@@ -277,6 +297,7 @@ public sealed class WorkerPreviewPlanner(
             + $"\"workerId\":{item.GetProperty("workerId").GetRawText()},"
             + $"\"samAccountName\":{item.GetProperty("samAccountName").GetRawText()},"
             + $"\"targetOu\":{item.GetProperty("targetOu").GetRawText()},"
+            + $"\"emplStatus\":{item.GetProperty("emplStatus").GetRawText()},"
             + $"\"matchedExistingUser\":{item.GetProperty("matchedExistingUser").GetRawText()},"
             + "\"operations\":["
             + string.Join(",", operations.Select(operation =>
