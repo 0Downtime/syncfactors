@@ -67,7 +67,7 @@
 }
 
 <section class="panel-grid dashboard-grid">
-    <article class="panel">
+    <article class="panel dashboard-rail">
         <div class="panel-heading panel-heading-tight">
             <h2>Status</h2>
             <button class="icon-button" type="button" data-dashboard-refresh aria-label="Refresh page" title="Refresh page">
@@ -146,6 +146,24 @@
     <article class="panel recent-runs-panel">
         <h2>Recent Runs</h2>
         <p class="muted dashboard-refresh-note" data-dashboard-checked>Live data is refreshed automatically while this page is open.</p>
+        <section class="dashboard-filter-bar" aria-label="Chart drill-down filter">
+            <div class="dashboard-filter-copy">
+                <p class="eyebrow">Chart Drill-Down</p>
+                <p class="muted dashboard-filter-caption" data-runs-filter-caption>Showing all recent runs.</p>
+            </div>
+            <button class="link-button subtle-button is-hidden" type="button" data-clear-runs-filter>Clear filter</button>
+        </section>
+        <section class="dashboard-timeline-card analytics-card" aria-label="Focused run timeline">
+            <div class="section-heading">
+                <div>
+                    <p class="eyebrow">Run Timeline</p>
+                    <h3 data-run-timeline-title>Runtime focus</h3>
+                </div>
+            </div>
+            <p class="muted analytics-meta" data-run-timeline-summary>Select a run from a chart or table row to focus its timeline.</p>
+            <ol class="run-timeline" data-run-timeline></ol>
+            <p class="muted analytics-empty is-hidden" data-run-timeline-empty>No timeline data is available yet.</p>
+        </section>
         <section class="dashboard-analytics-grid" aria-label="Run analytics">
             <article class="analytics-card">
                 <div class="section-heading">
