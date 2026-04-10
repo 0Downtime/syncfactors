@@ -31,9 +31,13 @@
       "deltaOverlapMinutes": 5,
       "baseFilter": "emplStatus in 'A','U'",
       "inactiveRetentionDays": 180,
+      "inactiveStatusValues": [
+        "64308"
+      ],
       "pageSize": 200,
       "select": [
         "userId",
+        "emplStatus",
         "jobTitle",
         "company",
         "department",
@@ -65,6 +69,9 @@
       "entitySet": "PerPerson",
       "identityField": "personIdExternal",
       "deltaField": "lastModifiedDateTime",
+      "inactiveStatusValues": [
+        "64308"
+      ],
       "pageSize": 200,
       "select": [
         "personIdExternal",
