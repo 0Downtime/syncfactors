@@ -8,6 +8,9 @@
   <ItemGroup>
     <Compile Include="ActiveDirectoryFailureDiagnostics.cs" />
     <Compile Include="RunEntriesQueryService.cs" />
+    <Compile Include="DashboardHub.cs" />
+    <Compile Include="DashboardRealtimeModels.cs" />
+    <Compile Include="DashboardRealtimeService.cs" />
     <Compile Include="SpaApiModels.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="Pages\Index.cshtml.cs" />

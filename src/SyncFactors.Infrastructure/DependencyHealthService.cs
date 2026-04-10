@@ -19,7 +19,7 @@ public sealed class DependencyHealthService(
     HttpClient httpClient,
     TimeProvider timeProvider,
     ILogger<DependencyHealthService> logger,
-    Func<ActiveDirectoryConfig, CancellationToken, Task<(string RequestedTransport, string EffectiveTransport, bool UsedFallback)>>? activeDirectoryProbe = null) : IDependencyHealthService
+    Func<ActiveDirectoryConfig, CancellationToken, Task<(string RequestedTransport, string EffectiveTransport, bool UsedFallback, int SuccessfulBaseCount, int SkippedBaseCount, string? SkippedBaseDetails)>>? activeDirectoryProbe = null) : IDependencyHealthService
 {
     private static readonly TimeSpan ActiveDirectoryTimeout = TimeSpan.FromSeconds(10);
     private static readonly TimeSpan SuccessFactorsTimeout = TimeSpan.FromSeconds(10);
@@ -193,17 +193,48 @@ public sealed class DependencyHealthService(
 
             var transportResult = await transportTask.WaitAsync(ActiveDirectoryTimeout, cancellationToken);
 
+            var details = new List<string>();
+            if (transportResult.UsedFallback && !isProduction)
+            {
+                details.Add($"Requested transport '{transportResult.RequestedTransport}' failed and the probe bound over fallback '{transportResult.EffectiveTransport}'.");
+            }
+
+            if (!string.IsNullOrWhiteSpace(transportResult.SkippedBaseDetails))
+            {
+                details.Add(transportResult.SkippedBaseDetails);
+            }
+
+            if (transportResult.SuccessfulBaseCount == 0)
+            {
+                return BuildProbe(
+                    "Active Directory",
+                    DependencyHealthStates.Unhealthy,
+                    "LDAP bind succeeded, but no configured search base passed lookup validation.",
+                    checkedAt,
+                    stopwatch.ElapsedMilliseconds,
+                    details: details.Count == 0 ? null : string.Join(" ", details));
+            }
+
+            if (transportResult.SkippedBaseCount > 0)
+            {
+                return BuildProbe(
+                    "Active Directory",
+                    DependencyHealthStates.Degraded,
+                    $"LDAP bind and lookup probe succeeded, but {transportResult.SkippedBaseCount} search {(transportResult.SkippedBaseCount == 1 ? "base was" : "bases were")} skipped.",
+                    checkedAt,
+                    stopwatch.ElapsedMilliseconds,
+                    details: details.Count == 0 ? null : string.Join(" ", details));
+            }
+
             return BuildProbe(
                 "Active Directory",
                 DependencyHealthStates.Healthy,
                 transportResult.UsedFallback && !isProduction
-                    ? "LDAP bind and base search succeeded via fallback LDAP."
-                    : "LDAP bind and base search succeeded.",
+                    ? "LDAP bind and lookup probe succeeded via fallback LDAP."
+                    : "LDAP bind and lookup probe succeeded.",
                 checkedAt,
                 stopwatch.ElapsedMilliseconds,
-                details: transportResult.UsedFallback && !isProduction
-                    ? $"Requested transport '{transportResult.RequestedTransport}' failed and the probe bound over fallback '{transportResult.EffectiveTransport}'."
-                    : null);
+                details: details.Count == 0 ? null : string.Join(" ", details));
         }
         catch (TimeoutException ex)
         {
@@ -229,7 +260,7 @@ public sealed class DependencyHealthService(
             return BuildProbe(
                 "Active Directory",
                 DependencyHealthStates.Unhealthy,
-                "LDAP bind or base search failed.",
+                "LDAP bind or lookup probe failed.",
                 checkedAt,
                 stopwatch.ElapsedMilliseconds,
                 details: ex.Message);
@@ -555,7 +586,7 @@ public sealed class DependencyHealthService(
     private static ActiveDirectoryConnectionResult CreateLdapConnection(ActiveDirectoryConfig config)
         => ActiveDirectoryConnectionFactory.CreateConnectionWithTransport(config, NullLogger<DependencyHealthService>.Instance, ActiveDirectoryTimeout);
 
-    private static Task<(string RequestedTransport, string EffectiveTransport, bool UsedFallback)> ProbeActiveDirectoryTransportAsync(
+    private static Task<(string RequestedTransport, string EffectiveTransport, bool UsedFallback, int SuccessfulBaseCount, int SkippedBaseCount, string? SkippedBaseDetails)> ProbeActiveDirectoryTransportAsync(
         ActiveDirectoryConfig config,
         CancellationToken cancellationToken)
     {
@@ -563,13 +594,29 @@ public sealed class DependencyHealthService(
         {
             var connectionResult = CreateLdapConnection(config);
             using var connection = connectionResult.Connection;
-            var request = new SearchRequest(
-                config.DefaultActiveOu,
-                "(objectClass=*)",
-                SearchScope.Base,
-                "distinguishedName");
-            _ = (SearchResponse)connection.SendRequest(request);
-            return (connectionResult.RequestedTransport, connectionResult.EffectiveTransport, connectionResult.UsedFallback);
+
+            var searchBases = GetActiveDirectorySearchBases(config);
+            var successfulBaseCount = 0;
+            var skippedBases = new List<string>();
+            foreach (var searchBase in searchBases)
+            {
+                var (isSuccessful, failureReason) = ProbeActiveDirectorySearchBase(connection, config, searchBase);
+                if (isSuccessful)
+                {
+                    successfulBaseCount++;
+                    continue;
+                }
+
+                skippedBases.Add($"{searchBase} ({failureReason ?? "lookup validation failed"})");
+            }
+
+            return (
+                connectionResult.RequestedTransport,
+                connectionResult.EffectiveTransport,
+                connectionResult.UsedFallback,
+                successfulBaseCount,
+                skippedBases.Count,
+                skippedBases.Count == 0 ? null : $"Skipped search bases: {string.Join("; ", skippedBases)}");
         }, cancellationToken);
     }
 
@@ -619,11 +666,77 @@ public sealed class DependencyHealthService(
         return BuildProbe(
             "Active Directory",
             DependencyHealthStates.Unhealthy,
-            $"LDAP bind or base search timed out after {Math.Max(1, (int)ActiveDirectoryTimeout.TotalSeconds)}s.",
+            $"LDAP bind or lookup probe timed out after {Math.Max(1, (int)ActiveDirectoryTimeout.TotalSeconds)}s.",
             checkedAt,
             durationMilliseconds,
             details: exception.Message);
     }
+
+    private static IReadOnlyList<string> GetActiveDirectorySearchBases(ActiveDirectoryConfig config)
+    {
+        return new[] { config.DefaultActiveOu, config.PrehireOu, config.GraveyardOu, config.LeaveOu }
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Select(value => value!)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
+    private static (bool IsSuccessful, string? FailureReason) ProbeActiveDirectorySearchBase(
+        LdapConnection connection,
+        ActiveDirectoryConfig config,
+        string searchBase)
+    {
+        var request = new SearchRequest(
+            searchBase,
+            "(&(objectCategory=person)(objectClass=user))",
+            SearchScope.Subtree,
+            BuildActiveDirectoryLookupProbeAttributes(config.IdentityAttribute));
+        request.SizeLimit = 1;
+        request.TimeLimit = ActiveDirectoryTimeout;
+
+        try
+        {
+            var response = (SearchResponse)connection.SendRequest(request, ActiveDirectoryTimeout);
+            return response.ResultCode switch
+            {
+                ResultCode.Success => (true, null),
+                ResultCode.SizeLimitExceeded => (true, null),
+                ResultCode.Referral => (false, "referral"),
+                ResultCode.NoSuchObject => (false, "search base was not found"),
+                _ => (false, string.IsNullOrWhiteSpace(response.ErrorMessage) ? response.ResultCode.ToString() : TrimForLog(response.ErrorMessage))
+            };
+        }
+        catch (DirectoryOperationException ex) when (ex.Response?.ResultCode == ResultCode.SizeLimitExceeded)
+        {
+            return (true, null);
+        }
+        catch (DirectoryOperationException ex) when (IsReferralLikeResult(ex.Response?.ResultCode))
+        {
+            return (false, "referral");
+        }
+        catch (DirectoryOperationException ex) when (ex.Response?.ResultCode == ResultCode.NoSuchObject)
+        {
+            return (false, "search base was not found");
+        }
+        catch (LdapException ex) when (IsReferralLikeMessage(ex.Message))
+        {
+            return (false, "referral");
+        }
+    }
+
+    private static string[] BuildActiveDirectoryLookupProbeAttributes(string identityAttribute)
+    {
+        return string.IsNullOrWhiteSpace(identityAttribute)
+            ? ["distinguishedName"]
+            : ["distinguishedName", identityAttribute];
+    }
+
+    private static bool IsReferralLikeResult(ResultCode? resultCode)
+        => resultCode == ResultCode.Referral;
+
+    private static bool IsReferralLikeMessage(string? message)
+        => !string.IsNullOrWhiteSpace(message) &&
+           message.Contains("referral", StringComparison.OrdinalIgnoreCase);
 
     private static string CalculateOverallStatus(IReadOnlyList<DependencyProbeResult> probes)
     {

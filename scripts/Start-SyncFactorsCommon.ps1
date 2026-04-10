@@ -144,6 +144,40 @@ function Invoke-SolutionBuild {
     }
 }
 
+function Invoke-FrontendBuild {
+    param(
+        [Parameter(Mandatory)]
+        [string]$ProjectRoot
+    )
+
+    $frontendRoot = Join-Path $ProjectRoot 'src/SyncFactors.Api'
+    $packageJsonPath = Join-Path $frontendRoot 'package.json'
+    $nodeModulesPath = Join-Path $frontendRoot 'node_modules'
+
+    if (-not (Test-Path $packageJsonPath)) {
+        return
+    }
+
+    if (-not (Get-Command 'npm' -ErrorAction SilentlyContinue)) {
+        throw "npm is required to build the SyncFactors UI bundle."
+    }
+
+    if (-not (Test-Path $nodeModulesPath)) {
+        throw "Missing frontend dependencies under '$nodeModulesPath'. Run 'cd src/SyncFactors.Api && npm install' first."
+    }
+
+    Push-Location $frontendRoot
+    try {
+        npm run build:ui
+        if ($LASTEXITCODE -ne 0) {
+            throw "npm run build:ui failed."
+        }
+    }
+    finally {
+        Pop-Location
+    }
+}
+
 function Invoke-DotnetProjectRun {
     param(
         [Parameter(Mandatory)]
@@ -163,6 +197,9 @@ function Invoke-DotnetProjectRun {
         if (-not $SkipBuild) {
             Invoke-SolutionBuild -ProjectRoot $ProjectRoot
             $dotnetRunArguments += '--no-restore'
+        }
+        else {
+            $dotnetRunArguments += '--no-build'
         }
 
         $dotnetRunArguments += @('--project', $ProjectPath)

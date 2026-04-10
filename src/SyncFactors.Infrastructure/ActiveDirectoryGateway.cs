@@ -380,11 +380,26 @@ public sealed class ActiveDirectoryGateway(
                 searchValue,
                 additionalAttribute);
 
-            var response = ExecuteSearch(
-                connection,
-                request,
-                logger,
-                operation);
+            SearchResponse response;
+            try
+            {
+                response = ExecuteSearch(
+                    connection,
+                    request,
+                    logger,
+                    operation);
+            }
+            catch (DirectoryOperationException ex) when (IsReferralException(ex))
+            {
+                logger.LogWarning(ex, "Skipping AD search base because the server returned a referral. SearchBase={SearchBase} Operation={Operation}", searchBase, operation);
+                continue;
+            }
+            catch (LdapException ex) when (IsReferralException(ex))
+            {
+                logger.LogWarning(ex, "Skipping AD search base because the LDAP client encountered a referral. SearchBase={SearchBase} Operation={Operation}", searchBase, operation);
+                continue;
+            }
+
             var entry = response.Entries.Cast<SearchResultEntry>().FirstOrDefault();
             if (entry is not null)
             {
@@ -410,11 +425,26 @@ public sealed class ActiveDirectoryGateway(
                 searchClauses,
                 additionalAttribute);
 
-            var response = ExecuteSearch(
-                connection,
-                request,
-                logger,
-                operation);
+            SearchResponse response;
+            try
+            {
+                response = ExecuteSearch(
+                    connection,
+                    request,
+                    logger,
+                    operation);
+            }
+            catch (DirectoryOperationException ex) when (IsReferralException(ex))
+            {
+                logger.LogWarning(ex, "Skipping AD search base because the server returned a referral. SearchBase={SearchBase} Operation={Operation}", searchBase, operation);
+                continue;
+            }
+            catch (LdapException ex) when (IsReferralException(ex))
+            {
+                logger.LogWarning(ex, "Skipping AD search base because the LDAP client encountered a referral. SearchBase={SearchBase} Operation={Operation}", searchBase, operation);
+                continue;
+            }
+
             var entry = response.Entries.Cast<SearchResultEntry>().FirstOrDefault();
             if (entry is not null)
             {
@@ -631,6 +661,17 @@ public sealed class ActiveDirectoryGateway(
             stopwatch.ElapsedMilliseconds,
             response.Entries.Count);
         return response;
+    }
+
+    private static bool IsReferralException(DirectoryOperationException exception)
+    {
+        return exception.Response?.ResultCode == ResultCode.Referral ||
+               exception.Message.Contains("referral", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsReferralException(LdapException exception)
+    {
+        return exception.Message.Contains("referral", StringComparison.OrdinalIgnoreCase);
     }
 
     private static string BuildEqualityFilter(string attributeName, string value)

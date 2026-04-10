@@ -69,6 +69,7 @@ internal static class ActiveDirectoryConnectionFactory
             value => connection.SessionOptions.Signing = value,
             value => connection.SessionOptions.Sealing = value,
             config.Transport.RequireSigning);
+        connection.SessionOptions.ReferralChasing = ReferralChasingOptions.None;
 
         if (!string.Equals(mode, "ldap", StringComparison.OrdinalIgnoreCase))
         {

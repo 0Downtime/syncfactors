@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidateSet('api', 'worker', 'mock', 'stack')]
+    [ValidateSet('api', 'ui', 'worker', 'mock', 'stack')]
     [string]$Service = 'stack',
     [ValidateSet('mock', 'real')]
     [string]$Profile = 'mock',
@@ -18,12 +18,13 @@ $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 function Show-Usage {
     @'
 Usage:
-  pwsh ./scripts/codex/run.ps1 -Service <api|worker|mock|stack> [-Profile <mock|real>] [-Restart] [-SkipBuild]
+  pwsh ./scripts/codex/run.ps1 -Service <api|ui|worker|mock|stack> [-Profile <mock|real>] [-Restart] [-SkipBuild]
   pwsh ./scripts/codex/run.ps1 -Help
   pwsh ./scripts/codex/run.ps1
 
 Services:
   api      Start the SyncFactors .NET API.
+  ui       Start the SyncFactors API after building the frontend UI bundle.
   worker   Start the SyncFactors worker service.
   mock     Start the mock SuccessFactors API.
   stack    Start the full local stack in separate terminals.
@@ -36,6 +37,7 @@ Options:
 
 Examples:
   pwsh ./scripts/codex/run.ps1
+  pwsh ./scripts/codex/run.ps1 -Service ui
   pwsh ./scripts/codex/run.ps1 -Service api
   pwsh ./scripts/codex/run.ps1 -Service stack -Restart
   pwsh ./scripts/codex/run.ps1 -Service worker -Profile real -SkipBuild
@@ -408,6 +410,7 @@ function Restart-SelectedServices {
 
     $servicesToRestart = switch ($RequestedService) {
         'stack' { @('mock', 'api', 'worker') }
+        'ui' { @('api') }
         default { @($RequestedService) }
     }
 
@@ -478,6 +481,22 @@ if ($Restart) {
 
 switch ($Service) {
     'api' {
+        $arguments = @(
+            './scripts/Start-SyncFactorsNextApi.ps1',
+            '-ConfigPath', $env:SYNCFACTORS_RESOLVED_CONFIG_PATH_ABS,
+            '-MappingConfigPath', $env:SYNCFACTORS_MAPPING_CONFIG_PATH_ABS,
+            '-SqlitePath', $env:SYNCFACTORS_SQLITE_PATH_ABS,
+            '-Urls', "https://127.0.0.1:$($env:SYNCFACTORS_API_PORT)"
+        )
+
+        if ($SkipBuild) {
+            $arguments += '-SkipBuild'
+        }
+
+        & pwsh @arguments
+        exit $LASTEXITCODE
+    }
+    'ui' {
         $arguments = @(
             './scripts/Start-SyncFactorsNextApi.ps1',
             '-ConfigPath', $env:SYNCFACTORS_RESOLVED_CONFIG_PATH_ABS,
