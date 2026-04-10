@@ -16,6 +16,10 @@
 - The repository already contains operator-facing UI flows, run history, scheduling, dependency health probes, worker preview/apply flows, and local authentication.
 - Production readiness is not implied by the current feature set, repository layout, sample config, or helper scripts.
 
+Current dashboard snapshot:
+
+![SyncFactors operator dashboard](docs/images/readme-dashboard.png)
+
 ## Goals
 
 - Keep the product local-first and operator-friendly.
@@ -26,7 +30,9 @@
 ## Current Stack
 
 - Runtime: .NET 10
-- Operator UI: ASP.NET Core Razor Pages
+- Operator UI: ASP.NET Core Razor Pages plus a bundled browser layer for realtime updates and analytics
+- Frontend tooling: npm plus esbuild
+- Frontend runtime packages: SignalR, Motion, and ECharts
 - Background execution: .NET hosted worker service
 - Runtime state: SQLite
 - Directory integration: .NET plus PowerShell seams where needed
@@ -34,7 +40,7 @@
 
 ## Solution Shape
 
-- `src/SyncFactors.Api`: local operator UI plus authenticated JSON endpoints for status, dashboard, health, runs, and schedule management
+- `src/SyncFactors.Api`: local operator UI plus authenticated JSON endpoints for status, dashboard, health, runs, schedule management, and a realtime SignalR dashboard hub
 - `src/SyncFactors.Worker`: background host that claims queued runs, executes sync work, records heartbeats, and processes recurring schedules
 - `src/SyncFactors.MockSuccessFactors`: local SuccessFactors-like API plus fixture generation tooling for development and testing
 - `src/SyncFactors.Domain`: run orchestration, preview/apply behavior, lifecycle rules, scheduling, and sync coordination
@@ -47,7 +53,8 @@
 
 ## What Works Today
 
-- Operator dashboard with current runtime status, recent runs, active run summary, and dependency health
+- Operator dashboard with current runtime status, recent runs, active run summary, dependency health, and realtime updates over SignalR
+- Live dashboard visuals including run mix and bucket composition charts, a sticky live status rail, and a run timeline card
 - Ad hoc run queueing for dry-run and live syncs
 - Recurring full-sync schedule configuration backed by SQLite
 - Run history and run detail pages
@@ -55,6 +62,7 @@
 - Local username/password authentication with cookie auth and an admin-only user management page
 - Mock SuccessFactors API for local development, fixture playback, and synthetic worker population
 - Delete-all testing reset flow from the Sync page
+- Active Directory health checks that validate lookup behavior across configured search bases instead of only doing a bind/base-object probe
 
 > [!CAUTION]
 > The delete-all/testing reset flow is destructive. It exists for controlled testing and operator workflows and should be treated as dangerous even in non-production environments.
@@ -72,6 +80,25 @@ Primary commands from the repository root:
 ```powershell
 dotnet build ./SyncFactors.Next.sln
 dotnet test ./SyncFactors.Next.sln
+```
+
+The API UI now has a small frontend bundle under `src/SyncFactors.Api`. Install the frontend dependencies once per checkout:
+
+```powershell
+cd ./src/SyncFactors.Api
+npm install
+```
+
+Build the browser bundle manually when needed:
+
+```powershell
+npm run build:ui
+```
+
+Or keep it rebuilding while you edit:
+
+```powershell
+npm run watch:ui
 ```
 
 The helper scripts under `scripts/` and `scripts/codex/` are the current supported launch path for the local stack.
@@ -368,6 +395,14 @@ pwsh ./scripts/codex/run.ps1 -Service api
 pwsh ./scripts/codex/run.ps1 -Service worker
 ```
 
+If you only want the operator UI and API, use:
+
+```powershell
+pwsh ./scripts/codex/run.ps1 -Service ui
+```
+
+The API launcher now builds the frontend bundle automatically unless you pass `-SkipBuild`. `-Service stack` also brings up the current UI because it starts the API as part of the stack.
+
 If you are using Windows Credential Manager, import values before launching services:
 
 ```powershell
@@ -385,12 +420,15 @@ Useful variants:
 - `pwsh ./scripts/codex/run.ps1 -Service stack -Profile mock`
 - `pwsh ./scripts/codex/run.ps1 -Service stack -Profile real`
 - `pwsh ./scripts/codex/run.ps1 -Service stack -Restart`
+- `pwsh ./scripts/codex/run.ps1 -Service ui -Profile mock`
 - `pwsh ./scripts/codex/run.ps1 -Service api -SkipBuild`
 
 When you run `-Service stack`, the launched services depend on the active profile:
 
 - `mock`: starts the mock SuccessFactors API, the SyncFactors API, and the worker
 - `real`: starts the SyncFactors API and the worker
+
+`-Service ui` starts the SyncFactors API only, using the same config/profile resolution as `-Service api`.
 
 The lower-level start scripts remain available if you need to launch individual components directly:
 
