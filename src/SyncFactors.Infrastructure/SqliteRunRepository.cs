@@ -26,6 +26,50 @@ public sealed class SqliteRunRepository(SqlitePathResolver pathResolver) : IRunR
           )
         """;
 
+    private const string RunEntryProjection =
+        """
+        SELECT
+          e.entry_id,
+          e.bucket,
+          e.bucket_index,
+          e.worker_id,
+          e.sam_account_name,
+          e.reason,
+          e.review_category,
+          e.review_case_type,
+          e.started_at,
+          e.item_json,
+          r.run_id,
+          r.artifact_type,
+          r.mode,
+          r.report_json
+        FROM run_entries e
+        JOIN runs r ON r.run_id = e.run_id
+        """;
+
+    private const string GetRunEntriesSql =
+        RunEntryProjection +
+        "\n" +
+        RunEntryFilterPredicate +
+        "\nORDER BY e.bucket ASC, e.bucket_index ASC, e.entry_id ASC\nLIMIT $take OFFSET $skip;";
+
+    private const string CountRunEntriesSql =
+        """
+        SELECT COUNT(1)
+        FROM run_entries e
+        JOIN runs r ON r.run_id = e.run_id
+        """
+        +
+        "\n" +
+        RunEntryFilterPredicate +
+        ";";
+
+    private const string GetRunEntryAttributeTotalsSql =
+        RunEntryProjection +
+        "\n" +
+        RunEntryFilterPredicate +
+        "\nORDER BY e.bucket ASC, e.bucket_index ASC, e.entry_id ASC;";
+
     private static readonly string[] BucketOrder =
     [
         "quarantined",
@@ -638,29 +682,8 @@ public sealed class SqliteRunRepository(SqlitePathResolver pathResolver) : IRunR
         command.Parameters.AddWithValue("$skip", Math.Max(0, skip));
         command.Parameters.AddWithValue("$take", Math.Max(1, take));
 
-        command.CommandText =
-            $"""
-            SELECT
-              e.entry_id,
-              e.bucket,
-              e.bucket_index,
-              e.worker_id,
-              e.sam_account_name,
-              e.reason,
-              e.review_category,
-              e.review_case_type,
-              e.started_at,
-              e.item_json,
-              r.run_id,
-              r.artifact_type,
-              r.mode,
-              r.report_json
-            FROM run_entries e
-            JOIN runs r ON r.run_id = e.run_id
-            {RunEntryFilterPredicate}
-            ORDER BY e.bucket ASC, e.bucket_index ASC, e.entry_id ASC
-            LIMIT $take OFFSET $skip;
-            """;
+        // nosemgrep: csharp.lang.security.sqli.csharp-sqli.csharp-sqli
+        command.CommandText = GetRunEntriesSql;
 
         var entries = new List<RunEntry>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -693,13 +716,8 @@ public sealed class SqliteRunRepository(SqlitePathResolver pathResolver) : IRunR
         await using var command = connection.CreateCommand();
         AddRunEntryFilterParameters(command, runId, bucket, workerId, reason, filter, entryId);
 
-        command.CommandText =
-            $"""
-            SELECT COUNT(1)
-            FROM run_entries e
-            JOIN runs r ON r.run_id = e.run_id
-            {RunEntryFilterPredicate};
-            """;
+        // nosemgrep: csharp.lang.security.sqli.csharp-sqli.csharp-sqli
+        command.CommandText = CountRunEntriesSql;
 
         var result = await command.ExecuteScalarAsync(cancellationToken);
         return result is null || result is DBNull ? 0 : Convert.ToInt32(result);
@@ -725,28 +743,8 @@ public sealed class SqliteRunRepository(SqlitePathResolver pathResolver) : IRunR
 
         await using var command = connection.CreateCommand();
         AddRunEntryFilterParameters(command, runId, bucket, workerId, reason, filter, entryId);
-        command.CommandText =
-            $"""
-            SELECT
-              e.entry_id,
-              e.bucket,
-              e.bucket_index,
-              e.worker_id,
-              e.sam_account_name,
-              e.reason,
-              e.review_category,
-              e.review_case_type,
-              e.started_at,
-              e.item_json,
-              r.run_id,
-              r.artifact_type,
-              r.mode,
-              r.report_json
-            FROM run_entries e
-            JOIN runs r ON r.run_id = e.run_id
-            {RunEntryFilterPredicate}
-            ORDER BY e.bucket ASC, e.bucket_index ASC, e.entry_id ASC;
-            """;
+        // nosemgrep: csharp.lang.security.sqli.csharp-sqli.csharp-sqli
+        command.CommandText = GetRunEntryAttributeTotalsSql;
 
         var firstSeenLabels = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         var counts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
