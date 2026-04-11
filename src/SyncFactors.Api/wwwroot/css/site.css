@@ -309,7 +309,6 @@ a:focus-visible {
   text-decoration: none;
   border-color: var(--line-strong);
   background: var(--panel-alt);
-  transform: translateY(-2px);
 }
 
 .nav a.is-active {
@@ -384,7 +383,6 @@ a:focus-visible {
 .theme-toggle:hover {
   border-color: var(--line-strong);
   background: var(--panel-alt);
-  transform: translateY(-1px);
 }
 
 .theme-toggle-option {
@@ -543,7 +541,6 @@ a:focus-visible {
 .run-health-card:hover,
 .sync-status-card:hover,
 .preview-inspector-card:hover {
-  transform: translateY(-2px);
   box-shadow: var(--shadow-raised);
 }
 
@@ -604,7 +601,6 @@ a:focus-visible {
 .icon-button:hover {
   border-color: var(--line-strong);
   background: var(--panel-alt);
-  transform: translateY(-1px);
 }
 
 .icon-button.is-loading .icon-button-glyph {
@@ -2073,7 +2069,6 @@ a:focus-visible {
   border-color: color-mix(in srgb, var(--accent) 38%, var(--line));
   background: color-mix(in srgb, var(--accent-soft) 78%, transparent);
   box-shadow: 0 10px 22px color-mix(in srgb, var(--accent) 10%, transparent);
-  transform: translateY(-1px);
 }
 
 .diff-row {
