@@ -177,6 +177,7 @@ public interface IGraveyardRetentionStore
     Task UpsertObservedAsync(GraveyardRetentionRecord record, CancellationToken cancellationToken);
     Task ResolveAsync(string workerId, CancellationToken cancellationToken);
     Task<IReadOnlyList<GraveyardRetentionRecord>> ListActiveAsync(CancellationToken cancellationToken);
+    Task SetHoldAsync(string workerId, bool isOnHold, string? actingUserId, DateTimeOffset changedAtUtc, CancellationToken cancellationToken);
     Task<GraveyardRetentionReportStatus> GetReportStatusAsync(CancellationToken cancellationToken);
     Task RecordReportAttemptAsync(DateTimeOffset attemptedAt, string? error, DateTimeOffset? sentAtUtc, CancellationToken cancellationToken);
 }

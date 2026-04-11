@@ -14,6 +14,7 @@
     <Compile Include="SpaApiModels.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="Pages\Index.cshtml.cs" />
+    <Compile Include="Pages\Admin\DeletionQueue.cshtml.cs" />
     <Compile Include="Pages\Admin\Users.cshtml.cs" />
     <Compile Include="Pages\AccessDenied.cshtml.cs" />
     <Compile Include="Pages\Login.cshtml.cs" />
