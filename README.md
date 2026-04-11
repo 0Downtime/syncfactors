@@ -13,7 +13,7 @@
 ## Current State
 
 - The active implementation is a local-first .NET 10 solution built around ASP.NET Core, a background worker, and SQLite-backed runtime state.
-- The repository already contains operator-facing UI flows, run history, scheduling, dependency health probes, worker preview/apply flows, and local authentication.
+- The repository already contains operator-facing UI flows, run history, scheduling, dependency health probes, worker preview/apply flows, and authentication modes for local break-glass or OIDC-backed deployments.
 - Production readiness is not implied by the current feature set, repository layout, sample config, or helper scripts.
 
 Current dashboard snapshot:
@@ -44,7 +44,7 @@ Current dashboard snapshot:
 - `src/SyncFactors.Worker`: background host that claims queued runs, executes sync work, records heartbeats, and processes recurring schedules
 - `src/SyncFactors.MockSuccessFactors`: local SuccessFactors-like API plus fixture generation tooling for development and testing
 - `src/SyncFactors.Domain`: run orchestration, preview/apply behavior, lifecycle rules, scheduling, and sync coordination
-- `src/SyncFactors.Infrastructure`: SQLite persistence, Active Directory access, SuccessFactors client logic, local auth, filesystem helpers, and config loading
+- `src/SyncFactors.Infrastructure`: SQLite persistence, Active Directory access, SuccessFactors client logic, authentication and local user storage, filesystem helpers, and config loading
 - `src/SyncFactors.Contracts`: shared runtime DTOs and status models
 - `tests/*`: unit and integration test projects aligned to the runtime components above
 - `config/*`: tracked sample config, mock fixture data, and scaffold data
@@ -59,10 +59,11 @@ Current dashboard snapshot:
 - Recurring full-sync schedule configuration backed by SQLite
 - Run history and run detail pages
 - Worker preview flow that stages one worker, persists the preview, and supports explicit apply from the saved fingerprint
-- Local username/password authentication with cookie auth and an admin-only user management page
+- Authentication modes for local break-glass, OIDC-only, or hybrid SSO plus break-glass access, with local user management when break-glass is enabled
 - Mock SuccessFactors API for local development, fixture playback, and synthetic worker population
 - Delete-all testing reset flow from the Sync page
 - Active Directory health checks that validate lookup behavior across configured search bases instead of only doing a bind/base-object probe
+- Due graveyard retention report processing from the worker when alerts are configured
 
 > [!CAUTION]
 > The delete-all/testing reset flow is destructive. It exists for controlled testing and operator workflows and should be treated as dangerous even in non-production environments.
@@ -105,7 +106,7 @@ The helper scripts under `scripts/` and `scripts/codex/` are the current support
 
 ## Config Model
 
-The rewrite keeps tracked samples and ignored local config under `config/`.
+The current runtime keeps tracked samples and ignored local config under `config/`.
 
 - `config/sample.mock-successfactors.real-ad.sync-config.json`: sample config for mock SuccessFactors plus real Active Directory
 - `config/sample.real-successfactors.real-ad.sync-config.json`: sample config for real SuccessFactors plus real Active Directory
@@ -123,7 +124,7 @@ Sync config resolution currently works like this:
 
 On Windows, `scripts/codex/Load-WorktreeEnv.ps1` checks the worktree-scoped Windows Credential Manager entry for each variable first, then falls back to `.env.worktree`, then `.env.worktree.example`, and finally built-in defaults where applicable.
 
-The checked-in example currently includes:
+The checked-in example plus the built-in `scripts/codex/Load-WorktreeEnv.ps1` defaults currently resolve to:
 
 ```bash
 SYNCFACTORS_RUN_PROFILE=mock
@@ -131,6 +132,9 @@ SYNCFACTORS_CONFIG_PATH=
 SYNCFACTORS_MAPPING_CONFIG_PATH=./config/local.syncfactors.mapping-config.json
 SYNCFACTORS_SQLITE_PATH=state/runtime/syncfactors.db
 SYNCFACTORS_API_PORT=5087
+NUGET_HTTP_CACHE_PATH=state/nuget/http-cache
+SYNCFACTORS_TLS_CERT_PATH=
+SYNCFACTORS_TLS_CERT_PASSWORD=
 MOCK_SF_PORT=18080
 MOCK_SF_SYNTHETIC_POPULATION_ENABLED=true
 MOCK_SF_TARGET_WORKER_COUNT=1000
@@ -144,6 +148,8 @@ SF_AD_SYNC_AD_USERNAME=
 SF_AD_SYNC_AD_BIND_PASSWORD=
 SF_AD_SYNC_AD_DEFAULT_PASSWORD=
 ```
+
+`.env.worktree.example` also carries the Entra/OIDC keys as commented placeholders until you intentionally enable SSO for that worktree.
 
 On macOS, you can keep sensitive `SF_AD_SYNC_*` values out of `.env.worktree` entirely and store them in the login Keychain instead. The launchers fall back to the Keychain service named by `SYNCFACTORS_KEYCHAIN_SERVICE` when those variables are blank in `.env.worktree`. To store one:
 
@@ -210,7 +216,7 @@ https://127.0.0.1:5087/signout-callback-oidc
 
 If you change `SYNCFACTORS_API_PORT`, the redirect URIs must match that exact HTTPS port. On macOS, you can keep the OIDC secret out of `.env.worktree` and store only `SYNCFACTORS__AUTH__OIDC__CLIENTSECRET` in Keychain with `./scripts/codex/set-macos-keychain-secret.sh SYNCFACTORS__AUTH__OIDC__CLIENTSECRET`.
 
-If you want the app registration provisioned for you, use [`scripts/Configure-EntraOidcAppRegistration.ps1`](/Users/chrisbrien/dev/github.com/syncfactors/scripts/Configure-EntraOidcAppRegistration.ps1). It connects to Microsoft Graph using your current/default tenant when `-TenantId` is omitted, creates or updates a single-tenant app registration, ensures the enterprise app exists, creates missing security groups for viewer/operator/admin roles, assigns those groups to the enterprise app, optionally creates a client secret, writes the resolved auth and OIDC settings back into `.env.worktree`, and then prints the same values in the terminal summary. Set `-AuthMode oidc` for Entra-only auth or `-AuthMode hybrid` to keep local break-glass enabled. In `hybrid` mode the script also sets `SYNCFACTORS__AUTH__LOCALBREAKGLASS__ENABLED=true`, writes the bootstrap admin username, and generates a bootstrap admin password automatically if you do not supply one. On Windows it stores the OIDC client secret and bootstrap admin password in Windows Credential Manager; on macOS it stores those secrets in the login Keychain using `SYNCFACTORS_KEYCHAIN_SERVICE` from the env file when present, otherwise `syncfactors`. In those cases the env file keeps the password/secret entries blank so the repo loaders pull them from the secure store. Use `-EnvFilePath` if you want to target a different env file.
+If you want the app registration provisioned for you, use [`scripts/Configure-EntraOidcAppRegistration.ps1`](scripts/Configure-EntraOidcAppRegistration.ps1). It connects to Microsoft Graph using your current/default tenant when `-TenantId` is omitted, creates or updates a single-tenant app registration, ensures the enterprise app exists, creates missing security groups for viewer/operator/admin roles, assigns those groups to the enterprise app, optionally creates a client secret, writes the resolved auth and OIDC settings back into `.env.worktree`, and then prints the same values in the terminal summary. Set `-AuthMode oidc` for Entra-only auth or `-AuthMode hybrid` to keep local break-glass enabled. In `hybrid` mode the script also sets `SYNCFACTORS__AUTH__LOCALBREAKGLASS__ENABLED=true`, writes the bootstrap admin username, and generates a bootstrap admin password automatically if you do not supply one. On Windows it stores the OIDC client secret and bootstrap admin password in Windows Credential Manager; on macOS it stores those secrets in the login Keychain using `SYNCFACTORS_KEYCHAIN_SERVICE` from the env file when present, otherwise `syncfactors`. In those cases the env file keeps the password/secret entries blank so the repo loaders pull them from the secure store. Use `-EnvFilePath` if you want to target a different env file.
 
 ## Entra Env Setup
 
@@ -359,15 +365,15 @@ If your primary AD transport is `ldaps` or `starttls` and you need an explicit d
 
 For full-sync `EmpJob` queries, `successFactors.query.inactiveRetentionDays` can extend the source filter to keep recently inactive workers in scope without hand-writing the date cutoff in `baseFilter`. With the default fields, a config like `"baseFilter": "emplStatus in 'A','U'"` plus `"inactiveRetentionDays": 180` expands to include terminated (`emplStatus eq 'T'`) workers whose `endDate` is within the last 180 days. Override `inactiveStatusField`, `inactiveStatusValues`, or `inactiveDateField` if your tenant uses different fields or status codes.
 
-## Local Auth
+## Authentication Modes
 
-The API uses local username/password authentication backed by SQLite.
+The API serves the same operator UI in all auth modes and protects it with cookie auth after sign-in.
 
-- Cookie auth protects the operator UI and authenticated API routes
-- The admin user management page lives under `/Admin/Users`
-- Admin accounts can create users, reset passwords, change roles, deactivate accounts, and delete users
+- `local-break-glass`: the default appsettings mode. Local usernames and password hashes live in SQLite, and `/Admin/Users` manages those local accounts.
+- `oidc`: enterprise OIDC sign-in only. The login page redirects or offers SSO, and local user management is disabled.
+- `hybrid`: enterprise OIDC is the primary sign-in path, and local break-glass accounts remain available for emergency access.
 
-On first startup, if no local users exist, the API requires bootstrap admin credentials to be configured through `SyncFactors:Auth:BootstrapAdmin:Username` and `SyncFactors:Auth:BootstrapAdmin:Password`. If those values are missing and the user store is empty, startup fails intentionally.
+On first startup, bootstrap admin credentials are only required when local break-glass auth is enabled and no local users exist yet. In `oidc` mode, the app skips that bootstrap requirement.
 
 ## Running The Local Stack
 
@@ -395,13 +401,13 @@ pwsh ./scripts/codex/run.ps1 -Service api
 pwsh ./scripts/codex/run.ps1 -Service worker
 ```
 
-If you only want the operator UI and API, use:
+If you only want the operator portal, use:
 
 ```powershell
 pwsh ./scripts/codex/run.ps1 -Service ui
 ```
 
-The API launcher now builds the frontend bundle automatically unless you pass `-SkipBuild`. `-Service stack` also brings up the current UI because it starts the API as part of the stack.
+There is no separate frontend dev server in the current design. The API serves the bundled UI, and the launcher builds that bundle automatically unless you pass `-SkipBuild`. `-Service ui` is effectively an alias for starting the API with the portal assets, and `-Service stack` brings up that same API as part of the stack.
 
 If you are using Windows Credential Manager, import values before launching services:
 
@@ -428,7 +434,7 @@ When you run `-Service stack`, the launched services depend on the active profil
 - `mock`: starts the mock SuccessFactors API, the SyncFactors API, and the worker
 - `real`: starts the SyncFactors API and the worker
 
-`-Service ui` starts the SyncFactors API only, using the same config/profile resolution as `-Service api`.
+`-Service ui` currently resolves to the same API launch path as `-Service api`.
 
 The lower-level start scripts remain available if you need to launch individual components directly:
 
@@ -442,7 +448,7 @@ Codex app worktrees can bootstrap this repository through the checked-in local e
 
 This setup is intentionally scoped to the core local dev loop:
 
-- prepare local config files for the .NET rewrite when missing
+- prepare local config files for the current .NET runtime when missing
 - copy ignored local runtime files from the primary checkout when missing
 - fall back to tracked `config/sample*.json` files when local config files are still missing
 - create runtime/report directories used by the API and worker
