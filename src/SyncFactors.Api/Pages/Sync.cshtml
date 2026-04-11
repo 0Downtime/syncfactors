@@ -30,6 +30,55 @@
 }
 
 <section class="panel-grid dashboard-grid sync-dashboard-grid">
+    <article class="panel sync-live-panel" data-sync-live-panel>
+        <div class="section-heading">
+            <div>
+                <p class="eyebrow">Operations Surface</p>
+                <h2>Runtime Readiness</h2>
+            </div>
+            <span class="sync-status-badge badge @StatusClass(Model.Status.Status)" data-sync-runtime-badge>@Model.Status.Status</span>
+        </div>
+        <div class="sync-status-grid">
+            <section class="sync-status-card" data-tone="info">
+                <div class="sync-status-card-head">
+                    <div>
+                        <p class="eyebrow">Next Scheduled Run</p>
+                        <h3>Countdown</h3>
+                    </div>
+                    <div class="countdown-ring" data-next-run-countdown style="--ring-progress: @(Model.Schedule.NextRunAt.HasValue ? "0.82turn" : "0turn");">
+                        <div class="countdown-copy">
+                            <strong data-next-run-countdown-value>@(Model.Schedule.NextRunAt.HasValue ? "Pending" : "Idle")</strong>
+                            <span class="muted">until run</span>
+                        </div>
+                    </div>
+                </div>
+                <p class="muted" data-next-run-at="@(Model.Schedule.NextRunAt?.ToString("o") ?? string.Empty)">
+                    @(Model.Schedule.NextRunAt?.ToLocalTime().ToString("f") ?? "No recurring run is scheduled right now.")
+                </p>
+            </section>
+
+            <section class="sync-status-card" data-tone="@(Model.HasPendingOrActiveRun ? "warn" : "good")">
+                <div class="sync-status-card-head">
+                    <div>
+                        <p class="eyebrow">Queue State</p>
+                        <h3>Operator Posture</h3>
+                    </div>
+                    <span class="badge @(Model.HasPendingOrActiveRun ? "warn" : "good")">@(Model.HasPendingOrActiveRun ? "Run In Flight" : "Ready")</span>
+                </div>
+                <div class="metric-strip">
+                    <span class="metric-pill"><strong>@(Model.ActiveRun?.RunTrigger ?? "n/a")</strong> trigger</span>
+                    <span class="metric-pill"><strong>@(Model.ActiveRun?.RequestedBy ?? "system")</strong> requested by</span>
+                    <span class="metric-pill"><strong>@Model.Status.ProcessedWorkers / @Model.Status.TotalWorkers</strong> progress</span>
+                </div>
+                <p class="muted" data-sync-status-copy>
+                    @(Model.HasPendingOrActiveRun
+                        ? "A queued or active run is already being managed by the worker."
+                        : "The runtime is clear for the next dry run or live provisioning request.")
+                </p>
+            </section>
+        </div>
+    </article>
+
     <article class="panel sync-current-run-panel">
         <h2>Current Run</h2>
         <dl class="kv">
@@ -55,7 +104,7 @@
         {
             <p class="callout warn">A run is already pending or active. You can request cancellation and the worker will stop gracefully.</p>
         }
-        <form method="post" asp-page-handler="@(Model.HasPendingOrActiveRun ? "CancelRun" : "StartRun")" class="filters">
+        <form method="post" asp-page-handler="@(Model.HasPendingOrActiveRun ? "CancelRun" : "StartRun")" class="filters" data-sync-form data-sync-action="queue">
             <label>
                 <span>Run type</span>
                 <select asp-for="RunMode" disabled="@Model.HasPendingOrActiveRun">
@@ -64,8 +113,9 @@
                 </select>
             </label>
             <div class="filter-actions">
-                <button type="submit" disabled="@(string.Equals(Model.CurrentQueueRequest?.Status, "CancelRequested", StringComparison.OrdinalIgnoreCase))">
-                    @(string.Equals(Model.CurrentQueueRequest?.Status, "CancelRequested", StringComparison.OrdinalIgnoreCase) ? "Cancel requested" : Model.HasPendingOrActiveRun ? "Cancel run" : "Queue run")
+                <button type="submit" data-sync-submit disabled="@(string.Equals(Model.CurrentQueueRequest?.Status, "CancelRequested", StringComparison.OrdinalIgnoreCase))">
+                    <span class="button-label">@(string.Equals(Model.CurrentQueueRequest?.Status, "CancelRequested", StringComparison.OrdinalIgnoreCase) ? "Cancel requested" : Model.HasPendingOrActiveRun ? "Cancel run" : "Queue run")</span>
+                    <span class="button-spinner" aria-hidden="true"></span>
                 </button>
             </div>
         </form>
@@ -84,7 +134,7 @@
         {
             <p class="callout warn">@Model.Schedule.LastEnqueueError</p>
         }
-        <form method="post" asp-page-handler="SaveSchedule" class="filters">
+        <form method="post" asp-page-handler="SaveSchedule" class="filters" data-sync-form data-sync-action="schedule">
             <label>
                 <span>Enabled</span>
                 <input asp-for="ScheduleEnabled" type="checkbox" />
@@ -94,7 +144,10 @@
                 <input asp-for="IntervalMinutes" type="number" min="5" max="1440" step="1" />
             </label>
             <div class="filter-actions">
-                <button type="submit">Save schedule</button>
+                <button type="submit" data-sync-submit>
+                    <span class="button-label">Save schedule</span>
+                    <span class="button-spinner" aria-hidden="true"></span>
+                </button>
             </div>
         </form>
     </article>
