@@ -29,7 +29,10 @@ public sealed class SqliteGraveyardRetentionStore(SqlitePathResolver pathResolve
               status,
               end_date_utc,
               last_observed_at_utc,
-              active
+              active,
+              is_on_hold,
+              hold_placed_at_utc,
+              hold_placed_by
             )
             VALUES (
               $workerId,
@@ -39,7 +42,10 @@ public sealed class SqliteGraveyardRetentionStore(SqlitePathResolver pathResolve
               $status,
               $endDateUtc,
               $lastObservedAtUtc,
-              $active
+              $active,
+              $isOnHold,
+              $holdPlacedAtUtc,
+              $holdPlacedBy
             )
             ON CONFLICT(worker_id) DO UPDATE SET
               sam_account_name = excluded.sam_account_name,
@@ -58,6 +64,9 @@ public sealed class SqliteGraveyardRetentionStore(SqlitePathResolver pathResolve
         command.Parameters.AddWithValue("$endDateUtc", ToDbValue(record.EndDateUtc));
         command.Parameters.AddWithValue("$lastObservedAtUtc", record.LastObservedAtUtc.ToString("O"));
         command.Parameters.AddWithValue("$active", record.Active ? 1 : 0);
+        command.Parameters.AddWithValue("$isOnHold", record.IsOnHold ? 1 : 0);
+        command.Parameters.AddWithValue("$holdPlacedAtUtc", ToDbValue(record.HoldPlacedAtUtc));
+        command.Parameters.AddWithValue("$holdPlacedBy", (object?)record.HoldPlacedBy ?? DBNull.Value);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
@@ -95,7 +104,7 @@ public sealed class SqliteGraveyardRetentionStore(SqlitePathResolver pathResolve
         await using var command = connection.CreateCommand();
         command.CommandText =
             """
-            SELECT worker_id, sam_account_name, display_name, distinguished_name, status, end_date_utc, last_observed_at_utc, active
+            SELECT worker_id, sam_account_name, display_name, distinguished_name, status, end_date_utc, last_observed_at_utc, active, is_on_hold, hold_placed_at_utc, hold_placed_by
             FROM graveyard_retention
             WHERE active = 1;
             """;
@@ -111,10 +120,39 @@ public sealed class SqliteGraveyardRetentionStore(SqlitePathResolver pathResolve
                 Status: reader.GetString(4),
                 EndDateUtc: ParseDate(reader.IsDBNull(5) ? null : reader.GetString(5)),
                 LastObservedAtUtc: ParseDate(reader.GetString(6)) ?? DateTimeOffset.MinValue,
-                Active: reader.GetInt32(7) != 0));
+                Active: reader.GetInt32(7) != 0,
+                IsOnHold: reader.GetInt32(8) != 0,
+                HoldPlacedAtUtc: ParseDate(reader.IsDBNull(9) ? null : reader.GetString(9)),
+                HoldPlacedBy: reader.IsDBNull(10) ? null : reader.GetString(10)));
         }
 
         return records;
+    }
+
+    public async Task SetHoldAsync(string workerId, bool isOnHold, string? actingUserId, DateTimeOffset changedAtUtc, CancellationToken cancellationToken)
+    {
+        var databasePath = pathResolver.ResolveConfiguredPath() ?? pathResolver.Resolve();
+        if (string.IsNullOrWhiteSpace(databasePath))
+        {
+            return;
+        }
+
+        await using var connection = OpenConnection(databasePath);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            UPDATE graveyard_retention
+            SET is_on_hold = $isOnHold,
+                hold_placed_at_utc = $holdPlacedAtUtc,
+                hold_placed_by = $holdPlacedBy
+            WHERE worker_id = $workerId;
+            """;
+        command.Parameters.AddWithValue("$workerId", workerId);
+        command.Parameters.AddWithValue("$isOnHold", isOnHold ? 1 : 0);
+        command.Parameters.AddWithValue("$holdPlacedAtUtc", isOnHold ? changedAtUtc.ToString("O") : DBNull.Value);
+        command.Parameters.AddWithValue("$holdPlacedBy", isOnHold ? (object?)actingUserId ?? DBNull.Value : DBNull.Value);
+        await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     public async Task<GraveyardRetentionReportStatus> GetReportStatusAsync(CancellationToken cancellationToken)

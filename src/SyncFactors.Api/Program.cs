@@ -53,6 +53,13 @@ builder.Services.AddSingleton(serviceProvider =>
 builder.Services.AddSingleton(serviceProvider =>
 {
     var config = serviceProvider.GetRequiredService<SyncFactorsConfigurationLoader>().GetSyncConfig();
+    return new GraveyardDeletionQueueSettings(
+        RetentionDays: config.Sync.DeletionRetentionDays,
+        AutoDeleteEnabled: config.Sync.AutoDeleteFromGraveyard);
+});
+builder.Services.AddSingleton(serviceProvider =>
+{
+    var config = serviceProvider.GetRequiredService<SyncFactorsConfigurationLoader>().GetSyncConfig();
     return new LifecyclePolicySettings(
         config.Ad.DefaultActiveOu,
         config.Ad.PrehireOu,
@@ -93,7 +100,9 @@ builder.Services.AddTransient<IFullSyncRunService, FullSyncRunService>();
 builder.Services.AddSingleton<IDashboardSnapshotService, DashboardSnapshotService>();
 builder.Services.AddSingleton<IRuntimeStatusStore, SqliteRuntimeStatusStore>();
 builder.Services.AddSingleton<IRunRepository, SqliteRunRepository>();
+builder.Services.AddSingleton<IGraveyardRetentionStore, SqliteGraveyardRetentionStore>();
 builder.Services.AddTransient<RunEntriesQueryService>();
+builder.Services.AddTransient<GraveyardDeletionQueueService>();
 builder.Services.AddSingleton<IRunQueueStore, SqliteRunQueueStore>();
 builder.Services.AddSingleton<RunQueueRecoveryService>();
 builder.Services.AddSingleton<ISyncScheduleStore, SqliteSyncScheduleStore>();
