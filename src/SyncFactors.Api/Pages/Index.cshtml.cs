@@ -5,7 +5,9 @@ using SyncFactors.Domain;
 
 namespace SyncFactors.Api.Pages;
 
-public sealed class IndexModel(IDashboardSnapshotService dashboardSnapshotService) : PageModel
+public sealed class IndexModel(
+    IDashboardSnapshotService dashboardSnapshotService,
+    ISyncScheduleStore syncScheduleStore) : PageModel
 {
     public RuntimeStatus Status { get; private set; } = new(
         Status: "Idle",
@@ -32,6 +34,14 @@ public sealed class IndexModel(IDashboardSnapshotService dashboardSnapshotServic
 
     public string? AttentionMessage { get; private set; }
 
+    public SyncScheduleStatus Schedule { get; private set; } = new(
+        Enabled: false,
+        IntervalMinutes: 30,
+        NextRunAt: null,
+        LastScheduledRunAt: null,
+        LastEnqueueAttemptAt: null,
+        LastEnqueueError: null);
+
     public async Task OnGetAsync(CancellationToken cancellationToken)
     {
         await LoadSnapshotAsync(cancellationToken);
@@ -40,6 +50,7 @@ public sealed class IndexModel(IDashboardSnapshotService dashboardSnapshotServic
     private async Task LoadSnapshotAsync(CancellationToken cancellationToken)
     {
         var snapshot = await dashboardSnapshotService.GetSnapshotAsync(cancellationToken);
+        Schedule = await syncScheduleStore.GetCurrentAsync(cancellationToken);
         Status = snapshot.Status;
         Runs = snapshot.Runs;
         ActiveRun = snapshot.ActiveRun;

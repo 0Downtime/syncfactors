@@ -49,6 +49,13 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
         progressFill: document.querySelector("[data-progress-fill]"),
         progressCaption: document.querySelector("[data-progress-caption]"),
         progressCopy: document.querySelector("[data-progress-copy]"),
+        scheduleTitle: document.querySelector("[data-dashboard-schedule-title]"),
+        scheduleBadge: document.querySelector("[data-dashboard-schedule-badge]"),
+        scheduleCountdown: document.querySelector("[data-dashboard-schedule-countdown]"),
+        scheduleCountdownValue: document.querySelector("[data-dashboard-schedule-countdown-value]"),
+        scheduleNextRun: document.querySelector("[data-dashboard-schedule-next-run-at]"),
+        scheduleInterval: document.querySelector("[data-dashboard-schedule-interval]"),
+        scheduleLastRun: document.querySelector("[data-dashboard-schedule-last-run]"),
         runsChart: document.querySelector("[data-runs-chart]"),
         runsChartEmpty: document.querySelector("[data-runs-chart-empty]"),
         bucketChart: document.querySelector("[data-buckets-chart]"),
@@ -94,17 +101,20 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
     let bucketChartInstance = null;
     let latestDashboardSnapshot = null;
     let latestHealthSnapshot = null;
+    let latestScheduleSnapshot = null;
     let latestProgressPercent = 0;
     let selectedRunId = null;
     let selectedBucketKey = null;
     let hoveredRunId = null;
     let hoveredBucketKey = null;
+    let scheduleTimerId = null;
 
     if (elements.refreshButton) {
         elements.refreshButton.addEventListener("click", function () {
             runMajorTransition(function () {
                 void loadDashboard();
                 void loadHealth();
+                void loadSchedule();
             });
         });
     }
@@ -508,6 +518,63 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
         if (previousState !== nextState) {
             flashUpdate(elements.signalRoot);
         }
+    }
+
+    function formatScheduleCountdown(schedule) {
+        if (!schedule || !schedule.enabled || !schedule.nextRunAt) {
+            return { label: "Idle", progress: "0turn" };
+        }
+
+        const nextRunAt = new Date(schedule.nextRunAt);
+        if (Number.isNaN(nextRunAt.getTime())) {
+            return { label: "Unknown", progress: "0turn" };
+        }
+
+        const remainingMs = nextRunAt.getTime() - Date.now();
+        if (remainingMs <= 0) {
+            return { label: "Due", progress: "1turn" };
+        }
+
+        const totalMinutes = Math.max(1, Math.round(remainingMs / 60000));
+        const hours = Math.floor(totalMinutes / 60);
+        const minutes = totalMinutes % 60;
+        const label = hours > 0 ? hours + "h " + minutes + "m" : minutes + "m";
+        const progress = Math.max(0.08, Math.min(0.98, remainingMs / (24 * 60 * 60 * 1000)));
+
+        return { label, progress: progress.toFixed(3) + "turn" };
+    }
+
+    function renderSchedule(schedule) {
+        if (!elements.scheduleTitle || !elements.scheduleBadge || !elements.scheduleCountdown || !elements.scheduleCountdownValue || !elements.scheduleNextRun || !elements.scheduleInterval || !elements.scheduleLastRun) {
+            return;
+        }
+
+        latestScheduleSnapshot = schedule;
+
+        const isEnabled = !!(schedule && schedule.enabled);
+        const countdown = formatScheduleCountdown(schedule);
+
+        elements.scheduleTitle.textContent = isEnabled ? "Recurring schedule is active" : "Recurring schedule is paused";
+        elements.scheduleBadge.className = "badge " + (isEnabled ? "good" : "dim");
+        elements.scheduleBadge.textContent = isEnabled ? "Enabled" : "Paused";
+        elements.scheduleCountdownValue.textContent = countdown.label;
+        elements.scheduleCountdown.style.setProperty("--ring-progress", countdown.progress);
+        elements.scheduleNextRun.setAttribute("data-dashboard-schedule-next-run-at", schedule && schedule.nextRunAt ? schedule.nextRunAt : "");
+        elements.scheduleNextRun.textContent = schedule && schedule.nextRunAt ? formatTimestamp(schedule.nextRunAt) : "Not scheduled";
+        elements.scheduleInterval.textContent = isEnabled ? (schedule.intervalMinutes || 0) + " minutes" : "Not scheduled";
+        elements.scheduleLastRun.textContent = schedule && schedule.lastScheduledRunAt ? formatTimestamp(schedule.lastScheduledRunAt) : "Not scheduled";
+    }
+
+    function startScheduleTimer() {
+        if (scheduleTimerId) {
+            return;
+        }
+
+        scheduleTimerId = window.setInterval(function () {
+            if (latestScheduleSnapshot) {
+                renderSchedule(latestScheduleSnapshot);
+            }
+        }, 30000);
     }
 
     function runDetailHref(runId) {
@@ -1530,6 +1597,22 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
         }
     }
 
+    async function loadSchedule() {
+        try {
+            const response = await fetch("/api/sync/schedule", { headers: { Accept: "application/json" } });
+            if (!response.ok) {
+                throw new Error("Schedule request failed with HTTP " + response.status + ".");
+            }
+
+            const payload = await response.json();
+            renderSchedule(payload && payload.schedule ? payload.schedule : null);
+        } catch (error) {
+            if (!latestScheduleSnapshot) {
+                renderSchedule(null);
+            }
+        }
+    }
+
     async function loadDashboard() {
         if (isLoadingDashboard) {
             return;
@@ -1564,6 +1647,7 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
         if (immediate) {
             void loadDashboard();
             void loadHealth();
+            void loadSchedule();
         }
 
         if (!dashboardTimerId) {
@@ -1685,6 +1769,7 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
     }
 
     function startDashboard() {
+        startScheduleTimer();
         startFallbackPolling();
         void startRealtimeConnection();
     }
@@ -1700,6 +1785,10 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
 
         if (reconnectTimerId) {
             window.clearTimeout(reconnectTimerId);
+        }
+
+        if (scheduleTimerId) {
+            window.clearInterval(scheduleTimerId);
         }
 
         if (connection) {
