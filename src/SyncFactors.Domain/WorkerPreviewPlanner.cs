@@ -172,10 +172,7 @@ public sealed class WorkerPreviewPlanner(
         var unusedSources = sourceAttributes
             .Where(attribute => usedSources.All(used => !string.Equals(used.Attribute, attribute.Attribute, StringComparison.OrdinalIgnoreCase)))
             .ToArray();
-        var missingSources = WorkerPlanningService.BuildMissingSourceAttributes(
-            plan.Worker.Attributes,
-            mappings,
-            plan.ProposedEmailAddress);
+        var missingSources = plan.MissingSourceAttributes;
 
         var item = ParseJson(
             "{"

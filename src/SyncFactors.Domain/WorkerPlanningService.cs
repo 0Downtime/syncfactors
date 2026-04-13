@@ -42,22 +42,30 @@ public sealed class WorkerPlanningService(
 
         var identity = identityMatcher.Match(worker, directoryUser);
         var lifecycle = lifecyclePolicy.Evaluate(worker, directoryUser);
-        var proposedEmailAddress = identity.MatchedExistingUser
-            ? directoryUser.Attributes.TryGetValue("UserPrincipalName", out var existingUserPrincipalName) && !string.IsNullOrWhiteSpace(existingUserPrincipalName)
-                ? existingUserPrincipalName
-                : directoryUser.Attributes.TryGetValue("mail", out var existingMail) && !string.IsNullOrWhiteSpace(existingMail)
-                    ? existingMail
-                    : DirectoryIdentityFormatter.BuildEmailAddress(
-                        await directoryGateway.ResolveAvailableEmailLocalPartAsync(worker, isCreate: false, cancellationToken))
-            : DirectoryIdentityFormatter.BuildEmailAddress(
-                await directoryGateway.ResolveAvailableEmailLocalPartAsync(worker, isCreate: true, cancellationToken));
-        var attributeChanges = (await attributeDiffService.BuildDiffAsync(worker, directoryUser, proposedEmailAddress, logPath, cancellationToken))
-            .ToList();
-        UpsertManagerAttributeChange(attributeChanges, directoryUser, managerDistinguishedName);
-        var missingSourceAttributes = BuildMissingSourceAttributes(
-            worker.Attributes,
-            attributeMappingProvider.GetEnabledMappings(),
-            proposedEmailAddress);
+        var suppressInactiveCreateValidation = ShouldSuppressInactiveCreateValidation(lifecycle, directoryUser);
+        var proposedEmailAddress = string.Empty;
+        var attributeChanges = new List<AttributeChange>();
+        IReadOnlyList<MissingSourceAttributeRow> missingSourceAttributes = [];
+
+        if (!suppressInactiveCreateValidation)
+        {
+            proposedEmailAddress = identity.MatchedExistingUser
+                ? directoryUser.Attributes.TryGetValue("UserPrincipalName", out var existingUserPrincipalName) && !string.IsNullOrWhiteSpace(existingUserPrincipalName)
+                    ? existingUserPrincipalName
+                    : directoryUser.Attributes.TryGetValue("mail", out var existingMail) && !string.IsNullOrWhiteSpace(existingMail)
+                        ? existingMail
+                        : DirectoryIdentityFormatter.BuildEmailAddress(
+                            await directoryGateway.ResolveAvailableEmailLocalPartAsync(worker, isCreate: false, cancellationToken))
+                : DirectoryIdentityFormatter.BuildEmailAddress(
+                    await directoryGateway.ResolveAvailableEmailLocalPartAsync(worker, isCreate: true, cancellationToken));
+            attributeChanges = (await attributeDiffService.BuildDiffAsync(worker, directoryUser, proposedEmailAddress, logPath, cancellationToken))
+                .ToList();
+            UpsertManagerAttributeChange(attributeChanges, directoryUser, managerDistinguishedName);
+            missingSourceAttributes = BuildMissingSourceAttributes(
+                worker.Attributes,
+                attributeMappingProvider.GetEnabledMappings(),
+                proposedEmailAddress);
+        }
 
         var currentOu = DirectoryDistinguishedName.GetParentOu(directoryUser.DistinguishedName);
         var bucket = lifecycle.Bucket;
@@ -103,6 +111,14 @@ public sealed class WorkerPlanningService(
             ReviewCaseType: reviewCaseType,
             Reason: reason,
             CanAutoApply: canAutoApply);
+    }
+
+    private static bool ShouldSuppressInactiveCreateValidation(
+        LifecycleDecision lifecycle,
+        DirectoryUserSnapshot directoryUser)
+    {
+        return string.Equals(lifecycle.Bucket, "unchanged", StringComparison.OrdinalIgnoreCase) &&
+               string.IsNullOrWhiteSpace(directoryUser.SamAccountName);
     }
 
     private static void UpsertManagerAttributeChange(
