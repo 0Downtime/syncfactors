@@ -240,6 +240,44 @@ public sealed class WorkerPreviewPlannerTests
     }
 
     [Fact]
+    public async Task PreviewAsync_DoesNotRequireReviewWhenRequiredGivenNameResolvesFromPreferredNameFallback()
+    {
+        var worker = new WorkerSnapshot(
+            WorkerId: "44522",
+            PreferredName: "Terra",
+            LastName: "Wells",
+            Department: "Infrastructure & Security",
+            TargetOu: "OU=Employees,DC=example,DC=com",
+            IsPrehire: false,
+            Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["personIdExternal"] = "44522",
+                ["lastName"] = "Wells"
+            });
+
+        var mappingProvider = new RequiredPathMappingProvider();
+        var planner = new WorkerPreviewPlanner(
+            new StubWorkerSource(worker),
+            new WorkerPlanningService(
+                new StubDirectoryGateway(),
+                new StubIdentityMatcher(),
+                CreateLifecyclePolicy(),
+                new AttributeDiffService(mappingProvider, new StubWorkerPreviewLogWriter(), NullLogger<AttributeDiffService>.Instance),
+                mappingProvider,
+                NullLogger<WorkerPlanningService>.Instance),
+            mappingProvider,
+            new StubWorkerPreviewLogWriter(),
+            new StubRunRepository(),
+            NullLogger<WorkerPreviewPlanner>.Instance);
+
+        var preview = await planner.PreviewAsync("44522", CancellationToken.None);
+
+        Assert.Null(preview.ReviewCaseType);
+        Assert.Empty(preview.MissingSourceAttributes);
+        Assert.Equal("Terra", preview.DiffRows.Single(row => row.Attribute == "GivenName").After);
+    }
+
+    [Fact]
     public async Task PreviewAsync_DoesNotRequireReviewWhenRequiredUpnIsGeneratedFromResolvedEmail()
     {
         var worker = new WorkerSnapshot(
