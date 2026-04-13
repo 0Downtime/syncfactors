@@ -913,6 +913,11 @@ public sealed class SqliteRunRepository(SqlitePathResolver pathResolver) : IRunR
             return "Delete all users";
         }
 
+        if (string.Equals(mode, "GraveyardAutoDelete", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Graveyard auto delete";
+        }
+
         return "Unknown";
     }
 

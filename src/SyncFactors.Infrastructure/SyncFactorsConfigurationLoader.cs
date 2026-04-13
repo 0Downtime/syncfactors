@@ -99,6 +99,7 @@ public sealed class SyncFactorsConfigurationLoader
             Sync: new SyncPolicyConfig(
                 EnableBeforeStartDays: document.GetRequiredObject("sync").GetRequiredInt32("enableBeforeStartDays"),
                 DeletionRetentionDays: document.GetRequiredObject("sync").GetRequiredInt32("deletionRetentionDays"),
+                AutoDeleteFromGraveyard: document.GetRequiredObject("sync").TryGetBoolean("autoDeleteFromGraveyard") ?? false,
                 LeaveStatusValues: document.GetRequiredObject("sync").TryGetStringArray("leaveStatusValues") ?? []),
             Safety: new SafetyConfig(
                 MaxCreatesPerRun: document.GetRequiredObject("safety").GetRequiredInt32("maxCreatesPerRun"),
