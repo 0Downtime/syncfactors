@@ -1609,6 +1609,18 @@ a:focus-visible {
   flex-wrap: wrap;
 }
 
+.deletion-queue-table td,
+.deletion-queue-table th {
+  white-space: nowrap;
+  padding: 9px 8px;
+  font-size: 0.95rem;
+}
+
+.deletion-queue-user {
+  display: grid;
+  gap: 2px;
+}
+
 .admin-user-compact-button {
   min-height: 34px;
   padding: 0 10px;

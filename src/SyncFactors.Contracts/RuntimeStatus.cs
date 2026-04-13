@@ -198,6 +198,10 @@ public sealed record WorkerRunSettings(
     int MaxDisablesPerRun = int.MaxValue,
     int MaxDeletionsPerRun = int.MaxValue);
 
+public sealed record GraveyardDeletionQueueSettings(
+    int RetentionDays,
+    bool AutoDeleteEnabled);
+
 public sealed record LifecyclePolicySettings(
     string ActiveOu,
     string PrehireOu,
@@ -316,7 +320,10 @@ public sealed record GraveyardRetentionRecord(
     string Status,
     DateTimeOffset? EndDateUtc,
     DateTimeOffset LastObservedAtUtc,
-    bool Active);
+    bool Active,
+    bool IsOnHold = false,
+    DateTimeOffset? HoldPlacedAtUtc = null,
+    string? HoldPlacedBy = null);
 
 public sealed record GraveyardRetentionReportStatus(
     DateTimeOffset? LastSentAtUtc,

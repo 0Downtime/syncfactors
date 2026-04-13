@@ -157,7 +157,8 @@
   },
   "sync": {
     "enableBeforeStartDays": 7,
-    "deletionRetentionDays": 90
+    "deletionRetentionDays": 90,
+    "autoDeleteFromGraveyard": false
   },
   "safety": {
     "maxCreatesPerRun": 5000,
