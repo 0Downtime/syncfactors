@@ -27,6 +27,8 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
     const elements = {
         root: document.querySelector("[data-connection-health]"),
         statusRoot: document.querySelector("[data-dashboard-status]"),
+        railPanel: document.querySelector(".dashboard-rail"),
+        runsPanel: document.querySelector(".recent-runs-panel"),
         runsBody: document.querySelector("[data-runs-body]"),
         runsTable: document.querySelector("[data-runs-table]"),
         runsEmpty: document.querySelector("[data-runs-empty]"),
@@ -47,6 +49,13 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
         progressFill: document.querySelector("[data-progress-fill]"),
         progressCaption: document.querySelector("[data-progress-caption]"),
         progressCopy: document.querySelector("[data-progress-copy]"),
+        scheduleTitle: document.querySelector("[data-dashboard-schedule-title]"),
+        scheduleBadge: document.querySelector("[data-dashboard-schedule-badge]"),
+        scheduleCountdown: document.querySelector("[data-dashboard-schedule-countdown]"),
+        scheduleCountdownValue: document.querySelector("[data-dashboard-schedule-countdown-value]"),
+        scheduleNextRun: document.querySelector("[data-dashboard-schedule-next-run-at]"),
+        scheduleInterval: document.querySelector("[data-dashboard-schedule-interval]"),
+        scheduleLastRun: document.querySelector("[data-dashboard-schedule-last-run]"),
         runsChart: document.querySelector("[data-runs-chart]"),
         runsChartEmpty: document.querySelector("[data-runs-chart-empty]"),
         bucketChart: document.querySelector("[data-buckets-chart]"),
@@ -92,15 +101,20 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
     let bucketChartInstance = null;
     let latestDashboardSnapshot = null;
     let latestHealthSnapshot = null;
+    let latestScheduleSnapshot = null;
     let latestProgressPercent = 0;
     let selectedRunId = null;
     let selectedBucketKey = null;
+    let hoveredRunId = null;
+    let hoveredBucketKey = null;
+    let scheduleTimerId = null;
 
     if (elements.refreshButton) {
         elements.refreshButton.addEventListener("click", function () {
             runMajorTransition(function () {
                 void loadDashboard();
                 void loadHealth();
+                void loadSchedule();
             });
         });
     }
@@ -349,6 +363,54 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
         element.classList.toggle("is-hidden", !!hidden);
     }
 
+    function setPanelLoading(panel, loading) {
+        if (!panel) {
+            return;
+        }
+
+        panel.classList.toggle("is-loading", !!loading);
+    }
+
+    function setRefreshLoading(loading) {
+        if (!elements.refreshButton) {
+            return;
+        }
+
+        elements.refreshButton.classList.toggle("is-loading", !!loading);
+        elements.refreshButton.setAttribute("aria-busy", String(!!loading));
+    }
+
+    function syncHoverState() {
+        if (!latestDashboardSnapshot) {
+            return;
+        }
+
+        syncRunsInteractionState();
+        syncTimelineInteractionState();
+        renderRunsChart(latestDashboardSnapshot.runs || []);
+        renderBucketChart(latestDashboardSnapshot);
+    }
+
+    function setHoveredRun(runId) {
+        const nextValue = runId || null;
+        if (hoveredRunId === nextValue) {
+            return;
+        }
+
+        hoveredRunId = nextValue;
+        syncHoverState();
+    }
+
+    function setHoveredBucket(bucketKey) {
+        const nextValue = bucketKey || null;
+        if (hoveredBucketKey === nextValue) {
+            return;
+        }
+
+        hoveredBucketKey = nextValue;
+        syncHoverState();
+    }
+
     function flashUpdate(element) {
         if (!element || !motionAllowed() || !element.animate) {
             return;
@@ -458,6 +520,63 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
         }
     }
 
+    function formatScheduleCountdown(schedule) {
+        if (!schedule || !schedule.enabled || !schedule.nextRunAt) {
+            return { label: "Idle", progress: "0turn" };
+        }
+
+        const nextRunAt = new Date(schedule.nextRunAt);
+        if (Number.isNaN(nextRunAt.getTime())) {
+            return { label: "Unknown", progress: "0turn" };
+        }
+
+        const remainingMs = nextRunAt.getTime() - Date.now();
+        if (remainingMs <= 0) {
+            return { label: "Due", progress: "1turn" };
+        }
+
+        const totalMinutes = Math.max(1, Math.round(remainingMs / 60000));
+        const hours = Math.floor(totalMinutes / 60);
+        const minutes = totalMinutes % 60;
+        const label = hours > 0 ? hours + "h " + minutes + "m" : minutes + "m";
+        const progress = Math.max(0.08, Math.min(0.98, remainingMs / (24 * 60 * 60 * 1000)));
+
+        return { label, progress: progress.toFixed(3) + "turn" };
+    }
+
+    function renderSchedule(schedule) {
+        if (!elements.scheduleTitle || !elements.scheduleBadge || !elements.scheduleCountdown || !elements.scheduleCountdownValue || !elements.scheduleNextRun || !elements.scheduleInterval || !elements.scheduleLastRun) {
+            return;
+        }
+
+        latestScheduleSnapshot = schedule;
+
+        const isEnabled = !!(schedule && schedule.enabled);
+        const countdown = formatScheduleCountdown(schedule);
+
+        elements.scheduleTitle.textContent = isEnabled ? "Recurring schedule is active" : "Recurring schedule is paused";
+        elements.scheduleBadge.className = "badge " + (isEnabled ? "good" : "dim");
+        elements.scheduleBadge.textContent = isEnabled ? "Enabled" : "Paused";
+        elements.scheduleCountdownValue.textContent = countdown.label;
+        elements.scheduleCountdown.style.setProperty("--ring-progress", countdown.progress);
+        elements.scheduleNextRun.setAttribute("data-dashboard-schedule-next-run-at", schedule && schedule.nextRunAt ? schedule.nextRunAt : "");
+        elements.scheduleNextRun.textContent = schedule && schedule.nextRunAt ? formatTimestamp(schedule.nextRunAt) : "Not scheduled";
+        elements.scheduleInterval.textContent = isEnabled ? (schedule.intervalMinutes || 0) + " minutes" : "Not scheduled";
+        elements.scheduleLastRun.textContent = schedule && schedule.lastScheduledRunAt ? formatTimestamp(schedule.lastScheduledRunAt) : "Not scheduled";
+    }
+
+    function startScheduleTimer() {
+        if (scheduleTimerId) {
+            return;
+        }
+
+        scheduleTimerId = window.setInterval(function () {
+            if (latestScheduleSnapshot) {
+                renderSchedule(latestScheduleSnapshot);
+            }
+        }, 30000);
+    }
+
     function runDetailHref(runId) {
         return "/Runs/Detail/" + encodeURIComponent(runId);
     }
@@ -530,6 +649,7 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
 
     function setSelectedRun(runId) {
         selectedBucketKey = null;
+        hoveredBucketKey = null;
         selectedRunId = selectedRunId === runId ? null : runId;
 
         if (latestDashboardSnapshot) {
@@ -539,6 +659,7 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
 
     function setSelectedBucket(bucketKey) {
         selectedRunId = null;
+        hoveredRunId = null;
         selectedBucketKey = selectedBucketKey === bucketKey ? null : bucketKey;
 
         if (latestDashboardSnapshot) {
@@ -549,6 +670,8 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
     function clearRunsFilter() {
         selectedRunId = null;
         selectedBucketKey = null;
+        hoveredRunId = null;
+        hoveredBucketKey = null;
 
         if (latestDashboardSnapshot) {
             renderDashboard(latestDashboardSnapshot);
@@ -590,44 +713,136 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
             : "No recent runs match the current chart drill-down filter.";
     }
 
-    function appendCell(row, text, className) {
+    function createCell(className) {
         const cell = document.createElement("td");
-        cell.textContent = text;
         if (className) {
             cell.className = className;
         }
-        row.appendChild(cell);
+        return cell;
     }
 
-    function appendStatusCell(row, status) {
-        const cell = document.createElement("td");
-        cell.className = "recent-runs-table__status";
-        const badge = document.createElement("span");
-        badge.className = "badge " + runStatusClass(status);
-        badge.textContent = status;
-        cell.appendChild(badge);
-        row.appendChild(cell);
-    }
-
-    function appendSummaryCell(row, text) {
-        const cell = document.createElement("td");
-        const content = document.createElement("span");
-        cell.className = "recent-runs-table__summary";
-        cell.title = text;
-        content.className = "summary-value";
-        content.textContent = text;
-        cell.appendChild(content);
-        row.appendChild(cell);
-    }
-
-    function appendLinkCell(row, href, text) {
-        const cell = document.createElement("td");
-        cell.className = "recent-runs-table__actions";
+    function buildRunRow() {
+        const row = document.createElement("tr");
+        const startedCell = createCell("recent-runs-table__started");
+        const triggerCell = createCell("recent-runs-table__trigger");
+        const modeCell = createCell("recent-runs-table__mode");
+        const statusCell = createCell("recent-runs-table__status");
+        const statusBadge = document.createElement("span");
+        statusCell.appendChild(statusBadge);
+        const dryRunCell = createCell("recent-runs-table__dry-run");
+        const workersCell = createCell("recent-runs-table__workers");
+        const summaryCell = createCell("recent-runs-table__summary");
+        const summaryValue = document.createElement("span");
+        summaryValue.className = "summary-value";
+        summaryCell.appendChild(summaryValue);
+        const actionsCell = createCell("recent-runs-table__actions");
         const link = document.createElement("a");
-        link.setAttribute("href", href);
-        link.textContent = text;
-        cell.appendChild(link);
-        row.appendChild(cell);
+        link.textContent = "Open";
+        actionsCell.appendChild(link);
+
+        row.appendChild(startedCell);
+        row.appendChild(triggerCell);
+        row.appendChild(modeCell);
+        row.appendChild(statusCell);
+        row.appendChild(dryRunCell);
+        row.appendChild(workersCell);
+        row.appendChild(summaryCell);
+        row.appendChild(actionsCell);
+
+        row.__cells = {
+            startedCell,
+            triggerCell,
+            modeCell,
+            statusBadge,
+            dryRunCell,
+            workersCell,
+            summaryCell,
+            summaryValue,
+            link
+        };
+
+        row.setAttribute("tabindex", "0");
+        row.addEventListener("click", function (event) {
+            if (event.target && event.target.closest("a")) {
+                return;
+            }
+
+            setSelectedRun(row.dataset.runId);
+        });
+        row.addEventListener("keydown", function (event) {
+            if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                setSelectedRun(row.dataset.runId);
+            }
+        });
+        row.addEventListener("mouseenter", function () {
+            setHoveredRun(row.dataset.runId);
+        });
+        row.addEventListener("mouseleave", function () {
+            setHoveredRun(null);
+        });
+
+        return row;
+    }
+
+    function syncRunRowState(row) {
+        if (!row) {
+            return;
+        }
+
+        const isSelected = !!selectedRunId && selectedRunId === row.dataset.runId;
+        const isHovered = !!hoveredRunId && hoveredRunId === row.dataset.runId;
+        const isDimmed = (!!selectedRunId && !isSelected) || (!!hoveredRunId && !isHovered && !isSelected);
+
+        row.classList.toggle("is-selected", isSelected);
+        row.classList.toggle("is-hovered", isHovered);
+        row.classList.toggle("is-dimmed", isDimmed);
+    }
+
+    function populateRunRow(row, run) {
+        const cells = row.__cells;
+        row.dataset.runId = run.runId;
+        cells.startedCell.textContent = formatTimestamp(run.startedAt);
+        cells.triggerCell.textContent = textOrFallback(run.runTrigger, "AdHoc");
+        cells.modeCell.textContent = textOrFallback(run.mode, "Unknown");
+        cells.statusBadge.className = "badge " + runStatusClass(textOrFallback(run.status, "Unknown"));
+        cells.statusBadge.textContent = textOrFallback(run.status, "Unknown");
+        cells.dryRunCell.textContent = run.dryRun ? "Yes" : "No";
+        cells.workersCell.textContent = String(run.totalWorkers || 0);
+
+        const summary = runSummary(run);
+        cells.summaryCell.title = summary;
+        cells.summaryValue.textContent = summary;
+        cells.link.setAttribute("href", runDetailHref(run.runId));
+        syncRunRowState(row);
+    }
+
+    function animateRunRowLayout(rows, beforeRects) {
+        if (!motionAllowed()) {
+            return;
+        }
+
+        rows.forEach(function (row, index) {
+            const previousRect = beforeRects.get(row.dataset.runId);
+            const nextRect = row.getBoundingClientRect();
+            const deltaY = previousRect ? previousRect.top - nextRect.top : 0;
+
+            row.animate(
+                previousRect
+                    ? [
+                        { transform: "translateY(" + deltaY + "px)" },
+                        { transform: "translateY(0)" }
+                    ]
+                    : [
+                        { opacity: 0, transform: "translateY(14px)" },
+                        { opacity: 1, transform: "translateY(0)" }
+                    ],
+                {
+                    duration: previousRect ? 300 : 260,
+                    delay: previousRect ? 0 : index * 24,
+                    easing: "cubic-bezier(0.22, 1, 0.36, 1)"
+                });
+        });
     }
 
     function animateCollection(nodes) {
@@ -647,41 +862,49 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
             return;
         }
 
-        elements.runsBody.innerHTML = "";
+        const beforeRects = new Map();
+        const existingRows = Array.prototype.slice.call(elements.runsBody.querySelectorAll("tr"));
+        const existingById = new Map();
+
+        existingRows.forEach(function (row) {
+            beforeRects.set(row.dataset.runId, row.getBoundingClientRect());
+            existingById.set(row.dataset.runId, row);
+        });
+
         toggleHidden(elements.runsTable, !runs.length);
         toggleHidden(elements.runsEmpty, !!runs.length);
 
+        const fragment = document.createDocumentFragment();
+        const activeRunIds = new Set();
+
         runs.forEach(function (run) {
-            const row = document.createElement("tr");
-            row.dataset.runId = run.runId;
-            row.classList.toggle("is-selected", selectedRunId === run.runId);
-            row.setAttribute("tabindex", "0");
-            row.addEventListener("click", function (event) {
-                if (event.target && event.target.closest("a")) {
-                    return;
-                }
-
-                setSelectedRun(run.runId);
-            });
-            row.addEventListener("keydown", function (event) {
-                if (event.key === "Enter" || event.key === " ") {
-                    event.preventDefault();
-                    setSelectedRun(run.runId);
-                }
-            });
-
-            appendCell(row, formatTimestamp(run.startedAt), "recent-runs-table__started");
-            appendCell(row, textOrFallback(run.runTrigger, "AdHoc"), "recent-runs-table__trigger");
-            appendCell(row, textOrFallback(run.mode, "Unknown"), "recent-runs-table__mode");
-            appendStatusCell(row, textOrFallback(run.status, "Unknown"));
-            appendCell(row, run.dryRun ? "Yes" : "No", "recent-runs-table__dry-run");
-            appendCell(row, String(run.totalWorkers || 0), "recent-runs-table__workers");
-            appendSummaryCell(row, runSummary(run));
-            appendLinkCell(row, runDetailHref(run.runId), "Open");
-            elements.runsBody.appendChild(row);
+            const row = existingById.get(run.runId) || buildRunRow();
+            populateRunRow(row, run);
+            activeRunIds.add(run.runId);
+            fragment.appendChild(row);
         });
 
-        animateCollection(Array.prototype.slice.call(elements.runsBody.querySelectorAll("tr")));
+        elements.runsBody.appendChild(fragment);
+
+        existingRows.forEach(function (row) {
+            if (!activeRunIds.has(row.dataset.runId)) {
+                row.remove();
+            }
+        });
+
+        const renderedRows = Array.prototype.slice.call(elements.runsBody.querySelectorAll("tr"));
+        animateRunRowLayout(renderedRows, beforeRects);
+        if (!beforeRects.size) {
+            animateCollection(renderedRows);
+        }
+    }
+
+    function syncRunsInteractionState() {
+        if (!elements.runsBody) {
+            return;
+        }
+
+        Array.prototype.slice.call(elements.runsBody.querySelectorAll("tr")).forEach(syncRunRowState);
     }
 
     function renderStatus(snapshot) {
@@ -958,6 +1181,7 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
         steps.forEach(function (step) {
             const item = document.createElement("li");
             item.className = "run-timeline-item " + (step.tone || "neutral");
+            item.dataset.runId = focusRun ? focusRun.runId : "";
 
             const marker = document.createElement("span");
             marker.className = "run-timeline-marker";
@@ -990,20 +1214,44 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
             item.appendChild(copy);
             elements.timelineList.appendChild(item);
         });
+
+        syncTimelineInteractionState();
+    }
+
+    function syncTimelineInteractionState() {
+        if (!elements.timelineList) {
+            return;
+        }
+
+        const items = Array.prototype.slice.call(elements.timelineList.querySelectorAll(".run-timeline-item"));
+        const activeHoverRun = hoveredRunId || null;
+
+        items.forEach(function (item) {
+            const matchesHover = !!activeHoverRun && item.dataset.runId === activeHoverRun;
+            const matchesSelection = !!selectedRunId && item.dataset.runId === selectedRunId;
+            const isDimmed = (!!selectedRunId && !matchesSelection) || (!!activeHoverRun && !matchesHover && !matchesSelection);
+
+            item.classList.toggle("is-hovered", matchesHover || matchesSelection);
+            item.classList.toggle("is-dimmed", isDimmed);
+        });
     }
 
     function buildSeriesData(runs, definition, palette) {
+        const activeRunFocus = selectedRunId || hoveredRunId;
+        const activeBucketFocus = selectedBucketKey || hoveredBucketKey;
+
         return runs.map(function (run) {
-            const isFocusedRun = selectedRunId && selectedRunId === run.runId;
-            const isRunDimmed = !!selectedRunId && selectedRunId !== run.runId;
-            const isBucketDimmed = !!selectedBucketKey && selectedBucketKey !== definition.key;
+            const isFocusedRun = !!activeRunFocus && activeRunFocus === run.runId;
+            const isHoveredRun = !!hoveredRunId && hoveredRunId === run.runId;
+            const isRunDimmed = !!activeRunFocus && activeRunFocus !== run.runId;
+            const isBucketDimmed = !!activeBucketFocus && activeBucketFocus !== definition.key;
 
             return {
                 value: run[definition.key] || 0,
                 itemStyle: {
-                    opacity: isRunDimmed ? 0.28 : (isBucketDimmed ? 0.38 : 1),
-                    borderColor: isFocusedRun ? palette.text : "transparent",
-                    borderWidth: isFocusedRun ? 2 : 0
+                    opacity: isRunDimmed ? 0.22 : (isBucketDimmed ? 0.34 : 1),
+                    borderColor: isFocusedRun || isHoveredRun ? palette.text : "transparent",
+                    borderWidth: isFocusedRun ? 2 : (isHoveredRun ? 1.5 : 0)
                 }
             };
         });
@@ -1015,11 +1263,22 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
         }
 
         runsChartInstance.off("click");
+        runsChartInstance.off("mouseover");
+        runsChartInstance.off("globalout");
         runsChartInstance.on("click", function (params) {
             const run = displayRuns[params.dataIndex];
             if (run) {
                 setSelectedRun(run.runId);
             }
+        });
+        runsChartInstance.on("mouseover", function (params) {
+            const run = displayRuns[params.dataIndex];
+            if (run) {
+                setHoveredRun(run.runId);
+            }
+        });
+        runsChartInstance.on("globalout", function () {
+            setHoveredRun(null);
         });
     }
 
@@ -1085,11 +1344,22 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
         }
 
         bucketChartInstance.off("click");
+        bucketChartInstance.off("mouseover");
+        bucketChartInstance.off("globalout");
         bucketChartInstance.on("click", function (params) {
             const definition = bucketLabelToDefinition[params.name];
             if (definition) {
                 setSelectedBucket(definition.key);
             }
+        });
+        bucketChartInstance.on("mouseover", function (params) {
+            const definition = bucketLabelToDefinition[params.name];
+            if (definition) {
+                setHoveredBucket(definition.key);
+            }
+        });
+        bucketChartInstance.on("globalout", function () {
+            setHoveredBucket(null);
         });
     }
 
@@ -1100,7 +1370,12 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
 
         ensureCharts();
 
-        const focusRun = snapshot.activeRun || snapshot.lastCompletedRun || (snapshot.runs && snapshot.runs.length ? snapshot.runs[0] : null);
+        const allRuns = Array.isArray(snapshot.runs) ? snapshot.runs : [];
+        const focusRun = (selectedRunId && findRunById(allRuns, selectedRunId)) ||
+            (hoveredRunId && findRunById(allRuns, hoveredRunId)) ||
+            snapshot.activeRun ||
+            snapshot.lastCompletedRun ||
+            (allRuns.length ? allRuns[0] : null);
         if (!focusRun) {
             toggleHidden(elements.bucketChart, true);
             toggleHidden(elements.bucketChartEmpty, false);
@@ -1113,12 +1388,20 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
             return;
         }
 
+        const palette = getThemePalette();
         const entries = bucketDefinitions
             .map(function (definition) {
+                const isFocused = selectedBucketKey === definition.key || hoveredBucketKey === definition.key;
+                const isDimmed = !!(selectedBucketKey || hoveredBucketKey) && !isFocused;
                 return {
                     name: definition.label,
                     value: focusRun[definition.key] || 0,
-                    selected: selectedBucketKey === definition.key
+                    selected: selectedBucketKey === definition.key,
+                    itemStyle: {
+                        opacity: isDimmed ? 0.34 : 1,
+                        borderColor: isFocused ? palette.text : "transparent",
+                        borderWidth: isFocused ? 1.5 : 0
+                    }
                 };
             })
             .filter(function (entry) { return entry.value > 0; });
@@ -1144,7 +1427,6 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
                 : "Click a slice to filter the table. Showing bucket composition for recent run " + focusRun.runId + ".";
         }
 
-        const palette = getThemePalette();
         bucketChartInstance.setOption({
             animationDuration: motionAllowed() ? 420 : 0,
             animationDurationUpdate: motionAllowed() ? 360 : 0,
@@ -1203,6 +1485,11 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
         renderTimeline(snapshot, filteredRuns);
         renderRunsChart(allRuns);
         renderBucketChart(snapshot);
+        syncRunsInteractionState();
+        syncTimelineInteractionState();
+        setPanelLoading(elements.railPanel, false);
+        setPanelLoading(elements.runsPanel, false);
+        setRefreshLoading(false);
 
         if (elements.checkedMessage) {
             elements.checkedMessage.textContent = "Live data refreshed " + formatTimestamp(snapshot.checkedAt);
@@ -1276,6 +1563,8 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
             segment.className = "connection-segment " + statusClass(probe ? probe.status : "unknown");
             segment.title = dependency + ": " + (probe ? probe.summary : "No data");
         });
+
+        setPanelLoading(elements.root, false);
     }
 
     function renderHealthFailure(message) {
@@ -1283,6 +1572,8 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
         if (lastChecked) {
             lastChecked.textContent = message;
         }
+
+        setPanelLoading(elements.root, false);
     }
 
     async function loadHealth() {
@@ -1291,6 +1582,7 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
         }
 
         isLoadingHealth = true;
+        setPanelLoading(elements.root, true);
         try {
             const response = await fetch("/api/health", { headers: { Accept: "application/json" } });
             if (!response.ok) {
@@ -1305,12 +1597,31 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
         }
     }
 
+    async function loadSchedule() {
+        try {
+            const response = await fetch("/api/sync/schedule", { headers: { Accept: "application/json" } });
+            if (!response.ok) {
+                throw new Error("Schedule request failed with HTTP " + response.status + ".");
+            }
+
+            const payload = await response.json();
+            renderSchedule(payload && payload.schedule ? payload.schedule : null);
+        } catch (error) {
+            if (!latestScheduleSnapshot) {
+                renderSchedule(null);
+            }
+        }
+    }
+
     async function loadDashboard() {
         if (isLoadingDashboard) {
             return;
         }
 
         isLoadingDashboard = true;
+        setPanelLoading(elements.railPanel, true);
+        setPanelLoading(elements.runsPanel, true);
+        setRefreshLoading(true);
         try {
             const response = await fetch("/api/dashboard", { headers: { Accept: "application/json" } });
             if (!response.ok) {
@@ -1324,6 +1635,9 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
             }
         } finally {
             isLoadingDashboard = false;
+            setPanelLoading(elements.railPanel, false);
+            setPanelLoading(elements.runsPanel, false);
+            setRefreshLoading(false);
         }
     }
 
@@ -1333,6 +1647,7 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
         if (immediate) {
             void loadDashboard();
             void loadHealth();
+            void loadSchedule();
         }
 
         if (!dashboardTimerId) {
@@ -1454,6 +1769,7 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
     }
 
     function startDashboard() {
+        startScheduleTimer();
         startFallbackPolling();
         void startRealtimeConnection();
     }
@@ -1469,6 +1785,10 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
 
         if (reconnectTimerId) {
             window.clearTimeout(reconnectTimerId);
+        }
+
+        if (scheduleTimerId) {
+            window.clearInterval(scheduleTimerId);
         }
 
         if (connection) {

@@ -75,6 +75,28 @@
                 <span class="icon-button-label">Refresh</span>
             </button>
         </div>
+        <section class="dashboard-schedule-widget" aria-label="Next scheduled sync">
+            <div class="dashboard-schedule-head">
+                <div>
+                    <p class="eyebrow">Next Scheduled Sync</p>
+                    <p class="dashboard-schedule-title" data-dashboard-schedule-title>@(Model.Schedule.Enabled ? "Recurring schedule is active" : "Recurring schedule is paused")</p>
+                </div>
+                <span class="badge @(Model.Schedule.Enabled ? "good" : "dim")" data-dashboard-schedule-badge>@(Model.Schedule.Enabled ? "Enabled" : "Paused")</span>
+            </div>
+            <div class="dashboard-schedule-body">
+                <div class="dashboard-schedule-countdown" data-dashboard-schedule-countdown style="--ring-progress: @(Model.Schedule.NextRunAt.HasValue ? "0.82turn" : "0turn");">
+                    <div class="dashboard-schedule-countdown-copy">
+                        <strong data-dashboard-schedule-countdown-value>@(Model.Schedule.NextRunAt.HasValue ? "Pending" : "Idle")</strong>
+                        <span class="muted">until next run</span>
+                    </div>
+                </div>
+                <dl class="kv dashboard-schedule-kv">
+                    <div><dt>Next Run</dt><dd data-dashboard-schedule-next-run-at="@(Model.Schedule.NextRunAt?.ToString("o") ?? string.Empty)">@FormatScheduleTimestamp(Model.Schedule.NextRunAt)</dd></div>
+                    <div><dt>Interval</dt><dd data-dashboard-schedule-interval>@(Model.Schedule.Enabled ? $"{Model.Schedule.IntervalMinutes} minutes" : "Not scheduled")</dd></div>
+                    <div><dt>Last Scheduled</dt><dd data-dashboard-schedule-last-run>@FormatScheduleTimestamp(Model.Schedule.LastScheduledRunAt)</dd></div>
+                </dl>
+            </div>
+        </section>
         <section class="dashboard-status-signal" data-dashboard-signal data-signal-state="@StatusVisualState(Model.Status)" aria-label="Runtime signal">
             <div class="dashboard-status-visual" aria-hidden="true">
                 <span class="dashboard-status-orbit dashboard-status-orbit-outer"></span>
@@ -248,6 +270,9 @@
         if (run.GuardrailFailures > 0) parts.Add($"{run.GuardrailFailures} guardrails");
         return parts.Count == 0 ? "No materialized bucket counts yet" : string.Join(" · ", parts);
     }
+
+    private static string FormatScheduleTimestamp(DateTimeOffset? value) =>
+        value?.ToLocalTime().ToString("g") ?? "Not scheduled";
 
     private static string StatusVisualState(SyncFactors.Contracts.RuntimeStatus status)
     {
