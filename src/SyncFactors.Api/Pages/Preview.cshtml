@@ -6,6 +6,9 @@
     var riskCallouts = preview is null ? [] : BuildRiskCallouts(preview);
     var managerDiff = preview?.DiffRows.FirstOrDefault(row => string.Equals(row.Attribute, "manager", StringComparison.OrdinalIgnoreCase));
     var employmentStatus = preview is null ? null : Model.GetEmploymentStatusDisplay(preview);
+    var changedCount = preview?.DiffRows.Count(row => row.Changed) ?? 0;
+    var unchangedCount = preview?.DiffRows.Count(row => !row.Changed) ?? 0;
+    var highRiskChangedCount = preview?.DiffRows.Count(row => row.Changed && IsHighRiskAttribute(row.Attribute)) ?? 0;
 }
 
 <section class="hero hero-compact">
@@ -93,10 +96,44 @@
 
 @if (preview is not null)
 {
-    var changedCount = preview.DiffRows.Count(row => row.Changed);
     var sourcePathAttributes = preview.SourceAttributes
         .Where(attribute => IsPathLikeAttribute(attribute.Attribute))
         .ToArray();
+
+    <section class="preview-inspector-grid">
+        <article class="preview-inspector-card" data-tone="@(highRiskChangedCount > 0 ? "warn" : "good")">
+            <div class="preview-inspector-head">
+                <div>
+                    <p class="eyebrow">Inspector</p>
+                    <h2>Preview Control Surface</h2>
+                    <p class="muted">Review the plan, the risk posture, and the saved snapshot before applying anything to Active Directory.</p>
+                </div>
+                <span class="badge @(highRiskChangedCount > 0 ? "warn" : "good")">@(highRiskChangedCount > 0 ? "Elevated Review" : "Low Risk")</span>
+            </div>
+            <div class="metric-strip">
+                <span class="metric-pill"><strong>@changedCount</strong> changed</span>
+                <span class="metric-pill"><strong>@unchangedCount</strong> unchanged</span>
+                <span class="metric-pill"><strong>@preview.UsedSourceAttributes.Count</strong> source fields used</span>
+                <span class="metric-pill"><strong>@highRiskChangedCount</strong> high-risk changes</span>
+            </div>
+        </article>
+
+        <aside class="preview-inspector-card" data-tone="@(riskCallouts.Count > 0 ? "warn" : "good")">
+            <div class="preview-inspector-head">
+                <div>
+                    <p class="eyebrow">Risk Posture</p>
+                    <h2>Apply Readiness</h2>
+                </div>
+                <span class="badge @(riskCallouts.Count > 0 ? "warn" : "good")">@(riskCallouts.Count > 0 ? "Review" : "Ready")</span>
+            </div>
+            <div class="metric-strip">
+                <span class="metric-pill"><strong>@preview.MissingSourceAttributes.Count</strong> missing fields</span>
+                <span class="metric-pill"><strong>@preview.Buckets.Count</strong> active buckets</span>
+                <span class="metric-pill"><strong>@riskCallouts.Count</strong> guardrail notes</span>
+            </div>
+            <p class="muted">The saved fingerprint and risk callouts below should be treated as the gate for applying this preview.</p>
+        </aside>
+    </section>
 
     <section class="panel-grid preview-summary-grid">
         <article class="panel">
@@ -250,6 +287,12 @@
                 }
             </div>
         </div>
+        <div class="diff-chip-row" data-preview-diff-filters>
+            <button class="diff-chip" type="button" data-preview-filter="all" aria-pressed="true"><strong>All</strong> rows</button>
+            <button class="diff-chip" type="button" data-preview-filter="changed" aria-pressed="false"><strong>@changedCount</strong> changed</button>
+            <button class="diff-chip" type="button" data-preview-filter="unchanged" aria-pressed="false"><strong>@unchangedCount</strong> unchanged</button>
+            <button class="diff-chip" type="button" data-preview-filter="risk" aria-pressed="false"><strong>@highRiskChangedCount</strong> high-risk</button>
+        </div>
 
         @if (Model.VisibleDiffRows.Count == 0)
         {
@@ -258,7 +301,7 @@
         else
         {
             <div class="table-scroll preview-diff-scroll">
-                <table class="data-table preview-diff-table">
+                <table class="data-table preview-diff-table" data-preview-diff-table>
                     <colgroup>
                         <col class="col-attribute" />
                         <col class="col-source" />
@@ -275,10 +318,13 @@
                             <th>Proposed</th>
                         </tr>
                     </thead>
-                    <tbody>
+                    <tbody data-preview-diff-body>
                     @foreach (var row in Model.VisibleDiffRows)
                     {
-                        <tr class="diff-row @(row.Changed ? "changed" : "same")">
+                        <tr class="diff-row @(row.Changed ? "changed" : "same") @(IsHighRiskAttribute(row.Attribute) && row.Changed ? "is-risk" : null)"
+                            data-diff-state="@(row.Changed ? "changed" : "unchanged")"
+                            data-diff-risk="@((IsHighRiskAttribute(row.Attribute) && row.Changed).ToString().ToLowerInvariant())"
+                            data-diff-attribute="@row.Attribute">
                             <td data-label="Attribute">@row.Attribute</td>
                             <td class="source-cell" data-label="Source">
                                 <span class="source-path" title="@(row.Source ?? "-")" tabindex="0">@(row.Source ?? "-")</span>
@@ -425,6 +471,28 @@
 
     private static bool IsPathLikeAttribute(string attribute) =>
         attribute.Contains('[') || attribute.Contains('.');
+
+    private static bool IsHighRiskAttribute(string? attribute)
+    {
+        if (string.IsNullOrWhiteSpace(attribute))
+        {
+            return false;
+        }
+
+        return attribute.Trim().ToLowerInvariant() switch
+        {
+            "manager" => true,
+            "distinguishedname" => true,
+            "targetou" => true,
+            "useraccountcontrol" => true,
+            "accountexpires" => true,
+            "samaccountname" => true,
+            "department" => true,
+            "title" => true,
+            "physicaldeliveryofficename" => true,
+            _ => false,
+        };
+    }
 
     private static string EnableTransition(bool? current, bool? proposed)
     {
