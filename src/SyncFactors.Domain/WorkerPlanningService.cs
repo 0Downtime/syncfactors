@@ -62,7 +62,7 @@ public sealed class WorkerPlanningService(
                 .ToList();
             UpsertManagerAttributeChange(attributeChanges, directoryUser, managerDistinguishedName);
             missingSourceAttributes = BuildMissingSourceAttributes(
-                worker.Attributes,
+                worker,
                 attributeMappingProvider.GetEnabledMappings(),
                 proposedEmailAddress);
         }
@@ -251,20 +251,15 @@ public sealed class WorkerPlanningService(
     }
 
     internal static IReadOnlyList<MissingSourceAttributeRow> BuildMissingSourceAttributes(
-        IReadOnlyDictionary<string, string?> attributes,
+        WorkerSnapshot worker,
         IReadOnlyList<AttributeMapping> mappings,
         string? proposedEmailAddress = null)
     {
         var missing = new List<MissingSourceAttributeRow>();
         foreach (var mapping in mappings.Where(mapping => mapping.Required))
         {
-            if (TargetCanUseResolvedEmail(mapping.Target, proposedEmailAddress))
-            {
-                continue;
-            }
-
-            if (TryResolveAttribute(attributes, mapping.Source, out var value) &&
-                !string.IsNullOrWhiteSpace(value))
+            var value = SourceValueResolver.ResolveSourceValue(worker, mapping.Source, mapping.Target, proposedEmailAddress);
+            if (!string.IsNullOrWhiteSpace(value))
             {
                 continue;
             }
@@ -276,63 +271,5 @@ public sealed class WorkerPlanningService(
             .DistinctBy(row => row.Attribute, StringComparer.OrdinalIgnoreCase)
             .OrderBy(row => row.Attribute, StringComparer.OrdinalIgnoreCase)
             .ToArray();
-    }
-
-    private static bool TargetCanUseResolvedEmail(string target, string? proposedEmailAddress)
-    {
-        return target is "UserPrincipalName" or "mail"
-            && !string.IsNullOrWhiteSpace(proposedEmailAddress);
-    }
-
-    private static bool TryResolveAttribute(
-        IReadOnlyDictionary<string, string?> attributes,
-        string source,
-        out string? value)
-    {
-        if (AttributeDiffService.TryParseConcatSource(source, out var concatKeys))
-        {
-            var parts = new List<string>();
-            foreach (var key in concatKeys)
-            {
-                if (!TryResolveAttribute(attributes, key, out var part) || string.IsNullOrWhiteSpace(part))
-                {
-                    value = null;
-                    return false;
-                }
-
-                parts.Add(part.Trim());
-            }
-
-            value = string.Join(' ', parts);
-            return true;
-        }
-
-        foreach (var key in SplitSourceKeys(source))
-        {
-            if (attributes.TryGetValue(key, out value))
-            {
-                return true;
-            }
-
-            var normalizedKey = SourceAttributePathNormalizer.Normalize(key);
-            if (!string.Equals(normalizedKey, key, StringComparison.OrdinalIgnoreCase) &&
-                attributes.TryGetValue(normalizedKey, out value))
-            {
-                return true;
-            }
-        }
-
-        value = null;
-        return false;
-    }
-
-    private static IEnumerable<string> SplitSourceKeys(string? source)
-    {
-        if (string.IsNullOrWhiteSpace(source))
-        {
-            return [];
-        }
-
-        return source.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
     }
 }
