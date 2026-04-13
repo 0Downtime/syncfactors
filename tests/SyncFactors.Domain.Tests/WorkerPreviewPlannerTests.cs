@@ -194,7 +194,7 @@ public sealed class WorkerPreviewPlannerTests
         Assert.Equal("unchanged", preview.Buckets.Single());
         Assert.Null(preview.ReviewCaseType);
         Assert.Empty(preview.MissingSourceAttributes);
-        Assert.Empty(preview.DiffRows.Where(row => row.Changed));
+        Assert.DoesNotContain(preview.DiffRows, row => row.Changed);
         Assert.Null(diffService.LastProposedEmailAddress);
         Assert.Equal("unchanged", runRepository.ReplacedEntries.Single().entries.Single().Bucket);
         Assert.Empty(runRepository.ReplacedEntries.Single().entries.Single().Item.GetProperty("changedAttributeDetails").EnumerateArray());
