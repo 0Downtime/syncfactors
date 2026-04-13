@@ -34,9 +34,10 @@
                     <a class="@(currentPage == "/Index" ? "is-active" : null)" asp-page="/Index">Dashboard</a>
                     <a class="@(currentPage.StartsWith("/Sync", StringComparison.OrdinalIgnoreCase) ? "is-active" : null)" asp-page="/Sync">Sync</a>
                     <a class="@(currentPage.StartsWith("/Preview", StringComparison.OrdinalIgnoreCase) ? "is-active" : null)" asp-page="/Preview">Worker Preview</a>
-                    @if (User.IsInRole("Admin"))
+                    @if (User.IsInRole("Admin") || User.IsInRole("BreakGlassAdmin"))
                     {
                         <a class="@(currentPage.StartsWith("/Admin/Users", StringComparison.OrdinalIgnoreCase) ? "is-active" : null)" asp-page="/Admin/Users">Users</a>
+                        <a class="@(currentPage.StartsWith("/Admin/DeletionQueue", StringComparison.OrdinalIgnoreCase) ? "is-active" : null)" asp-page="/Admin/DeletionQueue">Deletion Queue</a>
                     }
                 </nav>
                 @if (User.Identity?.IsAuthenticated == true)

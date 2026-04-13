@@ -9,6 +9,7 @@ public sealed class Worker(
     IRunQueueStore runQueueStore,
     SyncScheduleCoordinator syncScheduleCoordinator,
     GraveyardRetentionReportCoordinator graveyardRetentionReportCoordinator,
+    GraveyardAutoDeleteCoordinator graveyardAutoDeleteCoordinator,
     BulkRunCoordinator bulkRunCoordinator,
     DeleteAllUsersCoordinator deleteAllUsersCoordinator,
     IWorkerHeartbeatStore workerHeartbeatStore,
@@ -68,6 +69,7 @@ public sealed class Worker(
             }
             else
             {
+                await graveyardAutoDeleteCoordinator.TryExecuteAsync(stoppingToken);
                 await WriteHeartbeatAsync(startedAt, "Idle", "Waiting for scheduled work.", stoppingToken);
             }
         }

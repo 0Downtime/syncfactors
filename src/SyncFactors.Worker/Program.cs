@@ -23,6 +23,13 @@ builder.Services.AddSingleton(serviceProvider =>
 builder.Services.AddSingleton(serviceProvider =>
 {
     var config = serviceProvider.GetRequiredService<SyncFactorsConfigurationLoader>().GetSyncConfig();
+    return new SyncFactors.Contracts.GraveyardDeletionQueueSettings(
+        RetentionDays: config.Sync.DeletionRetentionDays,
+        AutoDeleteEnabled: config.Sync.AutoDeleteFromGraveyard);
+});
+builder.Services.AddSingleton(serviceProvider =>
+{
+    var config = serviceProvider.GetRequiredService<SyncFactorsConfigurationLoader>().GetSyncConfig();
     return new SyncFactors.Contracts.LifecyclePolicySettings(
         config.Ad.DefaultActiveOu,
         config.Ad.PrehireOu,
@@ -71,6 +78,8 @@ builder.Services.AddTransient<IWorkerPlanningService, WorkerPlanningService>();
 builder.Services.AddSingleton<IDirectoryMutationCommandBuilder, DirectoryMutationCommandBuilder>();
 builder.Services.AddTransient<BulkRunCoordinator>();
 builder.Services.AddTransient<DeleteAllUsersCoordinator>();
+builder.Services.AddTransient<GraveyardDeletionQueueService>();
+builder.Services.AddTransient<GraveyardAutoDeleteCoordinator>();
 builder.Services.AddTransient<SyncScheduleCoordinator>();
 builder.Services.AddTransient<GraveyardRetentionReportCoordinator>();
 builder.Services.AddSingleton<IRunLifecycleService, RunLifecycleService>();

@@ -36,10 +36,33 @@ public sealed class SyncFactorsConfigurationLoaderTests
         Assert.False(config.Ad.IdentityPolicy.ResolveCreateConflictingUpnAndMail);
     }
 
-    private static async Task<SyncFactorsConfigDocument> LoadConfigAsync(string? identityPolicyJson)
+    [Fact]
+    public async Task GetSyncConfig_DefaultsAutoDeleteFromGraveyardToFalse_WhenOmitted()
+    {
+        var config = await LoadConfigAsync(identityPolicyJson: null);
+
+        Assert.False(config.Sync.AutoDeleteFromGraveyard);
+    }
+
+    [Fact]
+    public async Task GetSyncConfig_LoadsAutoDeleteFromGraveyard_WhenExplicitlyTrue()
+    {
+        var config = await LoadConfigAsync(
+            identityPolicyJson: null,
+            syncJson: """
+              "autoDeleteFromGraveyard": true
+            """);
+
+        Assert.True(config.Sync.AutoDeleteFromGraveyard);
+    }
+
+    private static async Task<SyncFactorsConfigDocument> LoadConfigAsync(string? identityPolicyJson, string? syncJson = null)
     {
         var tempRoot = Path.Combine(Path.GetTempPath(), "syncfactors-config-loader", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(tempRoot);
+        var renderedSyncJson = string.IsNullOrWhiteSpace(syncJson)
+            ? string.Empty
+            : $",{Environment.NewLine}{syncJson.Trim()}";
 
         var configPath = Path.Combine(tempRoot, "sync-config.json");
         var mappingConfigPath = Path.Combine(tempRoot, "mapping-config.json");
@@ -81,7 +104,7 @@ public sealed class SyncFactorsConfigurationLoaderTests
           },
           "sync": {
             "enableBeforeStartDays": 7,
-            "deletionRetentionDays": 90
+            "deletionRetentionDays": 90{{renderedSyncJson}}
           },
           "safety": {
             "maxCreatesPerRun": 10,
