@@ -29,9 +29,13 @@
       "identityField": "userId",
       "deltaField": "lastModifiedDateTime",
       "baseFilter": "emplStatus in 'A','U'",
+      "inactiveStatusValues": [
+        "64308"
+      ],
       "pageSize": 200,
       "select": [
         "userId",
+        "emplStatus",
         "jobTitle",
         "company",
         "department",
@@ -63,6 +67,9 @@
       "entitySet": "PerPerson",
       "identityField": "personIdExternal",
       "deltaField": "lastModifiedDateTime",
+      "inactiveStatusValues": [
+        "64308"
+      ],
       "pageSize": 200,
       "select": [
         "personIdExternal",

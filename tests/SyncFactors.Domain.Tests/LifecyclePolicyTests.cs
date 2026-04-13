@@ -62,6 +62,70 @@ public sealed class LifecyclePolicyTests
         Assert.False(decision.TargetEnabled);
     }
 
+    [Fact]
+    public void Evaluate_TerminatedWorkerWithoutExistingUser_UsingConfiguredSuccessFactorsPath_DoesNotCreateAccount()
+    {
+        var policy = new LifecyclePolicy(
+            new LifecyclePolicySettings(
+                ActiveOu: "OU=Employees,DC=example,DC=com",
+                PrehireOu: "OU=Prehire,DC=example,DC=com",
+                GraveyardOu: "OU=Graveyard,DC=example,DC=com",
+                InactiveStatusField: "employmentNav/jobInfoNav/emplStatus",
+                InactiveStatusValues: ["64308"]));
+        var worker = new WorkerSnapshot(
+            WorkerId: "20004",
+            PreferredName: "Worker20004",
+            LastName: "Sample",
+            Department: "Operations",
+            TargetOu: "OU=Employees,DC=example,DC=com",
+            IsPrehire: false,
+            Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["employmentNav[0].jobInfoNav[0].emplStatus"] = "64308"
+            });
+        var directoryUser = new DirectoryUserSnapshot(
+            SamAccountName: null,
+            DistinguishedName: null,
+            Enabled: null,
+            DisplayName: null,
+            Attributes: new Dictionary<string, string?>());
+
+        var decision = policy.Evaluate(worker, directoryUser);
+
+        Assert.Equal("unchanged", decision.Bucket);
+        Assert.Equal("OU=Graveyard,DC=example,DC=com", decision.TargetOu);
+        Assert.False(decision.TargetEnabled);
+    }
+
+    [Fact]
+    public void Evaluate_TerminatedWorkerUsingEmployeeStatusAlias_DoesNotCreateAccount()
+    {
+        var policy = CreatePolicy();
+        var worker = new WorkerSnapshot(
+            WorkerId: "20005",
+            PreferredName: "Worker20005",
+            LastName: "Sample",
+            Department: "Operations",
+            TargetOu: "OU=Employees,DC=example,DC=com",
+            IsPrehire: false,
+            Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["employeestatus"] = "64308"
+            });
+        var directoryUser = new DirectoryUserSnapshot(
+            SamAccountName: null,
+            DistinguishedName: null,
+            Enabled: null,
+            DisplayName: null,
+            Attributes: new Dictionary<string, string?>());
+
+        var decision = policy.Evaluate(worker, directoryUser);
+
+        Assert.Equal("unchanged", decision.Bucket);
+        Assert.Equal("OU=Graveyard,DC=example,DC=com", decision.TargetOu);
+        Assert.False(decision.TargetEnabled);
+    }
+
     private static LifecyclePolicy CreatePolicy()
     {
         return new LifecyclePolicy(
