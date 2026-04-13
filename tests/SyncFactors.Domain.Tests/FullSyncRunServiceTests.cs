@@ -207,6 +207,58 @@ public sealed class FullSyncRunServiceTests
         Assert.Equal("64303", entry.Item.GetProperty("emplStatus").GetString());
     }
 
+    [Fact]
+    public async Task LaunchAsync_TerminatedWorkerWithoutExistingUser_UsingConfiguredSuccessFactorsPath_DoesNotExecuteCreate()
+    {
+        var worker = new WorkerSnapshot(
+            WorkerId: "10003",
+            PreferredName: "Winnie",
+            LastName: "Sample101",
+            Department: "IT",
+            TargetOu: "OU=LabUsers,DC=example,DC=com",
+            IsPrehire: false,
+            Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["firstName"] = "Winnie",
+                ["lastName"] = "Sample101",
+                ["department"] = "IT",
+                ["employmentNav[0].jobInfoNav[0].emplStatus"] = "T"
+            });
+
+        var runRepository = new CapturingRunRepository();
+        var runtimeStatusStore = new CapturingRuntimeStatusStore();
+        var directoryCommandGateway = new CapturingDirectoryCommandGateway();
+        var service = new FullSyncRunService(
+            new StubWorkerSource([worker]),
+            new WorkerPlanningService(
+                new StubDirectoryGateway(managerDistinguishedName: null),
+                new IdentityMatcher(),
+                new LifecyclePolicy(
+                    new LifecyclePolicySettings(
+                        ActiveOu: "OU=LabUsers,DC=example,DC=com",
+                        PrehireOu: "OU=Prehire,DC=example,DC=com",
+                        GraveyardOu: "OU=Graveyard,DC=example,DC=com",
+                        InactiveStatusField: "employmentNav/jobInfoNav/emplStatus",
+                        InactiveStatusValues: ["T"])),
+                new StubAttributeDiffService(),
+                new StubAttributeMappingProvider(),
+                NullLogger<WorkerPlanningService>.Instance),
+            new DirectoryMutationCommandBuilder(),
+            directoryCommandGateway,
+            runRepository,
+            runtimeStatusStore,
+            new WorkerRunSettings(MaxCreatesPerRun: 10, MaxDisablesPerRun: 10),
+            NullLogger<FullSyncRunService>.Instance);
+
+        var result = await service.LaunchAsync(
+            new LaunchFullRunRequest(DryRun: false, AcknowledgeRealSync: true),
+            CancellationToken.None);
+
+        Assert.Equal("Succeeded", result.Status);
+        Assert.Equal(0, directoryCommandGateway.ExecuteCount);
+        Assert.Equal("unchanged", runRepository.ReplacedEntries.Single().entries.Single().Bucket);
+    }
+
     private static FullSyncRunService CreateService(
         IReadOnlyList<WorkerSnapshot> workers,
         IDirectoryGateway directoryGateway,
