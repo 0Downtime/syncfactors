@@ -294,13 +294,7 @@ sessionApi.MapPost("/logout", async (HttpContext httpContext) =>
     return Results.Ok(LocalSessionManager.AnonymousSession);
 }).AllowAnonymous();
 
-api.MapGet("/health", async (IDependencyHealthService healthService, CancellationToken cancellationToken) =>
-{
-    var snapshot = await healthService.GetSnapshotAsync(cancellationToken);
-    return Results.Ok(snapshot);
-}).AllowAnonymous();
-
-app.MapGet("/healthz", () => Results.Ok(new { status = "ok" })).AllowAnonymous();
+app.MapPublicHealthEndpoints();
 
 var readApi = api.MapGroup(string.Empty)
     .RequireAuthorization(ViewerPolicy);
