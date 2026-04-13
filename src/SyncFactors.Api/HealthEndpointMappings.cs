@@ -1,0 +1,28 @@
+using Microsoft.AspNetCore.Http.HttpResults;
+using SyncFactors.Contracts;
+using SyncFactors.Domain;
+
+namespace SyncFactors.Api;
+
+public static class HealthEndpointMappings
+{
+    public static IEndpointRouteBuilder MapPublicHealthEndpoints(this IEndpointRouteBuilder endpoints)
+    {
+        var api = endpoints.MapGroup("/api");
+        api.MapGet("/health", GetApiHealthAsync).AllowAnonymous();
+        endpoints.MapGet("/healthz", GetHealthz).AllowAnonymous();
+        return endpoints;
+    }
+
+    public static async Task<Ok<DependencyHealthSnapshot>> GetApiHealthAsync(
+        IDependencyHealthService healthService,
+        CancellationToken cancellationToken)
+    {
+        var snapshot = await healthService.GetSnapshotAsync(cancellationToken);
+        return TypedResults.Ok(snapshot);
+    }
+
+    public static Ok<HealthzResponse> GetHealthz() => TypedResults.Ok(new HealthzResponse("ok"));
+}
+
+public sealed record HealthzResponse(string Status);

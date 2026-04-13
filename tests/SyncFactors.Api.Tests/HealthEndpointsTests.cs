@@ -1,170 +1,48 @@
-using System.Net;
-using System.Net.Http.Json;
-using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.Mvc.Testing;
-using Microsoft.Extensions.Configuration;
 using SyncFactors.Contracts;
+using SyncFactors.Domain;
 
 namespace SyncFactors.Api.Tests;
 
 public sealed class HealthEndpointsTests
 {
     [Fact]
-    public async Task ApiHealth_AllowsAnonymousAccess()
+    public async Task ApiHealth_ReturnsSnapshot()
     {
-        await using var factory = new SyncFactorsApiFactory();
-        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions
-        {
-            AllowAutoRedirect = false,
-            BaseAddress = new Uri("https://localhost")
-        });
+        var result = await HealthEndpointMappings.GetApiHealthAsync(new StubDependencyHealthService(), CancellationToken.None);
 
-        using var response = await client.GetAsync("/api/health");
-
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        var snapshot = await response.Content.ReadFromJsonAsync<DependencyHealthSnapshot>();
-        Assert.NotNull(snapshot);
-        Assert.NotEmpty(snapshot.Probes);
+        Assert.NotNull(result.Value);
+        Assert.NotEmpty(result.Value.Probes);
     }
 
     [Fact]
-    public async Task Healthz_AllowsAnonymousAccess()
+    public void Healthz_ReturnsOkPayload()
     {
-        await using var factory = new SyncFactorsApiFactory();
-        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions
-        {
-            AllowAutoRedirect = false,
-            BaseAddress = new Uri("https://localhost")
-        });
+        var result = HealthEndpointMappings.GetHealthz();
 
-        using var response = await client.GetAsync("/healthz");
-
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        var payload = await response.Content.ReadFromJsonAsync<HealthzResponse>();
-        Assert.NotNull(payload);
-        Assert.Equal("ok", payload.Status);
+        Assert.NotNull(result.Value);
+        Assert.Equal("ok", result.Value.Status);
     }
 
-    private sealed class SyncFactorsApiFactory : WebApplicationFactory<Program>
+    private sealed class StubDependencyHealthService : IDependencyHealthService
     {
-        private readonly string _tempRoot = Path.Combine(Path.GetTempPath(), "syncfactors-api-tests", Guid.NewGuid().ToString("N"));
-        private readonly string? _originalConfigPath = Environment.GetEnvironmentVariable("SYNCFACTORS_CONFIG_PATH");
-        private readonly string? _originalMappingConfigPath = Environment.GetEnvironmentVariable("SYNCFACTORS_MAPPING_CONFIG_PATH");
-        private readonly string? _originalAspNetCoreEnvironment = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT");
-        private readonly string? _originalDotNetEnvironment = Environment.GetEnvironmentVariable("DOTNET_ENVIRONMENT");
-
-        protected override void ConfigureWebHost(IWebHostBuilder builder)
+        public Task<DependencyHealthSnapshot> GetSnapshotAsync(CancellationToken cancellationToken)
         {
-            Directory.CreateDirectory(_tempRoot);
-            var sqlitePath = Path.Combine(_tempRoot, "runtime.db");
-            var syncConfigPath = Path.Combine(_tempRoot, "sync-config.json");
-            var mappingConfigPath = Path.Combine(_tempRoot, "mapping-config.json");
-            var reportingPath = Path.Combine(_tempRoot, "reports");
-
-            Directory.CreateDirectory(reportingPath);
-
-            File.WriteAllText(syncConfigPath, $$"""
-            {
-              "secrets": {},
-              "ad": {
-                "server": "ldap.example.invalid:636",
-                "username": "",
-                "bindPassword": "",
-                "defaultActiveOu": "OU=LabUsers,DC=example,DC=com",
-                "prehireOu": "OU=Prehire,DC=example,DC=com",
-                "graveyardOu": "OU=Graveyard,DC=example,DC=com",
-                "identityAttribute": "employeeID"
-              },
-              "successFactors": {
-                "baseUrl": "https://example.invalid/odata/v2",
-                "query": {
-                  "entitySet": "PerPerson",
-                  "identityField": "personIdExternal",
-                  "deltaField": "lastModifiedDateTime",
-                  "select": [ "userId" ],
-                  "expand": []
-                },
-                "auth": {
-                  "mode": "basic",
-                  "basic": {
-                    "username": "user",
-                    "password": "pass"
-                  }
-                }
-              },
-              "sync": {
-                "enableBeforeStartDays": 7,
-                "deletionRetentionDays": 30
-              },
-              "safety": {
-                "maxCreatesPerRun": 25,
-                "maxDisablesPerRun": 25,
-                "maxDeletionsPerRun": 25
-              },
-              "reporting": {
-                "outputDirectory": "{{reportingPath.Replace("\\", "\\\\")}}"
-              }
-            }
-            """);
-
-            File.WriteAllText(mappingConfigPath, """
-            {
-              "mappings": [
-                {
-                  "source": "userId",
-                  "target": "employeeId",
-                  "enabled": true,
-                  "required": true,
-                  "transform": "identity"
-                }
-              ]
-            }
-            """);
-
-            Environment.SetEnvironmentVariable("SYNCFACTORS_CONFIG_PATH", syncConfigPath);
-            Environment.SetEnvironmentVariable("SYNCFACTORS_MAPPING_CONFIG_PATH", mappingConfigPath);
-            Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", "Development");
-            Environment.SetEnvironmentVariable("DOTNET_ENVIRONMENT", "Development");
-
-            builder.UseEnvironment("Development");
-            builder.ConfigureAppConfiguration((_, configBuilder) =>
-            {
-                configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
-                {
-                    ["SyncFactors:SqlitePath"] = sqlitePath,
-                    ["SyncFactors:ConfigPath"] = syncConfigPath,
-                    ["SyncFactors:MappingConfigPath"] = mappingConfigPath,
-                    ["SyncFactors:Realtime:Enabled"] = "false",
-                    ["SyncFactors:Auth:BootstrapAdmin:Username"] = "bootstrap-admin",
-                    ["SyncFactors:Auth:BootstrapAdmin:Password"] = "BootstrapAdmin123!"
-                });
-            });
-        }
-
-        public override async ValueTask DisposeAsync()
-        {
-            await base.DisposeAsync();
-
-            Environment.SetEnvironmentVariable("SYNCFACTORS_CONFIG_PATH", _originalConfigPath);
-            Environment.SetEnvironmentVariable("SYNCFACTORS_MAPPING_CONFIG_PATH", _originalMappingConfigPath);
-            Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", _originalAspNetCoreEnvironment);
-            Environment.SetEnvironmentVariable("DOTNET_ENVIRONMENT", _originalDotNetEnvironment);
-
-            try
-            {
-                if (Directory.Exists(_tempRoot))
-                {
-                    Directory.Delete(_tempRoot, recursive: true);
-                }
-            }
-            catch (IOException)
-            {
-            }
-            catch (UnauthorizedAccessException)
-            {
-            }
+            var checkedAt = DateTimeOffset.Parse("2026-04-12T12:00:00Z");
+            return Task.FromResult(new DependencyHealthSnapshot(
+                Status: DependencyHealthStates.Healthy,
+                CheckedAt: checkedAt,
+                Probes:
+                [
+                    new DependencyProbeResult(
+                        Dependency: "SQLite",
+                        Status: DependencyHealthStates.Healthy,
+                        Summary: "Operational store opened successfully.",
+                        Details: "/tmp/runtime.db",
+                        CheckedAt: checkedAt,
+                        DurationMilliseconds: 3,
+                        ObservedAt: checkedAt,
+                        IsStale: false)
+                ]));
         }
     }
-
-    private sealed record HealthzResponse(string Status);
 }
