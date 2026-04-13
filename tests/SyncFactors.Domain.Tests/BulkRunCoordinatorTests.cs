@@ -517,6 +517,16 @@ public sealed class BulkRunCoordinatorTests
             return Task.FromResult<IReadOnlyList<GraveyardRetentionRecord>>(Observed);
         }
 
+        public Task SetHoldAsync(string workerId, bool isOnHold, string? actingUserId, DateTimeOffset changedAtUtc, CancellationToken cancellationToken)
+        {
+            _ = workerId;
+            _ = isOnHold;
+            _ = actingUserId;
+            _ = changedAtUtc;
+            _ = cancellationToken;
+            return Task.CompletedTask;
+        }
+
         public Task<GraveyardRetentionReportStatus> GetReportStatusAsync(CancellationToken cancellationToken)
         {
             _ = cancellationToken;

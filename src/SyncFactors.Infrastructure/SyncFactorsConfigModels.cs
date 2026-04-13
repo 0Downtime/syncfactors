@@ -82,6 +82,7 @@ public sealed record ActiveDirectoryIdentityPolicyConfig(
 public sealed record SyncPolicyConfig(
     int EnableBeforeStartDays,
     int DeletionRetentionDays,
+    bool AutoDeleteFromGraveyard = false,
     IReadOnlyList<string>? LeaveStatusValues = null);
 
 public sealed record SafetyConfig(

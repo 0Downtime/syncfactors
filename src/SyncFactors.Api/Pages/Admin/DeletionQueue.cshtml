@@ -1,0 +1,143 @@
+@page
+@model SyncFactors.Api.Pages.Admin.DeletionQueueModel
+@{
+    ViewData["Title"] = "Deletion Queue";
+}
+
+<section class="hero hero-compact">
+    <div>
+        <p class="eyebrow">Administration</p>
+        <h1>Deletion Queue</h1>
+        <p class="lede">Review graveyard users who are pending automatic deletion and place reversible holds when a user must stay preserved past retention.</p>
+    </div>
+</section>
+
+@if (!string.IsNullOrWhiteSpace(Model.ErrorMessage))
+{
+    <section class="panel">
+        <p class="callout danger">@Model.ErrorMessage</p>
+    </section>
+}
+
+@if (!string.IsNullOrWhiteSpace(Model.SuccessMessage))
+{
+    <section class="panel">
+        <p class="callout good">@Model.SuccessMessage</p>
+    </section>
+}
+
+<section class="panel">
+    <div class="section-heading">
+        <div>
+            <p class="eyebrow">Pending</p>
+            <h2>Pending Deletion</h2>
+        </div>
+    </div>
+
+    @if (Model.PendingUsers.Count == 0)
+    {
+        <p class="callout">No graveyard users are currently pending deletion.</p>
+    }
+    else
+    {
+        <div class="table-scroll">
+            <table class="data-table deletion-queue-table">
+                <thead>
+                    <tr>
+                        <th>Worker ID</th>
+                        <th>User</th>
+                        <th>Status</th>
+                        <th>Anchor Date</th>
+                        <th>Due Date</th>
+                        <th>Countdown</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                @foreach (var user in Model.PendingUsers)
+                {
+                    <tr>
+                        <td>@user.WorkerId</td>
+                        <td>
+                            <div class="deletion-queue-user">
+                                <strong>@(user.DisplayName ?? user.SamAccountName ?? user.WorkerId)</strong>
+                                <span class="muted">@(user.SamAccountName ?? "SAM unavailable")</span>
+                            </div>
+                        </td>
+                        <td><span class="badge @(user.OverdueDays > 0 ? "bad" : user.IsEligibleForDeletion ? "warn" : "neutral")">@user.Status</span></td>
+                        <td>@user.AnchorDateUtc.ToString("yyyy-MM-dd")</td>
+                        <td>@user.DueDateUtc.ToString("yyyy-MM-dd")</td>
+                        <td>
+                            <span class="badge @(user.OverdueDays > 0 ? "bad" : user.IsEligibleForDeletion ? "warn" : "good")">
+                                @Model.FormatCountdown(user)
+                            </span>
+                        </td>
+                        <td>
+                            <form method="post" asp-page-handler="PlaceHold">
+                                <input type="hidden" name="workerId" value="@user.WorkerId" />
+                                <button type="submit" class="link-button">Place hold</button>
+                            </form>
+                        </td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+    }
+</section>
+
+<section class="panel">
+    <div class="section-heading">
+        <div>
+            <p class="eyebrow">Protected</p>
+            <h2>On Hold</h2>
+        </div>
+    </div>
+
+    @if (Model.HeldUsers.Count == 0)
+    {
+        <p class="callout">No graveyard users are currently on hold.</p>
+    }
+    else
+    {
+        <div class="table-scroll">
+            <table class="data-table deletion-queue-table">
+                <thead>
+                    <tr>
+                        <th>Worker ID</th>
+                        <th>User</th>
+                        <th>Status</th>
+                        <th>Due Date</th>
+                        <th>Held Since</th>
+                        <th>Held By</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                @foreach (var user in Model.HeldUsers)
+                {
+                    <tr>
+                        <td>@user.WorkerId</td>
+                        <td>
+                            <div class="deletion-queue-user">
+                                <strong>@(user.DisplayName ?? user.SamAccountName ?? user.WorkerId)</strong>
+                                <span class="muted">@(user.SamAccountName ?? "SAM unavailable")</span>
+                            </div>
+                        </td>
+                        <td><span class="badge dim">@user.Status</span></td>
+                        <td>@user.DueDateUtc.ToString("yyyy-MM-dd")</td>
+                        <td>@(user.HoldPlacedAtUtc?.ToString("u") ?? "Unknown")</td>
+                        <td>@(user.HoldPlacedBy ?? "Unknown")</td>
+                        <td>
+                            <form method="post" asp-page-handler="RemoveHold">
+                                <input type="hidden" name="workerId" value="@user.WorkerId" />
+                                <button type="submit" class="link-button">Remove hold</button>
+                            </form>
+                        </td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+    }
+</section>

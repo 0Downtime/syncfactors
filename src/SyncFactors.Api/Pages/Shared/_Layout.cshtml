@@ -27,9 +27,10 @@
                     <a asp-page="/Index">Dashboard</a>
                     <a asp-page="/Sync">Sync</a>
                     <a asp-page="/Preview">Worker Preview</a>
-                    @if (User.IsInRole("Admin"))
+                    @if (User.IsInRole("Admin") || User.IsInRole("BreakGlassAdmin"))
                     {
                         <a asp-page="/Admin/Users">Users</a>
+                        <a asp-page="/Admin/DeletionQueue">Deletion Queue</a>
                     }
                 </nav>
                 @if (User.Identity?.IsAuthenticated == true)

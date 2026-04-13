@@ -5,7 +5,7 @@ namespace SyncFactors.Infrastructure;
 
 public sealed class SqliteDatabaseInitializer(SqlitePathResolver pathResolver)
 {
-    private const int CurrentSchemaVersion = 9;
+    private const int CurrentSchemaVersion = 10;
 
     public async Task InitializeAsync(CancellationToken cancellationToken)
     {
@@ -92,6 +92,12 @@ public sealed class SqliteDatabaseInitializer(SqlitePathResolver pathResolver)
         {
             await ApplyVersion9Async(connection, transaction, cancellationToken);
             await InsertVersionAsync(connection, transaction, 9, cancellationToken);
+        }
+
+        if (!appliedVersions.Contains(10))
+        {
+            await ApplyVersion10Async(connection, transaction, cancellationToken);
+            await InsertVersionAsync(connection, transaction, 10, cancellationToken);
         }
 
         await transaction.CommitAsync(cancellationToken);
@@ -323,6 +329,55 @@ public sealed class SqliteDatabaseInitializer(SqlitePathResolver pathResolver)
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
+    private static async Task ApplyVersion10Async(
+        SqliteConnection connection,
+        DbTransaction transaction,
+        CancellationToken cancellationToken)
+    {
+        var hasRetentionTable = await TableExistsAsync(connection, transaction, "graveyard_retention", cancellationToken);
+        if (!hasRetentionTable)
+        {
+            return;
+        }
+
+        var columns = await GetTableColumnsAsync(connection, transaction, "graveyard_retention", cancellationToken);
+        if (!columns.Contains("is_on_hold"))
+        {
+            await using var command = connection.CreateCommand();
+            command.Transaction = (SqliteTransaction)transaction;
+            command.CommandText =
+                """
+                ALTER TABLE graveyard_retention
+                ADD COLUMN is_on_hold INTEGER NOT NULL DEFAULT 0;
+                """;
+            await command.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        if (!columns.Contains("hold_placed_at_utc"))
+        {
+            await using var command = connection.CreateCommand();
+            command.Transaction = (SqliteTransaction)transaction;
+            command.CommandText =
+                """
+                ALTER TABLE graveyard_retention
+                ADD COLUMN hold_placed_at_utc TEXT NULL;
+                """;
+            await command.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        if (!columns.Contains("hold_placed_by"))
+        {
+            await using var command = connection.CreateCommand();
+            command.Transaction = (SqliteTransaction)transaction;
+            command.CommandText =
+                """
+                ALTER TABLE graveyard_retention
+                ADD COLUMN hold_placed_by TEXT NULL;
+                """;
+            await command.ExecuteNonQueryAsync(cancellationToken);
+        }
+    }
+
     private static async Task ApplyVersion4Async(
         SqliteConnection connection,
         DbTransaction transaction,
@@ -524,6 +579,7 @@ public sealed class SqliteDatabaseInitializer(SqlitePathResolver pathResolver)
             "sync_schedule" => "PRAGMA table_info(sync_schedule);",
             "worker_heartbeat" => "PRAGMA table_info(worker_heartbeat);",
             "local_users" => "PRAGMA table_info(local_users);",
+            "graveyard_retention" => "PRAGMA table_info(graveyard_retention);",
             _ => throw new InvalidOperationException($"Unsupported table name '{tableName}' for schema inspection.")
         };
 
