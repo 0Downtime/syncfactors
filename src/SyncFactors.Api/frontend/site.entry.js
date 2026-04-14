@@ -56,7 +56,7 @@
 
     function initializeSurfaceReveals() {
         const surfaces = Array.prototype.slice.call(document.querySelectorAll(
-            ".hero, .panel, .analytics-card, .entry-card, .connection-card, .run-health-card, .sync-status-card, .preview-inspector-card"));
+            ".hero, .analytics-card, .connection-card, .run-health-card, .sync-status-card, .preview-inspector-card"));
 
         if (!surfaces.length) {
             return;
