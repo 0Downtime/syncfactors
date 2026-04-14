@@ -108,10 +108,11 @@ public sealed class ActiveDirectoryCommandGateway(
         DirectoryUserSnapshot? existing = null;
         string? currentCn = null;
         DirectoryAttributeModificationCollection? modifications = null;
+        var identityLookupValue = ResolveIdentityLookupValue(command, config);
 
         try
         {
-            existing = FindExistingUser(connection, command.WorkerId, config);
+            existing = FindExistingUser(connection, identityLookupValue, config);
             if (existing is null)
             {
                 return new DirectoryCommandResult(
@@ -241,7 +242,7 @@ public sealed class ActiveDirectoryCommandGateway(
         string? targetOu,
         string? distinguishedName)
     {
-        var existing = FindExistingUser(connection, command.WorkerId, config);
+        var existing = FindExistingUser(connection, ResolveIdentityLookupValue(command, config), config);
         distinguishedName ??= existing?.DistinguishedName;
         if (string.IsNullOrWhiteSpace(distinguishedName) || string.IsNullOrWhiteSpace(targetOu))
         {
@@ -269,7 +270,7 @@ public sealed class ActiveDirectoryCommandGateway(
         bool enabled,
         string? distinguishedName)
     {
-        var existing = FindExistingUser(connection, command.WorkerId, config);
+        var existing = FindExistingUser(connection, ResolveIdentityLookupValue(command, config), config);
         distinguishedName ??= existing?.DistinguishedName;
         if (string.IsNullOrWhiteSpace(distinguishedName))
         {
@@ -294,7 +295,7 @@ public sealed class ActiveDirectoryCommandGateway(
         ILogger logger,
         string? distinguishedName)
     {
-        var existing = FindExistingUser(connection, command.WorkerId, config);
+        var existing = FindExistingUser(connection, ResolveIdentityLookupValue(command, config), config);
         distinguishedName ??= existing?.DistinguishedName;
         if (string.IsNullOrWhiteSpace(distinguishedName))
         {
@@ -517,9 +518,9 @@ public sealed class ActiveDirectoryCommandGateway(
             new("mail", command.Mail)
         };
 
-        if (!string.IsNullOrWhiteSpace(command.WorkerId))
+        if (TryResolveCreateIdentityValue(command, config, out var identityValue))
         {
-            attributes.Add(new DirectoryAttribute(config.IdentityAttribute, command.WorkerId));
+            attributes.Add(new DirectoryAttribute(config.IdentityAttribute, identityValue));
         }
 
         foreach (var attribute in command.Attributes)
@@ -550,9 +551,9 @@ public sealed class ActiveDirectoryCommandGateway(
             BuildReplaceModification("mail", command.Mail)
         };
 
-        if (!string.IsNullOrWhiteSpace(command.WorkerId))
+        if (TryGetConfiguredIdentityAttributeValue(command, config, out var identityValue))
         {
-            modifications.Add(BuildReplaceModification(config.IdentityAttribute, command.WorkerId));
+            modifications.Add(BuildReplaceModification(config.IdentityAttribute, identityValue));
         }
 
         foreach (var attribute in command.Attributes)
@@ -576,6 +577,55 @@ public sealed class ActiveDirectoryCommandGateway(
         }
 
         return modifications;
+    }
+
+    private static bool TryResolveCreateIdentityValue(
+        DirectoryMutationCommand command,
+        ActiveDirectoryConfig config,
+        out string identityValue)
+    {
+        if (TryGetConfiguredIdentityAttributeValue(command, config, out identityValue))
+        {
+            return true;
+        }
+
+        if (!string.IsNullOrWhiteSpace(command.WorkerId))
+        {
+            identityValue = command.WorkerId;
+            return true;
+        }
+
+        identityValue = string.Empty;
+        return false;
+    }
+
+    private static bool TryGetConfiguredIdentityAttributeValue(
+        DirectoryMutationCommand command,
+        ActiveDirectoryConfig config,
+        out string identityValue)
+    {
+        foreach (var attribute in command.Attributes)
+        {
+            var attributeName = NormalizeAttributeName(attribute.Key);
+            if (string.Equals(attributeName, config.IdentityAttribute, StringComparison.OrdinalIgnoreCase)
+                && !string.IsNullOrWhiteSpace(attribute.Value))
+            {
+                identityValue = attribute.Value;
+                return true;
+            }
+        }
+
+        identityValue = string.Empty;
+        return false;
+    }
+
+    private static string ResolveIdentityLookupValue(
+        DirectoryMutationCommand command,
+        ActiveDirectoryConfig config)
+    {
+        return TryGetConfiguredIdentityAttributeValue(command, config, out var identityValue)
+            ? identityValue
+            : command.WorkerId;
     }
 
     private static bool IsSystemManagedAttribute(string attributeName)
