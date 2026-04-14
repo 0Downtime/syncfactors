@@ -130,6 +130,40 @@ public sealed class RunDetailModelTests
         Assert.Equal("64304 - Paid Leave", model.GetEmploymentStatusDisplay(entry));
     }
 
+    [Fact]
+    public void GetEmploymentStatus_ReturnsToneAndPillCopy()
+    {
+        var model = new DetailModel(new RunEntriesQueryService(new StubRunRepository()));
+        var entry = new RunEntry(
+            EntryId: "entry-status",
+            RunId: "bulk-1",
+            ArtifactType: "BulkRun",
+            Mode: "BulkSync",
+            Bucket: "updates",
+            BucketLabel: "Updates",
+            WorkerId: "10001",
+            SamAccountName: "winnie",
+            Reason: null,
+            ReviewCategory: null,
+            ReviewCaseType: null,
+            StartedAt: DateTimeOffset.UtcNow,
+            ChangeCount: 0,
+            OperationSummary: null,
+            FailureSummary: null,
+            PrimarySummary: null,
+            TopChangedAttributes: [],
+            DiffRows: [],
+            Item: JsonDocument.Parse("""{"emplStatus":"64308"}""").RootElement.Clone());
+
+        var status = model.GetEmploymentStatus(entry);
+
+        Assert.NotNull(status);
+        Assert.Equal("Terminated", status!.Label);
+        Assert.Equal("bad", status.ToneCssClass);
+        Assert.Equal("Employment: Terminated", status.PillText);
+        Assert.Equal("Code 64308", status.DetailText);
+    }
+
     private sealed class StubRunRepository : IRunRepository
     {
         public int LastSkip { get; private set; }

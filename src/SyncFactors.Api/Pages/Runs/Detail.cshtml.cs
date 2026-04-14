@@ -45,8 +45,11 @@ public sealed class DetailModel(RunEntriesQueryService queryService) : PageModel
     public FailureDiagnostics? GetFailureDiagnostics(RunEntry entry)
         => ActiveDirectoryFailureDiagnostics.Parse(entry.Reason ?? entry.FailureSummary);
 
+    public EmploymentStatusInfo? GetEmploymentStatus(RunEntry entry)
+        => EmploymentStatusDisplay.Describe(GetItemString(entry.Item, "emplStatus"));
+
     public string? GetEmploymentStatusDisplay(RunEntry entry)
-        => EmploymentStatusDisplay.Format(GetItemString(entry.Item, "emplStatus"));
+        => GetEmploymentStatus(entry)?.Display;
 
     public async Task<IActionResult> OnGetAsync(CancellationToken cancellationToken)
     {
