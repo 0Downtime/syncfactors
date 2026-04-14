@@ -40,7 +40,6 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
         activeRunCard: document.querySelector("[data-active-run-card]"),
         lastRunEmpty: document.querySelector("[data-last-run-empty]"),
         lastRunCard: document.querySelector("[data-last-run-card]"),
-        refreshButton: document.querySelector("[data-dashboard-refresh]"),
         signalRoot: document.querySelector("[data-dashboard-signal]"),
         statusLine: document.querySelector("[data-status-line]"),
         statusCaption: document.querySelector("[data-status-caption]"),
@@ -108,16 +107,6 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
     let hoveredRunId = null;
     let hoveredBucketKey = null;
     let scheduleTimerId = null;
-
-    if (elements.refreshButton) {
-        elements.refreshButton.addEventListener("click", function () {
-            runMajorTransition(function () {
-                void loadDashboard();
-                void loadHealth();
-                void loadSchedule();
-            });
-        });
-    }
 
     if (elements.clearFilterButton) {
         elements.clearFilterButton.addEventListener("click", function () {
@@ -369,15 +358,6 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
         }
 
         panel.classList.toggle("is-loading", !!loading);
-    }
-
-    function setRefreshLoading(loading) {
-        if (!elements.refreshButton) {
-            return;
-        }
-
-        elements.refreshButton.classList.toggle("is-loading", !!loading);
-        elements.refreshButton.setAttribute("aria-busy", String(!!loading));
     }
 
     function syncHoverState() {
@@ -1489,7 +1469,6 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
         syncTimelineInteractionState();
         setPanelLoading(elements.railPanel, false);
         setPanelLoading(elements.runsPanel, false);
-        setRefreshLoading(false);
 
         if (elements.checkedMessage) {
             elements.checkedMessage.textContent = "Live data refreshed " + formatTimestamp(snapshot.checkedAt);
@@ -1621,7 +1600,6 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
         isLoadingDashboard = true;
         setPanelLoading(elements.railPanel, true);
         setPanelLoading(elements.runsPanel, true);
-        setRefreshLoading(true);
         try {
             const response = await fetch("/api/dashboard", { headers: { Accept: "application/json" } });
             if (!response.ok) {
@@ -1637,7 +1615,6 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
             isLoadingDashboard = false;
             setPanelLoading(elements.railPanel, false);
             setPanelLoading(elements.runsPanel, false);
-            setRefreshLoading(false);
         }
     }
 
