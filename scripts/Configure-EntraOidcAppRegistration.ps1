@@ -6,6 +6,8 @@ param(
     [string]$ClientId,
     [ValidateSet('oidc', 'hybrid')]
     [string]$AuthMode = 'oidc',
+    [string]$ApiBindHost = '127.0.0.1',
+    [string]$ApiPublicHost = '127.0.0.1',
     [int]$ApiPort = 5087,
     [int]$ClientSecretMonths = 12,
     [string]$ViewerGroupObjectId,
@@ -27,6 +29,37 @@ $ErrorActionPreference = 'Stop'
 
 $ConsumerTenantId = '9188040d-6c67-4c5b-b112-36a304b66dad'
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).ProviderPath
+
+function Assert-UsablePublicHost {
+    param(
+        [Parameter(Mandatory)]
+        [string]$Host
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Host)) {
+        throw 'ApiPublicHost cannot be empty.'
+    }
+
+    $normalizedHost = $Host.Trim()
+    if ($normalizedHost -in @('0.0.0.0', '::', '[::]', '*', '+')) {
+        throw "ApiPublicHost '$Host' is not a browser-usable host name. Use the DNS name or IP address that operators will browse to."
+    }
+
+    return $normalizedHost
+}
+
+function Format-UrlHost {
+    param(
+        [Parameter(Mandatory)]
+        [string]$Host
+    )
+
+    if ($Host.Contains(':') -and -not ($Host.StartsWith('[') -and $Host.EndsWith(']'))) {
+        return "[$Host]"
+    }
+
+    return $Host
+}
 
 function Ensure-Module {
     param(
@@ -653,9 +686,12 @@ if ([string]::IsNullOrWhiteSpace($EnvFilePath)) {
     $EnvFilePath = Join-Path $RepoRoot '.env.worktree'
 }
 
+$ApiPublicHost = Assert-UsablePublicHost -Host $ApiPublicHost
+$formattedApiPublicHost = Format-UrlHost -Host $ApiPublicHost
+
 $redirectUris = @(
-    "https://127.0.0.1:$ApiPort/signin-oidc",
-    "https://127.0.0.1:$ApiPort/signout-callback-oidc"
+    "https://$formattedApiPublicHost`:$ApiPort/signin-oidc",
+    "https://$formattedApiPublicHost`:$ApiPort/signout-callback-oidc"
 )
 
 $application = Ensure-Application `
@@ -696,6 +732,9 @@ $operatorGroupNameResolved = if ($null -ne $operatorGroup) { $operatorGroup.disp
 $adminGroupNameResolved = if ($null -ne $adminGroup) { $adminGroup.displayName } else { Get-GroupDisplayName -GroupObjectId $AdminGroupObjectId }
 
 $envValues = @{
+    'SYNCFACTORS_API_BIND_HOST' = $ApiBindHost
+    'SYNCFACTORS_API_PUBLIC_HOST' = $ApiPublicHost
+    'SYNCFACTORS_API_PORT' = [string]$ApiPort
     'SYNCFACTORS__AUTH__MODE' = $AuthMode
     'SYNCFACTORS__AUTH__LOCALBREAKGLASS__ENABLED' = if ([string]::Equals($AuthMode, 'hybrid', [System.StringComparison]::OrdinalIgnoreCase)) { 'true' } else { 'false' }
     'SYNCFACTORS__AUTH__OIDC__AUTHORITY' = "https://login.microsoftonline.com/$effectiveTenantId/v2.0"
@@ -762,6 +801,9 @@ Write-Host "ClientId:                 $($application.appId)"
 Write-Host "ServicePrincipalObjectId: $($servicePrincipal.id)"
 Write-Host "DisplayName:              $($application.displayName)"
 Write-Host "AuthMode:                 $AuthMode"
+Write-Host "ApiBindHost:              $ApiBindHost"
+Write-Host "ApiPublicHost:            $ApiPublicHost"
+Write-Host "ApiPort:                  $ApiPort"
 Write-Host "AssignmentRequired:       $($servicePrincipal.appRoleAssignmentRequired)"
 Write-Host "GroupMembershipClaims:    $($application.groupMembershipClaims)"
 Write-Host "RedirectSignIn:           $($redirectUris[0])"
@@ -779,6 +821,9 @@ if ($null -ne $secret) {
 
 Write-Host ''
 Write-Host 'Paste these into .env.worktree' -ForegroundColor Cyan
+Write-Host "SYNCFACTORS_API_BIND_HOST=$ApiBindHost"
+Write-Host "SYNCFACTORS_API_PUBLIC_HOST=$ApiPublicHost"
+Write-Host "SYNCFACTORS_API_PORT=$ApiPort"
 Write-Host "SYNCFACTORS__AUTH__MODE=$AuthMode"
 Write-Host "SYNCFACTORS__AUTH__LOCALBREAKGLASS__ENABLED=$(if ([string]::Equals($AuthMode, 'hybrid', [System.StringComparison]::OrdinalIgnoreCase)) { 'true' } else { 'false' })"
 Write-Host "SYNCFACTORS__AUTH__OIDC__AUTHORITY=https://login.microsoftonline.com/$effectiveTenantId/v2.0"

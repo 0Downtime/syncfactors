@@ -70,3 +70,4 @@ elseif ([OperatingSystem]::IsWindows()) {
 }
 
 Write-Host 'Default API URL: https://127.0.0.1:5087'
+Write-Host 'Use the hostname or IP from your certificate SAN when enabling remote access.' -ForegroundColor Cyan

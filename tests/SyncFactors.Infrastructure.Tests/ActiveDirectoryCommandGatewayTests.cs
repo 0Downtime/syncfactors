@@ -19,6 +19,17 @@ public sealed class ActiveDirectoryCommandGatewayTests
     }
 
     [Fact]
+    public void GetRelativeDistinguishedName_IgnoresEscapedCommaInCommonName()
+    {
+        var method = typeof(ActiveDirectoryCommandGateway).GetMethod("GetRelativeDistinguishedName", BindingFlags.NonPublic | BindingFlags.Static);
+        Assert.NotNull(method);
+
+        var relativeDn = Assert.IsType<string>(method!.Invoke(null, ["CN=Brien\\, Christopher,OU=IT,DC=example,DC=com"]));
+
+        Assert.Equal("CN=Brien\\, Christopher", relativeDn);
+    }
+
+    [Fact]
     public void BuildUpdateRenameFailureDetails_IncludesRenameContext()
     {
         var method = typeof(ActiveDirectoryCommandGateway).GetMethod("BuildUpdateRenameFailureDetails", BindingFlags.NonPublic | BindingFlags.Static);
