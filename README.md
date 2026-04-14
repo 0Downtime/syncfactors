@@ -131,6 +131,8 @@ SYNCFACTORS_RUN_PROFILE=mock
 SYNCFACTORS_CONFIG_PATH=
 SYNCFACTORS_MAPPING_CONFIG_PATH=./config/local.syncfactors.mapping-config.json
 SYNCFACTORS_SQLITE_PATH=state/runtime/syncfactors.db
+SYNCFACTORS_API_BIND_HOST=127.0.0.1
+SYNCFACTORS_API_PUBLIC_HOST=127.0.0.1
 SYNCFACTORS_API_PORT=5087
 NUGET_HTTP_CACHE_PATH=state/nuget/http-cache
 SYNCFACTORS_TLS_CERT_PATH=
@@ -181,7 +183,7 @@ Before starting the API on a new admin workstation, run:
 pwsh ./scripts/Install-SyncFactorsHttpsCertificate.ps1
 ```
 
-That script generates, trusts, and exports the local HTTPS certificate used by the API launcher. `scripts/Start-SyncFactorsNextApi.ps1` and `scripts/codex/run.ps1 -Service api` now bind `https://127.0.0.1:<port>` only and refuse `http://` URLs. If `SYNCFACTORS_TLS_CERT_PATH` and `SYNCFACTORS_TLS_CERT_PASSWORD` are not set explicitly, the launcher uses the exported certificate from that install step.
+That script generates, trusts, and exports the local HTTPS certificate used by the API launcher. By default the launcher binds `https://127.0.0.1:<port>` and refuses `http://` URLs. If `SYNCFACTORS_TLS_CERT_PATH` and `SYNCFACTORS_TLS_CERT_PASSWORD` are not set explicitly, the launcher uses the exported certificate from that install step.
 
 If you already have a CA-issued `.pfx`, use:
 
@@ -190,6 +192,16 @@ pwsh ./scripts/Install-SyncFactorsHttpsCertificateFromPfx.ps1 -PfxPath C:\path\t
 ```
 
 That script copies your PFX into the same runtime certificate location used by the launcher, writes the matching password file, and on Windows imports the certificate into the `My` store. Add `-StoreLocation LocalMachine` to target the machine store instead of the current user store, or `-SkipStoreImport` if you only want to configure the app runtime files.
+
+For remote UI access from another machine, set these env values in `.env.worktree`:
+
+```bash
+SYNCFACTORS_API_BIND_HOST=0.0.0.0
+SYNCFACTORS_API_PUBLIC_HOST=<dns-name-or-lan-ip>
+SYNCFACTORS_API_PORT=5087
+```
+
+Keep `SYNCFACTORS_API_BIND_HOST` on the listener address and `SYNCFACTORS_API_PUBLIC_HOST` on the exact host users browse to. The public host must match the HTTPS certificate and the Entra redirect URIs. The dev certificate from `Install-SyncFactorsHttpsCertificate.ps1` is localhost-only, so remote access requires a PFX whose SAN covers `<dns-name-or-lan-ip>`.
 
 Use `--remove-empty-values` on macOS or `-RemoveEmptyValues` on Windows if blank entries in `.env.worktree` should delete the corresponding stored credentials instead of saving empty strings.
 
@@ -207,16 +219,16 @@ SYNCFACTORS__AUTH__OIDC__OPERATORGROUPS__0=<entra-group-object-id>
 SYNCFACTORS__AUTH__OIDC__ADMINGROUPS__0=<entra-group-object-id>
 ```
 
-Use tenant-specific authorities, not `common`, so group and issuer checks stay deterministic for a single-tenant admin tool. Configure the Entra app registration with these redirect URIs for the default local port:
+Use tenant-specific authorities, not `common`, so group and issuer checks stay deterministic for a single-tenant admin tool. Configure the Entra app registration with redirect URIs that match the public HTTPS host and port. For the default local setup:
 
 ```text
 https://127.0.0.1:5087/signin-oidc
 https://127.0.0.1:5087/signout-callback-oidc
 ```
 
-If you change `SYNCFACTORS_API_PORT`, the redirect URIs must match that exact HTTPS port. On macOS, you can keep the OIDC secret out of `.env.worktree` and store only `SYNCFACTORS__AUTH__OIDC__CLIENTSECRET` in Keychain with `./scripts/codex/set-macos-keychain-secret.sh SYNCFACTORS__AUTH__OIDC__CLIENTSECRET`.
+If you change `SYNCFACTORS_API_PUBLIC_HOST` or `SYNCFACTORS_API_PORT`, the redirect URIs must match that exact HTTPS origin. On macOS, you can keep the OIDC secret out of `.env.worktree` and store only `SYNCFACTORS__AUTH__OIDC__CLIENTSECRET` in Keychain with `./scripts/codex/set-macos-keychain-secret.sh SYNCFACTORS__AUTH__OIDC__CLIENTSECRET`.
 
-If you want the app registration provisioned for you, use [`scripts/Configure-EntraOidcAppRegistration.ps1`](scripts/Configure-EntraOidcAppRegistration.ps1). It connects to Microsoft Graph using your current/default tenant when `-TenantId` is omitted, creates or updates a single-tenant app registration, ensures the enterprise app exists, creates missing security groups for viewer/operator/admin roles, assigns those groups to the enterprise app, optionally creates a client secret, writes the resolved auth and OIDC settings back into `.env.worktree`, and then prints the same values in the terminal summary. Set `-AuthMode oidc` for Entra-only auth or `-AuthMode hybrid` to keep local break-glass enabled. In `hybrid` mode the script also sets `SYNCFACTORS__AUTH__LOCALBREAKGLASS__ENABLED=true`, writes the bootstrap admin username, and generates a bootstrap admin password automatically if you do not supply one. On Windows it stores the OIDC client secret and bootstrap admin password in Windows Credential Manager; on macOS it stores those secrets in the login Keychain using `SYNCFACTORS_KEYCHAIN_SERVICE` from the env file when present, otherwise `syncfactors`. In those cases the env file keeps the password/secret entries blank so the repo loaders pull them from the secure store. Use `-EnvFilePath` if you want to target a different env file.
+If you want the app registration provisioned for you, use [`scripts/Configure-EntraOidcAppRegistration.ps1`](scripts/Configure-EntraOidcAppRegistration.ps1). It connects to Microsoft Graph using your current/default tenant when `-TenantId` is omitted, creates or updates a single-tenant app registration, ensures the enterprise app exists, creates missing security groups for viewer/operator/admin roles, assigns those groups to the enterprise app, optionally creates a client secret, writes the resolved auth and OIDC settings back into `.env.worktree`, and then prints the same values in the terminal summary. Set `-AuthMode oidc` for Entra-only auth or `-AuthMode hybrid` to keep local break-glass enabled. Use `-ApiBindHost 0.0.0.0 -ApiPublicHost <dns-name-or-lan-ip>` when you are provisioning a remotely reachable UI. In `hybrid` mode the script also sets `SYNCFACTORS__AUTH__LOCALBREAKGLASS__ENABLED=true`, writes the bootstrap admin username, and generates a bootstrap admin password automatically if you do not supply one. On Windows it stores the OIDC client secret and bootstrap admin password in Windows Credential Manager; on macOS it stores those secrets in the login Keychain using `SYNCFACTORS_KEYCHAIN_SERVICE` from the env file when present, otherwise `syncfactors`. In those cases the env file keeps the password/secret entries blank so the repo loaders pull them from the secure store. Use `-EnvFilePath` if you want to target a different env file.
 
 ## Entra Env Setup
 
@@ -241,6 +253,8 @@ pwsh ./scripts/Configure-EntraOidcAppRegistration.ps1 `
   -ViewerGroupName 'SyncFactors Viewers' `
   -OperatorGroupName 'SyncFactors Operators' `
   -AdminGroupName 'SyncFactors Admins' `
+  -ApiBindHost 0.0.0.0 `
+  -ApiPublicHost '<dns-name-or-lan-ip>' `
   -AuthMode oidc `
   -RequireAssignment `
   -InstallModules
@@ -255,6 +269,8 @@ pwsh ./scripts/Configure-EntraOidcAppRegistration.ps1 `
   -ViewerGroupName 'SyncFactors Viewers' `
   -OperatorGroupName 'SyncFactors Operators' `
   -AdminGroupName 'SyncFactors Admins' `
+  -ApiBindHost 0.0.0.0 `
+  -ApiPublicHost '<dns-name-or-lan-ip>' `
   -AuthMode hybrid `
   -BootstrapAdminUsername 'admin' `
   -RequireAssignment `
@@ -308,6 +324,7 @@ pwsh ./scripts/codex/run.ps1 -Service stack
 5. Open the login page:
 
 - [https://127.0.0.1:5087/Login](https://127.0.0.1:5087/Login)
+- Or browse to `https://<SYNCFACTORS_API_PUBLIC_HOST>:<SYNCFACTORS_API_PORT>/Login` when you configured remote access.
 
 Mode behavior:
 
@@ -428,6 +445,8 @@ Useful variants:
 - `pwsh ./scripts/codex/run.ps1 -Service stack -Restart`
 - `pwsh ./scripts/codex/run.ps1 -Service ui -Profile mock`
 - `pwsh ./scripts/codex/run.ps1 -Service api -SkipBuild`
+
+For remote UI access, set `SYNCFACTORS_API_BIND_HOST=0.0.0.0` and `SYNCFACTORS_API_PUBLIC_HOST=<dns-name-or-lan-ip>` before launching the API or stack, then browse to `https://<SYNCFACTORS_API_PUBLIC_HOST>:<SYNCFACTORS_API_PORT>/Login`.
 
 When you run `-Service stack`, the launched services depend on the active profile:
 

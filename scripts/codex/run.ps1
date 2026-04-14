@@ -83,6 +83,19 @@ function Resolve-ProfileConfigPath {
     return $preferredPath
 }
 
+function Format-UrlHost {
+    param(
+        [Parameter(Mandatory)]
+        [string]$Host
+    )
+
+    if ($Host.Contains(':') -and -not ($Host.StartsWith('[') -and $Host.EndsWith(']'))) {
+        return "[$Host]"
+    }
+
+    return $Host
+}
+
 function Get-ListeningProcessIds {
     param(
         [Parameter(Mandatory)]
@@ -481,12 +494,13 @@ if ($Restart) {
 
 switch ($Service) {
     'api' {
+        $apiBindHost = Format-UrlHost -Host $env:SYNCFACTORS_API_BIND_HOST
         $arguments = @(
             './scripts/Start-SyncFactorsNextApi.ps1',
             '-ConfigPath', $env:SYNCFACTORS_RESOLVED_CONFIG_PATH_ABS,
             '-MappingConfigPath', $env:SYNCFACTORS_MAPPING_CONFIG_PATH_ABS,
             '-SqlitePath', $env:SYNCFACTORS_SQLITE_PATH_ABS,
-            '-Urls', "https://127.0.0.1:$($env:SYNCFACTORS_API_PORT)"
+            '-Urls', "https://$apiBindHost`:$($env:SYNCFACTORS_API_PORT)"
         )
 
         if ($SkipBuild) {
@@ -497,12 +511,13 @@ switch ($Service) {
         exit $LASTEXITCODE
     }
     'ui' {
+        $apiBindHost = Format-UrlHost -Host $env:SYNCFACTORS_API_BIND_HOST
         $arguments = @(
             './scripts/Start-SyncFactorsNextApi.ps1',
             '-ConfigPath', $env:SYNCFACTORS_RESOLVED_CONFIG_PATH_ABS,
             '-MappingConfigPath', $env:SYNCFACTORS_MAPPING_CONFIG_PATH_ABS,
             '-SqlitePath', $env:SYNCFACTORS_SQLITE_PATH_ABS,
-            '-Urls', "https://127.0.0.1:$($env:SYNCFACTORS_API_PORT)"
+            '-Urls', "https://$apiBindHost`:$($env:SYNCFACTORS_API_PORT)"
         )
 
         if ($SkipBuild) {

@@ -137,6 +137,16 @@ if ([string]::IsNullOrWhiteSpace($env:SYNCFACTORS_SQLITE_PATH)) {
     $variableSources['SYNCFACTORS_SQLITE_PATH'] = 'built-in default'
 }
 
+if ([string]::IsNullOrWhiteSpace($env:SYNCFACTORS_API_BIND_HOST)) {
+    $env:SYNCFACTORS_API_BIND_HOST = '127.0.0.1'
+    $variableSources['SYNCFACTORS_API_BIND_HOST'] = 'built-in default'
+}
+
+if ([string]::IsNullOrWhiteSpace($env:SYNCFACTORS_API_PUBLIC_HOST)) {
+    $env:SYNCFACTORS_API_PUBLIC_HOST = '127.0.0.1'
+    $variableSources['SYNCFACTORS_API_PUBLIC_HOST'] = 'built-in default'
+}
+
 if ([string]::IsNullOrWhiteSpace($env:SYNCFACTORS_API_PORT)) {
     $env:SYNCFACTORS_API_PORT = '5087'
     $variableSources['SYNCFACTORS_API_PORT'] = 'built-in default'
