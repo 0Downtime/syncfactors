@@ -25,6 +25,7 @@ public sealed class BulkRunCoordinator(
         var runCancellationToken = runCancellationSource.Token;
         var cancellationMonitor = MonitorCancellationAsync(request.RequestId, runCancellationSource, cancellationToken);
         var syncScope = await DetermineSyncScopeAsync(cancellationToken);
+        var extractionStartedAt = timeProvider.GetUtcNow();
         var workers = new List<WorkerSnapshot>();
         GuardrailExceededException? guardrailFailure = null;
         try
@@ -267,7 +268,7 @@ public sealed class BulkRunCoordinator(
 
             if (!request.DryRun && ShouldAdvanceDeltaCheckpoint(tally))
             {
-                await deltaSyncService.RecordSuccessfulRunAsync(cancellationToken);
+                await deltaSyncService.RecordSuccessfulRunAsync(extractionStartedAt, cancellationToken);
             }
 
             return runId;

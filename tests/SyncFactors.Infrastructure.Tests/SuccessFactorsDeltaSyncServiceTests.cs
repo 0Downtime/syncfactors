@@ -72,7 +72,7 @@ public sealed class SuccessFactorsDeltaSyncServiceTests
 
             var configLoader = new SyncFactorsConfigurationLoader(new SyncFactorsConfigPathResolver(syncConfigPath, mappingConfigPath));
             var stateStore = new StubDeltaSyncStateStore(DateTimeOffset.Parse("2026-03-31T10:15:00Z"));
-            var service = new SuccessFactorsDeltaSyncService(configLoader, stateStore, TimeProvider.System, NullLogger<SuccessFactorsDeltaSyncService>.Instance);
+            var service = new SuccessFactorsDeltaSyncService(configLoader, stateStore, NullLogger<SuccessFactorsDeltaSyncService>.Instance);
 
             var window = await service.GetWindowAsync(CancellationToken.None);
 
@@ -88,8 +88,187 @@ public sealed class SuccessFactorsDeltaSyncServiceTests
         }
     }
 
+    [Fact]
+    public async Task GetWindowAsync_WithPreviewBackedMappings_DisablesDelta()
+    {
+        var tempDirectory = Path.Combine(Path.GetTempPath(), "syncfactors-delta-config", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDirectory);
+
+        try
+        {
+            var syncConfigPath = Path.Combine(tempDirectory, "sync-config.json");
+            var mappingConfigPath = Path.Combine(tempDirectory, "mapping-config.json");
+
+            await File.WriteAllTextAsync(syncConfigPath, """
+            {
+              "secrets": {
+                "adServerEnv": null,
+                "adUsernameEnv": null,
+                "adBindPasswordEnv": null
+              },
+              "successFactors": {
+                "baseUrl": "https://example.successfactors.com/odata/v2",
+                "auth": {
+                  "mode": "basic",
+                  "basic": {
+                    "username": "user",
+                    "password": "pass"
+                  }
+                },
+                "query": {
+                  "entitySet": "EmpJob",
+                  "identityField": "userId",
+                  "deltaField": "lastModifiedDateTime",
+                  "deltaSyncEnabled": true,
+                  "deltaOverlapMinutes": 5,
+                  "pageSize": 200,
+                  "select": [ "userId" ],
+                  "expand": []
+                },
+                "previewQuery": {
+                  "entitySet": "PerPerson",
+                  "identityField": "personIdExternal",
+                  "deltaField": "lastModifiedDateTime",
+                  "pageSize": 200,
+                  "select": [ "personIdExternal", "personalInfoNav/firstName" ],
+                  "expand": [ "personalInfoNav" ]
+                }
+              },
+              "ad": {
+                "server": "ldap.example.test",
+                "username": "",
+                "bindPassword": "",
+                "identityAttribute": "employeeID",
+                "defaultActiveOu": "OU=LabUsers,DC=example,DC=com",
+                "prehireOu": "OU=Prehire,DC=example,DC=com",
+                "graveyardOu": "OU=LabGraveyard,DC=example,DC=com"
+              },
+              "sync": {
+                "enableBeforeStartDays": 7,
+                "deletionRetentionDays": 90
+              },
+              "safety": {
+                "maxCreatesPerRun": 10,
+                "maxDisablesPerRun": 10,
+                "maxDeletionsPerRun": 10
+              },
+              "reporting": {
+                "outputDirectory": "reports"
+              }
+            }
+            """);
+            await File.WriteAllTextAsync(mappingConfigPath, """
+            {
+              "mappings": [
+                {
+                  "source": "personalInfoNav[0].firstName",
+                  "target": "GivenName",
+                  "enabled": true,
+                  "required": true,
+                  "transform": "Trim"
+                }
+              ]
+            }
+            """);
+
+            var configLoader = new SyncFactorsConfigurationLoader(new SyncFactorsConfigPathResolver(syncConfigPath, mappingConfigPath));
+            var stateStore = new StubDeltaSyncStateStore(DateTimeOffset.Parse("2026-03-31T10:15:00Z"));
+            var service = new SuccessFactorsDeltaSyncService(configLoader, stateStore, NullLogger<SuccessFactorsDeltaSyncService>.Instance);
+
+            var window = await service.GetWindowAsync(CancellationToken.None);
+
+            Assert.False(window.Enabled);
+            Assert.False(window.HasCheckpoint);
+            Assert.Null(window.Filter);
+        }
+        finally
+        {
+            Directory.Delete(tempDirectory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task RecordSuccessfulRunAsync_UsesSuppliedCheckpointUtc()
+    {
+        var tempDirectory = Path.Combine(Path.GetTempPath(), "syncfactors-delta-config", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDirectory);
+
+        try
+        {
+            var syncConfigPath = Path.Combine(tempDirectory, "sync-config.json");
+            var mappingConfigPath = Path.Combine(tempDirectory, "mapping-config.json");
+
+            await File.WriteAllTextAsync(syncConfigPath, """
+            {
+              "secrets": {
+                "adServerEnv": null,
+                "adUsernameEnv": null,
+                "adBindPasswordEnv": null
+              },
+              "successFactors": {
+                "baseUrl": "https://example.successfactors.com/odata/v2",
+                "auth": {
+                  "mode": "basic",
+                  "basic": {
+                    "username": "user",
+                    "password": "pass"
+                  }
+                },
+                "query": {
+                  "entitySet": "EmpJob",
+                  "identityField": "userId",
+                  "deltaField": "lastModifiedDateTime",
+                  "deltaSyncEnabled": true,
+                  "deltaOverlapMinutes": 5,
+                  "pageSize": 200,
+                  "select": [ "userId" ],
+                  "expand": []
+                }
+              },
+              "ad": {
+                "server": "ldap.example.test",
+                "username": "",
+                "bindPassword": "",
+                "identityAttribute": "employeeID",
+                "defaultActiveOu": "OU=LabUsers,DC=example,DC=com",
+                "prehireOu": "OU=Prehire,DC=example,DC=com",
+                "graveyardOu": "OU=LabGraveyard,DC=example,DC=com"
+              },
+              "sync": {
+                "enableBeforeStartDays": 7,
+                "deletionRetentionDays": 90
+              },
+              "safety": {
+                "maxCreatesPerRun": 10,
+                "maxDisablesPerRun": 10,
+                "maxDeletionsPerRun": 10
+              },
+              "reporting": {
+                "outputDirectory": "reports"
+              }
+            }
+            """);
+            await File.WriteAllTextAsync(mappingConfigPath, """{"mappings":[{"source":"userId","target":"employeeID","enabled":true,"required":true,"transform":"copy"}]}""");
+
+            var configLoader = new SyncFactorsConfigurationLoader(new SyncFactorsConfigPathResolver(syncConfigPath, mappingConfigPath));
+            var stateStore = new StubDeltaSyncStateStore(null);
+            var service = new SuccessFactorsDeltaSyncService(configLoader, stateStore, NullLogger<SuccessFactorsDeltaSyncService>.Instance);
+            var checkpointUtc = DateTimeOffset.Parse("2026-04-14T12:00:00Z");
+
+            await service.RecordSuccessfulRunAsync(checkpointUtc, CancellationToken.None);
+
+            Assert.Equal(checkpointUtc, stateStore.SavedCheckpointUtc);
+        }
+        finally
+        {
+            Directory.Delete(tempDirectory, recursive: true);
+        }
+    }
+
     private sealed class StubDeltaSyncStateStore(DateTimeOffset? checkpointUtc) : IDeltaSyncStateStore
     {
+        public DateTimeOffset? SavedCheckpointUtc { get; private set; }
+
         public Task<DateTimeOffset?> GetCheckpointAsync(string syncKey, CancellationToken cancellationToken)
         {
             _ = syncKey;
@@ -100,7 +279,7 @@ public sealed class SuccessFactorsDeltaSyncServiceTests
         public Task SaveCheckpointAsync(string syncKey, DateTimeOffset checkpointUtc, CancellationToken cancellationToken)
         {
             _ = syncKey;
-            _ = checkpointUtc;
+            SavedCheckpointUtc = checkpointUtc;
             _ = cancellationToken;
             return Task.CompletedTask;
         }

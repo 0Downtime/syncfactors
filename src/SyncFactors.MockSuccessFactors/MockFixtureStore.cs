@@ -579,8 +579,14 @@ public sealed class MockFixtureStore(IOptions<MockSuccessFactorsOptions> options
         }
 
         var valueToken = tokens[2];
-        const string prefix = "datetime'";
-        if (!valueToken.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) || !valueToken.EndsWith('\''))
+        const string datetimeOffsetPrefix = "datetimeoffset'";
+        const string datetimePrefix = "datetime'";
+        var prefix = valueToken.StartsWith(datetimeOffsetPrefix, StringComparison.OrdinalIgnoreCase)
+            ? datetimeOffsetPrefix
+            : valueToken.StartsWith(datetimePrefix, StringComparison.OrdinalIgnoreCase)
+                ? datetimePrefix
+                : null;
+        if (prefix is null || !valueToken.EndsWith('\''))
         {
             return false;
         }

@@ -29,7 +29,7 @@ public enum WorkerListingMode
 public interface IDeltaSyncService
 {
     Task<DeltaSyncWindow> GetWindowAsync(CancellationToken cancellationToken);
-    Task RecordSuccessfulRunAsync(CancellationToken cancellationToken);
+    Task RecordSuccessfulRunAsync(DateTimeOffset checkpointUtc, CancellationToken cancellationToken);
 }
 
 public sealed record DeltaSyncWindow(
