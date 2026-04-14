@@ -143,8 +143,14 @@ public static class FixtureGenerationCommand
         var company = GetString(companyNav, "name_localized") ?? GetString(companyNav, "company") ?? GetString(jobInfo, "company");
         var locationName = GetString(location, "name") ?? GetString(location, "LocationName") ?? GetString(jobInfo, "location");
         var managerId = GetString(managerEmpInfo, "personIdExternal") ?? GetString(jobInfo, "managerId") ?? GetString(worker, "managerId");
+        var employmentStatus = GetString(jobInfo, "emplStatus");
+        var endDate = GetString(employment, "endDate");
+        var firstDateWorked = GetString(employment, "firstDateWorked");
+        var lastDateWorked = GetString(employment, "lastDateWorked");
+        var isContingentWorker = GetString(employment, "isContingentWorker");
 
-        var tags = InferScenarioTags(startDate, department, managerId);
+        var lifecycleState = MockLifecycleState.Infer(startDate, employmentStatus, endDate);
+        var tags = InferScenarioTags(startDate, department, managerId, lifecycleState);
         return new MockWorkerFixture(
             PersonIdExternal: GetString(worker, "personIdExternal") ?? Guid.NewGuid().ToString("N"),
             UserName: GetString(userNav, "username") ?? GetString(worker, "username") ?? GetString(worker, "userName") ?? "user",
@@ -175,7 +181,12 @@ public static class FixtureGenerationCommand
             UnionJobCode: GetString(jobInfo, "customString91"),
             CintasUniformCategory: GetString(jobInfo, "customString112"),
             CintasUniformAllotment: GetString(jobInfo, "customString113"),
-            EmploymentStatus: GetString(jobInfo, "emplStatus"),
+            EmploymentStatus: employmentStatus,
+            LifecycleState: lifecycleState,
+            EndDate: endDate,
+            FirstDateWorked: firstDateWorked,
+            LastDateWorked: lastDateWorked,
+            IsContingentWorker: isContingentWorker,
             LastModifiedDateTime: GetString(worker, "lastModifiedDateTime"),
             ScenarioTags: tags,
             Response: null,
@@ -276,15 +287,19 @@ public static class FixtureGenerationCommand
                     City: worker.Location.City is null ? null : $"City{StableNumber(key + ":city", 10, 99)}",
                     ZipCode: worker.Location.ZipCode is null ? null : $"{StableNumber(key + ":zip", 10_000, 99_999):D5}",
                     CustomString4: worker.Location.CustomString4 is null ? null : $"Floor {StableNumber(key + ":floor", 1, 20)}"),
-            ScenarioTags = worker.ScenarioTags.Count > 0 ? worker.ScenarioTags : InferDefaultScenarioTags(index, worker.StartDate)
+            LifecycleState = MockLifecycleState.Normalize(worker.LifecycleState),
+            ScenarioTags = worker.ScenarioTags.Count > 0
+                ? worker.ScenarioTags
+                : InferDefaultScenarioTags(index, worker.StartDate, MockLifecycleState.Normalize(worker.LifecycleState))
         };
     }
 
-    private static IReadOnlyList<string> InferScenarioTags(string startDate, string? department, string? managerId)
+    private static IReadOnlyList<string> InferScenarioTags(string startDate, string? department, string? managerId, string lifecycleState)
     {
         var tags = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "update" };
-        if (DateTimeOffset.TryParse(startDate, out var parsedStart) && parsedStart > DateTimeOffset.UtcNow)
+        if (string.Equals(lifecycleState, MockLifecycleState.Preboarding, StringComparison.OrdinalIgnoreCase))
         {
+            tags.Add("preboarding");
             tags.Add("prehire");
         }
 
@@ -298,15 +313,45 @@ public static class FixtureGenerationCommand
             tags.Add("manager-change");
         }
 
+        switch (lifecycleState)
+        {
+            case MockLifecycleState.PaidLeave:
+            case MockLifecycleState.UnpaidLeave:
+                tags.Add("leave");
+                tags.Add("disable-candidate");
+                break;
+            case MockLifecycleState.Retired:
+            case MockLifecycleState.Terminated:
+                tags.Add("inactive");
+                tags.Add("delete-candidate");
+                break;
+        }
+
         return tags.ToArray();
     }
 
-    private static IReadOnlyList<string> InferDefaultScenarioTags(int index, string startDate)
+    private static IReadOnlyList<string> InferDefaultScenarioTags(int index, string startDate, string lifecycleState)
     {
         var tags = new List<string> { index == 0 ? "create" : "update" };
-        if (DateTimeOffset.TryParse(startDate, out var parsedStart) && parsedStart > DateTimeOffset.UtcNow)
+        if (string.Equals(lifecycleState, MockLifecycleState.Preboarding, StringComparison.OrdinalIgnoreCase) ||
+            DateTimeOffset.TryParse(startDate, out var parsedStart) && parsedStart > DateTimeOffset.UtcNow)
         {
+            tags.Add("preboarding");
             tags.Add("prehire");
+        }
+
+        switch (lifecycleState)
+        {
+            case MockLifecycleState.PaidLeave:
+            case MockLifecycleState.UnpaidLeave:
+                tags.Add("leave");
+                tags.Add("disable-candidate");
+                break;
+            case MockLifecycleState.Retired:
+            case MockLifecycleState.Terminated:
+                tags.Add("inactive");
+                tags.Add("delete-candidate");
+                break;
         }
 
         return tags;
