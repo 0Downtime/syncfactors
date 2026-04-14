@@ -13,14 +13,20 @@ public sealed class FixtureGenerationCommandTests
         var inputPath = Path.Combine(tempDirectory, "input.json");
         var outputPath = Path.Combine(tempDirectory, "fixtures.json");
         var manifestPath = Path.Combine(tempDirectory, "manifest.json");
+        var outputWriter = new StringWriter();
         File.Copy(Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "config", "mock-successfactors", "sample-export.json")), inputPath);
 
         var exitCode = await FixtureGenerationCommand.RunAsync(
             new FixtureGenerationRequest(inputPath, outputPath, manifestPath),
-            TextWriter.Null,
+            outputWriter,
             CancellationToken.None);
 
         Assert.Equal(0, exitCode);
+        var commandOutput = outputWriter.ToString();
+        Assert.Contains("Mock fixture summary (generated fixtures)", commandOutput);
+        Assert.Contains("workers=1", commandOutput);
+        Assert.Contains("provisioningBuckets", commandOutput);
+        Assert.Contains("Generated 1 sanitized fixtures", commandOutput);
 
         using var fixtureDocument = JsonDocument.Parse(await File.ReadAllTextAsync(outputPath));
         var worker = fixtureDocument.RootElement.GetProperty("workers")[0];
@@ -83,5 +89,27 @@ public sealed class FixtureGenerationCommandTests
         Assert.Contains("unpaid-leave", lifecycleStates);
         Assert.Contains("retired", lifecycleStates);
         Assert.Contains("terminated", lifecycleStates);
+    }
+
+    [Fact]
+    public async Task BaselineFixtures_SummaryIncludesProvisioningBuckets()
+    {
+        var fixturePath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "config", "mock-successfactors", "baseline-fixtures.json"));
+        using var document = JsonDocument.Parse(await File.ReadAllTextAsync(fixturePath));
+        var workers = document.RootElement.GetProperty("workers")
+            .EnumerateArray()
+            .Select(worker => JsonSerializer.Deserialize<MockWorkerFixture>(worker.GetRawText()))
+            .Where(worker => worker is not null)
+            .Cast<MockWorkerFixture>()
+            .ToArray();
+        var fixtureDocument = new MockFixtureDocument(workers);
+        var output = new StringWriter();
+
+        MockFixtureSummaryReporter.WriteSummary(output, fixtureDocument, "test");
+
+        var summary = output.ToString();
+        Assert.Contains("workers=10", summary);
+        Assert.Contains("lifecycleTypes active=4, preboarding=1, paid-leave=1, unpaid-leave=1, retired=1, terminated=2", summary);
+        Assert.Contains("provisioningBuckets creates=2, updates=2, disables=2, graveyardMoves=3, manualReview=1", summary);
     }
 }

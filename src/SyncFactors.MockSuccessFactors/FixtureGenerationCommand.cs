@@ -90,6 +90,7 @@ public static class FixtureGenerationCommand
                 cancellationToken);
         }
 
+        MockFixtureSummaryReporter.WriteSummary(output, fixtureDocument, "generated fixtures");
         await output.WriteLineAsync($"Generated {workers.Length} sanitized fixtures at {command.OutputPath}");
         return 0;
     }

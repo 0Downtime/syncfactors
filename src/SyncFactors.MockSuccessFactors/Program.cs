@@ -23,6 +23,8 @@ builder.Services.AddSingleton<ODataResponseBuilder>();
 builder.Services.AddSingleton<MockTokenService>();
 
 var app = builder.Build();
+var fixtureStore = app.Services.GetRequiredService<MockFixtureStore>();
+MockFixtureSummaryReporter.WriteSummary(Console.Out, fixtureStore.GetDocument(), "startup");
 
 app.MapGet("/healthz", () => TypedResults.Ok(new { status = "ok" }));
 
