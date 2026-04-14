@@ -33,16 +33,16 @@ $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).ProviderPath
 function Assert-UsablePublicHost {
     param(
         [Parameter(Mandatory)]
-        [string]$Host
+        [string]$HostName
     )
 
-    if ([string]::IsNullOrWhiteSpace($Host)) {
+    if ([string]::IsNullOrWhiteSpace($HostName)) {
         throw 'ApiPublicHost cannot be empty.'
     }
 
-    $normalizedHost = $Host.Trim()
+    $normalizedHost = $HostName.Trim()
     if ($normalizedHost -in @('0.0.0.0', '::', '[::]', '*', '+')) {
-        throw "ApiPublicHost '$Host' is not a browser-usable host name. Use the DNS name or IP address that operators will browse to."
+        throw "ApiPublicHost '$HostName' is not a browser-usable host name. Use the DNS name or IP address that operators will browse to."
     }
 
     return $normalizedHost
@@ -51,14 +51,14 @@ function Assert-UsablePublicHost {
 function Format-UrlHost {
     param(
         [Parameter(Mandatory)]
-        [string]$Host
+        [string]$HostName
     )
 
-    if ($Host.Contains(':') -and -not ($Host.StartsWith('[') -and $Host.EndsWith(']'))) {
-        return "[$Host]"
+    if ($HostName.Contains(':') -and -not ($HostName.StartsWith('[') -and $HostName.EndsWith(']'))) {
+        return "[$HostName]"
     }
 
-    return $Host
+    return $HostName
 }
 
 function Ensure-Module {
@@ -686,8 +686,8 @@ if ([string]::IsNullOrWhiteSpace($EnvFilePath)) {
     $EnvFilePath = Join-Path $RepoRoot '.env.worktree'
 }
 
-$ApiPublicHost = Assert-UsablePublicHost -Host $ApiPublicHost
-$formattedApiPublicHost = Format-UrlHost -Host $ApiPublicHost
+$ApiPublicHost = Assert-UsablePublicHost -HostName $ApiPublicHost
+$formattedApiPublicHost = Format-UrlHost -HostName $ApiPublicHost
 
 $redirectUris = @(
     "https://$formattedApiPublicHost`:$ApiPort/signin-oidc",
