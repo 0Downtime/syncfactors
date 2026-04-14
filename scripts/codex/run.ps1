@@ -360,6 +360,8 @@ on run argv
     set targetLabel to item 1 of argv
 
     tell application "Terminal"
+        set matchingWindows to {}
+
         repeat with currentWindow in windows
             set shouldCloseWindow to false
 
@@ -382,8 +384,21 @@ on run argv
             end repeat
 
             if shouldCloseWindow then
-                close currentWindow saving no
-                exit repeat
+                copy currentWindow to end of matchingWindows
+            end if
+        end repeat
+
+        repeat with targetWindow in matchingWindows
+            try
+                close targetWindow saving no
+            end try
+        end repeat
+
+        repeat with currentWindow in windows
+            if (count of tabs of currentWindow) is 0 then
+                try
+                    close currentWindow saving no
+                end try
             end if
         end repeat
     end tell
@@ -475,7 +490,7 @@ $activeProfile = $env:SYNCFACTORS_RUN_PROFILE.ToLowerInvariant()
 $repoRoot = Resolve-ProjectRoot
 
 if ($Restart) {
-    $preserveHostedTerminals = [OperatingSystem]::IsMacOS() -and $Service -eq 'stack'
+    $preserveHostedTerminals = $false
     Restart-SelectedServices -RequestedService $Service -RepositoryRoot $repoRoot -PreserveHostedTerminals:$preserveHostedTerminals
 }
 
@@ -557,7 +572,7 @@ switch ($Service) {
         }
 
         $terminalScriptPath = Join-Path $scriptDir 'Open-TerminalCommand.ps1'
-        $reuseHostedTerminals = [OperatingSystem]::IsMacOS() -and $Restart
+        $reuseHostedTerminals = $false
         $workerArguments = @('-Service', 'worker') + $sharedArguments
         $startMockApi = $activeProfile -eq 'mock'
         $startSyncFactorsApi = $true
