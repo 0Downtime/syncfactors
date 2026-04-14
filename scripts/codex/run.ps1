@@ -86,14 +86,14 @@ function Resolve-ProfileConfigPath {
 function Format-UrlHost {
     param(
         [Parameter(Mandatory)]
-        [string]$Host
+        [string]$HostName
     )
 
-    if ($Host.Contains(':') -and -not ($Host.StartsWith('[') -and $Host.EndsWith(']'))) {
-        return "[$Host]"
+    if ($HostName.Contains(':') -and -not ($HostName.StartsWith('[') -and $HostName.EndsWith(']'))) {
+        return "[$HostName]"
     }
 
-    return $Host
+    return $HostName
 }
 
 function Get-ListeningProcessIds {
@@ -509,7 +509,7 @@ if ($Restart) {
 
 switch ($Service) {
     'api' {
-        $apiBindHost = Format-UrlHost -Host $env:SYNCFACTORS_API_BIND_HOST
+        $apiBindHost = Format-UrlHost -HostName $env:SYNCFACTORS_API_BIND_HOST
         $arguments = @(
             './scripts/Start-SyncFactorsNextApi.ps1',
             '-ConfigPath', $env:SYNCFACTORS_RESOLVED_CONFIG_PATH_ABS,
@@ -526,7 +526,7 @@ switch ($Service) {
         exit $LASTEXITCODE
     }
     'ui' {
-        $apiBindHost = Format-UrlHost -Host $env:SYNCFACTORS_API_BIND_HOST
+        $apiBindHost = Format-UrlHost -HostName $env:SYNCFACTORS_API_BIND_HOST
         $arguments = @(
             './scripts/Start-SyncFactorsNextApi.ps1',
             '-ConfigPath', $env:SYNCFACTORS_RESOLVED_CONFIG_PATH_ABS,
