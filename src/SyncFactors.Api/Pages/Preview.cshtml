@@ -1,7 +1,7 @@
 @page
 @model SyncFactors.Api.Pages.PreviewModel
 @{
-    ViewData["Title"] = "Worker Preview";
+    ViewData["Title"] = "Manual Provision";
     var preview = Model.Preview;
     var riskCallouts = preview is null ? [] : BuildRiskCallouts(preview);
     var managerDiff = preview?.DiffRows.FirstOrDefault(row => string.Equals(row.Attribute, "manager", StringComparison.OrdinalIgnoreCase));
@@ -14,7 +14,7 @@
 <section class="hero hero-compact">
     <div>
         <p class="eyebrow">Staging Sync</p>
-        <h1>Worker Preview</h1>
+        <h1>Manual Provision</h1>
         <p class="lede">Enter a worker ID to fetch the worker from SuccessFactors, compare it to Active Directory, and inspect the staged operations before a real sync.</p>
     </div>
 </section>
