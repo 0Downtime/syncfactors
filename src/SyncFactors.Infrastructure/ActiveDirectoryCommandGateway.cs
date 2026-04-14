@@ -248,6 +248,12 @@ public sealed class ActiveDirectoryCommandGateway(
             return new DirectoryCommandResult(false, command.Action, command.SamAccountName, distinguishedName, "Could not resolve move target for AD user.", null);
         }
 
+        var currentParentOu = GetParentDistinguishedName(distinguishedName);
+        if (string.Equals(currentParentOu, targetOu, StringComparison.OrdinalIgnoreCase))
+        {
+            return new DirectoryCommandResult(true, command.Action, command.SamAccountName, distinguishedName, $"AD user {command.SamAccountName} is already in the target OU.", null);
+        }
+
         var currentRdn = GetRelativeDistinguishedName(distinguishedName);
         var request = new ModifyDNRequest(distinguishedName, targetOu, currentRdn) { DeleteOldRdn = true };
         ExecuteModify(connection, request, logger, "move user modify-dn request", ("WorkerId", command.WorkerId), ("TargetOu", targetOu));

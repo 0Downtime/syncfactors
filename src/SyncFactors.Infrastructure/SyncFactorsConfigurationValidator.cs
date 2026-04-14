@@ -36,6 +36,8 @@ public sealed class SyncFactorsConfigurationValidator(SyncFactorsConfigurationLo
             throw new InvalidOperationException("SyncFactors AD active, prehire, and graveyard OUs must be configured.");
         }
 
+        ValidateManagedOuNamingContexts(sync.Ad);
+
         if ((sync.Sync.LeaveStatusValues?.Count ?? 0) > 0 && string.IsNullOrWhiteSpace(sync.Ad.LeaveOu))
         {
             throw new InvalidOperationException("SyncFactors AD leaveOu must be configured when sync.leaveStatusValues are set.");
@@ -188,6 +190,49 @@ public sealed class SyncFactorsConfigurationValidator(SyncFactorsConfigurationLo
         }
 
         return false;
+    }
+
+    private static void ValidateManagedOuNamingContexts(ActiveDirectoryConfig config)
+    {
+        var managedOus = new[]
+        {
+            ("defaultActiveOu", config.DefaultActiveOu),
+            ("prehireOu", config.PrehireOu),
+            ("graveyardOu", config.GraveyardOu),
+            ("leaveOu", config.LeaveOu)
+        }
+        .Where(item => !string.IsNullOrWhiteSpace(item.Item2))
+        .Select(item => (Name: item.Item1, DistinguishedName: item.Item2!, NamingContext: ExtractNamingContext(item.Item2!)))
+        .ToArray();
+
+        if (managedOus.Length <= 1)
+        {
+            return;
+        }
+
+        var expectedNamingContext = managedOus[0].NamingContext;
+        var mismatched = managedOus
+            .Where(item => !string.Equals(item.NamingContext, expectedNamingContext, StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        if (mismatched.Length == 0)
+        {
+            return;
+        }
+
+        var details = string.Join(
+            ", ",
+            managedOus.Select(item => $"{item.Name}='{item.DistinguishedName}'"));
+        throw new InvalidOperationException(
+            $"SyncFactors managed AD OUs must remain within the same naming context because LDAP MoveUser cannot cross domains. Current values: {details}.");
+    }
+
+    private static string ExtractNamingContext(string distinguishedName)
+    {
+        var parts = distinguishedName
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(part => part.StartsWith("DC=", StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        return string.Join(",", parts);
     }
 
 }
