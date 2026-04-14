@@ -295,9 +295,10 @@ public sealed class ActiveDirectoryCommandGateway(
             return new DirectoryCommandResult(false, command.Action, command.SamAccountName, distinguishedName, "Could not resolve move target for AD user.", null);
         }
 
-        var request = new ModifyDNRequest(distinguishedName, targetOu, null) { DeleteOldRdn = true };
+        var currentRdn = GetRelativeDistinguishedName(distinguishedName);
+        var request = new ModifyDNRequest(distinguishedName, targetOu, currentRdn) { DeleteOldRdn = true };
         ExecuteModify(connection, request, logger, "move user modify-dn request", ("WorkerId", command.WorkerId), ("TargetOu", targetOu));
-        var movedDn = $"CN={EscapeDnComponent(command.CommonName)},{targetOu}";
+        var movedDn = $"{currentRdn},{targetOu}";
         return new DirectoryCommandResult(true, command.Action, command.SamAccountName, movedDn, $"Moved AD user {command.SamAccountName}.", null);
     }
 
@@ -386,6 +387,17 @@ public sealed class ActiveDirectoryCommandGateway(
         }
 
         return distinguishedName[(separatorIndex + 1)..];
+    }
+
+    private static string GetRelativeDistinguishedName(string distinguishedName)
+    {
+        var separatorIndex = FindFirstUnescapedComma(distinguishedName);
+        if (separatorIndex < 0)
+        {
+            throw new InvalidOperationException($"Could not resolve relative distinguished name from '{distinguishedName}'.");
+        }
+
+        return distinguishedName[..separatorIndex];
     }
 
     private static int FindFirstUnescapedComma(string distinguishedName)

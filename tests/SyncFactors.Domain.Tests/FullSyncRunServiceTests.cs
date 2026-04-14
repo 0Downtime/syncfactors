@@ -259,6 +259,61 @@ public sealed class FullSyncRunServiceTests
         Assert.Equal("unchanged", runRepository.ReplacedEntries.Single().entries.Single().Bucket);
     }
 
+    [Fact]
+    public async Task LaunchAsync_TerminatedWorkerWithoutExistingUser_DoesNotPersistManualReviewDiffsForMissingRequiredMappings()
+    {
+        var worker = new WorkerSnapshot(
+            WorkerId: "10003",
+            PreferredName: "Winnie",
+            LastName: "Sample101",
+            Department: "IT",
+            TargetOu: "OU=LabUsers,DC=example,DC=com",
+            IsPrehire: false,
+            Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["lastName"] = "Sample101",
+                ["employmentNav[0].jobInfoNav[0].emplStatus"] = "T"
+            });
+
+        var runRepository = new CapturingRunRepository();
+        var runtimeStatusStore = new CapturingRuntimeStatusStore();
+        var directoryCommandGateway = new CapturingDirectoryCommandGateway();
+        var mappingProvider = new RequiredGivenNameMappingProvider();
+        var service = new FullSyncRunService(
+            new StubWorkerSource([worker]),
+            new WorkerPlanningService(
+                new StubDirectoryGateway(managerDistinguishedName: null),
+                new IdentityMatcher(),
+                new LifecyclePolicy(
+                    new LifecyclePolicySettings(
+                        ActiveOu: "OU=LabUsers,DC=example,DC=com",
+                        PrehireOu: "OU=Prehire,DC=example,DC=com",
+                        GraveyardOu: "OU=Graveyard,DC=example,DC=com",
+                        InactiveStatusField: "employmentNav/jobInfoNav/emplStatus",
+                        InactiveStatusValues: ["T"])),
+                new StubAttributeDiffService(),
+                mappingProvider,
+                NullLogger<WorkerPlanningService>.Instance),
+            new DirectoryMutationCommandBuilder(),
+            directoryCommandGateway,
+            runRepository,
+            runtimeStatusStore,
+            new WorkerRunSettings(MaxCreatesPerRun: 10, MaxDisablesPerRun: 10),
+            NullLogger<FullSyncRunService>.Instance);
+
+        var result = await service.LaunchAsync(
+            new LaunchFullRunRequest(DryRun: true, AcknowledgeRealSync: false),
+            CancellationToken.None);
+
+        var entry = runRepository.ReplacedEntries.Single().entries.Single();
+
+        Assert.Equal("Succeeded", result.Status);
+        Assert.Equal(0, directoryCommandGateway.ExecuteCount);
+        Assert.Equal("unchanged", entry.Bucket);
+        Assert.False(entry.Item.TryGetProperty("reviewCaseType", out var reviewCaseType) && !string.IsNullOrWhiteSpace(reviewCaseType.GetString()));
+        Assert.Empty(entry.Item.GetProperty("changedAttributeDetails").EnumerateArray());
+    }
+
     private static FullSyncRunService CreateService(
         IReadOnlyList<WorkerSnapshot> workers,
         IDirectoryGateway directoryGateway,
@@ -448,6 +503,14 @@ public sealed class FullSyncRunServiceTests
     private sealed class StubAttributeMappingProvider : IAttributeMappingProvider
     {
         public IReadOnlyList<AttributeMapping> GetEnabledMappings() => [];
+    }
+
+    private sealed class RequiredGivenNameMappingProvider : IAttributeMappingProvider
+    {
+        public IReadOnlyList<AttributeMapping> GetEnabledMappings() =>
+        [
+            new AttributeMapping("personalInfoNav[0].firstName", "GivenName", Required: true, Transform: "Trim")
+        ];
     }
 
     private sealed class StubAttributeDiffService : IAttributeDiffService

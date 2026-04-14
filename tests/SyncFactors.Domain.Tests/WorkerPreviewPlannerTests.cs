@@ -156,6 +156,51 @@ public sealed class WorkerPreviewPlannerTests
     }
 
     [Fact]
+    public async Task PreviewAsync_TerminatedWorkerWithoutExistingUser_SkipsRequiredMappingReviewAndSyntheticDiffs()
+    {
+        var worker = new WorkerSnapshot(
+            WorkerId: "44522",
+            PreferredName: "Christopher",
+            LastName: "Brien",
+            Department: "Infrastructure & Security",
+            TargetOu: "OU=Employees,DC=example,DC=com",
+            IsPrehire: false,
+            Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["personIdExternal"] = "44522",
+                ["lastName"] = "Brien",
+                ["emplStatus"] = "T"
+            });
+
+        var diffService = new CapturingAttributeDiffService();
+        var mappingProvider = new RequiredPathMappingProvider();
+        var runRepository = new CapturingRunRepository();
+        var planner = new WorkerPreviewPlanner(
+            new StubWorkerSource(worker),
+            new WorkerPlanningService(
+                new StubDirectoryGateway(),
+                new StubIdentityMatcher(),
+                CreateLifecyclePolicy(),
+                diffService,
+                mappingProvider,
+                NullLogger<WorkerPlanningService>.Instance),
+            mappingProvider,
+            new StubWorkerPreviewLogWriter(),
+            runRepository,
+            NullLogger<WorkerPreviewPlanner>.Instance);
+
+        var preview = await planner.PreviewAsync("44522", CancellationToken.None);
+
+        Assert.Equal("unchanged", preview.Buckets.Single());
+        Assert.Null(preview.ReviewCaseType);
+        Assert.Empty(preview.MissingSourceAttributes);
+        Assert.DoesNotContain(preview.DiffRows, row => row.Changed);
+        Assert.Null(diffService.LastProposedEmailAddress);
+        Assert.Equal("unchanged", runRepository.ReplacedEntries.Single().entries.Single().Bucket);
+        Assert.Empty(runRepository.ReplacedEntries.Single().entries.Single().Item.GetProperty("changedAttributeDetails").EnumerateArray());
+    }
+
+    [Fact]
     public async Task PreviewAsync_DoesNotRequireReviewWhenRequiredMappingsResolveThroughNormalizedSourcePaths()
     {
         var worker = new WorkerSnapshot(
@@ -192,6 +237,44 @@ public sealed class WorkerPreviewPlannerTests
 
         Assert.Null(preview.ReviewCaseType);
         Assert.Empty(preview.MissingSourceAttributes);
+    }
+
+    [Fact]
+    public async Task PreviewAsync_DoesNotRequireReviewWhenRequiredGivenNameResolvesFromPreferredNameFallback()
+    {
+        var worker = new WorkerSnapshot(
+            WorkerId: "44522",
+            PreferredName: "Terra",
+            LastName: "Wells",
+            Department: "Infrastructure & Security",
+            TargetOu: "OU=Employees,DC=example,DC=com",
+            IsPrehire: false,
+            Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["personIdExternal"] = "44522",
+                ["lastName"] = "Wells"
+            });
+
+        var mappingProvider = new RequiredPathMappingProvider();
+        var planner = new WorkerPreviewPlanner(
+            new StubWorkerSource(worker),
+            new WorkerPlanningService(
+                new StubDirectoryGateway(),
+                new StubIdentityMatcher(),
+                CreateLifecyclePolicy(),
+                new AttributeDiffService(mappingProvider, new StubWorkerPreviewLogWriter(), NullLogger<AttributeDiffService>.Instance),
+                mappingProvider,
+                NullLogger<WorkerPlanningService>.Instance),
+            mappingProvider,
+            new StubWorkerPreviewLogWriter(),
+            new StubRunRepository(),
+            NullLogger<WorkerPreviewPlanner>.Instance);
+
+        var preview = await planner.PreviewAsync("44522", CancellationToken.None);
+
+        Assert.Null(preview.ReviewCaseType);
+        Assert.Empty(preview.MissingSourceAttributes);
+        Assert.Equal("Terra", preview.DiffRows.Single(row => row.Attribute == "GivenName").After);
     }
 
     [Fact]
