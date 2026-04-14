@@ -10,6 +10,7 @@ namespace SyncFactors.Infrastructure;
 
 public sealed class ActiveDirectoryGateway(
     SyncFactorsConfigurationLoader configLoader,
+    IAttributeMappingProvider attributeMappingProvider,
     ILogger<ActiveDirectoryGateway> logger) : IDirectoryGateway
 {
     private static readonly TimeSpan LdapOperationTimeout = TimeSpan.FromSeconds(10);
@@ -26,7 +27,7 @@ public sealed class ActiveDirectoryGateway(
         try
         {
             var directoryUser = await ExecuteWithTimeoutAsync(
-                operation: () => QueryDirectory(worker, config, logger),
+                operation: () => QueryDirectory(worker, config, attributeMappingProvider.GetEnabledMappings(), logger),
                 operationName: "lookup",
                 server: config.Server,
                 cancellationToken: cancellationToken);
@@ -63,7 +64,7 @@ public sealed class ActiveDirectoryGateway(
         try
         {
             var existingDirectoryUser = await ExecuteWithTimeoutAsync(
-                operation: () => QueryDirectory(worker, config, logger),
+                operation: () => QueryDirectory(worker, config, attributeMappingProvider.GetEnabledMappings(), logger),
                 operationName: "existing worker lookup for email local-part resolution",
                 server: config.Server,
                 cancellationToken: cancellationToken);
@@ -163,14 +164,17 @@ public sealed class ActiveDirectoryGateway(
         }
     }
 
-    private static DirectoryUserSnapshot? QueryDirectory(WorkerSnapshot worker, ActiveDirectoryConfig config, ILogger logger)
+    private static DirectoryUserSnapshot? QueryDirectory(
+        WorkerSnapshot worker,
+        ActiveDirectoryConfig config,
+        IReadOnlyList<AttributeMapping> mappings,
+        ILogger logger)
     {
         using var connection = CreateConnection(config, logger);
-        var entry = FindFirstEntry(
+        var entry = FindFirstEntryMatchingAny(
             connection,
             GetSearchBases(config),
-            searchAttribute: config.IdentityAttribute,
-            searchValue: worker.WorkerId,
+            BuildLookupClauses(worker, config.IdentityAttribute, mappings),
             config.IdentityAttribute,
             logger,
             "worker lookup search");
@@ -190,6 +194,153 @@ public sealed class ActiveDirectoryGateway(
             Enabled: ParseEnabled(userAccountControl),
             DisplayName: displayName,
             Attributes: BuildAttributes(entry, displayName, config.IdentityAttribute));
+    }
+
+    private static IReadOnlyList<(string Attribute, string Value)> BuildLookupClauses(
+        WorkerSnapshot worker,
+        string identityAttribute,
+        IReadOnlyList<AttributeMapping> mappings)
+    {
+        var clauses = new List<(string Attribute, string Value)>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        AddLookupClause(clauses, seen, identityAttribute, ResolveDirectoryIdentityValue(worker, identityAttribute, mappings));
+        AddLookupClause(clauses, seen, "sAMAccountName", worker.WorkerId);
+
+        if (clauses.Count == 0)
+        {
+            throw new InvalidOperationException("Could not determine any AD lookup clauses for the worker.");
+        }
+
+        return clauses;
+    }
+
+    private static void AddLookupClause(
+        ICollection<(string Attribute, string Value)> clauses,
+        ISet<string> seen,
+        string attribute,
+        string? value)
+    {
+        if (string.IsNullOrWhiteSpace(attribute) || string.IsNullOrWhiteSpace(value))
+        {
+            return;
+        }
+
+        var trimmedValue = value.Trim();
+        if (!seen.Add($"{attribute}\0{trimmedValue}"))
+        {
+            return;
+        }
+
+        clauses.Add((attribute, trimmedValue));
+    }
+
+    private static string ResolveDirectoryIdentityValue(
+        WorkerSnapshot worker,
+        string identityAttribute,
+        IReadOnlyList<AttributeMapping> mappings)
+    {
+        if (worker.Attributes.TryGetValue(identityAttribute, out var directValue) &&
+            !string.IsNullOrWhiteSpace(directValue))
+        {
+            return directValue.Trim();
+        }
+
+        var mapping = mappings.FirstOrDefault(candidate =>
+            string.Equals(candidate.Target, identityAttribute, StringComparison.OrdinalIgnoreCase));
+        if (mapping is not null)
+        {
+            var mappedValue = ApplyMappingTransform(ResolveMappedSourceValue(worker, mapping.Source), mapping.Transform);
+            if (!string.IsNullOrWhiteSpace(mappedValue))
+            {
+                return mappedValue;
+            }
+        }
+
+        if (string.Equals(identityAttribute, "employeeID", StringComparison.OrdinalIgnoreCase) &&
+            worker.Attributes.TryGetValue("personIdExternal", out var personIdExternal) &&
+            !string.IsNullOrWhiteSpace(personIdExternal))
+        {
+            return personIdExternal.Trim();
+        }
+
+        return worker.WorkerId;
+    }
+
+    private static string? ResolveMappedSourceValue(WorkerSnapshot worker, string source)
+    {
+        if (string.IsNullOrWhiteSpace(source))
+        {
+            return null;
+        }
+
+        const string concatPrefix = "Concat(";
+        if (source.StartsWith(concatPrefix, StringComparison.OrdinalIgnoreCase) && source.EndsWith(')'))
+        {
+            var parts = source[concatPrefix.Length..^1]
+                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Select(part => ResolveMappedSourceValue(worker, part))
+                .Where(part => !string.IsNullOrWhiteSpace(part))
+                .Select(part => part!.Trim())
+                .ToArray();
+
+            return parts.Length == 0 ? null : string.Join(' ', parts);
+        }
+
+        if (worker.Attributes.TryGetValue(source, out var directValue) &&
+            !string.IsNullOrWhiteSpace(directValue))
+        {
+            return directValue;
+        }
+
+        var normalizedSource = NormalizeSourcePath(source);
+        if (!string.Equals(normalizedSource, source, StringComparison.OrdinalIgnoreCase) &&
+            worker.Attributes.TryGetValue(normalizedSource, out var normalizedValue) &&
+            !string.IsNullOrWhiteSpace(normalizedValue))
+        {
+            return normalizedValue;
+        }
+
+        return normalizedSource switch
+        {
+            "preferredName" => worker.PreferredName,
+            "firstName" => worker.PreferredName,
+            "lastName" => worker.LastName,
+            "department" => worker.Department,
+            _ => null
+        };
+    }
+
+    private static string? ApplyMappingTransform(string? value, string transform)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return value;
+        }
+
+        return transform switch
+        {
+            "Trim" => value.Trim(),
+            "Lower" => value.Trim().ToLowerInvariant(),
+            "TrimStripCommasPeriods" => new string(value.Trim().Where(character => character is not ',' and not '.').ToArray()),
+            _ => value
+        };
+    }
+
+    private static string NormalizeSourcePath(string source)
+    {
+        return source switch
+        {
+            "personalInfoNav[0].firstName" => "firstName",
+            "personalInfoNav[0].lastName" => "lastName",
+            "personalInfoNav[0].preferredName" => "preferredName",
+            "personalInfoNav[0].displayName" => "displayName",
+            "emailNav[0].emailAddress" => "email",
+            "emailNav[?(@.isPrimary == true)].emailAddress" => "email",
+            "employmentNav[0].startDate" => "startDate",
+            "employmentNav[0].userNav.manager.empInfo.personIdExternal" => "managerId",
+            _ => source
+        };
     }
 
     private static IReadOnlyList<DirectoryUserSnapshot> QueryUsersInOu(string ouDistinguishedName, ActiveDirectoryConfig config, ILogger logger)

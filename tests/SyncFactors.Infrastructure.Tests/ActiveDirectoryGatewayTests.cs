@@ -162,6 +162,66 @@ public sealed class ActiveDirectoryGatewayTests
             bases);
     }
 
+    [Fact]
+    public void BuildLookupClauses_UsesMappedIdentityValueAndSamFallback()
+    {
+        var method = typeof(ActiveDirectoryGateway).GetMethod(
+            "BuildLookupClauses",
+            BindingFlags.NonPublic | BindingFlags.Static);
+        Assert.NotNull(method);
+
+        var worker = new SyncFactors.Contracts.WorkerSnapshot(
+            WorkerId: "user.10000",
+            PreferredName: "Preferred10000",
+            LastName: "Sample10000",
+            Department: "IT",
+            TargetOu: "OU=Users,DC=example,DC=com",
+            IsPrehire: false,
+            Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["personIdExternal"] = "10000",
+                ["userId"] = "user.10000"
+            });
+        var mappings = new[]
+        {
+            new SyncFactors.Domain.AttributeMapping("personIdExternal", "employeeID", Required: true, Transform: "Trim")
+        };
+
+        var clauses = Assert.IsAssignableFrom<IReadOnlyList<(string Attribute, string Value)>>(
+            method!.Invoke(null, [worker, "employeeID", mappings]));
+
+        Assert.Contains(("employeeID", "10000"), clauses);
+        Assert.Contains(("sAMAccountName", "user.10000"), clauses);
+    }
+
+    [Fact]
+    public void BuildLookupClauses_KeepsDistinctAttributesWhenIdentityMatchesWorkerId()
+    {
+        var method = typeof(ActiveDirectoryGateway).GetMethod(
+            "BuildLookupClauses",
+            BindingFlags.NonPublic | BindingFlags.Static);
+        Assert.NotNull(method);
+
+        var worker = new SyncFactors.Contracts.WorkerSnapshot(
+            WorkerId: "10000",
+            PreferredName: "Preferred10000",
+            LastName: "Sample10000",
+            Department: "IT",
+            TargetOu: "OU=Users,DC=example,DC=com",
+            IsPrehire: false,
+            Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["employeeID"] = "10000"
+            });
+
+        var clauses = Assert.IsAssignableFrom<IReadOnlyList<(string Attribute, string Value)>>(
+            method!.Invoke(null, [worker, "employeeID", Array.Empty<SyncFactors.Domain.AttributeMapping>()]));
+
+        Assert.Equal(2, clauses.Count);
+        Assert.Contains(("employeeID", "10000"), clauses);
+        Assert.Contains(("sAMAccountName", "10000"), clauses);
+    }
+
     private static string InvokeResolver(string baseLocalPart, Func<string, bool> candidateExists)
     {
         var method = typeof(ActiveDirectoryGateway).GetMethod(
