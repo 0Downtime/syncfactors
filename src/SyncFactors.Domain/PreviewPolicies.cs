@@ -31,15 +31,18 @@ public sealed class AttributeDiffService : IAttributeDiffService
     private readonly IAttributeMappingProvider _mappingProvider;
     private readonly ILogger<AttributeDiffService> _logger;
     private readonly IWorkerPreviewLogWriter _logWriter;
+    private readonly IEmailAddressPolicy _emailAddressPolicy;
 
     public AttributeDiffService(
         IAttributeMappingProvider mappingProvider,
         IWorkerPreviewLogWriter logWriter,
-        ILogger<AttributeDiffService> logger)
+        ILogger<AttributeDiffService> logger,
+        IEmailAddressPolicy? emailAddressPolicy = null)
     {
         _mappingProvider = mappingProvider;
         _logWriter = logWriter;
         _logger = logger;
+        _emailAddressPolicy = emailAddressPolicy ?? new DefaultEmailAddressPolicy();
     }
 
     public async Task<IReadOnlyList<AttributeChange>> BuildDiffAsync(
@@ -74,7 +77,7 @@ public sealed class AttributeDiffService : IAttributeDiffService
             : directoryUser.SamAccountName!;
         foreach (var mapping in enabledMappings)
         {
-            var sourceValue = GetSourceValue(worker, mapping.Source, mapping.Target, proposedEmailAddress);
+            var sourceValue = GetSourceValue(worker, mapping.Source, mapping.Target, proposedEmailAddress, _emailAddressPolicy);
             var proposedValue = Transform(sourceValue, mapping.Transform);
             var currentValue = GetDirectoryValue(currentAttributes, mapping.Target);
             var before = string.IsNullOrWhiteSpace(currentValue) ? "(unset)" : currentValue!;
@@ -171,9 +174,14 @@ public sealed class AttributeDiffService : IAttributeDiffService
         return changes;
     }
 
-    private static string? GetSourceValue(WorkerSnapshot worker, string source, string target, string? proposedEmailAddress)
+    private static string? GetSourceValue(
+        WorkerSnapshot worker,
+        string source,
+        string target,
+        string? proposedEmailAddress,
+        IEmailAddressPolicy emailAddressPolicy)
     {
-        return SourceValueResolver.ResolveSourceValue(worker, source, target, proposedEmailAddress);
+        return SourceValueResolver.ResolveSourceValue(worker, source, target, proposedEmailAddress, emailAddressPolicy);
     }
 
     internal static bool TryParseConcatSource(string? source, out IReadOnlyList<string> keys)

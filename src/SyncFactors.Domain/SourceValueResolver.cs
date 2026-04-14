@@ -8,11 +8,12 @@ internal static class SourceValueResolver
         WorkerSnapshot worker,
         string source,
         string target,
-        string? proposedEmailAddress)
+        string? proposedEmailAddress,
+        IEmailAddressPolicy? emailAddressPolicy = null)
     {
         if (target is "UserPrincipalName" or "mail")
         {
-            return proposedEmailAddress ?? DirectoryIdentityFormatter.BuildEmailAddress(
+            return proposedEmailAddress ?? (emailAddressPolicy ?? new DefaultEmailAddressPolicy()).BuildEmailAddress(
                 DirectoryIdentityFormatter.BuildBaseEmailLocalPart(worker.PreferredName, worker.LastName));
         }
 

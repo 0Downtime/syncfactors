@@ -2,8 +2,10 @@ using SyncFactors.Contracts;
 
 namespace SyncFactors.Domain;
 
-public sealed class DirectoryMutationCommandBuilder : IDirectoryMutationCommandBuilder
+public sealed class DirectoryMutationCommandBuilder(IEmailAddressPolicy? emailAddressPolicy = null) : IDirectoryMutationCommandBuilder
 {
+    private readonly IEmailAddressPolicy _emailAddressPolicy = emailAddressPolicy ?? new DefaultEmailAddressPolicy();
+
     public DirectoryMutationCommand Build(PlannedWorkerAction plan)
     {
         var action = plan.PrimaryAction;
@@ -48,7 +50,7 @@ public sealed class DirectoryMutationCommandBuilder : IDirectoryMutationCommandB
         var emailAddress = GetPreviewAttributeValue(preview, "UserPrincipalName")
             ?? GetPreviewAttributeValue(preview, "userPrincipalName")
             ?? GetPreviewAttributeValue(preview, "mail")
-            ?? DirectoryIdentityFormatter.BuildEmailAddress(
+            ?? _emailAddressPolicy.BuildEmailAddress(
                 DirectoryIdentityFormatter.BuildBaseEmailLocalPart(worker.PreferredName, worker.LastName));
         var mailAddress = GetPreviewAttributeValue(preview, "mail") ?? emailAddress;
 

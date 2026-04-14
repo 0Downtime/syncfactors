@@ -285,7 +285,7 @@ public sealed class ActiveDirectoryGateway(
         return ResolveAvailableEmailLocalPart(
             worker.WorkerId,
             baseLocalPart,
-            candidate => EmailLocalPartExists(connection, searchBases, candidate, existingSamAccountName, logger, worker.WorkerId));
+            candidate => EmailLocalPartExists(connection, searchBases, candidate, existingSamAccountName, config.UpnSuffix, logger, worker.WorkerId));
     }
 
     private static string ResolveAvailableEmailLocalPart(
@@ -310,10 +310,11 @@ public sealed class ActiveDirectoryGateway(
         IReadOnlyList<string> searchBases,
         string localPart,
         string? existingSamAccountName,
+        string upnSuffix,
         ILogger logger,
         string workerId)
     {
-        var userPrincipalName = DirectoryIdentityFormatter.BuildEmailAddress(localPart);
+        var userPrincipalName = DirectoryIdentityFormatter.BuildEmailAddress(localPart, upnSuffix);
         var entry = FindFirstEntryMatchingAny(
             connection,
             searchBases,

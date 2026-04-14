@@ -39,6 +39,7 @@ builder.Services.Configure<ForwardedHeadersOptions>(options =>
 builder.Services.AddSingleton<SqliteDatabaseInitializer>();
 builder.Services.AddSingleton<SyncFactorsConfigurationLoader>();
 builder.Services.AddSingleton<SyncFactorsConfigurationValidator>();
+builder.Services.AddSingleton<IEmailAddressPolicy, ConfiguredEmailAddressPolicy>();
 builder.Services.AddSingleton<ISecurityAuditService, SecurityAuditService>();
 builder.Services.AddSingleton<ILocalUserStore, SqliteLocalUserStore>();
 builder.Services.AddSingleton<ILocalAuthService, LocalAuthService>();

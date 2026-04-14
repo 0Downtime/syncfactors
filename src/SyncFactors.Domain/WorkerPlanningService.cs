@@ -10,8 +10,11 @@ public sealed class WorkerPlanningService(
     ILifecyclePolicy lifecyclePolicy,
     IAttributeDiffService attributeDiffService,
     IAttributeMappingProvider attributeMappingProvider,
-    ILogger<WorkerPlanningService> logger) : IWorkerPlanningService
+    ILogger<WorkerPlanningService> logger,
+    IEmailAddressPolicy? emailAddressPolicy = null) : IWorkerPlanningService
 {
+    private readonly IEmailAddressPolicy _emailAddressPolicy = emailAddressPolicy ?? new DefaultEmailAddressPolicy();
+
     public async Task<PlannedWorkerAction> PlanAsync(WorkerSnapshot worker, string? logPath, CancellationToken cancellationToken)
     {
         var directoryUser = await directoryGateway.FindByWorkerAsync(worker, cancellationToken)
@@ -54,9 +57,9 @@ public sealed class WorkerPlanningService(
                     ? existingUserPrincipalName
                     : directoryUser.Attributes.TryGetValue("mail", out var existingMail) && !string.IsNullOrWhiteSpace(existingMail)
                         ? existingMail
-                        : DirectoryIdentityFormatter.BuildEmailAddress(
+                        : _emailAddressPolicy.BuildEmailAddress(
                             await directoryGateway.ResolveAvailableEmailLocalPartAsync(worker, isCreate: false, cancellationToken))
-                : DirectoryIdentityFormatter.BuildEmailAddress(
+                : _emailAddressPolicy.BuildEmailAddress(
                     await directoryGateway.ResolveAvailableEmailLocalPartAsync(worker, isCreate: true, cancellationToken));
             attributeChanges = (await attributeDiffService.BuildDiffAsync(worker, directoryUser, proposedEmailAddress, logPath, cancellationToken))
                 .ToList();

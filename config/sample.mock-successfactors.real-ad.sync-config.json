@@ -130,6 +130,7 @@
     "username": "",
     "bindPassword": "",
     "identityAttribute": "employeeID",
+    "upnSuffix": "example.com",
     "defaultActiveOu": "OU=LabUsers,DC=example,DC=com",
     "prehireOu": "OU=Prehire,DC=example,DC=com",
     "graveyardOu": "OU=LabGraveyard,DC=example,DC=com",

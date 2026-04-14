@@ -1,3 +1,5 @@
+using SyncFactors.Domain;
+
 namespace SyncFactors.Infrastructure;
 
 public sealed record SyncFactorsConfigDocument(
@@ -67,7 +69,8 @@ public sealed record ActiveDirectoryConfig(
     string GraveyardOu,
     ActiveDirectoryTransportConfig Transport,
     ActiveDirectoryIdentityPolicyConfig IdentityPolicy,
-    string? LeaveOu = null);
+    string? LeaveOu = null,
+    string UpnSuffix = DirectoryIdentityFormatter.CorporateEmailDomain);
 
 public sealed record ActiveDirectoryTransportConfig(
     string Mode,
