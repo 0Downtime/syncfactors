@@ -22,14 +22,14 @@ public sealed class RunDetailModelTests
         var result = await model.OnGetAsync(CancellationToken.None);
 
         Assert.IsType<PageResult>(result);
-        Assert.Equal(50, repository.LastSkip);
-        Assert.Equal(50, repository.LastTake);
+        Assert.Equal(15, repository.LastSkip);
+        Assert.Equal(15, repository.LastTake);
         Assert.Equal(120, model.TotalEntries);
-        Assert.Equal(3, model.TotalPages);
+        Assert.Equal(8, model.TotalPages);
         Assert.Equal(2, model.PageNumber);
         Assert.True(model.HasPreviousPage);
         Assert.True(model.HasNextPage);
-        Assert.Equal(50, model.Entries.Count);
+        Assert.Equal(15, model.Entries.Count);
     }
 
     [Fact]
