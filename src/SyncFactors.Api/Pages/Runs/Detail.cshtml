@@ -84,6 +84,23 @@
 <section class="panel">
     <h2>Entries @if (!string.IsNullOrWhiteSpace(Model.Bucket)) { <text>· @Model.Bucket</text> }</h2>
     <p class="muted">Showing page @Model.PageNumber of @Model.TotalPages · @Model.TotalEntries total entries · 50 per page.</p>
+    @if (Model.EmploymentStatusTotals.Count > 0)
+    {
+        <div class="employment-status-summary" aria-label="Employment status totals">
+            @foreach (var total in Model.EmploymentStatusTotals)
+            {
+                var status = Model.DescribeEmploymentStatus(total.Code);
+                if (status is null)
+                {
+                    continue;
+                }
+
+                <span class="employment-status-pill @status.ToneCssClass">
+                    @status.Label <strong>@total.Count</strong>
+                </span>
+            }
+        </div>
+    }
     @if (Model.AttributeTotals.Count > 0)
     {
         <p class="muted">Changed attributes: @string.Join(", ", Model.AttributeTotals.Select(total => $"{total.Attribute}: {total.Count}"))</p>

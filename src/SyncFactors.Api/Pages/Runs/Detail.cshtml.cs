@@ -32,6 +32,8 @@ public sealed class DetailModel(RunEntriesQueryService queryService) : PageModel
 
     public IReadOnlyList<ChangedAttributeTotal> AttributeTotals { get; private set; } = [];
 
+    public IReadOnlyList<EmploymentStatusTotal> EmploymentStatusTotals { get; private set; } = [];
+
     public IReadOnlyList<string> AvailableBuckets { get; private set; } = [];
 
     public int TotalEntries { get; private set; }
@@ -47,6 +49,9 @@ public sealed class DetailModel(RunEntriesQueryService queryService) : PageModel
 
     public EmploymentStatusInfo? GetEmploymentStatus(RunEntry entry)
         => EmploymentStatusDisplay.Describe(GetItemString(entry.Item, "emplStatus"));
+
+    public EmploymentStatusInfo? DescribeEmploymentStatus(string? code)
+        => EmploymentStatusDisplay.Describe(code);
 
     public string? GetEmploymentStatusDisplay(RunEntry entry)
         => GetEmploymentStatus(entry)?.Display;
@@ -73,6 +78,7 @@ public sealed class DetailModel(RunEntriesQueryService queryService) : PageModel
 
         TotalEntries = result.Total;
         AttributeTotals = result.AttributeTotals;
+        EmploymentStatusTotals = result.EmploymentStatusTotals;
         Entries = result.Entries;
         PageNumber = result.Page;
         TotalPages = Math.Max(1, (int)Math.Ceiling(TotalEntries / (double)EntriesPerPage));

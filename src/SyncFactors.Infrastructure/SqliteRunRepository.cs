@@ -803,6 +803,70 @@ public sealed class SqliteRunRepository(SqlitePathResolver pathResolver) : IRunR
             .ToArray();
     }
 
+    public async Task<IReadOnlyList<EmploymentStatusTotal>> GetRunEntryEmploymentStatusTotalsAsync(
+        string runId,
+        string? bucket,
+        string? workerId,
+        string? reason,
+        string? filter,
+        string? entryId,
+        CancellationToken cancellationToken)
+    {
+        var databasePath = pathResolver.Resolve();
+        if (string.IsNullOrWhiteSpace(databasePath))
+        {
+            return [];
+        }
+
+        await using var connection = OpenConnection(databasePath);
+        await connection.OpenAsync(cancellationToken);
+
+        await using var command = connection.CreateCommand();
+        AddRunEntryFilterParameters(command, runId, bucket, workerId, reason, filter, entryId);
+        command.CommandText =
+            """
+            SELECT
+              TRIM(CAST(json_extract(e.item_json, '$.emplStatus') AS TEXT)) AS empl_status,
+              COUNT(1) AS total_count
+            FROM run_entries e
+            JOIN runs r ON r.run_id = e.run_id
+            WHERE e.run_id = $runId
+              AND ($bucket IS NULL OR e.bucket = $bucket)
+              AND (
+                $workerId IS NULL
+                OR LOWER(COALESCE(e.worker_id, '')) LIKE $workerId ESCAPE '\'
+                OR LOWER(COALESCE(e.sam_account_name, '')) LIKE $workerId ESCAPE '\'
+              )
+              AND ($reason IS NULL OR LOWER(COALESCE(e.reason, '')) = LOWER($reason))
+              AND ($entryId IS NULL OR e.entry_id = $entryId)
+              AND (
+                $filter IS NULL
+                OR LOWER(COALESCE(e.item_json, '')) LIKE $filter ESCAPE '\'
+                OR LOWER(COALESCE(e.reason, '')) LIKE $filter ESCAPE '\'
+                OR LOWER(COALESCE(e.review_case_type, '')) LIKE $filter ESCAPE '\'
+              )
+              AND NULLIF(TRIM(CAST(json_extract(e.item_json, '$.emplStatus') AS TEXT)), '') IS NOT NULL
+            GROUP BY LOWER(TRIM(CAST(json_extract(e.item_json, '$.emplStatus') AS TEXT)))
+            ORDER BY total_count DESC, empl_status ASC;
+            """;
+
+        var totals = new List<EmploymentStatusTotal>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var code = reader.GetStringOrDefault("empl_status");
+            var count = reader.GetInt32(reader.GetOrdinal("total_count"));
+            if (string.IsNullOrWhiteSpace(code))
+            {
+                continue;
+            }
+
+            totals.Add(new EmploymentStatusTotal(code, count));
+        }
+
+        return totals;
+    }
+
     private static int Sum(params int[] values) => values.Sum();
 
     private static void AddRunEntryFilterParameters(

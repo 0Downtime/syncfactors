@@ -63,6 +63,18 @@ public sealed class RunDetailModelTests
                 Assert.Equal("cn", total.Attribute);
                 Assert.Equal(4, total.Count);
             });
+        Assert.Collection(
+            model.EmploymentStatusTotals,
+            total =>
+            {
+                Assert.Equal("64300", total.Code);
+                Assert.Equal(80, total.Count);
+            },
+            total =>
+            {
+                Assert.Equal("64304", total.Code);
+                Assert.Equal(40, total.Count);
+            });
     }
 
     [Fact]
@@ -177,6 +189,8 @@ public sealed class RunDetailModelTests
         public string? LastTotalsWorkerId { get; private set; }
 
         public string? LastTotalsFilter { get; private set; }
+
+        public string? LastEmploymentTotalsRunId { get; private set; }
 
         public Task<IReadOnlyList<RunSummary>> ListRunsAsync(CancellationToken cancellationToken)
         {
@@ -316,6 +330,22 @@ public sealed class RunDetailModelTests
             [
                 new("email", 12),
                 new("cn", 4)
+            ]);
+        }
+
+        public Task<IReadOnlyList<EmploymentStatusTotal>> GetRunEntryEmploymentStatusTotalsAsync(string runId, string? bucket, string? workerId, string? reason, string? filter, string? entryId, CancellationToken cancellationToken)
+        {
+            LastEmploymentTotalsRunId = runId;
+            _ = bucket;
+            _ = workerId;
+            _ = reason;
+            _ = filter;
+            _ = entryId;
+            _ = cancellationToken;
+            return Task.FromResult<IReadOnlyList<EmploymentStatusTotal>>(
+            [
+                new("64300", 80),
+                new("64304", 40)
             ]);
         }
     }

@@ -134,6 +134,15 @@ public interface IRunRepository
         string? filter,
         string? entryId,
         CancellationToken cancellationToken);
+    Task<IReadOnlyList<EmploymentStatusTotal>> GetRunEntryEmploymentStatusTotalsAsync(
+        string runId,
+        string? bucket,
+        string? workerId,
+        string? reason,
+        string? filter,
+        string? entryId,
+        CancellationToken cancellationToken) =>
+        Task.FromResult<IReadOnlyList<EmploymentStatusTotal>>([]);
     Task<int> CountRunEntriesAsync(
         string runId,
         string? bucket,
