@@ -98,12 +98,22 @@
         @foreach (var entry in Model.Entries)
         {
             var diagnostics = Model.GetFailureDiagnostics(entry);
-            var employmentStatus = Model.GetEmploymentStatusDisplay(entry);
+            var employmentStatus = Model.GetEmploymentStatus(entry);
             <article class="entry-card">
                 <header class="entry-head">
-                    <div>
+                    <div class="entry-identity">
                         <h3>@entry.BucketLabel</h3>
                         <p class="muted">@entry.WorkerId / @(entry.SamAccountName ?? "n/a")</p>
+                        @if (employmentStatus is not null)
+                        {
+                            <div class="entry-submeta">
+                                <span class="employment-status-pill @employmentStatus.ToneCssClass">@employmentStatus.PillText</span>
+                                @if (!string.IsNullOrWhiteSpace(employmentStatus.DetailText))
+                                {
+                                    <span class="entry-submeta-note">@employmentStatus.DetailText</span>
+                                }
+                            </div>
+                        }
                     </div>
                     <div class="entry-meta">
                         <span class="badge neutral">@entry.ChangeCount changes</span>
@@ -116,12 +126,6 @@
                 @if (!string.IsNullOrWhiteSpace(entry.FailureSummary))
                 {
                     <p class="callout warn">@entry.FailureSummary</p>
-                }
-                @if (!string.IsNullOrWhiteSpace(employmentStatus))
-                {
-                    <dl class="kv preview-meta">
-                        <div><dt>Employment Status</dt><dd>@employmentStatus</dd></div>
-                    </dl>
                 }
                 @if (!string.IsNullOrWhiteSpace(entry.ReviewCaseType) || !string.IsNullOrWhiteSpace(entry.Reason))
                 {

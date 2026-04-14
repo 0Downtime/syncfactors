@@ -2258,10 +2258,69 @@ a:focus-visible {
   margin-bottom: 4px;
 }
 
+.entry-identity {
+  min-width: 0;
+}
+
 .entry-meta {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.entry-submeta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.entry-submeta-note {
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+.employment-status-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.employment-status-pill.good {
+  background: var(--good-bg);
+  color: var(--good);
+  border-color: color-mix(in srgb, var(--good) 22%, var(--line));
+}
+
+.employment-status-pill.warn {
+  background: var(--warn-bg);
+  color: var(--warn);
+  border-color: color-mix(in srgb, var(--warn) 22%, var(--line));
+}
+
+.employment-status-pill.bad {
+  background: var(--bad-bg);
+  color: var(--bad);
+  border-color: color-mix(in srgb, var(--bad) 22%, var(--line));
+}
+
+.employment-status-pill.dim {
+  background: var(--dim-bg);
+  color: var(--dim);
+  border-color: color-mix(in srgb, var(--dim) 18%, var(--line));
+}
+
+.employment-status-pill.neutral {
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 18%, var(--line));
 }
 
 .diff-row.same {
