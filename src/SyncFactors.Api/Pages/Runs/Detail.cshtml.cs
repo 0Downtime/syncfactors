@@ -9,7 +9,7 @@ namespace SyncFactors.Api.Pages.Runs;
 
 public sealed class DetailModel(RunEntriesQueryService queryService) : PageModel
 {
-    public const int EntriesPerPage = 50;
+    public const int EntriesPerPage = 15;
 
     [BindProperty(SupportsGet = true)]
     public string RunId { get; set; } = string.Empty;

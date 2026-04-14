@@ -83,7 +83,7 @@
 
 <section class="panel">
     <h2>Entries @if (!string.IsNullOrWhiteSpace(Model.Bucket)) { <text>· @Model.Bucket</text> }</h2>
-    <p class="muted">Showing page @Model.PageNumber of @Model.TotalPages · @Model.TotalEntries total entries · 50 per page.</p>
+    <p class="muted">Showing page @Model.PageNumber of @Model.TotalPages · @Model.TotalEntries total entries · 15 per page.</p>
     @if (Model.EmploymentStatusTotals.Count > 0)
     {
         <div class="employment-status-summary" aria-label="Employment status totals">
