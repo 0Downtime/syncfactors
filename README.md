@@ -453,6 +453,16 @@ When you run `-Service stack`, the launched services depend on the active profil
 - `mock`: starts the mock SuccessFactors API, the SyncFactors API, and the worker
 - `real`: starts the SyncFactors API and the worker
 
+Before `-Service stack` launches anything, the runner now does `git pull --ff-only` by default when the current branch has an upstream. Toggle that behavior in `config/local.codex-run.json`:
+
+```json
+{
+  "git": {
+    "pullBeforeStackStart": false
+  }
+}
+```
+
 `-Service ui` currently resolves to the same API launch path as `-Service api`.
 
 The lower-level start scripts remain available if you need to launch individual components directly:
@@ -470,6 +480,7 @@ This setup is intentionally scoped to the core local dev loop:
 - prepare local config files for the current .NET runtime when missing
 - copy ignored local runtime files from the primary checkout when missing
 - fall back to tracked `config/sample*.json` files when local config files are still missing
+- create `config/local.codex-run.json` from the tracked launcher defaults when missing
 - create runtime/report directories used by the API and worker
 - fall back to `.env.worktree.example` when `.env.worktree` is still missing
 
