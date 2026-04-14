@@ -25,7 +25,7 @@
     },
     "query": {
       "entitySet": "EmpJob",
-      "identityField": "personIdExternal",
+      "identityField": "userId",
       "deltaField": "lastModifiedDateTime",
       "deltaSyncEnabled": false,
       "deltaOverlapMinutes": 5,
