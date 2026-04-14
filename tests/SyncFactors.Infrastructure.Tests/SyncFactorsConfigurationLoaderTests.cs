@@ -37,6 +37,27 @@ public sealed class SyncFactorsConfigurationLoaderTests
     }
 
     [Fact]
+    public async Task GetSyncConfig_DefaultsUpnSuffix_WhenOmitted()
+    {
+        var config = await LoadConfigAsync(identityPolicyJson: null);
+
+        Assert.Equal("Exampleenergy.com", config.Ad.UpnSuffix);
+    }
+
+    [Fact]
+    public async Task GetSyncConfig_NormalizesUpnSuffix_WhenConfiguredWithAtPrefix()
+    {
+        var config = await LoadConfigAsync("""
+          "identityPolicy": {
+            "resolveCreateConflictingUpnAndMail": false
+          },
+          "upnSuffix": "@z.local",
+        """);
+
+        Assert.Equal("z.local", config.Ad.UpnSuffix);
+    }
+
+    [Fact]
     public async Task GetSyncConfig_DefaultsAutoDeleteFromGraveyardToFalse_WhenOmitted()
     {
         var config = await LoadConfigAsync(identityPolicyJson: null);

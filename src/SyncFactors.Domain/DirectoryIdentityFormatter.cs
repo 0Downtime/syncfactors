@@ -22,7 +22,21 @@ public static class DirectoryIdentityFormatter
 
     public static string BuildEmailAddress(string localPart)
     {
-        return $"{localPart}@{CorporateEmailDomain}";
+        return BuildEmailAddress(localPart, CorporateEmailDomain);
+    }
+
+    public static string BuildEmailAddress(string localPart, string? domain)
+    {
+        return $"{localPart}@{NormalizeEmailDomain(domain)}";
+    }
+
+    public static string NormalizeEmailDomain(string? domain)
+    {
+        var normalized = string.IsNullOrWhiteSpace(domain)
+            ? CorporateEmailDomain
+            : domain.Trim();
+
+        return normalized.TrimStart('@');
     }
 
     public static string NormalizeNamePart(string value)

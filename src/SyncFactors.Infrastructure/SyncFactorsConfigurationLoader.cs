@@ -1,4 +1,5 @@
 using System.Text.Json;
+using SyncFactors.Domain;
 
 namespace SyncFactors.Infrastructure;
 
@@ -95,7 +96,8 @@ public sealed class SyncFactorsConfigurationLoader
                 GraveyardOu: document.GetRequiredObject("ad").GetRequiredString("graveyardOu"),
                 Transport: LoadActiveDirectoryTransport(document.GetRequiredObject("ad")),
                 IdentityPolicy: LoadActiveDirectoryIdentityPolicy(document.GetRequiredObject("ad")),
-                LeaveOu: document.GetRequiredObject("ad").TryGetString("leaveOu")),
+                LeaveOu: document.GetRequiredObject("ad").TryGetString("leaveOu"),
+                UpnSuffix: DirectoryIdentityFormatter.NormalizeEmailDomain(document.GetRequiredObject("ad").TryGetString("upnSuffix"))),
             Sync: new SyncPolicyConfig(
                 EnableBeforeStartDays: document.GetRequiredObject("sync").GetRequiredInt32("enableBeforeStartDays"),
                 DeletionRetentionDays: document.GetRequiredObject("sync").GetRequiredInt32("deletionRetentionDays"),

@@ -13,6 +13,7 @@ builder.Services.AddSingleton(new SyncFactorsConfigPathResolver(
 builder.Services.AddSingleton<SqliteDatabaseInitializer>();
 builder.Services.AddSingleton<SyncFactorsConfigurationLoader>();
 builder.Services.AddSingleton<SyncFactorsConfigurationValidator>();
+builder.Services.AddSingleton<IEmailAddressPolicy, ConfiguredEmailAddressPolicy>();
 builder.Services.AddSingleton<ScaffoldDataStore>();
 builder.Services.AddSingleton<ScaffoldWorkerSource>();
 builder.Services.AddSingleton(serviceProvider =>
