@@ -85,3 +85,7 @@ public sealed record EmploymentStatusInfo(
         ? null
         : $"Code {Code}";
 }
+
+public sealed record EmploymentStatusTotal(
+    string Code,
+    int Count);

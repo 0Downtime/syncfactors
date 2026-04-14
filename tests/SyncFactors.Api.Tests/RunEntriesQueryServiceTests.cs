@@ -17,6 +17,7 @@ public sealed class RunEntriesQueryServiceTests
 
         Assert.NotNull(result);
         Assert.Equal("bulk-1", repository.LastTotalsRunId);
+        Assert.Equal("bulk-1", repository.LastEmploymentTotalsRunId);
         Assert.Equal("updates", repository.LastTotalsBucket);
         Assert.Equal("worker-1", repository.LastTotalsWorkerId);
         Assert.Equal("email", repository.LastTotalsFilter);
@@ -24,6 +25,18 @@ public sealed class RunEntriesQueryServiceTests
         Assert.Equal(2, result.Page);
         Assert.Equal(25, result.PageSize);
         Assert.Equal(25, result.Entries.Count);
+        Assert.Collection(
+            result.EmploymentStatusTotals,
+            total =>
+            {
+                Assert.Equal("64300", total.Code);
+                Assert.Equal(80, total.Count);
+            },
+            total =>
+            {
+                Assert.Equal("64304", total.Code);
+                Assert.Equal(40, total.Count);
+            });
         Assert.Collection(
             result.AttributeTotals,
             total =>
@@ -57,6 +70,8 @@ public sealed class RunEntriesQueryServiceTests
         public string? LastTotalsWorkerId { get; private set; }
 
         public string? LastTotalsFilter { get; private set; }
+
+        public string? LastEmploymentTotalsRunId { get; private set; }
 
         public Task<IReadOnlyList<RunSummary>> ListRunsAsync(CancellationToken cancellationToken)
         {
@@ -181,6 +196,22 @@ public sealed class RunEntriesQueryServiceTests
             [
                 new("email", 12),
                 new("cn", 4)
+            ]);
+        }
+
+        public Task<IReadOnlyList<EmploymentStatusTotal>> GetRunEntryEmploymentStatusTotalsAsync(string runId, string? bucket, string? workerId, string? reason, string? filter, string? entryId, CancellationToken cancellationToken)
+        {
+            LastEmploymentTotalsRunId = runId;
+            _ = bucket;
+            _ = workerId;
+            _ = reason;
+            _ = filter;
+            _ = entryId;
+            _ = cancellationToken;
+            return Task.FromResult<IReadOnlyList<EmploymentStatusTotal>>(
+            [
+                new("64300", 80),
+                new("64304", 40)
             ]);
         }
 

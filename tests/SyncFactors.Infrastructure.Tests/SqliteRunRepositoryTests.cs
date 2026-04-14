@@ -325,6 +325,93 @@ public sealed class SqliteRunRepositoryTests
         }
     }
 
+    [Fact]
+    public async Task GetRunEntryEmploymentStatusTotalsAsync_CountsStatusesAcrossMatchingEntries()
+    {
+        var databasePath = Path.Combine(Path.GetTempPath(), $"syncfactors-run-status-totals-{Guid.NewGuid():N}.db");
+
+        try
+        {
+            var repository = await CreateRepositoryAsync(databasePath);
+            var runId = "bulk-status-1";
+            var startedAt = DateTimeOffset.Parse("2026-04-02T15:15:00Z");
+
+            await repository.SaveRunAsync(
+                CreateRunRecord(runId, startedAt),
+                CancellationToken.None);
+
+            await repository.AppendRunEntryAsync(CreateEntry(
+                runId,
+                "updates",
+                0,
+                "10001",
+                item: new
+                {
+                    workerId = "10001",
+                    emplStatus = "64300",
+                    note = "email sync"
+                }),
+                CancellationToken.None);
+
+            await repository.AppendRunEntryAsync(CreateEntry(
+                runId,
+                "updates",
+                1,
+                "10002",
+                item: new
+                {
+                    workerId = "10002",
+                    emplStatus = "64300",
+                    note = "email sync"
+                }),
+                CancellationToken.None);
+
+            await repository.AppendRunEntryAsync(CreateEntry(
+                runId,
+                "creates",
+                2,
+                "10003",
+                item: new
+                {
+                    workerId = "10003",
+                    emplStatus = "64304",
+                    note = "email sync"
+                }),
+                CancellationToken.None);
+
+            await repository.AppendRunEntryAsync(CreateEntry(
+                runId,
+                "creates",
+                3,
+                "10004",
+                item: new
+                {
+                    workerId = "10004",
+                    note = "missing status"
+                }),
+                CancellationToken.None);
+
+            var totals = await repository.GetRunEntryEmploymentStatusTotalsAsync(runId, null, null, null, "email", null, CancellationToken.None);
+
+            Assert.Collection(
+                totals,
+                total =>
+                {
+                    Assert.Equal("64300", total.Code);
+                    Assert.Equal(2, total.Count);
+                },
+                total =>
+                {
+                    Assert.Equal("64304", total.Code);
+                    Assert.Equal(1, total.Count);
+                });
+        }
+        finally
+        {
+            File.Delete(databasePath);
+        }
+    }
+
     private static async Task<SqliteRunRepository> CreateRepositoryAsync(string databasePath)
     {
         var pathResolver = new SqlitePathResolver(databasePath);

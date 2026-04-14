@@ -27,6 +27,7 @@ public sealed class RunEntriesQueryService(IRunRepository runRepository)
         var totalPages = Math.Max(1, (int)Math.Ceiling(total / (double)resolvedPageSize));
         var resolvedPage = Math.Clamp(page ?? 1, 1, totalPages);
         var attributeTotals = await runRepository.GetRunEntryAttributeTotalsAsync(runId, bucket, workerId, reason, filter, entryId, cancellationToken);
+        var employmentStatusTotals = await runRepository.GetRunEntryEmploymentStatusTotalsAsync(runId, bucket, workerId, reason, filter, entryId, cancellationToken);
         var entries = await runRepository.GetRunEntriesAsync(
             runId,
             bucket,
@@ -42,6 +43,7 @@ public sealed class RunEntriesQueryService(IRunRepository runRepository)
             run,
             entries,
             attributeTotals,
+            employmentStatusTotals,
             total,
             resolvedPage,
             resolvedPageSize);
@@ -52,6 +54,7 @@ public sealed record RunEntriesQueryResult(
     RunDetail Run,
     IReadOnlyList<RunEntry> Entries,
     IReadOnlyList<ChangedAttributeTotal> AttributeTotals,
+    IReadOnlyList<EmploymentStatusTotal> EmploymentStatusTotals,
     int Total,
     int Page,
     int PageSize);
