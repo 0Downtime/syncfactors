@@ -72,6 +72,34 @@ function Resolve-ProfileConfigPath {
     return $preferredPath
 }
 
+function Test-IsSensitiveVariableName {
+    param(
+        [Parameter(Mandatory)]
+        [string]$Name
+    )
+
+    return $Name.Contains('PASSWORD', [StringComparison]::OrdinalIgnoreCase) -or
+        $Name.Contains('SECRET', [StringComparison]::OrdinalIgnoreCase)
+}
+
+function Format-LaunchValue {
+    param(
+        [AllowNull()]
+        [AllowEmptyString()]
+        [string]$Value
+    )
+
+    if ($null -eq $Value) {
+        return '<unset>'
+    }
+
+    if ([string]::IsNullOrWhiteSpace($Value)) {
+        return '<empty>'
+    }
+
+    return $Value
+}
+
 $exampleValues = Read-WorktreeEnvFile -Path $envExampleFile
 $fileValues = Read-WorktreeEnvFile -Path $envFile
 $variableNames = [System.Collections.Generic.List[string]]::new()
@@ -212,6 +240,47 @@ if ($IsMacOS) {
 Write-Host 'Worktree environment sources:' -ForegroundColor Cyan
 foreach ($entry in $variableSources.GetEnumerator()) {
     Write-Host ("  {0}: {1}" -f $entry.Key, $entry.Value)
+}
+
+$launchValues = [ordered]@{}
+foreach ($entry in $variableSources.GetEnumerator()) {
+    $name = [string]$entry.Key
+    if (Test-IsSensitiveVariableName -Name $name) {
+        continue
+    }
+
+    $launchValues[$name] = [pscustomobject]@{
+        Value = [Environment]::GetEnvironmentVariable($name)
+        Source = [string]$entry.Value
+    }
+}
+
+$derivedLaunchValues = [ordered]@{
+    'REPO_ROOT' = $env:REPO_ROOT
+    'SYNCFACTORS_CONFIG_PATH_ABS' = $env:SYNCFACTORS_CONFIG_PATH_ABS
+    'SYNCFACTORS_MAPPING_CONFIG_PATH_ABS' = $env:SYNCFACTORS_MAPPING_CONFIG_PATH_ABS
+    'SYNCFACTORS_SQLITE_PATH_ABS' = $env:SYNCFACTORS_SQLITE_PATH_ABS
+    'NUGET_HTTP_CACHE_PATH_ABS' = $env:NUGET_HTTP_CACHE_PATH
+    'SYNCFACTORS_MOCK_CONFIG_PATH_ABS' = $env:SYNCFACTORS_MOCK_CONFIG_PATH_ABS
+    'SYNCFACTORS_REAL_CONFIG_PATH_ABS' = $env:SYNCFACTORS_REAL_CONFIG_PATH_ABS
+    'SYNCFACTORS_PROFILE_CONFIG_PATH_ABS' = $env:SYNCFACTORS_PROFILE_CONFIG_PATH_ABS
+    'SYNCFACTORS_RESOLVED_CONFIG_PATH_ABS' = $env:SYNCFACTORS_RESOLVED_CONFIG_PATH_ABS
+}
+
+foreach ($entry in $derivedLaunchValues.GetEnumerator()) {
+    if (Test-IsSensitiveVariableName -Name ([string]$entry.Key)) {
+        continue
+    }
+
+    $launchValues[[string]$entry.Key] = [pscustomobject]@{
+        Value = [string]$entry.Value
+        Source = 'derived'
+    }
+}
+
+Write-Host 'Worktree environment values:' -ForegroundColor Cyan
+foreach ($entry in $launchValues.GetEnumerator()) {
+    Write-Host ("  {0}={1} [{2}]" -f $entry.Key, (Format-LaunchValue -Value $entry.Value.Value), $entry.Value.Source)
 }
 
 Set-Location $repoRoot
