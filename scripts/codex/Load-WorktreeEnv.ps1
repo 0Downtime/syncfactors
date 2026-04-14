@@ -100,6 +100,83 @@ function Format-LaunchValue {
     return $Value
 }
 
+function Get-SourceColor {
+    param(
+        [AllowNull()]
+        [AllowEmptyString()]
+        [string]$Source
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Source)) {
+        return 'DarkGray'
+    }
+
+    switch -Wildcard ($Source) {
+        'derived' { return 'DarkCyan' }
+        'built-in default' { return 'DarkYellow' }
+        'Windows Credential Manager' { return 'Green' }
+        '.env.worktree' { return 'Yellow' }
+        '.env.worktree.example' { return 'DarkGray' }
+        default { return 'Gray' }
+    }
+}
+
+function Get-ValueColor {
+    param(
+        [AllowNull()]
+        [AllowEmptyString()]
+        [string]$Value
+    )
+
+    if ($null -eq $Value) {
+        return 'DarkYellow'
+    }
+
+    if ([string]::IsNullOrWhiteSpace($Value)) {
+        return 'DarkYellow'
+    }
+
+    return 'Green'
+}
+
+function Write-VariableSourceLine {
+    param(
+        [Parameter(Mandatory)]
+        [string]$Name,
+        [AllowNull()]
+        [AllowEmptyString()]
+        [string]$Source
+    )
+
+    Write-Host '  ' -NoNewline
+    Write-Host $Name -ForegroundColor White -NoNewline
+    Write-Host ': ' -NoNewline
+    Write-Host $Source -ForegroundColor (Get-SourceColor -Source $Source)
+}
+
+function Write-VariableValueLine {
+    param(
+        [Parameter(Mandatory)]
+        [string]$Name,
+        [AllowNull()]
+        [AllowEmptyString()]
+        [string]$Value,
+        [AllowNull()]
+        [AllowEmptyString()]
+        [string]$Source
+    )
+
+    $displayValue = Format-LaunchValue -Value $Value
+
+    Write-Host '  ' -NoNewline
+    Write-Host $Name -ForegroundColor White -NoNewline
+    Write-Host '=' -NoNewline
+    Write-Host $displayValue -ForegroundColor (Get-ValueColor -Value $Value) -NoNewline
+    Write-Host ' [' -NoNewline
+    Write-Host $Source -ForegroundColor (Get-SourceColor -Source $Source) -NoNewline
+    Write-Host ']'
+}
+
 $exampleValues = Read-WorktreeEnvFile -Path $envExampleFile
 $fileValues = Read-WorktreeEnvFile -Path $envFile
 $variableNames = [System.Collections.Generic.List[string]]::new()
@@ -249,7 +326,7 @@ if ($IsMacOS) {
 
 Write-Host 'Worktree environment sources:' -ForegroundColor Cyan
 foreach ($entry in $variableSources.GetEnumerator()) {
-    Write-Host ("  {0}: {1}" -f $entry.Key, $entry.Value)
+    Write-VariableSourceLine -Name ([string]$entry.Key) -Source ([string]$entry.Value)
 }
 
 $launchValues = [ordered]@{}
@@ -290,7 +367,10 @@ foreach ($entry in $derivedLaunchValues.GetEnumerator()) {
 
 Write-Host 'Worktree environment values:' -ForegroundColor Cyan
 foreach ($entry in $launchValues.GetEnumerator()) {
-    Write-Host ("  {0}={1} [{2}]" -f $entry.Key, (Format-LaunchValue -Value $entry.Value.Value), $entry.Value.Source)
+    Write-VariableValueLine `
+        -Name ([string]$entry.Key) `
+        -Value ([string]$entry.Value.Value) `
+        -Source ([string]$entry.Value.Source)
 }
 
 Set-Location $repoRoot
