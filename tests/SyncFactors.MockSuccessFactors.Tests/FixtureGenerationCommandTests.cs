@@ -38,6 +38,7 @@ public sealed class FixtureGenerationCommandTests
         Assert.StartsWith("CC-", worker.GetProperty("costCenterId").GetString());
         Assert.Equal("US", worker.GetProperty("twoCharCountryCode").GetString());
         Assert.Equal("1", worker.GetProperty("activeEmploymentsCount").GetString());
+        Assert.Equal("active", worker.GetProperty("lifecycleState").GetString());
         Assert.NotNull(worker.GetProperty("businessPhoneNumber").GetString());
         Assert.NotNull(worker.GetProperty("cellPhoneNumber").GetString());
         Assert.StartsWith("Floor ", worker.GetProperty("location").GetProperty("customString4").GetString());
@@ -50,20 +51,37 @@ public sealed class FixtureGenerationCommandTests
     public async Task BaselineFixtures_CoverLifecycleMatrixTags()
     {
         using var document = JsonDocument.Parse(await File.ReadAllTextAsync(Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "config", "mock-successfactors", "baseline-fixtures.json"))));
-        var tags = document.RootElement.GetProperty("workers")
-            .EnumerateArray()
+        var workers = document.RootElement.GetProperty("workers").EnumerateArray().ToArray();
+        var tags = workers
             .SelectMany(worker => worker.GetProperty("scenarioTags").EnumerateArray().Select(tag => tag.GetString()))
             .Where(tag => tag is not null)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var lifecycleStates = workers
+            .Select(worker => worker.GetProperty("lifecycleState").GetString())
+            .Where(state => state is not null)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         Assert.Contains("create", tags);
         Assert.Contains("update", tags);
+        Assert.Contains("preboarding", tags);
         Assert.Contains("prehire", tags);
+        Assert.Contains("leave", tags);
+        Assert.Contains("inactive", tags);
+        Assert.Contains("retired", tags);
+        Assert.Contains("terminated", tags);
         Assert.Contains("manager-change", tags);
         Assert.Contains("ou-routing", tags);
         Assert.Contains("disable-candidate", tags);
         Assert.Contains("delete-candidate", tags);
+        Assert.Contains("stale-termination", tags);
         Assert.Contains("missing-required-attribute", tags);
         Assert.Contains("review-case", tags);
+
+        Assert.Contains("active", lifecycleStates);
+        Assert.Contains("preboarding", lifecycleStates);
+        Assert.Contains("paid-leave", lifecycleStates);
+        Assert.Contains("unpaid-leave", lifecycleStates);
+        Assert.Contains("retired", lifecycleStates);
+        Assert.Contains("terminated", lifecycleStates);
     }
 }

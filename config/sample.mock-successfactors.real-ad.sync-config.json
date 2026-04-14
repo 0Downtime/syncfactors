@@ -30,7 +30,7 @@
       "deltaField": "lastModifiedDateTime",
       "baseFilter": "emplStatus in 'A','U'",
       "inactiveStatusValues": [
-        "64308"
+        "T"
       ],
       "pageSize": 200,
       "select": [
@@ -68,7 +68,7 @@
       "identityField": "personIdExternal",
       "deltaField": "lastModifiedDateTime",
       "inactiveStatusValues": [
-        "64308"
+        "T"
       ],
       "pageSize": 200,
       "select": [
