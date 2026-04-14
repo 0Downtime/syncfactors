@@ -101,7 +101,7 @@ public sealed class MockApiTests
             ["$format"] = "json",
             ["$top"] = "1",
             ["$filter"] = "userId eq 'user.10001'",
-            ["$select"] = "userId,jobTitle,company,department,division,location,businessUnit,costCenter,employeeClass,employeeType,managerId,customString3,customString20,customString87,customString110,customString111,customString91,startDate",
+            ["$select"] = "userId,jobTitle,company,department,division,location,businessUnit,costCenter,employeeClass,employeeType,managerId,emplStatus,customString3,customString20,customString87,customString110,customString111,customString91,startDate",
             ["$expand"] = "companyNav,departmentNav,divisionNav,locationNav,businessUnitNav,costCenterNav"
         }));
 
@@ -110,6 +110,7 @@ public sealed class MockApiTests
         var job = document.RootElement.GetProperty("d").GetProperty("results")[0];
 
         Assert.Equal("user.10001", job.GetProperty("userId").GetString());
+        Assert.Equal("A", job.GetProperty("emplStatus").GetString());
         Assert.Equal("CORP", job.GetProperty("company").GetString());
         Assert.Equal("CORP", job.GetProperty("companyNav").GetProperty("company").GetString());
         Assert.Equal("Central", job.GetProperty("customString87").GetString());
@@ -125,7 +126,7 @@ public sealed class MockApiTests
         var baselineWorkers = baselineStore.GetDocument().Workers;
         var syntheticWorkers = syntheticStore.GetDocument().Workers;
 
-        Assert.Equal(7, baselineWorkers.Count);
+        Assert.Equal(10, baselineWorkers.Count);
         Assert.Equal(5000, syntheticWorkers.Count);
         Assert.Equal("10001", baselineWorkers[0].PersonIdExternal);
         Assert.Equal("Worker10001", baselineWorkers[0].FirstName);
@@ -170,7 +171,12 @@ public sealed class MockApiTests
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
         Assert.Contains("create", tags);
         Assert.Contains("update", tags);
+        Assert.Contains("preboarding", tags);
         Assert.Contains("prehire", tags);
+        Assert.Contains("leave", tags);
+        Assert.Contains("inactive", tags);
+        Assert.Contains("retired", tags);
+        Assert.Contains("terminated", tags);
         Assert.Contains("manager-change", tags);
         Assert.Contains("disable-candidate", tags);
         Assert.Contains("delete-candidate", tags);
@@ -218,8 +224,8 @@ public sealed class MockApiTests
         var job = document.RootElement.GetProperty("d").GetProperty("results")[0];
 
         Assert.Equal("user.14999", job.GetProperty("userId").GetString());
-        Assert.Equal("Systems Analyst 02-715", job.GetProperty("jobTitle").GetString());
-        Assert.Equal("Platform 02-715", job.GetProperty("department").GetString());
+        Assert.Equal("Security Analyst 10-500", job.GetProperty("jobTitle").GetString());
+        Assert.Equal("Security 10-500", job.GetProperty("department").GetString());
         Assert.Equal("CORP", job.GetProperty("company").GetString());
         Assert.False(job.TryGetProperty("personIdExternal", out _));
     }
@@ -286,7 +292,7 @@ public sealed class MockApiTests
             ["$format"] = "json",
             ["$filter"] = "emplStatus in 'A','U'",
             ["$top"] = "10",
-            ["asOfDate"] = "2026-04-03",
+            ["asOfDate"] = "2099-04-03",
             ["$select"] = "userId,startDate"
         }));
 
@@ -295,6 +301,27 @@ public sealed class MockApiTests
         var results = document.RootElement.GetProperty("d").GetProperty("results");
 
         Assert.Contains(results.EnumerateArray(), row => row.GetProperty("userId").GetString() == "user.10003");
+    }
+
+    [Fact]
+    public void EmpJobProjection_RecentInactiveRetentionFilter_IncludesRecentTermination_ButExcludesStaleTermination()
+    {
+        var store = CreateStore();
+        var builder = new ODataResponseBuilder();
+        var query = ODataQueryParser.Parse(new Microsoft.AspNetCore.Http.QueryCollection(new Dictionary<string, Microsoft.Extensions.Primitives.StringValues>
+        {
+            ["$format"] = "json",
+            ["$filter"] = "(emplStatus in 'A','U') or (emplStatus eq 'T' and endDate ge datetime'2026-02-01T00:00:00')",
+            ["$top"] = "20",
+            ["$select"] = "userId,emplStatus,endDate"
+        }));
+
+        var payload = builder.Build(store.QueryWorkers("EmpJob", query), query, "EmpJob");
+        using var document = JsonDocument.Parse(JsonSerializer.Serialize(payload));
+        var results = document.RootElement.GetProperty("d").GetProperty("results").EnumerateArray().ToArray();
+
+        Assert.Contains(results, row => row.GetProperty("userId").GetString() == "user.10007");
+        Assert.DoesNotContain(results, row => row.GetProperty("userId").GetString() == "user.10008");
     }
 
     [Fact]
