@@ -87,32 +87,7 @@ public sealed class ActiveDirectoryCommandGateway(
     private static DirectoryCommandResult CreateUser(LdapConnection connection, DirectoryMutationCommand command, ActiveDirectoryConfig config, ILogger logger)
     {
         var dn = $"CN={EscapeDnComponent(command.CommonName)},{command.TargetOu}";
-        var attributes = new List<DirectoryAttribute>
-        {
-            new("objectClass", "top", "person", "organizationalPerson", "user"),
-            new("cn", command.CommonName),
-            new("displayName", command.DisplayName),
-            new("sAMAccountName", command.SamAccountName),
-            new("userPrincipalName", command.UserPrincipalName),
-            new("mail", command.Mail)
-        };
-
-        if (!IsReservedAttribute(config.IdentityAttribute, config.IdentityAttribute))
-        {
-            attributes.Add(new DirectoryAttribute(config.IdentityAttribute, command.WorkerId));
-        }
-
-        foreach (var attribute in command.Attributes)
-        {
-            var attributeName = NormalizeAttributeName(attribute.Key);
-            if (string.IsNullOrWhiteSpace(attribute.Value) || IsReservedAttribute(attributeName, config.IdentityAttribute))
-            {
-                continue;
-            }
-
-            attributes.Add(new DirectoryAttribute(attributeName, attribute.Value));
-        }
-
+        var attributes = BuildCreateAttributes(command, config);
         var request = new AddRequest(dn, [.. attributes]);
         LogRequestAttributes("CreateUser", command.WorkerId, attributes, logger);
 
@@ -174,35 +149,13 @@ public sealed class ActiveDirectoryCommandGateway(
             }
 
             step = "BuildModifyRequest";
-            var request = new ModifyRequest(distinguishedName);
-            request.Modifications.Add(BuildReplaceModification("displayName", command.DisplayName));
-            request.Modifications.Add(BuildReplaceModification("userPrincipalName", command.UserPrincipalName));
-            request.Modifications.Add(BuildReplaceModification("mail", command.Mail));
-            if (!IsReservedAttribute(config.IdentityAttribute, config.IdentityAttribute))
-            {
-                request.Modifications.Add(BuildReplaceModification(config.IdentityAttribute, command.WorkerId));
-            }
-
-            foreach (var attribute in command.Attributes)
-            {
-                var attributeName = NormalizeAttributeName(attribute.Key);
-                if (IsReservedAttribute(attributeName, config.IdentityAttribute))
-                {
-                    continue;
-                }
-
-                request.Modifications.Add(
-                    string.IsNullOrWhiteSpace(attribute.Value)
-                        ? BuildDeleteModification(attributeName)
-                        : BuildReplaceModification(attributeName, attribute.Value));
-            }
-
             step = "ResolveManager";
             var managerDn = command.ManagerDistinguishedName
                 ?? ResolveManagerDistinguishedName(connection, command.ManagerId, config);
-            if (!string.IsNullOrWhiteSpace(managerDn))
+            var request = new ModifyRequest(distinguishedName);
+            foreach (DirectoryAttributeModification modification in BuildUpdateModifications(command, config, managerDn))
             {
-                request.Modifications.Add(BuildReplaceModification("manager", managerDn));
+                request.Modifications.Add(modification);
             }
 
             modifications = request.Modifications;
@@ -546,7 +499,80 @@ public sealed class ActiveDirectoryCommandGateway(
         };
     }
 
-    private static bool IsReservedAttribute(string attributeName, string identityAttribute)
+    private static List<DirectoryAttribute> BuildCreateAttributes(DirectoryMutationCommand command, ActiveDirectoryConfig config)
+    {
+        var attributes = new List<DirectoryAttribute>
+        {
+            new("objectClass", "top", "person", "organizationalPerson", "user"),
+            new("cn", command.CommonName),
+            new("displayName", command.DisplayName),
+            new("sAMAccountName", command.SamAccountName),
+            new("userPrincipalName", command.UserPrincipalName),
+            new("mail", command.Mail)
+        };
+
+        if (!string.IsNullOrWhiteSpace(command.WorkerId))
+        {
+            attributes.Add(new DirectoryAttribute(config.IdentityAttribute, command.WorkerId));
+        }
+
+        foreach (var attribute in command.Attributes)
+        {
+            var attributeName = NormalizeAttributeName(attribute.Key);
+            if (string.IsNullOrWhiteSpace(attribute.Value) ||
+                IsSystemManagedAttribute(attributeName) ||
+                string.Equals(attributeName, config.IdentityAttribute, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            attributes.Add(new DirectoryAttribute(attributeName, attribute.Value));
+        }
+
+        return attributes;
+    }
+
+    private static DirectoryAttributeModificationCollection BuildUpdateModifications(
+        DirectoryMutationCommand command,
+        ActiveDirectoryConfig config,
+        string? managerDn)
+    {
+        var modifications = new DirectoryAttributeModificationCollection
+        {
+            BuildReplaceModification("displayName", command.DisplayName),
+            BuildReplaceModification("userPrincipalName", command.UserPrincipalName),
+            BuildReplaceModification("mail", command.Mail)
+        };
+
+        if (!string.IsNullOrWhiteSpace(command.WorkerId))
+        {
+            modifications.Add(BuildReplaceModification(config.IdentityAttribute, command.WorkerId));
+        }
+
+        foreach (var attribute in command.Attributes)
+        {
+            var attributeName = NormalizeAttributeName(attribute.Key);
+            if (IsSystemManagedAttribute(attributeName) ||
+                string.Equals(attributeName, config.IdentityAttribute, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            modifications.Add(
+                string.IsNullOrWhiteSpace(attribute.Value)
+                    ? BuildDeleteModification(attributeName)
+                    : BuildReplaceModification(attributeName, attribute.Value));
+        }
+
+        if (!string.IsNullOrWhiteSpace(managerDn))
+        {
+            modifications.Add(BuildReplaceModification("manager", managerDn));
+        }
+
+        return modifications;
+    }
+
+    private static bool IsSystemManagedAttribute(string attributeName)
     {
         return string.Equals(attributeName, "objectClass", StringComparison.OrdinalIgnoreCase)
             || string.Equals(attributeName, "cn", StringComparison.OrdinalIgnoreCase)
@@ -554,8 +580,7 @@ public sealed class ActiveDirectoryCommandGateway(
             || string.Equals(attributeName, "sAMAccountName", StringComparison.OrdinalIgnoreCase)
             || string.Equals(attributeName, "userPrincipalName", StringComparison.OrdinalIgnoreCase)
             || string.Equals(attributeName, "mail", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(attributeName, "manager", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(attributeName, identityAttribute, StringComparison.OrdinalIgnoreCase);
+            || string.Equals(attributeName, "manager", StringComparison.OrdinalIgnoreCase);
     }
 
     private static string NormalizeAttributeName(string attributeName)
