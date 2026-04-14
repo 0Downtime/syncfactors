@@ -325,6 +325,27 @@ public sealed class MockApiTests
     }
 
     [Fact]
+    public void EmpJobProjection_DeltaFilter_HonorsDateTimeOffsetLiteral()
+    {
+        var store = CreateStore();
+        var builder = new ODataResponseBuilder();
+        var query = ODataQueryParser.Parse(new Microsoft.AspNetCore.Http.QueryCollection(new Dictionary<string, Microsoft.Extensions.Primitives.StringValues>
+        {
+            ["$format"] = "json",
+            ["$filter"] = "lastModifiedDateTime ge datetimeoffset'2026-03-24T12:30:00Z'",
+            ["$top"] = "20",
+            ["$select"] = "userId,lastModifiedDateTime"
+        }));
+
+        var payload = builder.Build(store.QueryWorkers("EmpJob", query), query, "EmpJob");
+        using var document = JsonDocument.Parse(JsonSerializer.Serialize(payload));
+        var results = document.RootElement.GetProperty("d").GetProperty("results").EnumerateArray().ToArray();
+
+        Assert.Contains(results, row => row.GetProperty("userId").GetString() == "user.10007");
+        Assert.DoesNotContain(results, row => row.GetProperty("userId").GetString() == "user.10006");
+    }
+
+    [Fact]
     public void EmpJobProjection_DefaultListing_IncludesTaggedPrehireWorkers()
     {
         var (fixturePath, futureStartDate) = CreateRelativeFuturePrehireFixture();

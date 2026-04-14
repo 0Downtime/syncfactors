@@ -61,6 +61,7 @@ public sealed class BulkRunCoordinatorTests
         CapturingRunLifecycleService.Entries.Clear();
         CapturingRunLifecycleService.Reset();
         var deltaSyncService = new CapturingDeltaSyncService();
+        var now = DateTimeOffset.Parse("2026-04-14T12:00:00Z");
         var coordinator = new BulkRunCoordinator(
             new StubWorkerSource([CreateWorker("10001")]),
             deltaSyncService,
@@ -73,7 +74,7 @@ public sealed class BulkRunCoordinatorTests
             new WorkerRunSettings(MaxCreatesPerRun: 10),
             CreateLifecycleSettings(),
             NullLogger<BulkRunCoordinator>.Instance,
-            TimeProvider.System);
+            new FakeTimeProvider(now));
 
         await coordinator.ExecuteAsync(
             new RunQueueRequest(
@@ -92,6 +93,7 @@ public sealed class BulkRunCoordinatorTests
             CancellationToken.None);
 
         Assert.Equal(1, deltaSyncService.RecordCalls);
+        Assert.Equal(now, deltaSyncService.LastCheckpointUtc);
     }
 
     [Fact]
@@ -707,6 +709,7 @@ public sealed class BulkRunCoordinatorTests
     private sealed class CapturingDeltaSyncService : IDeltaSyncService
     {
         public int RecordCalls { get; private set; }
+        public DateTimeOffset? LastCheckpointUtc { get; private set; }
 
         public Task<DeltaSyncWindow> GetWindowAsync(CancellationToken cancellationToken)
         {
@@ -714,11 +717,17 @@ public sealed class BulkRunCoordinatorTests
             return Task.FromResult(new DeltaSyncWindow(false, false, null, string.Empty, null, null));
         }
 
-        public Task RecordSuccessfulRunAsync(CancellationToken cancellationToken)
+        public Task RecordSuccessfulRunAsync(DateTimeOffset checkpointUtc, CancellationToken cancellationToken)
         {
             _ = cancellationToken;
+            LastCheckpointUtc = checkpointUtc;
             RecordCalls++;
             return Task.CompletedTask;
         }
+    }
+
+    private sealed class FakeTimeProvider(DateTimeOffset utcNow) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => utcNow;
     }
 }

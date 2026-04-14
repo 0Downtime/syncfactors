@@ -1478,8 +1478,9 @@ public sealed class SuccessFactorsWorkerSourceIntegrationTests
             return Task.FromResult(new DeltaSyncWindow(false, false, null, string.Empty, null, null));
         }
 
-        public Task RecordSuccessfulRunAsync(CancellationToken cancellationToken)
+        public Task RecordSuccessfulRunAsync(DateTimeOffset checkpointUtc, CancellationToken cancellationToken)
         {
+            _ = checkpointUtc;
             _ = cancellationToken;
             return Task.CompletedTask;
         }
@@ -1513,8 +1514,9 @@ public sealed class SuccessFactorsWorkerSourceIntegrationTests
             return Task.FromResult(new DeltaSyncWindow(true, true, filter, "lastModifiedDateTime", DateTimeOffset.Parse("2026-03-30T12:05:00Z"), DateTimeOffset.Parse("2026-03-30T12:00:00Z")));
         }
 
-        public Task RecordSuccessfulRunAsync(CancellationToken cancellationToken)
+        public Task RecordSuccessfulRunAsync(DateTimeOffset checkpointUtc, CancellationToken cancellationToken)
         {
+            _ = checkpointUtc;
             _ = cancellationToken;
             return Task.CompletedTask;
         }
