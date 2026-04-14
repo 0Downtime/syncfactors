@@ -51,7 +51,8 @@ if ($LASTEXITCODE -ne 0) {
 Write-Host 'SyncFactors HTTPS certificate ready.' -ForegroundColor Cyan
 Write-Host "Certificate: $($paths.CertificatePath)"
 Write-Host "Password file: $($paths.PasswordPath)"
-Write-Host 'Default API URL: https://127.0.0.1:5087'
+Write-Host 'Default local API URL: https://127.0.0.1:5087'
+Write-Host 'Remote access requires a certificate whose SAN matches the external DNS name or IP.' -ForegroundColor Yellow
 Write-Host ''
 Write-Host 'Optional .env.worktree overrides:' -ForegroundColor Cyan
 Write-Host "SYNCFACTORS_TLS_CERT_PATH=$($paths.CertificatePath)"
