@@ -35,6 +35,10 @@ Options:
   -SkipBuild            Skip the solution build step before starting the selected service.
   -Help                 Show this help text.
 
+Local runner settings:
+  config/local.codex-run.json        Local launcher settings (ignored by git).
+  config/sample.codex-run.json       Tracked defaults copied into the local file when missing.
+
 Examples:
   pwsh ./scripts/codex/run.ps1
   pwsh ./scripts/codex/run.ps1 -Service ui
@@ -52,6 +56,74 @@ if ($Help) {
 
 . (Join-Path $scriptDir 'Load-WorktreeEnv.ps1')
 . (Join-Path $scriptDir '..' 'Start-SyncFactorsCommon.ps1')
+
+function ConvertTo-BooleanSetting {
+    param(
+        [Parameter(Mandatory)]
+        [AllowNull()]
+        [object]$Value,
+        [Parameter(Mandatory)]
+        [string]$SettingPath
+    )
+
+    if ($Value -is [bool]) {
+        return $Value
+    }
+
+    try {
+        return [System.Convert]::ToBoolean($Value, [System.Globalization.CultureInfo]::InvariantCulture)
+    }
+    catch {
+        throw "Setting '$SettingPath' must be a JSON boolean."
+    }
+}
+
+function Get-CodexRunSettings {
+    param(
+        [Parameter(Mandatory)]
+        [string]$RepositoryRoot
+    )
+
+    $localConfigPath = Join-Path $RepositoryRoot 'config/local.codex-run.json'
+    $sampleConfigPath = Join-Path $RepositoryRoot 'config/sample.codex-run.json'
+    $configPath = if (Test-Path $localConfigPath) { $localConfigPath } elseif (Test-Path $sampleConfigPath) { $sampleConfigPath } else { $null }
+
+    $settings = [ordered]@{
+        GitPullBeforeStackStart = $true
+        ConfigPath = $configPath
+    }
+
+    if ($null -eq $configPath) {
+        return [pscustomobject]$settings
+    }
+
+    try {
+        $rawConfig = Get-Content -Path $configPath -Raw
+        $parsedConfig = ConvertFrom-Json -InputObject $rawConfig -AsHashtable
+    }
+    catch {
+        throw "Failed to read runner settings from '$configPath'. $_"
+    }
+
+    if ($parsedConfig -isnot [System.Collections.IDictionary]) {
+        throw "Runner settings file '$configPath' must contain a JSON object."
+    }
+
+    if ($parsedConfig.Contains('git')) {
+        $gitSettings = $parsedConfig['git']
+        if ($gitSettings -isnot [System.Collections.IDictionary]) {
+            throw "Setting 'git' in '$configPath' must be a JSON object."
+        }
+
+        if ($gitSettings.Contains('pullBeforeStackStart')) {
+            $settings.GitPullBeforeStackStart = ConvertTo-BooleanSetting `
+                -Value $gitSettings['pullBeforeStackStart'] `
+                -SettingPath 'git.pullBeforeStackStart'
+        }
+    }
+
+    return [pscustomobject]$settings
+}
 
 function Resolve-ProfileConfigPath {
     param(
@@ -501,6 +573,68 @@ else {
 
 $activeProfile = $env:SYNCFACTORS_RUN_PROFILE.ToLowerInvariant()
 $repoRoot = Resolve-ProjectRoot
+$runSettings = Get-CodexRunSettings -RepositoryRoot $repoRoot
+
+function Invoke-PrestartGitPull {
+    param(
+        [Parameter(Mandatory)]
+        [string]$RepositoryRoot,
+        [Parameter(Mandatory)]
+        [pscustomobject]$RunSettings
+    )
+
+    if (-not $RunSettings.GitPullBeforeStackStart) {
+        if (-not [string]::IsNullOrWhiteSpace($RunSettings.ConfigPath)) {
+            Write-Host "Skipping git pull before stack start because git.pullBeforeStackStart is disabled in $($RunSettings.ConfigPath)." -ForegroundColor DarkGray
+        }
+        else {
+            Write-Host 'Skipping git pull before stack start because the setting is disabled.' -ForegroundColor DarkGray
+        }
+
+        return
+    }
+
+    if (-not (Get-Command 'git' -ErrorAction SilentlyContinue)) {
+        Write-Warning 'git is unavailable; skipping pull before stack start.'
+        return
+    }
+
+    $branchName = ''
+    try {
+        $branchName = (& git -C $RepositoryRoot branch --show-current 2>$null).Trim()
+    }
+    catch {
+        $branchName = ''
+    }
+
+    if ([string]::IsNullOrWhiteSpace($branchName)) {
+        Write-Warning 'Current worktree is not on a named branch; skipping pull before stack start.'
+        return
+    }
+
+    $upstreamName = ''
+    try {
+        $upstreamName = (& git -C $RepositoryRoot rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' 2>$null).Trim()
+    }
+    catch {
+        $upstreamName = ''
+    }
+
+    if ([string]::IsNullOrWhiteSpace($upstreamName)) {
+        Write-Warning "Branch '$branchName' has no upstream; skipping pull before stack start."
+        return
+    }
+
+    Write-Host "Running git pull --ff-only for $branchName ($upstreamName) before starting the stack..." -ForegroundColor Cyan
+    & git -C $RepositoryRoot pull --ff-only
+    if ($LASTEXITCODE -ne 0) {
+        throw 'git pull --ff-only failed before starting the stack.'
+    }
+}
+
+if ($Service -eq 'stack') {
+    Invoke-PrestartGitPull -RepositoryRoot $repoRoot -RunSettings $runSettings
+}
 
 if ($Restart) {
     $preserveHostedTerminals = $false
