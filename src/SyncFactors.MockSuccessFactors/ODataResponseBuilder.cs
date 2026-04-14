@@ -72,6 +72,7 @@ public sealed class ODataResponseBuilder
         };
         AddIfSelected(workerNode, "personId", worker.PersonId, query);
         AddIfSelected(workerNode, "perPersonUuid", worker.PerPersonUuid, query);
+        AddIfSelected(workerNode, "lastModifiedDateTime", worker.LastModifiedDateTime, query);
 
         AddPersonalInfo(workerNode, worker, query);
         AddEmail(workerNode, worker, query);
@@ -127,6 +128,7 @@ public sealed class ODataResponseBuilder
         AddIfSelected(jobNode, "employeeClass", worker.EmployeeClass, query);
         AddIfSelected(jobNode, "employeeType", worker.EmployeeType, query);
         AddIfSelected(jobNode, "managerId", worker.ManagerId, query);
+        AddIfSelected(jobNode, "emplStatus", worker.EmploymentStatus, query);
         AddIfSelected(jobNode, "customString3", worker.PeopleGroup, query);
         AddIfSelected(jobNode, "customString20", worker.LeadershipLevel, query);
         AddIfSelected(jobNode, "customString87", worker.Region, query);
@@ -134,6 +136,11 @@ public sealed class ODataResponseBuilder
         AddIfSelected(jobNode, "customString111", worker.BargainingUnit, query);
         AddIfSelected(jobNode, "customString91", worker.UnionJobCode, query);
         AddIfSelected(jobNode, "startDate", worker.StartDate, query);
+        AddIfSelected(jobNode, "endDate", worker.EndDate, query);
+        AddIfSelected(jobNode, "firstDateWorked", worker.FirstDateWorked, query);
+        AddIfSelected(jobNode, "lastDateWorked", worker.LastDateWorked, query);
+        AddIfSelected(jobNode, "isContingentWorker", worker.IsContingentWorker, query);
+        AddIfSelected(jobNode, "lastModifiedDateTime", worker.LastModifiedDateTime, query);
 
         AddFlatNavigation(
             jobNode,
@@ -291,6 +298,10 @@ public sealed class ODataResponseBuilder
 
         var employment = new JsonObject();
         AddIfSelected(employment, "employmentNav/startDate", worker.StartDate, query, "startDate");
+        AddIfSelected(employment, "employmentNav/endDate", worker.EndDate, query, "endDate");
+        AddIfSelected(employment, "employmentNav/firstDateWorked", worker.FirstDateWorked, query, "firstDateWorked");
+        AddIfSelected(employment, "employmentNav/lastDateWorked", worker.LastDateWorked, query, "lastDateWorked");
+        AddIfSelected(employment, "employmentNav/isContingentWorker", worker.IsContingentWorker, query, "isContingentWorker");
         AddIfSelected(employment, "employmentNav/userId", worker.UserId ?? worker.UserName, query, "userId");
 
         if (ShouldIncludeNavigation("employmentNav/jobInfoNav", query))

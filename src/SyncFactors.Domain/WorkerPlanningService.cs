@@ -42,22 +42,30 @@ public sealed class WorkerPlanningService(
 
         var identity = identityMatcher.Match(worker, directoryUser);
         var lifecycle = lifecyclePolicy.Evaluate(worker, directoryUser);
-        var proposedEmailAddress = identity.MatchedExistingUser
-            ? directoryUser.Attributes.TryGetValue("UserPrincipalName", out var existingUserPrincipalName) && !string.IsNullOrWhiteSpace(existingUserPrincipalName)
-                ? existingUserPrincipalName
-                : directoryUser.Attributes.TryGetValue("mail", out var existingMail) && !string.IsNullOrWhiteSpace(existingMail)
-                    ? existingMail
-                    : DirectoryIdentityFormatter.BuildEmailAddress(
-                        await directoryGateway.ResolveAvailableEmailLocalPartAsync(worker, isCreate: false, cancellationToken))
-            : DirectoryIdentityFormatter.BuildEmailAddress(
-                await directoryGateway.ResolveAvailableEmailLocalPartAsync(worker, isCreate: true, cancellationToken));
-        var attributeChanges = (await attributeDiffService.BuildDiffAsync(worker, directoryUser, proposedEmailAddress, logPath, cancellationToken))
-            .ToList();
-        UpsertManagerAttributeChange(attributeChanges, directoryUser, managerDistinguishedName);
-        var missingSourceAttributes = BuildMissingSourceAttributes(
-            worker.Attributes,
-            attributeMappingProvider.GetEnabledMappings(),
-            proposedEmailAddress);
+        var suppressInactiveCreateValidation = ShouldSuppressInactiveCreateValidation(lifecycle, directoryUser);
+        var proposedEmailAddress = string.Empty;
+        var attributeChanges = new List<AttributeChange>();
+        IReadOnlyList<MissingSourceAttributeRow> missingSourceAttributes = [];
+
+        if (!suppressInactiveCreateValidation)
+        {
+            proposedEmailAddress = identity.MatchedExistingUser
+                ? directoryUser.Attributes.TryGetValue("UserPrincipalName", out var existingUserPrincipalName) && !string.IsNullOrWhiteSpace(existingUserPrincipalName)
+                    ? existingUserPrincipalName
+                    : directoryUser.Attributes.TryGetValue("mail", out var existingMail) && !string.IsNullOrWhiteSpace(existingMail)
+                        ? existingMail
+                        : DirectoryIdentityFormatter.BuildEmailAddress(
+                            await directoryGateway.ResolveAvailableEmailLocalPartAsync(worker, isCreate: false, cancellationToken))
+                : DirectoryIdentityFormatter.BuildEmailAddress(
+                    await directoryGateway.ResolveAvailableEmailLocalPartAsync(worker, isCreate: true, cancellationToken));
+            attributeChanges = (await attributeDiffService.BuildDiffAsync(worker, directoryUser, proposedEmailAddress, logPath, cancellationToken))
+                .ToList();
+            UpsertManagerAttributeChange(attributeChanges, directoryUser, managerDistinguishedName);
+            missingSourceAttributes = BuildMissingSourceAttributes(
+                worker,
+                attributeMappingProvider.GetEnabledMappings(),
+                proposedEmailAddress);
+        }
 
         var currentOu = DirectoryDistinguishedName.GetParentOu(directoryUser.DistinguishedName);
         var bucket = lifecycle.Bucket;
@@ -103,6 +111,14 @@ public sealed class WorkerPlanningService(
             ReviewCaseType: reviewCaseType,
             Reason: reason,
             CanAutoApply: canAutoApply);
+    }
+
+    private static bool ShouldSuppressInactiveCreateValidation(
+        LifecycleDecision lifecycle,
+        DirectoryUserSnapshot directoryUser)
+    {
+        return string.Equals(lifecycle.Bucket, "unchanged", StringComparison.OrdinalIgnoreCase) &&
+               string.IsNullOrWhiteSpace(directoryUser.SamAccountName);
     }
 
     private static void UpsertManagerAttributeChange(
@@ -235,20 +251,15 @@ public sealed class WorkerPlanningService(
     }
 
     internal static IReadOnlyList<MissingSourceAttributeRow> BuildMissingSourceAttributes(
-        IReadOnlyDictionary<string, string?> attributes,
+        WorkerSnapshot worker,
         IReadOnlyList<AttributeMapping> mappings,
         string? proposedEmailAddress = null)
     {
         var missing = new List<MissingSourceAttributeRow>();
         foreach (var mapping in mappings.Where(mapping => mapping.Required))
         {
-            if (TargetCanUseResolvedEmail(mapping.Target, proposedEmailAddress))
-            {
-                continue;
-            }
-
-            if (TryResolveAttribute(attributes, mapping.Source, out var value) &&
-                !string.IsNullOrWhiteSpace(value))
+            var value = SourceValueResolver.ResolveSourceValue(worker, mapping.Source, mapping.Target, proposedEmailAddress);
+            if (!string.IsNullOrWhiteSpace(value))
             {
                 continue;
             }
@@ -260,63 +271,5 @@ public sealed class WorkerPlanningService(
             .DistinctBy(row => row.Attribute, StringComparer.OrdinalIgnoreCase)
             .OrderBy(row => row.Attribute, StringComparer.OrdinalIgnoreCase)
             .ToArray();
-    }
-
-    private static bool TargetCanUseResolvedEmail(string target, string? proposedEmailAddress)
-    {
-        return target is "UserPrincipalName" or "mail"
-            && !string.IsNullOrWhiteSpace(proposedEmailAddress);
-    }
-
-    private static bool TryResolveAttribute(
-        IReadOnlyDictionary<string, string?> attributes,
-        string source,
-        out string? value)
-    {
-        if (AttributeDiffService.TryParseConcatSource(source, out var concatKeys))
-        {
-            var parts = new List<string>();
-            foreach (var key in concatKeys)
-            {
-                if (!TryResolveAttribute(attributes, key, out var part) || string.IsNullOrWhiteSpace(part))
-                {
-                    value = null;
-                    return false;
-                }
-
-                parts.Add(part.Trim());
-            }
-
-            value = string.Join(' ', parts);
-            return true;
-        }
-
-        foreach (var key in SplitSourceKeys(source))
-        {
-            if (attributes.TryGetValue(key, out value))
-            {
-                return true;
-            }
-
-            var normalizedKey = SourceAttributePathNormalizer.Normalize(key);
-            if (!string.Equals(normalizedKey, key, StringComparison.OrdinalIgnoreCase) &&
-                attributes.TryGetValue(normalizedKey, out value))
-            {
-                return true;
-            }
-        }
-
-        value = null;
-        return false;
-    }
-
-    private static IEnumerable<string> SplitSourceKeys(string? source)
-    {
-        if (string.IsNullOrWhiteSpace(source))
-        {
-            return [];
-        }
-
-        return source.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
     }
 }

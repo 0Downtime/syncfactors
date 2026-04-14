@@ -317,7 +317,7 @@ public sealed class MockFixtureStore(IOptions<MockSuccessFactorsOptions> options
         {
             workers = workers.Where(worker =>
                 IsEffectiveOnOrBefore(worker.StartDate, DateTimeOffset.UtcNow) ||
-                (empJobOptions.IncludeTaggedPrehiresInDefaultListing && IsTaggedPrehire(worker)));
+                (empJobOptions.IncludeTaggedPrehiresInDefaultListing && IsPreboarding(worker)));
         }
 
         if (string.IsNullOrWhiteSpace(query.Filter))
@@ -325,19 +325,7 @@ public sealed class MockFixtureStore(IOptions<MockSuccessFactorsOptions> options
             return workers;
         }
 
-        if (query.Filter.Contains("emplStatus", StringComparison.OrdinalIgnoreCase) &&
-            query.Filter.Contains(" in ", StringComparison.OrdinalIgnoreCase))
-        {
-            var allowedStatuses = query.Filter
-                .Split('\'')
-                .Where((_, index) => index % 2 == 1)
-                .Where(value => !string.IsNullOrWhiteSpace(value))
-                .ToHashSet(StringComparer.OrdinalIgnoreCase);
-
-            return workers.Where(worker => !string.IsNullOrWhiteSpace(worker.EmploymentStatus) && allowedStatuses.Contains(worker.EmploymentStatus));
-        }
-
-        return workers;
+        return workers.Where(worker => MatchesSupportedFilter(worker, query.Filter));
     }
 
     private static bool IsEffectiveOnOrBefore(string startDate, DateTimeOffset asOfDate)
@@ -350,8 +338,290 @@ public sealed class MockFixtureStore(IOptions<MockSuccessFactorsOptions> options
         return parsedStart <= asOfDate;
     }
 
-    private static bool IsTaggedPrehire(MockWorkerFixture worker)
+    private static bool IsPreboarding(MockWorkerFixture worker)
     {
-        return worker.ScenarioTags.Any(tag => string.Equals(tag, "prehire", StringComparison.OrdinalIgnoreCase));
+        return string.Equals(ResolveLifecycleState(worker), MockLifecycleState.Preboarding, StringComparison.OrdinalIgnoreCase) ||
+               worker.ScenarioTags.Any(tag =>
+                   string.Equals(tag, "preboarding", StringComparison.OrdinalIgnoreCase) ||
+                   string.Equals(tag, "prehire", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static string ResolveLifecycleState(MockWorkerFixture worker)
+    {
+        return !string.IsNullOrWhiteSpace(worker.LifecycleState)
+            ? MockLifecycleState.Normalize(worker.LifecycleState)
+            : MockLifecycleState.Infer(worker.StartDate, worker.EmploymentStatus, worker.EndDate, worker.ScenarioTags);
+    }
+
+    private static bool MatchesSupportedFilter(MockWorkerFixture worker, string filter)
+    {
+        var orBranches = SplitTopLevelExpression(filter, "or");
+        if (orBranches.Count == 0)
+        {
+            return true;
+        }
+
+        return orBranches.Any(branch => MatchesSupportedBranch(worker, branch));
+    }
+
+    private static bool MatchesSupportedBranch(MockWorkerFixture worker, string branch)
+    {
+        var conditions = SplitTopLevelExpression(branch, "and");
+
+        foreach (var condition in conditions)
+        {
+            if (!TryMatchCondition(worker, condition, out var matches))
+            {
+                continue;
+            }
+
+            if (!matches)
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static IReadOnlyList<string> SplitTopLevelExpression(string expression, string separator)
+    {
+        if (string.IsNullOrWhiteSpace(expression))
+        {
+            return [];
+        }
+
+        var parts = new List<string>();
+        var depth = 0;
+        var inString = false;
+        var start = 0;
+        var token = $" {separator} ";
+
+        for (var index = 0; index < expression.Length; index++)
+        {
+            var current = expression[index];
+            if (current == '\'')
+            {
+                if (inString && index + 1 < expression.Length && expression[index + 1] == '\'')
+                {
+                    index++;
+                    continue;
+                }
+
+                inString = !inString;
+                continue;
+            }
+
+            if (inString)
+            {
+                continue;
+            }
+
+            if (current == '(')
+            {
+                depth++;
+                continue;
+            }
+
+            if (current == ')')
+            {
+                depth = Math.Max(0, depth - 1);
+                continue;
+            }
+
+            if (depth == 0 &&
+                index + token.Length <= expression.Length &&
+                string.Equals(expression.Substring(index, token.Length), token, StringComparison.OrdinalIgnoreCase))
+            {
+                parts.Add(TrimWrappingParentheses(expression[start..index]));
+                start = index + token.Length;
+                index += token.Length - 1;
+            }
+        }
+
+        parts.Add(TrimWrappingParentheses(expression[start..]));
+        return parts
+            .Where(part => !string.IsNullOrWhiteSpace(part))
+            .ToArray();
+    }
+
+    private static string TrimWrappingParentheses(string value)
+    {
+        var trimmed = value.Trim();
+        while (trimmed.Length >= 2 &&
+               trimmed[0] == '(' &&
+               trimmed[^1] == ')' &&
+               HasBalancedOuterParentheses(trimmed))
+        {
+            trimmed = trimmed[1..^1].Trim();
+        }
+
+        return trimmed;
+    }
+
+    private static bool HasBalancedOuterParentheses(string value)
+    {
+        var depth = 0;
+        var inString = false;
+
+        for (var index = 0; index < value.Length; index++)
+        {
+            var current = value[index];
+            if (current == '\'')
+            {
+                if (inString && index + 1 < value.Length && value[index + 1] == '\'')
+                {
+                    index++;
+                    continue;
+                }
+
+                inString = !inString;
+                continue;
+            }
+
+            if (inString)
+            {
+                continue;
+            }
+
+            if (current == '(')
+            {
+                depth++;
+            }
+            else if (current == ')')
+            {
+                depth--;
+                if (depth == 0 && index < value.Length - 1)
+                {
+                    return false;
+                }
+            }
+        }
+
+        return depth == 0;
+    }
+
+    private static bool TryMatchCondition(MockWorkerFixture worker, string condition, out bool matches)
+    {
+        matches = false;
+
+        if (TryParseStatusSetCondition(condition, out var allowedStatuses))
+        {
+            matches = !string.IsNullOrWhiteSpace(worker.EmploymentStatus) &&
+                      allowedStatuses.Contains(worker.EmploymentStatus);
+            return true;
+        }
+
+        if (TryParseDateThresholdCondition(condition, out var fieldName, out var operatorToken, out var threshold))
+        {
+            matches = MatchesDateCondition(worker, fieldName, operatorToken, threshold);
+            return true;
+        }
+
+        return false;
+    }
+
+    private static bool TryParseStatusSetCondition(string condition, out IReadOnlySet<string> allowedStatuses)
+    {
+        allowedStatuses = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var normalized = condition.Trim();
+        if (!normalized.Contains("emplStatus", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        if (normalized.Contains(" in ", StringComparison.OrdinalIgnoreCase))
+        {
+            allowedStatuses = normalized
+                .Split('\'')
+                .Where((_, index) => index % 2 == 1)
+                .Where(value => !string.IsNullOrWhiteSpace(value))
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            return allowedStatuses.Count > 0;
+        }
+
+        if (normalized.Contains(" eq ", StringComparison.OrdinalIgnoreCase))
+        {
+            var value = normalized
+                .Split('\'')
+                .Where((_, index) => index % 2 == 1)
+                .FirstOrDefault();
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return false;
+            }
+
+            allowedStatuses = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { value };
+            return true;
+        }
+
+        return false;
+    }
+
+    private static bool TryParseDateThresholdCondition(string condition, out string fieldName, out string operatorToken, out DateTimeOffset threshold)
+    {
+        fieldName = string.Empty;
+        operatorToken = string.Empty;
+        threshold = default;
+
+        var tokens = condition.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (tokens.Length != 3)
+        {
+            return false;
+        }
+
+        fieldName = tokens[0];
+        operatorToken = tokens[1];
+        if (!fieldName.EndsWith("Date", StringComparison.OrdinalIgnoreCase) &&
+            !fieldName.EndsWith("DateTime", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var valueToken = tokens[2];
+        const string prefix = "datetime'";
+        if (!valueToken.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) || !valueToken.EndsWith('\''))
+        {
+            return false;
+        }
+
+        var rawValue = valueToken[prefix.Length..^1];
+        return DateTimeOffset.TryParse(rawValue, out threshold);
+    }
+
+    private static bool MatchesDateCondition(MockWorkerFixture worker, string fieldName, string operatorToken, DateTimeOffset threshold)
+    {
+        var candidate = ResolveDateField(worker, fieldName);
+        if (!DateTimeOffset.TryParse(candidate, out var value))
+        {
+            return false;
+        }
+
+        return operatorToken.ToLowerInvariant() switch
+        {
+            "ge" => value >= threshold,
+            "gt" => value > threshold,
+            "le" => value <= threshold,
+            "lt" => value < threshold,
+            "eq" => value == threshold,
+            _ => false
+        };
+    }
+
+    private static string? ResolveDateField(MockWorkerFixture worker, string fieldName)
+    {
+        return fieldName.Trim().ToLowerInvariant() switch
+        {
+            "startdate" => worker.StartDate,
+            "employmentnav/startdate" => worker.StartDate,
+            "enddate" => worker.EndDate,
+            "employmentnav/enddate" => worker.EndDate,
+            "firstdateworked" => worker.FirstDateWorked,
+            "employmentnav/firstdateworked" => worker.FirstDateWorked,
+            "lastdateworked" => worker.LastDateWorked,
+            "employmentnav/lastdateworked" => worker.LastDateWorked,
+            "lastmodifieddatetime" => worker.LastModifiedDateTime,
+            _ => null
+        };
     }
 }

@@ -12,8 +12,8 @@
     "auth": {
       "mode": "basic",
       "basic": {
-        "username": "replace-me",
-        "password": "replace-me"
+        "username": "",
+        "password": ""
       },
       "oauth": {
         "tokenUrl": "https://example.authentication.successfactors.com/oauth/token",
@@ -145,7 +145,7 @@
     "identityPolicy": {
       "resolveCreateConflictingUpnAndMail": false
     },
-    "defaultPassword": "Replace-This-Password123!",
+    "defaultPassword": "",
     "ouRoutingRules": [
       {
         "match": {
