@@ -170,6 +170,96 @@ public sealed class ActiveDirectoryCommandGatewayTests
         Assert.Contains("OU=Leave,DC=example,DC=com", searchBases);
     }
 
+    [Fact]
+    public void BuildCreateAttributes_IncludesConfiguredIdentityAttribute()
+    {
+        var method = typeof(ActiveDirectoryCommandGateway).GetMethod("BuildCreateAttributes", BindingFlags.NonPublic | BindingFlags.Static);
+        Assert.NotNull(method);
+
+        var command = new DirectoryMutationCommand(
+            Action: "CreateUser",
+            WorkerId: "10001",
+            ManagerId: null,
+            ManagerDistinguishedName: null,
+            SamAccountName: "user.10001",
+            CommonName: "user.10001",
+            UserPrincipalName: "user.10001@example.com",
+            Mail: "user.10001@example.com",
+            TargetOu: "OU=Users,DC=example,DC=com",
+            DisplayName: "Sample, User",
+            CurrentDistinguishedName: null,
+            EnableAccount: true,
+            Operations: [new SyncFactors.Contracts.DirectoryOperation("CreateUser")],
+            Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["employeeID"] = "should-not-duplicate",
+                ["department"] = "IT"
+            });
+        var config = new ActiveDirectoryConfig(
+            Server: "localhost",
+            Port: 389,
+            Username: "bind",
+            BindPassword: "secret",
+            IdentityAttribute: "employeeID",
+            DefaultActiveOu: "OU=Active,DC=example,DC=com",
+            PrehireOu: "OU=Prehire,DC=example,DC=com",
+            GraveyardOu: "OU=Graveyard,DC=example,DC=com",
+            Transport: new ActiveDirectoryTransportConfig("ldap", false, false, false, []),
+            IdentityPolicy: new ActiveDirectoryIdentityPolicyConfig(false));
+
+        var attributes = Assert.IsAssignableFrom<IReadOnlyList<DirectoryAttribute>>(method!.Invoke(null, [command, config]));
+
+        var employeeIdAttributes = attributes.Where(attribute => string.Equals(attribute.Name, "employeeID", StringComparison.OrdinalIgnoreCase)).ToArray();
+        Assert.Single(employeeIdAttributes);
+        Assert.Equal("10001", employeeIdAttributes[0].GetValues(typeof(string)).Cast<string>().Single());
+    }
+
+    [Fact]
+    public void BuildUpdateModifications_IncludesConfiguredIdentityAttribute()
+    {
+        var method = typeof(ActiveDirectoryCommandGateway).GetMethod("BuildUpdateModifications", BindingFlags.NonPublic | BindingFlags.Static);
+        Assert.NotNull(method);
+
+        var command = new DirectoryMutationCommand(
+            Action: "UpdateUser",
+            WorkerId: "10001",
+            ManagerId: null,
+            ManagerDistinguishedName: null,
+            SamAccountName: "user.10001",
+            CommonName: "user.10001",
+            UserPrincipalName: "user.10001@example.com",
+            Mail: "user.10001@example.com",
+            TargetOu: "OU=Users,DC=example,DC=com",
+            DisplayName: "Sample, User",
+            CurrentDistinguishedName: "CN=user.10001,OU=Users,DC=example,DC=com",
+            EnableAccount: true,
+            Operations: [new SyncFactors.Contracts.DirectoryOperation("UpdateUser")],
+            Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["employeeID"] = "should-not-duplicate",
+                ["department"] = "IT"
+            });
+        var config = new ActiveDirectoryConfig(
+            Server: "localhost",
+            Port: 389,
+            Username: "bind",
+            BindPassword: "secret",
+            IdentityAttribute: "employeeID",
+            DefaultActiveOu: "OU=Active,DC=example,DC=com",
+            PrehireOu: "OU=Prehire,DC=example,DC=com",
+            GraveyardOu: "OU=Graveyard,DC=example,DC=com",
+            Transport: new ActiveDirectoryTransportConfig("ldap", false, false, false, []),
+            IdentityPolicy: new ActiveDirectoryIdentityPolicyConfig(false));
+
+        var modifications = Assert.IsType<DirectoryAttributeModificationCollection>(method!.Invoke(null, [command, config, null]));
+
+        var employeeIdModifications = modifications.Cast<DirectoryAttributeModification>()
+            .Where(modification => string.Equals(modification.Name, "employeeID", StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        Assert.Single(employeeIdModifications);
+        Assert.Equal("10001", employeeIdModifications[0].GetValues(typeof(string)).Cast<string>().Single());
+    }
+
     private static DirectoryAttributeModification CreateModification(string name)
     {
         return new DirectoryAttributeModification
