@@ -10,6 +10,8 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
 (function () {
     const dashboardPollIntervalMs = 15000;
     const healthPollIntervalMs = 60000;
+    const progressAnimationDurationMs = 700;
+    const progressDoneDelayMs = 240;
     const reduceMotionQuery = window.matchMedia ? window.matchMedia("(prefers-reduced-motion: reduce)") : null;
     const supportsViewTransitions = typeof document.startViewTransition === "function";
     const bucketDefinitions = [
@@ -102,6 +104,8 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
     let latestHealthSnapshot = null;
     let latestScheduleSnapshot = null;
     let latestProgressPercent = 0;
+    let progressDoneTimerId = null;
+    let isProgressDoneShown = false;
     let selectedRunId = null;
     let selectedBucketKey = null;
     let hoveredRunId = null;
@@ -420,6 +424,41 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
         flashUpdate(element);
     }
 
+    function clearProgressDoneTimer() {
+        if (!progressDoneTimerId) {
+            return;
+        }
+
+        window.clearTimeout(progressDoneTimerId);
+        progressDoneTimerId = null;
+    }
+
+    function scheduleProgressDoneLabel(nextPercent, total) {
+        if (!elements.progressCaption) {
+            return;
+        }
+
+        if (nextPercent < 100 || total <= 0) {
+            clearProgressDoneTimer();
+            isProgressDoneShown = false;
+            return;
+        }
+
+        if (isProgressDoneShown || progressDoneTimerId) {
+            return;
+        }
+
+        const delayMs = motionAllowed()
+            ? progressAnimationDurationMs + progressDoneDelayMs
+            : progressDoneDelayMs;
+
+        progressDoneTimerId = window.setTimeout(function () {
+            progressDoneTimerId = null;
+            isProgressDoneShown = true;
+            updateText(elements.progressCaption, "Done");
+        }, delayMs);
+    }
+
     function runSummary(run) {
         const parts = [];
 
@@ -460,10 +499,17 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
 
         updateText(elements.progressCopy, summary);
 
+        if (nextPercent >= 100 && total > 0 && isProgressDoneShown) {
+            elements.progressFill.style.width = nextPercent + "%";
+            return;
+        }
+
         if (!motionAllowed()) {
             elements.progressFill.style.width = nextPercent + "%";
             elements.progressCaption.textContent = nextPercent + "%";
             latestProgressPercent = nextPercent;
+            isProgressDoneShown = false;
+            scheduleProgressDoneLabel(nextPercent, total);
             return;
         }
 
@@ -476,11 +522,13 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
         });
 
         animate(elements.progressFill, { width: nextPercent + "%" }, {
-            duration: 0.7,
+            duration: progressAnimationDurationMs / 1000,
             ease: "ease-out"
         });
 
         latestProgressPercent = nextPercent;
+        isProgressDoneShown = false;
+        scheduleProgressDoneLabel(nextPercent, total);
     }
 
     function renderSignal(status) {
@@ -1767,6 +1815,8 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
         if (scheduleTimerId) {
             window.clearInterval(scheduleTimerId);
         }
+
+        clearProgressDoneTimer();
 
         if (connection) {
             void connection.stop();
