@@ -89,6 +89,13 @@ public sealed class ActiveDirectoryCommandGateway(
         var dn = $"CN={EscapeDnComponent(command.CommonName)},{command.TargetOu}";
         var attributes = BuildCreateAttributes(command, config);
         var request = new AddRequest(dn, [.. attributes]);
+        logger.LogInformation(
+            "Prepared AD create identity payload. WorkerId={WorkerId} SamAccountName={SamAccountName} DistinguishedName={DistinguishedName} IdentityAttribute={IdentityAttribute} IdentityWriteValue={IdentityWriteValue}",
+            command.WorkerId,
+            command.SamAccountName,
+            dn,
+            config.IdentityAttribute,
+            TryGetDirectoryAttributeValue(attributes, config.IdentityAttribute, out var identityWriteValue) ? identityWriteValue : null);
         LogRequestAttributes("CreateUser", command.WorkerId, attributes, logger);
 
         ExecuteModify(connection, request, logger, "create user add request", ("WorkerId", command.WorkerId), ("SamAccountName", command.SamAccountName));
@@ -130,6 +137,15 @@ public sealed class ActiveDirectoryCommandGateway(
                 return new DirectoryCommandResult(false, command.Action, command.SamAccountName, null, "Existing AD user did not include a distinguished name.", null);
             }
 
+            logger.LogInformation(
+                "Resolved AD command target. Action={Action} WorkerId={WorkerId} SamAccountName={SamAccountName} DistinguishedName={DistinguishedName} IdentityAttribute={IdentityAttribute} IdentityLookupValue={IdentityLookupValue}",
+                command.Action,
+                command.WorkerId,
+                command.SamAccountName,
+                distinguishedName,
+                config.IdentityAttribute,
+                identityLookupValue);
+
             currentCn = existing.Attributes.TryGetValue("cn", out var resolvedCn) ? resolvedCn : null;
             if (!string.Equals(currentCn, command.CommonName, StringComparison.Ordinal))
             {
@@ -162,6 +178,14 @@ public sealed class ActiveDirectoryCommandGateway(
             modifications = request.Modifications;
 
             step = "ModifyAttributes";
+            logger.LogInformation(
+                "Prepared AD update identity payload. WorkerId={WorkerId} SamAccountName={SamAccountName} DistinguishedName={DistinguishedName} IdentityAttribute={IdentityAttribute} IdentityLookupValue={IdentityLookupValue} IdentityWriteValue={IdentityWriteValue}",
+                command.WorkerId,
+                command.SamAccountName,
+                distinguishedName,
+                config.IdentityAttribute,
+                identityLookupValue,
+                TryGetModificationValue(request.Modifications, config.IdentityAttribute, out var identityWriteValue) ? identityWriteValue : "(unchanged)");
             LogRequestModifications("UpdateUser", command.WorkerId, request.Modifications, logger);
             try
             {
@@ -457,12 +481,26 @@ public sealed class ActiveDirectoryCommandGateway(
 
     private static string? GetAttribute(SearchResultEntry entry, string attributeName)
     {
-        if (!entry.Attributes.Contains(attributeName) || entry.Attributes[attributeName].Count == 0)
+        var resolvedAttributeName = ResolveAttributeName(entry, attributeName);
+        if (resolvedAttributeName is null)
         {
             return null;
         }
 
-        return entry.Attributes[attributeName][0]?.ToString();
+        var attribute = entry.Attributes[resolvedAttributeName];
+        return attribute.Count == 0 ? null : attribute[0]?.ToString();
+    }
+
+    private static string? ResolveAttributeName(SearchResultEntry entry, string attributeName)
+    {
+        if (entry.Attributes.Contains(attributeName))
+        {
+            return attributeName;
+        }
+
+        return entry.Attributes.AttributeNames
+            .Cast<string>()
+            .FirstOrDefault(candidate => string.Equals(candidate, attributeName, StringComparison.OrdinalIgnoreCase));
     }
 
     private static string EscapeLdapFilter(string value)
@@ -626,6 +664,46 @@ public sealed class ActiveDirectoryCommandGateway(
         return TryGetConfiguredIdentityAttributeValue(command, config, out var identityValue)
             ? identityValue
             : command.WorkerId;
+    }
+
+    private static bool TryGetDirectoryAttributeValue(
+        IEnumerable<DirectoryAttribute> attributes,
+        string attributeName,
+        out string? value)
+    {
+        foreach (var attribute in attributes)
+        {
+            if (!string.Equals(attribute.Name, attributeName, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            value = attribute.Count > 0 ? attribute[0]?.ToString() : null;
+            return true;
+        }
+
+        value = null;
+        return false;
+    }
+
+    private static bool TryGetModificationValue(
+        DirectoryAttributeModificationCollection modifications,
+        string attributeName,
+        out string? value)
+    {
+        foreach (DirectoryAttributeModification modification in modifications)
+        {
+            if (!string.Equals(modification.Name, attributeName, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            value = modification.Count > 0 ? modification[0]?.ToString() : null;
+            return true;
+        }
+
+        value = null;
+        return false;
     }
 
     private static bool IsSystemManagedAttribute(string attributeName)

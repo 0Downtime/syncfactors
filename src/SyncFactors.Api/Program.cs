@@ -681,14 +681,35 @@ static void LogConfiguredEndpoints(WebApplication app)
 {
     var config = app.Services.GetRequiredService<SyncFactorsConfigurationLoader>().GetSyncConfig();
     var authOptions = app.Services.GetRequiredService<Microsoft.Extensions.Options.IOptions<LocalAuthOptions>>().Value;
+    var activeDirectoryPort = ResolveActiveDirectoryPort(config.Ad);
+    var usesGlobalCatalog = activeDirectoryPort is 3268 or 3269;
     app.Logger.LogInformation(
-        "Configured endpoints. ActiveDirectoryServer={ActiveDirectoryServer} ActiveDirectoryAccount={ActiveDirectoryAccount} ActiveDirectoryTransport={ActiveDirectoryTransport} SuccessFactorsBaseUrl={SuccessFactorsBaseUrl} SuccessFactorsAccount={SuccessFactorsAccount} AuthMode={AuthMode}",
+        "Configured endpoints. ActiveDirectoryServer={ActiveDirectoryServer} ActiveDirectoryPort={ActiveDirectoryPort} ActiveDirectoryAccount={ActiveDirectoryAccount} ActiveDirectoryTransport={ActiveDirectoryTransport} ActiveDirectoryUsesGlobalCatalog={ActiveDirectoryUsesGlobalCatalog} SuccessFactorsBaseUrl={SuccessFactorsBaseUrl} SuccessFactorsAccount={SuccessFactorsAccount} AuthMode={AuthMode}",
         config.Ad.Server,
+        activeDirectoryPort,
         string.IsNullOrWhiteSpace(config.Ad.Username) ? "anonymous" : config.Ad.Username,
         config.Ad.Transport.Mode,
+        usesGlobalCatalog,
         config.SuccessFactors.BaseUrl,
         DescribeSuccessFactorsAccount(config.SuccessFactors.Auth),
         authOptions.Mode);
+
+    if (usesGlobalCatalog)
+    {
+        app.Logger.LogWarning(
+            "Active Directory is configured to use Global Catalog port {ActiveDirectoryPort}. Attributes outside the partial attribute set, including employeeID by default, may read back as empty.",
+            activeDirectoryPort);
+    }
+}
+
+static int ResolveActiveDirectoryPort(ActiveDirectoryConfig config)
+{
+    if (config.Port is not null)
+    {
+        return config.Port.Value;
+    }
+
+    return string.Equals(config.Transport.Mode, "ldaps", StringComparison.OrdinalIgnoreCase) ? 636 : 389;
 }
 
 static Task ValidateCookiePrincipalAsync(Microsoft.AspNetCore.Authentication.Cookies.CookieValidatePrincipalContext context, LocalAuthOptions authSettings)
