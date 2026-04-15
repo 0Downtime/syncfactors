@@ -142,7 +142,6 @@ function Get-HashtableValue {
 
 function Add-RequiredSecureStoreVariable {
     param(
-        [Parameter(Mandatory)]
         [System.Collections.Generic.List[string]]$RequiredVariables,
         [AllowNull()]
         [string]$VariableName
