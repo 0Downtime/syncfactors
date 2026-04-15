@@ -140,6 +140,85 @@ function Get-HashtableValue {
     return $Table[$Key]
 }
 
+function Get-JsonConfigDocument {
+    param(
+        [Parameter(Mandatory)]
+        [string]$Path,
+        [Parameter(Mandatory)]
+        [string]$Label
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Path) -or -not (Test-Path $Path)) {
+        throw "$Label file '$Path' could not be found."
+    }
+
+    try {
+        $document = ConvertFrom-Json -InputObject (Get-Content -Path $Path -Raw) -AsHashtable
+    }
+    catch {
+        throw "Failed to parse $Label file '$Path' as JSON. $_"
+    }
+
+    if ($document -isnot [System.Collections.IDictionary]) {
+        throw "$Label file '$Path' must contain a JSON object."
+    }
+
+    return $document
+}
+
+function Test-HashtableHasAllKeys {
+    param(
+        [AllowNull()]
+        [System.Collections.IDictionary]$Table,
+        [Parameter(Mandatory)]
+        [string[]]$Keys
+    )
+
+    if ($null -eq $Table) {
+        return $false
+    }
+
+    foreach ($key in $Keys) {
+        if (-not $Table.Contains($key)) {
+            return $false
+        }
+    }
+
+    return $true
+}
+
+function Assert-ConfigPathShapes {
+    param(
+        [Parameter(Mandatory)]
+        [string]$ResolvedConfigPath,
+        [Parameter(Mandatory)]
+        [string]$MappingConfigPath
+    )
+
+    $syncDocument = Get-JsonConfigDocument -Path $ResolvedConfigPath -Label 'Sync config'
+    $mappingDocument = Get-JsonConfigDocument -Path $MappingConfigPath -Label 'Mapping config'
+
+    $syncLooksValid = Test-HashtableHasAllKeys -Table $syncDocument -Keys @('secrets', 'successFactors', 'ad')
+    $syncLooksLikeMapping = $syncDocument.Contains('mappings')
+    if (-not $syncLooksValid) {
+        if ($syncLooksLikeMapping) {
+            throw "Resolved sync config '$ResolvedConfigPath' looks like a mapping config because it contains 'mappings' but not the required sync config keys ('secrets', 'successFactors', 'ad'). Check SYNCFACTORS_CONFIG_PATH and leave it blank for profile-based resolution unless you intentionally want an explicit sync config override."
+        }
+
+        throw "Resolved sync config '$ResolvedConfigPath' is missing one or more required top-level keys: 'secrets', 'successFactors', 'ad'."
+    }
+
+    $mappingLooksValid = Test-HashtableHasAllKeys -Table $mappingDocument -Keys @('mappings')
+    $mappingLooksLikeSync = Test-HashtableHasAllKeys -Table $mappingDocument -Keys @('secrets', 'successFactors', 'ad')
+    if (-not $mappingLooksValid) {
+        if ($mappingLooksLikeSync) {
+            throw "Resolved mapping config '$MappingConfigPath' looks like a sync config because it contains 'secrets', 'successFactors', and 'ad' instead of a top-level 'mappings' array. Check SYNCFACTORS_MAPPING_CONFIG_PATH."
+        }
+
+        throw "Resolved mapping config '$MappingConfigPath' is missing the required top-level 'mappings' array."
+    }
+}
+
 function Add-RequiredSecureStoreVariable {
     param(
         [System.Collections.Generic.List[string]]$RequiredVariables,
@@ -865,6 +944,11 @@ $activeProfile = $env:SYNCFACTORS_RUN_PROFILE.ToLowerInvariant()
 $repoRoot = Resolve-ProjectRoot
 $worktreeEnvFile = Join-Path $repoRoot '.env.worktree'
 $runSettings = Get-CodexRunSettings -RepositoryRoot $repoRoot
+if ($Service -in @('api', 'ui', 'worker', 'stack')) {
+    Assert-ConfigPathShapes `
+        -ResolvedConfigPath $env:SYNCFACTORS_RESOLVED_CONFIG_PATH_ABS `
+        -MappingConfigPath $env:SYNCFACTORS_MAPPING_CONFIG_PATH_ABS
+}
 $requiredSecretNames = @(Get-RequiredSecretNamesForService `
     -RepositoryRoot $repoRoot `
     -ServiceName $Service `
