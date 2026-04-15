@@ -3,8 +3,8 @@
     {
       "source": "personIdExternal",
       "target": "employeeID",
-      "enabled": false,
-      "required": false,
+      "enabled": true,
+      "required": true,
       "transform": "Trim"
     },
     {
