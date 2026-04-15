@@ -37,6 +37,195 @@ function Read-WorktreeEnvFile {
     return $values
 }
 
+function Get-SyncFactorsSecureStoreVariableNames {
+    return @(
+        'SYNCFACTORS__AUTH__OIDC__CLIENTSECRET',
+        'SYNCFACTORS__AUTH__BOOTSTRAPADMIN__PASSWORD',
+        'SF_AD_SYNC_SF_USERNAME',
+        'SF_AD_SYNC_SF_PASSWORD',
+        'SF_AD_SYNC_SF_CLIENT_ID',
+        'SF_AD_SYNC_SF_CLIENT_SECRET',
+        'SF_AD_SYNC_AD_SERVER',
+        'SF_AD_SYNC_AD_USERNAME',
+        'SF_AD_SYNC_AD_BIND_PASSWORD',
+        'SF_AD_SYNC_AD_DEFAULT_PASSWORD'
+    )
+}
+
+function Test-SyncFactorsSecureStoreVariableName {
+    param(
+        [Parameter(Mandatory)]
+        [string]$VariableName
+    )
+
+    return (Get-SyncFactorsSecureStoreVariableNames).Contains($VariableName)
+}
+
+function Assert-SyncFactorsSecureStoreVariableName {
+    param(
+        [Parameter(Mandatory)]
+        [string]$VariableName
+    )
+
+    if (-not (Test-SyncFactorsSecureStoreVariableName -VariableName $VariableName)) {
+        $supportedNames = (Get-SyncFactorsSecureStoreVariableNames) -join ', '
+        throw "Unsupported secure-store variable '$VariableName'. Supported values: $supportedNames"
+    }
+}
+
+function Set-WorktreeEnvPlaceholder {
+    param(
+        [Parameter(Mandatory)]
+        [string]$Path,
+        [Parameter(Mandatory)]
+        [string]$VariableName
+    )
+
+    Assert-SyncFactorsSecureStoreVariableName -VariableName $VariableName
+
+    $placeholderLine = "$VariableName="
+    $existingLines = if (Test-Path $Path) { [string[]](Get-Content -Path $Path) } else { @() }
+    $updatedLines = [System.Collections.Generic.List[string]]::new()
+    $replaced = $false
+
+    foreach ($line in $existingLines) {
+        $trimmed = $line.Trim()
+        if (-not [string]::IsNullOrWhiteSpace($trimmed) -and -not $trimmed.StartsWith('#', [StringComparison]::Ordinal)) {
+            $separatorIndex = $trimmed.IndexOf('=')
+            if ($separatorIndex -ge 0) {
+                $name = $trimmed.Substring(0, $separatorIndex).Trim()
+                if ($name.Equals($VariableName, [StringComparison]::Ordinal)) {
+                    $updatedLines.Add($placeholderLine)
+                    $replaced = $true
+                    continue
+                }
+            }
+        }
+
+        $updatedLines.Add($line)
+    }
+
+    if (-not $replaced) {
+        if ($updatedLines.Count -gt 0 -and -not [string]::IsNullOrWhiteSpace($updatedLines[$updatedLines.Count - 1])) {
+            $updatedLines.Add('')
+        }
+
+        $updatedLines.Add($placeholderLine)
+    }
+
+    $content = ($updatedLines -join [Environment]::NewLine)
+    if ($updatedLines.Count -gt 0) {
+        $content += [Environment]::NewLine
+    }
+
+    [System.IO.File]::WriteAllText($Path, $content)
+}
+
+function Resolve-SyncFactorsKeychainServiceName {
+    param(
+        [string]$EnvFilePath
+    )
+
+    if (-not [string]::IsNullOrWhiteSpace($env:SYNCFACTORS_KEYCHAIN_SERVICE)) {
+        return $env:SYNCFACTORS_KEYCHAIN_SERVICE
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($EnvFilePath) -and (Test-Path $EnvFilePath)) {
+        $values = Read-WorktreeEnvFile -Path $EnvFilePath
+        if ($values.Contains('SYNCFACTORS_KEYCHAIN_SERVICE')) {
+            $service = [string]$values['SYNCFACTORS_KEYCHAIN_SERVICE']
+            if (-not [string]::IsNullOrWhiteSpace($service)) {
+                return $service
+            }
+        }
+    }
+
+    return 'syncfactors'
+}
+
+function Get-SyncFactorsSecureStoreValue {
+    param(
+        [Parameter(Mandatory)]
+        [string]$RepoRoot,
+        [Parameter(Mandatory)]
+        [string]$VariableName,
+        [string]$EnvFilePath
+    )
+
+    Assert-SyncFactorsSecureStoreVariableName -VariableName $VariableName
+
+    if ([OperatingSystem]::IsWindows()) {
+        $credential = Get-SyncFactorsCredentialValue -RepoRoot $RepoRoot -VariableName $VariableName
+        return [pscustomobject]@{
+            Found = $credential.Found
+            Value = $credential.Value
+            Store = 'Windows Credential Manager'
+        }
+    }
+
+    if ($IsMacOS) {
+        $service = Resolve-SyncFactorsKeychainServiceName -EnvFilePath $EnvFilePath
+        try {
+            $value = & security find-generic-password -s $service -a $VariableName -w 2>$null
+            if ($LASTEXITCODE -eq 0) {
+                return [pscustomobject]@{
+                    Found = $true
+                    Value = [string]$value
+                    Store = "macOS Keychain ($service)"
+                }
+            }
+        }
+        catch {
+        }
+    }
+
+    return [pscustomobject]@{
+        Found = $false
+        Value = $null
+        Store = $null
+    }
+}
+
+function Set-SyncFactorsSecureStoreValue {
+    param(
+        [Parameter(Mandatory)]
+        [string]$RepoRoot,
+        [Parameter(Mandatory)]
+        [string]$VariableName,
+        [Parameter(Mandatory)]
+        [AllowEmptyString()]
+        [string]$Value,
+        [string]$EnvFilePath
+    )
+
+    Assert-SyncFactorsSecureStoreVariableName -VariableName $VariableName
+
+    if ([OperatingSystem]::IsWindows()) {
+        Set-SyncFactorsCredentialValue -RepoRoot $RepoRoot -VariableName $VariableName -Value $Value
+        if (-not [string]::IsNullOrWhiteSpace($EnvFilePath)) {
+            Set-WorktreeEnvPlaceholder -Path $EnvFilePath -VariableName $VariableName
+        }
+
+        return 'Windows Credential Manager'
+    }
+
+    if ($IsMacOS) {
+        $service = Resolve-SyncFactorsKeychainServiceName -EnvFilePath $EnvFilePath
+        & security add-generic-password -U -s $service -a $VariableName -w $Value | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+            throw "Failed to store $VariableName in macOS Keychain service '$service'."
+        }
+
+        if (-not [string]::IsNullOrWhiteSpace($EnvFilePath)) {
+            Set-WorktreeEnvPlaceholder -Path $EnvFilePath -VariableName $VariableName
+        }
+
+        return "macOS Keychain ($service)"
+    }
+
+    throw 'Secure-store writes are only supported on Windows Credential Manager and the macOS Keychain.'
+}
+
 function Get-SyncFactorsCredentialNamespace {
     param(
         [Parameter(Mandatory)]

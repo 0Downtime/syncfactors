@@ -17,6 +17,26 @@ const string ViewerPolicy = "Viewer";
 const string OperatorPolicy = "Operator";
 const string AdminPolicy = "Admin";
 
+var launcherProbeAction = LauncherProbe.GetRequestedAction(args);
+if (!string.IsNullOrWhiteSpace(launcherProbeAction))
+{
+    if (!string.Equals(launcherProbeAction, LauncherProbe.BootstrapRequiredAction, StringComparison.OrdinalIgnoreCase))
+    {
+        throw new InvalidOperationException($"Unsupported launcher probe '{launcherProbeAction}'.");
+    }
+
+    var probeBuilder = WebApplication.CreateBuilder(args);
+    var authOptions = probeBuilder.Configuration.GetSection("SyncFactors:Auth").Get<LocalAuthOptions>() ?? new LocalAuthOptions();
+    var sqlitePathResolver = new SqlitePathResolver(probeBuilder.Configuration["SyncFactors:SqlitePath"]);
+    var databaseInitializer = new SqliteDatabaseInitializer(sqlitePathResolver);
+    var userStore = new SqliteLocalUserStore(sqlitePathResolver);
+
+    await databaseInitializer.InitializeAsync(CancellationToken.None);
+    var bootstrapRequired = await LauncherProbe.IsBootstrapRequiredAsync(authOptions, userStore, CancellationToken.None);
+    Console.Out.WriteLine(bootstrapRequired ? "true" : "false");
+    return;
+}
+
 var builder = WebApplication.CreateBuilder(args);
 ConfigureLocalFileLogging(
     builder.Logging,

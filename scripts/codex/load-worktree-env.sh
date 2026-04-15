@@ -4,6 +4,8 @@ set -euo pipefail
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "${script_dir}/../.." && pwd)"
 env_file="${repo_root}/.env.worktree"
+pwsh_bin="$("${script_dir}/resolve-pwsh.sh")"
+worktree_env_helper="${script_dir}/Invoke-WorktreeEnvHelper.ps1"
 
 if [[ ! -f "${env_file}" ]]; then
   cat >&2 <<EOF
@@ -75,7 +77,7 @@ fi
 export SYNCFACTORS_PROFILE_CONFIG_PATH_ABS="${profile_config_path}"
 export SYNCFACTORS_RESOLVED_CONFIG_PATH_ABS="${resolved_sync_config_path}"
 
-keychain_service="${SYNCFACTORS_KEYCHAIN_SERVICE:-syncfactors}"
+keychain_service="$("${pwsh_bin}" -NoProfile -File "${worktree_env_helper}" -Action resolve-keychain-service-name -EnvFilePath "${env_file}")"
 
 load_keychain_secret() {
   local name="$1"
@@ -94,19 +96,9 @@ load_keychain_secret() {
   fi
 }
 
-for secret_name in \
-  SYNCFACTORS__AUTH__OIDC__CLIENTSECRET \
-  SYNCFACTORS__AUTH__BOOTSTRAPADMIN__PASSWORD \
-  SF_AD_SYNC_SF_USERNAME \
-  SF_AD_SYNC_SF_PASSWORD \
-  SF_AD_SYNC_SF_CLIENT_ID \
-  SF_AD_SYNC_SF_CLIENT_SECRET \
-  SF_AD_SYNC_AD_SERVER \
-  SF_AD_SYNC_AD_USERNAME \
-  SF_AD_SYNC_AD_BIND_PASSWORD \
-  SF_AD_SYNC_AD_DEFAULT_PASSWORD
-do
+while IFS= read -r secret_name; do
+  [[ -z "${secret_name}" ]] && continue
   load_keychain_secret "${secret_name}"
-done
+done < <("${pwsh_bin}" -NoProfile -File "${worktree_env_helper}" -Action list-secure-store-variable-names)
 
 cd "${repo_root}"

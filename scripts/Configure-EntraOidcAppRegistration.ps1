@@ -268,19 +268,13 @@ function Resolve-EnvFileValue {
 function Resolve-KeychainServiceName {
     param(
         [Parameter(Mandatory)]
+        [string]$RepoRoot,
+        [Parameter(Mandatory)]
         [string]$EnvFilePath
     )
 
-    if (-not [string]::IsNullOrWhiteSpace($env:SYNCFACTORS_KEYCHAIN_SERVICE)) {
-        return $env:SYNCFACTORS_KEYCHAIN_SERVICE
-    }
-
-    $configured = Resolve-EnvFileValue -Path $EnvFilePath -Name 'SYNCFACTORS_KEYCHAIN_SERVICE'
-    if (-not [string]::IsNullOrWhiteSpace($configured)) {
-        return $configured
-    }
-
-    return 'syncfactors'
+    . (Join-Path $RepoRoot 'scripts/codex/WorktreeEnv.ps1')
+    return Resolve-SyncFactorsKeychainServiceName -EnvFilePath $EnvFilePath
 }
 
 function Store-SecretInLocalCredentialStore {
@@ -297,18 +291,13 @@ function Store-SecretInLocalCredentialStore {
 
     if ([OperatingSystem]::IsWindows()) {
         . (Join-Path $RepoRoot 'scripts/codex/WorktreeEnv.ps1')
-        Set-SyncFactorsCredentialValue -RepoRoot $RepoRoot -VariableName $VariableName -Value $Value
+        Set-SyncFactorsSecureStoreValue -RepoRoot $RepoRoot -EnvFilePath $EnvFilePath -VariableName $VariableName -Value $Value | Out-Null
         return 'Windows Credential Manager'
     }
 
     if ($IsMacOS) {
-        $service = Resolve-KeychainServiceName -EnvFilePath $EnvFilePath
-        & security add-generic-password -U -s $service -a $VariableName -w $Value | Out-Null
-        if ($LASTEXITCODE -ne 0) {
-            throw "Failed to store $VariableName in macOS Keychain service '$service'."
-        }
-
-        return "macOS Keychain ($service)"
+        . (Join-Path $RepoRoot 'scripts/codex/WorktreeEnv.ps1')
+        return (Set-SyncFactorsSecureStoreValue -RepoRoot $RepoRoot -EnvFilePath $EnvFilePath -VariableName $VariableName -Value $Value)
     }
 
     return $null
