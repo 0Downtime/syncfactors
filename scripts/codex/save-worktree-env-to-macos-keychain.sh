@@ -79,6 +79,11 @@ trim_whitespace() {
   printf '%s' "${value}"
 }
 
+value_is_blank() {
+  local value="$1"
+  [[ -z "$(trim_whitespace "${value}")" ]]
+}
+
 read_env_value() {
   local name="$1"
   local line raw_name value
@@ -148,6 +153,7 @@ mapfile -t secret_names < <(run_worktree_env_helper -Action list-secure-store-va
 
 stored_count=0
 removed_count=0
+skipped_count=0
 
 if [[ "${interactive_mode}" == "true" ]]; then
   if [[ ${#interactive_names[@]} -eq 0 ]]; then
@@ -170,10 +176,15 @@ for name in "${secret_names[@]}"; do
   if [[ "${interactive_mode}" == "true" ]]; then
     value="$(prompt_secret_value "${name}")"
   else
-    value="$(read_env_value "${name}" || true)"
+    env_value_found=false
+    if value="$(read_env_value "${name}")"; then
+      env_value_found=true
+    else
+      value=''
+    fi
   fi
 
-  if [[ "${remove_empty_values}" == "true" && -z "${value}" ]]; then
+  if [[ "${remove_empty_values}" == "true" && "${interactive_mode}" != "true" && "${env_value_found}" == "true" ]] && value_is_blank "${value}"; then
     security delete-generic-password -s "${service}" -a "${name}" >/dev/null 2>&1 || true
     if ! verify_secret_removed "${name}"; then
       echo "Failed to verify removal for ${name} in macOS Keychain" >&2
@@ -182,6 +193,14 @@ for name in "${secret_names[@]}"; do
     echo "Removed ${name} from macOS Keychain"
     removed_count=$((removed_count + 1))
     continue
+  fi
+
+  if [[ "${interactive_mode}" != "true" ]]; then
+    if [[ "${env_value_found}" != "true" ]] || value_is_blank "${value}"; then
+      echo "Skipped ${name} because .env.worktree does not define a non-empty value"
+      skipped_count=$((skipped_count + 1))
+      continue
+    fi
   fi
 
   security add-generic-password -U -s "${service}" -a "${name}" -w "${value}" >/dev/null
@@ -194,4 +213,4 @@ for name in "${secret_names[@]}"; do
   stored_count=$((stored_count + 1))
 done
 
-echo "Keychain import complete. Stored ${stored_count} value(s); removed ${removed_count} empty value(s)."
+echo "Keychain import complete. Stored ${stored_count} value(s); removed ${removed_count} empty value(s); skipped ${skipped_count} missing or blank value(s)."

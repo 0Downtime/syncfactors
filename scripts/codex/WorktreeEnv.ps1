@@ -37,6 +37,31 @@ function Read-WorktreeEnvFile {
     return $values
 }
 
+function Get-WorktreeEnvFileValueState {
+    param(
+        [Parameter(Mandatory)]
+        [string]$Path,
+        [Parameter(Mandatory)]
+        [string]$VariableName
+    )
+
+    $values = Read-WorktreeEnvFile -Path $Path
+    if (-not $values.Contains($VariableName)) {
+        return [pscustomobject]@{
+            Found = $false
+            HasValue = $false
+            Value = $null
+        }
+    }
+
+    $value = [string]$values[$VariableName]
+    return [pscustomobject]@{
+        Found = $true
+        HasValue = -not [string]::IsNullOrWhiteSpace($value)
+        Value = $value
+    }
+}
+
 function Get-SyncFactorsSecureStoreVariableNames {
     return @(
         'SYNCFACTORS__AUTH__OIDC__CLIENTSECRET',

@@ -203,7 +203,7 @@ SYNCFACTORS_API_PORT=5087
 
 Keep `SYNCFACTORS_API_BIND_HOST` on the listener address and `SYNCFACTORS_API_PUBLIC_HOST` on the exact host users browse to. The public host must match the HTTPS certificate and the Entra redirect URIs. The dev certificate from `Install-SyncFactorsHttpsCertificate.ps1` is localhost-only, so remote access requires a PFX whose SAN covers `<dns-name-or-lan-ip>`.
 
-Use `--remove-empty-values` on macOS or `-RemoveEmptyValues` on Windows if blank entries in `.env.worktree` should delete the corresponding stored credentials instead of saving empty strings.
+By default, the import helpers skip secure-store variables that are missing or blank in `.env.worktree` so an existing Keychain or Credential Manager value is left alone. Use `--remove-empty-values` on macOS or `-RemoveEmptyValues` on Windows if explicitly blank entries in `.env.worktree` should delete the corresponding stored credentials.
 
 Set `SYNCFACTORS_RUN_PROFILE=mock` or `real` to switch the active SuccessFactors config. Leave `SYNCFACTORS_CONFIG_PATH` empty for profile-based resolution, or set it only when you want an explicit one-off override.
 
