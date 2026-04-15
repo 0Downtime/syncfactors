@@ -47,26 +47,28 @@ internal static class ExternalSystemExceptionFactory
     {
         if (TryDescribeMissingOu(exception.Message, out var missingOuDescription))
         {
-            return missingOuDescription;
+            return AppendLdapServerDiagnostics(missingOuDescription, exception);
         }
 
         if (string.Equals(exception.Message, "The supplied credential is invalid.", StringComparison.OrdinalIgnoreCase))
         {
-            return "The configured bind credentials were rejected by the directory server.";
+            return AppendLdapServerDiagnostics("The configured bind credentials were rejected by the directory server.", exception);
         }
 
         if (string.Equals(exception.Message, "The LDAP server is unavailable.", StringComparison.OrdinalIgnoreCase))
         {
-            return $"The LDAP server could not be reached. Connection settings: host='{config.Server}', port={config.Port ?? GetDefaultPort(config.Transport.Mode)}, transport={config.Transport.Mode}.{FormatAttemptSummary(exception)}";
+            return AppendLdapServerDiagnostics(
+                $"The LDAP server could not be reached. Connection settings: host='{config.Server}', port={config.Port ?? GetDefaultPort(config.Transport.Mode)}, transport={config.Transport.Mode}.{FormatAttemptSummary(exception)}",
+                exception);
         }
 
         if (exception.ServerErrorMessage?.Contains("stronger", StringComparison.OrdinalIgnoreCase) == true ||
             exception.ServerErrorMessage?.Contains("signing", StringComparison.OrdinalIgnoreCase) == true)
         {
-            return "The directory rejected the connection because LDAP signing or a stronger transport is required.";
+            return AppendLdapServerDiagnostics("The directory rejected the connection because LDAP signing or a stronger transport is required.", exception);
         }
 
-        return exception.Message;
+        return AppendLdapServerDiagnostics(exception.Message, exception);
     }
 
     private static string DescribeDirectoryOperationFailure(DirectoryOperationException exception, ActiveDirectoryConfig config)
@@ -161,6 +163,29 @@ internal static class ExternalSystemExceptionFactory
         return exception.Data["LdapAttemptSummary"] is string attemptSummary && !string.IsNullOrWhiteSpace(attemptSummary)
             ? $" Attempt summary: {attemptSummary}."
             : string.Empty;
+    }
+
+    private static string AppendLdapServerDiagnostics(string summary, LdapException exception)
+    {
+        var parts = new List<string>();
+        if (!string.IsNullOrWhiteSpace(summary))
+        {
+            parts.Add(summary.Trim());
+        }
+
+        if (exception.ErrorCode != 0)
+        {
+            parts.Add($"LDAP error code {exception.ErrorCode}.");
+        }
+
+        var serverDetail = exception.ServerErrorMessage?.Trim();
+        if (!string.IsNullOrWhiteSpace(serverDetail) &&
+            !summary.Contains(serverDetail, StringComparison.OrdinalIgnoreCase))
+        {
+            parts.Add($"Server detail: {serverDetail}");
+        }
+
+        return string.Join(" ", parts);
     }
 
     private static int GetDefaultPort(string mode) =>

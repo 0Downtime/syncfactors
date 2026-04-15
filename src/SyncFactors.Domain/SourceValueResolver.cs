@@ -14,7 +14,7 @@ internal static class SourceValueResolver
         if (target is "UserPrincipalName" or "mail")
         {
             return proposedEmailAddress ?? (emailAddressPolicy ?? new DefaultEmailAddressPolicy()).BuildEmailAddress(
-                DirectoryIdentityFormatter.BuildBaseEmailLocalPart(worker.PreferredName, worker.LastName));
+                DirectoryIdentityFormatter.BuildPreferredEmailLocalPart(worker.PreferredName, worker.LastName, worker.WorkerId));
         }
 
         if (AttributeDiffService.TryParseConcatSource(source, out var keys))

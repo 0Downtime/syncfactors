@@ -60,6 +60,61 @@ public sealed class ActiveDirectoryCommandGatewayTests
     }
 
     [Fact]
+    public void BuildCreateFailureDetails_IncludesCreateContext()
+    {
+        var method = typeof(ActiveDirectoryCommandGateway).GetMethod("BuildCreateFailureDetails", BindingFlags.NonPublic | BindingFlags.Static);
+        Assert.NotNull(method);
+
+        var command = new DirectoryMutationCommand(
+            Action: "CreateUser",
+            WorkerId: "45086",
+            ManagerId: "90001",
+            ManagerDistinguishedName: null,
+            SamAccountName: "45086",
+            CommonName: "45086",
+            UserPrincipalName: "45086@example.com",
+            Mail: "45086@example.com",
+            TargetOu: "OU=Users,DC=example,DC=com",
+            DisplayName: "Worker, Example",
+            CurrentDistinguishedName: null,
+            EnableAccount: true,
+            Operations: [new SyncFactors.Contracts.DirectoryOperation("CreateUser")],
+            Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["employeeID"] = "45086"
+            });
+        var config = new ActiveDirectoryConfig(
+            Server: "localhost",
+            Port: 389,
+            Username: "bind",
+            BindPassword: "secret",
+            IdentityAttribute: "employeeID",
+            DefaultActiveOu: "OU=Active,DC=example,DC=com",
+            PrehireOu: "OU=Prehire,DC=example,DC=com",
+            GraveyardOu: "OU=Graveyard,DC=example,DC=com",
+            Transport: new ActiveDirectoryTransportConfig("ldap", false, false, false, []),
+            IdentityPolicy: new ActiveDirectoryIdentityPolicyConfig(false));
+        var attributes = new List<DirectoryAttribute>
+        {
+            new("sAMAccountName", "45086"),
+            new("userPrincipalName", "45086@example.com"),
+            new("mail", "45086@example.com"),
+            new("employeeID", "45086")
+        };
+
+        var details = Assert.IsType<string>(method!.Invoke(null, [command, "CN=45086,OU=Users,DC=example,DC=com", config, attributes, "CreateUser", null]));
+
+        Assert.Contains("Step=CreateUser", details, StringComparison.Ordinal);
+        Assert.Contains("TargetOu=OU=Users,DC=example,DC=com", details, StringComparison.Ordinal);
+        Assert.Contains("UserPrincipalName=45086@example.com", details, StringComparison.Ordinal);
+        Assert.Contains("Mail=45086@example.com", details, StringComparison.Ordinal);
+        Assert.Contains("IdentityAttribute=employeeID", details, StringComparison.Ordinal);
+        Assert.Contains("IdentityValue=45086", details, StringComparison.Ordinal);
+        Assert.Contains("ManagerId=90001", details, StringComparison.Ordinal);
+        Assert.Contains("ManagerDistinguishedName=(unset)", details, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void BuildUpdateModifyFailureDetails_ListsModifiedAttributes()
     {
         var method = typeof(ActiveDirectoryCommandGateway).GetMethod("BuildUpdateModifyFailureDetails", BindingFlags.NonPublic | BindingFlags.Static);

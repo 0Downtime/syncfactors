@@ -80,4 +80,43 @@ public sealed class ExternalSystemExceptionFactoryTests
         Assert.Contains("defaultActiveOu='OU=POWERSHELL,OU=SpireQA-Users,DC=spireQA,DC=biz'", exception.Message, StringComparison.Ordinal);
         Assert.Contains("leaveOu='OU=LEAVE USERS,OU=SpireQA-Users,DC=spireQA,DC=biz'", exception.Message, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void CreateActiveDirectoryException_IncludesLdapServerDetailAndErrorCode()
+    {
+        var method = typeof(SyncFactorsConfigurationLoader).Assembly
+            .GetType("SyncFactors.Infrastructure.ExternalSystemExceptionFactory")
+            ?.GetMethod(
+                "CreateActiveDirectoryException",
+                BindingFlags.Public | BindingFlags.Static,
+                [typeof(string), typeof(ActiveDirectoryConfig), typeof(Exception)]);
+        Assert.NotNull(method);
+
+        var config = new ActiveDirectoryConfig(
+            Server: "10.1.182.35",
+            Port: 389,
+            Username: "svc_syncfactors@example.local",
+            BindPassword: "secret",
+            IdentityAttribute: "employeeID",
+            DefaultActiveOu: "OU=Users,DC=example,DC=com",
+            PrehireOu: "OU=Prehire,DC=example,DC=com",
+            GraveyardOu: "OU=Graveyard,DC=example,DC=com",
+            Transport: new ActiveDirectoryTransportConfig(
+                Mode: "ldap",
+                AllowLdapFallback: false,
+                RequireCertificateValidation: false,
+                RequireSigning: false,
+                TrustedCertificateThumbprints: []),
+            IdentityPolicy: new ActiveDirectoryIdentityPolicyConfig(false));
+        var ldapException = new LdapException(
+            19,
+            "A value in the request is invalid.",
+            "000021C8: AtrErr: DSID-03200E96, problem 1005 (CONSTRAINT_ATT_TYPE), Att 90290 (userPrincipalName)");
+
+        var exception = Assert.IsType<InvalidOperationException>(method!.Invoke(null, ["command 'CreateUser'", config, ldapException]));
+
+        Assert.Contains("A value in the request is invalid.", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("LDAP error code 19.", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("Server detail: 000021C8: AtrErr: DSID-03200E96", exception.Message, StringComparison.Ordinal);
+    }
 }
