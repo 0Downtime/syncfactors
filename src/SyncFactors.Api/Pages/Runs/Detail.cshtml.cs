@@ -47,6 +47,45 @@ public sealed class DetailModel(RunEntriesQueryService queryService) : PageModel
     public FailureDiagnostics? GetFailureDiagnostics(RunEntry entry)
         => ActiveDirectoryFailureDiagnostics.Parse(entry.Reason ?? entry.FailureSummary);
 
+    public string? GetFailureSummaryDisplay(RunEntry entry)
+        => GetFailureDiagnostics(entry)?.Summary ?? entry.FailureSummary;
+
+    public string? GetPrimarySummaryDisplay(RunEntry entry)
+    {
+        var primarySummary = entry.PrimarySummary?.Trim();
+        if (string.IsNullOrWhiteSpace(primarySummary))
+        {
+            return null;
+        }
+
+        if (GetFailureDiagnostics(entry) is not null &&
+            (StringEquals(primarySummary, entry.Reason) || StringEquals(primarySummary, entry.FailureSummary)))
+        {
+            return null;
+        }
+
+        var failureSummary = GetFailureSummaryDisplay(entry);
+        return StringEquals(primarySummary, failureSummary) ? null : primarySummary;
+    }
+
+    public bool ShouldShowReason(RunEntry entry)
+    {
+        var reason = entry.Reason?.Trim();
+        if (string.IsNullOrWhiteSpace(reason))
+        {
+            return false;
+        }
+
+        if (GetFailureDiagnostics(entry) is not null)
+        {
+            return false;
+        }
+
+        var primarySummary = GetPrimarySummaryDisplay(entry);
+        var failureSummary = GetFailureSummaryDisplay(entry);
+        return !StringEquals(reason, primarySummary) && !StringEquals(reason, failureSummary);
+    }
+
     public EmploymentStatusInfo? GetEmploymentStatus(RunEntry entry)
         => EmploymentStatusDisplay.Describe(GetItemString(entry.Item, "emplStatus"));
 
@@ -96,4 +135,7 @@ public sealed class DetailModel(RunEntriesQueryService queryService) : PageModel
             ? property.GetString()
             : null;
     }
+
+    private static bool StringEquals(string? left, string? right)
+        => string.Equals(left?.Trim(), right?.Trim(), StringComparison.OrdinalIgnoreCase);
 }

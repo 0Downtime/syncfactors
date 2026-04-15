@@ -115,6 +115,33 @@ public sealed class RunDetailModelTests
     }
 
     [Fact]
+    public void GetPrimarySummaryDisplay_SuppressesDuplicateFailureSummary()
+    {
+        var model = new DetailModel(new RunEntriesQueryService(new StubRunRepository()));
+        var entry = CreateConflictEntry(
+            reason: "Active Directory command 'CreateUser' failed against LDAP server '10.1.182.35'. A value in the request is invalid. 000021C8: AtrErr: DSID-03200E96, #1: 0: 000021C8: DSID-03200E96, problem 1005 (CONSTRAINT_ATT_TYPE), data 0, Att 90290 (userPrincipalName) Next check: Check the target OU, manager resolution, and whether the account already exists with unexpected state.",
+            failureSummary: "Active Directory command 'CreateUser' failed against LDAP server '10.1.182.35'. A value in the request is invalid. 000021C8: AtrErr: DSID-03200E96, #1: 0: 000021C8: DSID-03200E96, problem 1005 (CONSTRAINT_ATT_TYPE), data 0, Att 90290 (userPrincipalName) Next check: Check the target OU, manager resolution, and whether the account already exists with unexpected state.",
+            primarySummary: "Active Directory command 'CreateUser' failed against LDAP server '10.1.182.35'. A value in the request is invalid. 000021C8: AtrErr: DSID-03200E96, #1: 0: 000021C8: DSID-03200E96, problem 1005 (CONSTRAINT_ATT_TYPE), data 0, Att 90290 (userPrincipalName) Next check: Check the target OU, manager resolution, and whether the account already exists with unexpected state.");
+
+        Assert.Null(model.GetPrimarySummaryDisplay(entry));
+        Assert.Equal(
+            "Active Directory command 'CreateUser' failed against LDAP server '10.1.182.35'. A value in the request is invalid. 000021C8: AtrErr: DSID-03200E96, #1: 0: 000021C8: DSID-03200E96, problem 1005 (CONSTRAINT_ATT_TYPE), data 0, Att 90290 (userPrincipalName)",
+            model.GetFailureSummaryDisplay(entry));
+    }
+
+    [Fact]
+    public void ShouldShowReason_HidesRawReasonWhenDiagnosticsAreAvailable()
+    {
+        var model = new DetailModel(new RunEntriesQueryService(new StubRunRepository()));
+        var entry = CreateConflictEntry(
+            reason: "Active Directory command 'CreateUser' failed against LDAP server '10.1.182.35'. A value in the request is invalid. 000021C8: AtrErr: DSID-03200E96, #1: 0: 000021C8: DSID-03200E96, problem 1005 (CONSTRAINT_ATT_TYPE), data 0, Att 90290 (userPrincipalName) Next check: Check the target OU, manager resolution, and whether the account already exists with unexpected state.",
+            failureSummary: "Active Directory command 'CreateUser' failed against LDAP server '10.1.182.35'. A value in the request is invalid. 000021C8: AtrErr: DSID-03200E96, #1: 0: 000021C8: DSID-03200E96, problem 1005 (CONSTRAINT_ATT_TYPE), data 0, Att 90290 (userPrincipalName) Next check: Check the target OU, manager resolution, and whether the account already exists with unexpected state.",
+            primarySummary: "Active Directory command 'CreateUser' failed against LDAP server '10.1.182.35'. A value in the request is invalid. 000021C8: AtrErr: DSID-03200E96, #1: 0: 000021C8: DSID-03200E96, problem 1005 (CONSTRAINT_ATT_TYPE), data 0, Att 90290 (userPrincipalName) Next check: Check the target OU, manager resolution, and whether the account already exists with unexpected state.");
+
+        Assert.False(model.ShouldShowReason(entry));
+    }
+
+    [Fact]
     public void GetEmploymentStatusDisplay_FormatsKnownCode()
     {
         var model = new DetailModel(new RunEntriesQueryService(new StubRunRepository()));
@@ -174,6 +201,30 @@ public sealed class RunDetailModelTests
         Assert.Equal("bad", status.ToneCssClass);
         Assert.Equal("Employment: Terminated", status.PillText);
         Assert.Equal("Code 64308", status.DetailText);
+    }
+
+    private static RunEntry CreateConflictEntry(string reason, string? failureSummary, string? primarySummary, string? reviewCaseType = null)
+    {
+        return new RunEntry(
+            EntryId: "entry-conflict",
+            RunId: "bulk-1",
+            ArtifactType: "BulkRun",
+            Mode: "BulkSync",
+            Bucket: "conflicts",
+            BucketLabel: "Conflicts",
+            WorkerId: "10001",
+            SamAccountName: "winnie",
+            Reason: reason,
+            ReviewCategory: null,
+            ReviewCaseType: reviewCaseType,
+            StartedAt: DateTimeOffset.UtcNow,
+            ChangeCount: 4,
+            OperationSummary: null,
+            FailureSummary: failureSummary,
+            PrimarySummary: primarySummary,
+            TopChangedAttributes: [],
+            DiffRows: [],
+            Item: JsonDocument.Parse("""{}""").RootElement.Clone());
     }
 
     private sealed class StubRunRepository : IRunRepository

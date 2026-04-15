@@ -116,6 +116,10 @@
         {
             var diagnostics = Model.GetFailureDiagnostics(entry);
             var employmentStatus = Model.GetEmploymentStatus(entry);
+            var primarySummary = Model.GetPrimarySummaryDisplay(entry);
+            var failureSummary = Model.GetFailureSummaryDisplay(entry);
+            var showReason = Model.ShouldShowReason(entry);
+            var showReviewCase = !string.IsNullOrWhiteSpace(entry.ReviewCaseType);
             <article class="entry-card">
                 <header class="entry-head">
                     <div class="entry-identity">
@@ -136,19 +140,25 @@
                         <span class="badge neutral">@entry.ChangeCount changes</span>
                     </div>
                 </header>
-                @if (!string.IsNullOrWhiteSpace(entry.PrimarySummary))
+                @if (!string.IsNullOrWhiteSpace(primarySummary))
                 {
-                    <p class="entry-summary">@entry.PrimarySummary</p>
+                    <p class="entry-summary">@primarySummary</p>
                 }
-                @if (!string.IsNullOrWhiteSpace(entry.FailureSummary))
+                @if (!string.IsNullOrWhiteSpace(failureSummary))
                 {
-                    <p class="callout warn">@entry.FailureSummary</p>
+                    <p class="callout warn">@failureSummary</p>
                 }
-                @if (!string.IsNullOrWhiteSpace(entry.ReviewCaseType) || !string.IsNullOrWhiteSpace(entry.Reason))
+                @if (showReason || showReviewCase)
                 {
                     <dl class="kv preview-meta">
-                        <div><dt>Reason</dt><dd>@(entry.Reason ?? "n/a")</dd></div>
-                        <div><dt>Review Case</dt><dd>@(entry.ReviewCaseType ?? "n/a")</dd></div>
+                        @if (showReason)
+                        {
+                            <div><dt>Reason</dt><dd>@entry.Reason</dd></div>
+                        }
+                        @if (showReviewCase)
+                        {
+                            <div><dt>Review Case</dt><dd>@entry.ReviewCaseType</dd></div>
+                        }
                     </dl>
                     @if (diagnostics is not null && (diagnostics.Details.Count > 0 || !string.IsNullOrWhiteSpace(diagnostics.Guidance)))
                     {
