@@ -62,6 +62,36 @@ public sealed class WorktreeEnvHelperTests
     }
 
     [Fact]
+    public async Task SetWorktreeEnvValue_BlanksTemplateAndRemovesDuplicateAssignments()
+    {
+        var tempDirectory = Directory.CreateTempSubdirectory("syncfactors-worktree-env");
+        try
+        {
+            var envFilePath = Path.Combine(tempDirectory.FullName, ".env.worktree");
+            await File.WriteAllTextAsync(envFilePath,
+                """
+                # SYNCFACTORS__AUTH__OIDC__CLIENTSECRET=
+                OTHER_SETTING=value
+                SYNCFACTORS__AUTH__OIDC__CLIENTSECRET=first-secret
+                SYNCFACTORS__AUTH__OIDC__CLIENTSECRET=second-secret
+                """);
+
+            await InvokeWorktreeEnvHelperAsync("set-worktree-env-value", envFilePath, "SYNCFACTORS__AUTH__OIDC__CLIENTSECRET", string.Empty);
+
+            var lines = await File.ReadAllLinesAsync(envFilePath);
+            Assert.Contains("OTHER_SETTING=value", lines);
+            Assert.Equal(1, lines.Count(line => line == "SYNCFACTORS__AUTH__OIDC__CLIENTSECRET="));
+            Assert.DoesNotContain(lines, line => line.Contains("first-secret", StringComparison.Ordinal));
+            Assert.DoesNotContain(lines, line => line.Contains("second-secret", StringComparison.Ordinal));
+            Assert.DoesNotContain(lines, line => line.StartsWith("# SYNCFACTORS__AUTH__OIDC__CLIENTSECRET=", StringComparison.Ordinal));
+        }
+        finally
+        {
+            tempDirectory.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task GetWorktreeEnvValueState_DistinguishesPresentBlankMissingAndValuedEntries()
     {
         var tempDirectory = Directory.CreateTempSubdirectory("syncfactors-worktree-env");
@@ -101,9 +131,9 @@ public sealed class WorktreeEnvHelperTests
         }
     }
 
-    private static async Task InvokeWorktreeEnvHelperAsync(string action, string envFilePath, string variableName)
+    private static async Task InvokeWorktreeEnvHelperAsync(string action, string envFilePath, string variableName, string? value = null)
     {
-        using var process = StartWorktreeEnvHelperProcess(action, envFilePath, variableName);
+        using var process = StartWorktreeEnvHelperProcess(action, envFilePath, variableName, value);
         var standardOutput = await process.StandardOutput.ReadToEndAsync();
         var standardError = await process.StandardError.ReadToEndAsync();
         await process.WaitForExitAsync();
@@ -116,7 +146,7 @@ public sealed class WorktreeEnvHelperTests
 
     private static async Task<JsonElement> InvokeWorktreeEnvHelperJsonAsync(string envFilePath, string variableName)
     {
-        using var process = StartWorktreeEnvHelperProcess("get-worktree-env-value-state", envFilePath, variableName);
+        using var process = StartWorktreeEnvHelperProcess("get-worktree-env-value-state", envFilePath, variableName, null);
         var standardOutput = await process.StandardOutput.ReadToEndAsync();
         var standardError = await process.StandardError.ReadToEndAsync();
         await process.WaitForExitAsync();
@@ -130,7 +160,7 @@ public sealed class WorktreeEnvHelperTests
         return document.RootElement.Clone();
     }
 
-    private static Process StartWorktreeEnvHelperProcess(string action, string envFilePath, string variableName)
+    private static Process StartWorktreeEnvHelperProcess(string action, string envFilePath, string variableName, string? value)
     {
         var helperPath = Path.Combine(GetRepositoryRoot(), "scripts", "codex", "Invoke-WorktreeEnvHelper.ps1");
         var startInfo = new ProcessStartInfo("pwsh")
@@ -149,6 +179,11 @@ public sealed class WorktreeEnvHelperTests
         startInfo.ArgumentList.Add(envFilePath);
         startInfo.ArgumentList.Add("-VariableName");
         startInfo.ArgumentList.Add(variableName);
+        if (value is not null)
+        {
+            startInfo.ArgumentList.Add("-Value");
+            startInfo.ArgumentList.Add(value);
+        }
 
         var process = Process.Start(startInfo);
         Assert.NotNull(process);

@@ -37,6 +37,64 @@ function Read-WorktreeEnvFile {
     return $values
 }
 
+function Set-WorktreeEnvValue {
+    param(
+        [Parameter(Mandatory)]
+        [string]$Path,
+        [Parameter(Mandatory)]
+        [string]$VariableName,
+        [AllowEmptyString()]
+        [string]$Value
+    )
+
+    $updatedLine = "$VariableName=$Value"
+    $existingLines = if (Test-Path $Path) { [string[]](Get-Content -Path $Path) } else { @() }
+    $updatedLines = [System.Collections.Generic.List[string]]::new()
+    $replaced = $false
+
+    foreach ($line in $existingLines) {
+        $trimmed = $line.Trim()
+        if (-not [string]::IsNullOrWhiteSpace($trimmed)) {
+            $candidate = if ($trimmed.StartsWith('#', [StringComparison]::Ordinal)) {
+                $trimmed.Substring(1).TrimStart()
+            }
+            else {
+                $trimmed
+            }
+
+            $separatorIndex = $candidate.IndexOf('=')
+            if ($separatorIndex -ge 0) {
+                $name = $candidate.Substring(0, $separatorIndex).Trim()
+                if ($name.Equals($VariableName, [StringComparison]::Ordinal)) {
+                    if (-not $replaced) {
+                        $updatedLines.Add($updatedLine)
+                        $replaced = $true
+                    }
+
+                    continue
+                }
+            }
+        }
+
+        $updatedLines.Add($line)
+    }
+
+    if (-not $replaced) {
+        if ($updatedLines.Count -gt 0 -and -not [string]::IsNullOrWhiteSpace($updatedLines[$updatedLines.Count - 1])) {
+            $updatedLines.Add('')
+        }
+
+        $updatedLines.Add($updatedLine)
+    }
+
+    $content = ($updatedLines -join [Environment]::NewLine)
+    if ($updatedLines.Count -gt 0) {
+        $content += [Environment]::NewLine
+    }
+
+    [System.IO.File]::WriteAllText($Path, $content)
+}
+
 function Get-WorktreeEnvFileValueState {
     param(
         [Parameter(Mandatory)]
@@ -107,43 +165,7 @@ function Set-WorktreeEnvPlaceholder {
     )
 
     Assert-SyncFactorsSecureStoreVariableName -VariableName $VariableName
-
-    $placeholderLine = "$VariableName="
-    $existingLines = if (Test-Path $Path) { [string[]](Get-Content -Path $Path) } else { @() }
-    $updatedLines = [System.Collections.Generic.List[string]]::new()
-    $replaced = $false
-
-    foreach ($line in $existingLines) {
-        $trimmed = $line.Trim()
-        if (-not [string]::IsNullOrWhiteSpace($trimmed) -and -not $trimmed.StartsWith('#', [StringComparison]::Ordinal)) {
-            $separatorIndex = $trimmed.IndexOf('=')
-            if ($separatorIndex -ge 0) {
-                $name = $trimmed.Substring(0, $separatorIndex).Trim()
-                if ($name.Equals($VariableName, [StringComparison]::Ordinal)) {
-                    $updatedLines.Add($placeholderLine)
-                    $replaced = $true
-                    continue
-                }
-            }
-        }
-
-        $updatedLines.Add($line)
-    }
-
-    if (-not $replaced) {
-        if ($updatedLines.Count -gt 0 -and -not [string]::IsNullOrWhiteSpace($updatedLines[$updatedLines.Count - 1])) {
-            $updatedLines.Add('')
-        }
-
-        $updatedLines.Add($placeholderLine)
-    }
-
-    $content = ($updatedLines -join [Environment]::NewLine)
-    if ($updatedLines.Count -gt 0) {
-        $content += [Environment]::NewLine
-    }
-
-    [System.IO.File]::WriteAllText($Path, $content)
+    Set-WorktreeEnvValue -Path $Path -VariableName $VariableName -Value ''
 }
 
 function Resolve-SyncFactorsKeychainServiceName {
