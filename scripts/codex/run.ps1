@@ -383,7 +383,7 @@ function Ensure-RequiredSecureStoreValues {
         [string]$RepositoryRoot,
         [Parameter(Mandatory)]
         [string]$EnvFilePath,
-        [Parameter(Mandatory)]
+        [AllowNull()]
         [string[]]$VariableNames
     )
 
@@ -392,7 +392,7 @@ function Ensure-RequiredSecureStoreValues {
     }
 
     $missing = @(
-        $VariableNames |
+        @($VariableNames) |
         Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
         Where-Object { [string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($_)) } |
         Sort-Object -Unique
@@ -865,11 +865,11 @@ $activeProfile = $env:SYNCFACTORS_RUN_PROFILE.ToLowerInvariant()
 $repoRoot = Resolve-ProjectRoot
 $worktreeEnvFile = Join-Path $repoRoot '.env.worktree'
 $runSettings = Get-CodexRunSettings -RepositoryRoot $repoRoot
-$requiredSecretNames = Get-RequiredSecretNamesForService `
+$requiredSecretNames = @(Get-RequiredSecretNamesForService `
     -RepositoryRoot $repoRoot `
     -ServiceName $Service `
     -ResolvedConfigPath $env:SYNCFACTORS_RESOLVED_CONFIG_PATH_ABS `
-    -ProbeNoBuild:$SkipBuild
+    -ProbeNoBuild:$SkipBuild)
 Ensure-RequiredSecureStoreValues -RepositoryRoot $repoRoot -EnvFilePath $worktreeEnvFile -VariableNames $requiredSecretNames
 
 function Invoke-PrestartGitPull {
