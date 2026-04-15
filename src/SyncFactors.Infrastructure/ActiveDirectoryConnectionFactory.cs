@@ -53,6 +53,7 @@ internal static class ActiveDirectoryConnectionFactory
     {
         var port = GetPortForMode(config.Port, mode, config.Transport.Mode);
         var identifier = new LdapDirectoryIdentifier(config.Server, port);
+        WarnIfSimpleBindUsernameLooksSuspicious(config, logger, mode, port);
         var connection = new LdapConnection(identifier)
         {
             AuthType = string.IsNullOrWhiteSpace(config.Username) ? AuthType.Anonymous : AuthType.Basic,
@@ -100,6 +101,25 @@ internal static class ActiveDirectoryConnectionFactory
         return connection;
     }
 
+    private static void WarnIfSimpleBindUsernameLooksSuspicious(ActiveDirectoryConfig config, ILogger logger, string mode, int port)
+    {
+        if (string.IsNullOrWhiteSpace(config.Username))
+        {
+            return;
+        }
+
+        if (LooksLikeSimpleBindPrincipal(config.Username))
+        {
+            return;
+        }
+
+        logger.LogWarning(
+            "[AD-BIND] Active Directory simple bind is using a username that is neither a UPN nor a distinguished name. Username={Username} Port={Port} Transport={Transport}. Prefer a UPN such as user@example.local to avoid inconsistent bind and search behavior.",
+            config.Username,
+            port,
+            mode);
+    }
+
     internal static void ConfigureSessionOptions(
         Action<int> setProtocolVersion,
         Action<bool> setSigning,
@@ -114,6 +134,18 @@ internal static class ActiveDirectoryConnectionFactory
 
         setSigning(true);
         setSealing(true);
+    }
+
+    internal static bool LooksLikeSimpleBindPrincipal(string username)
+    {
+        if (string.IsNullOrWhiteSpace(username))
+        {
+            return false;
+        }
+
+        var trimmed = username.Trim();
+        return trimmed.Contains('@', StringComparison.Ordinal) ||
+               (trimmed.Contains('=', StringComparison.Ordinal) && trimmed.Contains(',', StringComparison.Ordinal));
     }
 
     private static bool ValidateServerCertificate(X509Certificate? certificate, ActiveDirectoryTransportConfig transport)
