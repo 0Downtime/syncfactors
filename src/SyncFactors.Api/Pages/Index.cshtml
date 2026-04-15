@@ -35,6 +35,7 @@
                     <div data-active-run-card>
                         <p><strong data-active-run-id>@Model.ActiveRun.RunId</strong></p>
                         <p class="muted" data-active-run-summary>@Model.ActiveRun.Mode · @Model.ActiveRun.ProcessedWorkers / @Model.ActiveRun.TotalWorkers workers</p>
+                        <p class="muted" data-active-run-dates>Start @SyncFactors.Api.UiDateTimeFormatter.FormatDateTime(Model.ActiveRun.StartedAt) · End @(Model.ActiveRun.CompletedAt is null ? "In progress" : SyncFactors.Api.UiDateTimeFormatter.FormatDateTime(Model.ActiveRun.CompletedAt.Value))</p>
                         <p><a asp-page="/Runs/Detail" asp-route-runId="@Model.ActiveRun.RunId" data-active-run-link>Open active run</a></p>
                     </div>
                 }
@@ -51,6 +52,7 @@
                     <div data-last-run-card>
                         <p><strong data-last-run-id>@Model.LastCompletedRun.RunId</strong></p>
                         <p class="muted" data-last-run-summary>@Model.LastCompletedRun.Status · @Model.LastCompletedRun.Mode · @Model.LastCompletedRun.TotalWorkers workers</p>
+                        <p class="muted" data-last-run-dates>Start @SyncFactors.Api.UiDateTimeFormatter.FormatDateTime(Model.LastCompletedRun.StartedAt) · End @SyncFactors.Api.UiDateTimeFormatter.FormatDateTime(Model.LastCompletedRun.CompletedAt, "Unknown")</p>
                         <p><a asp-page="/Runs/Detail" asp-route-runId="@Model.LastCompletedRun.RunId" data-last-run-link>Review last run</a></p>
                     </div>
                 }
@@ -87,9 +89,9 @@
                     </div>
                 </div>
                 <dl class="kv dashboard-schedule-kv">
-                    <div><dt>Next Run</dt><dd data-dashboard-schedule-next-run-at="@(Model.Schedule.NextRunAt?.ToString("o") ?? string.Empty)">@FormatScheduleTimestamp(Model.Schedule.NextRunAt)</dd></div>
+                    <div><dt>Next Run</dt><dd data-dashboard-schedule-next-run-at="@(Model.Schedule.NextRunAt?.ToString("o") ?? string.Empty)">@SyncFactors.Api.UiDateTimeFormatter.FormatDateTime(Model.Schedule.NextRunAt, "Not scheduled")</dd></div>
                     <div><dt>Interval</dt><dd data-dashboard-schedule-interval>@(Model.Schedule.Enabled ? $"{Model.Schedule.IntervalMinutes} minutes" : "Not scheduled")</dd></div>
-                    <div><dt>Last Scheduled</dt><dd data-dashboard-schedule-last-run>@FormatScheduleTimestamp(Model.Schedule.LastScheduledRunAt)</dd></div>
+                    <div><dt>Last Scheduled</dt><dd data-dashboard-schedule-last-run>@SyncFactors.Api.UiDateTimeFormatter.FormatDateTime(Model.Schedule.LastScheduledRunAt, "Not scheduled")</dd></div>
                 </dl>
             </div>
         </section>
@@ -122,7 +124,9 @@
             <div><dt>Worker</dt><dd data-worker-value>@(Model.Status.CurrentWorkerId ?? "None")</dd></div>
             <div><dt>Progress</dt><dd data-progress-value>@Model.Status.ProcessedWorkers / @Model.Status.TotalWorkers</dd></div>
             <div><dt>Last Action</dt><dd data-last-action-value>@(Model.Status.LastAction ?? "None")</dd></div>
-            <div><dt>Last Updated</dt><dd data-last-updated-value>@(Model.Status.LastUpdatedAt?.ToString("u") ?? "Unknown")</dd></div>
+            <div><dt>Started</dt><dd data-started-at-value>@SyncFactors.Api.UiDateTimeFormatter.FormatDateTime(Model.Status.StartedAt, "Not started")</dd></div>
+            <div><dt>Completed</dt><dd data-completed-at-value>@SyncFactors.Api.UiDateTimeFormatter.FormatDateTime(Model.Status.CompletedAt, "Not completed")</dd></div>
+            <div><dt>Last Updated</dt><dd data-last-updated-value>@SyncFactors.Api.UiDateTimeFormatter.FormatDateTime(Model.Status.LastUpdatedAt)</dd></div>
         </dl>
         <p class="callout danger @(string.IsNullOrWhiteSpace(Model.Status.ErrorMessage) ? "is-hidden" : null)" data-status-error>@Model.Status.ErrorMessage</p>
 
@@ -226,7 +230,7 @@
                 @foreach (var run in Model.Runs)
                 {
                     <tr>
-                        <td class="recent-runs-table__started">@run.StartedAt.ToLocalTime().ToString("g")</td>
+                        <td class="recent-runs-table__started">@SyncFactors.Api.UiDateTimeFormatter.FormatDateTime(run.StartedAt)</td>
                         <td class="recent-runs-table__trigger">@run.RunTrigger</td>
                         <td class="recent-runs-table__mode">@run.Mode</td>
                         <td class="recent-runs-table__status"><span class="badge @StatusClass(run.Status)">@run.Status</span></td>
@@ -266,9 +270,6 @@
         if (run.GuardrailFailures > 0) parts.Add($"{run.GuardrailFailures} guardrails");
         return parts.Count == 0 ? "No materialized bucket counts yet" : string.Join(" · ", parts);
     }
-
-    private static string FormatScheduleTimestamp(DateTimeOffset? value) =>
-        value?.ToLocalTime().ToString("g") ?? "Not scheduled";
 
     private static string StatusVisualState(SyncFactors.Contracts.RuntimeStatus status)
     {
