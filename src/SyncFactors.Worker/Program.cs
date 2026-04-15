@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Serilog;
 using SyncFactors.Domain;
 using SyncFactors.Infrastructure;
@@ -11,6 +12,7 @@ ConfigureLocalFileLogging(
     processName: "worker",
     enabledValue: builder.Configuration[LocalFileLogging.EnabledEnvironmentVariable],
     directoryValue: builder.Configuration[LocalFileLogging.DirectoryEnvironmentVariable]);
+ConfigureApplicationInsights(builder);
 builder.Services.AddSingleton(new ScaffoldDataPathResolver(builder.Configuration["SyncFactors:ScaffoldDataPath"]));
 builder.Services.AddSingleton(new SqlitePathResolver(builder.Configuration["SyncFactors:SqlitePath"]));
 builder.Services.AddSingleton(new SyncFactorsConfigPathResolver(
@@ -182,4 +184,36 @@ static void ConfigureLocalFileLogging(
         .CreateLogger();
 
     logging.AddSerilog(logger, dispose: true);
+}
+
+static void ConfigureApplicationInsights(HostApplicationBuilder builder)
+{
+    if (!IsApplicationInsightsConfigured(builder.Configuration))
+    {
+        return;
+    }
+
+    builder.Services.AddApplicationInsightsTelemetryWorkerService();
+    RemoveApplicationInsightsDefaultWarningFilter(builder.Logging);
+}
+
+static bool IsApplicationInsightsConfigured(ConfigurationManager configuration)
+{
+    return !string.IsNullOrWhiteSpace(configuration["APPLICATIONINSIGHTS_CONNECTION_STRING"])
+        || !string.IsNullOrWhiteSpace(configuration["ApplicationInsights:ConnectionString"])
+        || !string.IsNullOrWhiteSpace(configuration["APPINSIGHTS_INSTRUMENTATIONKEY"])
+        || !string.IsNullOrWhiteSpace(configuration["ApplicationInsights:InstrumentationKey"]);
+}
+
+static void RemoveApplicationInsightsDefaultWarningFilter(ILoggingBuilder logging)
+{
+    logging.Services.Configure<LoggerFilterOptions>(options =>
+    {
+        const string ProviderName = "Microsoft.Extensions.Logging.ApplicationInsights.ApplicationInsightsLoggerProvider";
+        var defaultRule = options.Rules.FirstOrDefault(rule => string.Equals(rule.ProviderName, ProviderName, StringComparison.Ordinal));
+        if (defaultRule is not null)
+        {
+            options.Rules.Remove(defaultRule);
+        }
+    });
 }

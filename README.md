@@ -216,6 +216,14 @@ SYNCFACTORS_LOCAL_LOG_DIRECTORY=
 
 When enabled, the API writes `api-*.log` and the worker writes `worker-*.log` with daily rotation and 7 retained files. Leave `SYNCFACTORS_LOCAL_LOG_DIRECTORY` blank to use the default runtime log directory under `%LocalAppData%/SyncFactors/logs` on Windows or `${XDG_DATA_HOME:-~/.local/share}/SyncFactors/logs` on macOS/Linux. This does not change preview artifact logs under `preview-logs`.
 
+To send API and worker telemetry to Azure Application Insights, set:
+
+```bash
+APPLICATIONINSIGHTS_CONNECTION_STRING=InstrumentationKey=...;IngestionEndpoint=https://...
+```
+
+The API and worker will register Application Insights automatically when that connection string is present. Existing `ILogger` output continues to work, and local Serilog file logging can stay enabled alongside Application Insights. The older `APPINSIGHTS_INSTRUMENTATIONKEY` environment variable is also recognized for compatibility, but the connection string is the recommended Azure Monitor configuration.
+
 For Microsoft Entra ID OIDC in local development, add the ASP.NET config-bound environment variables below to `.env.worktree` once your app registration exists:
 
 ```bash

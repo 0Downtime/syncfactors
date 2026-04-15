@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.HttpOverrides;
+using Microsoft.Extensions.Logging;
 using Serilog;
 using SyncFactors.Api;
 using SyncFactors.Contracts;
@@ -22,6 +23,7 @@ ConfigureLocalFileLogging(
     processName: "api",
     enabledValue: builder.Configuration[LocalFileLogging.EnabledEnvironmentVariable],
     directoryValue: builder.Configuration[LocalFileLogging.DirectoryEnvironmentVariable]);
+ConfigureApplicationInsights(builder);
 var authSettings = builder.Configuration.GetSection("SyncFactors:Auth").Get<LocalAuthOptions>() ?? new LocalAuthOptions();
 var cspEnabled = builder.Configuration.GetValue<bool?>("SyncFactors:SecurityHeaders:EnableContentSecurityPolicy")
     ?? !builder.Environment.IsDevelopment();
@@ -919,6 +921,38 @@ static void ConfigureLocalFileLogging(
         .CreateLogger();
 
     logging.AddSerilog(logger, dispose: true);
+}
+
+static void ConfigureApplicationInsights(WebApplicationBuilder builder)
+{
+    if (!IsApplicationInsightsConfigured(builder.Configuration))
+    {
+        return;
+    }
+
+    builder.Services.AddApplicationInsightsTelemetry();
+    RemoveApplicationInsightsDefaultWarningFilter(builder.Logging);
+}
+
+static bool IsApplicationInsightsConfigured(ConfigurationManager configuration)
+{
+    return !string.IsNullOrWhiteSpace(configuration["APPLICATIONINSIGHTS_CONNECTION_STRING"])
+        || !string.IsNullOrWhiteSpace(configuration["ApplicationInsights:ConnectionString"])
+        || !string.IsNullOrWhiteSpace(configuration["APPINSIGHTS_INSTRUMENTATIONKEY"])
+        || !string.IsNullOrWhiteSpace(configuration["ApplicationInsights:InstrumentationKey"]);
+}
+
+static void RemoveApplicationInsightsDefaultWarningFilter(ILoggingBuilder logging)
+{
+    logging.Services.Configure<LoggerFilterOptions>(options =>
+    {
+        const string ProviderName = "Microsoft.Extensions.Logging.ApplicationInsights.ApplicationInsightsLoggerProvider";
+        var defaultRule = options.Rules.FirstOrDefault(rule => string.Equals(rule.ProviderName, ProviderName, StringComparison.Ordinal));
+        if (defaultRule is not null)
+        {
+            options.Rules.Remove(defaultRule);
+        }
+    });
 }
 
 public partial class Program
