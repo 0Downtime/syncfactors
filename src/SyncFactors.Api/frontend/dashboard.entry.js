@@ -14,6 +14,21 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
     const progressDoneDelayMs = 240;
     const reduceMotionQuery = window.matchMedia ? window.matchMedia("(prefers-reduced-motion: reduce)") : null;
     const supportsViewTransitions = typeof document.startViewTransition === "function";
+    const usDateTimeFormatter = new Intl.DateTimeFormat("en-US", {
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "numeric",
+        minute: "2-digit",
+        hour12: true
+    });
+    const usChartDateTimeFormatter = new Intl.DateTimeFormat("en-US", {
+        month: "2-digit",
+        day: "2-digit",
+        hour: "numeric",
+        minute: "2-digit",
+        hour12: true
+    });
     const bucketDefinitions = [
         { key: "creates", label: "Creates", tone: "good" },
         { key: "updates", label: "Updates", tone: "info" },
@@ -86,6 +101,8 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
         worker: elements.statusRoot.querySelector("[data-worker-value]"),
         progress: elements.statusRoot.querySelector("[data-progress-value]"),
         lastAction: elements.statusRoot.querySelector("[data-last-action-value]"),
+        started: elements.statusRoot.querySelector("[data-started-at-value]"),
+        completed: elements.statusRoot.querySelector("[data-completed-at-value]"),
         lastUpdated: elements.statusRoot.querySelector("[data-last-updated-value]")
     };
 
@@ -184,21 +201,25 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
         }
     }
 
-    function formatTimestamp(value) {
+    function formatTimestamp(value, fallback) {
         if (!value) {
-            return "Unknown";
+            return fallback || "Unknown";
         }
 
         const parsed = new Date(value);
-        return Number.isNaN(parsed.getTime())
-            ? "Unknown"
-            : parsed.toLocaleString([], {
-                year: "numeric",
-                month: "numeric",
-                day: "numeric",
-                hour: "numeric",
-                minute: "2-digit"
-            });
+        if (Number.isNaN(parsed.getTime())) {
+            return fallback || "Unknown";
+        }
+
+        const parts = usDateTimeFormatter.formatToParts(parsed).reduce(function (lookup, part) {
+            if (part.type !== "literal") {
+                lookup[part.type] = part.value;
+            }
+
+            return lookup;
+        }, {});
+
+        return parts.month + "/" + parts.day + "/" + parts.year + " " + parts.hour + ":" + parts.minute + " " + parts.dayPeriod;
     }
 
     function formatChartTimestamp(value) {
@@ -207,14 +228,19 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
         }
 
         const parsed = new Date(value);
-        return Number.isNaN(parsed.getTime())
-            ? "Unknown"
-            : parsed.toLocaleTimeString([], {
-                month: "short",
-                day: "numeric",
-                hour: "numeric",
-                minute: "2-digit"
-            });
+        if (Number.isNaN(parsed.getTime())) {
+            return "Unknown";
+        }
+
+        const parts = usChartDateTimeFormatter.formatToParts(parsed).reduce(function (lookup, part) {
+            if (part.type !== "literal") {
+                lookup[part.type] = part.value;
+            }
+
+            return lookup;
+        }, {});
+
+        return parts.month + "/" + parts.day + " " + parts.hour + ":" + parts.minute + " " + parts.dayPeriod;
     }
 
     function textOrFallback(value, fallback) {
@@ -483,6 +509,10 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
         }
 
         return parts.length ? parts.join(" • ") : "No materialized bucket counts yet";
+    }
+
+    function formatRunDates(run, incompleteLabel) {
+        return "Start " + formatTimestamp(run && run.startedAt) + " • End " + (run && run.completedAt ? formatTimestamp(run.completedAt) : incompleteLabel);
     }
 
     function animateProgress(status) {
@@ -948,6 +978,8 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
         updateText(valueNodes.worker, textOrFallback(status.currentWorkerId, "None"));
         updateText(valueNodes.progress, (status.processedWorkers || 0) + " / " + (status.totalWorkers || 0));
         updateText(valueNodes.lastAction, textOrFallback(status.lastAction, "None"));
+        updateText(valueNodes.started, formatTimestamp(status.startedAt, "Not started"));
+        updateText(valueNodes.completed, formatTimestamp(status.completedAt, "Not completed"));
         updateText(valueNodes.lastUpdated, formatTimestamp(status.lastUpdatedAt));
 
         animateProgress(status);
@@ -963,7 +995,7 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
         }
     }
 
-    function renderRunCard(card, empty, run, summarySelector, idSelector, linkSelector, emptyText) {
+    function renderRunCard(card, empty, run, summarySelector, datesSelector, idSelector, linkSelector, emptyText, incompleteLabel) {
         if (!card || !empty) {
             return;
         }
@@ -981,6 +1013,7 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
         updateText(
             card.querySelector(summarySelector),
             run.status + " · " + run.mode + " · " + (run.processedWorkers || 0) + " / " + (run.totalWorkers || 0) + " workers");
+        updateText(card.querySelector(datesSelector), formatRunDates(run, incompleteLabel));
         card.querySelector(linkSelector).setAttribute("href", runDetailHref(run.runId));
         flashUpdate(card);
     }
@@ -1508,8 +1541,8 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
         renderStatus(snapshot);
         renderFilterState(allRuns, filteredRuns);
         renderRuns(filteredRuns);
-        renderRunCard(elements.activeRunCard, elements.activeRunEmpty, snapshot.activeRun, "[data-active-run-summary]", "[data-active-run-id]", "[data-active-run-link]", "No run is active.");
-        renderRunCard(elements.lastRunCard, elements.lastRunEmpty, snapshot.lastCompletedRun, "[data-last-run-summary]", "[data-last-run-id]", "[data-last-run-link]", "No completed runs yet.");
+        renderRunCard(elements.activeRunCard, elements.activeRunEmpty, snapshot.activeRun, "[data-active-run-summary]", "[data-active-run-dates]", "[data-active-run-id]", "[data-active-run-link]", "No run is active.", "In progress");
+        renderRunCard(elements.lastRunCard, elements.lastRunEmpty, snapshot.lastCompletedRun, "[data-last-run-summary]", "[data-last-run-dates]", "[data-last-run-id]", "[data-last-run-link]", "No completed runs yet.", "Unknown");
         renderTimeline(snapshot, filteredRuns);
         renderRunsChart(allRuns);
         renderBucketChart(snapshot);

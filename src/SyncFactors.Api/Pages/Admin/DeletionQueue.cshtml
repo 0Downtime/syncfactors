@@ -65,8 +65,8 @@
                             </div>
                         </td>
                         <td><span class="badge @(user.OverdueDays > 0 ? "bad" : user.IsEligibleForDeletion ? "warn" : "neutral")">@user.Status</span></td>
-                        <td>@user.AnchorDateUtc.ToString("yyyy-MM-dd")</td>
-                        <td>@user.DueDateUtc.ToString("yyyy-MM-dd")</td>
+                        <td>@SyncFactors.Api.UiDateTimeFormatter.FormatDate(user.AnchorDateUtc)</td>
+                        <td>@SyncFactors.Api.UiDateTimeFormatter.FormatDate(user.DueDateUtc)</td>
                         <td>
                             <span class="badge @(user.OverdueDays > 0 ? "bad" : user.IsEligibleForDeletion ? "warn" : "good")">
                                 @Model.FormatCountdown(user)
@@ -125,8 +125,8 @@
                             </div>
                         </td>
                         <td><span class="badge dim">@user.Status</span></td>
-                        <td>@user.DueDateUtc.ToString("yyyy-MM-dd")</td>
-                        <td>@(user.HoldPlacedAtUtc?.ToString("u") ?? "Unknown")</td>
+                        <td>@SyncFactors.Api.UiDateTimeFormatter.FormatDate(user.DueDateUtc)</td>
+                        <td>@SyncFactors.Api.UiDateTimeFormatter.FormatDateTime(user.HoldPlacedAtUtc, "Unknown")</td>
                         <td>@(user.HoldPlacedBy ?? "Unknown")</td>
                         <td>
                             <form method="post" asp-page-handler="RemoveHold">

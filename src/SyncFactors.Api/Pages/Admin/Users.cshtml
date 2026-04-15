@@ -102,8 +102,8 @@
                         <td>
                             <span class="badge @(user.IsActive ? "good" : "dim")">@(user.IsActive ? "Active" : "Inactive")</span>
                         </td>
-                        <td>@user.CreatedAt.ToString("u")</td>
-                        <td>@(user.LastLoginAt?.ToString("u") ?? "Never")</td>
+                        <td>@SyncFactors.Api.UiDateTimeFormatter.FormatDateTime(user.CreatedAt)</td>
+                        <td>@SyncFactors.Api.UiDateTimeFormatter.FormatDateTime(user.LastLoginAt, "Never")</td>
                         <td>
                             <form method="post" asp-page-handler="ResetPassword" class="admin-user-inline-form">
                                 <input type="hidden" name="userId" value="@user.UserId" />

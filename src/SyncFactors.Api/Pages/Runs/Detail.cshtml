@@ -25,8 +25,8 @@
     <article class="panel">
         <h2>Summary</h2>
         <dl class="kv">
-            <div><dt>Started</dt><dd>@Model.Run.Run.StartedAt.ToString("u")</dd></div>
-            <div><dt>Completed</dt><dd>@(Model.Run.Run.CompletedAt?.ToString("u") ?? "Unknown")</dd></div>
+            <div><dt>Started</dt><dd>@SyncFactors.Api.UiDateTimeFormatter.FormatDateTime(Model.Run.Run.StartedAt)</dd></div>
+            <div><dt>Completed</dt><dd>@SyncFactors.Api.UiDateTimeFormatter.FormatDateTime(Model.Run.Run.CompletedAt, "Unknown")</dd></div>
             <div><dt>Artifact</dt><dd>@Model.Run.Run.ArtifactType</dd></div>
             <div><dt>Scope</dt><dd>@Model.Run.Run.SyncScope</dd></div>
             <div><dt>Trigger</dt><dd>@Model.Run.Run.RunTrigger</dd></div>

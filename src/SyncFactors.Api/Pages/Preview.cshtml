@@ -256,7 +256,7 @@
                     @foreach (var item in Model.PreviewHistory)
                     {
                         <tr>
-                            <td>@item.StartedAt.ToString("u")</td>
+                            <td>@SyncFactors.Api.UiDateTimeFormatter.FormatDateTime(item.StartedAt)</td>
                             <td><a asp-page="/Runs/Detail" asp-route-runId="@item.RunId">@item.RunId</a></td>
                             <td>@(item.Action ?? item.Bucket)</td>
                             <td>@(item.Status ?? "Unknown")</td>

@@ -53,7 +53,7 @@
                     </div>
                 </div>
                 <p class="muted" data-next-run-at="@(Model.Schedule.NextRunAt?.ToString("o") ?? string.Empty)">
-                    @(Model.Schedule.NextRunAt?.ToLocalTime().ToString("f") ?? "No recurring run is scheduled right now.")
+                    @SyncFactors.Api.UiDateTimeFormatter.FormatDateTime(Model.Schedule.NextRunAt, "No recurring run is scheduled right now.")
                 </p>
             </section>
 
@@ -89,7 +89,9 @@
             <div><dt>Requested By</dt><dd>@(Model.ActiveRun?.RequestedBy ?? "n/a")</dd></div>
             <div><dt>Progress</dt><dd>@Model.Status.ProcessedWorkers / @Model.Status.TotalWorkers</dd></div>
             <div><dt>Last Action</dt><dd>@(Model.Status.LastAction ?? "None")</dd></div>
-            <div><dt>Last Updated</dt><dd>@(Model.Status.LastUpdatedAt?.ToString("u") ?? "Unknown")</dd></div>
+            <div><dt>Started</dt><dd>@SyncFactors.Api.UiDateTimeFormatter.FormatDateTime(Model.Status.StartedAt, "Not started")</dd></div>
+            <div><dt>Completed</dt><dd>@SyncFactors.Api.UiDateTimeFormatter.FormatDateTime(Model.Status.CompletedAt, "Not completed")</dd></div>
+            <div><dt>Last Updated</dt><dd>@SyncFactors.Api.UiDateTimeFormatter.FormatDateTime(Model.Status.LastUpdatedAt)</dd></div>
         </dl>
         @if (Model.ActiveRun is not null)
         {
@@ -126,9 +128,9 @@
         <dl class="kv">
             <div><dt>Enabled</dt><dd>@(Model.Schedule.Enabled ? "Yes" : "No")</dd></div>
             <div><dt>Interval</dt><dd>@Model.Schedule.IntervalMinutes minutes</dd></div>
-            <div><dt>Next Run</dt><dd>@(Model.Schedule.NextRunAt?.ToString("u") ?? "Not scheduled")</dd></div>
-            <div><dt>Last Scheduled</dt><dd>@(Model.Schedule.LastScheduledRunAt?.ToString("u") ?? "Never")</dd></div>
-            <div><dt>Last Enqueue Attempt</dt><dd>@(Model.Schedule.LastEnqueueAttemptAt?.ToString("u") ?? "Never")</dd></div>
+            <div><dt>Next Run</dt><dd>@SyncFactors.Api.UiDateTimeFormatter.FormatDateTime(Model.Schedule.NextRunAt, "Not scheduled")</dd></div>
+            <div><dt>Last Scheduled</dt><dd>@SyncFactors.Api.UiDateTimeFormatter.FormatDateTime(Model.Schedule.LastScheduledRunAt, "Never")</dd></div>
+            <div><dt>Last Enqueue Attempt</dt><dd>@SyncFactors.Api.UiDateTimeFormatter.FormatDateTime(Model.Schedule.LastEnqueueAttemptAt, "Never")</dd></div>
         </dl>
         @if (!string.IsNullOrWhiteSpace(Model.Schedule.LastEnqueueError))
         {
@@ -212,7 +214,7 @@
                 @foreach (var run in Model.Runs)
                 {
                     <tr>
-                        <td>@run.StartedAt.ToString("u")</td>
+                        <td>@SyncFactors.Api.UiDateTimeFormatter.FormatDateTime(run.StartedAt)</td>
                         <td>@run.RunTrigger</td>
                         <td><span class="badge @StatusClass(run.Status)">@run.Status</span></td>
                         <td>@run.SyncScope</td>
