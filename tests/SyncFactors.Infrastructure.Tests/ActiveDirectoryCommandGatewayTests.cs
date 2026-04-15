@@ -147,6 +147,42 @@ public sealed class ActiveDirectoryCommandGatewayTests
     }
 
     [Fact]
+    public void ResolveTargetDistinguishedName_PrefersCommandDistinguishedName()
+    {
+        var method = typeof(ActiveDirectoryCommandGateway).GetMethod("ResolveTargetDistinguishedName", BindingFlags.NonPublic | BindingFlags.Static);
+        Assert.NotNull(method);
+
+        var existing = new DirectoryUserSnapshot(
+            SamAccountName: "00051",
+            DistinguishedName: "CN=00051,OU=Users,DC=example,DC=com",
+            Enabled: true,
+            DisplayName: "Sample, User",
+            Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase));
+
+        var resolved = Assert.IsType<string>(method!.Invoke(null, ["CN=Current,OU=Users,DC=example,DC=com", existing]));
+
+        Assert.Equal("CN=Current,OU=Users,DC=example,DC=com", resolved);
+    }
+
+    [Fact]
+    public void ResolveCurrentCommonName_FallsBackToDistinguishedName()
+    {
+        var method = typeof(ActiveDirectoryCommandGateway).GetMethod("ResolveCurrentCommonName", BindingFlags.NonPublic | BindingFlags.Static);
+        Assert.NotNull(method);
+
+        var existing = new DirectoryUserSnapshot(
+            SamAccountName: "00051",
+            DistinguishedName: "CN=00051,OU=Users,DC=example,DC=com",
+            Enabled: true,
+            DisplayName: "Sample, User",
+            Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase));
+
+        var resolved = Assert.IsType<string>(method!.Invoke(null, ["CN=Brien\\, Christopher,OU=IT,DC=example,DC=com", existing]));
+
+        Assert.Equal("Brien\\, Christopher", resolved);
+    }
+
+    [Fact]
     public void GetSearchBases_IncludesLeaveOu()
     {
         var method = typeof(ActiveDirectoryCommandGateway).GetMethod("GetSearchBases", BindingFlags.NonPublic | BindingFlags.Static);

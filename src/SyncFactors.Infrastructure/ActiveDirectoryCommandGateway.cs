@@ -119,8 +119,17 @@ public sealed class ActiveDirectoryCommandGateway(
 
         try
         {
-            existing = FindExistingUser(connection, identityLookupValue, config);
-            if (existing is null)
+            if (!string.IsNullOrWhiteSpace(distinguishedName))
+            {
+                step = "LoadExistingUserByDistinguishedName";
+                existing = FindExistingUserByDistinguishedName(connection, distinguishedName);
+            }
+            else
+            {
+                existing = FindExistingUser(connection, identityLookupValue, config);
+            }
+
+            if (existing is null && string.IsNullOrWhiteSpace(distinguishedName))
             {
                 return new DirectoryCommandResult(
                     Succeeded: false,
@@ -131,7 +140,7 @@ public sealed class ActiveDirectoryCommandGateway(
                     RunId: null);
             }
 
-            distinguishedName ??= existing.DistinguishedName;
+            distinguishedName = ResolveTargetDistinguishedName(distinguishedName, existing);
             if (string.IsNullOrWhiteSpace(distinguishedName))
             {
                 return new DirectoryCommandResult(false, command.Action, command.SamAccountName, null, "Existing AD user did not include a distinguished name.", null);
@@ -146,7 +155,7 @@ public sealed class ActiveDirectoryCommandGateway(
                 config.IdentityAttribute,
                 identityLookupValue);
 
-            currentCn = existing.Attributes.TryGetValue("cn", out var resolvedCn) ? resolvedCn : null;
+            currentCn = ResolveCurrentCommonName(distinguishedName, existing);
             if (!string.Equals(currentCn, command.CommonName, StringComparison.Ordinal))
             {
                 step = "RenameUser";
@@ -240,6 +249,33 @@ public sealed class ActiveDirectoryCommandGateway(
             });
     }
 
+    private static DirectoryUserSnapshot? FindExistingUserByDistinguishedName(LdapConnection connection, string distinguishedName)
+    {
+        var entry = FindFirstEntry(
+            connection,
+            [distinguishedName],
+            "(objectClass=*)",
+            NullLogger<ActiveDirectoryCommandGateway>.Instance,
+            "find existing user by distinguished name search",
+            ("DistinguishedName", distinguishedName));
+        if (entry is null)
+        {
+            return null;
+        }
+
+        return new DirectoryUserSnapshot(
+            SamAccountName: GetAttribute(entry, "sAMAccountName"),
+            DistinguishedName: GetAttribute(entry, "distinguishedName"),
+            Enabled: ParseEnabled(GetAttribute(entry, "userAccountControl")),
+            DisplayName: GetAttribute(entry, "displayName"),
+            Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["cn"] = GetAttribute(entry, "cn"),
+                ["displayName"] = GetAttribute(entry, "displayName"),
+                ["userAccountControl"] = GetAttribute(entry, "userAccountControl")
+            });
+    }
+
     private static string? ResolveManagerDistinguishedName(LdapConnection connection, string? managerId, ActiveDirectoryConfig config, ILogger? logger = null)
     {
         if (string.IsNullOrWhiteSpace(managerId))
@@ -266,8 +302,10 @@ public sealed class ActiveDirectoryCommandGateway(
         string? targetOu,
         string? distinguishedName)
     {
-        var existing = FindExistingUser(connection, ResolveIdentityLookupValue(command, config), config);
-        distinguishedName ??= existing?.DistinguishedName;
+        var existing = string.IsNullOrWhiteSpace(distinguishedName)
+            ? FindExistingUser(connection, ResolveIdentityLookupValue(command, config), config)
+            : FindExistingUserByDistinguishedName(connection, distinguishedName);
+        distinguishedName = ResolveTargetDistinguishedName(distinguishedName, existing);
         if (string.IsNullOrWhiteSpace(distinguishedName) || string.IsNullOrWhiteSpace(targetOu))
         {
             return new DirectoryCommandResult(false, command.Action, command.SamAccountName, distinguishedName, "Could not resolve move target for AD user.", null);
@@ -294,8 +332,10 @@ public sealed class ActiveDirectoryCommandGateway(
         bool enabled,
         string? distinguishedName)
     {
-        var existing = FindExistingUser(connection, ResolveIdentityLookupValue(command, config), config);
-        distinguishedName ??= existing?.DistinguishedName;
+        var existing = string.IsNullOrWhiteSpace(distinguishedName)
+            ? FindExistingUser(connection, ResolveIdentityLookupValue(command, config), config)
+            : FindExistingUserByDistinguishedName(connection, distinguishedName);
+        distinguishedName = ResolveTargetDistinguishedName(distinguishedName, existing);
         if (string.IsNullOrWhiteSpace(distinguishedName))
         {
             return new DirectoryCommandResult(false, command.Action, command.SamAccountName, null, "Could not resolve AD user to update account state.", null);
@@ -319,8 +359,10 @@ public sealed class ActiveDirectoryCommandGateway(
         ILogger logger,
         string? distinguishedName)
     {
-        var existing = FindExistingUser(connection, ResolveIdentityLookupValue(command, config), config);
-        distinguishedName ??= existing?.DistinguishedName;
+        var existing = string.IsNullOrWhiteSpace(distinguishedName)
+            ? FindExistingUser(connection, ResolveIdentityLookupValue(command, config), config)
+            : FindExistingUserByDistinguishedName(connection, distinguishedName);
+        distinguishedName = ResolveTargetDistinguishedName(distinguishedName, existing);
         if (string.IsNullOrWhiteSpace(distinguishedName))
         {
             return new DirectoryCommandResult(false, command.Action, command.SamAccountName, null, "Could not resolve AD user to delete.", null);
@@ -360,6 +402,27 @@ public sealed class ActiveDirectoryCommandGateway(
     {
         var parentDistinguishedName = GetParentDistinguishedName(distinguishedName);
         return $"CN={EscapeDnComponent(commonName)},{parentDistinguishedName}";
+    }
+
+    private static string? ResolveTargetDistinguishedName(string? distinguishedName, DirectoryUserSnapshot? existing)
+    {
+        return !string.IsNullOrWhiteSpace(distinguishedName)
+            ? distinguishedName
+            : existing?.DistinguishedName;
+    }
+
+    private static string? ResolveCurrentCommonName(string distinguishedName, DirectoryUserSnapshot? existing)
+    {
+        if (existing?.Attributes.TryGetValue("cn", out var resolvedCn) == true &&
+            !string.IsNullOrWhiteSpace(resolvedCn))
+        {
+            return resolvedCn;
+        }
+
+        var relativeDistinguishedName = GetRelativeDistinguishedName(distinguishedName);
+        return relativeDistinguishedName.StartsWith("CN=", StringComparison.OrdinalIgnoreCase)
+            ? relativeDistinguishedName[3..]
+            : relativeDistinguishedName;
     }
 
     private static string GetParentDistinguishedName(string distinguishedName)
