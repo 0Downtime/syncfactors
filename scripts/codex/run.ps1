@@ -394,10 +394,11 @@ function Ensure-RequiredSecureStoreValues {
     $missing = @(
         $VariableNames |
         Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
-        Where-Object { [string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($_)) }
-    ) | Sort-Object -Unique
+        Where-Object { [string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($_)) } |
+        Sort-Object -Unique
+    )
 
-    if ($missing.Count -eq 0) {
+    if ($missing.Length -eq 0) {
         return
     }
 
