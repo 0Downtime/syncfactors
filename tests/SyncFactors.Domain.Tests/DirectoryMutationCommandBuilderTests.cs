@@ -149,6 +149,57 @@ public sealed class DirectoryMutationCommandBuilderTests
         Assert.Equal("LaRussa, David", fullSyncCommand.DisplayName);
     }
 
+    [Fact]
+    public void Build_FromPlan_ThrowsWhenMappedAttributeExceedsAdSchemaLimit()
+    {
+        const string oversizedDepartment = "20921 MOW - Distribution - Maintenance & Construction - SW Missouri";
+        var worker = new WorkerSnapshot(
+            WorkerId: "20921",
+            PreferredName: "Terry",
+            LastName: "Example",
+            Department: oversizedDepartment,
+            TargetOu: "OU=LabUsers,DC=example,DC=com",
+            IsPrehire: false,
+            Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["managerId"] = "90001"
+            });
+
+        var plan = new PlannedWorkerAction(
+            Worker: worker,
+            DirectoryUser: new DirectoryUserSnapshot(
+                SamAccountName: "20921",
+                DistinguishedName: "CN=20921,OU=LabUsers,DC=example,DC=com",
+                Enabled: true,
+                DisplayName: "Example, Terry",
+                Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)),
+            Identity: new IdentityMatchResult("updates", MatchedExistingUser: true, SamAccountName: "20921", Reason: null, OperatorActionSummary: null),
+            ManagerDistinguishedName: null,
+            ProposedEmailAddress: "terry.example@example.com",
+            AttributeChanges:
+            [
+                new AttributeChange("department", "Concat(costCenterId, costCenterDescription)", "(unset)", oversizedDepartment, true)
+            ],
+            MissingSourceAttributes: [],
+            Bucket: "updates",
+            CurrentOu: "OU=LabUsers,DC=example,DC=com",
+            TargetOu: "OU=LabUsers,DC=example,DC=com",
+            CurrentEnabled: true,
+            TargetEnabled: true,
+            PrimaryAction: "UpdateUser",
+            Operations: [new DirectoryOperation("UpdateUser")],
+            ReviewCategory: null,
+            ReviewCaseType: null,
+            Reason: null,
+            CanAutoApply: true);
+
+        var error = Assert.Throws<InvalidOperationException>(() => new DirectoryMutationCommandBuilder().Build(plan));
+
+        Assert.Contains("department", error.Message, StringComparison.Ordinal);
+        Assert.Contains("67", error.Message, StringComparison.Ordinal);
+        Assert.Contains("64", error.Message, StringComparison.Ordinal);
+    }
+
     private sealed class StubAttributeMappingProvider : IAttributeMappingProvider
     {
         public IReadOnlyList<AttributeMapping> GetEnabledMappings() =>

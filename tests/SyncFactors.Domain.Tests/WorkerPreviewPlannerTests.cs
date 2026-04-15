@@ -240,6 +240,47 @@ public sealed class WorkerPreviewPlannerTests
     }
 
     [Fact]
+    public async Task PreviewAsync_RequiresManualReviewWhenMappedAttributeExceedsAdSchemaLimit()
+    {
+        const string oversizedDepartment = "20921 MOW - Distribution - Maintenance & Construction - SW Missouri";
+        var worker = new WorkerSnapshot(
+            WorkerId: "20921",
+            PreferredName: "Terry",
+            LastName: "Example",
+            Department: oversizedDepartment,
+            TargetOu: "OU=Employees,DC=example,DC=com",
+            IsPrehire: false,
+            Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["department"] = oversizedDepartment
+            });
+
+        var planner = new WorkerPreviewPlanner(
+            new StubWorkerSource(worker),
+            new WorkerPlanningService(
+                new StubDirectoryGateway(),
+                new StubIdentityMatcher(),
+                CreateLifecyclePolicy(),
+                new OversizedDepartmentDiffService(oversizedDepartment),
+                new EmptyAttributeMappingProvider(),
+                NullLogger<WorkerPlanningService>.Instance),
+            new EmptyAttributeMappingProvider(),
+            new StubWorkerPreviewLogWriter(),
+            new StubRunRepository(),
+            NullLogger<WorkerPreviewPlanner>.Instance);
+
+        var preview = await planner.PreviewAsync("20921", CancellationToken.None);
+
+        Assert.Equal("manualReview", preview.Buckets.Single());
+        Assert.Equal("AttributeConstraint", preview.ReviewCategory);
+        Assert.Equal("AttributeValueTooLong", preview.ReviewCaseType);
+        Assert.Contains("department", preview.Reason, StringComparison.Ordinal);
+        Assert.Contains("67", preview.Reason, StringComparison.Ordinal);
+        Assert.Contains("64", preview.Reason, StringComparison.Ordinal);
+        Assert.Empty(preview.Entries.Single().Item.GetProperty("operations").EnumerateArray());
+    }
+
+    [Fact]
     public async Task PreviewAsync_DoesNotRequireReviewWhenRequiredGivenNameResolvesFromPreferredNameFallback()
     {
         var worker = new WorkerSnapshot(
@@ -876,6 +917,32 @@ public sealed class WorkerPreviewPlannerTests
                     "department",
                     directoryUser?.Attributes["department"] ?? "(unset)",
                     "Infrastructure",
+                    true)
+            ]);
+        }
+    }
+
+    private sealed class OversizedDepartmentDiffService(string oversizedDepartment) : IAttributeDiffService
+    {
+        public Task<IReadOnlyList<AttributeChange>> BuildDiffAsync(
+            WorkerSnapshot worker,
+            DirectoryUserSnapshot? directoryUser,
+            string? proposedEmailAddress,
+            string? logPath,
+            CancellationToken cancellationToken)
+        {
+            _ = worker;
+            _ = directoryUser;
+            _ = proposedEmailAddress;
+            _ = logPath;
+            _ = cancellationToken;
+            return Task.FromResult<IReadOnlyList<AttributeChange>>(
+            [
+                new AttributeChange(
+                    "department",
+                    "Concat(costCenterId, costCenterDescription)",
+                    "(unset)",
+                    oversizedDepartment,
                     true)
             ]);
         }

@@ -70,13 +70,22 @@ public sealed class WorkerPlanningService(
                 proposedEmailAddress);
         }
 
+        var attributeLengthViolations = ActiveDirectoryAttributeConstraints.GetViolations(attributeChanges);
+
         var currentOu = DirectoryDistinguishedName.GetParentOu(directoryUser.DistinguishedName);
         var bucket = lifecycle.Bucket;
         string? reviewCaseType = null;
         string? reviewCategory = null;
         string? reason = lifecycle.Reason ?? identity.Reason;
 
-        if (missingSourceAttributes.Count > 0)
+        if (attributeLengthViolations.Count > 0)
+        {
+            bucket = "manualReview";
+            reviewCategory = "AttributeConstraint";
+            reviewCaseType = "AttributeValueTooLong";
+            reason = ActiveDirectoryAttributeConstraints.BuildReason(attributeLengthViolations);
+        }
+        else if (missingSourceAttributes.Count > 0)
         {
             bucket = "manualReview";
             reviewCategory = "RequiredMapping";
