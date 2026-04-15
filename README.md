@@ -165,10 +165,12 @@ To import the full worktree secret set in one pass:
 ./scripts/codex/save-worktree-env-to-macos-keychain.sh
 ```
 
+That import includes `SYNCFACTORS__AUTH__OIDC__CLIENTSECRET` when it is present and non-empty in `.env.worktree`.
+
 To enter selected values interactively and verify each save succeeded:
 
 ```bash
-./scripts/codex/save-worktree-env-to-macos-keychain.sh --interactive SF_AD_SYNC_AD_BIND_PASSWORD SF_AD_SYNC_AD_DEFAULT_PASSWORD
+./scripts/codex/save-worktree-env-to-macos-keychain.sh --interactive SYNCFACTORS__AUTH__OIDC__CLIENTSECRET SF_AD_SYNC_AD_BIND_PASSWORD SF_AD_SYNC_AD_DEFAULT_PASSWORD
 ```
 
 On Windows, you can import worktree values into Windows Credential Manager with:
@@ -176,6 +178,8 @@ On Windows, you can import worktree values into Windows Credential Manager with:
 ```powershell
 pwsh ./scripts/codex/Save-WorktreeEnvToWindowsCredentialManager.ps1
 ```
+
+That import also includes `SYNCFACTORS__AUTH__OIDC__CLIENTSECRET` when it is present and non-empty in `.env.worktree`.
 
 Before starting the API on a new admin workstation, run:
 

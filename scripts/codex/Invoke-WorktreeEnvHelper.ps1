@@ -1,10 +1,12 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)]
-    [ValidateSet('list-secure-store-variable-names', 'assert-secure-store-variable-name', 'set-worktree-env-placeholder', 'resolve-keychain-service-name', 'get-worktree-env-value-state')]
+    [ValidateSet('list-secure-store-variable-names', 'assert-secure-store-variable-name', 'set-worktree-env-placeholder', 'set-worktree-env-value', 'resolve-keychain-service-name', 'get-worktree-env-value-state')]
     [string]$Action,
     [string]$EnvFilePath,
-    [string]$VariableName
+    [string]$VariableName,
+    [AllowEmptyString()]
+    [string]$Value
 )
 
 Set-StrictMode -Version Latest
@@ -24,6 +26,9 @@ switch ($Action) {
     }
     'set-worktree-env-placeholder' {
         Set-WorktreeEnvPlaceholder -Path $EnvFilePath -VariableName $VariableName
+    }
+    'set-worktree-env-value' {
+        Set-WorktreeEnvValue -Path $EnvFilePath -VariableName $VariableName -Value $Value
     }
     'resolve-keychain-service-name' {
         Write-Output (Resolve-SyncFactorsKeychainServiceName -EnvFilePath $EnvFilePath)

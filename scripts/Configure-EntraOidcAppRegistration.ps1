@@ -160,45 +160,6 @@ function Assert-UsableTenantContext {
     }
 }
 
-function Update-OrInsertEnvValue {
-    param(
-        [Parameter(Mandatory)]
-        [System.Collections.Generic.List[string]]$Lines,
-        [Parameter(Mandatory)]
-        [string]$Name,
-        [Parameter(Mandatory)]
-        [string]$Value
-    )
-
-    $updated = $false
-    for ($index = 0; $index -lt $Lines.Count; $index++) {
-        $line = $Lines[$index]
-        $trimmed = $line.Trim()
-        if ([string]::IsNullOrWhiteSpace($trimmed)) {
-            continue
-        }
-
-        $candidate = if ($trimmed.StartsWith('#', [System.StringComparison]::Ordinal)) {
-            $trimmed.Substring(1).TrimStart()
-        }
-        else {
-            $trimmed
-        }
-
-        if (-not $candidate.StartsWith("$Name=", [System.StringComparison]::Ordinal)) {
-            continue
-        }
-
-        $Lines[$index] = "$Name=$Value"
-        $updated = $true
-        break
-    }
-
-    if (-not $updated) {
-        $Lines.Add("$Name=$Value") | Out-Null
-    }
-}
-
 function Update-EnvFile {
     param(
         [Parameter(Mandatory)]
@@ -212,22 +173,11 @@ function Update-EnvFile {
         [System.IO.Directory]::CreateDirectory($parent) | Out-Null
     }
 
-    $lines = [System.Collections.Generic.List[string]]::new()
-    if (Test-Path $Path) {
-        foreach ($line in Get-Content -Path $Path) {
-            $lines.Add([string]$line) | Out-Null
-        }
-    }
+    . (Join-Path $RepoRoot 'scripts/codex/WorktreeEnv.ps1')
 
     foreach ($entry in $Values.GetEnumerator()) {
-        if ([string]::IsNullOrWhiteSpace([string]$entry.Value)) {
-            continue
-        }
-
-        Update-OrInsertEnvValue -Lines $lines -Name ([string]$entry.Key) -Value ([string]$entry.Value)
+        Set-WorktreeEnvValue -Path $Path -VariableName ([string]$entry.Key) -Value ([string]$entry.Value)
     }
-
-    Set-Content -Path $Path -Value $lines
 }
 
 function Resolve-EnvFileValue {
