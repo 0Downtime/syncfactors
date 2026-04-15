@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.HttpOverrides;
+using Serilog;
 using SyncFactors.Api;
 using SyncFactors.Contracts;
 using SyncFactors.Domain;
@@ -16,6 +17,11 @@ const string OperatorPolicy = "Operator";
 const string AdminPolicy = "Admin";
 
 var builder = WebApplication.CreateBuilder(args);
+ConfigureLocalFileLogging(
+    builder.Logging,
+    processName: "api",
+    enabledValue: builder.Configuration[LocalFileLogging.EnabledEnvironmentVariable],
+    directoryValue: builder.Configuration[LocalFileLogging.DirectoryEnvironmentVariable]);
 var authSettings = builder.Configuration.GetSection("SyncFactors:Auth").Get<LocalAuthOptions>() ?? new LocalAuthOptions();
 var cspEnabled = builder.Configuration.GetValue<bool?>("SyncFactors:SecurityHeaders:EnableContentSecurityPolicy")
     ?? !builder.Environment.IsDevelopment();
@@ -683,8 +689,9 @@ static void LogConfiguredEndpoints(WebApplication app)
     var authOptions = app.Services.GetRequiredService<Microsoft.Extensions.Options.IOptions<LocalAuthOptions>>().Value;
     var activeDirectoryPort = ResolveActiveDirectoryPort(config.Ad);
     var usesGlobalCatalog = activeDirectoryPort is 3268 or 3269;
-    app.Logger.LogInformation(
-        "Configured endpoints. ActiveDirectoryServer={ActiveDirectoryServer} ActiveDirectoryPort={ActiveDirectoryPort} ActiveDirectoryAccount={ActiveDirectoryAccount} ActiveDirectoryTransport={ActiveDirectoryTransport} ActiveDirectoryUsesGlobalCatalog={ActiveDirectoryUsesGlobalCatalog} SuccessFactorsBaseUrl={SuccessFactorsBaseUrl} SuccessFactorsAccount={SuccessFactorsAccount} AuthMode={AuthMode}",
+    app.Logger.LogWarning("========== AD ENDPOINT DIAGNOSTIC ==========");
+    app.Logger.LogWarning(
+        "[AD-ENDPOINT] ActiveDirectoryServer={ActiveDirectoryServer} ActiveDirectoryPort={ActiveDirectoryPort} ActiveDirectoryAccount={ActiveDirectoryAccount} ActiveDirectoryTransport={ActiveDirectoryTransport} ActiveDirectoryUsesGlobalCatalog={ActiveDirectoryUsesGlobalCatalog} SuccessFactorsBaseUrl={SuccessFactorsBaseUrl} SuccessFactorsAccount={SuccessFactorsAccount} AuthMode={AuthMode}",
         config.Ad.Server,
         activeDirectoryPort,
         string.IsNullOrWhiteSpace(config.Ad.Username) ? "anonymous" : config.Ad.Username,
@@ -693,11 +700,12 @@ static void LogConfiguredEndpoints(WebApplication app)
         config.SuccessFactors.BaseUrl,
         DescribeSuccessFactorsAccount(config.SuccessFactors.Auth),
         authOptions.Mode);
+    app.Logger.LogWarning("============================================");
 
     if (usesGlobalCatalog)
     {
-        app.Logger.LogWarning(
-            "Active Directory is configured to use Global Catalog port {ActiveDirectoryPort}. Attributes outside the partial attribute set, including employeeID by default, may read back as empty.",
+        app.Logger.LogCritical(
+            "[AD-ENDPOINT] Active Directory is configured to use Global Catalog port {ActiveDirectoryPort}. Attributes outside the partial attribute set, including employeeID by default, may read back as empty.",
             activeDirectoryPort);
     }
 }
@@ -880,6 +888,37 @@ static string DescribeSuccessFactorsAccount(SuccessFactorsAuthConfig auth)
     }
 
     return $"mode:{auth.Mode}";
+}
+
+static void ConfigureLocalFileLogging(
+    ILoggingBuilder logging,
+    string processName,
+    string? enabledValue,
+    string? directoryValue)
+{
+    if (!LocalFileLogging.IsEnabled(enabledValue))
+    {
+        return;
+    }
+
+    var logPath = LocalFileLogging.ResolveRollingFilePath(processName, directoryValue);
+    var logDirectory = Path.GetDirectoryName(logPath);
+    if (!string.IsNullOrWhiteSpace(logDirectory))
+    {
+        Directory.CreateDirectory(logDirectory);
+    }
+
+    var logger = new LoggerConfiguration()
+        .MinimumLevel.Verbose()
+        .Enrich.FromLogContext()
+        .WriteTo.File(
+            path: logPath,
+            rollingInterval: RollingInterval.Day,
+            retainedFileCountLimit: 7,
+            outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level:u3}] {SourceContext}: {Message:lj}{NewLine}{Exception}")
+        .CreateLogger();
+
+    logging.AddSerilog(logger, dispose: true);
 }
 
 public partial class Program

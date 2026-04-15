@@ -30,10 +30,10 @@ public sealed class SqlitePathResolver
 
     private static string GetDefaultRuntimePath()
     {
-        var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        if (!string.IsNullOrWhiteSpace(localAppData))
+        var runtimeRoot = SyncFactorsRuntimePaths.TryGetRuntimeRoot();
+        if (!string.IsNullOrWhiteSpace(runtimeRoot))
         {
-            return Path.Combine(localAppData, "SyncFactors", "state", "syncfactors.db");
+            return Path.Combine(runtimeRoot, "state", "syncfactors.db");
         }
 
         return DefaultRelativeStatePath;

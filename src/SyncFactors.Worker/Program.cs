@@ -1,10 +1,16 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Serilog;
 using SyncFactors.Domain;
 using SyncFactors.Infrastructure;
 using System.Net;
 
 var builder = Host.CreateApplicationBuilder(args);
+ConfigureLocalFileLogging(
+    builder.Logging,
+    processName: "worker",
+    enabledValue: builder.Configuration[LocalFileLogging.EnabledEnvironmentVariable],
+    directoryValue: builder.Configuration[LocalFileLogging.DirectoryEnvironmentVariable]);
 builder.Services.AddSingleton(new ScaffoldDataPathResolver(builder.Configuration["SyncFactors:ScaffoldDataPath"]));
 builder.Services.AddSingleton(new SqlitePathResolver(builder.Configuration["SyncFactors:SqlitePath"]));
 builder.Services.AddSingleton(new SyncFactorsConfigPathResolver(
@@ -100,8 +106,9 @@ static void LogConfiguredEndpoints(IHost host)
     var activeDirectoryPort = ResolveActiveDirectoryPort(config.Ad);
     var usesGlobalCatalog = activeDirectoryPort is 3268 or 3269;
 
-    logger.LogInformation(
-        "Configured worker endpoints. ActiveDirectoryServer={ActiveDirectoryServer} ActiveDirectoryPort={ActiveDirectoryPort} ActiveDirectoryAccount={ActiveDirectoryAccount} ActiveDirectoryTransport={ActiveDirectoryTransport} ActiveDirectoryUsesGlobalCatalog={ActiveDirectoryUsesGlobalCatalog} SuccessFactorsBaseUrl={SuccessFactorsBaseUrl} SuccessFactorsAccount={SuccessFactorsAccount}",
+    logger.LogWarning("========== AD ENDPOINT DIAGNOSTIC ==========");
+    logger.LogWarning(
+        "[AD-ENDPOINT] ActiveDirectoryServer={ActiveDirectoryServer} ActiveDirectoryPort={ActiveDirectoryPort} ActiveDirectoryAccount={ActiveDirectoryAccount} ActiveDirectoryTransport={ActiveDirectoryTransport} ActiveDirectoryUsesGlobalCatalog={ActiveDirectoryUsesGlobalCatalog} SuccessFactorsBaseUrl={SuccessFactorsBaseUrl} SuccessFactorsAccount={SuccessFactorsAccount}",
         config.Ad.Server,
         activeDirectoryPort,
         string.IsNullOrWhiteSpace(config.Ad.Username) ? "anonymous" : config.Ad.Username,
@@ -109,11 +116,12 @@ static void LogConfiguredEndpoints(IHost host)
         usesGlobalCatalog,
         config.SuccessFactors.BaseUrl,
         DescribeSuccessFactorsAccount(config.SuccessFactors.Auth));
+    logger.LogWarning("============================================");
 
     if (usesGlobalCatalog)
     {
-        logger.LogWarning(
-            "Active Directory is configured to use Global Catalog port {ActiveDirectoryPort}. Attributes outside the partial attribute set, including employeeID by default, may read back as empty.",
+        logger.LogCritical(
+            "[AD-ENDPOINT] Active Directory is configured to use Global Catalog port {ActiveDirectoryPort}. Attributes outside the partial attribute set, including employeeID by default, may read back as empty.",
             activeDirectoryPort);
     }
 }
@@ -143,4 +151,35 @@ static string DescribeSuccessFactorsAccount(SuccessFactorsAuthConfig auth)
     }
 
     return $"mode:{auth.Mode}";
+}
+
+static void ConfigureLocalFileLogging(
+    ILoggingBuilder logging,
+    string processName,
+    string? enabledValue,
+    string? directoryValue)
+{
+    if (!LocalFileLogging.IsEnabled(enabledValue))
+    {
+        return;
+    }
+
+    var logPath = LocalFileLogging.ResolveRollingFilePath(processName, directoryValue);
+    var logDirectory = Path.GetDirectoryName(logPath);
+    if (!string.IsNullOrWhiteSpace(logDirectory))
+    {
+        Directory.CreateDirectory(logDirectory);
+    }
+
+    var logger = new LoggerConfiguration()
+        .MinimumLevel.Verbose()
+        .Enrich.FromLogContext()
+        .WriteTo.File(
+            path: logPath,
+            rollingInterval: RollingInterval.Day,
+            retainedFileCountLimit: 7,
+            outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level:u3}] {SourceContext}: {Message:lj}{NewLine}{Exception}")
+        .CreateLogger();
+
+    logging.AddSerilog(logger, dispose: true);
 }

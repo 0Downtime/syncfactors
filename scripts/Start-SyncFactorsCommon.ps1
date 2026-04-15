@@ -65,6 +65,38 @@ function Get-SyncFactorsRuntimeRoot {
     return Join-Path $basePath 'SyncFactors'
 }
 
+function Test-SyncFactorsLocalFileLoggingEnabled {
+    $value = $env:SYNCFACTORS_LOCAL_FILE_LOGGING_ENABLED
+    if ([string]::IsNullOrWhiteSpace($value)) {
+        return $false
+    }
+
+    switch ($value.Trim().ToLowerInvariant()) {
+        '1' { return $true }
+        'on' { return $true }
+        'true' { return $true }
+        'yes' { return $true }
+        default { return $false }
+    }
+}
+
+function Get-SyncFactorsLocalLogDirectory {
+    param(
+        [Parameter(Mandatory)]
+        [string]$ProjectRoot
+    )
+
+    if (-not [string]::IsNullOrWhiteSpace($env:SYNCFACTORS_LOCAL_LOG_DIRECTORY)) {
+        if ([System.IO.Path]::IsPathRooted($env:SYNCFACTORS_LOCAL_LOG_DIRECTORY)) {
+            return [System.IO.Path]::GetFullPath($env:SYNCFACTORS_LOCAL_LOG_DIRECTORY)
+        }
+
+        return [System.IO.Path]::GetFullPath((Join-Path $ProjectRoot $env:SYNCFACTORS_LOCAL_LOG_DIRECTORY))
+    }
+
+    return Join-Path (Get-SyncFactorsRuntimeRoot -ProjectRoot $ProjectRoot) 'logs'
+}
+
 function Get-SyncFactorsTlsAssetPaths {
     param(
         [Parameter(Mandatory)]

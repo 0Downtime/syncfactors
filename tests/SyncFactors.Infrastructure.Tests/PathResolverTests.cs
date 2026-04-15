@@ -155,6 +155,60 @@ public sealed class PathResolverTests
         }
     }
 
+    [Fact]
+    public void SqlitePathResolver_UsesRuntimeRootDefaultPath_WhenNoPathIsConfigured()
+    {
+        var resolver = new SqlitePathResolver();
+
+        Assert.Equal(SyncFactorsRuntimePaths.GetDefaultSqlitePath(), resolver.ResolveConfiguredPath());
+    }
+
+    [Fact]
+    public void LocalFileLogging_ResolvesConfiguredRelativeDirectory_ToFullPath()
+    {
+        var relativePath = Path.Combine("state", "runtime", "logs");
+
+        Assert.Equal(Path.GetFullPath(relativePath), LocalFileLogging.ResolveDirectory(relativePath));
+    }
+
+    [Theory]
+    [InlineData(null, false)]
+    [InlineData("", false)]
+    [InlineData("false", false)]
+    [InlineData("true", true)]
+    [InlineData("TRUE", true)]
+    [InlineData("1", true)]
+    [InlineData("yes", true)]
+    [InlineData("on", true)]
+    public void LocalFileLogging_ParsesEnabledFlag(string? value, bool expected)
+    {
+        Assert.Equal(expected, LocalFileLogging.IsEnabled(value));
+    }
+
+    [Fact]
+    public void SyncFactorsRuntimePaths_UsesXdgDataHome_WhenPresentOnNonWindows()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        var originalXdgDataHome = Environment.GetEnvironmentVariable("XDG_DATA_HOME");
+        var xdgDataHome = Path.Combine(Path.GetTempPath(), $"syncfactors-xdg-{Guid.NewGuid():N}");
+        Environment.SetEnvironmentVariable("XDG_DATA_HOME", xdgDataHome);
+
+        try
+        {
+            Assert.Equal(
+                Path.Combine(xdgDataHome, "SyncFactors"),
+                SyncFactorsRuntimePaths.GetRuntimeRoot());
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("XDG_DATA_HOME", originalXdgDataHome);
+        }
+    }
+
     private static void RestoreFile(string path, string? originalContents)
     {
         if (originalContents is null)
