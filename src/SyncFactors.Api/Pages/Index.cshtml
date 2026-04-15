@@ -265,6 +265,10 @@
         var parts = new List<string>();
         if (run.Creates > 0) parts.Add($"{run.Creates} creates");
         if (run.Updates > 0) parts.Add($"{run.Updates} updates");
+        if (run.Enables > 0) parts.Add($"{run.Enables} enables");
+        if (run.Disables > 0) parts.Add($"{run.Disables} disables");
+        if (run.GraveyardMoves > 0) parts.Add($"{run.GraveyardMoves} graveyard moves");
+        if (run.Deletions > 0) parts.Add($"{run.Deletions} deletions");
         if (run.Conflicts > 0) parts.Add($"{run.Conflicts} conflicts");
         if (run.ManualReview > 0) parts.Add($"{run.ManualReview} manual review");
         if (run.GuardrailFailures > 0) parts.Add($"{run.GuardrailFailures} guardrails");

@@ -134,6 +134,21 @@ public sealed class PreviewModelTests
     }
 
     [Fact]
+    public void ActiveDirectoryFailureDiagnostics_Parse_HandlesPreflightIdentityConflict()
+    {
+        var diagnostics = ActiveDirectoryFailureDiagnostics.Parse(
+            "Active Directory command 'CreateUser' failed against LDAP server '192.0.2.10'. A different AD account already uses userPrincipalName 'brian.oliver@Exampleenergy.com' for create worker 45086. Details: Step=PreflightIdentityConflict WorkerId=45086 SamAccountName=45086 DistinguishedName=CN=45086,OU=POWERSHELL,OU=ExampleQA-Users,DC=ExampleQA,DC=biz TargetOu=OU=POWERSHELL,OU=ExampleQA-Users,DC=ExampleQA,DC=biz UserPrincipalName=brian.oliver@Exampleenergy.com Mail=brian.oliver@Exampleenergy.com IdentityAttribute=sAMAccountName IdentityValue=45086 ConflictingAttribute=userPrincipalName ConflictingValue=brian.oliver@Exampleenergy.com ExistingSamAccountName=boliver ExistingDistinguishedName=CN=Brian Oliver,OU=POWERSHELL,OU=ExampleQA-Users,DC=ExampleQA,DC=biz ExistingUserPrincipalName=brian.oliver@Exampleenergy.com ExistingMail=brian.oliver@Exampleenergy.com ManagerId=43114 ManagerDistinguishedName=CN=43114,OU=POWERSHELL,OU=ExampleQA-Users,DC=ExampleQA,DC=biz Next check: Resolve the existing AD account that already owns this UPN or mail value, or change the planned suffix/value before retrying.");
+
+        Assert.NotNull(diagnostics);
+        Assert.Contains(diagnostics!.Details, item => item.Label == "Conflicting Attribute" && item.Value == "userPrincipalName");
+        Assert.Contains(diagnostics.Details, item => item.Label == "Conflicting Value" && item.Value == "brian.oliver@Exampleenergy.com");
+        Assert.Contains(diagnostics.Details, item => item.Label == "Existing SAM" && item.Value == "boliver");
+        Assert.Contains(diagnostics.Details, item => item.Label == "Existing Distinguished Name" && item.Value == "CN=Brian Oliver,OU=POWERSHELL,OU=ExampleQA-Users,DC=ExampleQA,DC=biz");
+        Assert.Contains(diagnostics.Details, item => item.Label == "Existing UPN" && item.Value == "brian.oliver@Exampleenergy.com");
+        Assert.Contains(diagnostics.Details, item => item.Label == "Existing Mail" && item.Value == "brian.oliver@Exampleenergy.com");
+    }
+
+    [Fact]
     public void ActiveDirectoryFailureDiagnostics_Parse_HandlesDisplayNameWithSpaces()
     {
         var diagnostics = ActiveDirectoryFailureDiagnostics.Parse(

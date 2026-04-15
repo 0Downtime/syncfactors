@@ -9,16 +9,15 @@ public sealed class SqliteRunRepository(SqlitePathResolver pathResolver) : IRunR
 {
     private static readonly string[] BucketOrder =
     [
-        "quarantined",
-        "conflicts",
-        "manualReview",
-        "guardrailFailures",
         "creates",
         "updates",
         "enables",
         "disables",
         "graveyardMoves",
         "deletions",
+        "conflicts",
+        "manualReview",
+        "guardrailFailures",
         "unchanged",
     ];
 
@@ -987,20 +986,26 @@ public sealed class SqliteRunRepository(SqlitePathResolver pathResolver) : IRunR
 
     private static IReadOnlyDictionary<string, int> BuildBucketCounts(RunSummary run)
     {
-        return new Dictionary<string, int>
+        var counts = new Dictionary<string, int>
         {
-            ["quarantined"] = run.Quarantined,
-            ["conflicts"] = run.Conflicts,
-            ["manualReview"] = run.ManualReview,
-            ["guardrailFailures"] = run.GuardrailFailures,
             ["creates"] = run.Creates,
             ["updates"] = run.Updates,
             ["enables"] = run.Enables,
             ["disables"] = run.Disables,
             ["graveyardMoves"] = run.GraveyardMoves,
             ["deletions"] = run.Deletions,
-            ["unchanged"] = run.Unchanged,
+            ["conflicts"] = run.Conflicts,
+            ["manualReview"] = run.ManualReview,
+            ["guardrailFailures"] = run.GuardrailFailures,
         };
+
+        if (run.Quarantined > 0)
+        {
+            counts["quarantined"] = run.Quarantined;
+        }
+
+        counts["unchanged"] = run.Unchanged;
+        return counts;
     }
 
     private static RunEntry MapEntry(EntryRow row)

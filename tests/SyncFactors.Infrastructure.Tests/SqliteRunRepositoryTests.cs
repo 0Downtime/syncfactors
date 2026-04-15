@@ -77,6 +77,79 @@ public sealed class SqliteRunRepositoryTests
     }
 
     [Fact]
+    public async Task GetRunAsync_BucketCounts_HideZeroQuarantinedAndExposeLifecycleBuckets()
+    {
+        var databasePath = Path.Combine(Path.GetTempPath(), $"syncfactors-run-buckets-{Guid.NewGuid():N}.db");
+
+        try
+        {
+            var repository = await CreateRepositoryAsync(databasePath);
+            var runId = "bulk-buckets-1";
+            var startedAt = DateTimeOffset.Parse("2026-04-02T13:50:00Z");
+
+            await repository.SaveRunAsync(
+                CreateRunRecord(runId, startedAt) with
+                {
+                    Creates = 1,
+                    Updates = 2,
+                    Enables = 3,
+                    Disables = 4,
+                    GraveyardMoves = 5,
+                    Deletions = 6,
+                    Conflicts = 7,
+                    ManualReview = 8,
+                    GuardrailFailures = 9,
+                    Unchanged = 10,
+                    Quarantined = 0
+                },
+                CancellationToken.None);
+
+            var detail = await repository.GetRunAsync(runId, CancellationToken.None);
+
+            Assert.NotNull(detail);
+            Assert.Equal(
+                ["creates", "updates", "enables", "disables", "graveyardMoves", "deletions", "conflicts", "manualReview", "guardrailFailures", "unchanged"],
+                detail!.BucketCounts.Keys.ToArray());
+            Assert.DoesNotContain("quarantined", detail.BucketCounts.Keys);
+        }
+        finally
+        {
+            File.Delete(databasePath);
+        }
+    }
+
+    [Fact]
+    public async Task GetRunAsync_BucketCounts_KeepLegacyQuarantinedWhenPresent()
+    {
+        var databasePath = Path.Combine(Path.GetTempPath(), $"syncfactors-run-buckets-legacy-{Guid.NewGuid():N}.db");
+
+        try
+        {
+            var repository = await CreateRepositoryAsync(databasePath);
+            var runId = "bulk-buckets-legacy-1";
+            var startedAt = DateTimeOffset.Parse("2026-04-02T13:55:00Z");
+
+            await repository.SaveRunAsync(
+                CreateRunRecord(runId, startedAt) with
+                {
+                    Quarantined = 2,
+                    Unchanged = 1
+                },
+                CancellationToken.None);
+
+            var detail = await repository.GetRunAsync(runId, CancellationToken.None);
+
+            Assert.NotNull(detail);
+            Assert.Equal(2, detail!.BucketCounts["quarantined"]);
+            Assert.Equal(["quarantined", "unchanged"], detail.BucketCounts.Where(pair => pair.Value > 0).Select(pair => pair.Key).ToArray());
+        }
+        finally
+        {
+            File.Delete(databasePath);
+        }
+    }
+
+    [Fact]
     public async Task ListRunsAsync_ExcludesWorkerPreviewArtifactsFromRecentRuns()
     {
         var databasePath = Path.Combine(Path.GetTempPath(), $"syncfactors-run-filter-{Guid.NewGuid():N}.db");

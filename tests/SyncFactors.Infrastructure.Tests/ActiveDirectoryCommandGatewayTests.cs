@@ -115,6 +115,62 @@ public sealed class ActiveDirectoryCommandGatewayTests
     }
 
     [Fact]
+    public void BuildIdentityConflictDetails_IncludesExistingAccountContext()
+    {
+        var method = typeof(ActiveDirectoryCommandGateway).GetMethod("BuildIdentityConflictDetails", BindingFlags.NonPublic | BindingFlags.Static);
+        Assert.NotNull(method);
+
+        var command = new DirectoryMutationCommand(
+            Action: "CreateUser",
+            WorkerId: "45086",
+            ManagerId: "43114",
+            ManagerDistinguishedName: "CN=43114,OU=Users,DC=example,DC=com",
+            SamAccountName: "45086",
+            CommonName: "45086",
+            UserPrincipalName: "brian.oliver@Exampleenergy.com",
+            Mail: "brian.oliver@Exampleenergy.com",
+            TargetOu: "OU=Users,DC=example,DC=com",
+            DisplayName: "Oliver, Brian",
+            CurrentDistinguishedName: null,
+            EnableAccount: true,
+            Operations: [new SyncFactors.Contracts.DirectoryOperation("CreateUser")],
+            Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase));
+        var config = new ActiveDirectoryConfig(
+            Server: "192.0.2.10",
+            Port: 389,
+            Username: "bind",
+            BindPassword: "secret",
+            IdentityAttribute: "sAMAccountName",
+            DefaultActiveOu: "OU=Active,DC=example,DC=com",
+            PrehireOu: "OU=Prehire,DC=example,DC=com",
+            GraveyardOu: "OU=Graveyard,DC=example,DC=com",
+            Transport: new ActiveDirectoryTransportConfig("ldap", false, false, false, []),
+            IdentityPolicy: new ActiveDirectoryIdentityPolicyConfig(false));
+        var conflictType = typeof(ActiveDirectoryCommandGateway).GetNestedType("IdentityConflictResult", BindingFlags.NonPublic);
+        Assert.NotNull(conflictType);
+        var conflict = Activator.CreateInstance(
+            conflictType!,
+            "userPrincipalName",
+            "brian.oliver@Exampleenergy.com",
+            "boliver",
+            "CN=Brian Oliver,OU=Existing,DC=example,DC=com",
+            "brian.oliver@Exampleenergy.com",
+            "brian.oliver@Exampleenergy.com");
+
+        var details = Assert.IsType<string>(method!.Invoke(null, [command, "CN=45086,OU=Users,DC=example,DC=com", config, conflict!]));
+
+        Assert.Contains("Step=PreflightIdentityConflict", details, StringComparison.Ordinal);
+        Assert.Contains("ConflictingAttribute=userPrincipalName", details, StringComparison.Ordinal);
+        Assert.Contains("ConflictingValue=brian.oliver@Exampleenergy.com", details, StringComparison.Ordinal);
+        Assert.Contains("ExistingSamAccountName=boliver", details, StringComparison.Ordinal);
+        Assert.Contains("ExistingDistinguishedName=CN=Brian Oliver,OU=Existing,DC=example,DC=com", details, StringComparison.Ordinal);
+        Assert.Contains("ExistingUserPrincipalName=brian.oliver@Exampleenergy.com", details, StringComparison.Ordinal);
+        Assert.Contains("ExistingMail=brian.oliver@Exampleenergy.com", details, StringComparison.Ordinal);
+        Assert.Contains("IdentityAttribute=sAMAccountName", details, StringComparison.Ordinal);
+        Assert.Contains("IdentityValue=45086", details, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void BuildUpdateModifyFailureDetails_ListsModifiedAttributes()
     {
         var method = typeof(ActiveDirectoryCommandGateway).GetMethod("BuildUpdateModifyFailureDetails", BindingFlags.NonPublic | BindingFlags.Static);

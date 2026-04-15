@@ -30,12 +30,16 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
         hour12: true
     });
     const bucketDefinitions = [
-        { key: "creates", label: "Creates", tone: "good" },
-        { key: "updates", label: "Updates", tone: "info" },
-        { key: "manualReview", label: "Manual Review", tone: "warn" },
-        { key: "conflicts", label: "Conflicts", tone: "bad" },
-        { key: "guardrailFailures", label: "Guardrails", tone: "dim" },
-        { key: "unchanged", label: "Unchanged", tone: "neutral" }
+        { key: "creates", label: "Creates", tone: "good", runMix: true },
+        { key: "updates", label: "Updates", tone: "accent", runMix: true },
+        { key: "enables", label: "Enables", tone: "info", runMix: true },
+        { key: "disables", label: "Disables", tone: "warn", runMix: true },
+        { key: "graveyardMoves", label: "Graveyard Moves", tone: "dim", runMix: true },
+        { key: "deletions", label: "Deletions", tone: "bad", runMix: true },
+        { key: "manualReview", label: "Manual Review", tone: "warn", runMix: true },
+        { key: "conflicts", label: "Conflicts", tone: "bad", runMix: true },
+        { key: "guardrailFailures", label: "Guardrails", tone: "dim", runMix: true },
+        { key: "unchanged", label: "Unchanged", tone: "neutral", runMix: false }
     ];
     const bucketLabelToDefinition = Object.fromEntries(bucketDefinitions.map(function (definition) {
         return [definition.label, definition];
@@ -516,6 +520,22 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
             parts.push(run.updates + " updates");
         }
 
+        if (run.enables) {
+            parts.push(run.enables + " enables");
+        }
+
+        if (run.disables) {
+            parts.push(run.disables + " disables");
+        }
+
+        if (run.graveyardMoves) {
+            parts.push(run.graveyardMoves + " graveyard moves");
+        }
+
+        if (run.deletions) {
+            parts.push(run.deletions + " deletions");
+        }
+
         if (run.conflicts) {
             parts.push(run.conflicts + " conflicts");
         }
@@ -529,6 +549,25 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
         }
 
         return parts.length ? parts.join(" • ") : "No materialized bucket counts yet";
+    }
+
+    function bucketToneColor(tone, palette) {
+        switch (tone) {
+            case "good":
+                return palette.good;
+            case "accent":
+                return palette.accent;
+            case "info":
+                return palette.info;
+            case "warn":
+                return palette.warn;
+            case "bad":
+                return palette.bad;
+            case "dim":
+                return palette.dim;
+            default:
+                return palette.muted;
+        }
     }
 
     function formatRunDates(run, incompleteLabel) {
@@ -1409,13 +1448,17 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
                 axisLabel: { color: palette.muted },
                 splitLine: { lineStyle: { color: palette.line } }
             },
-            series: [
-                { name: "Creates", type: "bar", stack: "runs", itemStyle: { color: palette.good }, data: buildSeriesData(displayRuns, bucketDefinitions[0], palette) },
-                { name: "Updates", type: "bar", stack: "runs", itemStyle: { color: palette.accent }, data: buildSeriesData(displayRuns, bucketDefinitions[1], palette) },
-                { name: "Manual Review", type: "bar", stack: "runs", itemStyle: { color: palette.warn }, data: buildSeriesData(displayRuns, bucketDefinitions[2], palette) },
-                { name: "Conflicts", type: "bar", stack: "runs", itemStyle: { color: palette.bad }, data: buildSeriesData(displayRuns, bucketDefinitions[3], palette) },
-                { name: "Guardrails", type: "bar", stack: "runs", itemStyle: { color: palette.dim }, data: buildSeriesData(displayRuns, bucketDefinitions[4], palette) }
-            ]
+            series: bucketDefinitions
+                .filter(function (definition) { return definition.runMix; })
+                .map(function (definition) {
+                    return {
+                        name: definition.label,
+                        type: "bar",
+                        stack: "runs",
+                        itemStyle: { color: bucketToneColor(definition.tone, palette) },
+                        data: buildSeriesData(displayRuns, definition, palette)
+                    };
+                })
         }, true);
 
         bindRunsChartEvents(displayRuns);
@@ -1529,8 +1572,16 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
                     avoidLabelOverlap: true,
                     selectedMode: "single",
                     label: { color: palette.text },
-                    data: entries,
-                    color: [palette.good, palette.accent, palette.warn, palette.bad, palette.dim, palette.info]
+                    data: entries.map(function (entry) {
+                        const definition = bucketLabelToDefinition[entry.name];
+                        return {
+                            ...entry,
+                            itemStyle: {
+                                ...entry.itemStyle,
+                                color: definition ? bucketToneColor(definition.tone, palette) : palette.muted
+                            }
+                        };
+                    })
                 }
             ]
         }, true);
