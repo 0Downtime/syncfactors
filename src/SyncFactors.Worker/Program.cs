@@ -90,4 +90,57 @@ var host = builder.Build();
 await host.Services.GetRequiredService<SqliteDatabaseInitializer>().InitializeAsync(CancellationToken.None);
 host.Services.GetRequiredService<SyncFactorsConfigurationValidator>().Validate();
 await host.Services.GetRequiredService<RunQueueRecoveryService>().RecoverIfNeededAsync("worker startup", CancellationToken.None);
+LogConfiguredEndpoints(host);
 host.Run();
+
+static void LogConfiguredEndpoints(IHost host)
+{
+    var config = host.Services.GetRequiredService<SyncFactorsConfigurationLoader>().GetSyncConfig();
+    var logger = host.Services.GetRequiredService<ILoggerFactory>().CreateLogger("SyncFactors.Worker.Startup");
+    var activeDirectoryPort = ResolveActiveDirectoryPort(config.Ad);
+    var usesGlobalCatalog = activeDirectoryPort is 3268 or 3269;
+
+    logger.LogInformation(
+        "Configured worker endpoints. ActiveDirectoryServer={ActiveDirectoryServer} ActiveDirectoryPort={ActiveDirectoryPort} ActiveDirectoryAccount={ActiveDirectoryAccount} ActiveDirectoryTransport={ActiveDirectoryTransport} ActiveDirectoryUsesGlobalCatalog={ActiveDirectoryUsesGlobalCatalog} SuccessFactorsBaseUrl={SuccessFactorsBaseUrl} SuccessFactorsAccount={SuccessFactorsAccount}",
+        config.Ad.Server,
+        activeDirectoryPort,
+        string.IsNullOrWhiteSpace(config.Ad.Username) ? "anonymous" : config.Ad.Username,
+        config.Ad.Transport.Mode,
+        usesGlobalCatalog,
+        config.SuccessFactors.BaseUrl,
+        DescribeSuccessFactorsAccount(config.SuccessFactors.Auth));
+
+    if (usesGlobalCatalog)
+    {
+        logger.LogWarning(
+            "Active Directory is configured to use Global Catalog port {ActiveDirectoryPort}. Attributes outside the partial attribute set, including employeeID by default, may read back as empty.",
+            activeDirectoryPort);
+    }
+}
+
+static int ResolveActiveDirectoryPort(ActiveDirectoryConfig config)
+{
+    if (config.Port is not null)
+    {
+        return config.Port.Value;
+    }
+
+    return string.Equals(config.Transport.Mode, "ldaps", StringComparison.OrdinalIgnoreCase) ? 636 : 389;
+}
+
+static string DescribeSuccessFactorsAccount(SuccessFactorsAuthConfig auth)
+{
+    if (string.Equals(auth.Mode, "basic", StringComparison.OrdinalIgnoreCase) && auth.Basic is not null)
+    {
+        return auth.Basic.Username;
+    }
+
+    if (string.Equals(auth.Mode, "oauth", StringComparison.OrdinalIgnoreCase) && auth.OAuth is not null)
+    {
+        return string.IsNullOrWhiteSpace(auth.OAuth.CompanyId)
+            ? $"oauth-client:{auth.OAuth.ClientId}"
+            : $"oauth-client:{auth.OAuth.ClientId} company:{auth.OAuth.CompanyId}";
+    }
+
+    return $"mode:{auth.Mode}";
+}

@@ -171,15 +171,27 @@ public sealed class ActiveDirectoryGateway(
         ILogger logger)
     {
         using var connection = CreateConnection(config, logger);
+        var lookupClauses = BuildLookupClauses(worker, config.IdentityAttribute, mappings);
+        logger.LogInformation(
+            "Starting AD worker lookup. WorkerId={WorkerId} IdentityAttribute={IdentityAttribute} Clauses={Clauses}",
+            worker.WorkerId,
+            config.IdentityAttribute,
+            FormatLookupClauses(lookupClauses));
+
         var entry = FindFirstEntryMatchingAny(
             connection,
             GetSearchBases(config),
-            BuildLookupClauses(worker, config.IdentityAttribute, mappings),
+            lookupClauses,
             config.IdentityAttribute,
             logger,
             "worker lookup search");
         if (entry is null)
         {
+            logger.LogInformation(
+                "No AD entry matched worker lookup. WorkerId={WorkerId} IdentityAttribute={IdentityAttribute} Clauses={Clauses}",
+                worker.WorkerId,
+                config.IdentityAttribute,
+                FormatLookupClauses(lookupClauses));
             return null;
         }
 
@@ -187,13 +199,22 @@ public sealed class ActiveDirectoryGateway(
         var distinguishedName = GetAttribute(entry, "distinguishedName");
         var displayName = GetAttribute(entry, "displayName");
         var userAccountControl = GetAttribute(entry, "userAccountControl");
+        var attributes = BuildAttributes(entry, displayName, config.IdentityAttribute);
+
+        logger.LogInformation(
+            "Resolved AD worker snapshot. WorkerId={WorkerId} SamAccountName={SamAccountName} DistinguishedName={DistinguishedName} IdentityAttribute={IdentityAttribute} IdentityValue={IdentityValue}",
+            worker.WorkerId,
+            samAccountName,
+            distinguishedName,
+            config.IdentityAttribute,
+            attributes.TryGetValue(config.IdentityAttribute, out var identityValue) ? identityValue : null);
 
         return new DirectoryUserSnapshot(
             SamAccountName: samAccountName,
             DistinguishedName: distinguishedName,
             Enabled: ParseEnabled(userAccountControl),
             DisplayName: displayName,
-            Attributes: BuildAttributes(entry, displayName, config.IdentityAttribute));
+            Attributes: attributes);
     }
 
     private static IReadOnlyList<(string Attribute, string Value)> BuildLookupClauses(
@@ -233,6 +254,11 @@ public sealed class ActiveDirectoryGateway(
         }
 
         clauses.Add((attribute, trimmedValue));
+    }
+
+    private static string FormatLookupClauses(IReadOnlyList<(string Attribute, string Value)> clauses)
+    {
+        return string.Join(" | ", clauses.Select(clause => $"{clause.Attribute}={clause.Value}"));
     }
 
     private static string ResolveDirectoryIdentityValue(
@@ -714,12 +740,26 @@ public sealed class ActiveDirectoryGateway(
 
     private static string? GetAttribute(SearchResultEntry entry, string attributeName)
     {
-        if (!entry.Attributes.Contains(attributeName) || entry.Attributes[attributeName].Count == 0)
+        var resolvedAttributeName = ResolveAttributeName(entry, attributeName);
+        if (resolvedAttributeName is null)
         {
             return null;
         }
 
-        return entry.Attributes[attributeName][0]?.ToString();
+        var attribute = entry.Attributes[resolvedAttributeName];
+        return attribute.Count == 0 ? null : attribute[0]?.ToString();
+    }
+
+    private static string? ResolveAttributeName(SearchResultEntry entry, string attributeName)
+    {
+        if (entry.Attributes.Contains(attributeName))
+        {
+            return attributeName;
+        }
+
+        return entry.Attributes.AttributeNames
+            .Cast<string>()
+            .FirstOrDefault(candidate => string.Equals(candidate, attributeName, StringComparison.OrdinalIgnoreCase));
     }
 
     private static bool? ParseEnabled(string? userAccountControl)
