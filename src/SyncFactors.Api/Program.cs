@@ -713,10 +713,11 @@ static void LogConfiguredEndpoints(WebApplication app)
     var usesGlobalCatalog = activeDirectoryPort is 3268 or 3269;
     app.Logger.LogWarning("========== AD ENDPOINT DIAGNOSTIC ==========");
     app.Logger.LogWarning(
-        "[AD-ENDPOINT] ActiveDirectoryServer={ActiveDirectoryServer} ActiveDirectoryPort={ActiveDirectoryPort} ActiveDirectoryAccount={ActiveDirectoryAccount} ActiveDirectoryTransport={ActiveDirectoryTransport} ActiveDirectoryUsesGlobalCatalog={ActiveDirectoryUsesGlobalCatalog} SuccessFactorsBaseUrl={SuccessFactorsBaseUrl} SuccessFactorsAccount={SuccessFactorsAccount} AuthMode={AuthMode}",
+        "[AD-ENDPOINT] ActiveDirectoryServer={ActiveDirectoryServer} ActiveDirectoryPort={ActiveDirectoryPort} ActiveDirectoryAccount={ActiveDirectoryAccount} ActiveDirectorySimpleBindPrincipalFormat={ActiveDirectorySimpleBindPrincipalFormat} ActiveDirectoryTransport={ActiveDirectoryTransport} ActiveDirectoryUsesGlobalCatalog={ActiveDirectoryUsesGlobalCatalog} SuccessFactorsBaseUrl={SuccessFactorsBaseUrl} SuccessFactorsAccount={SuccessFactorsAccount} AuthMode={AuthMode}",
         config.Ad.Server,
         activeDirectoryPort,
         string.IsNullOrWhiteSpace(config.Ad.Username) ? "anonymous" : config.Ad.Username,
+        DescribeSimpleBindPrincipalFormat(config.Ad.Username),
         config.Ad.Transport.Mode,
         usesGlobalCatalog,
         config.SuccessFactors.BaseUrl,
@@ -740,6 +741,32 @@ static int ResolveActiveDirectoryPort(ActiveDirectoryConfig config)
     }
 
     return string.Equals(config.Transport.Mode, "ldaps", StringComparison.OrdinalIgnoreCase) ? 636 : 389;
+}
+
+static string DescribeSimpleBindPrincipalFormat(string? username)
+{
+    if (string.IsNullOrWhiteSpace(username))
+    {
+        return "Anonymous";
+    }
+
+    var trimmed = username.Trim();
+    if (trimmed.Contains('@', StringComparison.Ordinal))
+    {
+        return "UPN";
+    }
+
+    if (trimmed.Contains('=', StringComparison.Ordinal) && trimmed.Contains(',', StringComparison.Ordinal))
+    {
+        return "DN";
+    }
+
+    if (trimmed.Contains('\\', StringComparison.Ordinal))
+    {
+        return "DownLevel";
+    }
+
+    return "BareUsername";
 }
 
 static Task ValidateCookiePrincipalAsync(Microsoft.AspNetCore.Authentication.Cookies.CookieValidatePrincipalContext context, LocalAuthOptions authSettings)
