@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)]
-    [ValidateSet('list-secure-store-variable-names', 'assert-secure-store-variable-name', 'set-worktree-env-placeholder', 'resolve-keychain-service-name')]
+    [ValidateSet('list-secure-store-variable-names', 'assert-secure-store-variable-name', 'set-worktree-env-placeholder', 'resolve-keychain-service-name', 'get-worktree-env-value-state')]
     [string]$Action,
     [string]$EnvFilePath,
     [string]$VariableName
@@ -27,5 +27,8 @@ switch ($Action) {
     }
     'resolve-keychain-service-name' {
         Write-Output (Resolve-SyncFactorsKeychainServiceName -EnvFilePath $EnvFilePath)
+    }
+    'get-worktree-env-value-state' {
+        Get-WorktreeEnvFileValueState -Path $EnvFilePath -VariableName $VariableName | ConvertTo-Json -Compress
     }
 }

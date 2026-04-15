@@ -28,14 +28,22 @@ if ($values.Count -eq 0) {
 $secretNames = Get-SyncFactorsSecureStoreVariableNames
 $writtenCount = 0
 $removedCount = 0
+$skippedCount = 0
 
 foreach ($name in $secretNames) {
-    $value = if ($values.Contains($name)) { [string]$values[$name] } else { '' }
+    $hasEntry = $values.Contains($name)
+    $value = if ($hasEntry) { [string]$values[$name] } else { $null }
 
-    if ($RemoveEmptyValues -and [string]::IsNullOrEmpty($value)) {
+    if ($RemoveEmptyValues -and $hasEntry -and [string]::IsNullOrWhiteSpace($value)) {
         Remove-SyncFactorsCredentialValue -RepoRoot $repoRoot -VariableName $name
         $removedCount += 1
         Write-Host "Removed $name from Windows Credential Manager"
+        continue
+    }
+
+    if (-not $hasEntry -or [string]::IsNullOrWhiteSpace($value)) {
+        $skippedCount += 1
+        Write-Host "Skipped $name because .env.worktree does not define a non-empty value"
         continue
     }
 
@@ -44,4 +52,4 @@ foreach ($name in $secretNames) {
     Write-Host "Stored $name in Windows Credential Manager"
 }
 
-Write-Host "Credential import complete. Stored $writtenCount value(s); removed $removedCount empty value(s)."
+Write-Host "Credential import complete. Stored $writtenCount value(s); removed $removedCount empty value(s); skipped $skippedCount missing or blank value(s)."
