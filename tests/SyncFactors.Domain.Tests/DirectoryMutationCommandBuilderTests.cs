@@ -150,7 +150,7 @@ public sealed class DirectoryMutationCommandBuilderTests
     }
 
     [Fact]
-    public void Build_FromPlan_ThrowsWhenMappedAttributeExceedsAdSchemaLimit()
+    public void Build_FromPlan_TruncatesMappedAttributeToAdSchemaLimit()
     {
         const string oversizedDepartment = "20921 MOW - Distribution - Maintenance & Construction - SW Missouri";
         var worker = new WorkerSnapshot(
@@ -193,11 +193,9 @@ public sealed class DirectoryMutationCommandBuilderTests
             Reason: null,
             CanAutoApply: true);
 
-        var error = Assert.Throws<InvalidOperationException>(() => new DirectoryMutationCommandBuilder().Build(plan));
+        var command = new DirectoryMutationCommandBuilder().Build(plan);
 
-        Assert.Contains("department", error.Message, StringComparison.Ordinal);
-        Assert.Contains("67", error.Message, StringComparison.Ordinal);
-        Assert.Contains("64", error.Message, StringComparison.Ordinal);
+        Assert.Equal(oversizedDepartment[..64], command.Attributes["department"]);
     }
 
     private sealed class StubAttributeMappingProvider : IAttributeMappingProvider

@@ -61,7 +61,8 @@ public sealed class WorkerPlanningService(
                             await directoryGateway.ResolveAvailableEmailLocalPartAsync(worker, isCreate: false, cancellationToken))
                 : _emailAddressPolicy.BuildEmailAddress(
                     await directoryGateway.ResolveAvailableEmailLocalPartAsync(worker, isCreate: true, cancellationToken));
-            attributeChanges = (await attributeDiffService.BuildDiffAsync(worker, directoryUser, proposedEmailAddress, logPath, cancellationToken))
+            attributeChanges = NormalizeAttributeChanges(
+                await attributeDiffService.BuildDiffAsync(worker, directoryUser, proposedEmailAddress, logPath, cancellationToken))
                 .ToList();
             UpsertManagerAttributeChange(attributeChanges, directoryUser, managerDistinguishedName);
             missingSourceAttributes = BuildMissingSourceAttributes(
@@ -70,22 +71,13 @@ public sealed class WorkerPlanningService(
                 proposedEmailAddress);
         }
 
-        var attributeLengthViolations = ActiveDirectoryAttributeConstraints.GetViolations(attributeChanges);
-
         var currentOu = DirectoryDistinguishedName.GetParentOu(directoryUser.DistinguishedName);
         var bucket = lifecycle.Bucket;
         string? reviewCaseType = null;
         string? reviewCategory = null;
         string? reason = lifecycle.Reason ?? identity.Reason;
 
-        if (attributeLengthViolations.Count > 0)
-        {
-            bucket = "manualReview";
-            reviewCategory = "AttributeConstraint";
-            reviewCaseType = "AttributeValueTooLong";
-            reason = ActiveDirectoryAttributeConstraints.BuildReason(attributeLengthViolations);
-        }
-        else if (missingSourceAttributes.Count > 0)
+        if (missingSourceAttributes.Count > 0)
         {
             bucket = "manualReview";
             reviewCategory = "RequiredMapping";
@@ -260,6 +252,23 @@ public sealed class WorkerPlanningService(
                !string.Equals(currentOu, targetOu, StringComparison.OrdinalIgnoreCase)
             ? "enables"
             : "updates";
+    }
+
+    private static IReadOnlyList<AttributeChange> NormalizeAttributeChanges(IReadOnlyList<AttributeChange> attributeChanges)
+    {
+        return attributeChanges
+            .Select(change =>
+            {
+                var normalizedAfter = string.Equals(change.After, "(unset)", StringComparison.Ordinal)
+                    ? change.After
+                    : ActiveDirectoryAttributeConstraints.NormalizeValue(change.Attribute, change.After) ?? change.After;
+                return change with
+                {
+                    After = normalizedAfter,
+                    Changed = !string.Equals(change.Before, normalizedAfter, StringComparison.Ordinal)
+                };
+            })
+            .ToArray();
     }
 
     internal static IReadOnlyList<MissingSourceAttributeRow> BuildMissingSourceAttributes(
