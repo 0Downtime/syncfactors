@@ -125,6 +125,296 @@ function Get-CodexRunSettings {
     return [pscustomobject]$settings
 }
 
+function Get-HashtableValue {
+    param(
+        [AllowNull()]
+        [System.Collections.IDictionary]$Table,
+        [Parameter(Mandatory)]
+        [string]$Key
+    )
+
+    if ($null -eq $Table -or -not $Table.Contains($Key)) {
+        return $null
+    }
+
+    return $Table[$Key]
+}
+
+function Add-RequiredSecureStoreVariable {
+    param(
+        [Parameter(Mandatory)]
+        [System.Collections.Generic.List[string]]$RequiredVariables,
+        [AllowNull()]
+        [string]$VariableName
+    )
+
+    if ([string]::IsNullOrWhiteSpace($VariableName)) {
+        return
+    }
+
+    if (-not (Test-SyncFactorsSecureStoreVariableName -VariableName $VariableName)) {
+        throw "Required secret variable '$VariableName' is not in the SyncFactors secure-store allowlist."
+    }
+
+    if (-not $RequiredVariables.Contains($VariableName)) {
+        $RequiredVariables.Add($VariableName)
+    }
+}
+
+function Get-RequiredSyncConfigSecretNames {
+    param(
+        [Parameter(Mandatory)]
+        [string]$ConfigPath
+    )
+
+    if ([string]::IsNullOrWhiteSpace($ConfigPath) -or -not (Test-Path $ConfigPath)) {
+        return @()
+    }
+
+    $document = ConvertFrom-Json -InputObject (Get-Content -Path $ConfigPath -Raw) -AsHashtable
+    if ($document -isnot [System.Collections.IDictionary]) {
+        throw "Sync config '$ConfigPath' must contain a JSON object."
+    }
+
+    $required = [System.Collections.Generic.List[string]]::new()
+    $secrets = Get-HashtableValue -Table $document -Key 'secrets'
+    $successFactors = Get-HashtableValue -Table $document -Key 'successFactors'
+    $auth = Get-HashtableValue -Table $successFactors -Key 'auth'
+    $mode = [string](Get-HashtableValue -Table $auth -Key 'mode')
+
+    if ($auth -is [System.Collections.IDictionary] -and $mode.Equals('basic', [StringComparison]::OrdinalIgnoreCase)) {
+        $basic = Get-HashtableValue -Table $auth -Key 'basic'
+        if ([string]::IsNullOrWhiteSpace([string](Get-HashtableValue -Table $basic -Key 'username'))) {
+            Add-RequiredSecureStoreVariable -RequiredVariables $required -VariableName ([string](Get-HashtableValue -Table $secrets -Key 'successFactorsUsernameEnv'))
+        }
+
+        if ([string]::IsNullOrWhiteSpace([string](Get-HashtableValue -Table $basic -Key 'password'))) {
+            Add-RequiredSecureStoreVariable -RequiredVariables $required -VariableName ([string](Get-HashtableValue -Table $secrets -Key 'successFactorsPasswordEnv'))
+        }
+    }
+
+    if ($auth -is [System.Collections.IDictionary] -and $mode.Equals('oauth', [StringComparison]::OrdinalIgnoreCase)) {
+        $oauth = Get-HashtableValue -Table $auth -Key 'oauth'
+        if ([string]::IsNullOrWhiteSpace([string](Get-HashtableValue -Table $oauth -Key 'clientId'))) {
+            Add-RequiredSecureStoreVariable -RequiredVariables $required -VariableName ([string](Get-HashtableValue -Table $secrets -Key 'successFactorsClientIdEnv'))
+        }
+
+        if ([string]::IsNullOrWhiteSpace([string](Get-HashtableValue -Table $oauth -Key 'clientSecret'))) {
+            Add-RequiredSecureStoreVariable -RequiredVariables $required -VariableName ([string](Get-HashtableValue -Table $secrets -Key 'successFactorsClientSecretEnv'))
+        }
+    }
+
+    $activeDirectory = Get-HashtableValue -Table $document -Key 'ad'
+    if ([string]::IsNullOrWhiteSpace([string](Get-HashtableValue -Table $activeDirectory -Key 'server'))) {
+        Add-RequiredSecureStoreVariable -RequiredVariables $required -VariableName ([string](Get-HashtableValue -Table $secrets -Key 'adServerEnv'))
+    }
+
+    return $required.ToArray()
+}
+
+function Test-SecretPromptAvailable {
+    if (-not ([OperatingSystem]::IsWindows() -or $IsMacOS)) {
+        return $false
+    }
+
+    if (-not [Environment]::UserInteractive) {
+        return $false
+    }
+
+    try {
+        return -not [Console]::IsInputRedirected
+    }
+    catch {
+        return $false
+    }
+}
+
+function ConvertTo-PlainText {
+    param(
+        [Parameter(Mandatory)]
+        [System.Security.SecureString]$SecureString
+    )
+
+    $pointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($SecureString)
+    try {
+        return [Runtime.InteropServices.Marshal]::PtrToStringBSTR($pointer)
+    }
+    finally {
+        if ($pointer -ne [IntPtr]::Zero) {
+            [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($pointer)
+        }
+    }
+}
+
+function Prompt-ForSecretValue {
+    param(
+        [Parameter(Mandatory)]
+        [string]$VariableName
+    )
+
+    $secureValue = Read-Host -Prompt "Enter value for $VariableName" -AsSecureString
+    $value = ConvertTo-PlainText -SecureString $secureValue
+    if ([string]::IsNullOrWhiteSpace($value)) {
+        throw "A non-empty value is required for $VariableName."
+    }
+
+    return $value
+}
+
+function Get-SecureStoreDescription {
+    param(
+        [Parameter(Mandatory)]
+        [string]$EnvFilePath
+    )
+
+    if ([OperatingSystem]::IsWindows()) {
+        return 'Windows Credential Manager'
+    }
+
+    if ($IsMacOS) {
+        $service = Resolve-SyncFactorsKeychainServiceName -EnvFilePath $EnvFilePath
+        return "macOS Keychain ($service)"
+    }
+
+    return 'the platform secure store'
+}
+
+function Invoke-ApiLauncherProbe {
+    param(
+        [Parameter(Mandatory)]
+        [string]$RepositoryRoot,
+        [Parameter(Mandatory)]
+        [string]$Action,
+        [switch]$NoBuild
+    )
+
+    $arguments = @(
+        'run',
+        '--project', (Join-Path $RepositoryRoot 'src/SyncFactors.Api/SyncFactors.Api.csproj'),
+        '--no-launch-profile'
+    )
+
+    if ($NoBuild) {
+        $arguments += '--no-build'
+    }
+
+    $arguments += @('--', '--launcher-probe', $Action)
+
+    $output = @(& dotnet @arguments 2>&1)
+    if ($LASTEXITCODE -ne 0) {
+        $details = ($output | Out-String).Trim()
+        throw "Launcher probe '$Action' failed. $details"
+    }
+
+    $result = $output |
+        Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
+        Select-Object -Last 1
+
+    if ($null -eq $result) {
+        throw "Launcher probe '$Action' did not return a result."
+    }
+
+    switch ($result.ToString().Trim().ToLowerInvariant()) {
+        'true' { return $true }
+        'false' { return $false }
+        default { throw "Launcher probe '$Action' returned unexpected output '$result'." }
+    }
+}
+
+function Get-RequiredAuthSecretNames {
+    param(
+        [Parameter(Mandatory)]
+        [string]$RepositoryRoot,
+        [Parameter(Mandatory)]
+        [string]$ServiceName,
+        [switch]$ProbeNoBuild
+    )
+
+    $required = [System.Collections.Generic.List[string]]::new()
+
+    if ($ServiceName -notin @('api', 'ui', 'stack')) {
+        return @()
+    }
+
+    $authMode = [string]$env:SYNCFACTORS__AUTH__MODE
+    $oidcConfigured = -not [string]::IsNullOrWhiteSpace([string]$env:SYNCFACTORS__AUTH__OIDC__AUTHORITY) -and
+        -not [string]::IsNullOrWhiteSpace([string]$env:SYNCFACTORS__AUTH__OIDC__CLIENTID)
+
+    if (($authMode.Equals('oidc', [StringComparison]::OrdinalIgnoreCase) -or $authMode.Equals('hybrid', [StringComparison]::OrdinalIgnoreCase)) -and $oidcConfigured) {
+        Add-RequiredSecureStoreVariable -RequiredVariables $required -VariableName 'SYNCFACTORS__AUTH__OIDC__CLIENTSECRET'
+    }
+
+    $bootstrapUsernameConfigured = -not [string]::IsNullOrWhiteSpace([string]$env:SYNCFACTORS__AUTH__BOOTSTRAPADMIN__USERNAME)
+    if ($bootstrapUsernameConfigured -and (Invoke-ApiLauncherProbe -RepositoryRoot $RepositoryRoot -Action 'bootstrap-required' -NoBuild:$ProbeNoBuild)) {
+        Add-RequiredSecureStoreVariable -RequiredVariables $required -VariableName 'SYNCFACTORS__AUTH__BOOTSTRAPADMIN__PASSWORD'
+    }
+
+    return $required.ToArray()
+}
+
+function Get-RequiredSecretNamesForService {
+    param(
+        [Parameter(Mandatory)]
+        [string]$RepositoryRoot,
+        [Parameter(Mandatory)]
+        [string]$ServiceName,
+        [Parameter(Mandatory)]
+        [string]$ResolvedConfigPath,
+        [switch]$ProbeNoBuild
+    )
+
+    $required = [System.Collections.Generic.List[string]]::new()
+
+    if ($ServiceName -in @('api', 'ui', 'worker', 'stack')) {
+        foreach ($name in Get-RequiredSyncConfigSecretNames -ConfigPath $ResolvedConfigPath) {
+            Add-RequiredSecureStoreVariable -RequiredVariables $required -VariableName $name
+        }
+    }
+
+    foreach ($name in Get-RequiredAuthSecretNames -RepositoryRoot $RepositoryRoot -ServiceName $ServiceName -ProbeNoBuild:$ProbeNoBuild) {
+        Add-RequiredSecureStoreVariable -RequiredVariables $required -VariableName $name
+    }
+
+    return $required.ToArray()
+}
+
+function Ensure-RequiredSecureStoreValues {
+    param(
+        [Parameter(Mandatory)]
+        [string]$RepositoryRoot,
+        [Parameter(Mandatory)]
+        [string]$EnvFilePath,
+        [Parameter(Mandatory)]
+        [string[]]$VariableNames
+    )
+
+    if (-not ([OperatingSystem]::IsWindows() -or $IsMacOS)) {
+        return
+    }
+
+    $missing = @(
+        $VariableNames |
+        Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
+        Where-Object { [string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($_)) }
+    ) | Sort-Object -Unique
+
+    if ($missing.Count -eq 0) {
+        return
+    }
+
+    if (-not (Test-SecretPromptAvailable)) {
+        $storeDescription = Get-SecureStoreDescription -EnvFilePath $EnvFilePath
+        throw "Missing required secret value(s): $($missing -join ', '). The launcher checked the current environment, $storeDescription, and .env.worktree. Start this command from an interactive terminal to be prompted, or populate $storeDescription first."
+    }
+
+    foreach ($name in $missing) {
+        $value = Prompt-ForSecretValue -VariableName $name
+        $storeLabel = Set-SyncFactorsSecureStoreValue -RepoRoot $RepositoryRoot -EnvFilePath $EnvFilePath -VariableName $name -Value $value
+        [Environment]::SetEnvironmentVariable($name, $value)
+        Write-Host "Stored $name in $storeLabel" -ForegroundColor Green
+    }
+}
+
 function Resolve-ProfileConfigPath {
     param(
         [Parameter(Mandatory)]
@@ -573,7 +863,14 @@ else {
 
 $activeProfile = $env:SYNCFACTORS_RUN_PROFILE.ToLowerInvariant()
 $repoRoot = Resolve-ProjectRoot
+$worktreeEnvFile = Join-Path $repoRoot '.env.worktree'
 $runSettings = Get-CodexRunSettings -RepositoryRoot $repoRoot
+$requiredSecretNames = Get-RequiredSecretNamesForService `
+    -RepositoryRoot $repoRoot `
+    -ServiceName $Service `
+    -ResolvedConfigPath $env:SYNCFACTORS_RESOLVED_CONFIG_PATH_ABS `
+    -ProbeNoBuild:$SkipBuild
+Ensure-RequiredSecureStoreValues -RepositoryRoot $repoRoot -EnvFilePath $worktreeEnvFile -VariableNames $requiredSecretNames
 
 function Invoke-PrestartGitPull {
     param(

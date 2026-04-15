@@ -24,11 +24,19 @@ if [[ "$(uname -s)" != "Darwin" ]]; then
   exit 1
 fi
 
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+repo_root="$(cd "${script_dir}/../.." && pwd)"
+env_file="${repo_root}/.env.worktree"
+pwsh_bin="$("${script_dir}/resolve-pwsh.sh")"
+worktree_env_helper="${script_dir}/Invoke-WorktreeEnvHelper.ps1"
 name="$1"
-service="${SYNCFACTORS_KEYCHAIN_SERVICE:-syncfactors}"
+
+"${pwsh_bin}" -NoProfile -File "${worktree_env_helper}" -Action assert-secure-store-variable-name -VariableName "${name}" >/dev/null
+service="$("${pwsh_bin}" -NoProfile -File "${worktree_env_helper}" -Action resolve-keychain-service-name -EnvFilePath "${env_file}")"
 
 read -r -s -p "Value for ${name}: " secret
 echo
 
 security add-generic-password -U -s "${service}" -a "${name}" -w "${secret}" >/dev/null
+"${pwsh_bin}" -NoProfile -File "${worktree_env_helper}" -Action set-worktree-env-placeholder -EnvFilePath "${env_file}" -VariableName "${name}" >/dev/null
 echo "Stored ${name} in macOS Keychain service '${service}'."

@@ -12,6 +12,7 @@
     <Compile Include="DashboardRealtimeModels.cs" />
     <Compile Include="DashboardRealtimeService.cs" />
     <Compile Include="HealthEndpointMappings.cs" />
+    <Compile Include="LauncherProbe.cs" />
     <Compile Include="SpaApiModels.cs" />
     <Compile Include="UiDateTimeFormatter.cs" />
     <Compile Include="Program.cs" />

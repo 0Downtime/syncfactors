@@ -25,12 +25,12 @@ if ($values.Count -eq 0) {
     throw "No environment variables were found in $envFile."
 }
 
+$secretNames = Get-SyncFactorsSecureStoreVariableNames
 $writtenCount = 0
 $removedCount = 0
 
-foreach ($entry in $values.GetEnumerator()) {
-    $name = [string]$entry.Key
-    $value = [string]$entry.Value
+foreach ($name in $secretNames) {
+    $value = if ($values.Contains($name)) { [string]$values[$name] } else { '' }
 
     if ($RemoveEmptyValues -and [string]::IsNullOrEmpty($value)) {
         Remove-SyncFactorsCredentialValue -RepoRoot $repoRoot -VariableName $name
@@ -39,7 +39,7 @@ foreach ($entry in $values.GetEnumerator()) {
         continue
     }
 
-    Set-SyncFactorsCredentialValue -RepoRoot $repoRoot -VariableName $name -Value $value
+    Set-SyncFactorsSecureStoreValue -RepoRoot $repoRoot -EnvFilePath $envFile -VariableName $name -Value $value | Out-Null
     $writtenCount += 1
     Write-Host "Stored $name in Windows Credential Manager"
 }

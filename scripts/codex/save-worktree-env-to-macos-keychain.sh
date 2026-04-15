@@ -65,6 +65,12 @@ fi
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "${script_dir}/../.." && pwd)"
 env_file="${repo_root}/.env.worktree"
+pwsh_bin="$("${script_dir}/resolve-pwsh.sh")"
+worktree_env_helper="${script_dir}/Invoke-WorktreeEnvHelper.ps1"
+
+run_worktree_env_helper() {
+  "${pwsh_bin}" -NoProfile -File "${worktree_env_helper}" "$@"
+}
 
 trim_whitespace() {
   local value="$1"
@@ -107,16 +113,9 @@ read_env_value() {
 
 validate_secret_name() {
   local name="$1"
-  case "${name}" in
-    SYNCFACTORS__AUTH__OIDC__CLIENTSECRET|SYNCFACTORS__AUTH__BOOTSTRAPADMIN__PASSWORD|SF_AD_SYNC_SF_USERNAME|SF_AD_SYNC_SF_PASSWORD|SF_AD_SYNC_SF_CLIENT_ID|SF_AD_SYNC_SF_CLIENT_SECRET|SF_AD_SYNC_AD_SERVER|SF_AD_SYNC_AD_USERNAME|SF_AD_SYNC_AD_BIND_PASSWORD|SF_AD_SYNC_AD_DEFAULT_PASSWORD)
-      return 0
-      ;;
-    *)
-      echo "Unsupported variable name: ${name}" >&2
-      echo "Expected one of the SyncFactors key-backed secret names." >&2
-      exit 1
-      ;;
-  esac
+  if ! run_worktree_env_helper -Action assert-secure-store-variable-name -VariableName "${name}" >/dev/null; then
+    exit 1
+  fi
 }
 
 prompt_secret_value() {
@@ -144,24 +143,8 @@ verify_secret_removed() {
   ! security find-generic-password -s "${service}" -a "${name}" -w >/dev/null 2>&1
 }
 
-service="${SYNCFACTORS_KEYCHAIN_SERVICE:-}"
-if [[ -z "${service}" ]]; then
-  service="$(read_env_value "SYNCFACTORS_KEYCHAIN_SERVICE" || true)"
-fi
-service="${service:-syncfactors}"
-
-secret_names=(
-  SYNCFACTORS__AUTH__OIDC__CLIENTSECRET
-  SYNCFACTORS__AUTH__BOOTSTRAPADMIN__PASSWORD
-  SF_AD_SYNC_SF_USERNAME
-  SF_AD_SYNC_SF_PASSWORD
-  SF_AD_SYNC_SF_CLIENT_ID
-  SF_AD_SYNC_SF_CLIENT_SECRET
-  SF_AD_SYNC_AD_SERVER
-  SF_AD_SYNC_AD_USERNAME
-  SF_AD_SYNC_AD_BIND_PASSWORD
-  SF_AD_SYNC_AD_DEFAULT_PASSWORD
-)
+service="$(run_worktree_env_helper -Action resolve-keychain-service-name -EnvFilePath "${env_file}")"
+mapfile -t secret_names < <(run_worktree_env_helper -Action list-secure-store-variable-names)
 
 stored_count=0
 removed_count=0
@@ -206,6 +189,7 @@ for name in "${secret_names[@]}"; do
     echo "Failed to verify stored value for ${name} in macOS Keychain" >&2
     exit 1
   fi
+  run_worktree_env_helper -Action set-worktree-env-placeholder -EnvFilePath "${env_file}" -VariableName "${name}" >/dev/null
   echo "Stored ${name} in macOS Keychain"
   stored_count=$((stored_count + 1))
 done
