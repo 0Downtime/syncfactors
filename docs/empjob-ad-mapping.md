@@ -4,7 +4,7 @@ This table reflects the tenant-confirmed `EmpJob` field labels from API Center a
 
 | Business field | Confirmed SuccessFactors field | Current source key | Recommended AD target | Default |
 | --- | --- | --- | --- | --- |
-| Employee ID | `PerPerson.personIdExternal` | `personIdExternal` | `employeeID` | Disabled |
+| Employee ID | `PerPerson.personIdExternal` | `personIdExternal` | `employeeID` | Enabled |
 | Legal First Name | `PerPersonal.firstName` | `personalInfoNav[0].firstName` | `GivenName` | Enabled |
 | Legal Last Name | `PerPersonal.lastName` | `personalInfoNav[0].lastName` | `Surname` | Enabled |
 | Business Email | `PerEmail.emailAddress` | `emailNav[?(@.isPrimary == true)].emailAddress` | `UserPrincipalName`, `mail` | Enabled |
@@ -31,7 +31,6 @@ This table reflects the tenant-confirmed `EmpJob` field labels from API Center a
 ## Notes
 
 - `Function` and `Sub Function` now resolve through `divisionNav.name_localized` and `departmentNav.name_localized`, which matches the tenant export more closely than the older direct `EmpJob` string fields.
-- `employeeID` is disabled by default in the mapping config because some environments cannot reliably read or write it during preview/apply. Re-enable it only if your AD topology and attribute availability are confirmed.
 - The standard AD Address tab is intentionally fed from office location data only: `streetAddress`, `l`, and `postalCode`. Personal `userNav` address fields remain unmapped in this pass.
 - `Supervisor` should not be mapped directly from `managerId` into AD. AD `manager` requires resolving the manager to an AD distinguished name first.
 - `Direct Reports` should not be synced as an attribute; AD derives it from `manager`.
