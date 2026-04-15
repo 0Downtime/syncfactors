@@ -255,6 +255,26 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
         return stage.replace(/inprogress/ig, "in progress").toLowerCase();
     }
 
+    function isCanceledState(status) {
+        const currentStatus = (status && status.status ? status.status : "").toLowerCase();
+        const currentStage = (status && status.stage ? status.stage : "").toLowerCase();
+        return currentStatus === "canceled" ||
+            currentStatus === "cancelled" ||
+            currentStage === "canceled" ||
+            currentStage === "cancelled";
+    }
+
+    function progressSnapshot(status) {
+        if (isCanceledState(status)) {
+            return { processed: 0, total: 0 };
+        }
+
+        return {
+            processed: status && status.processedWorkers ? status.processedWorkers : 0,
+            total: status && status.totalWorkers ? status.totalWorkers : 0
+        };
+    }
+
     function visualState(status) {
         const currentStatus = (status && status.status ? status.status : "").toLowerCase();
         const currentStage = (status && status.stage ? status.stage : "").toLowerCase();
@@ -520,8 +540,9 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
             return;
         }
 
-        const processed = status.processedWorkers || 0;
-        const total = status.totalWorkers || 0;
+        const progress = progressSnapshot(status);
+        const processed = progress.processed;
+        const total = progress.total;
         const nextPercent = total > 0 ? Math.round((processed / total) * 100) : 0;
         const summary = total > 0
             ? processed + " of " + total + " workers are accounted for in the current run."
@@ -971,12 +992,13 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
         }
 
         const status = snapshot.status;
+        const progress = progressSnapshot(status);
         renderSignal(status);
         updateText(valueNodes.status, textOrFallback(status.status, "Unknown"));
         updateText(valueNodes.stage, textOrFallback(status.stage, "Unknown"));
         updateText(valueNodes.runId, textOrFallback(status.runId, "None"));
         updateText(valueNodes.worker, textOrFallback(status.currentWorkerId, "None"));
-        updateText(valueNodes.progress, (status.processedWorkers || 0) + " / " + (status.totalWorkers || 0));
+        updateText(valueNodes.progress, progress.processed + " / " + progress.total);
         updateText(valueNodes.lastAction, textOrFallback(status.lastAction, "None"));
         updateText(valueNodes.started, formatTimestamp(status.startedAt, "Not started"));
         updateText(valueNodes.completed, formatTimestamp(status.completedAt, "Not completed"));

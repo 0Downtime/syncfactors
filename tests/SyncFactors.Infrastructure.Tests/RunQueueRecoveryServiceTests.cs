@@ -130,6 +130,8 @@ public sealed class RunQueueRecoveryServiceTests
         var savedRuntime = Assert.Single(runtimeStatusStore.SavedStatuses);
         Assert.Equal("Idle", savedRuntime.Status);
         Assert.Equal("Canceled", savedRuntime.Stage);
+        Assert.Equal(0, savedRuntime.ProcessedWorkers);
+        Assert.Equal(0, savedRuntime.TotalWorkers);
         Assert.Null(savedRuntime.ErrorMessage);
     }
 
