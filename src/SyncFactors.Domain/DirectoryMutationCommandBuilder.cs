@@ -23,7 +23,7 @@ public sealed class DirectoryMutationCommandBuilder(IEmailAddressPolicy? emailAd
                 : plan.ProposedEmailAddress
             : plan.ProposedEmailAddress;
 
-        return new DirectoryMutationCommand(
+        var command = new DirectoryMutationCommand(
             Action: action,
             WorkerId: plan.Worker.WorkerId,
             ManagerId: plan.Worker.Attributes.TryGetValue("managerId", out var managerId) ? managerId : null,
@@ -38,6 +38,9 @@ public sealed class DirectoryMutationCommandBuilder(IEmailAddressPolicy? emailAd
             EnableAccount: plan.TargetEnabled,
             Operations: plan.Operations,
             Attributes: BuildAttributes(plan.AttributeChanges));
+
+        ValidateAttributeLengths(command);
+        return command;
     }
 
     public DirectoryMutationCommand Build(WorkerSnapshot worker, WorkerPreviewResult preview)
@@ -54,7 +57,7 @@ public sealed class DirectoryMutationCommandBuilder(IEmailAddressPolicy? emailAd
                 DirectoryIdentityFormatter.BuildBaseEmailLocalPart(worker.PreferredName, worker.LastName));
         var mailAddress = GetPreviewAttributeValue(preview, "mail") ?? emailAddress;
 
-        return new DirectoryMutationCommand(
+        var command = new DirectoryMutationCommand(
             Action: action,
             WorkerId: worker.WorkerId,
             ManagerId: worker.Attributes.TryGetValue("managerId", out var managerId) ? managerId : null,
@@ -72,6 +75,9 @@ public sealed class DirectoryMutationCommandBuilder(IEmailAddressPolicy? emailAd
                 .Distinct()
                 .ToArray(),
             Attributes: BuildAttributes(preview.DiffRows.Select(row => new AttributeChange(row.Attribute, row.Source, row.Before, row.After, row.Changed)).ToArray()));
+
+        ValidateAttributeLengths(command);
+        return command;
     }
 
     private static string ResolvePrimaryAction(WorkerPreviewResult preview)
@@ -135,5 +141,16 @@ public sealed class DirectoryMutationCommandBuilder(IEmailAddressPolicy? emailAd
         return string.Equals(row.After, "(unset)", StringComparison.Ordinal)
             ? null
             : row.After;
+    }
+
+    private static void ValidateAttributeLengths(DirectoryMutationCommand command)
+    {
+        var violations = ActiveDirectoryAttributeConstraints.GetViolations(command);
+        if (violations.Count == 0)
+        {
+            return;
+        }
+
+        throw new InvalidOperationException(ActiveDirectoryAttributeConstraints.BuildValidationMessage(violations));
     }
 }
