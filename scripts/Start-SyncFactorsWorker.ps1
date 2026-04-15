@@ -26,5 +26,8 @@ Write-Host "Config: $resolvedConfigPath"
 Write-Host "Mapping Config: $resolvedMappingConfigPath"
 Write-Host "SQLite: $SqlitePath"
 Write-Host "Logging: SyncFactors=Debug" -ForegroundColor Cyan
+if (Test-SyncFactorsLocalFileLoggingEnabled) {
+    Write-Host "Local file logging: $(Get-SyncFactorsLocalLogDirectory -ProjectRoot $projectRoot)" -ForegroundColor Cyan
+}
 
 Invoke-DotnetProjectRun -ProjectPath $workerProjectPath -ProjectRoot $projectRoot -SkipBuild:$SkipBuild

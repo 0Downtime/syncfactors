@@ -207,6 +207,15 @@ Use `--remove-empty-values` on macOS or `-RemoveEmptyValues` on Windows if blank
 
 Set `SYNCFACTORS_RUN_PROFILE=mock` or `real` to switch the active SuccessFactors config. Leave `SYNCFACTORS_CONFIG_PATH` empty for profile-based resolution, or set it only when you want an explicit one-off override.
 
+To enable local rolling file logs for the SyncFactors API and worker, add these worktree env vars:
+
+```bash
+SYNCFACTORS_LOCAL_FILE_LOGGING_ENABLED=true
+SYNCFACTORS_LOCAL_LOG_DIRECTORY=
+```
+
+When enabled, the API writes `api-*.log` and the worker writes `worker-*.log` with daily rotation and 7 retained files. Leave `SYNCFACTORS_LOCAL_LOG_DIRECTORY` blank to use the default runtime log directory under `%LocalAppData%/SyncFactors/logs` on Windows or `${XDG_DATA_HOME:-~/.local/share}/SyncFactors/logs` on macOS/Linux. This does not change preview artifact logs under `preview-logs`.
+
 For Microsoft Entra ID OIDC in local development, add the ASP.NET config-bound environment variables below to `.env.worktree` once your app registration exists:
 
 ```bash
