@@ -54,7 +54,7 @@ public sealed class ActiveDirectoryGateway(
 
     public async Task<string> ResolveAvailableEmailLocalPartAsync(WorkerSnapshot worker, bool isCreate, CancellationToken cancellationToken)
     {
-        var baseLocalPart = DirectoryIdentityFormatter.BuildBaseEmailLocalPart(worker.PreferredName, worker.LastName);
+        var baseLocalPart = DirectoryIdentityFormatter.BuildPreferredEmailLocalPart(worker.PreferredName, worker.LastName, worker.WorkerId);
         var config = configLoader.GetSyncConfig().Ad;
         if (string.IsNullOrWhiteSpace(config.Server))
         {

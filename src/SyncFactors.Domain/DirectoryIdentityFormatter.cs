@@ -20,6 +20,20 @@ public static class DirectoryIdentityFormatter
         return $"{normalizedFirstName}.{normalizedLastName}".Trim('.');
     }
 
+    public static string BuildPreferredEmailLocalPart(string firstName, string lastName, string fallbackIdentifier)
+    {
+        var baseLocalPart = BuildBaseEmailLocalPart(firstName, lastName);
+        if (!string.IsNullOrWhiteSpace(baseLocalPart))
+        {
+            return baseLocalPart;
+        }
+
+        var fallbackLocalPart = NormalizeNamePart(fallbackIdentifier);
+        return string.IsNullOrWhiteSpace(fallbackLocalPart)
+            ? "worker"
+            : fallbackLocalPart;
+    }
+
     public static string BuildEmailAddress(string localPart)
     {
         return BuildEmailAddress(localPart, CorporateEmailDomain);

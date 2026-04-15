@@ -51,7 +51,7 @@ public sealed class DirectoryMutationCommandBuilder(IEmailAddressPolicy? emailAd
             ?? GetPreviewAttributeValue(preview, "userPrincipalName")
             ?? GetPreviewAttributeValue(preview, "mail")
             ?? _emailAddressPolicy.BuildEmailAddress(
-                DirectoryIdentityFormatter.BuildBaseEmailLocalPart(worker.PreferredName, worker.LastName));
+                DirectoryIdentityFormatter.BuildPreferredEmailLocalPart(worker.PreferredName, worker.LastName, worker.WorkerId));
         var mailAddress = GetPreviewAttributeValue(preview, "mail") ?? emailAddress;
 
         return new DirectoryMutationCommand(

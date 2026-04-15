@@ -19,10 +19,16 @@ public static partial class ActiveDirectoryFailureDiagnostics
         "WorkerId",
         "SamAccountName",
         "DistinguishedName",
+        "TargetOu",
+        "UserPrincipalName",
+        "Mail",
+        "IdentityAttribute",
+        "IdentityValue",
         "CurrentCn",
         "DesiredCn",
         "Attributes",
-        "ManagerId"
+        "ManagerId",
+        "ManagerDistinguishedName"
     ];
 
     public static FailureDiagnostics? Parse(string? message)
@@ -100,9 +106,14 @@ public static partial class ActiveDirectoryFailureDiagnostics
             "WorkerId" => "Worker ID",
             "SamAccountName" => "SAM",
             "DistinguishedName" => "Distinguished Name",
+            "TargetOu" => "Target OU",
+            "UserPrincipalName" => "UPN",
+            "IdentityAttribute" => "Identity Attribute",
+            "IdentityValue" => "Identity Value",
             "CurrentCn" => "Current CN",
             "DesiredCn" => "Desired CN",
             "ManagerId" => "Manager ID",
+            "ManagerDistinguishedName" => "Manager Distinguished Name",
             _ => key
         };
     }

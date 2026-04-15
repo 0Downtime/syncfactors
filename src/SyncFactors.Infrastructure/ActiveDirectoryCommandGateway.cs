@@ -89,6 +89,8 @@ public sealed class ActiveDirectoryCommandGateway(
         var dn = $"CN={EscapeDnComponent(command.CommonName)},{command.TargetOu}";
         var attributes = BuildCreateAttributes(command, config);
         var request = new AddRequest(dn, [.. attributes]);
+        string step = "CreateUser";
+        string? managerDn = command.ManagerDistinguishedName;
         logger.LogInformation(
             "Prepared AD create identity payload. WorkerId={WorkerId} SamAccountName={SamAccountName} DistinguishedName={DistinguishedName} IdentityAttribute={IdentityAttribute} IdentityWriteValue={IdentityWriteValue}",
             command.WorkerId,
@@ -98,12 +100,24 @@ public sealed class ActiveDirectoryCommandGateway(
             TryGetDirectoryAttributeValue(attributes, config.IdentityAttribute, out var identityWriteValue) ? identityWriteValue : null);
         LogRequestAttributes("CreateUser", command.WorkerId, attributes, logger);
 
-        ExecuteModify(connection, request, logger, "create user add request", ("WorkerId", command.WorkerId), ("SamAccountName", command.SamAccountName));
-        var managerDn = command.ManagerDistinguishedName
-            ?? ResolveManagerDistinguishedName(connection, command.ManagerId, config);
-        if (!string.IsNullOrWhiteSpace(managerDn))
+        try
         {
-            SetManager(connection, dn, managerDn, logger, command.WorkerId);
+            ExecuteModify(connection, request, logger, "create user add request", ("WorkerId", command.WorkerId), ("SamAccountName", command.SamAccountName));
+            step = "ResolveManager";
+            managerDn ??= ResolveManagerDistinguishedName(connection, command.ManagerId, config);
+            if (!string.IsNullOrWhiteSpace(managerDn))
+            {
+                step = "SetManager";
+                SetManager(connection, dn, managerDn, logger, command.WorkerId);
+            }
+        }
+        catch (Exception ex) when (ex is LdapException or DirectoryOperationException)
+        {
+            throw ExternalSystemExceptionFactory.CreateActiveDirectoryException(
+                "command 'CreateUser'",
+                config,
+                ex,
+                BuildCreateFailureDetails(command, dn, config, attributes, step, managerDn));
         }
 
         return new DirectoryCommandResult(true, command.Action, command.SamAccountName, dn, $"Created AD user {command.SamAccountName}.", null);
@@ -899,6 +913,19 @@ public sealed class ActiveDirectoryCommandGateway(
     private static string BuildUpdateRenameFailureDetails(DirectoryMutationCommand command, string distinguishedName, string? currentCn)
     {
         return $"Step=RenameUser WorkerId={command.WorkerId} SamAccountName={command.SamAccountName} DistinguishedName={distinguishedName} CurrentCn={FormatDetailValue(currentCn)} DesiredCn={FormatDetailValue(command.CommonName)}";
+    }
+
+    private static string BuildCreateFailureDetails(
+        DirectoryMutationCommand command,
+        string distinguishedName,
+        ActiveDirectoryConfig config,
+        IReadOnlyList<DirectoryAttribute> attributes,
+        string step,
+        string? managerDistinguishedName)
+    {
+        TryGetDirectoryAttributeValue(attributes, config.IdentityAttribute, out var identityValue);
+
+        return $"Step={step} WorkerId={command.WorkerId} SamAccountName={command.SamAccountName} DistinguishedName={distinguishedName} TargetOu={FormatDetailValue(command.TargetOu)} UserPrincipalName={FormatDetailValue(command.UserPrincipalName)} Mail={FormatDetailValue(command.Mail)} IdentityAttribute={config.IdentityAttribute} IdentityValue={FormatDetailValue(identityValue)} ManagerId={FormatDetailValue(command.ManagerId)} ManagerDistinguishedName={FormatDetailValue(managerDistinguishedName)}";
     }
 
     private static string BuildUpdateModifyFailureDetails(DirectoryMutationCommand command, string distinguishedName, DirectoryAttributeModificationCollection modifications)

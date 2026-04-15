@@ -198,6 +198,60 @@ public sealed class DirectoryMutationCommandBuilderTests
         Assert.Equal(oversizedDepartment[..64], command.Attributes["department"]);
     }
 
+    [Fact]
+    public void Build_FromPreview_FallsBackToWorkerIdEmailWhenNamesDoNotProduceLocalPart()
+    {
+        var worker = new WorkerSnapshot(
+            WorkerId: "45086",
+            PreferredName: "!!!",
+            LastName: "???",
+            Department: "IT",
+            TargetOu: "OU=LabUsers,DC=example,DC=com",
+            IsPrehire: false,
+            Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase));
+
+        var preview = new WorkerPreviewResult(
+            ReportPath: null,
+            RunId: "preview-45086",
+            PreviousRunId: null,
+            Fingerprint: "fingerprint-45086",
+            Mode: "Preview",
+            Status: "Planned",
+            ErrorMessage: null,
+            ArtifactType: "WorkerPreview",
+            SuccessFactorsAuth: "NativeScaffold",
+            WorkerId: worker.WorkerId,
+            Buckets: ["creates"],
+            MatchedExistingUser: false,
+            ReviewCategory: null,
+            ReviewCaseType: null,
+            Reason: null,
+            OperatorActionSummary: null,
+            SamAccountName: "45086",
+            ManagerDistinguishedName: null,
+            TargetOu: worker.TargetOu,
+            CurrentDistinguishedName: null,
+            CurrentEnabled: null,
+            ProposedEnable: true,
+            OperationSummary: null,
+            DiffRows: [],
+            SourceAttributes: [],
+            UsedSourceAttributes: [],
+            UnusedSourceAttributes: [],
+            MissingSourceAttributes: [],
+            Entries:
+            [
+                new WorkerPreviewEntry(
+                    Bucket: "creates",
+                    Item: System.Text.Json.JsonDocument.Parse("""{"operations":[{"kind":"CreateUser"}]}""").RootElement.Clone())
+            ]);
+
+        var command = new DirectoryMutationCommandBuilder().Build(worker, preview);
+
+        Assert.Equal("45086@Exampleenergy.com", command.UserPrincipalName);
+        Assert.Equal("45086@Exampleenergy.com", command.Mail);
+    }
+
     private sealed class StubAttributeMappingProvider : IAttributeMappingProvider
     {
         public IReadOnlyList<AttributeMapping> GetEnabledMappings() =>
