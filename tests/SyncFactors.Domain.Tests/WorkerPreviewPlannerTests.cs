@@ -240,7 +240,7 @@ public sealed class WorkerPreviewPlannerTests
     }
 
     [Fact]
-    public async Task PreviewAsync_RequiresManualReviewWhenMappedAttributeExceedsAdSchemaLimit()
+    public async Task PreviewAsync_TruncatesMappedAttributeToAdSchemaLimit()
     {
         const string oversizedDepartment = "20921 MOW - Distribution - Maintenance & Construction - SW Missouri";
         var worker = new WorkerSnapshot(
@@ -271,13 +271,13 @@ public sealed class WorkerPreviewPlannerTests
 
         var preview = await planner.PreviewAsync("20921", CancellationToken.None);
 
-        Assert.Equal("manualReview", preview.Buckets.Single());
-        Assert.Equal("AttributeConstraint", preview.ReviewCategory);
-        Assert.Equal("AttributeValueTooLong", preview.ReviewCaseType);
-        Assert.Contains("department", preview.Reason, StringComparison.Ordinal);
-        Assert.Contains("67", preview.Reason, StringComparison.Ordinal);
-        Assert.Contains("64", preview.Reason, StringComparison.Ordinal);
-        Assert.Empty(preview.Entries.Single().Item.GetProperty("operations").EnumerateArray());
+        Assert.Equal("creates", preview.Buckets.Single());
+        Assert.Null(preview.ReviewCategory);
+        Assert.Null(preview.ReviewCaseType);
+        Assert.Equal(
+            oversizedDepartment[..64],
+            preview.DiffRows.Single(row => row.Attribute == "department").After);
+        Assert.Single(preview.Entries.Single().Item.GetProperty("operations").EnumerateArray());
     }
 
     [Fact]

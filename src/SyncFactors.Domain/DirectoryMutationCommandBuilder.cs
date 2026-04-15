@@ -23,24 +23,21 @@ public sealed class DirectoryMutationCommandBuilder(IEmailAddressPolicy? emailAd
                 : plan.ProposedEmailAddress
             : plan.ProposedEmailAddress;
 
-        var command = new DirectoryMutationCommand(
+        return new DirectoryMutationCommand(
             Action: action,
             WorkerId: plan.Worker.WorkerId,
             ManagerId: plan.Worker.Attributes.TryGetValue("managerId", out var managerId) ? managerId : null,
             ManagerDistinguishedName: plan.ManagerDistinguishedName,
-            SamAccountName: samAccountName,
-            CommonName: commonName,
-            UserPrincipalName: userPrincipalName,
-            Mail: mail,
+            SamAccountName: NormalizeValue("sAMAccountName", samAccountName)!,
+            CommonName: NormalizeValue("cn", commonName)!,
+            UserPrincipalName: NormalizeValue("UserPrincipalName", userPrincipalName)!,
+            Mail: NormalizeValue("mail", mail)!,
             TargetOu: plan.TargetOu,
-            DisplayName: displayName,
+            DisplayName: NormalizeValue("displayName", displayName)!,
             CurrentDistinguishedName: plan.DirectoryUser.DistinguishedName,
             EnableAccount: plan.TargetEnabled,
             Operations: plan.Operations,
             Attributes: BuildAttributes(plan.AttributeChanges));
-
-        ValidateAttributeLengths(command);
-        return command;
     }
 
     public DirectoryMutationCommand Build(WorkerSnapshot worker, WorkerPreviewResult preview)
@@ -57,17 +54,17 @@ public sealed class DirectoryMutationCommandBuilder(IEmailAddressPolicy? emailAd
                 DirectoryIdentityFormatter.BuildBaseEmailLocalPart(worker.PreferredName, worker.LastName));
         var mailAddress = GetPreviewAttributeValue(preview, "mail") ?? emailAddress;
 
-        var command = new DirectoryMutationCommand(
+        return new DirectoryMutationCommand(
             Action: action,
             WorkerId: worker.WorkerId,
             ManagerId: worker.Attributes.TryGetValue("managerId", out var managerId) ? managerId : null,
             ManagerDistinguishedName: preview.ManagerDistinguishedName,
-            SamAccountName: samAccountName,
-            CommonName: commonName,
-            UserPrincipalName: emailAddress,
-            Mail: mailAddress,
+            SamAccountName: NormalizeValue("sAMAccountName", samAccountName)!,
+            CommonName: NormalizeValue("cn", commonName)!,
+            UserPrincipalName: NormalizeValue("UserPrincipalName", emailAddress)!,
+            Mail: NormalizeValue("mail", mailAddress)!,
             TargetOu: preview.TargetOu ?? worker.TargetOu,
-            DisplayName: displayName,
+            DisplayName: NormalizeValue("displayName", displayName)!,
             CurrentDistinguishedName: preview.CurrentDistinguishedName,
             EnableAccount: preview.ProposedEnable ?? true,
             Operations: preview.Entries
@@ -75,9 +72,6 @@ public sealed class DirectoryMutationCommandBuilder(IEmailAddressPolicy? emailAd
                 .Distinct()
                 .ToArray(),
             Attributes: BuildAttributes(preview.DiffRows.Select(row => new AttributeChange(row.Attribute, row.Source, row.Before, row.After, row.Changed)).ToArray()));
-
-        ValidateAttributeLengths(command);
-        return command;
     }
 
     private static string ResolvePrimaryAction(WorkerPreviewResult preview)
@@ -123,7 +117,7 @@ public sealed class DirectoryMutationCommandBuilder(IEmailAddressPolicy? emailAd
         {
             attributes[row.Attribute] = string.Equals(row.After, "(unset)", StringComparison.Ordinal)
                 ? null
-                : row.After;
+                : NormalizeValue(row.Attribute, row.After);
         }
 
         return attributes;
@@ -143,14 +137,8 @@ public sealed class DirectoryMutationCommandBuilder(IEmailAddressPolicy? emailAd
             : row.After;
     }
 
-    private static void ValidateAttributeLengths(DirectoryMutationCommand command)
+    private static string? NormalizeValue(string attributeName, string? value)
     {
-        var violations = ActiveDirectoryAttributeConstraints.GetViolations(command);
-        if (violations.Count == 0)
-        {
-            return;
-        }
-
-        throw new InvalidOperationException(ActiveDirectoryAttributeConstraints.BuildValidationMessage(violations));
+        return ActiveDirectoryAttributeConstraints.NormalizeValue(attributeName, value);
     }
 }

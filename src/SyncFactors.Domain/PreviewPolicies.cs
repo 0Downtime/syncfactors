@@ -78,7 +78,9 @@ public sealed class AttributeDiffService : IAttributeDiffService
         foreach (var mapping in enabledMappings)
         {
             var sourceValue = GetSourceValue(worker, mapping.Source, mapping.Target, proposedEmailAddress, _emailAddressPolicy);
-            var proposedValue = Transform(sourceValue, mapping.Transform);
+            var proposedValue = ActiveDirectoryAttributeConstraints.NormalizeValue(
+                mapping.Target,
+                Transform(sourceValue, mapping.Transform));
             var currentValue = GetDirectoryValue(currentAttributes, mapping.Target);
             var before = string.IsNullOrWhiteSpace(currentValue) ? "(unset)" : currentValue!;
             var after = string.IsNullOrWhiteSpace(proposedValue) ? "(unset)" : proposedValue!;
@@ -111,21 +113,25 @@ public sealed class AttributeDiffService : IAttributeDiffService
                 Changed: changed));
         }
 
-        var proposedDisplayName = DirectoryIdentityFormatter.BuildDisplayName(worker.PreferredName, worker.LastName);
+        var proposedDisplayName = ActiveDirectoryAttributeConstraints.NormalizeValue(
+            "displayName",
+            DirectoryIdentityFormatter.BuildDisplayName(worker.PreferredName, worker.LastName))!;
+        var normalizedSamAccountName = ActiveDirectoryAttributeConstraints.NormalizeValue("sAMAccountName", proposedSamAccountName)!;
+        var normalizedCommonName = ActiveDirectoryAttributeConstraints.NormalizeValue("cn", proposedSamAccountName)!;
         UpsertSystemAttributeChange(
             changes,
             attribute: "sAMAccountName",
             source: "workerId",
             before: FormatValue(directoryUser?.SamAccountName ?? GetDirectoryValue(currentAttributes, "sAMAccountName")),
-            after: FormatValue(proposedSamAccountName),
-            changed: !string.Equals(directoryUser?.SamAccountName ?? GetDirectoryValue(currentAttributes, "sAMAccountName"), proposedSamAccountName, StringComparison.OrdinalIgnoreCase));
+            after: FormatValue(normalizedSamAccountName),
+            changed: !string.Equals(directoryUser?.SamAccountName ?? GetDirectoryValue(currentAttributes, "sAMAccountName"), normalizedSamAccountName, StringComparison.OrdinalIgnoreCase));
         UpsertSystemAttributeChange(
             changes,
             attribute: "cn",
             source: "sAMAccountName",
             before: FormatValue(GetDirectoryValue(currentAttributes, "cn")),
-            after: FormatValue(proposedSamAccountName),
-            changed: !string.Equals(GetDirectoryValue(currentAttributes, "cn"), proposedSamAccountName, StringComparison.Ordinal));
+            after: FormatValue(normalizedCommonName),
+            changed: !string.Equals(GetDirectoryValue(currentAttributes, "cn"), normalizedCommonName, StringComparison.Ordinal));
         UpsertSystemAttributeChange(
             changes,
             attribute: "displayName",
@@ -141,15 +147,25 @@ public sealed class AttributeDiffService : IAttributeDiffService
             attribute: "UserPrincipalName",
             source: "resolved email local-part",
             before: FormatValue(currentUserPrincipalName),
-            after: FormatValue(isCreate ? proposedEmailAddress : currentUserPrincipalName),
-            changed: isCreate && !string.Equals(currentUserPrincipalName, proposedEmailAddress, StringComparison.Ordinal));
+            after: FormatValue(isCreate
+                ? ActiveDirectoryAttributeConstraints.NormalizeValue("UserPrincipalName", proposedEmailAddress)
+                : currentUserPrincipalName),
+            changed: isCreate && !string.Equals(
+                currentUserPrincipalName,
+                ActiveDirectoryAttributeConstraints.NormalizeValue("UserPrincipalName", proposedEmailAddress),
+                StringComparison.Ordinal));
         UpsertSystemAttributeChange(
             changes,
             attribute: "mail",
             source: "resolved email local-part",
             before: FormatValue(currentMail),
-            after: FormatValue(isCreate ? proposedEmailAddress : currentMail),
-            changed: isCreate && !string.Equals(currentMail, proposedEmailAddress, StringComparison.Ordinal));
+            after: FormatValue(isCreate
+                ? ActiveDirectoryAttributeConstraints.NormalizeValue("mail", proposedEmailAddress)
+                : currentMail),
+            changed: isCreate && !string.Equals(
+                currentMail,
+                ActiveDirectoryAttributeConstraints.NormalizeValue("mail", proposedEmailAddress),
+                StringComparison.Ordinal));
 
         _logger.LogDebug(
             "Attribute diff completed. EnabledMappings={EnabledMappings} ChangedMappings={ChangedMappings}",
