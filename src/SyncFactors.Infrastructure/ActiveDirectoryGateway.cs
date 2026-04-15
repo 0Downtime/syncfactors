@@ -200,6 +200,22 @@ public sealed class ActiveDirectoryGateway(
         var displayName = GetAttribute(entry, "displayName");
         var userAccountControl = GetAttribute(entry, "userAccountControl");
         var attributes = BuildAttributes(entry, displayName, config.IdentityAttribute);
+        var identityValue = attributes.TryGetValue(config.IdentityAttribute, out var resolvedIdentityValue)
+            ? resolvedIdentityValue
+            : null;
+
+        if (!string.IsNullOrWhiteSpace(config.IdentityAttribute) &&
+            string.IsNullOrWhiteSpace(identityValue))
+        {
+            logger.LogWarning(
+                "Matched AD entry did not return the configured identity attribute. WorkerId={WorkerId} SamAccountName={SamAccountName} DistinguishedName={DistinguishedName} IdentityAttribute={IdentityAttribute} LookupClauses={Clauses} ReturnedAttributes={ReturnedAttributes}",
+                worker.WorkerId,
+                samAccountName,
+                distinguishedName,
+                config.IdentityAttribute,
+                FormatLookupClauses(lookupClauses),
+                FormatReturnedAttributeNames(entry));
+        }
 
         logger.LogInformation(
             "Resolved AD worker snapshot. WorkerId={WorkerId} SamAccountName={SamAccountName} DistinguishedName={DistinguishedName} IdentityAttribute={IdentityAttribute} IdentityValue={IdentityValue}",
@@ -207,7 +223,7 @@ public sealed class ActiveDirectoryGateway(
             samAccountName,
             distinguishedName,
             config.IdentityAttribute,
-            attributes.TryGetValue(config.IdentityAttribute, out var identityValue) ? identityValue : null);
+            identityValue);
 
         return new DirectoryUserSnapshot(
             SamAccountName: samAccountName,
@@ -259,6 +275,15 @@ public sealed class ActiveDirectoryGateway(
     private static string FormatLookupClauses(IReadOnlyList<(string Attribute, string Value)> clauses)
     {
         return string.Join(" | ", clauses.Select(clause => $"{clause.Attribute}={clause.Value}"));
+    }
+
+    private static string FormatReturnedAttributeNames(SearchResultEntry entry)
+    {
+        return string.Join(
+            ",",
+            entry.Attributes.AttributeNames
+                .Cast<string>()
+                .OrderBy(name => name, StringComparer.OrdinalIgnoreCase));
     }
 
     private static string ResolveDirectoryIdentityValue(

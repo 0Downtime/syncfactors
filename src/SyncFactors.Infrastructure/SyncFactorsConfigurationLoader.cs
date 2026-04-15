@@ -90,7 +90,9 @@ public sealed class SyncFactorsConfigurationLoader
                 BindPassword: GetOptionalSecretValue(
                     environmentVariableName: secrets.AdBindPasswordEnv,
                     fallbackJsonValue: document.GetRequiredObject("ad").TryGetString("bindPassword")),
-                IdentityAttribute: document.GetRequiredObject("ad").GetRequiredString("identityAttribute"),
+                IdentityAttribute: NormalizeRequiredValue(
+                    document.GetRequiredObject("ad").GetRequiredString("identityAttribute"),
+                    "ad.identityAttribute"),
                 DefaultActiveOu: document.GetRequiredObject("ad").GetRequiredString("defaultActiveOu"),
                 PrehireOu: document.GetRequiredObject("ad").GetRequiredString("prehireOu"),
                 GraveyardOu: document.GetRequiredObject("ad").GetRequiredString("graveyardOu"),
@@ -124,11 +126,11 @@ public sealed class SyncFactorsConfigurationLoader
         var document = JsonDocument.Parse(json).RootElement;
         var mappings = document.GetRequiredArray("mappings")
             .Select(item => new AttributeMappingConfig(
-                Source: item.GetRequiredString("source"),
-                Target: item.GetRequiredString("target"),
+                Source: NormalizeRequiredValue(item.GetRequiredString("source"), "mappings[].source"),
+                Target: NormalizeRequiredValue(item.GetRequiredString("target"), "mappings[].target"),
                 Enabled: item.GetRequiredBoolean("enabled"),
                 Required: item.GetRequiredBoolean("required"),
-                Transform: item.GetRequiredString("transform")))
+                Transform: NormalizeRequiredValue(item.GetRequiredString("transform"), "mappings[].transform")))
             .ToArray();
 
         return new MappingConfigDocument(mappings);
@@ -222,6 +224,17 @@ public sealed class SyncFactorsConfigurationLoader
 
         var value = Environment.GetEnvironmentVariable(environmentVariableName);
         return string.IsNullOrWhiteSpace(value) ? null : value;
+    }
+
+    private static string NormalizeRequiredValue(string value, string configPath)
+    {
+        var normalized = value.Trim();
+        if (string.IsNullOrWhiteSpace(normalized))
+        {
+            throw new InvalidOperationException($"Property '{configPath}' must not be empty.");
+        }
+
+        return normalized;
     }
 
     private static AlertingConfig LoadAlerts(JsonElement document)
