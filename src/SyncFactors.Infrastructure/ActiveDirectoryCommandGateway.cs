@@ -91,6 +91,17 @@ public sealed class ActiveDirectoryCommandGateway(
         var request = new AddRequest(dn, [.. attributes]);
         string step = "CreateUser";
         string? managerDn = command.ManagerDistinguishedName;
+        var identityConflict = FindIdentityConflict(connection, command, config, logger);
+        if (identityConflict is not null)
+        {
+            throw ExternalSystemExceptionFactory.CreateActiveDirectoryValidationException(
+                "command 'CreateUser'",
+                config,
+                BuildIdentityConflictSummary(command, identityConflict),
+                BuildIdentityConflictDetails(command, dn, config, identityConflict),
+                "Resolve the existing AD account that already owns this UPN or mail value, or change the planned suffix/value before retrying.");
+        }
+
         logger.LogInformation(
             "Prepared AD create identity payload. WorkerId={WorkerId} SamAccountName={SamAccountName} DistinguishedName={DistinguishedName} IdentityAttribute={IdentityAttribute} IdentityWriteValue={IdentityWriteValue}",
             command.WorkerId,
@@ -121,6 +132,67 @@ public sealed class ActiveDirectoryCommandGateway(
         }
 
         return new DirectoryCommandResult(true, command.Action, command.SamAccountName, dn, $"Created AD user {command.SamAccountName}.", null);
+    }
+
+    private static IdentityConflictResult? FindIdentityConflict(
+        LdapConnection connection,
+        DirectoryMutationCommand command,
+        ActiveDirectoryConfig config,
+        ILogger logger)
+    {
+        var searchBases = GetIdentityConflictSearchBases(connection, config, logger);
+        var searchClauses = new List<(string Attribute, string Value)>();
+        if (!string.IsNullOrWhiteSpace(command.UserPrincipalName))
+        {
+            searchClauses.Add(("userPrincipalName", command.UserPrincipalName));
+        }
+
+        if (!string.IsNullOrWhiteSpace(command.Mail) &&
+            !string.Equals(command.Mail, command.UserPrincipalName, StringComparison.OrdinalIgnoreCase))
+        {
+            searchClauses.Add(("mail", command.Mail));
+        }
+
+        if (searchClauses.Count == 0)
+        {
+            return null;
+        }
+
+        var entry = FindFirstEntry(
+            connection,
+            searchBases,
+            BuildAnyOfEqualityFilter(searchClauses),
+            logger,
+            "create user identity conflict search",
+            ("WorkerId", command.WorkerId),
+            ("UserPrincipalName", command.UserPrincipalName),
+            ("Mail", command.Mail));
+        if (entry is null)
+        {
+            return null;
+        }
+
+        var matchedUserPrincipalName = GetAttribute(entry, "userPrincipalName");
+        var matchedMail = GetAttribute(entry, "mail");
+        var conflictingAttribute = string.Equals(matchedUserPrincipalName, command.UserPrincipalName, StringComparison.OrdinalIgnoreCase)
+            ? "userPrincipalName"
+            : string.Equals(matchedMail, command.Mail, StringComparison.OrdinalIgnoreCase)
+                ? "mail"
+                : "identity";
+        var conflictingValue = conflictingAttribute switch
+        {
+            "userPrincipalName" => matchedUserPrincipalName ?? command.UserPrincipalName,
+            "mail" => matchedMail ?? command.Mail,
+            _ => command.UserPrincipalName ?? command.Mail
+        };
+
+        return new IdentityConflictResult(
+            ConflictingAttribute: conflictingAttribute,
+            ConflictingValue: conflictingValue ?? string.Empty,
+            ExistingSamAccountName: GetAttribute(entry, "sAMAccountName"),
+            ExistingDistinguishedName: GetAttribute(entry, "distinguishedName"),
+            ExistingUserPrincipalName: matchedUserPrincipalName,
+            ExistingMail: matchedMail);
     }
 
     private static DirectoryCommandResult UpdateUser(LdapConnection connection, DirectoryMutationCommand command, ActiveDirectoryConfig config, ILogger logger, string? distinguishedName)
@@ -601,6 +673,22 @@ public sealed class ActiveDirectoryCommandGateway(
             .Replace(";", "\\;", StringComparison.Ordinal);
     }
 
+    private static string BuildAnyOfEqualityFilter(IReadOnlyList<(string Attribute, string Value)> clauses)
+    {
+        if (clauses.Count == 0)
+        {
+            throw new InvalidOperationException("At least one identity conflict search clause is required.");
+        }
+
+        if (clauses.Count == 1)
+        {
+            var clause = clauses[0];
+            return $"({EscapeLdapFilter(clause.Attribute)}={EscapeLdapFilter(clause.Value)})";
+        }
+
+        return "(|" + string.Join(string.Empty, clauses.Select(clause => $"({EscapeLdapFilter(clause.Attribute)}={EscapeLdapFilter(clause.Value)})")) + ")";
+    }
+
     private static DirectoryAttributeModification BuildReplaceModification(string attributeName, string value)
     {
         var modification = new DirectoryAttributeModification
@@ -819,7 +907,9 @@ public sealed class ActiveDirectoryCommandGateway(
                 "cn",
                 "distinguishedName",
                 "displayName",
-                "userAccountControl");
+                "userAccountControl",
+                "userPrincipalName",
+                "mail");
             SearchResponse response;
             try
             {
@@ -928,6 +1018,25 @@ public sealed class ActiveDirectoryCommandGateway(
         return $"Step={step} WorkerId={command.WorkerId} SamAccountName={command.SamAccountName} DistinguishedName={distinguishedName} TargetOu={FormatDetailValue(command.TargetOu)} UserPrincipalName={FormatDetailValue(command.UserPrincipalName)} Mail={FormatDetailValue(command.Mail)} IdentityAttribute={config.IdentityAttribute} IdentityValue={FormatDetailValue(identityValue)} ManagerId={FormatDetailValue(command.ManagerId)} ManagerDistinguishedName={FormatDetailValue(managerDistinguishedName)}";
     }
 
+    private static string BuildIdentityConflictSummary(DirectoryMutationCommand command, IdentityConflictResult conflict)
+    {
+        return conflict.ConflictingAttribute switch
+        {
+            "userPrincipalName" => $"A different AD account already uses userPrincipalName '{conflict.ConflictingValue}' for create worker {command.WorkerId}.",
+            "mail" => $"A different AD account already uses mail '{conflict.ConflictingValue}' for create worker {command.WorkerId}.",
+            _ => $"A different AD account already uses the planned create identity value '{conflict.ConflictingValue}' for worker {command.WorkerId}."
+        };
+    }
+
+    private static string BuildIdentityConflictDetails(
+        DirectoryMutationCommand command,
+        string distinguishedName,
+        ActiveDirectoryConfig config,
+        IdentityConflictResult conflict)
+    {
+        return $"Step=PreflightIdentityConflict WorkerId={command.WorkerId} SamAccountName={command.SamAccountName} DistinguishedName={distinguishedName} TargetOu={FormatDetailValue(command.TargetOu)} UserPrincipalName={FormatDetailValue(command.UserPrincipalName)} Mail={FormatDetailValue(command.Mail)} IdentityAttribute={config.IdentityAttribute} IdentityValue={FormatDetailValue(ResolveCreateIdentityValueForDetails(command, config))} ConflictingAttribute={conflict.ConflictingAttribute} ConflictingValue={FormatDetailValue(conflict.ConflictingValue)} ExistingSamAccountName={FormatDetailValue(conflict.ExistingSamAccountName)} ExistingDistinguishedName={FormatDetailValue(conflict.ExistingDistinguishedName)} ExistingUserPrincipalName={FormatDetailValue(conflict.ExistingUserPrincipalName)} ExistingMail={FormatDetailValue(conflict.ExistingMail)} ManagerId={FormatDetailValue(command.ManagerId)} ManagerDistinguishedName={FormatDetailValue(command.ManagerDistinguishedName)}";
+    }
+
     private static string BuildUpdateModifyFailureDetails(DirectoryMutationCommand command, string distinguishedName, DirectoryAttributeModificationCollection modifications)
     {
         return $"Step=ModifyAttributes WorkerId={command.WorkerId} SamAccountName={command.SamAccountName} DistinguishedName={distinguishedName} Attributes={FormatModificationAttributeNames(modifications)} ManagerId={FormatDetailValue(command.ManagerId)}";
@@ -957,4 +1066,58 @@ public sealed class ActiveDirectoryCommandGateway(
     {
         return string.IsNullOrWhiteSpace(value) ? "(unset)" : value;
     }
+
+    private static string? ResolveCreateIdentityValueForDetails(DirectoryMutationCommand command, ActiveDirectoryConfig config)
+    {
+        if (string.Equals(config.IdentityAttribute, "sAMAccountName", StringComparison.OrdinalIgnoreCase))
+        {
+            return command.SamAccountName;
+        }
+
+        if (string.Equals(config.IdentityAttribute, "userPrincipalName", StringComparison.OrdinalIgnoreCase))
+        {
+            return command.UserPrincipalName;
+        }
+
+        if (string.Equals(config.IdentityAttribute, "mail", StringComparison.OrdinalIgnoreCase))
+        {
+            return command.Mail;
+        }
+
+        return TryGetConfiguredIdentityAttributeValue(command, config, out var identityValue)
+            ? identityValue
+            : command.WorkerId;
+    }
+
+    private static IReadOnlyList<string> GetIdentityConflictSearchBases(LdapConnection connection, ActiveDirectoryConfig config, ILogger logger)
+    {
+        var defaultNamingContext = TryGetDefaultNamingContext(connection, logger);
+        if (!string.IsNullOrWhiteSpace(defaultNamingContext))
+        {
+            return [defaultNamingContext.Trim()];
+        }
+
+        return GetSearchBases(config);
+    }
+
+    private static string? TryGetDefaultNamingContext(LdapConnection connection, ILogger logger)
+    {
+        var request = new SearchRequest(
+            string.Empty,
+            "(objectClass=*)",
+            SearchScope.Base,
+            "defaultNamingContext");
+
+        var response = ExecuteSearch(connection, request, logger, "command rootdse naming context search");
+        var entry = response.Entries.Cast<SearchResultEntry>().FirstOrDefault();
+        return entry is null ? null : GetAttribute(entry, "defaultNamingContext");
+    }
+
+    private sealed record IdentityConflictResult(
+        string ConflictingAttribute,
+        string ConflictingValue,
+        string? ExistingSamAccountName,
+        string? ExistingDistinguishedName,
+        string? ExistingUserPrincipalName,
+        string? ExistingMail);
 }

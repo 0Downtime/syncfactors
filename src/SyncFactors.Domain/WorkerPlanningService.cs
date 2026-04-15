@@ -176,7 +176,6 @@ public sealed class WorkerPlanningService(
         var hasAttributeChanges = attributeChanges.Any(change => change.Changed);
 
         if (string.Equals(bucket, "manualReview", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(bucket, "quarantined", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(bucket, "unchanged", StringComparison.OrdinalIgnoreCase))
         {
             return operations;

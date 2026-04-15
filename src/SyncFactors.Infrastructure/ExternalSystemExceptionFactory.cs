@@ -4,6 +4,13 @@ namespace SyncFactors.Infrastructure;
 
 internal static class ExternalSystemExceptionFactory
 {
+    public static InvalidOperationException CreateActiveDirectoryValidationException(string operation, ActiveDirectoryConfig config, string summary, string? details, string guidance)
+    {
+        var server = config.Server;
+        return new InvalidOperationException(
+            $"Active Directory {operation} failed against LDAP server '{server}'. {summary}{FormatDetails(details)} Next check: {guidance}");
+    }
+
     public static InvalidOperationException CreateActiveDirectoryException(string operation, ActiveDirectoryConfig config, Exception exception)
         => CreateActiveDirectoryException(operation, config, exception, details: null);
 
