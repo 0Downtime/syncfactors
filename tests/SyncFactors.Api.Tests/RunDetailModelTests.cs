@@ -203,6 +203,129 @@ public sealed class RunDetailModelTests
         Assert.Equal("Code 64308", status.DetailText);
     }
 
+    [Fact]
+    public async Task DescribeEntryExecution_RealSyncDisableWithoutWrite_ShowsAlreadyCompliant()
+    {
+        var model = new DetailModel(new RunEntriesQueryService(new StubRunRepository(CreateRunDetail(dryRun: false))))
+        {
+            RunId = "bulk-1"
+        };
+
+        await model.OnGetAsync(CancellationToken.None);
+
+        var entry = new RunEntry(
+            EntryId: "entry-disable",
+            RunId: "bulk-1",
+            ArtifactType: "BulkRun",
+            Mode: "BulkSync",
+            Bucket: "disables",
+            BucketLabel: "Disables",
+            WorkerId: "40774",
+            SamAccountName: "40774",
+            Reason: "Inactive worker should be disabled and placed in the graveyard OU.",
+            ReviewCategory: null,
+            ReviewCaseType: null,
+            StartedAt: DateTimeOffset.UtcNow,
+            ChangeCount: 0,
+            OperationSummary: null,
+            FailureSummary: null,
+            PrimarySummary: null,
+            TopChangedAttributes: [],
+            DiffRows: [],
+            Item: JsonDocument.Parse("""{"currentEnabled":false,"proposedEnable":false,"operations":[]}""").RootElement.Clone());
+
+        var status = model.DescribeEntryExecution(entry);
+
+        Assert.Equal("Already Compliant", status.Label);
+        Assert.Equal("neutral", status.ToneCssClass);
+        Assert.Contains(status.Facts, fact => fact.Label == "Run Type" && fact.Value == "Real Sync");
+        Assert.Contains(status.Facts, fact => fact.Label == "Execution" && fact.Value == "No AD write required");
+        Assert.Contains(status.Facts, fact => fact.Label == "Planned Action" && fact.Value == "Keep account disabled");
+    }
+
+    [Fact]
+    public async Task DescribeEntryExecution_RealSyncAppliedDisable_ShowsApplied()
+    {
+        var model = new DetailModel(new RunEntriesQueryService(new StubRunRepository(CreateRunDetail(dryRun: false))))
+        {
+            RunId = "bulk-1"
+        };
+
+        await model.OnGetAsync(CancellationToken.None);
+
+        var entry = new RunEntry(
+            EntryId: "entry-disable-applied",
+            RunId: "bulk-1",
+            ArtifactType: "BulkRun",
+            Mode: "BulkSync",
+            Bucket: "disables",
+            BucketLabel: "Disables",
+            WorkerId: "40774",
+            SamAccountName: "40774",
+            Reason: null,
+            ReviewCategory: null,
+            ReviewCaseType: null,
+            StartedAt: DateTimeOffset.UtcNow,
+            ChangeCount: 1,
+            OperationSummary: null,
+            FailureSummary: null,
+            PrimarySummary: null,
+            TopChangedAttributes: ["enabled"],
+            DiffRows: [new DiffRow("enabled", null, "true", "false", true)],
+            Item: JsonDocument.Parse("""{"action":"DisableUser","applied":true,"succeeded":true,"operations":[{"kind":"DisableUser"}],"currentEnabled":true,"proposedEnable":false}""").RootElement.Clone());
+
+        var status = model.DescribeEntryExecution(entry);
+
+        Assert.Equal("Applied", status.Label);
+        Assert.Equal("good", status.ToneCssClass);
+        Assert.Contains(status.Facts, fact => fact.Label == "Execution" && fact.Value == "Executed");
+        Assert.Contains(status.Facts, fact => fact.Label == "Result" && fact.Value == "AD write succeeded");
+        Assert.Contains(status.Facts, fact => fact.Label == "Planned Action" && fact.Value == "Disable account");
+    }
+
+    [Fact]
+    public async Task DescribeEntryExecution_PreviewDisable_ShowsPreviewOnly()
+    {
+        var model = new DetailModel(new RunEntriesQueryService(new StubRunRepository(CreateRunDetail(
+            artifactType: "WorkerPreview",
+            mode: "Preview",
+            dryRun: true))))
+        {
+            RunId = "preview-1"
+        };
+
+        await model.OnGetAsync(CancellationToken.None);
+
+        var entry = new RunEntry(
+            EntryId: "entry-preview-disable",
+            RunId: "preview-1",
+            ArtifactType: "WorkerPreview",
+            Mode: "Preview",
+            Bucket: "disables",
+            BucketLabel: "Disables",
+            WorkerId: "40774",
+            SamAccountName: "40774",
+            Reason: "Inactive worker should be disabled and placed in the graveyard OU.",
+            ReviewCategory: null,
+            ReviewCaseType: null,
+            StartedAt: DateTimeOffset.UtcNow,
+            ChangeCount: 0,
+            OperationSummary: null,
+            FailureSummary: null,
+            PrimarySummary: null,
+            TopChangedAttributes: [],
+            DiffRows: [],
+            Item: JsonDocument.Parse("""{"operations":[]}""").RootElement.Clone());
+
+        var status = model.DescribeEntryExecution(entry);
+
+        Assert.Equal("Preview No Action", status.Label);
+        Assert.Equal("neutral", status.ToneCssClass);
+        Assert.Contains(status.Facts, fact => fact.Label == "Run Type" && fact.Value == "Preview Snapshot");
+        Assert.Contains(status.Facts, fact => fact.Label == "Execution" && fact.Value == "Not executed");
+        Assert.Contains(status.Facts, fact => fact.Label == "Result" && fact.Value == "No AD write would be required");
+    }
+
     private static RunEntry CreateConflictEntry(string reason, string? failureSummary, string? primarySummary, string? reviewCaseType = null)
     {
         return new RunEntry(
@@ -227,7 +350,44 @@ public sealed class RunDetailModelTests
             Item: JsonDocument.Parse("""{}""").RootElement.Clone());
     }
 
-    private sealed class StubRunRepository : IRunRepository
+    private static RunDetail CreateRunDetail(
+        string runId = "bulk-1",
+        string artifactType = "BulkRun",
+        string mode = "BulkSync",
+        bool dryRun = true)
+    {
+        return new RunDetail(
+            new RunSummary(
+                RunId: runId,
+                Path: null,
+                ArtifactType: artifactType,
+                ConfigPath: null,
+                MappingConfigPath: null,
+                Mode: mode,
+                DryRun: dryRun,
+                Status: "Succeeded",
+                StartedAt: DateTimeOffset.UtcNow,
+                CompletedAt: DateTimeOffset.UtcNow,
+                DurationSeconds: 10,
+                ProcessedWorkers: 120,
+                TotalWorkers: 120,
+                Creates: 10,
+                Updates: 100,
+                Enables: 0,
+                Disables: 0,
+                GraveyardMoves: 0,
+                Deletions: 0,
+                Quarantined: 0,
+                Conflicts: 10,
+                GuardrailFailures: 0,
+                ManualReview: 0,
+                Unchanged: 0,
+                SyncScope: "Delta"),
+            JsonDocument.Parse("""{"kind":"bulkRun"}""").RootElement.Clone(),
+            new Dictionary<string, int> { ["updates"] = 100, ["conflicts"] = 10, ["creates"] = 10 });
+    }
+
+    private sealed class StubRunRepository(RunDetail? runDetail = null) : IRunRepository
     {
         public int LastSkip { get; private set; }
 
@@ -253,36 +413,7 @@ public sealed class RunDetailModelTests
         {
             _ = runId;
             _ = cancellationToken;
-            return Task.FromResult<RunDetail?>(
-                new RunDetail(
-                    new RunSummary(
-                        RunId: "bulk-1",
-                        Path: null,
-                        ArtifactType: "BulkRun",
-                        ConfigPath: null,
-                        MappingConfigPath: null,
-                        Mode: "BulkSync",
-                        DryRun: true,
-                        Status: "Succeeded",
-                        StartedAt: DateTimeOffset.UtcNow,
-                        CompletedAt: DateTimeOffset.UtcNow,
-                        DurationSeconds: 10,
-                        ProcessedWorkers: 120,
-                        TotalWorkers: 120,
-                        Creates: 10,
-                        Updates: 100,
-                        Enables: 0,
-                        Disables: 0,
-                        GraveyardMoves: 0,
-                        Deletions: 0,
-                        Quarantined: 0,
-                        Conflicts: 10,
-                        GuardrailFailures: 0,
-                        ManualReview: 0,
-                        Unchanged: 0,
-                        SyncScope: "Delta"),
-                    JsonDocument.Parse("""{"kind":"bulkRun"}""").RootElement.Clone(),
-                    new Dictionary<string, int> { ["updates"] = 100, ["conflicts"] = 10, ["creates"] = 10 }));
+            return Task.FromResult<RunDetail?>(runDetail ?? CreateRunDetail());
         }
 
         public Task<WorkerPreviewResult?> GetWorkerPreviewAsync(string runId, CancellationToken cancellationToken)

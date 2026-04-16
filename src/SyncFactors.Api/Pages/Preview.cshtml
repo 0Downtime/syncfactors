@@ -9,6 +9,7 @@
     var changedCount = preview?.DiffRows.Count(row => row.Changed) ?? 0;
     var unchangedCount = preview?.DiffRows.Count(row => !row.Changed) ?? 0;
     var highRiskChangedCount = preview?.DiffRows.Count(row => row.Changed && IsHighRiskAttribute(row.Attribute)) ?? 0;
+    var plannedOperationCount = preview?.Entries.Sum(CountOperations) ?? 0;
 }
 
 <section class="hero hero-compact">
@@ -135,6 +136,10 @@
         </aside>
     </section>
 
+    <section class="panel">
+        <p class="callout">This page is preview-only until you run a real sync. Buckets, actions, and diffs below describe the planned AD outcome; they do not mean AD has already changed.</p>
+    </section>
+
     <section class="panel-grid preview-summary-grid">
         <article class="panel">
             <div class="section-heading">
@@ -151,7 +156,10 @@
             </div>
 
             <dl class="kv">
-                <div><dt>Action</dt><dd>@(preview.OperationSummary?.Action ?? "No operation")</dd></div>
+                <div><dt>Preview Status</dt><dd><span class="badge @PreviewStatusTone(preview)">@PreviewStatusLabel(preview)</span></dd></div>
+                <div><dt>Execution</dt><dd>Preview only - not applied to AD</dd></div>
+                <div><dt>Planned Action</dt><dd>@(preview.OperationSummary?.Action ?? "No operation")</dd></div>
+                <div><dt>Directory Ops</dt><dd>@plannedOperationCount</dd></div>
                 <div><dt>Changed Attributes</dt><dd>@changedCount</dd></div>
                 @if (!string.IsNullOrWhiteSpace(employmentStatus))
                 {
@@ -170,6 +178,8 @@
             {
                 <p class="callout">@preview.OperationSummary.Effect</p>
             }
+
+            <p class="muted">@PreviewStatusSummary(preview, plannedOperationCount, changedCount)</p>
 
             @if (!string.IsNullOrWhiteSpace(preview.Reason) || !string.IsNullOrWhiteSpace(preview.ReviewCaseType))
             {
@@ -507,6 +517,65 @@
         }
 
         return "Unknown";
+    }
+
+    private static int CountOperations(SyncFactors.Contracts.WorkerPreviewEntry entry)
+    {
+        if (entry.Item.ValueKind != System.Text.Json.JsonValueKind.Object ||
+            !entry.Item.TryGetProperty("operations", out var operations) ||
+            operations.ValueKind != System.Text.Json.JsonValueKind.Array)
+        {
+            return 0;
+        }
+
+        return operations.GetArrayLength();
+    }
+
+    private static string PreviewStatusLabel(SyncFactors.Contracts.WorkerPreviewResult preview)
+    {
+        if (preview.Buckets.Contains("manualReview", StringComparer.OrdinalIgnoreCase))
+        {
+            return "Needs Review";
+        }
+
+        if (preview.Buckets.Contains("guardrailFailures", StringComparer.OrdinalIgnoreCase))
+        {
+            return "Blocked";
+        }
+
+        if (preview.Buckets.Contains("conflicts", StringComparer.OrdinalIgnoreCase))
+        {
+            return "Preview Failed";
+        }
+
+        var operationCount = preview.Entries.Sum(CountOperations);
+        var changedCount = preview.DiffRows.Count(row => row.Changed);
+        return operationCount == 0 && changedCount == 0
+            ? "No Action Needed"
+            : "Planned";
+    }
+
+    private static string PreviewStatusTone(SyncFactors.Contracts.WorkerPreviewResult preview) =>
+        PreviewStatusLabel(preview) switch
+        {
+            "Needs Review" => "warn",
+            "Blocked" => "warn",
+            "Preview Failed" => "bad",
+            "No Action Needed" => "neutral",
+            _ => "info",
+        };
+
+    private static string PreviewStatusSummary(SyncFactors.Contracts.WorkerPreviewResult preview, int plannedOperationCount, int changedCount)
+    {
+        var status = PreviewStatusLabel(preview);
+        return status switch
+        {
+            "Needs Review" => "Preview found a blocker that needs operator review before a real sync should be attempted.",
+            "Blocked" => "Preview hit a guardrail or validation boundary. No AD change has happened.",
+            "Preview Failed" => "Preview could not produce a clean plan. No AD change has happened.",
+            "No Action Needed" => "Preview found the worker already in the target state. A real sync would not need to write to AD for this snapshot.",
+            _ => $"Preview staged {plannedOperationCount} planned directory operation{(plannedOperationCount == 1 ? string.Empty : "s")} and {changedCount} changed attribute{(changedCount == 1 ? string.Empty : "s")}.",
+        };
     }
 
     private static IReadOnlyList<string> BuildRiskCallouts(SyncFactors.Contracts.WorkerPreviewResult preview)
