@@ -227,6 +227,38 @@ public sealed class FullSyncRunServiceTests
     }
 
     [Fact]
+    public async Task LaunchAsync_PersistsPopulationTotalsInRunReport()
+    {
+        var workers = new[]
+        {
+            CreateWorker("10001", managerId: "90001", emplStatus: "A"),
+            CreateWorker("10002", managerId: "90001", emplStatus: "T")
+        };
+        var service = CreateService(
+            workers: workers,
+            directoryGateway: new StubDirectoryGateway(
+                managerDistinguishedName: "CN=Manager,OU=LabUsers,DC=example,DC=com",
+                activeUsers:
+                [
+                    new DirectoryUserSnapshot("10001", "CN=10001,OU=LabUsers,DC=example,DC=com", true, "Worker 10001", new Dictionary<string, string?>()),
+                    new DirectoryUserSnapshot("10005", "CN=10005,OU=LabUsers,DC=example,DC=com", true, "Worker 10005", new Dictionary<string, string?>()),
+                    new DirectoryUserSnapshot("10006", "CN=10006,OU=LabUsers,DC=example,DC=com", false, "Worker 10006", new Dictionary<string, string?>())
+                ]),
+            directoryCommandGateway: new CapturingDirectoryCommandGateway(),
+            runRepository: out var runRepository,
+            runtimeStatusStore: out _);
+
+        await service.LaunchAsync(
+            new LaunchFullRunRequest(DryRun: true, AcknowledgeRealSync: false),
+            CancellationToken.None);
+
+        var populationTotals = runRepository.SavedRuns[^1].Report.GetProperty("populationTotals");
+        Assert.Equal(1, populationTotals.GetProperty("successFactorsActive").GetInt32());
+        Assert.Equal(2, populationTotals.GetProperty("activeDirectoryEnabled").GetInt32());
+        Assert.Equal(-1, populationTotals.GetProperty("difference").GetInt32());
+    }
+
+    [Fact]
     public async Task LaunchAsync_TerminatedWorkerWithoutExistingUser_UsingConfiguredSuccessFactorsPath_DoesNotExecuteCreate()
     {
         var worker = new WorkerSnapshot(
@@ -252,21 +284,17 @@ public sealed class FullSyncRunServiceTests
             new WorkerPlanningService(
                 new StubDirectoryGateway(managerDistinguishedName: null),
                 new IdentityMatcher(),
-                new LifecyclePolicy(
-                    new LifecyclePolicySettings(
-                        ActiveOu: "OU=LabUsers,DC=example,DC=com",
-                        PrehireOu: "OU=Prehire,DC=example,DC=com",
-                        GraveyardOu: "OU=Graveyard,DC=example,DC=com",
-                        InactiveStatusField: "employmentNav/jobInfoNav/emplStatus",
-                        InactiveStatusValues: ["T"])),
+                new LifecyclePolicy(CreateConfiguredStatusLifecycleSettings()),
                 new StubAttributeDiffService(),
                 new StubAttributeMappingProvider(),
                 NullLogger<WorkerPlanningService>.Instance),
             new DirectoryMutationCommandBuilder(),
             directoryCommandGateway,
+            new StubDirectoryGateway(managerDistinguishedName: null),
             runRepository,
             runtimeStatusStore,
             new WorkerRunSettings(MaxCreatesPerRun: 10, MaxDisablesPerRun: 10),
+            CreateConfiguredStatusLifecycleSettings(),
             NullLogger<FullSyncRunService>.Instance);
 
         var result = await service.LaunchAsync(
@@ -303,21 +331,17 @@ public sealed class FullSyncRunServiceTests
             new WorkerPlanningService(
                 new StubDirectoryGateway(managerDistinguishedName: null),
                 new IdentityMatcher(),
-                new LifecyclePolicy(
-                    new LifecyclePolicySettings(
-                        ActiveOu: "OU=LabUsers,DC=example,DC=com",
-                        PrehireOu: "OU=Prehire,DC=example,DC=com",
-                        GraveyardOu: "OU=Graveyard,DC=example,DC=com",
-                        InactiveStatusField: "employmentNav/jobInfoNav/emplStatus",
-                        InactiveStatusValues: ["T"])),
+                new LifecyclePolicy(CreateConfiguredStatusLifecycleSettings()),
                 new StubAttributeDiffService(),
                 mappingProvider,
                 NullLogger<WorkerPlanningService>.Instance),
             new DirectoryMutationCommandBuilder(),
             directoryCommandGateway,
+            new StubDirectoryGateway(managerDistinguishedName: null),
             runRepository,
             runtimeStatusStore,
             new WorkerRunSettings(MaxCreatesPerRun: 10, MaxDisablesPerRun: 10),
+            CreateConfiguredStatusLifecycleSettings(),
             NullLogger<FullSyncRunService>.Instance);
 
         var result = await service.LaunchAsync(
@@ -412,9 +436,11 @@ public sealed class FullSyncRunServiceTests
                 NullLogger<WorkerPlanningService>.Instance),
             new DirectoryMutationCommandBuilder(),
             directoryCommandGateway,
+            directoryGateway,
             runRepository,
             resolvedRuntimeStatusStore,
             settings ?? new WorkerRunSettings(MaxCreatesPerRun: 10, MaxDisablesPerRun: 10),
+            CreateLifecycleSettings(),
             NullLogger<FullSyncRunService>.Instance);
     }
 
@@ -440,16 +466,24 @@ public sealed class FullSyncRunServiceTests
             Attributes: attributes);
     }
 
+    private static LifecyclePolicySettings CreateLifecycleSettings()
+        => new(
+            ActiveOu: "OU=LabUsers,DC=example,DC=com",
+            PrehireOu: "OU=Prehire,DC=example,DC=com",
+            GraveyardOu: "OU=Graveyard,DC=example,DC=com",
+            InactiveStatusField: "emplStatus",
+            InactiveStatusValues: ["T"]);
+
+    private static LifecyclePolicySettings CreateConfiguredStatusLifecycleSettings()
+        => new(
+            ActiveOu: "OU=LabUsers,DC=example,DC=com",
+            PrehireOu: "OU=Prehire,DC=example,DC=com",
+            GraveyardOu: "OU=Graveyard,DC=example,DC=com",
+            InactiveStatusField: "employmentNav/jobInfoNav/emplStatus",
+            InactiveStatusValues: ["T"]);
+
     private static LifecyclePolicy CreateLifecyclePolicy()
-    {
-        return new LifecyclePolicy(
-            new LifecyclePolicySettings(
-                ActiveOu: "OU=LabUsers,DC=example,DC=com",
-                PrehireOu: "OU=Prehire,DC=example,DC=com",
-                GraveyardOu: "OU=Graveyard,DC=example,DC=com",
-                InactiveStatusField: "emplStatus",
-                InactiveStatusValues: ["T"]));
-    }
+        => new(CreateLifecycleSettings());
 
     private sealed class StubWorkerSource(IReadOnlyList<WorkerSnapshot> workers) : IWorkerSource
     {
@@ -496,13 +530,24 @@ public sealed class FullSyncRunServiceTests
         public WorkerListingMode? LastMode { get; private set; }
     }
 
-    private sealed class StubDirectoryGateway(string? managerDistinguishedName) : IDirectoryGateway
+    private sealed class StubDirectoryGateway(
+        string? managerDistinguishedName,
+        IReadOnlyList<DirectoryUserSnapshot>? activeUsers = null) : IDirectoryGateway
     {
         public Task<DirectoryUserSnapshot?> FindByWorkerAsync(WorkerSnapshot worker, CancellationToken cancellationToken)
         {
             _ = worker;
             _ = cancellationToken;
             return Task.FromResult<DirectoryUserSnapshot?>(null);
+        }
+
+        public Task<IReadOnlyList<DirectoryUserSnapshot>> ListUsersInOuAsync(string ouDistinguishedName, CancellationToken cancellationToken)
+        {
+            _ = cancellationToken;
+            return Task.FromResult<IReadOnlyList<DirectoryUserSnapshot>>(
+                string.Equals(ouDistinguishedName, "OU=LabUsers,DC=example,DC=com", StringComparison.OrdinalIgnoreCase)
+                    ? activeUsers ?? []
+                    : []);
         }
 
         public Task<string?> ResolveManagerDistinguishedNameAsync(string managerId, CancellationToken cancellationToken)

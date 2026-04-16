@@ -9,9 +9,11 @@ public sealed class FullSyncRunService(
     IWorkerPlanningService planningService,
     IDirectoryMutationCommandBuilder mutationCommandBuilder,
     IDirectoryCommandGateway directoryCommandGateway,
+    IDirectoryGateway directoryGateway,
     IRunRepository runRepository,
     IRuntimeStatusStore runtimeStatusStore,
     WorkerRunSettings settings,
+    LifecyclePolicySettings lifecycleSettings,
     ILogger<FullSyncRunService> logger) : IFullSyncRunService
 {
     public async Task<RunLaunchResult> LaunchAsync(LaunchFullRunRequest request, CancellationToken cancellationToken)
@@ -52,6 +54,36 @@ public sealed class FullSyncRunService(
         string? errorMessage = null;
         var runRecordSaved = false;
         var disableCount = 0;
+        var successFactorsActiveCount = 0;
+        RunPopulationTotals? populationTotals = null;
+
+        async Task<RunPopulationTotals?> GetPopulationTotalsAsync()
+        {
+            if (populationTotals is not null)
+            {
+                return populationTotals;
+            }
+
+            try
+            {
+                populationTotals = await RunPopulationTotalsBuilder.BuildAsync(
+                    workers,
+                    directoryGateway,
+                    lifecycleSettings,
+                    cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(
+                    ex,
+                    "Population totals could not be captured for full sync run {RunId}. SuccessFactorsActive={SuccessFactorsActive} ActiveOu={ActiveOu}",
+                    runId,
+                    successFactorsActiveCount,
+                    lifecycleSettings.ActiveOu);
+            }
+
+            return populationTotals;
+        }
 
         try
         {
@@ -89,6 +121,8 @@ public sealed class FullSyncRunService(
             {
                 workers.Add(worker);
             }
+
+            successFactorsActiveCount = RunPopulationTotalsBuilder.CountSuccessFactorsActiveWorkers(workers, lifecycleSettings);
 
             logger.LogInformation(
                 "Starting full sync run. RunId={RunId} DryRun={DryRun} WorkerCount={WorkerCount}",
@@ -168,6 +202,7 @@ public sealed class FullSyncRunService(
                 completedAt,
                 tally,
                 operations,
+                await GetPopulationTotalsAsync(),
                 requestedBy: "Dashboard"), cancellationToken);
 
             await runRepository.ReplaceRunEntriesAsync(runId, entries, cancellationToken);
@@ -213,6 +248,7 @@ public sealed class FullSyncRunService(
                     completedAt,
                     tally,
                     operations,
+                    await GetPopulationTotalsAsync(),
                     requestedBy: "Dashboard",
                     errorMessage: ex.Message), cancellationToken);
             }
@@ -420,6 +456,7 @@ public sealed class FullSyncRunService(
         DateTimeOffset completedAt,
         IDictionary<string, int> tally,
         IReadOnlyList<object> operations,
+        RunPopulationTotals? populationTotals,
         string requestedBy,
         string? errorMessage = null)
     {
@@ -446,7 +483,24 @@ public sealed class FullSyncRunService(
             GuardrailFailures: GetBucketCount(tally, "guardrailFailures"),
             ManualReview: GetBucketCount(tally, "manualReview"),
             Unchanged: GetBucketCount(tally, "unchanged"),
-            Report: ToJsonElement(new { kind = "fullSyncRun", syncScope = "Full sync", dryRun, operations, totals = tally, errorMessage }),
+            Report: ToJsonElement(new
+            {
+                kind = "fullSyncRun",
+                syncScope = "Full sync",
+                dryRun,
+                operations,
+                totals = tally,
+                errorMessage,
+                populationTotals = populationTotals is null
+                    ? null
+                    : new
+                    {
+                        successFactorsActive = populationTotals.SuccessFactorsActive,
+                        activeDirectoryEnabled = populationTotals.ActiveDirectoryEnabled,
+                        difference = populationTotals.Difference,
+                        activeOu = populationTotals.ActiveOu
+                    }
+            }),
             RunTrigger: "AdHoc",
             RequestedBy: requestedBy);
     }

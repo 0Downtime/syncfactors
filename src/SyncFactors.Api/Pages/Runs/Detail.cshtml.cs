@@ -159,6 +159,41 @@ public sealed class DetailModel(RunEntriesQueryService queryService) : PageModel
     public string? GetEmploymentStatusFilterLabel()
         => DescribeEmploymentStatus(EmploymentStatus)?.Label;
 
+    public RunPopulationComparisonDisplay? GetPopulationComparison()
+    {
+        if (Run?.Report.ValueKind != JsonValueKind.Object ||
+            !Run.Report.TryGetProperty("populationTotals", out var populationTotals) ||
+            populationTotals.ValueKind != JsonValueKind.Object)
+        {
+            return null;
+        }
+
+        var successFactorsActive = GetItemInt32(populationTotals, "successFactorsActive");
+        var activeDirectoryEnabled = GetItemInt32(populationTotals, "activeDirectoryEnabled");
+        if (!successFactorsActive.HasValue || !activeDirectoryEnabled.HasValue)
+        {
+            return null;
+        }
+
+        var difference = GetItemInt32(populationTotals, "difference") ?? (successFactorsActive.Value - activeDirectoryEnabled.Value);
+        var activeOu = GetItemString(populationTotals, "activeOu");
+        var summary = difference switch
+        {
+            0 => $"SuccessFactors active and enabled AD totals are aligned at {successFactorsActive.Value}.",
+            > 0 => $"SuccessFactors active exceeds enabled AD by {difference}. Review missing creates, enables, or unresolved conflicts.",
+            _ => $"Enabled AD exceeds SuccessFactors active by {Math.Abs(difference)}. Review stale enabled accounts in the active OU."
+        };
+
+        return new RunPopulationComparisonDisplay(
+            SuccessFactorsActive: successFactorsActive.Value,
+            ActiveDirectoryEnabled: activeDirectoryEnabled.Value,
+            Difference: difference,
+            ActiveOu: activeOu,
+            StatusLabel: difference == 0 ? "Aligned" : difference > 0 ? "SF ahead" : "AD ahead",
+            ToneCssClass: difference == 0 ? "good" : "warn",
+            Summary: summary);
+    }
+
     public EntryExecutionDisplay DescribeEntryExecution(RunEntry entry)
     {
         var action = GetItemString(entry.Item, "action");
@@ -506,6 +541,18 @@ public sealed class DetailModel(RunEntriesQueryService queryService) : PageModel
         };
     }
 
+    private static int? GetItemInt32(JsonElement item, string propertyName)
+    {
+        if (item.ValueKind != JsonValueKind.Object || !item.TryGetProperty(propertyName, out var property))
+        {
+            return null;
+        }
+
+        return property.ValueKind == JsonValueKind.Number && property.TryGetInt32(out var value)
+            ? value
+            : null;
+    }
+
     private static int GetItemArrayCount(JsonElement item, string propertyName)
         => GetItemArray(item, propertyName).Count;
 
@@ -691,6 +738,27 @@ public sealed class DetailModel(RunEntriesQueryService queryService) : PageModel
     public sealed record EntryExecutionFact(
         string Label,
         string Value);
+
+    public sealed record RunPopulationComparisonDisplay(
+        int SuccessFactorsActive,
+        int ActiveDirectoryEnabled,
+        int Difference,
+        string? ActiveOu,
+        string StatusLabel,
+        string ToneCssClass,
+        string Summary)
+    {
+        public string DifferenceLabel => Difference switch
+        {
+            > 0 => $"+{Difference}",
+            < 0 => Difference.ToString(),
+            _ => "0"
+        };
+
+        public string ActiveOuLabel => string.IsNullOrWhiteSpace(ActiveOu)
+            ? "Configured active OU"
+            : ActiveOu;
+    }
 
     private sealed record JsonlExportMetadataRecord(
         string RecordType,

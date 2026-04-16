@@ -299,6 +299,41 @@ public sealed class RunDetailModelTests
     }
 
     [Fact]
+    public async Task GetPopulationComparison_ReadsTotalsFromRunReport()
+    {
+        var runDetail = CreateRunDetail(
+            report: JsonDocument.Parse(
+                """
+                {
+                  "kind": "bulkRun",
+                  "populationTotals": {
+                    "successFactorsActive": 42,
+                    "activeDirectoryEnabled": 39,
+                    "difference": 3,
+                    "activeOu": "OU=LabUsers,DC=example,DC=com"
+                  }
+                }
+                """).RootElement.Clone());
+        var model = new DetailModel(new RunEntriesQueryService(new StubRunRepository(runDetail)))
+        {
+            RunId = "bulk-1"
+        };
+
+        await model.OnGetAsync(CancellationToken.None);
+
+        var comparison = model.GetPopulationComparison();
+
+        Assert.NotNull(comparison);
+        Assert.Equal(42, comparison!.SuccessFactorsActive);
+        Assert.Equal(39, comparison.ActiveDirectoryEnabled);
+        Assert.Equal(3, comparison.Difference);
+        Assert.Equal("+3", comparison.DifferenceLabel);
+        Assert.Equal("SF ahead", comparison.StatusLabel);
+        Assert.Equal("warn", comparison.ToneCssClass);
+        Assert.Equal("OU=LabUsers,DC=example,DC=com", comparison.ActiveOuLabel);
+    }
+
+    [Fact]
     public void GetEndDateDisplay_FormatsParseableDate()
     {
         var model = new DetailModel(new RunEntriesQueryService(new StubRunRepository()));
@@ -512,7 +547,8 @@ public sealed class RunDetailModelTests
         string runId = "bulk-1",
         string artifactType = "BulkRun",
         string mode = "BulkSync",
-        bool dryRun = true)
+        bool dryRun = true,
+        JsonElement? report = null)
     {
         return new RunDetail(
             new RunSummary(
@@ -541,7 +577,7 @@ public sealed class RunDetailModelTests
                 ManualReview: 0,
                 Unchanged: 0,
                 SyncScope: "Delta"),
-            JsonDocument.Parse("""{"kind":"bulkRun"}""").RootElement.Clone(),
+            report ?? JsonDocument.Parse("""{"kind":"bulkRun"}""").RootElement.Clone(),
             new Dictionary<string, int> { ["updates"] = 100, ["conflicts"] = 10, ["creates"] = 10 });
     }
 

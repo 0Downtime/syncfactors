@@ -13,6 +13,7 @@ public sealed class BulkRunCoordinator(
     IWorkerPlanningService planningService,
     IDirectoryMutationCommandBuilder mutationCommandBuilder,
     IDirectoryCommandGateway directoryCommandGateway,
+    IDirectoryGateway directoryGateway,
     IRunLifecycleService runLifecycleService,
     WorkerRunSettings settings,
     LifecyclePolicySettings lifecycleSettings,
@@ -49,6 +50,7 @@ public sealed class BulkRunCoordinator(
         var runId = $"bulk-{timeProvider.GetUtcNow():yyyyMMddHHmmssfff}";
         var startedAt = timeProvider.GetUtcNow();
         var totalWorkers = workers.Count;
+        var successFactorsActiveCount = RunPopulationTotalsBuilder.CountSuccessFactorsActiveWorkers(workers, lifecycleSettings);
         logger.LogInformation(
             "Starting bulk run. RunId={RunId} Trigger={RunTrigger} DryRun={DryRun} RequestedBy={RequestedBy} Workers={Workers}",
             runId,
@@ -61,6 +63,35 @@ public sealed class BulkRunCoordinator(
         var processedWorkers = 0;
         var createCount = 0;
         var disableCount = 0;
+        RunPopulationTotals? populationTotals = null;
+
+        async Task<RunPopulationTotals?> GetPopulationTotalsAsync()
+        {
+            if (populationTotals is not null)
+            {
+                return populationTotals;
+            }
+
+            try
+            {
+                populationTotals = await RunPopulationTotalsBuilder.BuildAsync(
+                    workers,
+                    directoryGateway,
+                    lifecycleSettings,
+                    cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(
+                    ex,
+                    "Population totals could not be captured for run {RunId}. SuccessFactorsActive={SuccessFactorsActive} ActiveOu={ActiveOu}",
+                    runId,
+                    successFactorsActiveCount,
+                    lifecycleSettings.ActiveOu);
+            }
+
+            return populationTotals;
+        }
 
         await runLifecycleService.StartRunAsync(
             runId,
@@ -256,13 +287,14 @@ public sealed class BulkRunCoordinator(
 
             channel.Writer.Complete();
             await writerTask;
+            populationTotals = await GetPopulationTotalsAsync();
             await runLifecycleService.CompleteRunAsync(
                 runId,
                 mode: "BulkSync",
                 dryRun: request.DryRun,
                 totalWorkers: totalWorkers,
                 tally: tally,
-                report: BuildReport(runId, request, tally, totalWorkers, startedAt, syncScope),
+                report: BuildReport(runId, request, tally, totalWorkers, startedAt, syncScope, populationTotals),
                 startedAt: startedAt,
                 cancellationToken);
 
@@ -295,7 +327,7 @@ public sealed class BulkRunCoordinator(
                     currentWorkerId: null,
                     errorMessage: guardrailFailure.Message,
                     tally: tally,
-                    report: BuildReport(runId, request, tally, totalWorkers, startedAt, syncScope),
+                    report: BuildReport(runId, request, tally, totalWorkers, startedAt, syncScope, await GetPopulationTotalsAsync()),
                     startedAt: startedAt,
                     cancellationToken);
                 throw guardrailFailure;
@@ -322,7 +354,7 @@ public sealed class BulkRunCoordinator(
                     currentWorkerId: null,
                     reason: "Run canceled by operator.",
                     tally: tally,
-                    report: BuildReport(runId, request, tally, totalWorkers, startedAt, syncScope),
+                    report: BuildReport(runId, request, tally, totalWorkers, startedAt, syncScope, await GetPopulationTotalsAsync()),
                     startedAt: startedAt,
                     cancellationToken);
                 throw new RunCanceledException(runId, "Run canceled by operator.");
@@ -350,7 +382,7 @@ public sealed class BulkRunCoordinator(
                 currentWorkerId: null,
                 errorMessage: ex.Message,
                 tally: tally,
-                report: BuildReport(runId, request, tally, totalWorkers, startedAt, syncScope),
+                report: BuildReport(runId, request, tally, totalWorkers, startedAt, syncScope, await GetPopulationTotalsAsync()),
                 startedAt: startedAt,
                 cancellationToken);
             throw;
@@ -490,37 +522,52 @@ public sealed class BulkRunCoordinator(
             """);
     }
 
-    private static JsonElement BuildReport(string runId, RunQueueRequest request, RunTally tally, int totalWorkers, DateTimeOffset startedAt, string syncScope)
+    private static JsonElement BuildReport(
+        string runId,
+        RunQueueRequest request,
+        RunTally tally,
+        int totalWorkers,
+        DateTimeOffset startedAt,
+        string syncScope,
+        RunPopulationTotals? populationTotals)
     {
-        return ParseJson(
-            $$"""
+        return JsonSerializer.SerializeToElement(new
+        {
+            kind = "bulkRun",
+            syncScope,
+            runId,
+            requestId = request.RequestId,
+            mode = request.Mode,
+            runTrigger = request.RunTrigger,
+            requestedBy = request.RequestedBy,
+            dryRun = request.DryRun,
+            startedAt,
+            totalWorkers,
+            tally = new
             {
-              "kind": "bulkRun",
-              "syncScope": "{{Escape(syncScope)}}",
-              "runId": "{{runId}}",
-              "requestId": "{{request.RequestId}}",
-              "mode": "{{request.Mode}}",
-              "runTrigger": "{{request.RunTrigger}}",
-              "requestedBy": {{ToJsonString(request.RequestedBy)}},
-              "dryRun": {{(request.DryRun ? "true" : "false")}},
-              "startedAt": "{{startedAt:O}}",
-              "totalWorkers": {{totalWorkers}},
-              "tally": {
-                "creates": {{tally.Creates}},
-                "updates": {{tally.Updates}},
-                "enables": {{tally.Enables}},
-                "disables": {{tally.Disables}},
-                "graveyardMoves": {{tally.GraveyardMoves}},
-                "deletions": {{tally.Deletions}},
-                "manualReview": {{tally.ManualReview}},
-                "guardrailFailures": {{tally.GuardrailFailures}},
-                "conflicts": {{tally.Conflicts}},
-                "quarantined": {{tally.Quarantined}},
-                "unchanged": {{tally.Unchanged}}
-              },
-              "operations": []
-            }
-            """);
+                creates = tally.Creates,
+                updates = tally.Updates,
+                enables = tally.Enables,
+                disables = tally.Disables,
+                graveyardMoves = tally.GraveyardMoves,
+                deletions = tally.Deletions,
+                manualReview = tally.ManualReview,
+                guardrailFailures = tally.GuardrailFailures,
+                conflicts = tally.Conflicts,
+                quarantined = tally.Quarantined,
+                unchanged = tally.Unchanged
+            },
+            populationTotals = populationTotals is null
+                ? null
+                : new
+                {
+                    successFactorsActive = populationTotals.SuccessFactorsActive,
+                    activeDirectoryEnabled = populationTotals.ActiveDirectoryEnabled,
+                    difference = populationTotals.Difference,
+                    activeOu = populationTotals.ActiveOu
+                },
+            operations = Array.Empty<object>()
+        });
     }
 
     private static JsonElement ParseJson(string json)

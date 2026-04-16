@@ -26,6 +26,7 @@ public sealed class BulkRunCoordinatorTests
             new StubWorkerPlanningService(),
             new StubDirectoryMutationCommandBuilder(),
             new StubDirectoryCommandGateway(),
+            new StubDirectoryGateway(),
             new CapturingRunLifecycleService(),
             new WorkerRunSettings(MaxCreatesPerRun: 10),
             CreateLifecycleSettings(),
@@ -70,6 +71,7 @@ public sealed class BulkRunCoordinatorTests
             new StubWorkerPlanningService(),
             new StubDirectoryMutationCommandBuilder(),
             new SuccessfulDirectoryCommandGateway(),
+            new StubDirectoryGateway(),
             new CapturingRunLifecycleService(),
             new WorkerRunSettings(MaxCreatesPerRun: 10),
             CreateLifecycleSettings(),
@@ -110,6 +112,7 @@ public sealed class BulkRunCoordinatorTests
             new StubWorkerPlanningService(includeChangedAttribute: true),
             new StubDirectoryMutationCommandBuilder(),
             new FailingDirectoryCommandGateway(),
+            new StubDirectoryGateway(),
             new CapturingRunLifecycleService(),
             new WorkerRunSettings(MaxCreatesPerRun: 10),
             CreateLifecycleSettings(),
@@ -149,6 +152,7 @@ public sealed class BulkRunCoordinatorTests
             new CreateWorkerPlanningService(),
             new StubDirectoryMutationCommandBuilder(),
             new SuccessfulDirectoryCommandGateway(),
+            new StubDirectoryGateway(),
             new CapturingRunLifecycleService(),
             new WorkerRunSettings(MaxCreatesPerRun: 1),
             CreateLifecycleSettings(),
@@ -192,6 +196,7 @@ public sealed class BulkRunCoordinatorTests
             new GraveyardWorkerPlanningService(),
             new StubDirectoryMutationCommandBuilder(),
             new SuccessfulDirectoryCommandGateway(),
+            new StubDirectoryGateway(),
             new CapturingRunLifecycleService(),
             new WorkerRunSettings(MaxCreatesPerRun: 10, MaxDeletionsPerRun: 5),
             CreateLifecycleSettings(),
@@ -233,6 +238,7 @@ public sealed class BulkRunCoordinatorTests
             new StubWorkerPlanningService(),
             new StubDirectoryMutationCommandBuilder(),
             new SuccessfulDirectoryCommandGateway(),
+            new StubDirectoryGateway(),
             new CapturingRunLifecycleService(),
             new WorkerRunSettings(MaxCreatesPerRun: 10),
             CreateLifecycleSettings(),
@@ -257,6 +263,56 @@ public sealed class BulkRunCoordinatorTests
 
         var entry = Assert.Single(CapturingRunLifecycleService.Entries);
         Assert.Equal("64304", entry.Item.GetProperty("emplStatus").GetString());
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_PersistsPopulationTotalsInRunReport()
+    {
+        CapturingRunLifecycleService.Entries.Clear();
+        CapturingRunLifecycleService.Reset();
+        var activeOuUsers = new[]
+        {
+            new DirectoryUserSnapshot("10001", "CN=10001,OU=LabUsers,DC=example,DC=com", true, "Worker 10001", new Dictionary<string, string?>()),
+            new DirectoryUserSnapshot("10005", "CN=10005,OU=LabUsers,DC=example,DC=com", true, "Worker 10005", new Dictionary<string, string?>()),
+            new DirectoryUserSnapshot("10006", "CN=10006,OU=LabUsers,DC=example,DC=com", false, "Worker 10006", new Dictionary<string, string?>())
+        };
+        var coordinator = new BulkRunCoordinator(
+            new StubWorkerSource([CreateWorker("10001", "64300"), CreateWorker("10003", "64304"), CreateWorker("10004", "64308")]),
+            new CapturingDeltaSyncService(),
+            new StubRunQueueStore(),
+            new StubGraveyardRetentionStore(),
+            new StubWorkerPlanningService(),
+            new StubDirectoryMutationCommandBuilder(),
+            new SuccessfulDirectoryCommandGateway(),
+            new StubDirectoryGateway(activeUsers: activeOuUsers),
+            new CapturingRunLifecycleService(),
+            new WorkerRunSettings(MaxCreatesPerRun: 10),
+            CreateLifecycleSettings(),
+            NullLogger<BulkRunCoordinator>.Instance,
+            TimeProvider.System);
+
+        await coordinator.ExecuteAsync(
+            new RunQueueRequest(
+                RequestId: "req-population",
+                Mode: "BulkSync",
+                DryRun: true,
+                RunTrigger: "AdHoc",
+                RequestedBy: "test",
+                Status: "Pending",
+                RequestedAt: DateTimeOffset.UtcNow,
+                StartedAt: null,
+                CompletedAt: null,
+                RunId: null,
+                ErrorMessage: null),
+            maxDegreeOfParallelism: 1,
+            CancellationToken.None);
+
+        Assert.NotNull(CapturingRunLifecycleService.LastCompletedReport);
+        var populationTotals = CapturingRunLifecycleService.LastCompletedReport!.Value.GetProperty("populationTotals");
+        Assert.Equal(1, populationTotals.GetProperty("successFactorsActive").GetInt32());
+        Assert.Equal(2, populationTotals.GetProperty("activeDirectoryEnabled").GetInt32());
+        Assert.Equal(-1, populationTotals.GetProperty("difference").GetInt32());
+        Assert.Equal("OU=LabUsers,DC=example,DC=com", populationTotals.GetProperty("activeOu").GetString());
     }
 
     private static WorkerSnapshot CreateWorker(string workerId, string? status = null, string? endDate = null)
@@ -315,7 +371,9 @@ public sealed class BulkRunCoordinatorTests
         }
     }
 
-    private sealed class StubDirectoryGateway(IReadOnlyList<DirectoryUserSnapshot>? graveyardUsers = null) : IDirectoryGateway
+    private sealed class StubDirectoryGateway(
+        IReadOnlyList<DirectoryUserSnapshot>? activeUsers = null,
+        IReadOnlyList<DirectoryUserSnapshot>? graveyardUsers = null) : IDirectoryGateway
     {
         public Task<DirectoryUserSnapshot?> FindByWorkerAsync(WorkerSnapshot worker, CancellationToken cancellationToken) =>
             Task.FromResult<DirectoryUserSnapshot?>(null);
@@ -323,6 +381,11 @@ public sealed class BulkRunCoordinatorTests
         public Task<IReadOnlyList<DirectoryUserSnapshot>> ListUsersInOuAsync(string ouDistinguishedName, CancellationToken cancellationToken)
         {
             _ = cancellationToken;
+            if (string.Equals(ouDistinguishedName, "OU=LabUsers,DC=example,DC=com", StringComparison.OrdinalIgnoreCase))
+            {
+                return Task.FromResult<IReadOnlyList<DirectoryUserSnapshot>>(activeUsers ?? []);
+            }
+
             if (!string.Equals(ouDistinguishedName, "OU=Graveyard,DC=example,DC=com", StringComparison.OrdinalIgnoreCase))
             {
                 return Task.FromResult<IReadOnlyList<DirectoryUserSnapshot>>([]);
@@ -619,11 +682,13 @@ public sealed class BulkRunCoordinatorTests
         public static List<RunEntryRecord> Entries { get; } = [];
         public static int CompletedCalls { get; private set; }
         public static int FailedCalls { get; private set; }
+        public static JsonElement? LastCompletedReport { get; private set; }
 
         public static void Reset()
         {
             CompletedCalls = 0;
             FailedCalls = 0;
+            LastCompletedReport = null;
         }
 
         public Task ExecutePlannedRunAsync(RunPlan plan, CancellationToken cancellationToken)
@@ -680,6 +745,7 @@ public sealed class BulkRunCoordinatorTests
             _ = startedAt;
             _ = cancellationToken;
             CompletedCalls++;
+            LastCompletedReport = report.Clone();
             return Task.CompletedTask;
         }
 
