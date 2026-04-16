@@ -1697,7 +1697,7 @@ a:focus-visible {
     justify-content: flex-start;
   }
 
-  .config-entry-multiline .config-entry-meta {
+  .config-entry-stacked .config-entry-meta {
     align-items: flex-start;
   }
 
@@ -2109,10 +2109,15 @@ a:focus-visible {
   min-width: 0;
   margin: 0;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 12px 14px;
+  grid-template-columns: 1fr;
+  gap: 8px;
   align-items: flex-start;
   text-align: left;
+}
+
+.config-entry-stacked {
+  grid-template-columns: 1fr;
+  gap: 8px;
 }
 
 .config-entry-main {
@@ -2159,22 +2164,32 @@ a:focus-visible {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  justify-content: flex-end;
-  align-items: center;
+  justify-content: flex-start;
+  align-items: flex-start;
   flex-shrink: 0;
 }
 
 .config-entry-meta-stack {
-  flex-direction: column;
-  align-items: flex-end;
+  flex-direction: row;
+  align-items: flex-start;
   justify-content: flex-start;
 }
 
 .config-entry-meta .badge {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  min-width: 0;
   padding: 4px 10px;
   font-size: 0.84rem;
   line-height: 1.15;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.config-entry-source-badge {
+  max-width: min(100%, 18rem);
 }
 
 .config-copy-button {
