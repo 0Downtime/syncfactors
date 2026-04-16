@@ -2618,6 +2618,16 @@ a:focus-visible {
   font-size: 0.82rem;
   font-weight: 700;
   letter-spacing: 0.01em;
+  text-decoration: none;
+  transition: transform 140ms ease, box-shadow 140ms ease, border-color 140ms ease;
+}
+
+.employment-status-pill:hover {
+  transform: translateY(-1px);
+}
+
+.employment-status-pill.active {
+  box-shadow: 0 0 0 2px color-mix(in srgb, currentColor 20%, transparent);
 }
 
 .employment-status-pill strong {

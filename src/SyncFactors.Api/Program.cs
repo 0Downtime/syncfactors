@@ -480,13 +480,14 @@ readApi.MapGet("/runs/{runId}/entries", async (
     string? workerId,
     string? reason,
     string? filter,
+    string? employmentStatus,
     string? entryId,
     int? page,
     int? pageSize,
     RunEntriesQueryService queryService,
     CancellationToken cancellationToken) =>
 {
-    var result = await queryService.LoadAsync(runId, bucket, workerId, reason, filter, entryId, page, pageSize, cancellationToken);
+    var result = await queryService.LoadAsync(runId, bucket, workerId, reason, filter, employmentStatus, entryId, page, pageSize, cancellationToken);
     if (result is null)
     {
         return Results.NotFound();

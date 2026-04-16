@@ -154,6 +154,7 @@ public sealed class RunLifecycleServiceTests
             string? workerId,
             string? reason,
             string? filter,
+            string? employmentStatus,
             string? entryId,
             int skip,
             int take,
@@ -164,6 +165,7 @@ public sealed class RunLifecycleServiceTests
             _ = workerId;
             _ = reason;
             _ = filter;
+            _ = employmentStatus;
             _ = entryId;
             _ = skip;
             _ = take;
@@ -177,6 +179,7 @@ public sealed class RunLifecycleServiceTests
             string? workerId,
             string? reason,
             string? filter,
+            string? employmentStatus,
             string? entryId,
             CancellationToken cancellationToken)
         {
@@ -185,6 +188,7 @@ public sealed class RunLifecycleServiceTests
             _ = workerId;
             _ = reason;
             _ = filter;
+            _ = employmentStatus;
             _ = entryId;
             _ = cancellationToken;
             throw new NotSupportedException();
@@ -196,6 +200,7 @@ public sealed class RunLifecycleServiceTests
             string? workerId,
             string? reason,
             string? filter,
+            string? employmentStatus,
             string? entryId,
             CancellationToken cancellationToken)
         {
@@ -204,6 +209,7 @@ public sealed class RunLifecycleServiceTests
             _ = workerId;
             _ = reason;
             _ = filter;
+            _ = employmentStatus;
             _ = entryId;
             _ = cancellationToken;
             throw new NotSupportedException();

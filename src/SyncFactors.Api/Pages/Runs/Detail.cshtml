@@ -45,7 +45,7 @@
         <div class="bucket-grid">
         @foreach (var bucket in Model.Run.BucketCounts)
         {
-            <a class="bucket-card" asp-page="/Runs/Detail" asp-route-runId="@Model.Run.Run.RunId" asp-route-bucket="@bucket.Key">
+            <a class="bucket-card" asp-page="/Runs/Detail" asp-route-runId="@Model.Run.Run.RunId" asp-route-bucket="@bucket.Key" asp-route-workerId="@Model.WorkerId" asp-route-filter="@Model.Filter" asp-route-employmentStatus="@Model.EmploymentStatus">
                 <span class="bucket-name">@bucket.Key</span>
                 <strong>@bucket.Value</strong>
             </a>
@@ -66,6 +66,7 @@
             <span>Text search</span>
             <input type="text" name="filter" value="@Model.Filter" placeholder="reason, reviewCaseType, raw entry text..." />
         </label>
+        <input type="hidden" name="employmentStatus" value="@Model.EmploymentStatus" />
         <input type="hidden" name="pageNumber" value="1" />
         <div class="filter-actions">
             <button type="submit">Apply</button>
@@ -82,10 +83,10 @@
     </form>
     <p class="muted">Exports download the full matching set for the active filters, not just the current page. JSONL writes one metadata record first, then one entry record per line. CSV repeats the run and filter context on every row.</p>
     <div class="bucket-chip-row">
-        <a class="bucket-card @(string.IsNullOrWhiteSpace(Model.Bucket) ? "active" : null)" asp-page="/Runs/Detail" asp-route-runId="@Model.Run.Run.RunId" asp-route-workerId="@Model.WorkerId" asp-route-filter="@Model.Filter" asp-route-pageNumber="1">All buckets</a>
+        <a class="bucket-card @(string.IsNullOrWhiteSpace(Model.Bucket) ? "active" : null)" asp-page="/Runs/Detail" asp-route-runId="@Model.Run.Run.RunId" asp-route-workerId="@Model.WorkerId" asp-route-filter="@Model.Filter" asp-route-employmentStatus="@Model.EmploymentStatus" asp-route-pageNumber="1">All buckets</a>
         @foreach (var bucket in Model.AvailableBuckets)
         {
-            <a class="bucket-card @(string.Equals(Model.Bucket, bucket, StringComparison.Ordinal) ? "active" : null)" asp-page="/Runs/Detail" asp-route-runId="@Model.Run.Run.RunId" asp-route-bucket="@bucket" asp-route-workerId="@Model.WorkerId" asp-route-filter="@Model.Filter" asp-route-pageNumber="1">
+            <a class="bucket-card @(string.Equals(Model.Bucket, bucket, StringComparison.Ordinal) ? "active" : null)" asp-page="/Runs/Detail" asp-route-runId="@Model.Run.Run.RunId" asp-route-bucket="@bucket" asp-route-workerId="@Model.WorkerId" asp-route-filter="@Model.Filter" asp-route-employmentStatus="@Model.EmploymentStatus" asp-route-pageNumber="1">
                 <span class="bucket-name">@bucket</span>
                 <strong>@Model.Run.BucketCounts[bucket]</strong>
             </a>
@@ -94,11 +95,25 @@
 </section>
 
 <section class="panel">
-    <h2>Entries @if (!string.IsNullOrWhiteSpace(Model.Bucket)) { <text>· @Model.Bucket</text> }</h2>
+    <h2>
+        Entries
+        @if (!string.IsNullOrWhiteSpace(Model.Bucket)) { <text>· @Model.Bucket</text> }
+        @if (!string.IsNullOrWhiteSpace(Model.GetEmploymentStatusFilterLabel())) { <text>· @Model.GetEmploymentStatusFilterLabel()</text> }
+    </h2>
     <p class="muted">Showing page @Model.PageNumber of @Model.TotalPages · @Model.TotalEntries total entries · 15 per page.</p>
     @if (Model.EmploymentStatusTotals.Count > 0)
     {
         <div class="employment-status-summary" aria-label="Employment status totals">
+            <a class="employment-status-pill neutral @(string.IsNullOrWhiteSpace(Model.EmploymentStatus) ? "active" : null)"
+               asp-page="/Runs/Detail"
+               asp-route-runId="@Model.Run.Run.RunId"
+               asp-route-bucket="@Model.Bucket"
+               asp-route-workerId="@Model.WorkerId"
+               asp-route-filter="@Model.Filter"
+               asp-route-employmentStatus=""
+               asp-route-pageNumber="1">
+                All statuses
+            </a>
             @foreach (var total in Model.EmploymentStatusTotals)
             {
                 var status = Model.DescribeEmploymentStatus(total.Code);
@@ -107,9 +122,16 @@
                     continue;
                 }
 
-                <span class="employment-status-pill @status.ToneCssClass">
+                <a class="employment-status-pill @status.ToneCssClass @(string.Equals(Model.EmploymentStatus, total.Code, StringComparison.OrdinalIgnoreCase) ? "active" : null)"
+                   asp-page="/Runs/Detail"
+                   asp-route-runId="@Model.Run.Run.RunId"
+                   asp-route-bucket="@Model.Bucket"
+                   asp-route-workerId="@Model.WorkerId"
+                   asp-route-filter="@Model.Filter"
+                   asp-route-employmentStatus="@total.Code"
+                   asp-route-pageNumber="1">
                     @status.Label <strong>@total.Count</strong>
-                </span>
+                </a>
             }
         </div>
     }
@@ -250,11 +272,11 @@
         <div class="filter-actions">
             @if (Model.HasPreviousPage)
             {
-                <a class="link-button" asp-page="/Runs/Detail" asp-route-runId="@Model.Run.Run.RunId" asp-route-bucket="@Model.Bucket" asp-route-workerId="@Model.WorkerId" asp-route-filter="@Model.Filter" asp-route-pageNumber="@(Model.PageNumber - 1)">Previous</a>
+                <a class="link-button" asp-page="/Runs/Detail" asp-route-runId="@Model.Run.Run.RunId" asp-route-bucket="@Model.Bucket" asp-route-workerId="@Model.WorkerId" asp-route-filter="@Model.Filter" asp-route-employmentStatus="@Model.EmploymentStatus" asp-route-pageNumber="@(Model.PageNumber - 1)">Previous</a>
             }
             @if (Model.HasNextPage)
             {
-                <a class="link-button" asp-page="/Runs/Detail" asp-route-runId="@Model.Run.Run.RunId" asp-route-bucket="@Model.Bucket" asp-route-workerId="@Model.WorkerId" asp-route-filter="@Model.Filter" asp-route-pageNumber="@(Model.PageNumber + 1)">Next</a>
+                <a class="link-button" asp-page="/Runs/Detail" asp-route-runId="@Model.Run.Run.RunId" asp-route-bucket="@Model.Bucket" asp-route-workerId="@Model.WorkerId" asp-route-filter="@Model.Filter" asp-route-employmentStatus="@Model.EmploymentStatus" asp-route-pageNumber="@(Model.PageNumber + 1)">Next</a>
             }
         </div>
     }

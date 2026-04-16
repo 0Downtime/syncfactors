@@ -128,6 +128,7 @@ public interface IRunRepository
         string? workerId,
         string? reason,
         string? filter,
+        string? employmentStatus,
         string? entryId,
         int skip,
         int take,
@@ -138,6 +139,7 @@ public interface IRunRepository
         string? workerId,
         string? reason,
         string? filter,
+        string? employmentStatus,
         string? entryId,
         CancellationToken cancellationToken);
     Task<IReadOnlyList<EmploymentStatusTotal>> GetRunEntryEmploymentStatusTotalsAsync(
@@ -146,6 +148,7 @@ public interface IRunRepository
         string? workerId,
         string? reason,
         string? filter,
+        string? employmentStatus,
         string? entryId,
         CancellationToken cancellationToken) =>
         Task.FromResult<IReadOnlyList<EmploymentStatusTotal>>([]);
@@ -155,6 +158,7 @@ public interface IRunRepository
         string? workerId,
         string? reason,
         string? filter,
+        string? employmentStatus,
         string? entryId,
         CancellationToken cancellationToken);
 }

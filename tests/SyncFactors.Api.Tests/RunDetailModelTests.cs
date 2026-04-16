@@ -41,7 +41,8 @@ public sealed class RunDetailModelTests
             RunId = "bulk-1",
             Bucket = "updates",
             WorkerId = "worker-1",
-            Filter = "email"
+            Filter = "email",
+            EmploymentStatus = "64304"
         };
 
         var result = await model.OnGetAsync(CancellationToken.None);
@@ -51,6 +52,9 @@ public sealed class RunDetailModelTests
         Assert.Equal("updates", repository.LastTotalsBucket);
         Assert.Equal("worker-1", repository.LastTotalsWorkerId);
         Assert.Equal("email", repository.LastTotalsFilter);
+        Assert.Equal("64304", repository.LastTotalsEmploymentStatus);
+        Assert.Equal("64304", repository.LastEntriesEmploymentStatus);
+        Assert.Null(repository.LastEmploymentTotalsEmploymentStatus);
         Assert.Collection(
             model.AttributeTotals,
             total =>
@@ -492,7 +496,13 @@ public sealed class RunDetailModelTests
 
         public string? LastTotalsFilter { get; private set; }
 
+        public string? LastTotalsEmploymentStatus { get; private set; }
+
         public string? LastEmploymentTotalsRunId { get; private set; }
+
+        public string? LastEmploymentTotalsEmploymentStatus { get; private set; }
+
+        public string? LastEntriesEmploymentStatus { get; private set; }
 
         public Task<IReadOnlyList<RunSummary>> ListRunsAsync(CancellationToken cancellationToken)
         {
@@ -544,13 +554,14 @@ public sealed class RunDetailModelTests
             return Task.CompletedTask;
         }
 
-        public Task<IReadOnlyList<RunEntry>> GetRunEntriesAsync(string runId, string? bucket, string? workerId, string? reason, string? filter, string? entryId, int skip, int take, CancellationToken cancellationToken)
+        public Task<IReadOnlyList<RunEntry>> GetRunEntriesAsync(string runId, string? bucket, string? workerId, string? reason, string? filter, string? employmentStatus, string? entryId, int skip, int take, CancellationToken cancellationToken)
         {
             _ = runId;
             _ = bucket;
             _ = workerId;
             _ = reason;
             _ = filter;
+            LastEntriesEmploymentStatus = employmentStatus;
             _ = entryId;
             _ = cancellationToken;
             LastSkip = skip;
@@ -578,24 +589,26 @@ public sealed class RunDetailModelTests
                     Item: JsonDocument.Parse("""{}""").RootElement.Clone())).ToArray());
         }
 
-        public Task<int> CountRunEntriesAsync(string runId, string? bucket, string? workerId, string? reason, string? filter, string? entryId, CancellationToken cancellationToken)
+        public Task<int> CountRunEntriesAsync(string runId, string? bucket, string? workerId, string? reason, string? filter, string? employmentStatus, string? entryId, CancellationToken cancellationToken)
         {
             _ = runId;
             _ = bucket;
             _ = workerId;
             _ = reason;
             _ = filter;
+            _ = employmentStatus;
             _ = entryId;
             _ = cancellationToken;
             return Task.FromResult(120);
         }
 
-        public Task<IReadOnlyList<ChangedAttributeTotal>> GetRunEntryAttributeTotalsAsync(string runId, string? bucket, string? workerId, string? reason, string? filter, string? entryId, CancellationToken cancellationToken)
+        public Task<IReadOnlyList<ChangedAttributeTotal>> GetRunEntryAttributeTotalsAsync(string runId, string? bucket, string? workerId, string? reason, string? filter, string? employmentStatus, string? entryId, CancellationToken cancellationToken)
         {
             LastTotalsRunId = runId;
             LastTotalsBucket = bucket;
             LastTotalsWorkerId = workerId;
             LastTotalsFilter = filter;
+            LastTotalsEmploymentStatus = employmentStatus;
             _ = reason;
             _ = entryId;
             _ = cancellationToken;
@@ -606,13 +619,14 @@ public sealed class RunDetailModelTests
             ]);
         }
 
-        public Task<IReadOnlyList<EmploymentStatusTotal>> GetRunEntryEmploymentStatusTotalsAsync(string runId, string? bucket, string? workerId, string? reason, string? filter, string? entryId, CancellationToken cancellationToken)
+        public Task<IReadOnlyList<EmploymentStatusTotal>> GetRunEntryEmploymentStatusTotalsAsync(string runId, string? bucket, string? workerId, string? reason, string? filter, string? employmentStatus, string? entryId, CancellationToken cancellationToken)
         {
             LastEmploymentTotalsRunId = runId;
             _ = bucket;
             _ = workerId;
             _ = reason;
             _ = filter;
+            LastEmploymentTotalsEmploymentStatus = employmentStatus;
             _ = entryId;
             _ = cancellationToken;
             return Task.FromResult<IReadOnlyList<EmploymentStatusTotal>>(
