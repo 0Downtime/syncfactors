@@ -1,6 +1,27 @@
 # [Alpha] SyncFactors
 
 <p>
+  <a href="https://github.com/0Downtime/syncfactors/actions/workflows/test.yml">
+    <img src="https://github.com/0Downtime/syncfactors/actions/workflows/test.yml/badge.svg?branch=main" alt="Tests" />
+  </a>
+  <a href="https://github.com/0Downtime/syncfactors/actions/workflows/security.yml">
+    <img src="https://github.com/0Downtime/syncfactors/actions/workflows/security.yml/badge.svg?branch=main" alt="Security Scans" />
+  </a>
+  <a href="https://github.com/0Downtime/syncfactors/actions/workflows/codeql.yml">
+    <img src="https://github.com/0Downtime/syncfactors/actions/workflows/codeql.yml/badge.svg?branch=main" alt="CodeQL" />
+  </a>
+  <a href="https://github.com/0Downtime/syncfactors/blob/main/LICENSE">
+    <img src="https://img.shields.io/github/license/0Downtime/syncfactors" alt="License" />
+  </a>
+  <a href="https://github.com/0Downtime/syncfactors/commits/main">
+    <img src="https://img.shields.io/github/last-commit/0Downtime/syncfactors?label=last%20commit" alt="Last Commit" />
+  </a>
+  <a href="https://github.com/0Downtime/syncfactors/search?l=C%23">
+    <img src="https://img.shields.io/github/languages/top/0Downtime/syncfactors" alt="Top Language" />
+  </a>
+</p>
+
+<p>
   <img src="src/SyncFactors.Api/wwwroot/images/syncfactors-logo-black.png" alt="SyncFactors" width="420" />
 </p>
 
