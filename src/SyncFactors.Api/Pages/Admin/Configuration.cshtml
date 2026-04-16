@@ -1,0 +1,203 @@
+@page
+@model SyncFactors.Api.Pages.Admin.ConfigurationModel
+@{
+    ViewData["Title"] = "Configuration";
+}
+
+<section class="hero hero-compact" id="top">
+    <div>
+        <p class="eyebrow">Administration</p>
+        <h1>Configuration</h1>
+        <p class="lede">Review the effective non-secret configuration for this deployment, including host wiring, authentication mode, sync policy, and mapping coverage.</p>
+        <p class="callout">Secrets are intentionally hidden. Source badges show whether a value came from the runtime host configuration, a config file, or a built-in default.</p>
+    </div>
+</section>
+
+<nav class="config-anchor-nav" aria-label="Configuration sections">
+@foreach (var configSection in Model.Snapshot.Sections)
+{
+    <a href="#@configSection.Id">@configSection.Title</a>
+}
+</nav>
+
+@foreach (var configSection in Model.Snapshot.Sections)
+{
+    <section class="panel config-section" id="@configSection.Id">
+        <div class="section-heading">
+            <div>
+                <p class="eyebrow">@configSection.Eyebrow</p>
+                <h2>@configSection.Title</h2>
+                <p class="muted config-section-description">@configSection.Description</p>
+            </div>
+            <a class="link-button subtle-button" href="#top">Back to top</a>
+        </div>
+
+        @if (configSection.MappingSummary is not null)
+        {
+            <div class="config-summary-strip" aria-label="Mapping summary">
+                <article class="config-summary-card">
+                    <span class="config-summary-label">Total</span>
+                    <strong>@configSection.MappingSummary.TotalCount</strong>
+                </article>
+                <article class="config-summary-card">
+                    <span class="config-summary-label">Enabled</span>
+                    <strong>@configSection.MappingSummary.EnabledCount</strong>
+                </article>
+                <article class="config-summary-card">
+                    <span class="config-summary-label">Disabled</span>
+                    <strong>@configSection.MappingSummary.DisabledCount</strong>
+                </article>
+                <article class="config-summary-card">
+                    <span class="config-summary-label">Required</span>
+                    <strong>@configSection.MappingSummary.RequiredCount</strong>
+                </article>
+            </div>
+        }
+
+        @if (configSection.Groups.Count > 0)
+        {
+            <div class="config-group-grid">
+                @foreach (var group in configSection.Groups)
+                {
+                    <article class="config-group">
+                        <h3>@group.Title</h3>
+                        <dl class="config-kv">
+                            @foreach (var entry in group.Entries)
+                            {
+                                var displayLines = entry.DisplayValue
+                                    .Split(["\r\n", "\n"], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                                if (displayLines.Length == 0)
+                                {
+                                    displayLines = [entry.DisplayValue];
+                                }
+
+                                var showCopyButton = !entry.IsSecretOmitted &&
+                                    (entry.DisplayValue.Length > 48 || displayLines.Length > 1);
+                                var hasLongSourceLabel = entry.SourceLabel.Length > 24;
+                                var useStackedMeta = displayLines.Length > 1 || showCopyButton || entry.IsSecretOmitted || hasLongSourceLabel;
+                                var entryClasses = useStackedMeta ? "config-entry config-entry-stacked" : "config-entry";
+                                var metaClasses = useStackedMeta
+                                    ? "config-entry-meta config-entry-meta-stack"
+                                    : "config-entry-meta";
+                                <div>
+                                    <dt>@entry.Label</dt>
+                                    <dd class="@entryClasses">
+                                        <div class="config-entry-main" title="@entry.DisplayValue">
+                                            @foreach (var line in displayLines)
+                                            {
+                                                var separatorIndex = line.IndexOf(':');
+                                                var hasLineLabel =
+                                                    separatorIndex > 0 &&
+                                                    separatorIndex < line.Length - 1 &&
+                                                    (line.StartsWith("Configured:", StringComparison.OrdinalIgnoreCase) ||
+                                                     line.StartsWith("Resolved:", StringComparison.OrdinalIgnoreCase));
+                                                if (hasLineLabel)
+                                                {
+                                                    var lineLabel = line[..separatorIndex];
+                                                    var lineValue = line[(separatorIndex + 1)..].TrimStart();
+                                                    <span class="config-entry-line config-entry-line-with-label">
+                                                        <span class="config-entry-line-label">@($"{lineLabel}:")</span>
+                                                        <span class="config-entry-line-value">@lineValue</span>
+                                                    </span>
+                                                }
+                                                else
+                                                {
+                                                    <span class="config-entry-line">
+                                                        <span class="config-entry-line-value">@line</span>
+                                                    </span>
+                                                }
+                                            }
+                                        </div>
+                                        <div class="@metaClasses">
+                                            @if (showCopyButton)
+                                            {
+                                                <button
+                                                    class="config-copy-button"
+                                                    type="button"
+                                                    title="Copy full value"
+                                                    aria-label="Copy full value for @entry.Label"
+                                                    data-copy-value="@entry.DisplayValue">
+                                                    Copy
+                                                </button>
+                                            }
+                                            @if (entry.IsSecretOmitted)
+                                            {
+                                                <span class="badge dim">Secret hidden</span>
+                                            }
+                                            <span
+                                                class="badge config-entry-source-badge @Model.GetSourceBadgeClass(entry.SourceLabel)"
+                                                title="@entry.SourceLabel">
+                                                @entry.SourceLabel
+                                            </span>
+                                        </div>
+                                    </dd>
+                                </div>
+                            }
+                        </dl>
+                    </article>
+                }
+            </div>
+        }
+
+        @if (configSection.MappingRows is not null && configSection.MappingRows.Count > 0)
+        {
+            <div class="table-scroll">
+                <table class="data-table compact config-mapping-table">
+                    <thead>
+                        <tr>
+                            <th>Source</th>
+                            <th>Target</th>
+                            <th>Enabled</th>
+                            <th>Required</th>
+                            <th>Transform</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    @foreach (var row in configSection.MappingRows)
+                    {
+                        <tr>
+                            <td><span class="source-path" title="@row.Source" tabindex="0">@row.Source</span></td>
+                            <td><span class="source-value" title="@row.Target" tabindex="0">@row.Target</span></td>
+                            <td><span class="badge @(row.Enabled ? "good" : "dim")">@(row.Enabled ? "Enabled" : "Disabled")</span></td>
+                            <td><span class="badge @(row.Required ? "warn" : "neutral")">@(row.Required ? "Required" : "Optional")</span></td>
+                            <td>@row.Transform</td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </section>
+}
+
+<script>
+(() => {
+    const copyButtons = Array.from(document.querySelectorAll("[data-copy-value]"));
+    if (!copyButtons.length || !navigator.clipboard || !navigator.clipboard.writeText) {
+        return;
+    }
+
+    copyButtons.forEach((button) => {
+        button.addEventListener("click", async () => {
+            try {
+                await navigator.clipboard.writeText(button.getAttribute("data-copy-value") || "");
+                window.dispatchEvent(new CustomEvent("syncfactors:toast", {
+                    detail: {
+                        title: "Copied",
+                        tone: "good",
+                        message: "Full value copied to clipboard."
+                    }
+                }));
+            } catch (error) {
+                window.dispatchEvent(new CustomEvent("syncfactors:toast", {
+                    detail: {
+                        title: "Copy Failed",
+                        tone: "warn",
+                        message: "Clipboard access was blocked for this value."
+                    }
+                }));
+            }
+        });
+    });
+})();
+</script>
