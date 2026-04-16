@@ -12,9 +12,36 @@ public sealed class DeletionQueueModel(
     IGraveyardRetentionStore retentionStore,
     TimeProvider timeProvider) : PageModel
 {
+    private const int PageSize = 25;
+
+    [BindProperty(SupportsGet = true)]
+    public string? Filter { get; set; }
+
+    [BindProperty(SupportsGet = true)]
+    public int PendingPageNumber { get; set; } = 1;
+
+    [BindProperty(SupportsGet = true)]
+    public int HeldPageNumber { get; set; } = 1;
+
     public IReadOnlyList<GraveyardDeletionQueueItem> PendingUsers { get; private set; } = [];
 
     public IReadOnlyList<GraveyardDeletionQueueItem> HeldUsers { get; private set; } = [];
+
+    public int TotalPendingUsers { get; private set; }
+
+    public int TotalHeldUsers { get; private set; }
+
+    public int TotalPendingPages { get; private set; } = 1;
+
+    public int TotalHeldPages { get; private set; } = 1;
+
+    public bool HasPreviousPendingPage => PendingPageNumber > 1;
+
+    public bool HasNextPendingPage => PendingPageNumber < TotalPendingPages;
+
+    public bool HasPreviousHeldPage => HeldPageNumber > 1;
+
+    public bool HasNextHeldPage => HeldPageNumber < TotalHeldPages;
 
     [TempData]
     public string? ErrorMessage { get; set; }
@@ -33,7 +60,7 @@ public sealed class DeletionQueueModel(
         {
             ErrorMessage = "Worker ID is required to place a hold.";
             SuccessMessage = null;
-            return RedirectToPage();
+            return RedirectToCurrentPage();
         }
 
         await retentionStore.SetHoldAsync(
@@ -44,7 +71,7 @@ public sealed class DeletionQueueModel(
             cancellationToken);
         SuccessMessage = $"Placed a deletion hold for worker {workerId}.";
         ErrorMessage = null;
-        return RedirectToPage();
+        return RedirectToCurrentPage();
     }
 
     public async Task<IActionResult> OnPostRemoveHoldAsync(string workerId, CancellationToken cancellationToken)
@@ -53,7 +80,7 @@ public sealed class DeletionQueueModel(
         {
             ErrorMessage = "Worker ID is required to remove a hold.";
             SuccessMessage = null;
-            return RedirectToPage();
+            return RedirectToCurrentPage();
         }
 
         await retentionStore.SetHoldAsync(
@@ -64,7 +91,7 @@ public sealed class DeletionQueueModel(
             cancellationToken);
         SuccessMessage = $"Removed the deletion hold for worker {workerId}.";
         ErrorMessage = null;
-        return RedirectToPage();
+        return RedirectToCurrentPage();
     }
 
     public string FormatCountdown(GraveyardDeletionQueueItem item) =>
@@ -75,9 +102,57 @@ public sealed class DeletionQueueModel(
     private async Task LoadAsync(CancellationToken cancellationToken)
     {
         var snapshot = await deletionQueueService.GetSnapshotAsync(cancellationToken);
-        PendingUsers = snapshot.Pending;
-        HeldUsers = snapshot.Held;
+        var filteredPending = ApplyFilter(snapshot.Pending);
+        var filteredHeld = ApplyFilter(snapshot.Held);
+
+        TotalPendingUsers = filteredPending.Count;
+        TotalHeldUsers = filteredHeld.Count;
+        TotalPendingPages = Math.Max(1, (int)Math.Ceiling(TotalPendingUsers / (double)PageSize));
+        TotalHeldPages = Math.Max(1, (int)Math.Ceiling(TotalHeldUsers / (double)PageSize));
+
+        PendingPageNumber = Math.Clamp(PendingPageNumber, 1, TotalPendingPages);
+        HeldPageNumber = Math.Clamp(HeldPageNumber, 1, TotalHeldPages);
+
+        PendingUsers = filteredPending
+            .Skip((PendingPageNumber - 1) * PageSize)
+            .Take(PageSize)
+            .ToArray();
+        HeldUsers = filteredHeld
+            .Skip((HeldPageNumber - 1) * PageSize)
+            .Take(PageSize)
+            .ToArray();
     }
+
+    private IReadOnlyList<GraveyardDeletionQueueItem> ApplyFilter(IReadOnlyList<GraveyardDeletionQueueItem> users)
+    {
+        if (string.IsNullOrWhiteSpace(Filter))
+        {
+            return users;
+        }
+
+        var filter = Filter.Trim();
+        return users
+            .Where(user =>
+                Contains(user.WorkerId, filter) ||
+                Contains(user.SamAccountName, filter) ||
+                Contains(user.DisplayName, filter) ||
+                Contains(user.Status, filter) ||
+                Contains(user.DistinguishedName, filter) ||
+                Contains(user.HoldPlacedBy, filter))
+            .ToArray();
+    }
+
+    private RedirectToPageResult RedirectToCurrentPage() =>
+        RedirectToPage(new
+        {
+            Filter,
+            PendingPageNumber,
+            HeldPageNumber
+        });
+
+    private static bool Contains(string? value, string filter) =>
+        !string.IsNullOrWhiteSpace(value) &&
+        value.Contains(filter, StringComparison.OrdinalIgnoreCase);
 
     private string GetActingUserId() =>
         User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.Identity?.Name ?? "unknown";
