@@ -107,6 +107,39 @@ public sealed class RunDetailModelTests
     }
 
     [Fact]
+    public async Task OnGetExportJsonlAsync_ReturnsMetadataLineThenEntryLines()
+    {
+        var repository = new StubRunRepository();
+        var model = new DetailModel(new RunEntriesQueryService(repository))
+        {
+            RunId = "bulk-1",
+            Bucket = "conflicts",
+            WorkerId = "worker-1",
+            Filter = "manager"
+        };
+
+        var result = await model.OnGetExportJsonlAsync(CancellationToken.None);
+
+        var file = Assert.IsType<FileContentResult>(result);
+        Assert.Equal("application/x-ndjson", file.ContentType);
+        Assert.Equal("syncfactors-run-bulk-1-conflicts-worker-filtered-text-filtered-entries.jsonl", file.FileDownloadName);
+
+        var lines = System.Text.Encoding.UTF8.GetString(file.FileContents)
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        Assert.Equal(121, lines.Length);
+
+        using var metadataDocument = JsonDocument.Parse(lines[0]);
+        Assert.Equal("metadata", metadataDocument.RootElement.GetProperty("recordType").GetString());
+        Assert.Equal("conflicts", metadataDocument.RootElement.GetProperty("filters").GetProperty("bucket").GetString());
+        Assert.Equal(120, metadataDocument.RootElement.GetProperty("summary").GetProperty("matchingEntries").GetInt32());
+
+        using var entryDocument = JsonDocument.Parse(lines[1]);
+        Assert.Equal("entry", entryDocument.RootElement.GetProperty("recordType").GetString());
+        Assert.Equal("conflicts", entryDocument.RootElement.GetProperty("entry").GetProperty("bucket").GetString());
+    }
+
+    [Fact]
     public async Task GetFailureDiagnostics_ParsesEntryReason()
     {
         var repository = new StubRunRepository();
