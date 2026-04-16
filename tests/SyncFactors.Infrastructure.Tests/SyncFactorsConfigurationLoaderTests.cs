@@ -78,6 +78,26 @@ public sealed class SyncFactorsConfigurationLoaderTests
     }
 
     [Fact]
+    public async Task GetSyncConfig_DefaultsMaxDegreeOfParallelismToTwo_WhenOmitted()
+    {
+        var config = await LoadConfigAsync(identityPolicyJson: null);
+
+        Assert.Equal(2, config.Sync.MaxDegreeOfParallelism);
+    }
+
+    [Fact]
+    public async Task GetSyncConfig_LoadsMaxDegreeOfParallelism_WhenExplicitlyConfigured()
+    {
+        var config = await LoadConfigAsync(
+            identityPolicyJson: null,
+            syncJson: """
+              "maxDegreeOfParallelism": 6
+            """);
+
+        Assert.Equal(6, config.Sync.MaxDegreeOfParallelism);
+    }
+
+    [Fact]
     public async Task Loader_TrimsIdentityAttributeAndMappingIdentifiers()
     {
         var tempRoot = Path.Combine(Path.GetTempPath(), "syncfactors-config-loader", Guid.NewGuid().ToString("N"));

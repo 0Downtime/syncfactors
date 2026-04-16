@@ -1,8 +1,8 @@
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Configuration;
 using SyncFactors.Contracts;
 using SyncFactors.Domain;
+using SyncFactors.Infrastructure;
 
 public sealed class Worker(
     ILogger<Worker> logger,
@@ -14,7 +14,7 @@ public sealed class Worker(
     DeleteAllUsersCoordinator deleteAllUsersCoordinator,
     IWorkerHeartbeatStore workerHeartbeatStore,
     TimeProvider timeProvider,
-    IConfiguration configuration) : BackgroundService
+    SyncFactorsConfigurationLoader configLoader) : BackgroundService
 {
     private static readonly TimeSpan HeartbeatInterval = TimeSpan.FromSeconds(15);
 
@@ -39,7 +39,7 @@ public sealed class Worker(
                 var heartbeatTask = PumpHeartbeatsAsync(startedAt, "Running", activity, heartbeatCts.Token);
                 try
                 {
-                    var maxDegreeOfParallelism = Math.Max(1, configuration.GetValue<int?>("SyncFactors:Worker:MaxDegreeOfParallelism") ?? 2);
+                    var maxDegreeOfParallelism = Math.Max(1, configLoader.GetSyncConfig().Sync.MaxDegreeOfParallelism);
                     var runId = string.Equals(claimed.Mode, "DeleteAllUsers", StringComparison.OrdinalIgnoreCase)
                         ? await deleteAllUsersCoordinator.ExecuteAsync(claimed, stoppingToken)
                         : await bulkRunCoordinator.ExecuteAsync(claimed, maxDegreeOfParallelism, stoppingToken);

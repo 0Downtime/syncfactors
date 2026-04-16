@@ -71,6 +71,11 @@ public sealed class SyncFactorsConfigurationValidator(SyncFactorsConfigurationLo
             throw new InvalidOperationException("SyncFactors sync policy values must be non-negative.");
         }
 
+        if (sync.Sync.MaxDegreeOfParallelism <= 0)
+        {
+            throw new InvalidOperationException("SyncFactors sync.maxDegreeOfParallelism must be positive.");
+        }
+
         if (sync.Safety.MaxCreatesPerRun <= 0 || sync.Safety.MaxDisablesPerRun <= 0 || sync.Safety.MaxDeletionsPerRun <= 0)
         {
             throw new InvalidOperationException("SyncFactors safety thresholds must be positive.");

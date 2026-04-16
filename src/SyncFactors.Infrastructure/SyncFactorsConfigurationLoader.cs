@@ -103,6 +103,7 @@ public sealed class SyncFactorsConfigurationLoader
             Sync: new SyncPolicyConfig(
                 EnableBeforeStartDays: document.GetRequiredObject("sync").GetRequiredInt32("enableBeforeStartDays"),
                 DeletionRetentionDays: document.GetRequiredObject("sync").GetRequiredInt32("deletionRetentionDays"),
+                MaxDegreeOfParallelism: TryGetInt32(document.GetRequiredObject("sync"), "maxDegreeOfParallelism") ?? 2,
                 AutoDeleteFromGraveyard: document.GetRequiredObject("sync").TryGetBoolean("autoDeleteFromGraveyard") ?? false,
                 LeaveStatusValues: document.GetRequiredObject("sync").TryGetStringArray("leaveStatusValues") ?? []),
             Safety: new SafetyConfig(

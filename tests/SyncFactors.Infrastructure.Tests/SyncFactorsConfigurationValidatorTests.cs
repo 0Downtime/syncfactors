@@ -204,6 +204,100 @@ public sealed class SyncFactorsConfigurationValidatorTests
         }
     }
 
+    [Fact]
+    public async Task Validate_RejectsNonPositiveMaxDegreeOfParallelism()
+    {
+        var tempRoot = CreateTempRoot();
+        var configPath = Path.Combine(tempRoot, "sync-config.json");
+        var mappingConfigPath = await WriteMappingConfigAsync(tempRoot);
+
+        await File.WriteAllTextAsync(configPath, """
+        {
+          "secrets": {
+            "successFactorsUsernameEnv": "SF_AD_SYNC_SF_USERNAME",
+            "successFactorsPasswordEnv": "SF_AD_SYNC_SF_PASSWORD",
+            "adServerEnv": null,
+            "adUsernameEnv": null,
+            "adBindPasswordEnv": "SF_AD_SYNC_AD_BIND_PASSWORD"
+          },
+          "successFactors": {
+            "baseUrl": "https://example.test/odata/v2",
+            "auth": {
+              "mode": "basic",
+              "basic": {
+                "username": "",
+                "password": ""
+              }
+            },
+            "query": {
+              "entitySet": "PerPerson",
+              "identityField": "personIdExternal",
+              "deltaField": "lastModifiedDateTime",
+              "select": ["personIdExternal"],
+              "expand": []
+            }
+          },
+          "ad": {
+            "server": "ldap.example.test",
+            "username": "",
+            "bindPassword": "",
+            "identityAttribute": "employeeID",
+            "defaultActiveOu": "OU=LabUsers,DC=example,DC=com",
+            "prehireOu": "OU=Prehire,DC=example,DC=com",
+            "graveyardOu": "OU=LabGraveyard,DC=example,DC=com",
+            "transport": {
+              "mode": "ldaps",
+              "allowLdapFallback": false,
+              "requireCertificateValidation": true,
+              "requireSigning": true,
+              "trustedCertificateThumbprints": []
+            }
+          },
+          "sync": {
+            "enableBeforeStartDays": 7,
+            "deletionRetentionDays": 90,
+            "maxDegreeOfParallelism": 0
+          },
+          "safety": {
+            "maxCreatesPerRun": 10,
+            "maxDisablesPerRun": 10,
+            "maxDeletionsPerRun": 10
+          },
+          "reporting": {
+            "outputDirectory": "/tmp"
+          }
+        }
+        """);
+
+        var originalDotnetEnvironment = Environment.GetEnvironmentVariable("DOTNET_ENVIRONMENT");
+        var originalSfUsername = Environment.GetEnvironmentVariable("SF_AD_SYNC_SF_USERNAME");
+        var originalSfPassword = Environment.GetEnvironmentVariable("SF_AD_SYNC_SF_PASSWORD");
+        var originalAdBindPassword = Environment.GetEnvironmentVariable("SF_AD_SYNC_AD_BIND_PASSWORD");
+
+        try
+        {
+            Environment.SetEnvironmentVariable("DOTNET_ENVIRONMENT", "Production");
+            Environment.SetEnvironmentVariable("SF_AD_SYNC_SF_USERNAME", "env-backed-user");
+            Environment.SetEnvironmentVariable("SF_AD_SYNC_SF_PASSWORD", "env-backed-password");
+            Environment.SetEnvironmentVariable("SF_AD_SYNC_AD_BIND_PASSWORD", "env-backed-bind-password");
+
+            var loader = new SyncFactorsConfigurationLoader(new SyncFactorsConfigPathResolver(configPath, mappingConfigPath));
+            var validator = new SyncFactorsConfigurationValidator(loader);
+
+            var exception = Assert.Throws<InvalidOperationException>(() => validator.Validate());
+
+            Assert.Equal("SyncFactors sync.maxDegreeOfParallelism must be positive.", exception.Message);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("DOTNET_ENVIRONMENT", originalDotnetEnvironment);
+            Environment.SetEnvironmentVariable("SF_AD_SYNC_SF_USERNAME", originalSfUsername);
+            Environment.SetEnvironmentVariable("SF_AD_SYNC_SF_PASSWORD", originalSfPassword);
+            Environment.SetEnvironmentVariable("SF_AD_SYNC_AD_BIND_PASSWORD", originalAdBindPassword);
+            Directory.Delete(tempRoot, recursive: true);
+        }
+    }
+
     private static string CreateTempRoot()
     {
         var tempRoot = Path.Combine(Path.GetTempPath(), "syncfactors-config-validator", Guid.NewGuid().ToString("N"));
