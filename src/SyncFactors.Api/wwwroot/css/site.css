@@ -2039,10 +2039,55 @@ a:focus-visible {
   display: flex;
   gap: 10px;
   align-items: end;
+  flex-wrap: wrap;
 }
 
 .filter-actions .link-button {
   text-align: center;
+}
+
+.export-menu {
+  position: relative;
+}
+
+.export-menu summary {
+  list-style: none;
+  cursor: pointer;
+  user-select: none;
+}
+
+.export-menu summary::-webkit-details-marker {
+  display: none;
+}
+
+.export-menu summary::after {
+  content: "▾";
+  margin-left: 8px;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+.export-menu[open] summary::after {
+  content: "▴";
+}
+
+.export-menu-panel {
+  position: absolute;
+  right: 0;
+  z-index: 10;
+  display: grid;
+  gap: 8px;
+  min-width: 160px;
+  margin-top: 8px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  box-shadow: var(--shadow-raised);
+}
+
+.export-menu-panel .link-button {
+  width: 100%;
 }
 
 .auth-remember {

@@ -15,6 +15,7 @@ public sealed class DetailModel(RunEntriesQueryService queryService) : PageModel
     {
         WriteIndented = true
     };
+    private static readonly JsonSerializerOptions JsonlSerializerOptions = new(JsonSerializerDefaults.Web);
 
     [BindProperty(SupportsGet = true)]
     public string RunId { get; set; } = string.Empty;
@@ -375,7 +376,39 @@ public sealed class DetailModel(RunEntriesQueryService queryService) : PageModel
         }
 
         var fileBytes = JsonSerializer.SerializeToUtf8Bytes(export, ExportSerializerOptions);
-        return File(fileBytes, "application/json", BuildExportFileName());
+        return File(fileBytes, "application/json", BuildExportFileName("json"));
+    }
+
+    public async Task<IActionResult> OnGetExportJsonlAsync(CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(RunId))
+        {
+            return NotFound();
+        }
+
+        var export = await queryService.ExportAsync(RunId, Bucket, WorkerId, null, Filter, null, cancellationToken);
+        if (export is null)
+        {
+            return NotFound();
+        }
+
+        return File(BuildJsonlExport(export), "application/x-ndjson", BuildExportFileName("jsonl"));
+    }
+
+    public async Task<IActionResult> OnGetExportCsvAsync(CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(RunId))
+        {
+            return NotFound();
+        }
+
+        var export = await queryService.ExportAsync(RunId, Bucket, WorkerId, null, Filter, null, cancellationToken);
+        if (export is null)
+        {
+            return NotFound();
+        }
+
+        return File(BuildCsvExport(export), "text/csv", BuildExportFileName("csv"));
     }
 
     private static string DescribePlannedAction(RunEntry entry, string? action, int operationCount)
@@ -470,7 +503,121 @@ public sealed class DetailModel(RunEntriesQueryService queryService) : PageModel
     private static bool StringEquals(string? left, string? right)
         => string.Equals(left?.Trim(), right?.Trim(), StringComparison.OrdinalIgnoreCase);
 
-    private string BuildExportFileName()
+    private static byte[] BuildJsonlExport(RunEntriesExportResult export)
+    {
+        var builder = new StringBuilder();
+        builder.AppendLine(JsonSerializer.Serialize(
+            new JsonlExportMetadataRecord(
+                "metadata",
+                export.ExportedAt,
+                export.Filters,
+                export.Run,
+                export.Summary),
+            JsonlSerializerOptions));
+
+        foreach (var entry in export.Entries)
+        {
+            builder.AppendLine(JsonSerializer.Serialize(
+                new JsonlRunEntryRecord("entry", entry),
+                JsonlSerializerOptions));
+        }
+
+        return Encoding.UTF8.GetBytes(builder.ToString());
+    }
+
+    private static byte[] BuildCsvExport(RunEntriesExportResult export)
+    {
+        var builder = new StringBuilder();
+        var header = new[]
+        {
+            "exportedAt",
+            "runId",
+            "runArtifactType",
+            "runMode",
+            "runStatus",
+            "runDryRun",
+            "runSyncScope",
+            "filterBucket",
+            "filterWorkerId",
+            "filterReason",
+            "filterText",
+            "entryId",
+            "bucket",
+            "bucketLabel",
+            "workerId",
+            "samAccountName",
+            "reason",
+            "reviewCategory",
+            "reviewCaseType",
+            "startedAt",
+            "changeCount",
+            "operationAction",
+            "operationEffect",
+            "failureSummary",
+            "primarySummary",
+            "topChangedAttributes",
+            "diffRowsJson",
+            "itemJson"
+        };
+
+        AppendCsvRow(builder, header);
+        foreach (var entry in export.Entries)
+        {
+            AppendCsvRow(builder, new[]
+            {
+                export.ExportedAt.ToString("O"),
+                export.Run.Run.RunId,
+                export.Run.Run.ArtifactType,
+                export.Run.Run.Mode,
+                export.Run.Run.Status,
+                export.Run.Run.DryRun.ToString(),
+                export.Run.Run.SyncScope,
+                export.Filters.Bucket,
+                export.Filters.WorkerId,
+                export.Filters.Reason,
+                export.Filters.Filter,
+                entry.EntryId,
+                entry.Bucket,
+                entry.BucketLabel,
+                entry.WorkerId,
+                entry.SamAccountName,
+                entry.Reason,
+                entry.ReviewCategory,
+                entry.ReviewCaseType,
+                entry.StartedAt?.ToString("O"),
+                entry.ChangeCount.ToString(),
+                entry.OperationSummary?.Action,
+                entry.OperationSummary?.Effect,
+                entry.FailureSummary,
+                entry.PrimarySummary,
+                entry.TopChangedAttributes.Count == 0 ? null : string.Join(" | ", entry.TopChangedAttributes),
+                entry.DiffRows.Count == 0 ? null : JsonSerializer.Serialize(entry.DiffRows, JsonlSerializerOptions),
+                entry.Item.ValueKind == JsonValueKind.Undefined ? null : entry.Item.GetRawText()
+            });
+        }
+
+        return Encoding.UTF8.GetBytes(builder.ToString());
+    }
+
+    private static void AppendCsvRow(StringBuilder builder, IEnumerable<string?> cells)
+    {
+        builder.AppendLine(string.Join(",", cells.Select(EscapeCsvCell)));
+    }
+
+    private static string EscapeCsvCell(string? value)
+    {
+        if (string.IsNullOrEmpty(value))
+        {
+            return string.Empty;
+        }
+
+        var escaped = value.Replace("\"", "\"\"");
+        return value.IndexOfAny([',', '"', '\r', '\n']) >= 0
+            ? $"\"{escaped}\""
+            : escaped;
+    }
+
+    private string BuildExportFileName(string extension)
     {
         var segments = new List<string>
         {
@@ -490,7 +637,7 @@ public sealed class DetailModel(RunEntriesQueryService queryService) : PageModel
             segments.Add("text-filtered");
         }
 
-        return $"{string.Join("-", segments)}-entries.json";
+        return $"{string.Join("-", segments)}-entries.{extension}";
     }
 
     private static string SanitizeFileNameSegment(string value)
@@ -525,4 +672,15 @@ public sealed class DetailModel(RunEntriesQueryService queryService) : PageModel
     public sealed record EntryExecutionFact(
         string Label,
         string Value);
+
+    private sealed record JsonlExportMetadataRecord(
+        string RecordType,
+        DateTimeOffset ExportedAt,
+        RunEntriesExportFilters Filters,
+        RunEntriesExportRunMetadata Run,
+        RunEntriesExportSummary Summary);
+
+    private sealed record JsonlRunEntryRecord(
+        string RecordType,
+        RunEntry Entry);
 }
