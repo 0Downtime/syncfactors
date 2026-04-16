@@ -38,6 +38,7 @@
                     {
                         <a class="@(currentPage.StartsWith("/Admin/Users", StringComparison.OrdinalIgnoreCase) ? "is-active" : null)" asp-page="/Admin/Users">Users</a>
                         <a class="@(currentPage.StartsWith("/Admin/DeletionQueue", StringComparison.OrdinalIgnoreCase) ? "is-active" : null)" asp-page="/Admin/DeletionQueue">Deletion Queue</a>
+                        <a class="@(currentPage.StartsWith("/Admin/Configuration", StringComparison.OrdinalIgnoreCase) ? "is-active" : null)" asp-page="/Admin/Configuration">Configuration</a>
                     }
                 </nav>
                 @if (User.Identity?.IsAuthenticated == true)

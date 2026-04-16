@@ -1,0 +1,116 @@
+@page
+@model SyncFactors.Api.Pages.Admin.ConfigurationModel
+@{
+    ViewData["Title"] = "Configuration";
+}
+
+<section class="hero hero-compact" id="top">
+    <div>
+        <p class="eyebrow">Administration</p>
+        <h1>Configuration</h1>
+        <p class="lede">Review the effective non-secret configuration for this deployment, including host wiring, authentication mode, sync policy, and mapping coverage.</p>
+        <p class="callout">Secrets are intentionally hidden. Source badges show whether a value came from the runtime host configuration, a config file, or a built-in default.</p>
+    </div>
+</section>
+
+<nav class="config-anchor-nav" aria-label="Configuration sections">
+@foreach (var configSection in Model.Snapshot.Sections)
+{
+    <a href="#@configSection.Id">@configSection.Title</a>
+}
+</nav>
+
+@foreach (var configSection in Model.Snapshot.Sections)
+{
+    <section class="panel config-section" id="@configSection.Id">
+        <div class="section-heading">
+            <div>
+                <p class="eyebrow">@configSection.Eyebrow</p>
+                <h2>@configSection.Title</h2>
+                <p class="muted config-section-description">@configSection.Description</p>
+            </div>
+            <a class="link-button subtle-button" href="#top">Back to top</a>
+        </div>
+
+        @if (configSection.MappingSummary is not null)
+        {
+            <div class="config-summary-strip" aria-label="Mapping summary">
+                <article class="config-summary-card">
+                    <span class="config-summary-label">Total</span>
+                    <strong>@configSection.MappingSummary.TotalCount</strong>
+                </article>
+                <article class="config-summary-card">
+                    <span class="config-summary-label">Enabled</span>
+                    <strong>@configSection.MappingSummary.EnabledCount</strong>
+                </article>
+                <article class="config-summary-card">
+                    <span class="config-summary-label">Disabled</span>
+                    <strong>@configSection.MappingSummary.DisabledCount</strong>
+                </article>
+                <article class="config-summary-card">
+                    <span class="config-summary-label">Required</span>
+                    <strong>@configSection.MappingSummary.RequiredCount</strong>
+                </article>
+            </div>
+        }
+
+        @if (configSection.Groups.Count > 0)
+        {
+            <div class="config-group-grid">
+                @foreach (var group in configSection.Groups)
+                {
+                    <article class="config-group">
+                        <h3>@group.Title</h3>
+                        <dl class="config-kv">
+                            @foreach (var entry in group.Entries)
+                            {
+                                <div>
+                                    <dt>@entry.Label</dt>
+                                    <dd>
+                                        <div class="config-entry-main">
+                                            <span class="config-entry-value" title="@entry.DisplayValue">@entry.DisplayValue</span>
+                                            @if (entry.IsSecretOmitted)
+                                            {
+                                                <span class="badge dim">Secret hidden</span>
+                                            }
+                                        </div>
+                                        <span class="badge @Model.GetSourceBadgeClass(entry.SourceLabel)">@entry.SourceLabel</span>
+                                    </dd>
+                                </div>
+                            }
+                        </dl>
+                    </article>
+                }
+            </div>
+        }
+
+        @if (configSection.MappingRows is not null && configSection.MappingRows.Count > 0)
+        {
+            <div class="table-scroll">
+                <table class="data-table compact config-mapping-table">
+                    <thead>
+                        <tr>
+                            <th>Source</th>
+                            <th>Target</th>
+                            <th>Enabled</th>
+                            <th>Required</th>
+                            <th>Transform</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    @foreach (var row in configSection.MappingRows)
+                    {
+                        <tr>
+                            <td><span class="source-path" title="@row.Source" tabindex="0">@row.Source</span></td>
+                            <td><span class="source-value" title="@row.Target" tabindex="0">@row.Target</span></td>
+                            <td><span class="badge @(row.Enabled ? "good" : "dim")">@(row.Enabled ? "Enabled" : "Disabled")</span></td>
+                            <td><span class="badge @(row.Required ? "warn" : "neutral")">@(row.Required ? "Required" : "Optional")</span></td>
+                            <td>@row.Transform</td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </section>
+}
