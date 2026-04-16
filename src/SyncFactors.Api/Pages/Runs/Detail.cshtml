@@ -2,6 +2,7 @@
 @model SyncFactors.Api.Pages.Runs.DetailModel
 @{
     ViewData["Title"] = "Run Detail";
+    var runContext = Model.DescribeRunContext();
 }
 
 @if (Model.Run is null)
@@ -31,10 +32,12 @@
             <div><dt>Scope</dt><dd>@Model.Run.Run.SyncScope</dd></div>
             <div><dt>Trigger</dt><dd>@Model.Run.Run.RunTrigger</dd></div>
             <div><dt>Requested By</dt><dd>@(Model.Run.Run.RequestedBy ?? "n/a")</dd></div>
+            <div><dt>Run Type</dt><dd><span class="badge @runContext.ToneCssClass">@runContext.Label</span></dd></div>
             <div><dt>Status</dt><dd><span class="badge @StatusClass(Model.Run.Run.Status)">@Model.Run.Run.Status</span></dd></div>
             <div><dt>Processed</dt><dd>@Model.Run.Run.ProcessedWorkers</dd></div>
             <div><dt>Total</dt><dd>@Model.Run.Run.TotalWorkers</dd></div>
         </dl>
+        <p class="callout">@runContext.Summary</p>
     </article>
 
     <article class="panel">
@@ -120,6 +123,7 @@
             var failureSummary = Model.GetFailureSummaryDisplay(entry);
             var showReason = Model.ShouldShowReason(entry);
             var showReviewCase = !string.IsNullOrWhiteSpace(entry.ReviewCaseType);
+            var execution = Model.DescribeEntryExecution(entry);
             <article class="entry-card">
                 <header class="entry-head">
                     <div class="entry-identity">
@@ -137,9 +141,17 @@
                         }
                     </div>
                     <div class="entry-meta">
-                        <span class="badge neutral">@entry.ChangeCount changes</span>
+                        <span class="badge @execution.ToneCssClass">@execution.Label</span>
+                        <span class="badge neutral">@entry.ChangeCount @(entry.ChangeCount == 1 ? "diff" : "diffs")</span>
                     </div>
                 </header>
+                <p><strong>@execution.Label.</strong> @execution.Summary</p>
+                <dl class="kv preview-meta">
+                    @foreach (var fact in execution.Facts)
+                    {
+                        <div><dt>@fact.Label</dt><dd>@fact.Value</dd></div>
+                    }
+                </dl>
                 @if (!string.IsNullOrWhiteSpace(primarySummary))
                 {
                     <p class="entry-summary">@primarySummary</p>
