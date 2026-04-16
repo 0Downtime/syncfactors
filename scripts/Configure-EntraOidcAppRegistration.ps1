@@ -455,8 +455,45 @@ function Get-SingleItemByPropertyValue {
     return $matched[0]
 }
 
+function Resolve-ExistingApplication {
+    param(
+        [string]$ApplicationObjectId,
+        [string]$ClientId,
+        [Parameter(Mandatory)]
+        [string]$DisplayName
+    )
+
+    if (-not [string]::IsNullOrWhiteSpace($ApplicationObjectId)) {
+        return Invoke-GraphGet -Uri ("https://graph.microsoft.com/v1.0/applications/{0}" -f $ApplicationObjectId)
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($ClientId)) {
+        $existingByClientId = Get-SingleItemByPropertyValue `
+            -CollectionPath 'applications' `
+            -PropertyName 'appId' `
+            -PropertyValue $ClientId `
+            -SelectFields @('id', 'appId', 'displayName')
+        if ($null -ne $existingByClientId) {
+            return Invoke-GraphGet -Uri ("https://graph.microsoft.com/v1.0/applications/{0}" -f $existingByClientId.id)
+        }
+    }
+
+    $existingByDisplayName = Get-SingleItemByPropertyValue `
+        -CollectionPath 'applications' `
+        -PropertyName 'displayName' `
+        -PropertyValue $DisplayName `
+        -SelectFields @('id', 'appId', 'displayName')
+
+    if ($null -eq $existingByDisplayName) {
+        return $null
+    }
+
+    return Invoke-GraphGet -Uri ("https://graph.microsoft.com/v1.0/applications/{0}" -f $existingByDisplayName.id)
+}
+
 function Ensure-Application {
     param(
+        $ExistingApplication,
         [string]$ApplicationObjectId,
         [string]$ClientId,
         [Parameter(Mandatory)]
@@ -465,23 +502,12 @@ function Ensure-Application {
         [string[]]$RedirectUris
     )
 
-    $existing = $null
-    if (-not [string]::IsNullOrWhiteSpace($ApplicationObjectId)) {
-        $existing = Invoke-GraphGet -Uri ("https://graph.microsoft.com/v1.0/applications/{0}" -f $ApplicationObjectId)
-    }
-    elseif (-not [string]::IsNullOrWhiteSpace($ClientId)) {
-        $existing = Get-SingleItemByPropertyValue `
-            -CollectionPath 'applications' `
-            -PropertyName 'appId' `
-            -PropertyValue $ClientId `
-            -SelectFields @('id', 'appId', 'displayName')
-    }
-    else {
-        $existing = Get-SingleItemByPropertyValue `
-            -CollectionPath 'applications' `
-            -PropertyName 'displayName' `
-            -PropertyValue $DisplayName `
-            -SelectFields @('id', 'appId', 'displayName')
+    $existing = $ExistingApplication
+    if ($null -eq $existing) {
+        $existing = Resolve-ExistingApplication `
+            -ApplicationObjectId $ApplicationObjectId `
+            -ClientId $ClientId `
+            -DisplayName $DisplayName
     }
 
     $groupMembershipClaims = if ($RequireAssignment -or
@@ -726,11 +752,27 @@ if ([string]::IsNullOrWhiteSpace($EnvFilePath)) {
     $EnvFilePath = Join-Path $RepoRoot '.env.worktree'
 }
 
+$existingApplication = Resolve-ExistingApplication `
+    -ApplicationObjectId $ApplicationObjectId `
+    -ClientId $ClientId `
+    -DisplayName $AppDisplayName
+
+if ($null -ne $existingApplication) {
+    if ([string]::IsNullOrWhiteSpace($ApplicationObjectId)) {
+        $ApplicationObjectId = [string]$existingApplication.id
+    }
+
+    if ([string]::IsNullOrWhiteSpace($ClientId)) {
+        $ClientId = [string]$existingApplication.appId
+    }
+}
+
 $ApiPublicHost = Assert-UsablePublicHost -HostName $ApiPublicHost
 $redirectHosts = Get-RedirectHosts -PrimaryHost $ApiPublicHost
 $redirectUris = New-RedirectUris -HostNames $redirectHosts -Port $ApiPort
 
 $application = Ensure-Application `
+    -ExistingApplication $existingApplication `
     -ApplicationObjectId $ApplicationObjectId `
     -ClientId $ClientId `
     -DisplayName $AppDisplayName `
