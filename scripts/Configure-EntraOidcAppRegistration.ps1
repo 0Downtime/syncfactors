@@ -61,6 +61,107 @@ function Format-UrlHost {
     return $HostName
 }
 
+function Resolve-LocalNetworkIpAddress {
+    try {
+        $socket = [System.Net.Sockets.Socket]::new(
+            [System.Net.Sockets.AddressFamily]::InterNetwork,
+            [System.Net.Sockets.SocketType]::Dgram,
+            [System.Net.Sockets.ProtocolType]::Udp)
+
+        try {
+            $socket.Connect('8.8.8.8', 53)
+            $localEndPoint = [System.Net.IPEndPoint]$socket.LocalEndPoint
+            if ($null -ne $localEndPoint -and $null -ne $localEndPoint.Address) {
+                $preferredIpAddress = $localEndPoint.Address.ToString()
+                if (-not [System.Net.IPAddress]::IsLoopback($localEndPoint.Address) -and
+                    -not $preferredIpAddress.StartsWith('169.254.', [System.StringComparison]::Ordinal)) {
+                    return $preferredIpAddress
+                }
+            }
+        }
+        finally {
+            $socket.Dispose()
+        }
+    }
+    catch {
+    }
+
+    $interfaces = [System.Net.NetworkInformation.NetworkInterface]::GetAllNetworkInterfaces() |
+        Where-Object {
+            $_.OperationalStatus -eq [System.Net.NetworkInformation.OperationalStatus]::Up -and
+            $_.NetworkInterfaceType -ne [System.Net.NetworkInformation.NetworkInterfaceType]::Loopback -and
+            $_.NetworkInterfaceType -ne [System.Net.NetworkInformation.NetworkInterfaceType]::Tunnel
+        }
+
+    foreach ($interface in $interfaces) {
+        foreach ($unicastAddress in $interface.GetIPProperties().UnicastAddresses) {
+            $address = $unicastAddress.Address
+            if ($null -eq $address) {
+                continue
+            }
+
+            if ($address.AddressFamily -ne [System.Net.Sockets.AddressFamily]::InterNetwork) {
+                continue
+            }
+
+            if ([System.Net.IPAddress]::IsLoopback($address)) {
+                continue
+            }
+
+            $ipAddress = $address.ToString()
+            if ($ipAddress.StartsWith('169.254.', [System.StringComparison]::Ordinal)) {
+                continue
+            }
+
+            return $ipAddress
+        }
+    }
+
+    return $null
+}
+
+function Get-RedirectHosts {
+    param(
+        [Parameter(Mandatory)]
+        [string]$PrimaryHost
+    )
+
+    $hosts = New-Object 'System.Collections.Generic.List[string]'
+    $seen = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+
+    foreach ($candidateHost in @($PrimaryHost, (Resolve-LocalNetworkIpAddress))) {
+        if ([string]::IsNullOrWhiteSpace($candidateHost)) {
+            continue
+        }
+
+        $normalizedHost = $candidateHost.Trim()
+        if ($seen.Add($normalizedHost)) {
+            $hosts.Add($normalizedHost) | Out-Null
+        }
+    }
+
+    return $hosts.ToArray()
+}
+
+function New-RedirectUris {
+    param(
+        [Parameter(Mandatory)]
+        [string[]]$HostNames,
+        [Parameter(Mandatory)]
+        [int]$Port
+    )
+
+    $redirectUris = New-Object 'System.Collections.Generic.List[string]'
+
+    foreach ($hostName in $HostNames) {
+        $formattedHost = Format-UrlHost -HostName $hostName
+        $redirectUris.Add("https://$formattedHost`:$Port/signin-oidc") | Out-Null
+        $redirectUris.Add("https://$formattedHost`:$Port/signout-callback-oidc") | Out-Null
+    }
+
+    return $redirectUris.ToArray()
+}
+
 function Ensure-Module {
     param(
         [Parameter(Mandatory)]
@@ -626,12 +727,8 @@ if ([string]::IsNullOrWhiteSpace($EnvFilePath)) {
 }
 
 $ApiPublicHost = Assert-UsablePublicHost -HostName $ApiPublicHost
-$formattedApiPublicHost = Format-UrlHost -HostName $ApiPublicHost
-
-$redirectUris = @(
-    "https://$formattedApiPublicHost`:$ApiPort/signin-oidc",
-    "https://$formattedApiPublicHost`:$ApiPort/signout-callback-oidc"
-)
+$redirectHosts = Get-RedirectHosts -PrimaryHost $ApiPublicHost
+$redirectUris = New-RedirectUris -HostNames $redirectHosts -Port $ApiPort
 
 $application = Ensure-Application `
     -ApplicationObjectId $ApplicationObjectId `
@@ -743,10 +840,13 @@ Write-Host "AuthMode:                 $AuthMode"
 Write-Host "ApiBindHost:              $ApiBindHost"
 Write-Host "ApiPublicHost:            $ApiPublicHost"
 Write-Host "ApiPort:                  $ApiPort"
+Write-Host "RedirectHosts:            $($redirectHosts -join ', ')"
 Write-Host "AssignmentRequired:       $($servicePrincipal.appRoleAssignmentRequired)"
 Write-Host "GroupMembershipClaims:    $($application.groupMembershipClaims)"
-Write-Host "RedirectSignIn:           $($redirectUris[0])"
-Write-Host "RedirectSignOut:          $($redirectUris[1])"
+Write-Host 'RedirectUris:'
+foreach ($redirectUri in $redirectUris) {
+    Write-Host "  $redirectUri"
+}
 Write-Host "EnvFileUpdated:           $EnvFilePath"
 if (-not [string]::IsNullOrWhiteSpace($secretStoreLabel)) {
     Write-Host "OidcSecretStoredIn:       $secretStoreLabel"
