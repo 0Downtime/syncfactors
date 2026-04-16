@@ -85,7 +85,6 @@
                 <div class="dashboard-schedule-countdown" data-dashboard-schedule-countdown style="--ring-progress: @(Model.Schedule.NextRunAt.HasValue ? "0.82turn" : "0turn");">
                     <div class="dashboard-schedule-countdown-copy">
                         <strong data-dashboard-schedule-countdown-value>@(Model.Schedule.NextRunAt.HasValue ? "Pending" : "Idle")</strong>
-                        <span class="muted">until next run</span>
                     </div>
                 </div>
                 <dl class="kv dashboard-schedule-kv">
