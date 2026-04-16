@@ -140,6 +140,35 @@ public sealed class RunDetailModelTests
     }
 
     [Fact]
+    public async Task OnGetExportCsvAsync_ReturnsFlattenedRowsWithContextColumns()
+    {
+        var repository = new StubRunRepository();
+        var model = new DetailModel(new RunEntriesQueryService(repository))
+        {
+            RunId = "bulk-1",
+            Bucket = "conflicts",
+            WorkerId = "worker-1",
+            Filter = "manager"
+        };
+
+        var result = await model.OnGetExportCsvAsync(CancellationToken.None);
+
+        var file = Assert.IsType<FileContentResult>(result);
+        Assert.Equal("text/csv", file.ContentType);
+        Assert.Equal("syncfactors-run-bulk-1-conflicts-worker-filtered-text-filtered-entries.csv", file.FileDownloadName);
+
+        var lines = System.Text.Encoding.UTF8.GetString(file.FileContents)
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        Assert.Equal(121, lines.Length);
+        Assert.StartsWith("exportedAt,runId,runArtifactType,runMode,runStatus,runDryRun,runSyncScope,filterBucket,filterWorkerId,filterReason,filterText,entryId,bucket,bucketLabel,workerId,samAccountName,reason,reviewCategory,reviewCaseType,startedAt,changeCount,operationAction,operationEffect,failureSummary,primarySummary,topChangedAttributes,diffRowsJson,itemJson", lines[0]);
+        Assert.Contains(",bulk-1,", lines[1]);
+        Assert.Contains(",conflicts,worker-1,,manager,", lines[1]);
+        Assert.Contains(",entry-1,conflicts,Conflicts,worker-1,", lines[1]);
+        Assert.EndsWith("{}", lines[1]);
+    }
+
+    [Fact]
     public async Task GetFailureDiagnostics_ParsesEntryReason()
     {
         var repository = new StubRunRepository();
