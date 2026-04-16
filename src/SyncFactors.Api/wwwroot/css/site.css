@@ -1684,6 +1684,14 @@ a:focus-visible {
     align-items: flex-start;
     flex-direction: column;
   }
+
+  .config-kv div {
+    grid-template-columns: 1fr;
+  }
+
+  .config-anchor-nav {
+    top: 8px;
+  }
 }
 
 .summary-value {
@@ -1996,6 +2004,151 @@ a:focus-visible {
   min-height: 34px;
   padding: 0 10px;
   font-size: 0.95rem;
+}
+
+.config-anchor-nav {
+  position: sticky;
+  top: 12px;
+  z-index: 10;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 0 0 18px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--accent-soft) 46%, transparent), transparent),
+    color-mix(in srgb, var(--panel) 92%, transparent);
+  box-shadow: var(--shadow-soft);
+  backdrop-filter: blur(10px);
+}
+
+.config-anchor-nav a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 36px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--ink);
+}
+
+.config-anchor-nav a:hover {
+  text-decoration: none;
+}
+
+.config-section + .config-section {
+  margin-top: 18px;
+}
+
+.config-section-description {
+  max-width: 80ch;
+  margin: 8px 0 0;
+}
+
+.config-group-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr));
+  gap: 18px;
+  margin-top: 18px;
+}
+
+.config-group {
+  min-width: 0;
+  padding: 18px 20px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--accent-soft) 28%, transparent), transparent),
+    var(--panel-alt);
+}
+
+.config-group h3 {
+  margin: 0 0 12px;
+}
+
+.config-kv {
+  margin: 0;
+}
+
+.config-kv div {
+  display: grid;
+  grid-template-columns: minmax(132px, 180px) minmax(0, 1fr);
+  gap: 12px 18px;
+  padding: 11px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.config-kv div:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.config-kv dt {
+  min-width: 0;
+  font-weight: 600;
+}
+
+.config-kv dd {
+  min-width: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-start;
+  text-align: left;
+}
+
+.config-entry-main {
+  display: grid;
+  gap: 8px;
+}
+
+.config-entry-value {
+  max-width: 100%;
+  color: var(--muted);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.config-summary-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.config-summary-card {
+  padding: 16px 18px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background:
+    radial-gradient(circle at top right, color-mix(in srgb, var(--accent-soft) 58%, transparent) 0, transparent 52%),
+    var(--panel-alt);
+}
+
+.config-summary-card strong {
+  display: block;
+  margin-top: 8px;
+  font-size: 1.32rem;
+  letter-spacing: -0.03em;
+}
+
+.config-summary-label {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.config-mapping-table {
+  min-width: 56rem;
+  margin-top: 18px;
 }
 
 .sr-only {
