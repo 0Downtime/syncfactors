@@ -64,17 +64,42 @@
                         <dl class="config-kv">
                             @foreach (var entry in group.Entries)
                             {
+                                var displayLines = entry.DisplayValue
+                                    .Split(["\r\n", "\n"], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                                if (displayLines.Length == 0)
+                                {
+                                    displayLines = [entry.DisplayValue];
+                                }
+
+                                var showCopyButton = !entry.IsSecretOmitted &&
+                                    (entry.DisplayValue.Length > 48 || displayLines.Length > 1);
                                 <div>
                                     <dt>@entry.Label</dt>
-                                    <dd>
-                                        <div class="config-entry-main">
-                                            <span class="config-entry-value" title="@entry.DisplayValue">@entry.DisplayValue</span>
+                                    <dd class="config-entry">
+                                        <div class="config-entry-main" title="@entry.DisplayValue">
+                                            @foreach (var line in displayLines)
+                                            {
+                                                <span class="config-entry-line">@line</span>
+                                            }
+                                        </div>
+                                        <div class="config-entry-meta">
+                                            @if (showCopyButton)
+                                            {
+                                                <button
+                                                    class="config-copy-button"
+                                                    type="button"
+                                                    title="Copy full value"
+                                                    aria-label="Copy full value for @entry.Label"
+                                                    data-copy-value="@entry.DisplayValue">
+                                                    Copy
+                                                </button>
+                                            }
                                             @if (entry.IsSecretOmitted)
                                             {
                                                 <span class="badge dim">Secret hidden</span>
                                             }
+                                            <span class="badge @Model.GetSourceBadgeClass(entry.SourceLabel)">@entry.SourceLabel</span>
                                         </div>
-                                        <span class="badge @Model.GetSourceBadgeClass(entry.SourceLabel)">@entry.SourceLabel</span>
                                     </dd>
                                 </div>
                             }
@@ -114,3 +139,35 @@
         }
     </section>
 }
+
+<script>
+(() => {
+    const copyButtons = Array.from(document.querySelectorAll("[data-copy-value]"));
+    if (!copyButtons.length || !navigator.clipboard || !navigator.clipboard.writeText) {
+        return;
+    }
+
+    copyButtons.forEach((button) => {
+        button.addEventListener("click", async () => {
+            try {
+                await navigator.clipboard.writeText(button.getAttribute("data-copy-value") || "");
+                window.dispatchEvent(new CustomEvent("syncfactors:toast", {
+                    detail: {
+                        title: "Copied",
+                        tone: "good",
+                        message: "Full value copied to clipboard."
+                    }
+                }));
+            } catch (error) {
+                window.dispatchEvent(new CustomEvent("syncfactors:toast", {
+                    detail: {
+                        title: "Copy Failed",
+                        tone: "warn",
+                        message: "Clipboard access was blocked for this value."
+                    }
+                }));
+            }
+        });
+    });
+})();
+</script>
