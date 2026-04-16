@@ -163,6 +163,55 @@ public sealed class ActiveDirectoryGatewayTests
     }
 
     [Fact]
+    public void GetWorkerLookupSearchBases_AppendsDefaultNamingContextAfterManagedOus()
+    {
+        var method = typeof(ActiveDirectoryGateway).GetMethod(
+            "GetWorkerLookupSearchBases",
+            BindingFlags.NonPublic | BindingFlags.Static,
+            [typeof(string), typeof(ActiveDirectoryConfig)]);
+        Assert.NotNull(method);
+
+        var config = CreateConfig();
+
+        var bases = Assert.IsAssignableFrom<IReadOnlyList<string>>(
+            method!.Invoke(null, ["DC=example,DC=com", config]));
+
+        Assert.Equal(
+            [
+                "OU=Active,DC=example,DC=com",
+                "OU=Prehire,DC=example,DC=com",
+                "OU=Graveyard,DC=example,DC=com",
+                "OU=Leave,DC=example,DC=com",
+                "DC=example,DC=com"
+            ],
+            bases);
+    }
+
+    [Fact]
+    public void GetWorkerLookupSearchBases_FallsBackToManagedOusWhenNamingContextMissing()
+    {
+        var method = typeof(ActiveDirectoryGateway).GetMethod(
+            "GetWorkerLookupSearchBases",
+            BindingFlags.NonPublic | BindingFlags.Static,
+            [typeof(string), typeof(ActiveDirectoryConfig)]);
+        Assert.NotNull(method);
+
+        var config = CreateConfig();
+
+        var bases = Assert.IsAssignableFrom<IReadOnlyList<string>>(
+            method!.Invoke(null, [null, config]));
+
+        Assert.Equal(
+            [
+                "OU=Active,DC=example,DC=com",
+                "OU=Prehire,DC=example,DC=com",
+                "OU=Graveyard,DC=example,DC=com",
+                "OU=Leave,DC=example,DC=com"
+            ],
+            bases);
+    }
+
+    [Fact]
     public void BuildLookupClauses_UsesMappedIdentityValueAndSamFallback()
     {
         var method = typeof(ActiveDirectoryGateway).GetMethod(

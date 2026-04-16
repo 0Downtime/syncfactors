@@ -237,7 +237,7 @@ public sealed class ActiveDirectoryGateway(
 
         var entry = FindFirstEntryMatchingAny(
             connection,
-            GetSearchBases(config),
+            GetWorkerLookupSearchBases(TryGetDefaultNamingContext(connection, logger), config),
             lookupClauses,
             config.IdentityAttribute,
             logger,
@@ -596,6 +596,20 @@ public sealed class ActiveDirectoryGateway(
     {
         var defaultNamingContext = TryGetDefaultNamingContext(connection, logger);
         return GetEmailUniquenessSearchBases(defaultNamingContext, config);
+    }
+
+    private static IReadOnlyList<string> GetWorkerLookupSearchBases(string? defaultNamingContext, ActiveDirectoryConfig config)
+    {
+        var managedSearchBases = GetSearchBases(config);
+        if (string.IsNullOrWhiteSpace(defaultNamingContext))
+        {
+            return managedSearchBases;
+        }
+
+        return managedSearchBases
+            .Concat([defaultNamingContext.Trim()])
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
     }
 
     private static IReadOnlyList<string> GetEmailUniquenessSearchBases(string? defaultNamingContext, ActiveDirectoryConfig config)
