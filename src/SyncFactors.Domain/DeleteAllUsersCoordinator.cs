@@ -5,11 +5,11 @@ using SyncFactors.Contracts;
 namespace SyncFactors.Domain;
 
 public sealed class DeleteAllUsersCoordinator(
-    IWorkerSource workerSource,
     IRunQueueStore runQueueStore,
     IDirectoryGateway directoryGateway,
     IDirectoryCommandGateway directoryCommandGateway,
     IRunLifecycleService runLifecycleService,
+    LifecyclePolicySettings lifecycleSettings,
     WorkerRunSettings settings,
     ILogger<DeleteAllUsersCoordinator> logger,
     TimeProvider timeProvider)
@@ -20,13 +20,10 @@ public sealed class DeleteAllUsersCoordinator(
         var runCancellationToken = runCancellationSource.Token;
         var cancellationMonitor = MonitorCancellationAsync(request.RequestId, runCancellationSource, cancellationToken);
 
-        var workers = new List<WorkerSnapshot>();
+        var users = new List<DeleteCandidate>();
         try
         {
-            await foreach (var worker in workerSource.ListWorkersAsync(WorkerListingMode.Full, runCancellationToken))
-            {
-                workers.Add(worker);
-            }
+            users = await ListDeleteCandidatesAsync(runCancellationToken);
         }
         catch (OperationCanceledException)
         {
@@ -41,7 +38,7 @@ public sealed class DeleteAllUsersCoordinator(
 
         var runId = $"delete-all-{timeProvider.GetUtcNow():yyyyMMddHHmmssfff}";
         var startedAt = timeProvider.GetUtcNow();
-        var totalWorkers = workers.Count;
+        var totalWorkers = users.Count;
         var tally = new RunTally(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
         var processedWorkers = 0;
         var deletionCount = 0;
@@ -65,11 +62,11 @@ public sealed class DeleteAllUsersCoordinator(
 
         try
         {
-            foreach (var worker in workers)
+            foreach (var user in users)
             {
                 runCancellationToken.ThrowIfCancellationRequested();
 
-                var result = await DeleteWorkerAsync(worker, request.DryRun, deletionCount, runCancellationToken);
+                var result = await DeleteUserAsync(user, request.DryRun, deletionCount, runCancellationToken);
                 processedWorkers++;
                 tally = AddToTally(tally, result.Bucket);
 
@@ -83,7 +80,7 @@ public sealed class DeleteAllUsersCoordinator(
                     RunId: runId,
                     Bucket: result.Bucket,
                     BucketIndex: processedWorkers - 1,
-                    WorkerId: result.WorkerId,
+                    WorkerId: user.WorkerId,
                     SamAccountName: result.SamAccountName,
                     Reason: result.Reason,
                     ReviewCategory: result.ReviewCategory,
@@ -98,7 +95,7 @@ public sealed class DeleteAllUsersCoordinator(
                     dryRun: request.DryRun,
                     processedWorkers: processedWorkers,
                     totalWorkers: totalWorkers,
-                    currentWorkerId: worker.WorkerId,
+                    currentWorkerId: user.WorkerId,
                     lastAction: result.Reason ?? result.Action ?? result.Bucket,
                     tally: tally,
                     cancellationToken);
@@ -115,7 +112,7 @@ public sealed class DeleteAllUsersCoordinator(
                 dryRun: request.DryRun,
                 totalWorkers: totalWorkers,
                 tally: tally,
-                report: BuildReport(runId, request, tally, totalWorkers, startedAt),
+                report: BuildReport(runId, request, tally, totalWorkers, startedAt, users),
                 startedAt: startedAt,
                 cancellationToken);
 
@@ -135,7 +132,7 @@ public sealed class DeleteAllUsersCoordinator(
                     currentWorkerId: null,
                     reason: "Run canceled by operator.",
                     tally: tally,
-                    report: BuildReport(runId, request, tally, totalWorkers, startedAt),
+                    report: BuildReport(runId, request, tally, totalWorkers, startedAt, users),
                     startedAt: startedAt,
                     cancellationToken);
                 throw new RunCanceledException(runId, "Run canceled by operator.");
@@ -154,7 +151,7 @@ public sealed class DeleteAllUsersCoordinator(
                 currentWorkerId: null,
                 errorMessage: ex.Message,
                 tally: tally,
-                report: BuildReport(runId, request, tally, totalWorkers, startedAt),
+                report: BuildReport(runId, request, tally, totalWorkers, startedAt, users),
                 startedAt: startedAt,
                 cancellationToken);
             throw;
@@ -170,7 +167,7 @@ public sealed class DeleteAllUsersCoordinator(
                 currentWorkerId: null,
                 errorMessage: ex.Message,
                 tally: tally,
-                report: BuildReport(runId, request, tally, totalWorkers, startedAt),
+                report: BuildReport(runId, request, tally, totalWorkers, startedAt, users),
                 startedAt: startedAt,
                 cancellationToken);
             throw;
@@ -188,57 +185,84 @@ public sealed class DeleteAllUsersCoordinator(
         }
     }
 
-    private async Task<WorkerRunResult> DeleteWorkerAsync(
-        WorkerSnapshot worker,
+    private async Task<List<DeleteCandidate>> ListDeleteCandidatesAsync(CancellationToken cancellationToken)
+    {
+        var candidates = new Dictionary<string, DeleteCandidate>(StringComparer.OrdinalIgnoreCase);
+        var fallbackCandidates = new Dictionary<string, DeleteCandidate>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var ou in GetDeleteTargetOus())
+        {
+            var users = await directoryGateway.ListUsersInOuAsync(ou, cancellationToken);
+            foreach (var directoryUser in users)
+            {
+                var candidate = BuildDeleteCandidate(directoryUser, ou);
+                var dedupeKey = ResolveCandidateDeduplicationKey(candidate);
+                if (string.IsNullOrWhiteSpace(candidate.DistinguishedName))
+                {
+                    fallbackCandidates.TryAdd(dedupeKey, candidate);
+                    continue;
+                }
+
+                candidates.TryAdd(dedupeKey, candidate);
+            }
+        }
+
+        return [.. candidates.Values
+            .Concat(fallbackCandidates.Values)
+            .OrderBy(candidate => candidate.SamAccountName ?? candidate.WorkerId, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(candidate => candidate.DistinguishedName ?? candidate.SourceOu, StringComparer.OrdinalIgnoreCase)];
+    }
+
+    private async Task<WorkerRunResult> DeleteUserAsync(
+        DeleteCandidate user,
         bool dryRun,
         int deletionCount,
         CancellationToken cancellationToken)
     {
         try
         {
-            var directoryUser = await directoryGateway.FindByWorkerAsync(worker, cancellationToken);
-            if (directoryUser is null || string.IsNullOrWhiteSpace(directoryUser.DistinguishedName))
+            if (string.IsNullOrWhiteSpace(user.DistinguishedName))
             {
-                var noUserReason = "No AD user matched worker.";
+                const string missingDnReason = "No AD distinguished name was available for deletion.";
                 return new WorkerRunResult(
-                    WorkerId: worker.WorkerId,
-                    Bucket: "unchanged",
-                    SamAccountName: null,
-                    Reason: noUserReason,
-                    ReviewCategory: null,
-                    ReviewCaseType: null,
+                    WorkerId: user.WorkerId,
+                    Bucket: "conflicts",
+                    SamAccountName: user.SamAccountName,
+                    Reason: missingDnReason,
+                    ReviewCategory: "ExternalSystem",
+                    ReviewCaseType: "DeleteAllUsersFailed",
                     Action: null,
                     Applied: false,
-                    Succeeded: true,
-                    OperationSummary: new OperationSummary("NoOp", "No AD user found for deletion.", null, null, null),
+                    Succeeded: false,
+                    OperationSummary: null,
                     DiffRows: [],
-                    Item: BuildEntryItem(worker, directoryUser, dryRun, "unchanged", action: null, applied: false, succeeded: true, noUserReason));
+                    Item: BuildEntryItem(user, dryRun, "conflicts", action: null, applied: false, succeeded: false, missingDnReason));
             }
 
             if (deletionCount + 1 > settings.MaxDeletionsPerRun)
             {
                 var reason = $"Deletion guardrail exceeded. MaxDeletionsPerRun={settings.MaxDeletionsPerRun}.";
                 return new WorkerRunResult(
-                    WorkerId: worker.WorkerId,
+                    WorkerId: user.WorkerId,
                     Bucket: "guardrailFailures",
-                    SamAccountName: directoryUser.SamAccountName,
+                    SamAccountName: user.SamAccountName,
                     Reason: reason,
                     ReviewCategory: null,
                     ReviewCaseType: null,
                     Action: null,
                     Applied: false,
                     Succeeded: false,
-                    OperationSummary: new OperationSummary("DeleteUser", "Deletion guardrail blocked execution.", null, DirectoryDistinguishedName.GetParentOu(directoryUser.DistinguishedName), null),
+                    OperationSummary: new OperationSummary("DeleteUser", "Deletion guardrail blocked execution.", null, user.CurrentOu, null),
                     DiffRows: [],
-                    Item: BuildEntryItem(worker, directoryUser, dryRun, "guardrailFailures", action: null, applied: false, succeeded: false, reason));
+                    Item: BuildEntryItem(user, dryRun, "guardrailFailures", action: null, applied: false, succeeded: false, reason));
             }
 
             var action = "DeleteUser";
             var applied = false;
             var succeeded = true;
             var reasonMessage = dryRun
-                ? $"Dry-run planned deletion for AD user {directoryUser.SamAccountName ?? worker.WorkerId}."
-                : $"Deleted AD user {directoryUser.SamAccountName ?? worker.WorkerId}.";
+                ? $"Dry-run planned deletion for AD user {user.SamAccountName ?? user.WorkerId}."
+                : $"Deleted AD user {user.SamAccountName ?? user.WorkerId}.";
             var bucket = "deletions";
 
             if (!dryRun)
@@ -246,7 +270,7 @@ public sealed class DeleteAllUsersCoordinator(
                 try
                 {
                     var result = await directoryCommandGateway.ExecuteAsync(
-                        BuildDeleteCommand(worker, directoryUser),
+                        BuildDeleteCommand(user),
                         cancellationToken);
                     applied = true;
                     succeeded = result.Succeeded;
@@ -265,18 +289,18 @@ public sealed class DeleteAllUsersCoordinator(
                 }
             }
             return new WorkerRunResult(
-                WorkerId: worker.WorkerId,
+                WorkerId: user.WorkerId,
                 Bucket: bucket,
-                SamAccountName: directoryUser.SamAccountName,
+                SamAccountName: user.SamAccountName,
                 Reason: reasonMessage,
                 ReviewCategory: null,
                 ReviewCaseType: null,
                 Action: action,
                 Applied: applied,
                 Succeeded: succeeded,
-                OperationSummary: new OperationSummary(action, "The AD user object will be removed.", null, DirectoryDistinguishedName.GetParentOu(directoryUser.DistinguishedName), null),
+                OperationSummary: new OperationSummary(action, "The AD user object will be removed.", null, user.CurrentOu, null),
                 DiffRows: [],
-                Item: BuildEntryItem(worker, directoryUser, dryRun, bucket, action, applied, succeeded, reasonMessage));
+                Item: BuildEntryItem(user, dryRun, bucket, action, applied, succeeded, reasonMessage));
         }
         catch (GuardrailExceededException)
         {
@@ -284,11 +308,11 @@ public sealed class DeleteAllUsersCoordinator(
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Delete-all planning failed. WorkerId={WorkerId}", worker.WorkerId);
+            logger.LogError(ex, "Delete-all planning failed. WorkerId={WorkerId}", user.WorkerId);
             return new WorkerRunResult(
-                WorkerId: worker.WorkerId,
+                WorkerId: user.WorkerId,
                 Bucket: "conflicts",
-                SamAccountName: null,
+                SamAccountName: user.SamAccountName,
                 Reason: ex.Message,
                 ReviewCategory: "ExternalSystem",
                 ReviewCaseType: "DeleteAllUsersFailed",
@@ -297,24 +321,24 @@ public sealed class DeleteAllUsersCoordinator(
                 Succeeded: false,
                 OperationSummary: null,
                 DiffRows: [],
-                Item: BuildEntryItem(worker, null, dryRun, "conflicts", action: null, applied: false, succeeded: false, ex.Message));
+                Item: BuildEntryItem(user, dryRun, "conflicts", action: null, applied: false, succeeded: false, ex.Message));
         }
     }
 
-    private static DirectoryMutationCommand BuildDeleteCommand(WorkerSnapshot worker, DirectoryUserSnapshot directoryUser)
+    private static DirectoryMutationCommand BuildDeleteCommand(DeleteCandidate user)
     {
         return new DirectoryMutationCommand(
             Action: "DeleteUser",
-            WorkerId: worker.WorkerId,
+            WorkerId: user.WorkerId,
             ManagerId: null,
             ManagerDistinguishedName: null,
-            SamAccountName: directoryUser.SamAccountName ?? worker.WorkerId,
-            CommonName: directoryUser.SamAccountName ?? worker.WorkerId,
-            UserPrincipalName: directoryUser.Attributes.TryGetValue("UserPrincipalName", out var upn) ? upn ?? string.Empty : string.Empty,
-            Mail: directoryUser.Attributes.TryGetValue("mail", out var mail) ? mail ?? string.Empty : string.Empty,
-            TargetOu: DirectoryDistinguishedName.GetParentOu(directoryUser.DistinguishedName),
-            DisplayName: directoryUser.DisplayName ?? directoryUser.SamAccountName ?? worker.WorkerId,
-            CurrentDistinguishedName: directoryUser.DistinguishedName,
+            SamAccountName: user.SamAccountName ?? user.WorkerId,
+            CommonName: user.SamAccountName ?? user.WorkerId,
+            UserPrincipalName: user.Attributes.TryGetValue("UserPrincipalName", out var upn) ? upn ?? string.Empty : string.Empty,
+            Mail: user.Attributes.TryGetValue("mail", out var mail) ? mail ?? string.Empty : string.Empty,
+            TargetOu: user.CurrentOu ?? user.SourceOu,
+            DisplayName: user.DisplayName ?? user.SamAccountName ?? user.WorkerId,
+            CurrentDistinguishedName: user.DistinguishedName,
             EnableAccount: false,
             Operations: [new DirectoryOperation("DeleteUser")],
             Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase));
@@ -349,8 +373,7 @@ public sealed class DeleteAllUsersCoordinator(
     }
 
     private static JsonElement BuildEntryItem(
-        WorkerSnapshot worker,
-        DirectoryUserSnapshot? directoryUser,
+        DeleteCandidate user,
         bool dryRun,
         string bucket,
         string? action,
@@ -361,11 +384,11 @@ public sealed class DeleteAllUsersCoordinator(
         return ParseJson(
             $$"""
             {
-              "workerId": "{{Escape(worker.WorkerId)}}",
-              "samAccountName": {{ToJsonString(directoryUser?.SamAccountName)}},
-              "targetOu": {{ToJsonString(worker.TargetOu)}},
-              "emplStatus": {{ToJsonString(ResolveSourceAttribute(worker.Attributes, "emplStatus"))}},
-              "currentOu": {{ToJsonString(DirectoryDistinguishedName.GetParentOu(directoryUser?.DistinguishedName))}},
+              "workerId": "{{Escape(user.WorkerId)}}",
+              "samAccountName": {{ToJsonString(user.SamAccountName)}},
+              "targetOu": {{ToJsonString(user.CurrentOu ?? user.SourceOu)}},
+              "emplStatus": null,
+              "currentOu": {{ToJsonString(user.CurrentOu)}},
               "managerDistinguishedName": null,
               "reviewCategory": null,
               "reviewCaseType": null,
@@ -375,7 +398,7 @@ public sealed class DeleteAllUsersCoordinator(
               "dryRun": {{(dryRun ? "true" : "false")}},
               "applied": {{(applied ? "true" : "false")}},
               "succeeded": {{(succeeded ? "true" : "false")}},
-              "currentEnabled": {{ToJsonNullableBoolean(directoryUser?.Enabled)}},
+              "currentEnabled": {{ToJsonNullableBoolean(user.Enabled)}},
               "proposedEnable": false,
               "operations": [
                 {{(action is null ? string.Empty : $$"""
@@ -391,13 +414,14 @@ public sealed class DeleteAllUsersCoordinator(
             """);
     }
 
-    private static JsonElement BuildReport(string runId, RunQueueRequest request, RunTally tally, int totalWorkers, DateTimeOffset startedAt)
+    private JsonElement BuildReport(string runId, RunQueueRequest request, RunTally tally, int totalWorkers, DateTimeOffset startedAt, IReadOnlyList<DeleteCandidate> users)
     {
+        var targetOus = GetDeleteTargetOus();
         return ParseJson(
             $$"""
             {
               "kind": "deleteAllUsersRun",
-              "syncScope": "Delete all users",
+              "syncScope": "Delete users from configured test OUs",
               "runId": "{{runId}}",
               "requestId": "{{request.RequestId}}",
               "mode": "{{request.Mode}}",
@@ -406,15 +430,82 @@ public sealed class DeleteAllUsersCoordinator(
               "dryRun": {{(request.DryRun ? "true" : "false")}},
               "startedAt": "{{startedAt:O}}",
               "totalWorkers": {{totalWorkers}},
+              "targetOus": [{{string.Join(",", targetOus.Select(ToJsonString))}}],
               "tally": {
                 "deletions": {{tally.Deletions}},
                 "guardrailFailures": {{tally.GuardrailFailures}},
                 "conflicts": {{tally.Conflicts}},
                 "unchanged": {{tally.Unchanged}}
               },
-              "operations": []
+              "operations": [],
+              "sampleUsers": [{{string.Join(",", users.Take(5).Select(user => $$"""
+                {
+                  "workerId": {{ToJsonString(user.WorkerId)}},
+                  "samAccountName": {{ToJsonString(user.SamAccountName)}},
+                  "distinguishedName": {{ToJsonString(user.DistinguishedName)}}
+                }
+                """))}}]
             }
             """);
+    }
+
+    private DeleteCandidate BuildDeleteCandidate(DirectoryUserSnapshot directoryUser, string sourceOu)
+    {
+        var workerId = ResolveWorkerId(directoryUser);
+        return new DeleteCandidate(
+            WorkerId: workerId,
+            SamAccountName: directoryUser.SamAccountName,
+            DistinguishedName: directoryUser.DistinguishedName,
+            DisplayName: directoryUser.DisplayName,
+            Enabled: directoryUser.Enabled,
+            CurrentOu: DirectoryDistinguishedName.GetParentOu(directoryUser.DistinguishedName),
+            SourceOu: sourceOu,
+            Attributes: directoryUser.Attributes);
+    }
+
+    private string ResolveWorkerId(DirectoryUserSnapshot directoryUser)
+    {
+        if (directoryUser.Attributes.TryGetValue(lifecycleSettings.DirectoryIdentityAttribute, out var identityValue) &&
+            !string.IsNullOrWhiteSpace(identityValue))
+        {
+            return identityValue.Trim();
+        }
+
+        if (!string.IsNullOrWhiteSpace(directoryUser.SamAccountName))
+        {
+            return directoryUser.SamAccountName;
+        }
+
+        if (!string.IsNullOrWhiteSpace(directoryUser.DistinguishedName))
+        {
+            return directoryUser.DistinguishedName;
+        }
+
+        return "unknown-directory-user";
+    }
+
+    private static string ResolveCandidateDeduplicationKey(DeleteCandidate candidate)
+    {
+        if (!string.IsNullOrWhiteSpace(candidate.DistinguishedName))
+        {
+            return candidate.DistinguishedName;
+        }
+
+        if (!string.IsNullOrWhiteSpace(candidate.SamAccountName))
+        {
+            return $"sam:{candidate.SamAccountName}";
+        }
+
+        return $"worker:{candidate.WorkerId}";
+    }
+
+    private IReadOnlyList<string> GetDeleteTargetOus()
+    {
+        return new[] { lifecycleSettings.ActiveOu, lifecycleSettings.PrehireOu, lifecycleSettings.GraveyardOu, lifecycleSettings.LeaveOu }
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Select(value => value!)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
     }
 
     private static JsonElement ParseJson(string json)
@@ -433,14 +524,13 @@ public sealed class DeleteAllUsersCoordinator(
 
     private static string ToJsonNullableBoolean(bool? value) => value.HasValue ? (value.Value ? "true" : "false") : "null";
 
-    private static string? ResolveSourceAttribute(IReadOnlyDictionary<string, string?> attributes, string key)
-    {
-        if (attributes.TryGetValue(key, out var value))
-        {
-            return value;
-        }
-
-        var normalized = SourceAttributePathNormalizer.Normalize(key);
-        return attributes.TryGetValue(normalized, out value) ? value : null;
-    }
+    private sealed record DeleteCandidate(
+        string WorkerId,
+        string? SamAccountName,
+        string? DistinguishedName,
+        string? DisplayName,
+        bool? Enabled,
+        string? CurrentOu,
+        string SourceOu,
+        IReadOnlyDictionary<string, string?> Attributes);
 }

@@ -121,7 +121,7 @@ public sealed class SyncModel(
 
         if (!string.Equals(DeleteAllUsersConfirmationText?.Trim(), DeleteAllUsersConfirmationPhrase, StringComparison.Ordinal))
         {
-            ErrorMessage = $"Type {DeleteAllUsersConfirmationPhrase} to queue the delete-all test run.";
+            ErrorMessage = $"Type {DeleteAllUsersConfirmationPhrase} to queue the delete-all AD reset run.";
             SuccessMessage = null;
             return RedirectToPage(new { PageNumber });
         }
@@ -134,7 +134,7 @@ public sealed class SyncModel(
                 RequestedBy: ResolveRequestedBy()),
             cancellationToken);
 
-        SuccessMessage = "Delete-all test run queued.";
+        SuccessMessage = "Delete-all AD reset queued.";
         ErrorMessage = null;
         return RedirectToPage(new { PageNumber });
     }

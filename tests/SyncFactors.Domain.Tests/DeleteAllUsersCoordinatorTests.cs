@@ -8,67 +8,80 @@ namespace SyncFactors.Domain.Tests;
 public sealed class DeleteAllUsersCoordinatorTests
 {
     [Fact]
-    public async Task ExecuteAsync_DryRun_RecordsDeletionAndUnchangedEntries()
+    public async Task ExecuteAsync_DryRun_RecordsDeletionEntriesFromConfiguredOus()
     {
         CapturingRunLifecycleService.Reset();
-        var coordinator = new DeleteAllUsersCoordinator(
-            new StubWorkerSource([CreateWorker("10001"), CreateWorker("10002")]),
-            new StubRunQueueStore(),
-            new StubDirectoryGateway("10001"),
-            new ThrowingDirectoryCommandGateway(),
-            new CapturingRunLifecycleService(),
-            new WorkerRunSettings(MaxCreatesPerRun: 10, MaxDisablesPerRun: 10, MaxDeletionsPerRun: 10),
-            NullLogger<DeleteAllUsersCoordinator>.Instance,
-            TimeProvider.System);
+        var coordinator = CreateCoordinator(
+            directoryGateway: new StubDirectoryGateway(new Dictionary<string, IReadOnlyList<DirectoryUserSnapshot>>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["OU=LabUsers,DC=example,DC=com"] =
+                [
+                    CreateDirectoryUser("10001", "lab10001", "OU=LabUsers,DC=example,DC=com")
+                ],
+                ["OU=Prehire,DC=example,DC=com"] =
+                [
+                    CreateDirectoryUser("10002", "lab10002", "OU=Prehire,DC=example,DC=com")
+                ]
+            }),
+            commandGateway: new ThrowingDirectoryCommandGateway());
 
         var runId = await coordinator.ExecuteAsync(
             new RunQueueRequest("req-1", "DeleteAllUsers", true, "DeleteAllUsers", "test", "Pending", DateTimeOffset.UtcNow, null, null, null, null),
             CancellationToken.None);
 
         Assert.StartsWith("delete-all-", runId, StringComparison.Ordinal);
-        Assert.Contains(CapturingRunLifecycleService.Entries, entry => entry.WorkerId == "10001" && entry.Bucket == "deletions");
-        Assert.Contains(CapturingRunLifecycleService.Entries, entry => entry.WorkerId == "10002" && entry.Bucket == "unchanged");
+        Assert.Equal(2, CapturingRunLifecycleService.Entries.Count);
+        Assert.All(CapturingRunLifecycleService.Entries, entry => Assert.Equal("deletions", entry.Bucket));
+        Assert.Contains(CapturingRunLifecycleService.Entries, entry => entry.WorkerId == "10001" && entry.SamAccountName == "lab10001");
+        Assert.Contains(CapturingRunLifecycleService.Entries, entry => entry.WorkerId == "10002" && entry.SamAccountName == "lab10002");
         Assert.Equal(1, CapturingRunLifecycleService.CompletedCalls);
         Assert.Equal(0, CapturingRunLifecycleService.FailedCalls);
     }
 
     [Fact]
-    public async Task ExecuteAsync_LiveRun_ExecutesDeleteCommand()
+    public async Task ExecuteAsync_LiveRun_ExecutesDeleteCommandForDistinctDirectoryUsers()
     {
         CapturingRunLifecycleService.Reset();
         var gateway = new CapturingDirectoryCommandGateway();
-        var coordinator = new DeleteAllUsersCoordinator(
-            new StubWorkerSource([CreateWorker("10001")]),
-            new StubRunQueueStore(),
-            new StubDirectoryGateway("10001"),
-            gateway,
-            new CapturingRunLifecycleService(),
-            new WorkerRunSettings(MaxCreatesPerRun: 10, MaxDisablesPerRun: 10, MaxDeletionsPerRun: 10),
-            NullLogger<DeleteAllUsersCoordinator>.Instance,
-            TimeProvider.System);
+        var coordinator = CreateCoordinator(
+            directoryGateway: new StubDirectoryGateway(new Dictionary<string, IReadOnlyList<DirectoryUserSnapshot>>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["OU=LabUsers,DC=example,DC=com"] =
+                [
+                    CreateDirectoryUser("10001", "lab10001", "OU=LabUsers,DC=example,DC=com"),
+                    CreateDirectoryUser("10002", "lab10002", "OU=LabUsers,DC=example,DC=com")
+                ],
+                ["OU=Leave,DC=example,DC=com"] =
+                [
+                    CreateDirectoryUser("10001", "lab10001", "OU=LabUsers,DC=example,DC=com")
+                ]
+            }),
+            commandGateway: gateway);
 
         await coordinator.ExecuteAsync(
             new RunQueueRequest("req-live", "DeleteAllUsers", false, "DeleteAllUsers", "test", "Pending", DateTimeOffset.UtcNow, null, null, null, null),
             CancellationToken.None);
 
-        Assert.Single(gateway.Commands);
-        Assert.Equal("DeleteUser", gateway.Commands[0].Action);
-        Assert.Equal("10001", gateway.Commands[0].WorkerId);
+        Assert.Equal(2, gateway.Commands.Count);
+        Assert.All(gateway.Commands, command => Assert.Equal("DeleteUser", command.Action));
+        Assert.Equal(["10001", "10002"], gateway.Commands.Select(command => command.WorkerId).OrderBy(value => value, StringComparer.Ordinal).ToArray());
     }
 
     [Fact]
     public async Task ExecuteAsync_DeletionGuardrailExceeded_FailsRun()
     {
         CapturingRunLifecycleService.Reset();
-        var coordinator = new DeleteAllUsersCoordinator(
-            new StubWorkerSource([CreateWorker("10001"), CreateWorker("10002")]),
-            new StubRunQueueStore(),
-            new StubDirectoryGateway("10001", "10002"),
-            new ThrowingDirectoryCommandGateway(),
-            new CapturingRunLifecycleService(),
-            new WorkerRunSettings(MaxCreatesPerRun: 10, MaxDisablesPerRun: 10, MaxDeletionsPerRun: 1),
-            NullLogger<DeleteAllUsersCoordinator>.Instance,
-            TimeProvider.System);
+        var coordinator = CreateCoordinator(
+            directoryGateway: new StubDirectoryGateway(new Dictionary<string, IReadOnlyList<DirectoryUserSnapshot>>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["OU=LabUsers,DC=example,DC=com"] =
+                [
+                    CreateDirectoryUser("10001", "lab10001", "OU=LabUsers,DC=example,DC=com"),
+                    CreateDirectoryUser("10002", "lab10002", "OU=LabUsers,DC=example,DC=com")
+                ]
+            }),
+            commandGateway: new ThrowingDirectoryCommandGateway(),
+            workerRunSettings: new WorkerRunSettings(MaxCreatesPerRun: 10, MaxDisablesPerRun: 10, MaxDeletionsPerRun: 1));
 
         var ex = await Assert.ThrowsAsync<GuardrailExceededException>(() => coordinator.ExecuteAsync(
             new RunQueueRequest("req-guardrail", "DeleteAllUsers", true, "DeleteAllUsers", "test", "Pending", DateTimeOffset.UtcNow, null, null, null, null),
@@ -79,60 +92,60 @@ public sealed class DeleteAllUsersCoordinatorTests
         Assert.Contains(CapturingRunLifecycleService.Entries, entry => entry.WorkerId == "10002" && entry.Bucket == "guardrailFailures");
     }
 
-    private static WorkerSnapshot CreateWorker(string workerId)
+    private static DeleteAllUsersCoordinator CreateCoordinator(
+        IDirectoryGateway directoryGateway,
+        IDirectoryCommandGateway commandGateway,
+        WorkerRunSettings? workerRunSettings = null)
     {
-        return new WorkerSnapshot(
-            WorkerId: workerId,
-            PreferredName: $"Worker{workerId}",
-            LastName: "Sample",
-            Department: "IT",
-            TargetOu: "OU=LabUsers,DC=example,DC=com",
-            IsPrehire: false,
-            Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase));
+        return new DeleteAllUsersCoordinator(
+            new StubRunQueueStore(),
+            directoryGateway,
+            commandGateway,
+            new CapturingRunLifecycleService(),
+            new LifecyclePolicySettings(
+                ActiveOu: "OU=LabUsers,DC=example,DC=com",
+                PrehireOu: "OU=Prehire,DC=example,DC=com",
+                GraveyardOu: "OU=Graveyard,DC=example,DC=com",
+                InactiveStatusField: "emplStatus",
+                InactiveStatusValues: [],
+                LeaveOu: "OU=Leave,DC=example,DC=com",
+                LeaveStatusValues: [],
+                DirectoryIdentityAttribute: "employeeID"),
+            workerRunSettings ?? new WorkerRunSettings(MaxCreatesPerRun: 10, MaxDisablesPerRun: 10, MaxDeletionsPerRun: 10),
+            NullLogger<DeleteAllUsersCoordinator>.Instance,
+            TimeProvider.System);
     }
 
-    private sealed class StubWorkerSource(IReadOnlyList<WorkerSnapshot> workers) : IWorkerSource
+    private static DirectoryUserSnapshot CreateDirectoryUser(string workerId, string samAccountName, string ou)
     {
-        public Task<WorkerSnapshot?> GetWorkerAsync(string workerId, CancellationToken cancellationToken)
-        {
-            _ = cancellationToken;
-            return Task.FromResult(workers.FirstOrDefault(worker => worker.WorkerId == workerId));
-        }
-
-        public async IAsyncEnumerable<WorkerSnapshot> ListWorkersAsync(WorkerListingMode mode, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
-        {
-            _ = mode;
-            foreach (var worker in workers)
+        return new DirectoryUserSnapshot(
+            SamAccountName: samAccountName,
+            DistinguishedName: $"CN={samAccountName},{ou}",
+            Enabled: true,
+            DisplayName: samAccountName,
+            Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
             {
-                cancellationToken.ThrowIfCancellationRequested();
-                yield return worker;
-                await Task.Yield();
-            }
-        }
+                ["employeeID"] = workerId,
+                ["UserPrincipalName"] = $"{samAccountName}@example.com",
+                ["mail"] = $"{samAccountName}@example.com"
+            });
     }
 
-    private sealed class StubDirectoryGateway(params string[] existingWorkerIds) : IDirectoryGateway
+    private sealed class StubDirectoryGateway(IReadOnlyDictionary<string, IReadOnlyList<DirectoryUserSnapshot>> usersByOu) : IDirectoryGateway
     {
-        private readonly HashSet<string> _existingWorkerIds = [.. existingWorkerIds];
-
         public Task<DirectoryUserSnapshot?> FindByWorkerAsync(WorkerSnapshot worker, CancellationToken cancellationToken)
         {
+            _ = worker;
             _ = cancellationToken;
-            if (!_existingWorkerIds.Contains(worker.WorkerId))
-            {
-                return Task.FromResult<DirectoryUserSnapshot?>(null);
-            }
+            throw new InvalidOperationException("Delete-all reset should not look up users by worker.");
+        }
 
-            return Task.FromResult<DirectoryUserSnapshot?>(new DirectoryUserSnapshot(
-                SamAccountName: worker.WorkerId,
-                DistinguishedName: $"CN={worker.WorkerId},OU=LabUsers,DC=example,DC=com",
-                Enabled: true,
-                DisplayName: worker.WorkerId,
-                Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
-                {
-                    ["UserPrincipalName"] = $"{worker.WorkerId}@example.com",
-                    ["mail"] = $"{worker.WorkerId}@example.com"
-                }));
+        public Task<IReadOnlyList<DirectoryUserSnapshot>> ListUsersInOuAsync(string ouDistinguishedName, CancellationToken cancellationToken)
+        {
+            _ = cancellationToken;
+            return Task.FromResult(usersByOu.TryGetValue(ouDistinguishedName, out var users)
+                ? users
+                : Array.Empty<DirectoryUserSnapshot>() as IReadOnlyList<DirectoryUserSnapshot>);
         }
 
         public Task<string?> ResolveManagerDistinguishedNameAsync(string managerId, CancellationToken cancellationToken)

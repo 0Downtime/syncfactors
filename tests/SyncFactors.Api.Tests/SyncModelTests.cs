@@ -89,7 +89,7 @@ public sealed class SyncModelTests
         Assert.False(queueStore.LastRequest!.DryRun);
         Assert.Equal("DeleteAllUsers", queueStore.LastRequest.Mode);
         Assert.Equal("DeleteAllUsers", queueStore.LastRequest.RunTrigger);
-        Assert.Equal("Delete-all test run queued.", model.SuccessMessage);
+        Assert.Equal("Delete-all AD reset queued.", model.SuccessMessage);
         Assert.Null(model.ErrorMessage);
     }
 
@@ -106,7 +106,7 @@ public sealed class SyncModelTests
 
         Assert.IsType<RedirectToPageResult>(result);
         Assert.Null(queueStore.LastRequest);
-        Assert.Equal($"Type {SyncModel.DeleteAllUsersConfirmationPhrase} to queue the delete-all test run.", model.ErrorMessage);
+        Assert.Equal($"Type {SyncModel.DeleteAllUsersConfirmationPhrase} to queue the delete-all AD reset run.", model.ErrorMessage);
         Assert.Null(model.SuccessMessage);
     }
 
