@@ -3,6 +3,7 @@
 @{
     ViewData["Title"] = "Run Detail";
     var runContext = Model.DescribeRunContext();
+    var populationComparison = Model.GetPopulationComparison();
 }
 
 @if (Model.Run is null)
@@ -52,6 +53,35 @@
         }
         </div>
     </article>
+
+    @if (populationComparison is not null)
+    {
+        <article class="panel">
+            <div class="panel-heading panel-heading-tight">
+                <div>
+                    <h2>Population Comparison</h2>
+                    <p class="muted">SuccessFactors workers targeting the active OU vs enabled accounts currently in that OU.</p>
+                </div>
+                <span class="badge @populationComparison.ToneCssClass">@populationComparison.StatusLabel</span>
+            </div>
+            <div class="metric-strip" aria-label="Population comparison totals">
+                <div class="metric-pill">
+                    <span>SF active</span>
+                    <strong>@populationComparison.SuccessFactorsActive</strong>
+                </div>
+                <div class="metric-pill">
+                    <span>AD enabled</span>
+                    <strong>@populationComparison.ActiveDirectoryEnabled</strong>
+                </div>
+                <div class="metric-pill">
+                    <span>Difference</span>
+                    <strong>@populationComparison.DifferenceLabel</strong>
+                </div>
+            </div>
+            <p class="muted">@populationComparison.ActiveOuLabel</p>
+            <p class="callout">@populationComparison.Summary</p>
+        </article>
+    }
 </section>
 
 <section class="panel">
