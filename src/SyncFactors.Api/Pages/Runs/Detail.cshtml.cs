@@ -30,6 +30,9 @@ public sealed class DetailModel(RunEntriesQueryService queryService) : PageModel
     public string? Filter { get; set; }
 
     [BindProperty(SupportsGet = true)]
+    public string? EmploymentStatus { get; set; }
+
+    [BindProperty(SupportsGet = true)]
     public int PageNumber { get; set; } = 1;
 
     public RunDetail? Run { get; private set; }
@@ -139,6 +142,9 @@ public sealed class DetailModel(RunEntriesQueryService queryService) : PageModel
 
     public string? GetEmploymentStatusDisplay(RunEntry entry)
         => GetEmploymentStatus(entry)?.Display;
+
+    public string? GetEmploymentStatusFilterLabel()
+        => DescribeEmploymentStatus(EmploymentStatus)?.Label;
 
     public EntryExecutionDisplay DescribeEntryExecution(RunEntry entry)
     {
@@ -340,7 +346,7 @@ public sealed class DetailModel(RunEntriesQueryService queryService) : PageModel
             return NotFound();
         }
 
-        var result = await queryService.LoadAsync(RunId, Bucket, WorkerId, null, Filter, null, PageNumber, EntriesPerPage, cancellationToken);
+        var result = await queryService.LoadAsync(RunId, Bucket, WorkerId, null, Filter, EmploymentStatus, null, PageNumber, EntriesPerPage, cancellationToken);
         if (result is null)
         {
             return NotFound();

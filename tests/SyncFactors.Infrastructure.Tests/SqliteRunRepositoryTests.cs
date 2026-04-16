@@ -245,7 +245,7 @@ public sealed class SqliteRunRepositoryTests
                 }),
                 CancellationToken.None);
 
-            var totals = await repository.GetRunEntryAttributeTotalsAsync(runId, null, null, null, null, null, CancellationToken.None);
+            var totals = await repository.GetRunEntryAttributeTotalsAsync(runId, null, null, null, null, null, null, CancellationToken.None);
 
             Assert.Collection(
                 totals,
@@ -330,7 +330,7 @@ public sealed class SqliteRunRepositoryTests
                 }),
                 CancellationToken.None);
 
-            var totals = await repository.GetRunEntryAttributeTotalsAsync(runId, "updates", "100", null, "email", null, CancellationToken.None);
+            var totals = await repository.GetRunEntryAttributeTotalsAsync(runId, "updates", "100", null, "email", null, null, CancellationToken.None);
 
             var total = Assert.Single(totals);
             Assert.Equal("mail", total.Attribute);
@@ -387,7 +387,7 @@ public sealed class SqliteRunRepositoryTests
                 }),
                 CancellationToken.None);
 
-            var total = Assert.Single(await repository.GetRunEntryAttributeTotalsAsync(runId, null, null, null, null, null, CancellationToken.None));
+            var total = Assert.Single(await repository.GetRunEntryAttributeTotalsAsync(runId, null, null, null, null, null, null, CancellationToken.None));
 
             Assert.Equal("CN", total.Attribute);
             Assert.Equal(2, total.Count);
@@ -464,7 +464,7 @@ public sealed class SqliteRunRepositoryTests
                 }),
                 CancellationToken.None);
 
-            var totals = await repository.GetRunEntryEmploymentStatusTotalsAsync(runId, null, null, null, "email", null, CancellationToken.None);
+            var totals = await repository.GetRunEntryEmploymentStatusTotalsAsync(runId, null, null, null, "email", null, null, CancellationToken.None);
 
             Assert.Collection(
                 totals,
@@ -478,6 +478,58 @@ public sealed class SqliteRunRepositoryTests
                     Assert.Equal("64304", total.Code);
                     Assert.Equal(1, total.Count);
                 });
+        }
+        finally
+        {
+            File.Delete(databasePath);
+        }
+    }
+
+    [Fact]
+    public async Task GetRunEntriesAsync_FiltersByEmploymentStatus()
+    {
+        var databasePath = Path.Combine(Path.GetTempPath(), $"syncfactors-run-status-filter-{Guid.NewGuid():N}.db");
+
+        try
+        {
+            var repository = await CreateRepositoryAsync(databasePath);
+            var runId = "bulk-status-filter-1";
+            var startedAt = DateTimeOffset.Parse("2026-04-02T15:30:00Z");
+
+            await repository.SaveRunAsync(
+                CreateRunRecord(runId, startedAt),
+                CancellationToken.None);
+
+            await repository.AppendRunEntryAsync(CreateEntry(
+                runId,
+                "updates",
+                0,
+                "10001",
+                item: new
+                {
+                    workerId = "10001",
+                    emplStatus = "64300"
+                }),
+                CancellationToken.None);
+
+            await repository.AppendRunEntryAsync(CreateEntry(
+                runId,
+                "updates",
+                1,
+                "10002",
+                item: new
+                {
+                    workerId = "10002",
+                    emplStatus = "64307"
+                }),
+                CancellationToken.None);
+
+            var entries = await repository.GetRunEntriesAsync(runId, null, null, null, null, "64307", null, 0, 10, CancellationToken.None);
+            var total = await repository.CountRunEntriesAsync(runId, null, null, null, null, "64307", null, CancellationToken.None);
+
+            var entry = Assert.Single(entries);
+            Assert.Equal("10002", entry.WorkerId);
+            Assert.Equal(1, total);
         }
         finally
         {

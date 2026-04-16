@@ -13,7 +13,7 @@ public sealed class RunEntriesQueryServiceTests
         var repository = new StubRunRepository();
         var service = new RunEntriesQueryService(repository);
 
-        var result = await service.LoadAsync("bulk-1", "updates", "worker-1", null, "email", null, 2, 25, CancellationToken.None);
+        var result = await service.LoadAsync("bulk-1", "updates", "worker-1", null, "email", "64307", null, 2, 25, CancellationToken.None);
 
         Assert.NotNull(result);
         Assert.Equal("bulk-1", repository.LastTotalsRunId);
@@ -21,6 +21,9 @@ public sealed class RunEntriesQueryServiceTests
         Assert.Equal("updates", repository.LastTotalsBucket);
         Assert.Equal("worker-1", repository.LastTotalsWorkerId);
         Assert.Equal("email", repository.LastTotalsFilter);
+        Assert.Equal("64307", repository.LastTotalsEmploymentStatus);
+        Assert.Equal("64307", repository.LastEntriesEmploymentStatus);
+        Assert.Null(repository.LastEmploymentTotalsEmploymentStatus);
         Assert.Equal(120, result!.Total);
         Assert.Equal(2, result.Page);
         Assert.Equal(25, result.PageSize);
@@ -56,7 +59,7 @@ public sealed class RunEntriesQueryServiceTests
     {
         var service = new RunEntriesQueryService(new MissingRunRepository());
 
-        var result = await service.LoadAsync("missing-run", null, null, null, null, null, 1, 50, CancellationToken.None);
+        var result = await service.LoadAsync("missing-run", null, null, null, null, null, null, 1, 50, CancellationToken.None);
 
         Assert.Null(result);
     }
@@ -96,7 +99,13 @@ public sealed class RunEntriesQueryServiceTests
 
         public string? LastTotalsFilter { get; private set; }
 
+        public string? LastTotalsEmploymentStatus { get; private set; }
+
         public string? LastEmploymentTotalsRunId { get; private set; }
+
+        public string? LastEmploymentTotalsEmploymentStatus { get; private set; }
+
+        public string? LastEntriesEmploymentStatus { get; private set; }
 
         public Task<IReadOnlyList<RunSummary>> ListRunsAsync(CancellationToken cancellationToken)
         {
@@ -176,13 +185,14 @@ public sealed class RunEntriesQueryServiceTests
             return Task.CompletedTask;
         }
 
-        public Task<IReadOnlyList<RunEntry>> GetRunEntriesAsync(string runId, string? bucket, string? workerId, string? reason, string? filter, string? entryId, int skip, int take, CancellationToken cancellationToken)
+        public Task<IReadOnlyList<RunEntry>> GetRunEntriesAsync(string runId, string? bucket, string? workerId, string? reason, string? filter, string? employmentStatus, string? entryId, int skip, int take, CancellationToken cancellationToken)
         {
             _ = runId;
             _ = bucket;
             _ = workerId;
             _ = reason;
             _ = filter;
+            LastEntriesEmploymentStatus = employmentStatus;
             _ = entryId;
             _ = cancellationToken;
             LastSkip = skip;
@@ -210,12 +220,13 @@ public sealed class RunEntriesQueryServiceTests
                     Item: JsonDocument.Parse("""{}""").RootElement.Clone())).ToArray());
         }
 
-        public Task<IReadOnlyList<ChangedAttributeTotal>> GetRunEntryAttributeTotalsAsync(string runId, string? bucket, string? workerId, string? reason, string? filter, string? entryId, CancellationToken cancellationToken)
+        public Task<IReadOnlyList<ChangedAttributeTotal>> GetRunEntryAttributeTotalsAsync(string runId, string? bucket, string? workerId, string? reason, string? filter, string? employmentStatus, string? entryId, CancellationToken cancellationToken)
         {
             LastTotalsRunId = runId;
             LastTotalsBucket = bucket;
             LastTotalsWorkerId = workerId;
             LastTotalsFilter = filter;
+            LastTotalsEmploymentStatus = employmentStatus;
             _ = reason;
             _ = entryId;
             _ = cancellationToken;
@@ -226,13 +237,14 @@ public sealed class RunEntriesQueryServiceTests
             ]);
         }
 
-        public Task<IReadOnlyList<EmploymentStatusTotal>> GetRunEntryEmploymentStatusTotalsAsync(string runId, string? bucket, string? workerId, string? reason, string? filter, string? entryId, CancellationToken cancellationToken)
+        public Task<IReadOnlyList<EmploymentStatusTotal>> GetRunEntryEmploymentStatusTotalsAsync(string runId, string? bucket, string? workerId, string? reason, string? filter, string? employmentStatus, string? entryId, CancellationToken cancellationToken)
         {
             LastEmploymentTotalsRunId = runId;
             _ = bucket;
             _ = workerId;
             _ = reason;
             _ = filter;
+            LastEmploymentTotalsEmploymentStatus = employmentStatus;
             _ = entryId;
             _ = cancellationToken;
             return Task.FromResult<IReadOnlyList<EmploymentStatusTotal>>(
@@ -242,13 +254,14 @@ public sealed class RunEntriesQueryServiceTests
             ]);
         }
 
-        public Task<int> CountRunEntriesAsync(string runId, string? bucket, string? workerId, string? reason, string? filter, string? entryId, CancellationToken cancellationToken)
+        public Task<int> CountRunEntriesAsync(string runId, string? bucket, string? workerId, string? reason, string? filter, string? employmentStatus, string? entryId, CancellationToken cancellationToken)
         {
             _ = runId;
             _ = bucket;
             _ = workerId;
             _ = reason;
             _ = filter;
+            _ = employmentStatus;
             _ = entryId;
             _ = cancellationToken;
             return Task.FromResult(120);
@@ -307,13 +320,14 @@ public sealed class RunEntriesQueryServiceTests
             return Task.CompletedTask;
         }
 
-        public Task<IReadOnlyList<RunEntry>> GetRunEntriesAsync(string runId, string? bucket, string? workerId, string? reason, string? filter, string? entryId, int skip, int take, CancellationToken cancellationToken)
+        public Task<IReadOnlyList<RunEntry>> GetRunEntriesAsync(string runId, string? bucket, string? workerId, string? reason, string? filter, string? employmentStatus, string? entryId, int skip, int take, CancellationToken cancellationToken)
         {
             _ = runId;
             _ = bucket;
             _ = workerId;
             _ = reason;
             _ = filter;
+            _ = employmentStatus;
             _ = entryId;
             _ = skip;
             _ = take;
@@ -321,25 +335,27 @@ public sealed class RunEntriesQueryServiceTests
             return Task.FromResult<IReadOnlyList<RunEntry>>([]);
         }
 
-        public Task<IReadOnlyList<ChangedAttributeTotal>> GetRunEntryAttributeTotalsAsync(string runId, string? bucket, string? workerId, string? reason, string? filter, string? entryId, CancellationToken cancellationToken)
+        public Task<IReadOnlyList<ChangedAttributeTotal>> GetRunEntryAttributeTotalsAsync(string runId, string? bucket, string? workerId, string? reason, string? filter, string? employmentStatus, string? entryId, CancellationToken cancellationToken)
         {
             _ = runId;
             _ = bucket;
             _ = workerId;
             _ = reason;
             _ = filter;
+            _ = employmentStatus;
             _ = entryId;
             _ = cancellationToken;
             return Task.FromResult<IReadOnlyList<ChangedAttributeTotal>>([]);
         }
 
-        public Task<int> CountRunEntriesAsync(string runId, string? bucket, string? workerId, string? reason, string? filter, string? entryId, CancellationToken cancellationToken)
+        public Task<int> CountRunEntriesAsync(string runId, string? bucket, string? workerId, string? reason, string? filter, string? employmentStatus, string? entryId, CancellationToken cancellationToken)
         {
             _ = runId;
             _ = bucket;
             _ = workerId;
             _ = reason;
             _ = filter;
+            _ = employmentStatus;
             _ = entryId;
             _ = cancellationToken;
             return Task.FromResult(0);

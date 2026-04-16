@@ -612,13 +612,14 @@ public sealed class FullSyncRunServiceTests
             return Task.CompletedTask;
         }
 
-        public Task<IReadOnlyList<RunEntry>> GetRunEntriesAsync(string runId, string? bucket, string? workerId, string? reason, string? filter, string? entryId, int skip, int take, CancellationToken cancellationToken)
+        public Task<IReadOnlyList<RunEntry>> GetRunEntriesAsync(string runId, string? bucket, string? workerId, string? reason, string? filter, string? employmentStatus, string? entryId, int skip, int take, CancellationToken cancellationToken)
         {
             _ = runId;
             _ = bucket;
             _ = workerId;
             _ = reason;
             _ = filter;
+            _ = employmentStatus;
             _ = entryId;
             _ = skip;
             _ = take;
@@ -626,25 +627,27 @@ public sealed class FullSyncRunServiceTests
             return Task.FromResult<IReadOnlyList<RunEntry>>([]);
         }
 
-        public Task<int> CountRunEntriesAsync(string runId, string? bucket, string? workerId, string? reason, string? filter, string? entryId, CancellationToken cancellationToken)
+        public Task<int> CountRunEntriesAsync(string runId, string? bucket, string? workerId, string? reason, string? filter, string? employmentStatus, string? entryId, CancellationToken cancellationToken)
         {
             _ = runId;
             _ = bucket;
             _ = workerId;
             _ = reason;
             _ = filter;
+            _ = employmentStatus;
             _ = entryId;
             _ = cancellationToken;
             return Task.FromResult(0);
         }
 
-        public Task<IReadOnlyList<ChangedAttributeTotal>> GetRunEntryAttributeTotalsAsync(string runId, string? bucket, string? workerId, string? reason, string? filter, string? entryId, CancellationToken cancellationToken)
+        public Task<IReadOnlyList<ChangedAttributeTotal>> GetRunEntryAttributeTotalsAsync(string runId, string? bucket, string? workerId, string? reason, string? filter, string? employmentStatus, string? entryId, CancellationToken cancellationToken)
         {
             _ = runId;
             _ = bucket;
             _ = workerId;
             _ = reason;
             _ = filter;
+            _ = employmentStatus;
             _ = entryId;
             _ = cancellationToken;
             return Task.FromResult<IReadOnlyList<ChangedAttributeTotal>>([]);

@@ -599,6 +599,7 @@ public sealed class SqliteRunRepository(SqlitePathResolver pathResolver) : IRunR
         string? workerId,
         string? reason,
         string? filter,
+        string? employmentStatus,
         string? entryId,
         int skip,
         int take,
@@ -614,7 +615,7 @@ public sealed class SqliteRunRepository(SqlitePathResolver pathResolver) : IRunR
         await connection.OpenAsync(cancellationToken);
 
         await using var command = connection.CreateCommand();
-        AddRunEntryFilterParameters(command, runId, bucket, workerId, reason, filter, entryId);
+        AddRunEntryFilterParameters(command, runId, bucket, workerId, reason, filter, employmentStatus, entryId);
         command.Parameters.AddWithValue("$skip", Math.Max(0, skip));
         command.Parameters.AddWithValue("$take", Math.Max(1, take));
 
@@ -645,6 +646,10 @@ public sealed class SqliteRunRepository(SqlitePathResolver pathResolver) : IRunR
                 OR LOWER(COALESCE(e.sam_account_name, '')) LIKE $workerId ESCAPE '\'
               )
               AND ($reason IS NULL OR LOWER(COALESCE(e.reason, '')) = LOWER($reason))
+              AND (
+                $employmentStatus IS NULL
+                OR LOWER(TRIM(CAST(json_extract(e.item_json, '$.emplStatus') AS TEXT))) = LOWER($employmentStatus)
+              )
               AND ($entryId IS NULL OR e.entry_id = $entryId)
               AND (
                 $filter IS NULL
@@ -672,6 +677,7 @@ public sealed class SqliteRunRepository(SqlitePathResolver pathResolver) : IRunR
         string? workerId,
         string? reason,
         string? filter,
+        string? employmentStatus,
         string? entryId,
         CancellationToken cancellationToken)
     {
@@ -685,7 +691,7 @@ public sealed class SqliteRunRepository(SqlitePathResolver pathResolver) : IRunR
         await connection.OpenAsync(cancellationToken);
 
         await using var command = connection.CreateCommand();
-        AddRunEntryFilterParameters(command, runId, bucket, workerId, reason, filter, entryId);
+        AddRunEntryFilterParameters(command, runId, bucket, workerId, reason, filter, employmentStatus, entryId);
 
         command.CommandText =
             """
@@ -700,6 +706,10 @@ public sealed class SqliteRunRepository(SqlitePathResolver pathResolver) : IRunR
                 OR LOWER(COALESCE(e.sam_account_name, '')) LIKE $workerId ESCAPE '\'
               )
               AND ($reason IS NULL OR LOWER(COALESCE(e.reason, '')) = LOWER($reason))
+              AND (
+                $employmentStatus IS NULL
+                OR LOWER(TRIM(CAST(json_extract(e.item_json, '$.emplStatus') AS TEXT))) = LOWER($employmentStatus)
+              )
               AND ($entryId IS NULL OR e.entry_id = $entryId)
               AND (
                 $filter IS NULL
@@ -719,6 +729,7 @@ public sealed class SqliteRunRepository(SqlitePathResolver pathResolver) : IRunR
         string? workerId,
         string? reason,
         string? filter,
+        string? employmentStatus,
         string? entryId,
         CancellationToken cancellationToken)
     {
@@ -732,7 +743,7 @@ public sealed class SqliteRunRepository(SqlitePathResolver pathResolver) : IRunR
         await connection.OpenAsync(cancellationToken);
 
         await using var command = connection.CreateCommand();
-        AddRunEntryFilterParameters(command, runId, bucket, workerId, reason, filter, entryId);
+        AddRunEntryFilterParameters(command, runId, bucket, workerId, reason, filter, employmentStatus, entryId);
         command.CommandText =
             """
             SELECT
@@ -760,6 +771,10 @@ public sealed class SqliteRunRepository(SqlitePathResolver pathResolver) : IRunR
                 OR LOWER(COALESCE(e.sam_account_name, '')) LIKE $workerId ESCAPE '\'
               )
               AND ($reason IS NULL OR LOWER(COALESCE(e.reason, '')) = LOWER($reason))
+              AND (
+                $employmentStatus IS NULL
+                OR LOWER(TRIM(CAST(json_extract(e.item_json, '$.emplStatus') AS TEXT))) = LOWER($employmentStatus)
+              )
               AND ($entryId IS NULL OR e.entry_id = $entryId)
               AND (
                 $filter IS NULL
@@ -808,6 +823,7 @@ public sealed class SqliteRunRepository(SqlitePathResolver pathResolver) : IRunR
         string? workerId,
         string? reason,
         string? filter,
+        string? employmentStatus,
         string? entryId,
         CancellationToken cancellationToken)
     {
@@ -821,7 +837,7 @@ public sealed class SqliteRunRepository(SqlitePathResolver pathResolver) : IRunR
         await connection.OpenAsync(cancellationToken);
 
         await using var command = connection.CreateCommand();
-        AddRunEntryFilterParameters(command, runId, bucket, workerId, reason, filter, entryId);
+        AddRunEntryFilterParameters(command, runId, bucket, workerId, reason, filter, employmentStatus, entryId);
         command.CommandText =
             """
             SELECT
@@ -837,6 +853,10 @@ public sealed class SqliteRunRepository(SqlitePathResolver pathResolver) : IRunR
                 OR LOWER(COALESCE(e.sam_account_name, '')) LIKE $workerId ESCAPE '\'
               )
               AND ($reason IS NULL OR LOWER(COALESCE(e.reason, '')) = LOWER($reason))
+              AND (
+                $employmentStatus IS NULL
+                OR LOWER(TRIM(CAST(json_extract(e.item_json, '$.emplStatus') AS TEXT))) = LOWER($employmentStatus)
+              )
               AND ($entryId IS NULL OR e.entry_id = $entryId)
               AND (
                 $filter IS NULL
@@ -875,6 +895,7 @@ public sealed class SqliteRunRepository(SqlitePathResolver pathResolver) : IRunR
         string? workerId,
         string? reason,
         string? filter,
+        string? employmentStatus,
         string? entryId)
     {
         command.Parameters.AddWithValue("$runId", runId);
@@ -891,6 +912,7 @@ public sealed class SqliteRunRepository(SqlitePathResolver pathResolver) : IRunR
             string.IsNullOrWhiteSpace(filter)
                 ? DBNull.Value
                 : $"%{EscapeLike(filter.ToLowerInvariant())}%");
+        command.Parameters.AddWithValue("$employmentStatus", string.IsNullOrWhiteSpace(employmentStatus) ? DBNull.Value : employmentStatus.Trim());
     }
 
     private static DateTimeOffset? ParseDate(string? value)

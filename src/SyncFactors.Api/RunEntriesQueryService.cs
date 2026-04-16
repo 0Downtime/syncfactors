@@ -11,6 +11,7 @@ public sealed class RunEntriesQueryService(IRunRepository runRepository)
         string? workerId,
         string? reason,
         string? filter,
+        string? employmentStatus,
         string? entryId,
         int? page,
         int? pageSize,
@@ -23,17 +24,18 @@ public sealed class RunEntriesQueryService(IRunRepository runRepository)
         }
 
         var resolvedPageSize = Math.Clamp(pageSize ?? 50, 1, 200);
-        var total = await runRepository.CountRunEntriesAsync(runId, bucket, workerId, reason, filter, entryId, cancellationToken);
+        var total = await runRepository.CountRunEntriesAsync(runId, bucket, workerId, reason, filter, employmentStatus, entryId, cancellationToken);
         var totalPages = Math.Max(1, (int)Math.Ceiling(total / (double)resolvedPageSize));
         var resolvedPage = Math.Clamp(page ?? 1, 1, totalPages);
-        var attributeTotals = await runRepository.GetRunEntryAttributeTotalsAsync(runId, bucket, workerId, reason, filter, entryId, cancellationToken);
-        var employmentStatusTotals = await runRepository.GetRunEntryEmploymentStatusTotalsAsync(runId, bucket, workerId, reason, filter, entryId, cancellationToken);
+        var attributeTotals = await runRepository.GetRunEntryAttributeTotalsAsync(runId, bucket, workerId, reason, filter, employmentStatus, entryId, cancellationToken);
+        var employmentStatusTotals = await runRepository.GetRunEntryEmploymentStatusTotalsAsync(runId, bucket, workerId, reason, filter, null, entryId, cancellationToken);
         var entries = await runRepository.GetRunEntriesAsync(
             runId,
             bucket,
             workerId,
             reason,
             filter,
+            employmentStatus,
             entryId,
             (resolvedPage - 1) * resolvedPageSize,
             resolvedPageSize,
