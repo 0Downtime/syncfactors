@@ -507,7 +507,9 @@ public sealed class FullSyncRunService(
 
     private static string ResolveExecutionBucket(PlannedWorkerAction plan)
     {
-        return plan.Bucket == "updates" && plan.AttributeChanges.All(change => !change.Changed)
+        return plan.Bucket == "updates" &&
+               plan.AttributeChanges.All(change => !change.Changed) &&
+               plan.Operations.Count == 0
             ? "unchanged"
             : plan.Bucket;
     }

@@ -259,6 +259,211 @@ public sealed class FullSyncRunServiceTests
     }
 
     [Fact]
+    public async Task LaunchAsync_SimulatesAllEmployeeStatesFromSuccessFactorsToAd()
+    {
+        var cases = new[]
+        {
+            new EmployeeStateSimulationCase(
+                Name: "active-create",
+                Worker: CreateWorker("20001", managerId: null, emplStatus: "64300"),
+                ExistingDirectoryUser: null,
+                ExpectedBucket: "creates",
+                ExpectedTargetOu: "OU=LabUsers,DC=example,DC=com",
+                ExpectedEnableAccount: true,
+                ExpectedOperations: ["CreateUser"]),
+            new EmployeeStateSimulationCase(
+                Name: "active-unchanged",
+                Worker: CreateWorker("20002", managerId: null, emplStatus: "64300"),
+                ExistingDirectoryUser: CreateDirectoryUser("20002", "OU=LabUsers,DC=example,DC=com", enabled: true),
+                ExpectedBucket: "unchanged",
+                ExpectedTargetOu: "OU=LabUsers,DC=example,DC=com",
+                ExpectedEnableAccount: true,
+                ExpectedOperations: []),
+            new EmployeeStateSimulationCase(
+                Name: "active-enable-and-move",
+                Worker: CreateWorker("20003", managerId: null, emplStatus: "64300"),
+                ExistingDirectoryUser: CreateDirectoryUser("20003", "OU=Prehire,DC=example,DC=com", enabled: false),
+                ExpectedBucket: "enables",
+                ExpectedTargetOu: "OU=LabUsers,DC=example,DC=com",
+                ExpectedEnableAccount: true,
+                ExpectedOperations: ["MoveUser", "EnableUser"]),
+            new EmployeeStateSimulationCase(
+                Name: "active-enable-in-place",
+                Worker: CreateWorker("20004", managerId: null, emplStatus: "64300"),
+                ExistingDirectoryUser: CreateDirectoryUser("20004", "OU=LabUsers,DC=example,DC=com", enabled: false),
+                ExpectedBucket: "enables",
+                ExpectedTargetOu: "OU=LabUsers,DC=example,DC=com",
+                ExpectedEnableAccount: true,
+                ExpectedOperations: ["EnableUser"]),
+            new EmployeeStateSimulationCase(
+                Name: "preboarding-create",
+                Worker: CreateWorker("20005", managerId: null, emplStatus: "64300", isPrehire: true),
+                ExistingDirectoryUser: null,
+                ExpectedBucket: "creates",
+                ExpectedTargetOu: "OU=Prehire,DC=example,DC=com",
+                ExpectedEnableAccount: false,
+                ExpectedOperations: ["CreateUser"]),
+            new EmployeeStateSimulationCase(
+                Name: "preboarding-unchanged",
+                Worker: CreateWorker("20006", managerId: null, emplStatus: "64300", isPrehire: true),
+                ExistingDirectoryUser: CreateDirectoryUser("20006", "OU=Prehire,DC=example,DC=com", enabled: false),
+                ExpectedBucket: "unchanged",
+                ExpectedTargetOu: "OU=Prehire,DC=example,DC=com",
+                ExpectedEnableAccount: false,
+                ExpectedOperations: []),
+            new EmployeeStateSimulationCase(
+                Name: "preboarding-move-and-disable",
+                Worker: CreateWorker("20007", managerId: null, emplStatus: "64300", isPrehire: true),
+                ExistingDirectoryUser: CreateDirectoryUser("20007", "OU=LabUsers,DC=example,DC=com", enabled: true),
+                ExpectedBucket: "updates",
+                ExpectedTargetOu: "OU=Prehire,DC=example,DC=com",
+                ExpectedEnableAccount: false,
+                ExpectedOperations: ["MoveUser", "DisableUser"]),
+            new EmployeeStateSimulationCase(
+                Name: "paid-leave-create",
+                Worker: CreateWorker("20008", managerId: null, emplStatus: "64304"),
+                ExistingDirectoryUser: null,
+                ExpectedBucket: "creates",
+                ExpectedTargetOu: "OU=Leave Users,DC=example,DC=com",
+                ExpectedEnableAccount: false,
+                ExpectedOperations: ["CreateUser"]),
+            new EmployeeStateSimulationCase(
+                Name: "paid-leave-unchanged",
+                Worker: CreateWorker("20009", managerId: null, emplStatus: "64304"),
+                ExistingDirectoryUser: CreateDirectoryUser("20009", "OU=Leave Users,DC=example,DC=com", enabled: false),
+                ExpectedBucket: "unchanged",
+                ExpectedTargetOu: "OU=Leave Users,DC=example,DC=com",
+                ExpectedEnableAccount: false,
+                ExpectedOperations: []),
+            new EmployeeStateSimulationCase(
+                Name: "paid-leave-move-and-disable",
+                Worker: CreateWorker("20010", managerId: null, emplStatus: "64304"),
+                ExistingDirectoryUser: CreateDirectoryUser("20010", "OU=LabUsers,DC=example,DC=com", enabled: true),
+                ExpectedBucket: "updates",
+                ExpectedTargetOu: "OU=Leave Users,DC=example,DC=com",
+                ExpectedEnableAccount: false,
+                ExpectedOperations: ["MoveUser", "DisableUser"]),
+            new EmployeeStateSimulationCase(
+                Name: "unpaid-leave-create",
+                Worker: CreateWorker("20011", managerId: null, emplStatus: "64303"),
+                ExistingDirectoryUser: null,
+                ExpectedBucket: "creates",
+                ExpectedTargetOu: "OU=Leave Users,DC=example,DC=com",
+                ExpectedEnableAccount: false,
+                ExpectedOperations: ["CreateUser"]),
+            new EmployeeStateSimulationCase(
+                Name: "unpaid-leave-unchanged",
+                Worker: CreateWorker("20012", managerId: null, emplStatus: "64303"),
+                ExistingDirectoryUser: CreateDirectoryUser("20012", "OU=Leave Users,DC=example,DC=com", enabled: false),
+                ExpectedBucket: "unchanged",
+                ExpectedTargetOu: "OU=Leave Users,DC=example,DC=com",
+                ExpectedEnableAccount: false,
+                ExpectedOperations: []),
+            new EmployeeStateSimulationCase(
+                Name: "unpaid-leave-disable-in-place",
+                Worker: CreateWorker("20013", managerId: null, emplStatus: "64303"),
+                ExistingDirectoryUser: CreateDirectoryUser("20013", "OU=Leave Users,DC=example,DC=com", enabled: true),
+                ExpectedBucket: "disables",
+                ExpectedTargetOu: "OU=Leave Users,DC=example,DC=com",
+                ExpectedEnableAccount: false,
+                ExpectedOperations: ["DisableUser"]),
+            new EmployeeStateSimulationCase(
+                Name: "retired-without-account",
+                Worker: CreateWorker("20014", managerId: null, emplStatus: "64307"),
+                ExistingDirectoryUser: null,
+                ExpectedBucket: "unchanged",
+                ExpectedTargetOu: "OU=Graveyard,DC=example,DC=com",
+                ExpectedEnableAccount: false,
+                ExpectedOperations: []),
+            new EmployeeStateSimulationCase(
+                Name: "retired-unchanged",
+                Worker: CreateWorker("20015", managerId: null, emplStatus: "64307"),
+                ExistingDirectoryUser: CreateDirectoryUser("20015", "OU=Graveyard,DC=example,DC=com", enabled: false),
+                ExpectedBucket: "unchanged",
+                ExpectedTargetOu: "OU=Graveyard,DC=example,DC=com",
+                ExpectedEnableAccount: false,
+                ExpectedOperations: []),
+            new EmployeeStateSimulationCase(
+                Name: "retired-disable-in-place",
+                Worker: CreateWorker("20016", managerId: null, emplStatus: "64307"),
+                ExistingDirectoryUser: CreateDirectoryUser("20016", "OU=Graveyard,DC=example,DC=com", enabled: true),
+                ExpectedBucket: "disables",
+                ExpectedTargetOu: "OU=Graveyard,DC=example,DC=com",
+                ExpectedEnableAccount: false,
+                ExpectedOperations: ["DisableUser"]),
+            new EmployeeStateSimulationCase(
+                Name: "terminated-without-account",
+                Worker: CreateWorker("20017", managerId: null, emplStatus: "64308"),
+                ExistingDirectoryUser: null,
+                ExpectedBucket: "unchanged",
+                ExpectedTargetOu: "OU=Graveyard,DC=example,DC=com",
+                ExpectedEnableAccount: false,
+                ExpectedOperations: []),
+            new EmployeeStateSimulationCase(
+                Name: "terminated-unchanged",
+                Worker: CreateWorker("20018", managerId: null, emplStatus: "64308"),
+                ExistingDirectoryUser: CreateDirectoryUser("20018", "OU=Graveyard,DC=example,DC=com", enabled: false),
+                ExpectedBucket: "unchanged",
+                ExpectedTargetOu: "OU=Graveyard,DC=example,DC=com",
+                ExpectedEnableAccount: false,
+                ExpectedOperations: []),
+            new EmployeeStateSimulationCase(
+                Name: "terminated-move-to-graveyard",
+                Worker: CreateWorker("20019", managerId: null, emplStatus: "64308"),
+                ExistingDirectoryUser: CreateDirectoryUser("20019", "OU=LabUsers,DC=example,DC=com", enabled: true),
+                ExpectedBucket: "graveyardMoves",
+                ExpectedTargetOu: "OU=Graveyard,DC=example,DC=com",
+                ExpectedEnableAccount: false,
+                ExpectedOperations: ["MoveUser", "DisableUser"])
+        };
+
+        foreach (var simulation in cases)
+        {
+            var directoryCommandGateway = new CapturingDirectoryCommandGateway();
+            var service = CreateLifecycleSimulationService(simulation, directoryCommandGateway, out var runRepository);
+
+            var result = await service.LaunchAsync(
+                new LaunchFullRunRequest(DryRun: false, AcknowledgeRealSync: true),
+                CancellationToken.None);
+
+            var entry = runRepository.ReplacedEntries.Single().entries.Single();
+            var operationKinds = entry.Item
+                .GetProperty("operations")
+                .EnumerateArray()
+                .Select(operation => operation.GetProperty("kind").GetString())
+                .ToArray();
+
+            Assert.True(result.Status == "Succeeded", $"Simulation '{simulation.Name}' failed unexpectedly: {result.Message}");
+            Assert.True(
+                string.Equals(simulation.ExpectedBucket, entry.Bucket, StringComparison.Ordinal),
+                $"Simulation '{simulation.Name}' expected bucket '{simulation.ExpectedBucket}' but got '{entry.Bucket}'.");
+            Assert.True(
+                string.Equals(simulation.ExpectedTargetOu, entry.Item.GetProperty("targetOu").GetString(), StringComparison.Ordinal),
+                $"Simulation '{simulation.Name}' expected target OU '{simulation.ExpectedTargetOu}' but got '{entry.Item.GetProperty("targetOu").GetString()}'.");
+            Assert.True(
+                simulation.ExpectedEnableAccount == entry.Item.GetProperty("proposedEnable").GetBoolean(),
+                $"Simulation '{simulation.Name}' expected enable={simulation.ExpectedEnableAccount} but got {entry.Item.GetProperty("proposedEnable").GetBoolean()}.");
+            Assert.True(
+                simulation.ExpectedOperations.SequenceEqual(operationKinds, StringComparer.Ordinal),
+                $"Simulation '{simulation.Name}' expected operations [{string.Join(", ", simulation.ExpectedOperations)}] but got [{string.Join(", ", operationKinds)}].");
+
+            if (simulation.ExpectedOperations.Length == 0)
+            {
+                Assert.Equal(0, directoryCommandGateway.ExecuteCount);
+                Assert.Null(directoryCommandGateway.LastCommand);
+                continue;
+            }
+
+            Assert.Equal(1, directoryCommandGateway.ExecuteCount);
+            Assert.NotNull(directoryCommandGateway.LastCommand);
+            Assert.Equal(simulation.ExpectedOperations[0], directoryCommandGateway.LastCommand!.Action);
+            Assert.Equal(simulation.ExpectedTargetOu, directoryCommandGateway.LastCommand.TargetOu);
+            Assert.Equal(simulation.ExpectedEnableAccount, directoryCommandGateway.LastCommand.EnableAccount);
+            Assert.Equal(simulation.ExpectedOperations, directoryCommandGateway.LastCommand.Operations.Select(operation => operation.Kind).ToArray());
+        }
+    }
+
+    [Fact]
     public async Task LaunchAsync_TerminatedWorkerWithoutExistingUser_UsingConfiguredSuccessFactorsPath_DoesNotExecuteCreate()
     {
         var worker = new WorkerSnapshot(
@@ -444,7 +649,34 @@ public sealed class FullSyncRunServiceTests
             NullLogger<FullSyncRunService>.Instance);
     }
 
-    private static WorkerSnapshot CreateWorker(string workerId, string? managerId, string? emplStatus = null, string? endDate = null)
+    private static FullSyncRunService CreateLifecycleSimulationService(
+        EmployeeStateSimulationCase simulation,
+        IDirectoryCommandGateway directoryCommandGateway,
+        out CapturingRunRepository runRepository)
+    {
+        runRepository = new CapturingRunRepository();
+        var directoryGateway = new SimulatedDirectoryGateway(simulation.ExistingDirectoryUser);
+
+        return new FullSyncRunService(
+            new StubWorkerSource([simulation.Worker]),
+            new WorkerPlanningService(
+                directoryGateway,
+                new IdentityMatcher(),
+                CreateLifecycleSimulationPolicy(),
+                new NoAttributeChangesDiffService(),
+                new StubAttributeMappingProvider(),
+                NullLogger<WorkerPlanningService>.Instance),
+            new DirectoryMutationCommandBuilder(),
+            directoryCommandGateway,
+            directoryGateway,
+            runRepository,
+            new CapturingRuntimeStatusStore(),
+            new WorkerRunSettings(MaxCreatesPerRun: 50, MaxDisablesPerRun: 50),
+            CreateLifecycleSimulationSettings(),
+            NullLogger<FullSyncRunService>.Instance);
+    }
+
+    private static WorkerSnapshot CreateWorker(string workerId, string? managerId, string? emplStatus = null, string? endDate = null, bool isPrehire = false)
     {
         var attributes = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
         {
@@ -462,8 +694,22 @@ public sealed class FullSyncRunServiceTests
             LastName: "Sample101",
             Department: "IT",
             TargetOu: "OU=LabUsers,DC=example,DC=com",
-            IsPrehire: false,
+            IsPrehire: isPrehire,
             Attributes: attributes);
+    }
+
+    private static DirectoryUserSnapshot CreateDirectoryUser(string workerId, string ou, bool enabled)
+    {
+        return new DirectoryUserSnapshot(
+            SamAccountName: workerId,
+            DistinguishedName: $"CN={workerId},{ou}",
+            Enabled: enabled,
+            DisplayName: "Sample101, Winnie",
+            Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["UserPrincipalName"] = $"winnie.sample101.{workerId}@example.test",
+                ["mail"] = $"winnie.sample101.{workerId}@example.test"
+            });
     }
 
     private static LifecyclePolicySettings CreateLifecycleSettings()
@@ -473,6 +719,16 @@ public sealed class FullSyncRunServiceTests
             GraveyardOu: "OU=Graveyard,DC=example,DC=com",
             InactiveStatusField: "emplStatus",
             InactiveStatusValues: ["T"]);
+
+    private static LifecyclePolicySettings CreateLifecycleSimulationSettings()
+        => new(
+            ActiveOu: "OU=LabUsers,DC=example,DC=com",
+            PrehireOu: "OU=Prehire,DC=example,DC=com",
+            GraveyardOu: "OU=Graveyard,DC=example,DC=com",
+            InactiveStatusField: "emplStatus",
+            InactiveStatusValues: ["64307", "64308"],
+            LeaveOu: "OU=Leave Users,DC=example,DC=com",
+            LeaveStatusValues: ["64303", "64304"]);
 
     private static LifecyclePolicySettings CreateConfiguredStatusLifecycleSettings()
         => new(
@@ -484,6 +740,9 @@ public sealed class FullSyncRunServiceTests
 
     private static LifecyclePolicy CreateLifecyclePolicy()
         => new(CreateLifecycleSettings());
+
+    private static LifecyclePolicy CreateLifecycleSimulationPolicy()
+        => new(CreateLifecycleSimulationSettings());
 
     private sealed class StubWorkerSource(IReadOnlyList<WorkerSnapshot> workers) : IWorkerSource
     {
@@ -565,6 +824,45 @@ public sealed class FullSyncRunServiceTests
         }
     }
 
+    private sealed class SimulatedDirectoryGateway(DirectoryUserSnapshot? directoryUser) : IDirectoryGateway
+    {
+        public Task<DirectoryUserSnapshot?> FindByWorkerAsync(WorkerSnapshot worker, CancellationToken cancellationToken)
+        {
+            _ = worker;
+            _ = cancellationToken;
+            return Task.FromResult(directoryUser);
+        }
+
+        public Task<IReadOnlyList<DirectoryUserSnapshot>> ListUsersInOuAsync(string ouDistinguishedName, CancellationToken cancellationToken)
+        {
+            _ = cancellationToken;
+            if (directoryUser is null ||
+                !string.Equals(
+                    DirectoryDistinguishedName.GetParentOu(directoryUser.DistinguishedName),
+                    ouDistinguishedName,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                return Task.FromResult<IReadOnlyList<DirectoryUserSnapshot>>([]);
+            }
+
+            return Task.FromResult<IReadOnlyList<DirectoryUserSnapshot>>([directoryUser]);
+        }
+
+        public Task<string?> ResolveManagerDistinguishedNameAsync(string managerId, CancellationToken cancellationToken)
+        {
+            _ = managerId;
+            _ = cancellationToken;
+            return Task.FromResult<string?>(null);
+        }
+
+        public Task<string> ResolveAvailableEmailLocalPartAsync(WorkerSnapshot worker, bool isCreate, CancellationToken cancellationToken)
+        {
+            _ = isCreate;
+            _ = cancellationToken;
+            return Task.FromResult($"{worker.PreferredName.ToLowerInvariant()}.{worker.LastName.ToLowerInvariant()}");
+        }
+    }
+
     private sealed class StubAttributeMappingProvider : IAttributeMappingProvider
     {
         public IReadOnlyList<AttributeMapping> GetEnabledMappings() => [];
@@ -596,6 +894,24 @@ public sealed class FullSyncRunServiceTests
                 new AttributeChange("UserPrincipalName", "resolved email local-part", "(unset)", proposedEmailAddress ?? "(unset)", true),
                 new AttributeChange("mail", "resolved email local-part", "(unset)", proposedEmailAddress ?? "(unset)", true)
             ]);
+        }
+    }
+
+    private sealed class NoAttributeChangesDiffService : IAttributeDiffService
+    {
+        public Task<IReadOnlyList<AttributeChange>> BuildDiffAsync(
+            WorkerSnapshot worker,
+            DirectoryUserSnapshot? directoryUser,
+            string? proposedEmailAddress,
+            string? logPath,
+            CancellationToken cancellationToken)
+        {
+            _ = worker;
+            _ = directoryUser;
+            _ = proposedEmailAddress;
+            _ = logPath;
+            _ = cancellationToken;
+            return Task.FromResult<IReadOnlyList<AttributeChange>>([]);
         }
     }
 
@@ -759,4 +1075,13 @@ public sealed class FullSyncRunServiceTests
             return Task.FromException<PlannedWorkerAction>(exception);
         }
     }
+
+    private sealed record EmployeeStateSimulationCase(
+        string Name,
+        WorkerSnapshot Worker,
+        DirectoryUserSnapshot? ExistingDirectoryUser,
+        string ExpectedBucket,
+        string ExpectedTargetOu,
+        bool ExpectedEnableAccount,
+        string[] ExpectedOperations);
 }
