@@ -944,11 +944,34 @@ if ([string]::Equals($AuthMode, 'hybrid', [System.StringComparison]::OrdinalIgno
 
 Write-Host ''
 Write-Host 'Recommended next steps' -ForegroundColor Cyan
-Write-Host '1. Store the client secret in your secret store instead of committing it to a file.'
-Write-Host '2. If you use macOS Keychain, run:'
-Write-Host '   ./scripts/codex/set-macos-keychain-secret.sh SYNCFACTORS__AUTH__OIDC__CLIENTSECRET'
-Write-Host '3. Uncomment the OIDC block in .env.worktree and set the values printed above.'
-Write-Host '4. Start the API over HTTPS on the same port used for the redirect URIs.'
+$nextSteps = New-Object 'System.Collections.Generic.List[string]'
+$nextSteps.Add('Store the client secret in your secret store instead of committing it to a file.') | Out-Null
+
+if ([OperatingSystem]::IsWindows()) {
+    $nextSteps.Add('If you use Windows Credential Manager, run:') | Out-Null
+    $nextSteps.Add('   pwsh ./scripts/codex/Save-WorktreeEnvToWindowsCredentialManager.ps1') | Out-Null
+}
+elseif ($IsMacOS) {
+    $nextSteps.Add('If you use macOS Keychain, run:') | Out-Null
+    $nextSteps.Add('   ./scripts/codex/set-macos-keychain-secret.sh SYNCFACTORS__AUTH__OIDC__CLIENTSECRET') | Out-Null
+}
+else {
+    $nextSteps.Add('If your platform does not support the built-in secure-store helpers, keep the client secret in a local-only env file or another secure secret store.') | Out-Null
+}
+
+$nextSteps.Add('Uncomment the OIDC block in .env.worktree and set the values printed above.') | Out-Null
+$nextSteps.Add('Start the API over HTTPS on the same port used for the redirect URIs.') | Out-Null
+
+$stepNumber = 1
+foreach ($nextStep in $nextSteps) {
+    if ($nextStep.StartsWith('   ', [System.StringComparison]::Ordinal)) {
+        Write-Host $nextStep
+        continue
+    }
+
+    Write-Host ("{0}. {1}" -f $stepNumber, $nextStep)
+    $stepNumber += 1
+}
 
 if (-not [string]::IsNullOrWhiteSpace($viewerGroupId) -or
     -not [string]::IsNullOrWhiteSpace($operatorGroupId) -or
