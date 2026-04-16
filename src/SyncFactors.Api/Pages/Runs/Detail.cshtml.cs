@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc.RazorPages;
 using SyncFactors.Api;
 using SyncFactors.Contracts;
 using SyncFactors.Domain;
+using System.Text;
 using System.Text.Json;
 
 namespace SyncFactors.Api.Pages.Runs;
@@ -10,6 +11,10 @@ namespace SyncFactors.Api.Pages.Runs;
 public sealed class DetailModel(RunEntriesQueryService queryService) : PageModel
 {
     public const int EntriesPerPage = 15;
+    private static readonly JsonSerializerOptions ExportSerializerOptions = new(JsonSerializerDefaults.Web)
+    {
+        WriteIndented = true
+    };
 
     [BindProperty(SupportsGet = true)]
     public string RunId { get; set; } = string.Empty;
@@ -356,6 +361,23 @@ public sealed class DetailModel(RunEntriesQueryService queryService) : PageModel
         return Page();
     }
 
+    public async Task<IActionResult> OnGetExportAsync(CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(RunId))
+        {
+            return NotFound();
+        }
+
+        var export = await queryService.ExportAsync(RunId, Bucket, WorkerId, null, Filter, null, cancellationToken);
+        if (export is null)
+        {
+            return NotFound();
+        }
+
+        var fileBytes = JsonSerializer.SerializeToUtf8Bytes(export, ExportSerializerOptions);
+        return File(fileBytes, "application/json", BuildExportFileName());
+    }
+
     private static string DescribePlannedAction(RunEntry entry, string? action, int operationCount)
     {
         var operationKinds = GetItemArray(entry.Item, "operations")
@@ -447,6 +469,47 @@ public sealed class DetailModel(RunEntriesQueryService queryService) : PageModel
 
     private static bool StringEquals(string? left, string? right)
         => string.Equals(left?.Trim(), right?.Trim(), StringComparison.OrdinalIgnoreCase);
+
+    private string BuildExportFileName()
+    {
+        var segments = new List<string>
+        {
+            "syncfactors",
+            "run",
+            SanitizeFileNameSegment(RunId),
+            string.IsNullOrWhiteSpace(Bucket) ? "all-buckets" : SanitizeFileNameSegment(Bucket)
+        };
+
+        if (!string.IsNullOrWhiteSpace(WorkerId))
+        {
+            segments.Add("worker-filtered");
+        }
+
+        if (!string.IsNullOrWhiteSpace(Filter))
+        {
+            segments.Add("text-filtered");
+        }
+
+        return $"{string.Join("-", segments)}-entries.json";
+    }
+
+    private static string SanitizeFileNameSegment(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return "unknown";
+        }
+
+        var builder = new StringBuilder(value.Length);
+        foreach (var character in value)
+        {
+            builder.Append(Path.GetInvalidFileNameChars().Contains(character) || char.IsWhiteSpace(character)
+                ? '-'
+                : char.ToLowerInvariant(character));
+        }
+
+        return builder.ToString().Trim('-');
+    }
 
     public sealed record RunContextDisplay(
         string Label,

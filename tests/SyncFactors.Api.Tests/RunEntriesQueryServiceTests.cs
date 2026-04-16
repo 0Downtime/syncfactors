@@ -61,8 +61,33 @@ public sealed class RunEntriesQueryServiceTests
         Assert.Null(result);
     }
 
+    [Fact]
+    public async Task ExportAsync_ReturnsAllMatchingEntriesWithFiltersAndTotals()
+    {
+        var repository = new StubRunRepository();
+        var service = new RunEntriesQueryService(repository);
+
+        var result = await service.ExportAsync("bulk-1", "conflicts", "worker-1", null, "manager", null, CancellationToken.None);
+
+        Assert.NotNull(result);
+        Assert.Equal(0, repository.LastSkip);
+        Assert.Equal(120, repository.LastTake);
+        Assert.Equal("bulk-1", result!.Filters.RunId);
+        Assert.Equal("conflicts", result.Filters.Bucket);
+        Assert.Equal("worker-1", result.Filters.WorkerId);
+        Assert.Equal("manager", result.Filters.Filter);
+        Assert.Equal(120, result.Summary.MatchingEntries);
+        Assert.Equal(120, result.Entries.Count);
+        Assert.Equal("bulk-1", result.Run.Run.RunId);
+        Assert.Equal(80, result.Summary.EmploymentStatusTotals.First().Count);
+    }
+
     private sealed class StubRunRepository : IRunRepository
     {
+        public int LastSkip { get; private set; }
+
+        public int LastTake { get; private set; }
+
         public string? LastTotalsRunId { get; private set; }
 
         public string? LastTotalsBucket { get; private set; }
@@ -160,14 +185,16 @@ public sealed class RunEntriesQueryServiceTests
             _ = filter;
             _ = entryId;
             _ = cancellationToken;
+            LastSkip = skip;
+            LastTake = take;
             return Task.FromResult<IReadOnlyList<RunEntry>>(Enumerable.Range(1, take).Select(index =>
                 new RunEntry(
                     EntryId: $"entry-{skip + index}",
                     RunId: runId,
                     ArtifactType: "BulkRun",
                     Mode: "BulkSync",
-                    Bucket: "updates",
-                    BucketLabel: "Updates",
+                    Bucket: bucket ?? "updates",
+                    BucketLabel: string.Equals(bucket, "conflicts", StringComparison.OrdinalIgnoreCase) ? "Conflicts" : "Updates",
                     WorkerId: $"worker-{skip + index}",
                     SamAccountName: null,
                     Reason: null,
