@@ -150,6 +150,7 @@
         {
             var diagnostics = Model.GetFailureDiagnostics(entry);
             var employmentStatus = Model.GetEmploymentStatus(entry);
+            var endDateDisplay = Model.GetEndDateDisplay(entry);
             var primarySummary = Model.GetPrimarySummaryDisplay(entry);
             var failureSummary = Model.GetFailureSummaryDisplay(entry);
             var showReason = Model.ShouldShowReason(entry);
@@ -160,13 +161,20 @@
                     <div class="entry-identity">
                         <h3>@entry.BucketLabel</h3>
                         <p class="muted">@entry.WorkerId / @(entry.SamAccountName ?? "n/a")</p>
-                        @if (employmentStatus is not null)
+                        @if (employmentStatus is not null || !string.IsNullOrWhiteSpace(endDateDisplay))
                         {
                             <div class="entry-submeta">
-                                <span class="employment-status-pill @employmentStatus.ToneCssClass">@employmentStatus.PillText</span>
-                                @if (!string.IsNullOrWhiteSpace(employmentStatus.DetailText))
+                                @if (employmentStatus is not null)
                                 {
-                                    <span class="entry-submeta-note">@employmentStatus.DetailText</span>
+                                    <span class="employment-status-pill @employmentStatus.ToneCssClass">@employmentStatus.PillText</span>
+                                    @if (!string.IsNullOrWhiteSpace(employmentStatus.DetailText))
+                                    {
+                                        <span class="entry-submeta-note">@employmentStatus.DetailText</span>
+                                    }
+                                }
+                                @if (!string.IsNullOrWhiteSpace(endDateDisplay))
+                                {
+                                    <span class="entry-submeta-note">End Date @endDateDisplay</span>
                                 }
                             </div>
                         }

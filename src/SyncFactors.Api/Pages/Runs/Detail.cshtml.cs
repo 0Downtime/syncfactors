@@ -143,6 +143,19 @@ public sealed class DetailModel(RunEntriesQueryService queryService) : PageModel
     public string? GetEmploymentStatusDisplay(RunEntry entry)
         => GetEmploymentStatus(entry)?.Display;
 
+    public string? GetEndDateDisplay(RunEntry entry)
+    {
+        var rawValue = GetItemString(entry.Item, "endDate")?.Trim();
+        if (string.IsNullOrWhiteSpace(rawValue) || string.Equals(rawValue, "null", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        return SourceDateParser.TryParse(rawValue, out var parsed)
+            ? UiDateTimeFormatter.FormatDate(parsed)
+            : rawValue;
+    }
+
     public string? GetEmploymentStatusFilterLabel()
         => DescribeEmploymentStatus(EmploymentStatus)?.Label;
 

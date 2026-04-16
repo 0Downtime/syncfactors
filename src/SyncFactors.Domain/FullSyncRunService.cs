@@ -307,6 +307,7 @@ public sealed class FullSyncRunService(
                 samAccountName = plan.Identity.SamAccountName,
                 targetOu = plan.TargetOu,
                 emplStatus = ResolveSourceAttribute(plan.Worker.Attributes, "emplStatus"),
+                endDate = ResolveSourceAttribute(plan.Worker.Attributes, "endDate"),
                 currentOu = plan.CurrentOu,
                 managerDistinguishedName = plan.ManagerDistinguishedName,
                 reason = message,
@@ -389,6 +390,7 @@ public sealed class FullSyncRunService(
                         workerId = worker.WorkerId,
                         bucket = "conflicts",
                         emplStatus = ResolveSourceAttribute(worker.Attributes, "emplStatus"),
+                        endDate = ResolveSourceAttribute(worker.Attributes, "endDate"),
                         reason = ex.Message,
                         succeeded = false
                     })),

@@ -208,6 +208,25 @@ public sealed class FullSyncRunServiceTests
     }
 
     [Fact]
+    public async Task LaunchAsync_PersistsEndDateInEntryItem()
+    {
+        var worker = CreateWorker("10001", managerId: "90001", endDate: "2026-04-14T00:00:00Z");
+        var service = CreateService(
+            workers: [worker],
+            directoryGateway: new StubDirectoryGateway(managerDistinguishedName: "CN=Manager,OU=LabUsers,DC=example,DC=com"),
+            directoryCommandGateway: new CapturingDirectoryCommandGateway(),
+            runRepository: out var runRepository,
+            runtimeStatusStore: out _);
+
+        await service.LaunchAsync(
+            new LaunchFullRunRequest(DryRun: true, AcknowledgeRealSync: false),
+            CancellationToken.None);
+
+        var entry = runRepository.ReplacedEntries.Single().entries.Single();
+        Assert.Equal("2026-04-14T00:00:00Z", entry.Item.GetProperty("endDate").GetString());
+    }
+
+    [Fact]
     public async Task LaunchAsync_TerminatedWorkerWithoutExistingUser_UsingConfiguredSuccessFactorsPath_DoesNotExecuteCreate()
     {
         var worker = new WorkerSnapshot(
@@ -399,7 +418,7 @@ public sealed class FullSyncRunServiceTests
             NullLogger<FullSyncRunService>.Instance);
     }
 
-    private static WorkerSnapshot CreateWorker(string workerId, string? managerId, string? emplStatus = null)
+    private static WorkerSnapshot CreateWorker(string workerId, string? managerId, string? emplStatus = null, string? endDate = null)
     {
         var attributes = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
         {
@@ -407,7 +426,8 @@ public sealed class FullSyncRunServiceTests
             ["lastName"] = "Sample101",
             ["department"] = "IT",
             ["managerId"] = managerId,
-            ["emplStatus"] = emplStatus
+            ["emplStatus"] = emplStatus,
+            ["endDate"] = endDate
         };
 
         return new WorkerSnapshot(
