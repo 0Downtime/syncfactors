@@ -28,6 +28,64 @@ public sealed class AdminDeletionQueueModelTests
     }
 
     [Fact]
+    public async Task OnGetAsync_FiltersPendingAndHeldUsers_BySearchText()
+    {
+        var model = CreateModel(new CapturingRetentionStore(
+            [
+                CreateRecord("10001", false),
+                CreateRecord("20002", false),
+                CreateRecord("30003", true)
+            ]));
+        model.Filter = "30003";
+
+        await model.OnGetAsync(CancellationToken.None);
+
+        Assert.Empty(model.PendingUsers);
+        Assert.Single(model.HeldUsers);
+        Assert.Equal("30003", model.HeldUsers[0].WorkerId);
+        Assert.Equal(0, model.TotalPendingUsers);
+        Assert.Equal(1, model.TotalHeldUsers);
+    }
+
+    [Fact]
+    public async Task OnGetAsync_PaginatesPendingUsers_AtTwentyFivePerPage()
+    {
+        var records = Enumerable.Range(1, 30)
+            .Select(index => CreateRecord(index.ToString("D5"), false))
+            .ToArray();
+        var model = CreateModel(new CapturingRetentionStore(records));
+        model.PendingPageNumber = 2;
+
+        await model.OnGetAsync(CancellationToken.None);
+
+        Assert.Equal(30, model.TotalPendingUsers);
+        Assert.Equal(2, model.TotalPendingPages);
+        Assert.Equal(5, model.PendingUsers.Count);
+        Assert.Equal("00026", model.PendingUsers[0].WorkerId);
+        Assert.True(model.HasPreviousPendingPage);
+        Assert.False(model.HasNextPendingPage);
+    }
+
+    [Fact]
+    public async Task OnGetAsync_PaginatesHeldUsers_AtTwentyFivePerPage()
+    {
+        var records = Enumerable.Range(1, 30)
+            .Select(index => CreateRecord(index.ToString("D5"), true))
+            .ToArray();
+        var model = CreateModel(new CapturingRetentionStore(records));
+        model.HeldPageNumber = 2;
+
+        await model.OnGetAsync(CancellationToken.None);
+
+        Assert.Equal(30, model.TotalHeldUsers);
+        Assert.Equal(2, model.TotalHeldPages);
+        Assert.Equal(5, model.HeldUsers.Count);
+        Assert.Equal("00026", model.HeldUsers[0].WorkerId);
+        Assert.True(model.HasPreviousHeldPage);
+        Assert.False(model.HasNextHeldPage);
+    }
+
+    [Fact]
     public async Task OnPostPlaceHoldAsync_UsesCurrentUserAsActor()
     {
         var store = new CapturingRetentionStore([CreateRecord("10001", false)]);
@@ -58,9 +116,12 @@ public sealed class AdminDeletionQueueModelTests
 
     private static DeletionQueueModel CreateModel(CapturingRetentionStore store, string actingUserId = "admin-1")
     {
+        var workerIds = recordsFromStore(store)
+            .Select(record => record.WorkerId)
+            .ToArray();
         var service = new GraveyardDeletionQueueService(
             store,
-            new StubDirectoryGateway("10001", "10002"),
+            new StubDirectoryGateway(workerIds),
             new GraveyardDeletionQueueSettings(RetentionDays: 30, AutoDeleteEnabled: true),
             new LifecyclePolicySettings(
                 ActiveOu: "OU=Employees,DC=example,DC=com",
@@ -91,6 +152,9 @@ public sealed class AdminDeletionQueueModelTests
         };
     }
 
+    private static IReadOnlyList<GraveyardRetentionRecord> recordsFromStore(CapturingRetentionStore store) =>
+        store.Records;
+
     private static GraveyardRetentionRecord CreateRecord(string workerId, bool isOnHold) =>
         new(
             WorkerId: workerId,
@@ -107,6 +171,8 @@ public sealed class AdminDeletionQueueModelTests
 
     private sealed class CapturingRetentionStore(IReadOnlyList<GraveyardRetentionRecord> records) : IGraveyardRetentionStore
     {
+        public IReadOnlyList<GraveyardRetentionRecord> Records => records;
+
         public string? LastWorkerId { get; private set; }
 
         public bool LastIsOnHold { get; private set; }

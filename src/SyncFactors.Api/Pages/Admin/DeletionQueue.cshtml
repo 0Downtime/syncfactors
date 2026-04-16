@@ -27,12 +27,29 @@
 }
 
 <section class="panel">
+    <h2>Filters</h2>
+    <form method="get" class="filters">
+        <label class="filter-search">
+            <span>Text search</span>
+            <input type="text" name="filter" value="@Model.Filter" placeholder="worker id, user, status, distinguished name..." />
+        </label>
+        <input type="hidden" name="pendingPageNumber" value="1" />
+        <input type="hidden" name="heldPageNumber" value="1" />
+        <div class="filter-actions">
+            <button type="submit">Apply</button>
+            <a class="link-button" asp-page="/Admin/DeletionQueue">Clear</a>
+        </div>
+    </form>
+</section>
+
+<section class="panel">
     <div class="section-heading">
         <div>
             <p class="eyebrow">Pending</p>
             <h2>Pending Deletion</h2>
         </div>
     </div>
+    <p class="muted">Showing page @Model.PendingPageNumber of @Model.TotalPendingPages · @Model.TotalPendingUsers total records · 25 per page.</p>
 
     @if (Model.PendingUsers.Count == 0)
     {
@@ -73,7 +90,7 @@
                             </span>
                         </td>
                         <td>
-                            <form method="post" asp-page-handler="PlaceHold">
+                            <form method="post" asp-page-handler="PlaceHold" asp-route-filter="@Model.Filter" asp-route-pendingPageNumber="@Model.PendingPageNumber" asp-route-heldPageNumber="@Model.HeldPageNumber">
                                 <input type="hidden" name="workerId" value="@user.WorkerId" />
                                 <button type="submit" class="link-button">Place hold</button>
                             </form>
@@ -82,6 +99,19 @@
                 }
                 </tbody>
             </table>
+        </div>
+        <div class="table-pagination">
+            <p class="muted">Showing @Model.PendingUsers.Count of @Model.TotalPendingUsers pending records.</p>
+            <div class="filter-actions">
+                @if (Model.HasPreviousPendingPage)
+                {
+                    <a class="link-button" asp-page="/Admin/DeletionQueue" asp-route-filter="@Model.Filter" asp-route-pendingPageNumber="@(Model.PendingPageNumber - 1)" asp-route-heldPageNumber="@Model.HeldPageNumber">Previous</a>
+                }
+                @if (Model.HasNextPendingPage)
+                {
+                    <a class="link-button" asp-page="/Admin/DeletionQueue" asp-route-filter="@Model.Filter" asp-route-pendingPageNumber="@(Model.PendingPageNumber + 1)" asp-route-heldPageNumber="@Model.HeldPageNumber">Next</a>
+                }
+            </div>
         </div>
     }
 </section>
@@ -93,6 +123,7 @@
             <h2>On Hold</h2>
         </div>
     </div>
+    <p class="muted">Showing page @Model.HeldPageNumber of @Model.TotalHeldPages · @Model.TotalHeldUsers total records · 25 per page.</p>
 
     @if (Model.HeldUsers.Count == 0)
     {
@@ -129,7 +160,7 @@
                         <td>@SyncFactors.Api.UiDateTimeFormatter.FormatDateTime(user.HoldPlacedAtUtc, "Unknown")</td>
                         <td>@(user.HoldPlacedBy ?? "Unknown")</td>
                         <td>
-                            <form method="post" asp-page-handler="RemoveHold">
+                            <form method="post" asp-page-handler="RemoveHold" asp-route-filter="@Model.Filter" asp-route-pendingPageNumber="@Model.PendingPageNumber" asp-route-heldPageNumber="@Model.HeldPageNumber">
                                 <input type="hidden" name="workerId" value="@user.WorkerId" />
                                 <button type="submit" class="link-button">Remove hold</button>
                             </form>
@@ -138,6 +169,19 @@
                 }
                 </tbody>
             </table>
+        </div>
+        <div class="table-pagination">
+            <p class="muted">Showing @Model.HeldUsers.Count of @Model.TotalHeldUsers held records.</p>
+            <div class="filter-actions">
+                @if (Model.HasPreviousHeldPage)
+                {
+                    <a class="link-button" asp-page="/Admin/DeletionQueue" asp-route-filter="@Model.Filter" asp-route-pendingPageNumber="@Model.PendingPageNumber" asp-route-heldPageNumber="@(Model.HeldPageNumber - 1)">Previous</a>
+                }
+                @if (Model.HasNextHeldPage)
+                {
+                    <a class="link-button" asp-page="/Admin/DeletionQueue" asp-route-filter="@Model.Filter" asp-route-pendingPageNumber="@Model.PendingPageNumber" asp-route-heldPageNumber="@(Model.HeldPageNumber + 1)">Next</a>
+                }
+            </div>
         </div>
     }
 </section>
