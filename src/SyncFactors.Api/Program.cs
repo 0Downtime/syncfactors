@@ -122,6 +122,7 @@ builder.Services.AddSingleton<IAttributeMappingProvider, AttributeMappingProvide
 builder.Services.AddSingleton<IIdentityMatcher, IdentityMatcher>();
 builder.Services.AddSingleton<ILifecyclePolicy, LifecyclePolicy>();
 builder.Services.AddSingleton<IAttributeDiffService, AttributeDiffService>();
+builder.Services.AddSingleton<IActiveDirectoryConnectionPool, ActiveDirectoryConnectionPool>();
 builder.Services.AddSingleton<IWorkerHeartbeatStore, SqliteWorkerHeartbeatStore>();
 builder.Services.AddTransient<IWorkerPreviewPlanner, WorkerPreviewPlanner>();
 builder.Services.AddTransient<IApplyPreviewService, ApplyPreviewService>();

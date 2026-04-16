@@ -81,6 +81,7 @@ builder.Services.AddTransient<IEmailSender, SmtpEmailSender>();
 builder.Services.AddSingleton<IAttributeMappingProvider, AttributeMappingProvider>();
 builder.Services.AddSingleton<IIdentityMatcher, IdentityMatcher>();
 builder.Services.AddSingleton<ILifecyclePolicy, LifecyclePolicy>();
+builder.Services.AddSingleton<IActiveDirectoryConnectionPool, ActiveDirectoryConnectionPool>();
 builder.Services.AddSingleton<IWorkerPreviewLogWriter, FileWorkerPreviewLogWriter>();
 builder.Services.AddTransient<IAttributeDiffService, AttributeDiffService>();
 builder.Services.AddTransient<IWorkerPlanningService, WorkerPlanningService>();
