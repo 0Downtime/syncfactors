@@ -58,9 +58,9 @@ public sealed class WorkerPlanningService(
                     : directoryUser.Attributes.TryGetValue("mail", out var existingMail) && !string.IsNullOrWhiteSpace(existingMail)
                         ? existingMail
                         : _emailAddressPolicy.BuildEmailAddress(
-                            await directoryGateway.ResolveAvailableEmailLocalPartAsync(worker, isCreate: false, cancellationToken))
+                            await directoryGateway.ResolveAvailableEmailLocalPartAsync(worker, isCreate: false, directoryUser, cancellationToken))
                 : _emailAddressPolicy.BuildEmailAddress(
-                    await directoryGateway.ResolveAvailableEmailLocalPartAsync(worker, isCreate: true, cancellationToken));
+                    await directoryGateway.ResolveAvailableEmailLocalPartAsync(worker, isCreate: true, directoryUser, cancellationToken));
             attributeChanges = NormalizeAttributeChanges(
                 await attributeDiffService.BuildDiffAsync(worker, directoryUser, proposedEmailAddress, logPath, cancellationToken))
                 .ToList();

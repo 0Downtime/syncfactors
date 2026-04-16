@@ -53,6 +53,12 @@ public interface IDirectoryGateway
         Task.FromResult<IReadOnlyList<DirectoryUserSnapshot>>([]);
     Task<string?> ResolveManagerDistinguishedNameAsync(string managerId, CancellationToken cancellationToken);
     Task<string> ResolveAvailableEmailLocalPartAsync(WorkerSnapshot worker, bool isCreate, CancellationToken cancellationToken);
+    Task<string> ResolveAvailableEmailLocalPartAsync(
+        WorkerSnapshot worker,
+        bool isCreate,
+        DirectoryUserSnapshot? existingDirectoryUser,
+        CancellationToken cancellationToken) =>
+        ResolveAvailableEmailLocalPartAsync(worker, isCreate, cancellationToken);
 }
 
 public interface IIdentityMatcher

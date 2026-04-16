@@ -54,6 +54,15 @@ public sealed class ActiveDirectoryGateway(
 
     public async Task<string> ResolveAvailableEmailLocalPartAsync(WorkerSnapshot worker, bool isCreate, CancellationToken cancellationToken)
     {
+        return await ResolveAvailableEmailLocalPartAsync(worker, isCreate, existingDirectoryUser: null, cancellationToken);
+    }
+
+    public async Task<string> ResolveAvailableEmailLocalPartAsync(
+        WorkerSnapshot worker,
+        bool isCreate,
+        DirectoryUserSnapshot? existingDirectoryUser,
+        CancellationToken cancellationToken)
+    {
         var baseLocalPart = DirectoryIdentityFormatter.BuildPreferredEmailLocalPart(worker.PreferredName, worker.LastName, worker.WorkerId);
         var config = configLoader.GetSyncConfig().Ad;
         if (string.IsNullOrWhiteSpace(config.Server))
@@ -63,12 +72,6 @@ public sealed class ActiveDirectoryGateway(
 
         try
         {
-            var existingDirectoryUser = await ExecuteWithTimeoutAsync(
-                operation: () => QueryDirectory(worker, config, attributeMappingProvider.GetEnabledMappings(), logger),
-                operationName: "existing worker lookup for email local-part resolution",
-                server: config.Server,
-                cancellationToken: cancellationToken);
-
             if (!isCreate)
             {
                 return baseLocalPart;

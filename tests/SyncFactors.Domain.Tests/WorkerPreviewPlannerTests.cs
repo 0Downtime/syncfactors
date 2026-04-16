@@ -120,6 +120,42 @@ public sealed class WorkerPreviewPlannerTests
     }
 
     [Fact]
+    public async Task PreviewAsync_UsesExistingDirectoryUserWhenResolvingEmailLocalPart()
+    {
+        var worker = new WorkerSnapshot(
+            WorkerId: "44522",
+            PreferredName: "Christopher",
+            LastName: "Brien",
+            Department: "Infrastructure & Security",
+            TargetOu: "OU=Employees,DC=example,DC=com",
+            IsPrehire: false,
+            Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase));
+
+        var directoryGateway = new ExistingUserEmailResolutionDirectoryGateway();
+        var diffService = new CapturingAttributeDiffService();
+        var planner = new WorkerPreviewPlanner(
+            new StubWorkerSource(worker),
+            new WorkerPlanningService(
+                directoryGateway,
+                new ExistingUserIdentityMatcher(),
+                CreateLifecyclePolicy(),
+                diffService,
+                new StubAttributeMappingProvider(),
+                NullLogger<WorkerPlanningService>.Instance),
+            new StubAttributeMappingProvider(),
+            new StubWorkerPreviewLogWriter(),
+            new StubRunRepository(),
+            NullLogger<WorkerPreviewPlanner>.Instance);
+
+        await planner.PreviewAsync("44522", CancellationToken.None);
+
+        Assert.Equal(1, directoryGateway.FindByWorkerCalls);
+        Assert.Equal(0, directoryGateway.LegacyEmailLookupCalls);
+        Assert.Same(directoryGateway.DirectoryUser, directoryGateway.LastExistingDirectoryUser);
+        Assert.Equal("christopher.brien2@Exampleenergy.com", diffService.LastProposedEmailAddress);
+    }
+
+    [Fact]
     public async Task PreviewAsync_PersistsEmploymentStatusInSavedEntryItem()
     {
         var worker = new WorkerSnapshot(
@@ -797,6 +833,57 @@ public sealed class WorkerPreviewPlannerTests
             _ = worker;
             _ = isCreate;
             _ = cancellationToken;
+            return Task.FromResult("christopher.brien2");
+        }
+    }
+
+    private sealed class ExistingUserEmailResolutionDirectoryGateway : IDirectoryGateway
+    {
+        public DirectoryUserSnapshot DirectoryUser { get; } = new(
+            SamAccountName: "cbrien",
+            DistinguishedName: "CN=Brien\\, Christopher,OU=Employees,DC=example,DC=com",
+            Enabled: true,
+            DisplayName: "Brien, Christopher",
+            Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase));
+
+        public int FindByWorkerCalls { get; private set; }
+        public int LegacyEmailLookupCalls { get; private set; }
+        public DirectoryUserSnapshot? LastExistingDirectoryUser { get; private set; }
+
+        public Task<DirectoryUserSnapshot?> FindByWorkerAsync(WorkerSnapshot worker, CancellationToken cancellationToken)
+        {
+            _ = worker;
+            _ = cancellationToken;
+            FindByWorkerCalls++;
+            return Task.FromResult<DirectoryUserSnapshot?>(DirectoryUser);
+        }
+
+        public Task<string?> ResolveManagerDistinguishedNameAsync(string managerId, CancellationToken cancellationToken)
+        {
+            _ = managerId;
+            _ = cancellationToken;
+            return Task.FromResult<string?>(null);
+        }
+
+        public Task<string> ResolveAvailableEmailLocalPartAsync(WorkerSnapshot worker, bool isCreate, CancellationToken cancellationToken)
+        {
+            _ = worker;
+            _ = isCreate;
+            _ = cancellationToken;
+            LegacyEmailLookupCalls++;
+            return Task.FromResult("legacy-path-should-not-run");
+        }
+
+        public Task<string> ResolveAvailableEmailLocalPartAsync(
+            WorkerSnapshot worker,
+            bool isCreate,
+            DirectoryUserSnapshot? existingDirectoryUser,
+            CancellationToken cancellationToken)
+        {
+            _ = worker;
+            _ = isCreate;
+            _ = cancellationToken;
+            LastExistingDirectoryUser = existingDirectoryUser;
             return Task.FromResult("christopher.brien2");
         }
     }
