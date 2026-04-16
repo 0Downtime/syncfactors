@@ -1211,17 +1211,14 @@ a:focus-visible {
 .dashboard-schedule-countdown-copy {
   display: grid;
   justify-items: center;
-  gap: 2px;
   text-align: center;
 }
 
 .dashboard-schedule-countdown-copy strong {
   font-size: 1.05rem;
   letter-spacing: -0.04em;
-}
-
-.dashboard-schedule-countdown-copy span {
-  font-size: 0.74rem;
+  line-height: 1.1;
+  max-width: 4.5ch;
 }
 
 .dashboard-schedule-kv div:first-child {
@@ -1268,9 +1265,11 @@ a:focus-visible {
 
 .dashboard-progress-value {
   margin: 0;
+  min-width: 4ch;
   font-size: 1.2rem;
   font-weight: 700;
   letter-spacing: -0.03em;
+  text-align: right;
 }
 
 .dashboard-progress-track {
@@ -1284,9 +1283,11 @@ a:focus-visible {
 }
 
 .dashboard-progress-fill {
+  position: relative;
   display: block;
   width: 0;
   height: 100%;
+  overflow: hidden;
   border-radius: inherit;
   background:
     linear-gradient(90deg, color-mix(in srgb, var(--accent) 88%, white 12%), color-mix(in srgb, var(--info) 80%, white 20%));
@@ -1295,12 +1296,12 @@ a:focus-visible {
 
 .dashboard-progress-fill::after {
   content: "";
-  display: block;
-  width: 34%;
-  height: 100%;
-  margin-left: auto;
+  position: absolute;
+  inset: 0 auto 0 -42%;
+  width: 42%;
   background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.52), transparent);
   animation: progress-sheen 1.6s linear infinite;
+  pointer-events: none;
 }
 
 .dashboard-progress-copy {
@@ -1363,14 +1364,27 @@ a:focus-visible {
   margin: 0;
 }
 
+.dashboard-status-line,
+.dashboard-status-caption,
+.dashboard-progress-value,
+.dashboard-progress-copy,
+.dashboard-schedule-countdown-copy strong,
+.dashboard-schedule-kv dd,
+.live-status-caption,
+[data-dashboard-status] dd {
+  font-variant-numeric: tabular-nums lining-nums;
+}
+
 .dashboard-status-line {
   font-size: 1.12rem;
   font-weight: 700;
   letter-spacing: -0.01em;
+  line-height: 1.2;
 }
 
 .dashboard-status-caption {
   margin-top: 6px;
+  line-height: 1.45;
 }
 
 .dashboard-status-signal[data-signal-state="idle"] .dashboard-status-orbit-outer {
