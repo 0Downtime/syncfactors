@@ -17,6 +17,14 @@
         .Trim('/')
         .Replace("/", "-", StringComparison.Ordinal)
         .ToLowerInvariant();
+    var isAdmin = User.IsInRole("Admin") || User.IsInRole("BreakGlassAdmin");
+    var isDashboardPage = currentPage == "/Index";
+    var isSyncPage = currentPage.StartsWith("/Sync", StringComparison.OrdinalIgnoreCase);
+    var isPreviewPage = currentPage.StartsWith("/Preview", StringComparison.OrdinalIgnoreCase);
+    var isAdminPage = currentPage.StartsWith("/Admin", StringComparison.OrdinalIgnoreCase);
+    var isAdminUsersPage = currentPage.StartsWith("/Admin/Users", StringComparison.OrdinalIgnoreCase);
+    var isAdminDeletionQueuePage = currentPage.StartsWith("/Admin/DeletionQueue", StringComparison.OrdinalIgnoreCase);
+    var isAdminConfigurationPage = currentPage.StartsWith("/Admin/Configuration", StringComparison.OrdinalIgnoreCase);
 }
 <body data-page="@currentPageToken">
     <div class="shell">
@@ -31,14 +39,19 @@
             </div>
             <div class="topbar-actions">
                 <nav class="nav">
-                    <a class="@(currentPage == "/Index" ? "is-active" : null)" asp-page="/Index">Dashboard</a>
-                    <a class="@(currentPage.StartsWith("/Sync", StringComparison.OrdinalIgnoreCase) ? "is-active" : null)" asp-page="/Sync">Sync</a>
-                    <a class="@(currentPage.StartsWith("/Preview", StringComparison.OrdinalIgnoreCase) ? "is-active" : null)" asp-page="/Preview">Manual Provision</a>
-                    @if (User.IsInRole("Admin") || User.IsInRole("BreakGlassAdmin"))
+                    <a class="@(isDashboardPage ? "is-active" : null)" asp-page="/Index">Dashboard</a>
+                    <a class="@(isSyncPage ? "is-active" : null)" asp-page="/Sync">Sync</a>
+                    <a class="@(isPreviewPage ? "is-active" : null)" asp-page="/Preview">Manual Provision</a>
+                    @if (isAdmin)
                     {
-                        <a class="@(currentPage.StartsWith("/Admin/Users", StringComparison.OrdinalIgnoreCase) ? "is-active" : null)" asp-page="/Admin/Users">Users</a>
-                        <a class="@(currentPage.StartsWith("/Admin/DeletionQueue", StringComparison.OrdinalIgnoreCase) ? "is-active" : null)" asp-page="/Admin/DeletionQueue">Deletion Queue</a>
-                        <a class="@(currentPage.StartsWith("/Admin/Configuration", StringComparison.OrdinalIgnoreCase) ? "is-active" : null)" asp-page="/Admin/Configuration">Configuration</a>
+                        <details class="nav-menu" data-nav-menu>
+                            <summary class="@(isAdminPage ? "is-active" : null)">Admin</summary>
+                            <div class="nav-menu-panel">
+                                <a class="@(isAdminUsersPage ? "is-active" : null)" asp-page="/Admin/Users">Users</a>
+                                <a class="@(isAdminDeletionQueuePage ? "is-active" : null)" asp-page="/Admin/DeletionQueue">Deletion Queue</a>
+                                <a class="@(isAdminConfigurationPage ? "is-active" : null)" asp-page="/Admin/Configuration">Configuration</a>
+                            </div>
+                        </details>
                     }
                 </nav>
                 @if (User.Identity?.IsAuthenticated == true)

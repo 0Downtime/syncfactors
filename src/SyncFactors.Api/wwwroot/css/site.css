@@ -273,7 +273,12 @@ a:focus-visible {
   flex-wrap: wrap;
 }
 
+.nav-menu {
+  position: relative;
+}
+
 .nav a,
+.nav-menu summary,
 .link-button,
 .filters button {
   display: inline-flex;
@@ -290,6 +295,16 @@ a:focus-visible {
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18);
 }
 
+.nav-menu summary {
+  list-style: none;
+  cursor: pointer;
+  user-select: none;
+}
+
+.nav-menu summary::-webkit-details-marker {
+  display: none;
+}
+
 .nav a::after {
   content: "";
   position: absolute;
@@ -302,7 +317,16 @@ a:focus-visible {
   transition: transform var(--motion-base) var(--ease-emphasis);
 }
 
+.nav-menu summary::after {
+  content: "▾";
+  margin-left: 8px;
+  font-size: 0.78rem;
+  color: var(--muted);
+  transition: transform var(--motion-fast) var(--ease-standard);
+}
+
 .nav a:hover,
+.nav-menu summary:hover,
 .link-button:hover,
 .filters button:hover {
   text-decoration: none;
@@ -310,7 +334,9 @@ a:focus-visible {
   background: var(--panel-alt);
 }
 
-.nav a.is-active {
+.nav a.is-active,
+.nav-menu summary.is-active,
+.nav-menu[open] summary {
   border-color: color-mix(in srgb, var(--accent) 34%, var(--line));
   background:
     linear-gradient(180deg, color-mix(in srgb, var(--accent-soft) 72%, transparent), transparent),
@@ -321,8 +347,37 @@ a:focus-visible {
     0 10px 22px color-mix(in srgb, var(--accent) 12%, transparent);
 }
 
+.nav-menu[open] summary::after {
+  transform: rotate(180deg);
+}
+
 .nav a.is-active::after {
   transform: scaleX(1);
+}
+
+.nav-menu-panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 25;
+  display: grid;
+  gap: 8px;
+  min-width: 200px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.16), transparent),
+    var(--panel);
+  box-shadow: var(--shadow-raised);
+}
+
+.nav-menu-panel a {
+  width: 100%;
+}
+
+.nav-menu-panel a::after {
+  inset-inline: 12px;
 }
 
 .danger-button {
@@ -2799,9 +2854,18 @@ a:focus-visible {
 
   .theme-toggle,
   .nav a,
+  .nav-menu,
+  .nav-menu summary,
   .link-button,
   .filters button {
     width: 100%;
+  }
+
+  .nav-menu-panel {
+    position: static;
+    min-width: 0;
+    width: 100%;
+    margin-top: 8px;
   }
 
   .panel-heading {
