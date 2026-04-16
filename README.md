@@ -61,7 +61,7 @@ Current dashboard snapshot:
 - Worker preview flow that stages one worker, persists the preview, and supports explicit apply from the saved fingerprint
 - Authentication modes for local break-glass, OIDC-only, or hybrid SSO plus break-glass access, with local user management when break-glass is enabled
 - Mock SuccessFactors API for local development, fixture playback, and synthetic worker population
-- Delete-all testing reset flow from the Sync page
+- Delete-all testing reset flow from the Sync page that clears configured AD test OUs
 - Active Directory health checks that validate lookup behavior across configured search bases instead of only doing a bind/base-object probe
 - Due graveyard retention report processing from the worker when alerts are configured
 
