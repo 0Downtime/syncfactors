@@ -86,7 +86,7 @@ public sealed class WorkerPlanningService(
         }
         var targetEnabled = lifecycle.TargetEnabled;
         var operations = BuildOperations(bucket, directoryUser, lifecycle.TargetOu, targetEnabled, attributeChanges);
-        bucket = ResolveBucket(bucket, directoryUser, lifecycle.TargetOu, targetEnabled, attributeChanges);
+        bucket = ResolveBucket(bucket, directoryUser, lifecycle.TargetOu, targetEnabled, attributeChanges, operations);
         var primaryAction = ResolvePrimaryAction(bucket, operations);
         var canAutoApply = operations.Count > 0;
 
@@ -229,10 +229,24 @@ public sealed class WorkerPlanningService(
         DirectoryUserSnapshot directoryUser,
         string targetOu,
         bool targetEnabled,
-        IReadOnlyList<AttributeChange> attributeChanges)
+        IReadOnlyList<AttributeChange> attributeChanges,
+        IReadOnlyList<DirectoryOperation> operations)
     {
+        if (operations.Count == 0)
+        {
+            return string.Equals(lifecycleBucket, "manualReview", StringComparison.OrdinalIgnoreCase)
+                ? lifecycleBucket
+                : "unchanged";
+        }
+
         if (!string.Equals(lifecycleBucket, "enables", StringComparison.OrdinalIgnoreCase))
         {
+            if (string.Equals(lifecycleBucket, "disables", StringComparison.OrdinalIgnoreCase) &&
+                operations.All(operation => !string.Equals(operation.Kind, "DisableUser", StringComparison.OrdinalIgnoreCase)))
+            {
+                return "updates";
+            }
+
             return lifecycleBucket;
         }
 
