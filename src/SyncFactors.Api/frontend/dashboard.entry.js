@@ -452,11 +452,11 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
 
         element.animate(
             [
-                { transform: "translateY(6px)", opacity: 0.55, filter: "saturate(0.92)" },
-                { transform: "translateY(0)", opacity: 1, filter: "saturate(1)" }
+                { opacity: 0.72, filter: "saturate(0.94)" },
+                { opacity: 1, filter: "saturate(1)" }
             ],
             {
-                duration: 280,
+                duration: 220,
                 easing: "cubic-bezier(0.22, 1, 0.36, 1)"
             });
     }
