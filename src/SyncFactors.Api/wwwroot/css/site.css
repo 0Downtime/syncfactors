@@ -1690,11 +1690,15 @@ a:focus-visible {
   }
 
   .config-kv dd {
-    flex-direction: column;
+    grid-template-columns: 1fr;
   }
 
   .config-entry-meta {
     justify-content: flex-start;
+  }
+
+  .config-entry-multiline .config-entry-meta {
+    align-items: flex-start;
   }
 
   .config-anchor-nav {
@@ -2104,14 +2108,16 @@ a:focus-visible {
   width: 100%;
   min-width: 0;
   margin: 0;
-  display: flex;
-  justify-content: space-between;
-  gap: 16px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px 14px;
   align-items: flex-start;
   text-align: left;
 }
 
 .config-entry-main {
+  display: grid;
+  gap: 6px;
   width: 100%;
   min-width: 0;
 }
@@ -2119,34 +2125,71 @@ a:focus-visible {
 .config-entry-line {
   display: block;
   max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.config-entry-line-with-label {
+  display: grid;
+  grid-template-columns: 86px minmax(0, 1fr);
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.config-entry-line-label {
+  color: var(--muted);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.config-entry-line-value {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
   color: var(--muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.config-entry-line + .config-entry-line {
-  margin-top: 6px;
-}
-
 .config-entry-meta {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 6px;
   justify-content: flex-end;
-  align-items: flex-start;
+  align-items: center;
   flex-shrink: 0;
 }
 
+.config-entry-meta-stack {
+  flex-direction: column;
+  align-items: flex-end;
+  justify-content: flex-start;
+}
+
+.config-entry-meta .badge {
+  padding: 4px 10px;
+  font-size: 0.84rem;
+  line-height: 1.15;
+  white-space: nowrap;
+}
+
 .config-copy-button {
-  min-height: 30px;
-  padding: 0 10px;
+  min-height: 28px;
+  min-width: 68px;
+  padding: 0 9px;
   border: 1px solid var(--line);
   border-radius: 999px;
   background: var(--panel);
   color: var(--muted);
   cursor: pointer;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  font-size: 0.9rem;
+  font-weight: 600;
+  white-space: nowrap;
 }
 
 .config-copy-button:hover {
