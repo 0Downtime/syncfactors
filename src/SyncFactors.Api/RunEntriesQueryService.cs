@@ -57,6 +57,7 @@ public sealed class RunEntriesQueryService(IRunRepository runRepository)
         string? workerId,
         string? reason,
         string? filter,
+        string? employmentStatus,
         string? entryId,
         CancellationToken cancellationToken)
     {
@@ -66,16 +67,16 @@ public sealed class RunEntriesQueryService(IRunRepository runRepository)
             return null;
         }
 
-        var total = await runRepository.CountRunEntriesAsync(runId, bucket, workerId, reason, filter, entryId, cancellationToken);
-        var attributeTotals = await runRepository.GetRunEntryAttributeTotalsAsync(runId, bucket, workerId, reason, filter, entryId, cancellationToken);
-        var employmentStatusTotals = await runRepository.GetRunEntryEmploymentStatusTotalsAsync(runId, bucket, workerId, reason, filter, entryId, cancellationToken);
+        var total = await runRepository.CountRunEntriesAsync(runId, bucket, workerId, reason, filter, employmentStatus, entryId, cancellationToken);
+        var attributeTotals = await runRepository.GetRunEntryAttributeTotalsAsync(runId, bucket, workerId, reason, filter, employmentStatus, entryId, cancellationToken);
+        var employmentStatusTotals = await runRepository.GetRunEntryEmploymentStatusTotalsAsync(runId, bucket, workerId, reason, filter, null, entryId, cancellationToken);
         var entries = total == 0
             ? []
-            : await runRepository.GetRunEntriesAsync(runId, bucket, workerId, reason, filter, entryId, 0, total, cancellationToken);
+            : await runRepository.GetRunEntriesAsync(runId, bucket, workerId, reason, filter, employmentStatus, entryId, 0, total, cancellationToken);
 
         return new RunEntriesExportResult(
             DateTimeOffset.UtcNow,
-            new RunEntriesExportFilters(runId, bucket, workerId, reason, filter, entryId),
+            new RunEntriesExportFilters(runId, bucket, workerId, reason, filter, employmentStatus, entryId),
             new RunEntriesExportRunMetadata(run.Run, run.BucketCounts),
             new RunEntriesExportSummary(total, attributeTotals, employmentStatusTotals),
             entries);
@@ -97,6 +98,7 @@ public sealed record RunEntriesExportFilters(
     string? WorkerId,
     string? Reason,
     string? Filter,
+    string? EmploymentStatus,
     string? EntryId);
 
 public sealed record RunEntriesExportRunMetadata(
