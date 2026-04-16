@@ -1,6 +1,7 @@
 [CmdletBinding()]
 param(
-    [switch]$RemoveEmptyValues
+    [switch]$RemoveEmptyValues,
+    [switch]$PromptForMissingValues
 )
 
 Set-StrictMode -Version Latest
@@ -19,6 +20,28 @@ if (-not (Test-Path $envFile)) {
 }
 
 . (Join-Path $scriptDir 'WorktreeEnv.ps1')
+
+function Read-SecretValue {
+    param(
+        [Parameter(Mandatory)]
+        [string]$VariableName
+    )
+
+    $secureValue = Read-Host -Prompt "Value for $VariableName" -AsSecureString
+    if ($null -eq $secureValue) {
+        return ''
+    }
+
+    $bstr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secureValue)
+    try {
+        return [Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr)
+    }
+    finally {
+        if ($bstr -ne [IntPtr]::Zero) {
+            [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr)
+        }
+    }
+}
 
 $values = Read-WorktreeEnvFile -Path $envFile
 if ($values.Count -eq 0) {
@@ -42,6 +65,16 @@ foreach ($name in $secretNames) {
     }
 
     if (-not $hasEntry -or [string]::IsNullOrWhiteSpace($value)) {
+        if ($PromptForMissingValues) {
+            $value = Read-SecretValue -VariableName $name
+            if (-not [string]::IsNullOrWhiteSpace($value)) {
+                Set-SyncFactorsSecureStoreValue -RepoRoot $repoRoot -EnvFilePath $envFile -VariableName $name -Value $value | Out-Null
+                $writtenCount += 1
+                Write-Host "Stored $name in Windows Credential Manager"
+                continue
+            }
+        }
+
         $skippedCount += 1
         Write-Host "Skipped $name because .env.worktree does not define a non-empty value"
         continue

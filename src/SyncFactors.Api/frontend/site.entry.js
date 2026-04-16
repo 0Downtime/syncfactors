@@ -50,6 +50,43 @@
         topbar.classList.toggle("is-condensed", window.scrollY > 18);
     }
 
+    function initializeNavMenus() {
+        const navMenus = Array.prototype.slice.call(document.querySelectorAll("[data-nav-menu]"));
+
+        if (!navMenus.length) {
+            return;
+        }
+
+        document.addEventListener("click", function (event) {
+            navMenus.forEach(function (menu) {
+                if (!menu.open || menu.contains(event.target)) {
+                    return;
+                }
+
+                menu.open = false;
+            });
+        });
+
+        document.addEventListener("keydown", function (event) {
+            if (event.key !== "Escape") {
+                return;
+            }
+
+            navMenus.forEach(function (menu) {
+                menu.open = false;
+            });
+        });
+
+        navMenus.forEach(function (menu) {
+            const links = Array.prototype.slice.call(menu.querySelectorAll("a"));
+            links.forEach(function (link) {
+                link.addEventListener("click", function () {
+                    menu.open = false;
+                });
+            });
+        });
+    }
+
     function decorateSurface(surface) {
         surface.classList.add("reveal-on-scroll");
     }
@@ -186,6 +223,7 @@
 
     syncTopbar();
     window.addEventListener("scroll", syncTopbar, { passive: true });
+    initializeNavMenus();
     initializeSurfaceReveals();
     bootstrapCalloutToasts();
 
