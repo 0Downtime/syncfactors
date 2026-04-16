@@ -78,6 +78,35 @@ public sealed class RunDetailModelTests
     }
 
     [Fact]
+    public async Task OnGetExportAsync_ReturnsFilteredJsonDownload()
+    {
+        var repository = new StubRunRepository();
+        var model = new DetailModel(new RunEntriesQueryService(repository))
+        {
+            RunId = "bulk-1",
+            Bucket = "conflicts",
+            WorkerId = "worker-1",
+            Filter = "manager"
+        };
+
+        var result = await model.OnGetExportAsync(CancellationToken.None);
+
+        var file = Assert.IsType<FileContentResult>(result);
+        Assert.Equal("application/json", file.ContentType);
+        Assert.Equal("syncfactors-run-bulk-1-conflicts-worker-filtered-text-filtered-entries.json", file.FileDownloadName);
+        Assert.Equal(0, repository.LastSkip);
+        Assert.Equal(120, repository.LastTake);
+
+        using var document = JsonDocument.Parse(file.FileContents);
+        Assert.Equal("bulk-1", document.RootElement.GetProperty("filters").GetProperty("runId").GetString());
+        Assert.Equal("conflicts", document.RootElement.GetProperty("filters").GetProperty("bucket").GetString());
+        Assert.Equal("worker-1", document.RootElement.GetProperty("filters").GetProperty("workerId").GetString());
+        Assert.Equal("manager", document.RootElement.GetProperty("filters").GetProperty("filter").GetString());
+        Assert.Equal(120, document.RootElement.GetProperty("summary").GetProperty("matchingEntries").GetInt32());
+        Assert.Equal(120, document.RootElement.GetProperty("entries").GetArrayLength());
+    }
+
+    [Fact]
     public async Task GetFailureDiagnostics_ParsesEntryReason()
     {
         var repository = new StubRunRepository();
@@ -470,8 +499,8 @@ public sealed class RunDetailModelTests
                     RunId: runId,
                     ArtifactType: "BulkRun",
                     Mode: "BulkSync",
-                    Bucket: "updates",
-                    BucketLabel: "Updates",
+                    Bucket: bucket ?? "updates",
+                    BucketLabel: string.Equals(bucket, "conflicts", StringComparison.OrdinalIgnoreCase) ? "Conflicts" : "Updates",
                     WorkerId: $"worker-{skip + index}",
                     SamAccountName: null,
                     Reason: null,
