@@ -95,6 +95,7 @@ public sealed class WorkerPreviewPlanner(
             + $"\"samAccountName\":{ToJsonString(preview.SamAccountName)},"
             + $"\"targetOu\":{ToJsonString(preview.TargetOu)},"
             + $"\"emplStatus\":{ToJsonString(ResolveSourceAttribute(preview.SourceAttributes, "emplStatus"))},"
+            + $"\"endDate\":{ToJsonString(ResolveSourceAttribute(preview.SourceAttributes, "endDate"))},"
             + $"\"managerDistinguishedName\":{ToJsonString(preview.ManagerDistinguishedName)},"
             + $"\"reviewCaseType\":{ToJsonString(preview.ReviewCaseType)},"
             + $"\"reason\":{ToJsonString(preview.Reason)},"
@@ -180,6 +181,7 @@ public sealed class WorkerPreviewPlanner(
             + $"\"samAccountName\":\"{Escape(plan.Identity.SamAccountName)}\","
             + $"\"targetOu\":\"{Escape(plan.Worker.TargetOu)}\","
             + $"\"emplStatus\":{ToJsonString(ResolveSourceAttribute(plan.Worker.Attributes, "emplStatus"))},"
+            + $"\"endDate\":{ToJsonString(ResolveSourceAttribute(plan.Worker.Attributes, "endDate"))},"
             + $"\"matchedExistingUser\":{ToJsonBoolean(plan.Identity.MatchedExistingUser)},"
             + "\"changedAttributeDetails\":["
             + string.Join(",", finalizedDiffRows
@@ -295,6 +297,7 @@ public sealed class WorkerPreviewPlanner(
             + $"\"samAccountName\":{item.GetProperty("samAccountName").GetRawText()},"
             + $"\"targetOu\":{item.GetProperty("targetOu").GetRawText()},"
             + $"\"emplStatus\":{item.GetProperty("emplStatus").GetRawText()},"
+            + $"\"endDate\":{item.GetProperty("endDate").GetRawText()},"
             + $"\"matchedExistingUser\":{item.GetProperty("matchedExistingUser").GetRawText()},"
             + "\"operations\":["
             + string.Join(",", operations.Select(operation =>

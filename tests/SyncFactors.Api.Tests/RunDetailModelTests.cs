@@ -299,6 +299,69 @@ public sealed class RunDetailModelTests
     }
 
     [Fact]
+    public void GetEndDateDisplay_FormatsParseableDate()
+    {
+        var model = new DetailModel(new RunEntriesQueryService(new StubRunRepository()));
+        var localOffset = TimeZoneInfo.Local.GetUtcOffset(new DateTime(2026, 4, 14, 12, 0, 0, DateTimeKind.Unspecified));
+        var entry = new RunEntry(
+            EntryId: "entry-status",
+            RunId: "bulk-1",
+            ArtifactType: "BulkRun",
+            Mode: "BulkSync",
+            Bucket: "graveyardMoves",
+            BucketLabel: "Graveyard Moves",
+            WorkerId: "10001",
+            SamAccountName: "winnie",
+            Reason: null,
+            ReviewCategory: null,
+            ReviewCaseType: null,
+            StartedAt: DateTimeOffset.UtcNow,
+            ChangeCount: 0,
+            OperationSummary: null,
+            FailureSummary: null,
+            PrimarySummary: null,
+            TopChangedAttributes: [],
+            DiffRows: [],
+            Item: JsonDocument.Parse($$"""{"endDate":"{{new DateTimeOffset(2026, 4, 14, 12, 0, 0, localOffset):O}}"}""").RootElement.Clone());
+
+        Assert.Equal("04/14/2026", model.GetEndDateDisplay(entry));
+    }
+
+    [Fact]
+    public void GetEndDateDisplay_ReturnsNullForMissingOrNullLikeValue()
+    {
+        var model = new DetailModel(new RunEntriesQueryService(new StubRunRepository()));
+        var missingEntry = new RunEntry(
+            EntryId: "entry-missing-end-date",
+            RunId: "bulk-1",
+            ArtifactType: "BulkRun",
+            Mode: "BulkSync",
+            Bucket: "graveyardMoves",
+            BucketLabel: "Graveyard Moves",
+            WorkerId: "10001",
+            SamAccountName: "winnie",
+            Reason: null,
+            ReviewCategory: null,
+            ReviewCaseType: null,
+            StartedAt: DateTimeOffset.UtcNow,
+            ChangeCount: 0,
+            OperationSummary: null,
+            FailureSummary: null,
+            PrimarySummary: null,
+            TopChangedAttributes: [],
+            DiffRows: [],
+            Item: JsonDocument.Parse("""{}""").RootElement.Clone());
+        var nullStringEntry = missingEntry with
+        {
+            EntryId = "entry-null-end-date",
+            Item = JsonDocument.Parse("""{"endDate":"null"}""").RootElement.Clone()
+        };
+
+        Assert.Null(model.GetEndDateDisplay(missingEntry));
+        Assert.Null(model.GetEndDateDisplay(nullStringEntry));
+    }
+
+    [Fact]
     public async Task DescribeEntryExecution_RealSyncDisableWithoutWrite_ShowsAlreadyCompliant()
     {
         var model = new DetailModel(new RunEntriesQueryService(new StubRunRepository(CreateRunDetail(dryRun: false))))
