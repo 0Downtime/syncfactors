@@ -556,6 +556,7 @@ public sealed class SuccessFactorsWorkerSourceIntegrationTests
               "entitySet": "PerPerson",
               "identityField": "personIdExternal",
               "deltaField": "lastModifiedDateTime",
+              "onboardingDateField": "employmentNav/startDate",
               "deltaSyncEnabled": true,
               "baseFilter": "status eq 'active'",
               "pageSize": 2,
@@ -601,7 +602,9 @@ public sealed class SuccessFactorsWorkerSourceIntegrationTests
         var workerSource = new SuccessFactorsWorkerSource(
             client,
             configLoader,
-            new ConfiguredDeltaSyncService("lastModifiedDateTime ge datetimeoffset'2026-03-30T12:00:00Z'"),
+            new ConfiguredDeltaSyncService(
+                "(lastModifiedDateTime ge datetimeoffset'2026-03-30T12:00:00Z') or " +
+                "(employmentNav/startDate gt datetime'2026-03-30T00:00:00' and employmentNav/startDate le datetime'2026-04-01T00:00:00')"),
             fallbackSource,
             logger);
 
@@ -614,8 +617,117 @@ public sealed class SuccessFactorsWorkerSourceIntegrationTests
                 .Select(query => query.TryGetValue("$filter", out var filter) ? filter.ToString() : null),
             filter => !string.IsNullOrWhiteSpace(filter) &&
                       filter.Contains("status eq 'active'", StringComparison.Ordinal) &&
-                      filter.Contains("lastModifiedDateTime ge datetimeoffset'2026-03-30T12:00:00Z'", StringComparison.Ordinal));
+                      filter.Contains("lastModifiedDateTime ge datetimeoffset'2026-03-30T12:00:00Z'", StringComparison.Ordinal) &&
+                      filter.Contains("employmentNav/startDate gt datetime'2026-03-30T00:00:00'", StringComparison.Ordinal));
         Assert.Contains(logger.Messages, message => message.Contains("using SuccessFactors delta sync", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task WorkerSource_ListWorkersAsync_SinglePerPersonQuery_UsesCanonicalIdentityWithoutPreviewLookup()
+    {
+        var fixturePath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "config", "mock-successfactors", "baseline-fixtures.json"));
+        var fixtureStore = new MockFixtureStore(Options.Create(new MockSuccessFactorsOptions
+        {
+            FixturePath = fixturePath
+        }));
+        var responseBuilder = new ODataResponseBuilder();
+        var handler = new MockSuccessFactorsHttpHandler(fixtureStore, responseBuilder);
+        using var client = new HttpClient(handler)
+        {
+            BaseAddress = new Uri("http://mock-successfactors.local")
+        };
+
+        var tempDirectory = Path.Combine(Path.GetTempPath(), "syncfactors-worker-source", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDirectory);
+
+        var syncConfigPath = Path.Combine(tempDirectory, "sync-config.json");
+        var mappingConfigPath = Path.Combine(tempDirectory, "mapping-config.json");
+        var scaffoldDataPath = Path.Combine(tempDirectory, "scaffold-data.json");
+
+        await File.WriteAllTextAsync(syncConfigPath, """
+        {
+          "secrets": {
+            "adServerEnv": null,
+            "adUsernameEnv": null,
+            "adBindPasswordEnv": null,
+            "successFactorsClientIdEnv": null,
+            "successFactorsClientSecretEnv": null
+          },
+          "successFactors": {
+            "baseUrl": "http://mock-successfactors.local/odata/v2",
+            "auth": {
+              "mode": "oauth",
+              "oauth": {
+                "tokenUrl": "http://mock-successfactors.local/oauth/token",
+                "clientId": "mock-client-id",
+                "clientSecret": "mock-client-secret",
+                "companyId": "MOCK"
+              }
+            },
+            "query": {
+              "entitySet": "PerPerson",
+              "identityField": "employmentNav/userId",
+              "deltaField": "lastModifiedDateTime",
+              "onboardingDateField": "employmentNav/startDate",
+              "deltaSyncEnabled": true,
+              "baseFilter": "employmentNav/jobInfoNav/emplStatus in 'A','U'",
+              "pageSize": 2,
+              "select": [
+                "employmentNav/userId",
+                "personIdExternal",
+                "personalInfoNav/firstName",
+                "personalInfoNav/lastName",
+                "employmentNav/startDate"
+              ],
+              "expand": [
+                "employmentNav",
+                "personalInfoNav"
+              ]
+            }
+          },
+          "ad": {
+            "server": "ldap.example.test",
+            "username": "",
+            "bindPassword": "",
+            "identityAttribute": "employeeID",
+            "defaultActiveOu": "OU=LabUsers,DC=example,DC=com",
+            "prehireOu": "OU=Prehire,DC=example,DC=com",
+            "graveyardOu": "OU=LabGraveyard,DC=example,DC=com"
+          },
+          "sync": {
+            "enableBeforeStartDays": 7,
+            "deletionRetentionDays": 90
+          },
+          "safety": {
+            "maxCreatesPerRun": 10,
+            "maxDisablesPerRun": 10,
+            "maxDeletionsPerRun": 10
+          },
+          "reporting": {
+            "outputDirectory": "reports"
+          }
+        }
+        """);
+        await File.WriteAllTextAsync(mappingConfigPath, """{"mappings":[{"source":"personIdExternal","target":"employeeID","enabled":true,"required":true,"transform":"copy"}]}""");
+        await File.WriteAllTextAsync(scaffoldDataPath, """{"workers":[],"directoryUsers":[]}""");
+
+        var configLoader = new SyncFactorsConfigurationLoader(new SyncFactorsConfigPathResolver(syncConfigPath, mappingConfigPath));
+        var scaffoldStore = new ScaffoldDataStore(new ScaffoldDataPathResolver(scaffoldDataPath));
+        var fallbackSource = new ScaffoldWorkerSource(scaffoldStore);
+        var workerSource = new SuccessFactorsWorkerSource(
+            client,
+            configLoader,
+            new ConfiguredDeltaSyncService("lastModifiedDateTime ge datetimeoffset'2026-03-30T12:00:00Z'"),
+            fallbackSource,
+            NullLogger<SuccessFactorsWorkerSource>.Instance);
+
+        await using var enumerator = workerSource.ListWorkersAsync(WorkerListingMode.DeltaPreferred, CancellationToken.None).GetAsyncEnumerator();
+        Assert.True(await enumerator.MoveNextAsync());
+
+        Assert.Equal("user.10001", enumerator.Current.WorkerId);
+        Assert.Equal("Worker10001", enumerator.Current.PreferredName);
+        Assert.Contains(handler.RequestUris, uri => uri.Contains("/PerPerson?", StringComparison.Ordinal));
+        Assert.DoesNotContain(handler.RequestUris, uri => uri.Contains("/EmpJob?", StringComparison.Ordinal));
     }
 
     [Fact]

@@ -104,6 +104,12 @@ public sealed class SyncFactorsConfigurationValidator(SyncFactorsConfigurationLo
             throw new InvalidOperationException("SyncFactors successFactors.query.deltaOverlapMinutes must be non-negative.");
         }
 
+        if (sync.SuccessFactors.Query.DeltaSyncEnabled &&
+            string.IsNullOrWhiteSpace(sync.SuccessFactors.Query.OnboardingDateField))
+        {
+            throw new InvalidOperationException("SyncFactors successFactors.query.onboardingDateField must be configured when delta sync is enabled.");
+        }
+
         if (mapping.Mappings.Count == 0)
         {
             throw new InvalidOperationException("SyncFactors mapping config must contain at least one mapping.");

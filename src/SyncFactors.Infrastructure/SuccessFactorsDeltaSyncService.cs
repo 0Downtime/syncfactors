@@ -6,6 +6,7 @@ namespace SyncFactors.Infrastructure;
 public sealed class SuccessFactorsDeltaSyncService(
     SyncFactorsConfigurationLoader configLoader,
     IDeltaSyncStateStore stateStore,
+    TimeProvider timeProvider,
     ILogger<SuccessFactorsDeltaSyncService> logger) : IDeltaSyncService
 {
     public async Task<DeltaSyncWindow> GetWindowAsync(CancellationToken cancellationToken)
@@ -40,7 +41,7 @@ public sealed class SuccessFactorsDeltaSyncService(
                 EffectiveSinceUtc: null);
         }
 
-        var syncKey = BuildSyncKey(query);
+        var syncKey = BuildSyncKey(query, config.Sync.EnableBeforeStartDays);
         var checkpointUtc = await stateStore.GetCheckpointAsync(syncKey, cancellationToken);
         if (checkpointUtc is null)
         {
@@ -58,10 +59,11 @@ public sealed class SuccessFactorsDeltaSyncService(
         }
 
         var effectiveSinceUtc = checkpointUtc.Value.AddMinutes(-Math.Max(0, query.DeltaOverlapMinutes)).ToUniversalTime();
+        var deltaFilter = BuildDeltaFilter(query, effectiveSinceUtc, checkpointUtc.Value.ToUniversalTime(), config.Sync.EnableBeforeStartDays);
         return new DeltaSyncWindow(
             Enabled: true,
             HasCheckpoint: true,
-            Filter: $"{query.DeltaField} ge datetimeoffset'{FormatDateTimeOffsetLiteral(effectiveSinceUtc)}'",
+            Filter: deltaFilter,
             DeltaField: query.DeltaField,
             CheckpointUtc: checkpointUtc.Value.ToUniversalTime(),
             EffectiveSinceUtc: effectiveSinceUtc);
@@ -82,7 +84,7 @@ public sealed class SuccessFactorsDeltaSyncService(
         }
 
         checkpointUtc = checkpointUtc.ToUniversalTime();
-        await stateStore.SaveCheckpointAsync(BuildSyncKey(query), checkpointUtc, cancellationToken);
+        await stateStore.SaveCheckpointAsync(BuildSyncKey(query, config.Sync.EnableBeforeStartDays), checkpointUtc, cancellationToken);
         logger.LogInformation(
             "Advanced SuccessFactors delta sync checkpoint. EntitySet={EntitySet} DeltaField={DeltaField} CheckpointUtc={CheckpointUtc}",
             query.EntitySet,
@@ -90,19 +92,68 @@ public sealed class SuccessFactorsDeltaSyncService(
             checkpointUtc);
     }
 
-    private static string BuildSyncKey(SuccessFactorsQueryConfig query)
+    private static string BuildSyncKey(SuccessFactorsQueryConfig query, int enableBeforeStartDays)
     {
         return string.Join("|",
             query.EntitySet,
             query.IdentityField,
             query.DeltaField,
+            query.OnboardingDateField,
             query.BaseFilter ?? string.Empty,
-            query.AsOfDate ?? string.Empty);
+            query.AsOfDate ?? string.Empty,
+            enableBeforeStartDays);
+    }
+
+    private string BuildDeltaFilter(
+        SuccessFactorsQueryConfig query,
+        DateTimeOffset effectiveSinceUtc,
+        DateTimeOffset checkpointUtc,
+        int enableBeforeStartDays)
+    {
+        var filters = new List<string>
+        {
+            $"{query.DeltaField} ge datetimeoffset'{FormatDateTimeOffsetLiteral(effectiveSinceUtc)}'"
+        };
+
+        if (string.IsNullOrWhiteSpace(query.OnboardingDateField))
+        {
+            return filters[0];
+        }
+
+        var todayUtc = timeProvider.GetUtcNow().UtcDateTime.Date;
+        var checkpointDateUtc = checkpointUtc.UtcDateTime.Date;
+        var onboardingField = query.OnboardingDateField;
+
+        if (todayUtc > checkpointDateUtc)
+        {
+            filters.Add(
+                $"{onboardingField} gt datetime'{FormatDateLiteral(checkpointDateUtc)}' and {onboardingField} le datetime'{FormatDateLiteral(todayUtc)}'");
+        }
+
+        if (enableBeforeStartDays > 0)
+        {
+            var priorNearStartHorizonUtc = checkpointDateUtc.AddDays(enableBeforeStartDays);
+            var currentNearStartHorizonUtc = todayUtc.AddDays(enableBeforeStartDays);
+            if (currentNearStartHorizonUtc > priorNearStartHorizonUtc)
+            {
+                filters.Add(
+                    $"{onboardingField} gt datetime'{FormatDateLiteral(priorNearStartHorizonUtc)}' and {onboardingField} le datetime'{FormatDateLiteral(currentNearStartHorizonUtc)}'");
+            }
+        }
+
+        return filters.Count == 1
+            ? filters[0]
+            : string.Join(" or ", filters.Select(filter => $"({filter})"));
     }
 
     private static string FormatDateTimeOffsetLiteral(DateTimeOffset value)
     {
         return value.UtcDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'");
+    }
+
+    private static string FormatDateLiteral(DateTime value)
+    {
+        return value.ToString("yyyy-MM-dd'T'HH:mm:ss");
     }
 
     private string[] GetPreviewBackedEnabledSources(SyncFactorsConfigDocument config)
