@@ -73,16 +73,36 @@
 
                                 var showCopyButton = !entry.IsSecretOmitted &&
                                     (entry.DisplayValue.Length > 48 || displayLines.Length > 1);
+                                var entryClasses = displayLines.Length > 1 ? "config-entry config-entry-multiline" : "config-entry";
+                                var metaClasses = entry.IsSecretOmitted || showCopyButton
+                                    ? "config-entry-meta config-entry-meta-stack"
+                                    : "config-entry-meta";
                                 <div>
                                     <dt>@entry.Label</dt>
-                                    <dd class="config-entry">
+                                    <dd class="@entryClasses">
                                         <div class="config-entry-main" title="@entry.DisplayValue">
                                             @foreach (var line in displayLines)
                                             {
-                                                <span class="config-entry-line">@line</span>
+                                                var separatorIndex = line.IndexOf(':');
+                                                var hasLineLabel = separatorIndex > 0 && separatorIndex < line.Length - 1;
+                                                if (hasLineLabel)
+                                                {
+                                                    var lineLabel = line[..separatorIndex];
+                                                    var lineValue = line[(separatorIndex + 1)..].TrimStart();
+                                                    <span class="config-entry-line config-entry-line-with-label">
+                                                        <span class="config-entry-line-label">@($"{lineLabel}:")</span>
+                                                        <span class="config-entry-line-value">@lineValue</span>
+                                                    </span>
+                                                }
+                                                else
+                                                {
+                                                    <span class="config-entry-line">
+                                                        <span class="config-entry-line-value">@line</span>
+                                                    </span>
+                                                }
                                             }
                                         </div>
-                                        <div class="config-entry-meta">
+                                        <div class="@metaClasses">
                                             @if (showCopyButton)
                                             {
                                                 <button
