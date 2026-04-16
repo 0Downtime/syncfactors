@@ -57,6 +57,7 @@ builder.Services.AddSingleton(new SyncFactorsConfigPathResolver(
     builder.Configuration["SyncFactors:ConfigPath"],
     builder.Configuration["SyncFactors:MappingConfigPath"]));
 builder.Services.AddSingleton(new ScaffoldDataPathResolver(builder.Configuration["SyncFactors:ScaffoldDataPath"]));
+builder.Services.AddSingleton<AdminConfigurationSnapshotBuilder>();
 builder.Services.Configure<LocalAuthOptions>(builder.Configuration.GetSection("SyncFactors:Auth"));
 builder.Services.Configure<ForwardedHeadersOptions>(options =>
 {
