@@ -403,6 +403,8 @@ If your primary AD transport is `ldaps` or `starttls` and you need an explicit d
 
 For full-sync `EmpJob` queries, `successFactors.query.inactiveRetentionDays` can extend the source filter to keep recently inactive workers in scope without hand-writing the date cutoff in `baseFilter`. With the default fields, a config like `"baseFilter": "emplStatus in 'A','U'"` plus `"inactiveRetentionDays": 180` expands to include terminated (`emplStatus eq 'T'`) workers whose `endDate` is within the last 180 days. Override `inactiveStatusField`, `inactiveStatusValues`, or `inactiveDateField` if your tenant uses different fields or status codes.
 
+Queued bulk runs read worker concurrency from `sync.maxDegreeOfParallelism`. The sample configs default this to `2`. Increase it cautiously based on SuccessFactors and AD capacity.
+
 ## Authentication Modes
 
 The API serves the same operator UI in all auth modes and protects it with cookie auth after sign-in.

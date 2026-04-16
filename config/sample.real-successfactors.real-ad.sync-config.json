@@ -163,6 +163,7 @@
   "sync": {
     "enableBeforeStartDays": 7,
     "deletionRetentionDays": 90,
+    "maxDegreeOfParallelism": 2,
     "autoDeleteFromGraveyard": false
   },
   "safety": {
