@@ -84,11 +84,11 @@ public sealed class DependencyHealthServiceTests
             }
             """);
 
-        var originalDotnetEnvironment = Environment.GetEnvironmentVariable("DOTNET_ENVIRONMENT");
+        var originalEnvironment = CaptureEnvironment();
 
         try
         {
-            Environment.SetEnvironmentVariable("DOTNET_ENVIRONMENT", "Development");
+            SetEnvironment("Development");
 
             var service = new DependencyHealthService(
                 configLoader,
@@ -108,7 +108,7 @@ public sealed class DependencyHealthServiceTests
         }
         finally
         {
-            Environment.SetEnvironmentVariable("DOTNET_ENVIRONMENT", originalDotnetEnvironment);
+            RestoreEnvironment(originalEnvironment);
             Directory.Delete(tempRoot, recursive: true);
         }
     }
@@ -187,11 +187,11 @@ public sealed class DependencyHealthServiceTests
             }
             """);
 
-        var originalDotnetEnvironment = Environment.GetEnvironmentVariable("DOTNET_ENVIRONMENT");
+        var originalEnvironment = CaptureEnvironment();
 
         try
         {
-            Environment.SetEnvironmentVariable("DOTNET_ENVIRONMENT", "Production");
+            SetEnvironment("Production");
 
             var service = new DependencyHealthService(
                 configLoader,
@@ -211,7 +211,7 @@ public sealed class DependencyHealthServiceTests
         }
         finally
         {
-            Environment.SetEnvironmentVariable("DOTNET_ENVIRONMENT", originalDotnetEnvironment);
+            RestoreEnvironment(originalEnvironment);
             Directory.Delete(tempRoot, recursive: true);
         }
     }
@@ -742,5 +742,23 @@ public sealed class DependencyHealthServiceTests
     private sealed class FakeTimeProvider(DateTimeOffset utcNow) : TimeProvider
     {
         public override DateTimeOffset GetUtcNow() => utcNow;
+    }
+
+    private static (string? AspNetCoreEnvironment, string? DotNetEnvironment) CaptureEnvironment() =>
+        (
+            Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT"),
+            Environment.GetEnvironmentVariable("DOTNET_ENVIRONMENT")
+        );
+
+    private static void SetEnvironment(string environmentName)
+    {
+        Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", environmentName);
+        Environment.SetEnvironmentVariable("DOTNET_ENVIRONMENT", environmentName);
+    }
+
+    private static void RestoreEnvironment((string? AspNetCoreEnvironment, string? DotNetEnvironment) original)
+    {
+        Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", original.AspNetCoreEnvironment);
+        Environment.SetEnvironmentVariable("DOTNET_ENVIRONMENT", original.DotNetEnvironment);
     }
 }
