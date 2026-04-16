@@ -70,7 +70,7 @@ public sealed class RunEntriesQueryServiceTests
         var repository = new StubRunRepository();
         var service = new RunEntriesQueryService(repository);
 
-        var result = await service.ExportAsync("bulk-1", "conflicts", "worker-1", null, "manager", null, CancellationToken.None);
+        var result = await service.ExportAsync("bulk-1", "conflicts", "worker-1", null, "manager", "64307", null, CancellationToken.None);
 
         Assert.NotNull(result);
         Assert.Equal(0, repository.LastSkip);
@@ -79,10 +79,14 @@ public sealed class RunEntriesQueryServiceTests
         Assert.Equal("conflicts", result.Filters.Bucket);
         Assert.Equal("worker-1", result.Filters.WorkerId);
         Assert.Equal("manager", result.Filters.Filter);
+        Assert.Equal("64307", result.Filters.EmploymentStatus);
         Assert.Equal(120, result.Summary.MatchingEntries);
         Assert.Equal(120, result.Entries.Count);
         Assert.Equal("bulk-1", result.Run.Run.RunId);
         Assert.Equal(80, result.Summary.EmploymentStatusTotals.First().Count);
+        Assert.Equal("64307", repository.LastTotalsEmploymentStatus);
+        Assert.Equal("64307", repository.LastEntriesEmploymentStatus);
+        Assert.Null(repository.LastEmploymentTotalsEmploymentStatus);
     }
 
     private sealed class StubRunRepository : IRunRepository

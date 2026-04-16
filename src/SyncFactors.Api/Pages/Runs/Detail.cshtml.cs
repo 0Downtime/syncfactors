@@ -375,7 +375,7 @@ public sealed class DetailModel(RunEntriesQueryService queryService) : PageModel
             return NotFound();
         }
 
-        var export = await queryService.ExportAsync(RunId, Bucket, WorkerId, null, Filter, null, cancellationToken);
+        var export = await queryService.ExportAsync(RunId, Bucket, WorkerId, null, Filter, EmploymentStatus, null, cancellationToken);
         if (export is null)
         {
             return NotFound();
@@ -392,7 +392,7 @@ public sealed class DetailModel(RunEntriesQueryService queryService) : PageModel
             return NotFound();
         }
 
-        var export = await queryService.ExportAsync(RunId, Bucket, WorkerId, null, Filter, null, cancellationToken);
+        var export = await queryService.ExportAsync(RunId, Bucket, WorkerId, null, Filter, EmploymentStatus, null, cancellationToken);
         if (export is null)
         {
             return NotFound();
@@ -408,7 +408,7 @@ public sealed class DetailModel(RunEntriesQueryService queryService) : PageModel
             return NotFound();
         }
 
-        var export = await queryService.ExportAsync(RunId, Bucket, WorkerId, null, Filter, null, cancellationToken);
+        var export = await queryService.ExportAsync(RunId, Bucket, WorkerId, null, Filter, EmploymentStatus, null, cancellationToken);
         if (export is null)
         {
             return NotFound();
