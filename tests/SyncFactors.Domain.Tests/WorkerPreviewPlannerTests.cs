@@ -39,7 +39,7 @@ public sealed class WorkerPreviewPlannerTests
 
         var preview = await planner.PreviewAsync("44522", CancellationToken.None);
 
-        Assert.Equal("updates", preview.Buckets.Single());
+        Assert.Equal("unchanged", preview.Buckets.Single());
         Assert.Equal(1, runRepository.SavedRuns.Single().Unchanged);
         Assert.Equal(0, runRepository.SavedRuns.Single().Updates);
         Assert.Equal("unchanged", runRepository.ReplacedEntries.Single().entries.Single().Bucket);
@@ -583,6 +583,91 @@ public sealed class WorkerPreviewPlannerTests
     }
 
     [Fact]
+    public async Task PreviewAsync_ForGraveyardUsersAlreadyDisabledWithoutAttributeChanges_UsesUnchangedBucket()
+    {
+        var worker = new WorkerSnapshot(
+            WorkerId: "44522",
+            PreferredName: "Christopher",
+            LastName: "Brien",
+            Department: "Infrastructure & Security",
+            TargetOu: "OU=Employees,DC=example,DC=com",
+            IsPrehire: false,
+            Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["company"] = "Spire Services, Inc.",
+                ["department"] = "Infrastructure & Security",
+                ["emplStatus"] = "T"
+            });
+
+        var runRepository = new CapturingRunRepository();
+        var planner = new WorkerPreviewPlanner(
+            new StubWorkerSource(worker),
+            new WorkerPlanningService(
+                new DisabledGraveyardUserDirectoryGateway(),
+                new ExistingUserIdentityMatcher(),
+                CreateLifecyclePolicy(),
+                new UnchangedAttributeDiffService(),
+                new StubAttributeMappingProvider(),
+                NullLogger<WorkerPlanningService>.Instance),
+            new StubAttributeMappingProvider(),
+            new StubWorkerPreviewLogWriter(),
+            runRepository,
+            NullLogger<WorkerPreviewPlanner>.Instance);
+
+        var preview = await planner.PreviewAsync("44522", CancellationToken.None);
+
+        Assert.Equal("unchanged", preview.Buckets.Single());
+        Assert.Empty(preview.Entries
+            .SelectMany(entry => entry.Item.GetProperty("operations").EnumerateArray()));
+        Assert.Equal("unchanged", runRepository.ReplacedEntries.Single().entries.Single().Bucket);
+        Assert.Equal(1, runRepository.SavedRuns.Single().Unchanged);
+        Assert.Equal(0, runRepository.SavedRuns.Single().Disables);
+    }
+
+    [Fact]
+    public async Task PreviewAsync_ForGraveyardUsersAlreadyDisabledWithAttributeChanges_UsesUpdateBucket()
+    {
+        var worker = new WorkerSnapshot(
+            WorkerId: "44522",
+            PreferredName: "Christopher",
+            LastName: "Brien",
+            Department: "Infrastructure & Security",
+            TargetOu: "OU=Employees,DC=example,DC=com",
+            IsPrehire: false,
+            Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["company"] = "Spire Services, Inc.",
+                ["department"] = "Infrastructure",
+                ["emplStatus"] = "T"
+            });
+
+        var planner = new WorkerPreviewPlanner(
+            new StubWorkerSource(worker),
+            new WorkerPlanningService(
+                new DisabledGraveyardUserDirectoryGateway(),
+                new ExistingUserIdentityMatcher(),
+                CreateLifecyclePolicy(),
+                new ChangedDepartmentDiffService(),
+                new StubAttributeMappingProvider(),
+                NullLogger<WorkerPlanningService>.Instance),
+            new StubAttributeMappingProvider(),
+            new StubWorkerPreviewLogWriter(),
+            new StubRunRepository(),
+            NullLogger<WorkerPreviewPlanner>.Instance);
+
+        var preview = await planner.PreviewAsync("44522", CancellationToken.None);
+
+        Assert.Equal("updates", preview.Buckets.Single());
+        Assert.True(preview.DiffRows.Single(row => row.Attribute == "department").Changed);
+        var operationKinds = preview.Entries
+            .SelectMany(entry => entry.Item.GetProperty("operations").EnumerateArray())
+            .Select(operation => operation.GetProperty("kind").GetString())
+            .ToArray();
+        Assert.Contains("UpdateUser", operationKinds);
+        Assert.DoesNotContain("DisableUser", operationKinds);
+    }
+
+    [Fact]
     public async Task PreviewAsync_WhenManagerChanges_IncludesManagerDiffAndPlansUpdate()
     {
         var worker = new WorkerSnapshot(
@@ -922,6 +1007,41 @@ public sealed class WorkerPreviewPlannerTests
             return Task.FromResult<DirectoryUserSnapshot?>(new DirectoryUserSnapshot(
                 SamAccountName: "cbrien",
                 DistinguishedName: "CN=Brien\\, Christopher,OU=Employees,DC=example,DC=com",
+                Enabled: false,
+                DisplayName: "Brien, Christopher",
+                Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+                {
+                    ["department"] = "Infrastructure & Security",
+                    ["UserPrincipalName"] = "existing.upn@spireenergy.com",
+                    ["mail"] = "existing.mail@spireenergy.com"
+                }));
+        }
+
+        public Task<string?> ResolveManagerDistinguishedNameAsync(string managerId, CancellationToken cancellationToken)
+        {
+            _ = managerId;
+            _ = cancellationToken;
+            return Task.FromResult<string?>(null);
+        }
+
+        public Task<string> ResolveAvailableEmailLocalPartAsync(WorkerSnapshot worker, bool isCreate, CancellationToken cancellationToken)
+        {
+            _ = worker;
+            _ = isCreate;
+            _ = cancellationToken;
+            return Task.FromResult("christopher.brien2");
+        }
+    }
+
+    private sealed class DisabledGraveyardUserDirectoryGateway : IDirectoryGateway
+    {
+        public Task<DirectoryUserSnapshot?> FindByWorkerAsync(WorkerSnapshot worker, CancellationToken cancellationToken)
+        {
+            _ = worker;
+            _ = cancellationToken;
+            return Task.FromResult<DirectoryUserSnapshot?>(new DirectoryUserSnapshot(
+                SamAccountName: "cbrien",
+                DistinguishedName: "CN=Brien\\, Christopher,OU=Graveyard,DC=example,DC=com",
                 Enabled: false,
                 DisplayName: "Brien, Christopher",
                 Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
