@@ -267,15 +267,29 @@ if ([string]::IsNullOrWhiteSpace($env:NUGET_HTTP_CACHE_PATH)) {
     $variableSources['NUGET_HTTP_CACHE_PATH'] = 'built-in default'
 }
 
+if ([string]::IsNullOrWhiteSpace($env:NUGET_PACKAGES)) {
+    $env:NUGET_PACKAGES = 'state/nuget/packages'
+    $variableSources['NUGET_PACKAGES'] = 'built-in default'
+}
+
+if ([string]::IsNullOrWhiteSpace($env:NUGET_PLUGINS_CACHE_PATH)) {
+    $env:NUGET_PLUGINS_CACHE_PATH = 'state/nuget/plugin-cache'
+    $variableSources['NUGET_PLUGINS_CACHE_PATH'] = 'built-in default'
+}
+
 $env:REPO_ROOT = $repoRoot
 $env:SYNCFACTORS_CONFIG_PATH_ABS = Resolve-RepoPath $env:SYNCFACTORS_CONFIG_PATH
 $env:SYNCFACTORS_MAPPING_CONFIG_PATH_ABS = Resolve-RepoPath $env:SYNCFACTORS_MAPPING_CONFIG_PATH
 $env:SYNCFACTORS_SQLITE_PATH_ABS = Resolve-RepoPath $env:SYNCFACTORS_SQLITE_PATH
 $env:NUGET_HTTP_CACHE_PATH = Resolve-RepoPath $env:NUGET_HTTP_CACHE_PATH
+$env:NUGET_PACKAGES = Resolve-RepoPath $env:NUGET_PACKAGES
+$env:NUGET_PLUGINS_CACHE_PATH = Resolve-RepoPath $env:NUGET_PLUGINS_CACHE_PATH
 $env:SYNCFACTORS_MOCK_CONFIG_PATH_ABS = Join-Path $repoRoot 'config/local.mock-successfactors.real-ad.sync-config.json'
 $env:SYNCFACTORS_REAL_CONFIG_PATH_ABS = Join-Path $repoRoot 'config/local.real-successfactors.real-ad.sync-config.json'
 
 [System.IO.Directory]::CreateDirectory($env:NUGET_HTTP_CACHE_PATH) | Out-Null
+[System.IO.Directory]::CreateDirectory($env:NUGET_PACKAGES) | Out-Null
+[System.IO.Directory]::CreateDirectory($env:NUGET_PLUGINS_CACHE_PATH) | Out-Null
 
 $profileConfigPath = Resolve-ProfileConfigPath `
     -Profile $env:SYNCFACTORS_RUN_PROFILE `
@@ -316,6 +330,8 @@ $derivedLaunchValues = [ordered]@{
     'SYNCFACTORS_MAPPING_CONFIG_PATH_ABS' = $env:SYNCFACTORS_MAPPING_CONFIG_PATH_ABS
     'SYNCFACTORS_SQLITE_PATH_ABS' = $env:SYNCFACTORS_SQLITE_PATH_ABS
     'NUGET_HTTP_CACHE_PATH_ABS' = $env:NUGET_HTTP_CACHE_PATH
+    'NUGET_PACKAGES_ABS' = $env:NUGET_PACKAGES
+    'NUGET_PLUGINS_CACHE_PATH_ABS' = $env:NUGET_PLUGINS_CACHE_PATH
     'SYNCFACTORS_MOCK_CONFIG_PATH_ABS' = $env:SYNCFACTORS_MOCK_CONFIG_PATH_ABS
     'SYNCFACTORS_REAL_CONFIG_PATH_ABS' = $env:SYNCFACTORS_REAL_CONFIG_PATH_ABS
     'SYNCFACTORS_PROFILE_CONFIG_PATH_ABS' = $env:SYNCFACTORS_PROFILE_CONFIG_PATH_ABS

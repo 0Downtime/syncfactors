@@ -15,8 +15,14 @@ function Initialize-DotnetEnvironment {
     )
 
     $nugetHttpCachePath = Join-Path $ProjectRoot 'state/nuget/http-cache'
+    $nugetPackagesPath = Join-Path $ProjectRoot 'state/nuget/packages'
+    $nugetPluginsCachePath = Join-Path $ProjectRoot 'state/nuget/plugin-cache'
     New-Item -ItemType Directory -Force -Path $nugetHttpCachePath | Out-Null
+    New-Item -ItemType Directory -Force -Path $nugetPackagesPath | Out-Null
+    New-Item -ItemType Directory -Force -Path $nugetPluginsCachePath | Out-Null
     $env:NUGET_HTTP_CACHE_PATH = $nugetHttpCachePath
+    $env:NUGET_PACKAGES = $nugetPackagesPath
+    $env:NUGET_PLUGINS_CACHE_PATH = $nugetPluginsCachePath
 }
 
 function Resolve-RequiredPath {

@@ -29,6 +29,8 @@ export SYNCFACTORS_API_PUBLIC_HOST="${SYNCFACTORS_API_PUBLIC_HOST:-127.0.0.1}"
 export SYNCFACTORS_API_PORT="${SYNCFACTORS_API_PORT:-5087}"
 export MOCK_SF_PORT="${MOCK_SF_PORT:-18080}"
 export NUGET_HTTP_CACHE_PATH="${NUGET_HTTP_CACHE_PATH:-state/nuget/http-cache}"
+export NUGET_PACKAGES="${NUGET_PACKAGES:-state/nuget/packages}"
+export NUGET_PLUGINS_CACHE_PATH="${NUGET_PLUGINS_CACHE_PATH:-state/nuget/plugin-cache}"
 export REPO_ROOT="${repo_root}"
 
 resolve_repo_path() {
@@ -50,10 +52,14 @@ export SYNCFACTORS_CONFIG_PATH_ABS="$(resolve_repo_path "${SYNCFACTORS_CONFIG_PA
 export SYNCFACTORS_MAPPING_CONFIG_PATH_ABS="$(resolve_repo_path "${SYNCFACTORS_MAPPING_CONFIG_PATH}")"
 export SYNCFACTORS_SQLITE_PATH_ABS="$(resolve_repo_path "${SYNCFACTORS_SQLITE_PATH}")"
 export NUGET_HTTP_CACHE_PATH="$(resolve_repo_path "${NUGET_HTTP_CACHE_PATH}")"
+export NUGET_PACKAGES="$(resolve_repo_path "${NUGET_PACKAGES}")"
+export NUGET_PLUGINS_CACHE_PATH="$(resolve_repo_path "${NUGET_PLUGINS_CACHE_PATH}")"
 export SYNCFACTORS_MOCK_CONFIG_PATH_ABS="${repo_root}/config/local.mock-successfactors.real-ad.sync-config.json"
 export SYNCFACTORS_REAL_CONFIG_PATH_ABS="${repo_root}/config/local.real-successfactors.real-ad.sync-config.json"
 
 mkdir -p "${NUGET_HTTP_CACHE_PATH}"
+mkdir -p "${NUGET_PACKAGES}"
+mkdir -p "${NUGET_PLUGINS_CACHE_PATH}"
 
 case "${SYNCFACTORS_RUN_PROFILE}" in
   mock)
