@@ -9,6 +9,7 @@ namespace SyncFactors.Infrastructure;
 
 public sealed class ActiveDirectoryCommandGateway(
     SyncFactorsConfigurationLoader configLoader,
+    IActiveDirectoryConnectionPool connectionPool,
     ILogger<ActiveDirectoryCommandGateway> logger) : IDirectoryCommandGateway
 {
     private static readonly TimeSpan LdapOperationTimeout = TimeSpan.FromSeconds(10);
@@ -30,11 +31,13 @@ public sealed class ActiveDirectoryCommandGateway(
             throw new InvalidOperationException("AD server was not configured.");
         }
 
+        ActiveDirectoryConnectionPool.ActiveDirectoryConnectionLease? lease = null;
         try
         {
             logger.LogInformation("Executing AD command. Action={Action} WorkerId={WorkerId} SamAccountName={SamAccountName}", command.Action, command.WorkerId, command.SamAccountName);
+            lease = connectionPool.Lease(config, logger, LdapOperationTimeout);
             var result = await ExecuteWithTimeoutAsync(
-                operation: () => ExecuteCommand(command, config, logger),
+                operation: () => ExecuteCommand(lease.Connection, command, config, logger),
                 operationName: $"command '{command.Action}'",
                 server: config.Server,
                 cancellationToken: cancellationToken);
@@ -43,19 +46,29 @@ public sealed class ActiveDirectoryCommandGateway(
         }
         catch (LdapException ex)
         {
+            lease?.Invalidate();
             logger.LogError(ex, "AD command failed with LDAP exception. Action={Action} WorkerId={WorkerId} Server={Server}", command.Action, command.WorkerId, config.Server);
             throw ExternalSystemExceptionFactory.CreateActiveDirectoryException($"command '{command.Action}'", config, ex);
         }
         catch (DirectoryOperationException ex)
         {
+            lease?.Invalidate();
             logger.LogError(ex, "AD command failed with directory operation exception. Action={Action} WorkerId={WorkerId} Server={Server}", command.Action, command.WorkerId, config.Server);
             throw ExternalSystemExceptionFactory.CreateActiveDirectoryException($"command '{command.Action}'", config, ex);
         }
+        catch
+        {
+            lease?.Invalidate();
+            throw;
+        }
+        finally
+        {
+            lease?.Dispose();
+        }
     }
 
-    private static DirectoryCommandResult ExecuteCommand(DirectoryMutationCommand command, ActiveDirectoryConfig config, ILogger logger)
+    private static DirectoryCommandResult ExecuteCommand(LdapConnection connection, DirectoryMutationCommand command, ActiveDirectoryConfig config, ILogger logger)
     {
-        using var connection = CreateConnection(config, logger);
         var operations = command.Operations.Count > 0
             ? command.Operations
             : [new SyncFactors.Contracts.DirectoryOperation(command.Action, command.TargetOu)];
@@ -556,9 +569,6 @@ public sealed class ActiveDirectoryCommandGateway(
 
         return -1;
     }
-
-    private static LdapConnection CreateConnection(ActiveDirectoryConfig config, ILogger logger)
-        => ActiveDirectoryConnectionFactory.CreateConnection(config, logger, LdapOperationTimeout);
 
     private static async Task<T> ExecuteWithTimeoutAsync<T>(
         Func<T> operation,
