@@ -73,8 +73,10 @@
 
                                 var showCopyButton = !entry.IsSecretOmitted &&
                                     (entry.DisplayValue.Length > 48 || displayLines.Length > 1);
-                                var entryClasses = displayLines.Length > 1 ? "config-entry config-entry-multiline" : "config-entry";
-                                var metaClasses = entry.IsSecretOmitted || showCopyButton
+                                var hasLongSourceLabel = entry.SourceLabel.Length > 24;
+                                var useStackedMeta = displayLines.Length > 1 || showCopyButton || entry.IsSecretOmitted || hasLongSourceLabel;
+                                var entryClasses = useStackedMeta ? "config-entry config-entry-stacked" : "config-entry";
+                                var metaClasses = useStackedMeta
                                     ? "config-entry-meta config-entry-meta-stack"
                                     : "config-entry-meta";
                                 <div>
@@ -118,7 +120,11 @@
                                             {
                                                 <span class="badge dim">Secret hidden</span>
                                             }
-                                            <span class="badge @Model.GetSourceBadgeClass(entry.SourceLabel)">@entry.SourceLabel</span>
+                                            <span
+                                                class="badge config-entry-source-badge @Model.GetSourceBadgeClass(entry.SourceLabel)"
+                                                title="@entry.SourceLabel">
+                                                @entry.SourceLabel
+                                            </span>
                                         </div>
                                     </dd>
                                 </div>
