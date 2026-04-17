@@ -16,6 +16,7 @@ public sealed class ActiveDirectoryGateway(
 {
     private static readonly TimeSpan LdapOperationTimeout = TimeSpan.FromSeconds(10);
     private static readonly Regex LdapAttributeNamePattern = new("^[A-Za-z][A-Za-z0-9-]*$", RegexOptions.Compiled);
+    private const int OuListingPageSize = 500;
 
     public async Task<DirectoryUserSnapshot?> FindByWorkerAsync(WorkerSnapshot worker, CancellationToken cancellationToken)
     {
@@ -453,6 +454,39 @@ public sealed class ActiveDirectoryGateway(
 
     private static IReadOnlyList<DirectoryUserSnapshot> QueryUsersInOu(LdapConnection connection, string ouDistinguishedName, ActiveDirectoryConfig config, ILogger logger)
     {
+        var request = CreateOuListingRequest(ouDistinguishedName, config);
+        var users = new List<DirectoryUserSnapshot>();
+        byte[]? pageCookie = null;
+
+        do
+        {
+            ApplyPageCookie(request, pageCookie);
+            var response = ExecuteSearch(connection, request, logger, "ou listing");
+            users.AddRange(
+                response.Entries.Cast<SearchResultEntry>()
+                    .Select(entry =>
+                    {
+                        var distinguishedName = GetAttribute(entry, "distinguishedName");
+                        var displayName = GetAttribute(entry, "displayName");
+                        var userAccountControl = GetAttribute(entry, "userAccountControl");
+
+                        return new DirectoryUserSnapshot(
+                            SamAccountName: GetAttribute(entry, "sAMAccountName"),
+                            DistinguishedName: distinguishedName,
+                            Enabled: ParseEnabled(userAccountControl),
+                            DisplayName: displayName,
+                            Attributes: BuildAttributes(entry, displayName, config.IdentityAttribute));
+                    }));
+
+            pageCookie = GetPageCookie(response);
+        }
+        while (pageCookie is { Length: > 0 });
+
+        return users.ToArray();
+    }
+
+    private static SearchRequest CreateOuListingRequest(string ouDistinguishedName, ActiveDirectoryConfig config)
+    {
         var request = new SearchRequest(
             ouDistinguishedName,
             "(&(objectCategory=person)(objectClass=user))",
@@ -492,23 +526,23 @@ public sealed class ActiveDirectoryGateway(
             "extensionAttribute13",
             "extensionAttribute14",
             "extensionAttribute15");
+        request.Controls.Add(new PageResultRequestControl(OuListingPageSize));
 
-        var response = ExecuteSearch(connection, request, logger, "ou listing");
-        return response.Entries.Cast<SearchResultEntry>()
-            .Select(entry =>
-            {
-                var distinguishedName = GetAttribute(entry, "distinguishedName");
-                var displayName = GetAttribute(entry, "displayName");
-                var userAccountControl = GetAttribute(entry, "userAccountControl");
+        return request;
+    }
 
-                return new DirectoryUserSnapshot(
-                    SamAccountName: GetAttribute(entry, "sAMAccountName"),
-                    DistinguishedName: distinguishedName,
-                    Enabled: ParseEnabled(userAccountControl),
-                    DisplayName: displayName,
-                    Attributes: BuildAttributes(entry, displayName, config.IdentityAttribute));
-            })
-            .ToArray();
+    private static void ApplyPageCookie(SearchRequest request, byte[]? pageCookie)
+    {
+        var pageControl = request.Controls.OfType<PageResultRequestControl>().Single();
+        pageControl.Cookie = pageCookie ?? [];
+    }
+
+    private static byte[]? GetPageCookie(SearchResponse response)
+    {
+        return response.Controls
+            .OfType<PageResultResponseControl>()
+            .SingleOrDefault()?
+            .Cookie;
     }
 
     private static string? ResolveDistinguishedName(LdapConnection connection, string workerId, ActiveDirectoryConfig config, ILogger logger)
