@@ -356,13 +356,13 @@ function Get-LocalConfigDriftRemediationMessage {
     )
 
     $lines = [System.Collections.Generic.List[string]]::new()
-    $lines.Add('Local config drift blocked startup because the launcher could not prompt in this headless session.')
+    $lines.Add('Local config/env drift blocked startup because the launcher could not prompt in this headless session.')
     $lines.Add('Drifted files:')
     foreach ($config in $DriftedConfigs) {
         $lines.Add("  - $(Get-RepoRelativePath -RepositoryRoot $RepositoryRoot -Path $config.LocalConfigPath)")
     }
 
-    $lines.Add('Fix the local config files with:')
+    $lines.Add('Fix the local config/env files with:')
     $lines.Add('  pwsh ./scripts/Update-LocalSyncFactorsConfig.ps1')
     $lines.Add('Then rerun the launcher with:')
     $lines.Add("  $RunCommand")
@@ -378,14 +378,14 @@ function Prompt-ForLocalConfigRewrite {
         [pscustomobject[]]$DriftedConfigs
     )
 
-    Write-Warning 'Local config files drifted from their tracked samples.'
+    Write-Warning 'Local config/env files drifted from their tracked samples.'
     foreach ($config in $DriftedConfigs) {
         $localRelativePath = Get-RepoRelativePath -RepositoryRoot $RepositoryRoot -Path $config.LocalConfigPath
         $sampleRelativePath = Get-RepoRelativePath -RepositoryRoot $RepositoryRoot -Path $config.SampleConfigPath
         Write-Host "  $localRelativePath <- $sampleRelativePath" -ForegroundColor Yellow
     }
 
-    $response = Read-Host 'Rewrite the drifted local config files to match the sample format now? [y/N]'
+    $response = Read-Host 'Rewrite the drifted local config/env files to match the sample format now? [y/N]'
     return $response -match '^(y|yes)$'
 }
 
@@ -397,7 +397,10 @@ function Ensure-TrackedLocalConfigFormats {
         [string]$RunCommand
     )
 
-    $driftedConfigs = @(Get-TrackedLocalConfigDrift -RepositoryRoot $RepositoryRoot)
+    $driftedConfigs = @(
+        Get-TrackedLocalConfigDrift -RepositoryRoot $RepositoryRoot
+        Get-TrackedWorktreeEnvDrift -RepositoryRoot $RepositoryRoot
+    )
     if ($driftedConfigs.Length -eq 0) {
         return
     }
@@ -412,11 +415,14 @@ function Ensure-TrackedLocalConfigFormats {
     }
 
     if (-not (Prompt-ForLocalConfigRewrite -RepositoryRoot $RepositoryRoot -DriftedConfigs $driftedConfigs)) {
-        Write-Warning 'Continuing without rewriting the local config files. Run pwsh ./scripts/Update-LocalSyncFactorsConfig.ps1 when you want to realign them with the tracked samples.'
+        Write-Warning 'Continuing without rewriting the local config/env files. Run pwsh ./scripts/Update-LocalSyncFactorsConfig.ps1 when you want to realign them with the tracked samples.'
         return
     }
 
-    $results = @(Sync-TrackedLocalConfigFormats -RepositoryRoot $RepositoryRoot)
+    $results = @(
+        Sync-TrackedLocalConfigFormats -RepositoryRoot $RepositoryRoot
+        Sync-TrackedWorktreeEnvFormats -RepositoryRoot $RepositoryRoot
+    )
     foreach ($result in $results) {
         if ($result.BackupPath) {
             Write-Host "Backed up $(Split-Path -Leaf $result.LocalConfigPath) -> $(Split-Path -Leaf $result.BackupPath)" -ForegroundColor DarkGray

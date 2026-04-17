@@ -37,6 +37,210 @@ function Read-WorktreeEnvFile {
     return $values
 }
 
+function Test-WorktreeEnvVariableName {
+    param(
+        [Parameter(Mandatory)]
+        [string]$Name
+    )
+
+    return $Name -match '^[A-Za-z_][A-Za-z0-9_]*$'
+}
+
+function Get-TrackedWorktreeEnvPair {
+    param(
+        [Parameter(Mandatory)]
+        [string]$RepositoryRoot
+    )
+
+    return [pscustomobject]@{
+        SampleConfigPath = Join-Path $RepositoryRoot '.env.worktree.example'
+        LocalConfigPath = Join-Path $RepositoryRoot '.env.worktree'
+    }
+}
+
+function Read-WorktreeEnvTemplateAssignment {
+    param(
+        [Parameter(Mandatory)]
+        [string]$Line
+    )
+
+    $trimmed = $Line.Trim()
+    if ([string]::IsNullOrWhiteSpace($trimmed)) {
+        return $null
+    }
+
+    $isCommented = $false
+    $candidate = $trimmed
+    if ($candidate.StartsWith('#', [StringComparison]::Ordinal)) {
+        $isCommented = $true
+        $candidate = $candidate.Substring(1).TrimStart()
+    }
+
+    $separatorIndex = $candidate.IndexOf('=')
+    if ($separatorIndex -lt 0) {
+        return $null
+    }
+
+    $name = $candidate.Substring(0, $separatorIndex).Trim()
+    if (-not (Test-WorktreeEnvVariableName -Name $name)) {
+        return $null
+    }
+
+    return [pscustomobject]@{
+        Name = $name
+        Value = $candidate.Substring($separatorIndex + 1)
+        IsCommented = $isCommented
+    }
+}
+
+function ConvertTo-NormalizedWorktreeEnvContent {
+    param(
+        [Parameter(Mandatory)]
+        [string]$SamplePath,
+        [Parameter(Mandatory)]
+        [System.Collections.IDictionary]$LocalValues
+    )
+
+    if (-not (Test-Path $SamplePath)) {
+        throw "Worktree env sample file not found: $SamplePath"
+    }
+
+    $normalizedLines = [System.Collections.Generic.List[string]]::new()
+    foreach ($line in Get-Content -Path $SamplePath) {
+        $assignment = Read-WorktreeEnvTemplateAssignment -Line $line
+        if ($null -eq $assignment) {
+            $normalizedLines.Add($line)
+            continue
+        }
+
+        if ($LocalValues.Contains($assignment.Name)) {
+            $normalizedLines.Add("$($assignment.Name)=$([string]$LocalValues[$assignment.Name])")
+            continue
+        }
+
+        $normalizedLines.Add($line)
+    }
+
+    if ($normalizedLines.Count -eq 0) {
+        return ''
+    }
+
+    return ($normalizedLines -join [Environment]::NewLine)
+}
+
+function Get-NormalizedWorktreeEnvContent {
+    param(
+        [Parameter(Mandatory)]
+        [string]$SampleConfigPath,
+        [Parameter(Mandatory)]
+        [string]$LocalConfigPath
+    )
+
+    $localValues = Read-WorktreeEnvFile -Path $LocalConfigPath
+    return ConvertTo-NormalizedWorktreeEnvContent -SamplePath $SampleConfigPath -LocalValues $localValues
+}
+
+function Write-WorktreeEnvFile {
+    param(
+        [Parameter(Mandatory)]
+        [string]$Path,
+        [Parameter(Mandatory)]
+        [AllowEmptyString()]
+        [string]$Content
+    )
+
+    $directory = Split-Path -Parent $Path
+    if (-not [string]::IsNullOrWhiteSpace($directory)) {
+        [System.IO.Directory]::CreateDirectory($directory) | Out-Null
+    }
+
+    $encoding = [System.Text.UTF8Encoding]::new($false)
+    $text = if ([string]::IsNullOrEmpty($Content)) { '' } else { $Content + [Environment]::NewLine }
+    [System.IO.File]::WriteAllText($Path, $text, $encoding)
+}
+
+function Test-WorktreeEnvDrift {
+    param(
+        [Parameter(Mandatory)]
+        [string]$SampleConfigPath,
+        [Parameter(Mandatory)]
+        [string]$LocalConfigPath
+    )
+
+    $normalizedContent = Get-NormalizedWorktreeEnvContent -SampleConfigPath $SampleConfigPath -LocalConfigPath $LocalConfigPath
+    $currentContent = if (Test-Path $LocalConfigPath) { (Get-Content -Path $LocalConfigPath -Raw).TrimEnd("`r", "`n") } else { $null }
+    $drifted = -not (Test-Path $LocalConfigPath) -or -not [string]::Equals($currentContent, $normalizedContent, [StringComparison]::Ordinal)
+
+    return [pscustomobject]@{
+        SampleConfigPath = $SampleConfigPath
+        LocalConfigPath = $LocalConfigPath
+        Drifted = $drifted
+        CurrentContent = $currentContent
+        NormalizedContent = $normalizedContent
+    }
+}
+
+function Get-TrackedWorktreeEnvDrift {
+    param(
+        [Parameter(Mandatory)]
+        [string]$RepositoryRoot
+    )
+
+    $pair = Get-TrackedWorktreeEnvPair -RepositoryRoot $RepositoryRoot
+    $status = Test-WorktreeEnvDrift -SampleConfigPath $pair.SampleConfigPath -LocalConfigPath $pair.LocalConfigPath
+    if ($status.Drifted) {
+        return @($status)
+    }
+
+    return @()
+}
+
+function Sync-WorktreeEnvFormat {
+    param(
+        [Parameter(Mandatory)]
+        [string]$SampleConfigPath,
+        [Parameter(Mandatory)]
+        [string]$LocalConfigPath,
+        [switch]$NoBackup
+    )
+
+    $status = Test-WorktreeEnvDrift -SampleConfigPath $SampleConfigPath -LocalConfigPath $LocalConfigPath
+    $backupPath = $null
+
+    if ($status.Drifted) {
+        if (-not $NoBackup -and (Test-Path $LocalConfigPath)) {
+            $timestamp = Get-Date -Format 'yyyyMMddHHmmss'
+            $backupPath = "$LocalConfigPath.$timestamp.bak"
+            Copy-Item -Path $LocalConfigPath -Destination $backupPath
+        }
+
+        Write-WorktreeEnvFile -Path $LocalConfigPath -Content $status.NormalizedContent
+    }
+
+    return [pscustomobject]@{
+        SampleConfigPath = $SampleConfigPath
+        LocalConfigPath = $LocalConfigPath
+        Drifted = $status.Drifted
+        BackupPath = $backupPath
+    }
+}
+
+function Sync-TrackedWorktreeEnvFormats {
+    param(
+        [Parameter(Mandatory)]
+        [string]$RepositoryRoot,
+        [switch]$NoBackup
+    )
+
+    $pair = Get-TrackedWorktreeEnvPair -RepositoryRoot $RepositoryRoot
+    return @(
+        Sync-WorktreeEnvFormat `
+            -SampleConfigPath $pair.SampleConfigPath `
+            -LocalConfigPath $pair.LocalConfigPath `
+            -NoBackup:$NoBackup
+    )
+}
+
 function Set-WorktreeEnvValue {
     param(
         [Parameter(Mandatory)]
@@ -87,12 +291,22 @@ function Set-WorktreeEnvValue {
         $updatedLines.Add($updatedLine)
     }
 
-    $content = ($updatedLines -join [Environment]::NewLine)
-    if ($updatedLines.Count -gt 0) {
-        $content += [Environment]::NewLine
+    $content = if ($updatedLines.Count -gt 0) {
+        $updatedLines -join [Environment]::NewLine
+    }
+    else {
+        ''
     }
 
-    [System.IO.File]::WriteAllText($Path, $content)
+    $samplePath = Join-Path (Split-Path -Parent $Path) '.env.worktree.example'
+    if ([string]::Equals((Split-Path -Leaf $Path), '.env.worktree', [StringComparison]::OrdinalIgnoreCase) -and
+        (Test-Path $samplePath)) {
+        $values = Read-WorktreeEnvFile -Path $Path
+        $values[$VariableName] = $Value
+        $content = ConvertTo-NormalizedWorktreeEnvContent -SamplePath $samplePath -LocalValues $values
+    }
+
+    Write-WorktreeEnvFile -Path $Path -Content $content
 }
 
 function Get-WorktreeEnvFileValueState {
