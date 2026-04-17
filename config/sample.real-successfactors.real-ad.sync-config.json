@@ -143,9 +143,6 @@
       "requireSigning": true,
       "trustedCertificateThumbprints": []
     },
-    "identityPolicy": {
-      "resolveCreateConflictingUpnAndMail": true
-    },
     "defaultPassword": "",
     "ouRoutingRules": [
       {
