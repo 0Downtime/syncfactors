@@ -4,18 +4,8 @@
     ViewData["Title"] = "Dashboard";
 }
 
-<section class="hero">
-    <div class="hero-main">
-        <div>
-            <p class="eyebrow">Current Runtime</p>
-            <h1>Operator Dashboard</h1>
-            <p class="lede">This page reads runtime status and recent runs from the configured operational store for the .NET rewrite.</p>
-        </div>
-        <div class="hero-actions">
-            <a class="link-button" asp-page="/Sync">Manage sync</a>
-        </div>
-    </div>
-    <aside class="hero-run-health" aria-label="Run health summary">
+<section class="hero-run-health-panel" aria-label="Run health summary">
+    <div class="hero-run-health">
         <div class="hero-run-health-header">
             <p class="eyebrow">Run Health</p>
             <div class="live-status-stack">
@@ -58,7 +48,7 @@
                 }
             </section>
         </div>
-    </aside>
+    </div>
 </section>
 
 @if (!string.IsNullOrWhiteSpace(Model.ErrorMessage))

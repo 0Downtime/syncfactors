@@ -702,6 +702,10 @@ a:focus-visible {
     color-mix(in srgb, var(--panel) 82%, var(--panel-alt) 18%);
 }
 
+.hero-run-health-panel {
+  margin-bottom: 18px;
+}
+
 .hero-run-health-header {
   display: flex;
   justify-content: space-between;
