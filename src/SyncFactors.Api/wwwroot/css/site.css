@@ -763,7 +763,9 @@ a:focus-visible {
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
-  margin-top: 14px;
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
 }
 
 .connection-toolbar-actions {
