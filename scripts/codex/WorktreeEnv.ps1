@@ -58,6 +58,106 @@ function Get-TrackedWorktreeEnvPair {
     }
 }
 
+function Get-WorktreeEnvLauncherFallbackValues {
+    $values = [ordered]@{
+        'DOTNET_ENVIRONMENT' = 'Development'
+        'ASPNETCORE_ENVIRONMENT' = 'Development'
+        'SYNCFACTORS_RUN_PROFILE' = 'mock'
+        'SYNCFACTORS_CONFIG_PATH' = ''
+        'SYNCFACTORS_MAPPING_CONFIG_PATH' = './config/local.syncfactors.mapping-config.json'
+        'SYNCFACTORS_SQLITE_PATH' = './state/runtime/syncfactors.db'
+        'SYNCFACTORS_API_BIND_HOST' = '127.0.0.1'
+        'SYNCFACTORS_API_PUBLIC_HOST' = '127.0.0.1'
+        'SYNCFACTORS_API_PORT' = '5087'
+        'MOCK_SF_PORT' = '18080'
+        'NUGET_HTTP_CACHE_PATH' = './state/nuget/http-cache'
+        'NUGET_PACKAGES' = './state/nuget/packages'
+        'NUGET_PLUGINS_CACHE_PATH' = './state/nuget/plugin-cache'
+    }
+
+    return $values
+}
+
+function Get-RequiredWorktreeEnvTemplateValues {
+    $values = [ordered]@{}
+    foreach ($entry in (Get-WorktreeEnvLauncherFallbackValues).GetEnumerator()) {
+        $values[[string]$entry.Key] = [string]$entry.Value
+    }
+
+    $values['SYNCFACTORS_TLS_CERT_PATH'] = ''
+    $values['SYNCFACTORS_TLS_CERT_PASSWORD'] = ''
+    $values['MOCK_SF_SYNTHETIC_POPULATION_ENABLED'] = 'true'
+    $values['MOCK_SF_TARGET_WORKER_COUNT'] = '1000'
+    $values['SYNCFACTORS_KEYCHAIN_SERVICE'] = 'syncfactors'
+    $values['SF_AD_SYNC_SF_USERNAME'] = ''
+    $values['SF_AD_SYNC_SF_PASSWORD'] = ''
+    $values['SF_AD_SYNC_SF_CLIENT_ID'] = 'mock-client-id'
+    $values['SF_AD_SYNC_SF_CLIENT_SECRET'] = 'mock-client-secret'
+    $values['SF_AD_SYNC_AD_SERVER'] = ''
+    $values['SF_AD_SYNC_AD_USERNAME'] = ''
+    $values['SF_AD_SYNC_AD_BIND_PASSWORD'] = ''
+    $values['SF_AD_SYNC_AD_DEFAULT_PASSWORD'] = ''
+
+    return $values
+}
+
+function Get-TrackedWorktreeEnvTemplateIssues {
+    param(
+        [Parameter(Mandatory)]
+        [string]$RepositoryRoot
+    )
+
+    $pair = Get-TrackedWorktreeEnvPair -RepositoryRoot $RepositoryRoot
+    if (-not (Test-Path $pair.SampleConfigPath)) {
+        throw "Worktree env sample file not found: $($pair.SampleConfigPath)"
+    }
+
+    $sampleValues = Read-WorktreeEnvFile -Path $pair.SampleConfigPath
+    $issues = [System.Collections.Generic.List[string]]::new()
+    foreach ($entry in (Get-RequiredWorktreeEnvTemplateValues).GetEnumerator()) {
+        $name = [string]$entry.Key
+        $expectedValue = [string]$entry.Value
+        if (-not $sampleValues.Contains($name)) {
+            $displayValue = if ([string]::IsNullOrEmpty($expectedValue)) { '<empty>' } else { $expectedValue }
+            $issues.Add("missing $name=$displayValue")
+            continue
+        }
+
+        $actualValue = [string]$sampleValues[$name]
+        if (-not [string]::Equals($actualValue, $expectedValue, [StringComparison]::Ordinal)) {
+            $displayExpectedValue = if ([string]::IsNullOrEmpty($expectedValue)) { '<empty>' } else { $expectedValue }
+            $displayActualValue = if ([string]::IsNullOrEmpty($actualValue)) { '<empty>' } else { $actualValue }
+            $issues.Add("$name expected '$displayExpectedValue' but found '$displayActualValue'")
+        }
+    }
+
+    return $issues.ToArray()
+}
+
+function Assert-TrackedWorktreeEnvTemplate {
+    param(
+        [Parameter(Mandatory)]
+        [string]$RepositoryRoot
+    )
+
+    $issues = @(Get-TrackedWorktreeEnvTemplateIssues -RepositoryRoot $RepositoryRoot)
+    if ($issues.Count -eq 0) {
+        return
+    }
+
+    $pair = Get-TrackedWorktreeEnvPair -RepositoryRoot $RepositoryRoot
+    $sampleRelativePath = [System.IO.Path]::GetRelativePath($RepositoryRoot, $pair.SampleConfigPath)
+    $lines = [System.Collections.Generic.List[string]]::new()
+    $lines.Add("Tracked worktree env template '$sampleRelativePath' is missing required launcher defaults or sample values.")
+    $lines.Add('Update the checked-in template so new local worktrees inherit the full expected config surface.')
+    $lines.Add('Problems:')
+    foreach ($issue in $issues) {
+        $lines.Add("  - $issue")
+    }
+
+    throw ($lines -join [Environment]::NewLine)
+}
+
 function Read-WorktreeEnvTemplateAssignment {
     param(
         [Parameter(Mandatory)]

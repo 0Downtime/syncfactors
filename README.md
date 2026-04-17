@@ -498,7 +498,7 @@ Useful variants:
 - `pwsh ./scripts/codex/run.ps1 -Service ui -Profile mock`
 - `pwsh ./scripts/codex/run.ps1 -Service api -SkipBuild`
 
-Before `run.ps1` launches services, it checks the tracked local JSON config files and `.env.worktree` against their checked-in samples. In an interactive terminal it shows the drifted files once and offers to rewrite them in place while preserving current local values for matching fields. In a headless session it fails fast with a remediation message instead of guessing.
+Before `run.ps1` launches services, it checks the tracked local JSON config files and `.env.worktree` against their checked-in samples. It also validates that `.env.worktree.example` still contains the launcher's required default keys so new worktrees inherit the full expected env surface. In an interactive terminal it shows the drifted files once and offers to rewrite them in place while preserving current local values for matching fields. In a headless session it fails fast with a remediation message instead of guessing.
 
 If a headless run fails on config/env drift, repair the local files first:
 

@@ -19,6 +19,8 @@ if (-not (Test-Path $envFile) -and -not (Test-Path $envExampleFile)) {
     throw "Missing both $envFile and $envExampleFile. At least one worktree env file is required."
 }
 
+Assert-TrackedWorktreeEnvTemplate -RepositoryRoot $repoRoot
+
 function Resolve-RepoPath {
     param(
         [AllowEmptyString()]
@@ -222,59 +224,23 @@ foreach ($name in $variableNames) {
     }
 }
 
-if ([string]::IsNullOrWhiteSpace($env:SYNCFACTORS_RUN_PROFILE)) {
-    $env:SYNCFACTORS_RUN_PROFILE = 'mock'
-    $variableSources['SYNCFACTORS_RUN_PROFILE'] = 'built-in default'
-}
+foreach ($entry in (Get-WorktreeEnvLauncherFallbackValues).GetEnumerator()) {
+    $name = [string]$entry.Key
+    $defaultValue = [string]$entry.Value
+    $currentValue = [Environment]::GetEnvironmentVariable($name)
+    $shouldApplyDefault = if ($name -eq 'SYNCFACTORS_CONFIG_PATH') {
+        $null -eq $currentValue
+    }
+    else {
+        [string]::IsNullOrWhiteSpace($currentValue)
+    }
 
-if ($null -eq $env:SYNCFACTORS_CONFIG_PATH) {
-    $env:SYNCFACTORS_CONFIG_PATH = ''
-    $variableSources['SYNCFACTORS_CONFIG_PATH'] = 'built-in default'
-}
+    if (-not $shouldApplyDefault) {
+        continue
+    }
 
-if ([string]::IsNullOrWhiteSpace($env:SYNCFACTORS_MAPPING_CONFIG_PATH)) {
-    $env:SYNCFACTORS_MAPPING_CONFIG_PATH = './config/local.syncfactors.mapping-config.json'
-    $variableSources['SYNCFACTORS_MAPPING_CONFIG_PATH'] = 'built-in default'
-}
-
-if ([string]::IsNullOrWhiteSpace($env:SYNCFACTORS_SQLITE_PATH)) {
-    $env:SYNCFACTORS_SQLITE_PATH = 'state/runtime/syncfactors.db'
-    $variableSources['SYNCFACTORS_SQLITE_PATH'] = 'built-in default'
-}
-
-if ([string]::IsNullOrWhiteSpace($env:SYNCFACTORS_API_BIND_HOST)) {
-    $env:SYNCFACTORS_API_BIND_HOST = '127.0.0.1'
-    $variableSources['SYNCFACTORS_API_BIND_HOST'] = 'built-in default'
-}
-
-if ([string]::IsNullOrWhiteSpace($env:SYNCFACTORS_API_PUBLIC_HOST)) {
-    $env:SYNCFACTORS_API_PUBLIC_HOST = '127.0.0.1'
-    $variableSources['SYNCFACTORS_API_PUBLIC_HOST'] = 'built-in default'
-}
-
-if ([string]::IsNullOrWhiteSpace($env:SYNCFACTORS_API_PORT)) {
-    $env:SYNCFACTORS_API_PORT = '5087'
-    $variableSources['SYNCFACTORS_API_PORT'] = 'built-in default'
-}
-
-if ([string]::IsNullOrWhiteSpace($env:MOCK_SF_PORT)) {
-    $env:MOCK_SF_PORT = '18080'
-    $variableSources['MOCK_SF_PORT'] = 'built-in default'
-}
-
-if ([string]::IsNullOrWhiteSpace($env:NUGET_HTTP_CACHE_PATH)) {
-    $env:NUGET_HTTP_CACHE_PATH = 'state/nuget/http-cache'
-    $variableSources['NUGET_HTTP_CACHE_PATH'] = 'built-in default'
-}
-
-if ([string]::IsNullOrWhiteSpace($env:NUGET_PACKAGES)) {
-    $env:NUGET_PACKAGES = 'state/nuget/packages'
-    $variableSources['NUGET_PACKAGES'] = 'built-in default'
-}
-
-if ([string]::IsNullOrWhiteSpace($env:NUGET_PLUGINS_CACHE_PATH)) {
-    $env:NUGET_PLUGINS_CACHE_PATH = 'state/nuget/plugin-cache'
-    $variableSources['NUGET_PLUGINS_CACHE_PATH'] = 'built-in default'
+    Set-Item -Path "env:$name" -Value $defaultValue
+    $variableSources[$name] = 'built-in default'
 }
 
 $env:REPO_ROOT = $repoRoot

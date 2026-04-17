@@ -108,6 +108,7 @@ Require-Command -Name 'pwsh' -InstallHint 'Install PowerShell 7 before creating 
 Set-Location $repoRoot
 
 Write-Host 'Preparing SyncFactors worktree defaults (mock SF + real AD)'
+Assert-TrackedWorktreeEnvTemplate -RepositoryRoot $repoRoot
 
 New-Item -ItemType Directory -Force -Path `
     (Join-Path $repoRoot 'state/runtime'), `
