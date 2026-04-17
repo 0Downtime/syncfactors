@@ -7,6 +7,8 @@ $ErrorActionPreference = 'Stop'
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $repoRoot = (Resolve-Path (Join-Path $scriptDir '../..')).ProviderPath
 
+. (Join-Path $scriptDir 'WorktreeEnv.ps1')
+
 function Require-Command {
     param(
         [Parameter(Mandatory)]
@@ -121,5 +123,6 @@ Copy-IfMissing -SourcePath (Join-Path $repoRoot 'config/sample.empjob-confirmed.
 Copy-IfMissing -SourcePath (Join-Path $repoRoot 'config/sample.empjob-confirmed.mapping-config.json') -DestinationPath (Join-Path $repoRoot 'config/local.empjob-confirmed.mapping-config.json')
 Copy-IfMissing -SourcePath (Join-Path $repoRoot 'config/sample.codex-run.json') -DestinationPath (Join-Path $repoRoot 'config/local.codex-run.json')
 Copy-IfMissing -SourcePath (Join-Path $repoRoot '.env.worktree.example') -DestinationPath (Join-Path $repoRoot '.env.worktree')
+Sync-TrackedWorktreeEnvFormats -RepositoryRoot $repoRoot -NoBackup | Out-Null
 
 Write-Host 'Worktree bootstrap complete. Start Mock SF, the .NET API, and the worker from scripts/codex.'

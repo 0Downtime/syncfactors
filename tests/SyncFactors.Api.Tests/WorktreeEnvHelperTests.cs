@@ -131,6 +131,63 @@ public sealed class WorktreeEnvHelperTests
         }
     }
 
+    [Fact]
+    public async Task SyncWorktreeEnvFormat_RewritesFileToSampleLayoutAndKeepsLocalValues()
+    {
+        var tempDirectory = Directory.CreateTempSubdirectory("syncfactors-worktree-env");
+        try
+        {
+            var samplePath = Path.Combine(tempDirectory.FullName, ".env.worktree.example");
+            var envFilePath = Path.Combine(tempDirectory.FullName, ".env.worktree");
+
+            await File.WriteAllTextAsync(samplePath,
+                """
+                SYNCFACTORS_RUN_PROFILE=mock
+                # Optional comment
+                # SYNCFACTORS__AUTH__MODE=oidc
+                # SYNCFACTORS__AUTH__OIDC__CLIENTID=
+                SF_AD_SYNC_SF_USERNAME=
+                SF_AD_SYNC_SF_PASSWORD=
+                """);
+
+            await File.WriteAllTextAsync(envFilePath,
+                """
+                SF_AD_SYNC_SF_PASSWORD=secret-value
+                UNUSED_SETTING=remove-me
+                SYNCFACTORS__AUTH__MODE=hybrid
+                SYNCFACTORS_RUN_PROFILE=real
+                SYNCFACTORS__AUTH__OIDC__CLIENTID=client-id
+                """);
+
+            var result = await InvokePowerShellCommandAsync(
+                GetRepositoryRoot(),
+                string.Join(
+                    Environment.NewLine,
+                    $". '{GetRepositoryFile(Path.Combine("scripts", "codex", "WorktreeEnv.ps1")).Replace("'", "''")}'",
+                    $"Sync-WorktreeEnvFormat -SampleConfigPath '{samplePath.Replace("'", "''")}' -LocalConfigPath '{envFilePath.Replace("'", "''")}' -NoBackup | Out-Null"));
+
+            Assert.Equal(0, result.ExitCode);
+
+            var content = await File.ReadAllTextAsync(envFilePath);
+            Assert.Equal(
+                """
+                SYNCFACTORS_RUN_PROFILE=real
+                # Optional comment
+                SYNCFACTORS__AUTH__MODE=hybrid
+                SYNCFACTORS__AUTH__OIDC__CLIENTID=client-id
+                SF_AD_SYNC_SF_USERNAME=
+                SF_AD_SYNC_SF_PASSWORD=secret-value
+
+                """.ReplaceLineEndings(),
+                content.ReplaceLineEndings());
+            Assert.DoesNotContain("UNUSED_SETTING=remove-me", content, StringComparison.Ordinal);
+        }
+        finally
+        {
+            tempDirectory.Delete(recursive: true);
+        }
+    }
+
     private static async Task InvokeWorktreeEnvHelperAsync(string action, string envFilePath, string variableName, string? value = null)
     {
         using var process = StartWorktreeEnvHelperProcess(action, envFilePath, variableName, value);
@@ -189,6 +246,31 @@ public sealed class WorktreeEnvHelperTests
         Assert.NotNull(process);
         return process!;
     }
+
+    private static async Task<(int ExitCode, string StandardOutput, string StandardError)> InvokePowerShellCommandAsync(string workingDirectory, string command)
+    {
+        var startInfo = new ProcessStartInfo("pwsh")
+        {
+            WorkingDirectory = workingDirectory,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true
+        };
+
+        startInfo.ArgumentList.Add("-NoProfile");
+        startInfo.ArgumentList.Add("-Command");
+        startInfo.ArgumentList.Add(command);
+
+        using var process = Process.Start(startInfo);
+        Assert.NotNull(process);
+
+        var standardOutput = await process!.StandardOutput.ReadToEndAsync();
+        var standardError = await process.StandardError.ReadToEndAsync();
+        await process.WaitForExitAsync();
+        return (process.ExitCode, standardOutput, standardError);
+    }
+
+    private static string GetRepositoryFile(string relativePath) =>
+        Path.Combine(GetRepositoryRoot(), relativePath);
 
     private static string GetRepositoryRoot() =>
         Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", ".."));

@@ -14,6 +14,7 @@ $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $repoRoot = (Resolve-Path (Join-Path $scriptDir '..')).ProviderPath
 
 . (Join-Path $scriptDir 'Sync-LocalConfigFormat.ps1')
+. (Join-Path $scriptDir 'codex/WorktreeEnv.ps1')
 
 function Resolve-ConfigPath {
     param(
@@ -46,6 +47,18 @@ function Write-SyncResult {
     Write-Host "$(Split-Path -Leaf $Result.LocalConfigPath) already matches $(Split-Path -Leaf $Result.SampleConfigPath)"
 }
 
+function Test-IsTrackedWorktreeEnvPair {
+    param(
+        [Parameter(Mandatory)]
+        [string]$LocalConfigPath,
+        [Parameter(Mandatory)]
+        [string]$SampleConfigPath
+    )
+
+    return [string]::Equals((Split-Path -Leaf $LocalConfigPath), '.env.worktree', [StringComparison]::OrdinalIgnoreCase) -and
+        [string]::Equals((Split-Path -Leaf $SampleConfigPath), '.env.worktree.example', [StringComparison]::OrdinalIgnoreCase)
+}
+
 $trackedPairs = @(Get-TrackedLocalConfigPairs -RepositoryRoot $repoRoot)
 $profilePairs = @(
     $trackedPairs |
@@ -72,6 +85,10 @@ if ($shouldSyncTrackedConfigs) {
             -NoBackup:$NoBackup)
     }
 
+    foreach ($result in Sync-TrackedWorktreeEnvFormats -RepositoryRoot $repoRoot -NoBackup:$NoBackup) {
+        Write-SyncResult -Result $result
+    }
+
     return
 }
 
@@ -81,6 +98,15 @@ if ([string]::IsNullOrWhiteSpace($LocalPath) -or [string]::IsNullOrWhiteSpace($S
 
 $resolvedLocalPath = Resolve-ConfigPath -Path $LocalPath
 $resolvedSamplePath = Resolve-ConfigPath -Path $SamplePath
+
+if (Test-IsTrackedWorktreeEnvPair -LocalConfigPath $resolvedLocalPath -SampleConfigPath $resolvedSamplePath) {
+    Write-SyncResult -Result (Sync-WorktreeEnvFormat `
+        -SampleConfigPath $resolvedSamplePath `
+        -LocalConfigPath $resolvedLocalPath `
+        -NoBackup:$NoBackup)
+    return
+}
+
 Write-SyncResult -Result (Sync-ConfigFormat `
     -SampleConfigPath $resolvedSamplePath `
     -LocalConfigPath $resolvedLocalPath `

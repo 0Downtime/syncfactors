@@ -318,7 +318,14 @@ public sealed class LocalConfigFormatScriptTests
         {
             var configRoot = Path.Combine(tempRepo.FullName, "config");
             var localCodexRunPath = Path.Combine(configRoot, "local.codex-run.json");
+            var envFilePath = Path.Combine(tempRepo.FullName, ".env.worktree");
             await File.WriteAllTextAsync(localCodexRunPath, "{}");
+            await File.WriteAllTextAsync(envFilePath,
+                """
+                SF_AD_SYNC_SF_PASSWORD=secret-value
+                UNUSED_SETTING=remove-me
+                SYNCFACTORS_RUN_PROFILE=real
+                """);
             File.Delete(Path.Combine(configRoot, "local.empjob-confirmed.mapping-config.json"));
 
             var result = await InvokePowerShellFileAsync(
@@ -330,6 +337,12 @@ public sealed class LocalConfigFormatScriptTests
             using var codexRunDocument = JsonDocument.Parse(await File.ReadAllTextAsync(localCodexRunPath));
             Assert.True(codexRunDocument.RootElement.GetProperty("git").GetProperty("pullBeforeStackStart").GetBoolean());
             Assert.True(File.Exists(Path.Combine(configRoot, "local.empjob-confirmed.mapping-config.json")));
+
+            var envContent = await File.ReadAllTextAsync(envFilePath);
+            Assert.Contains("SYNCFACTORS_RUN_PROFILE=real", envContent);
+            Assert.Contains("SF_AD_SYNC_SF_PASSWORD=secret-value", envContent);
+            Assert.DoesNotContain("UNUSED_SETTING=remove-me", envContent, StringComparison.Ordinal);
+            Assert.DoesNotContain("SF_AD_SYNC_SF_PASSWORD=secret-value" + Environment.NewLine + "SYNCFACTORS_RUN_PROFILE=real", envContent, StringComparison.Ordinal);
         }
         finally
         {
@@ -362,7 +375,7 @@ public sealed class LocalConfigFormatScriptTests
 
             Assert.NotEqual(0, result.ExitCode);
             var combinedOutput = result.StandardOutput + result.StandardError;
-            Assert.Contains("Local config drift blocked startup because the launcher could not prompt", combinedOutput);
+            Assert.Contains("Local config/env drift blocked startup", combinedOutput);
             Assert.Contains("headless session", combinedOutput);
             Assert.Contains("Update-LocalSyncFactorsConfig.ps1", combinedOutput);
             Assert.Contains("./scripts/codex/run.ps1", combinedOutput);
@@ -370,6 +383,38 @@ public sealed class LocalConfigFormatScriptTests
             Assert.Contains("-Profile mock", combinedOutput);
             Assert.Contains("-SkipBuild", combinedOutput);
             Assert.Contains("config/local.codex-run.json", combinedOutput);
+        }
+        finally
+        {
+            tempRepo.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task RunScript_HeadlessFailure_ExplainsHowToFixWorktreeEnvDrift()
+    {
+        var tempRepo = await CreateMinimalScriptRepoAsync();
+        try
+        {
+            await File.WriteAllTextAsync(
+                Path.Combine(tempRepo.FullName, ".env.worktree"),
+                """
+                UNUSED_SETTING=remove-me
+                SYNCFACTORS_RUN_PROFILE=mock
+                """);
+
+            var result = await InvokePowerShellFileAsync(
+                workingDirectory: tempRepo.FullName,
+                filePath: Path.Combine(tempRepo.FullName, "scripts", "codex", "run.ps1"),
+                "-Service", "mock",
+                "-SkipBuild");
+
+            Assert.NotEqual(0, result.ExitCode);
+            var combinedOutput = result.StandardOutput + result.StandardError;
+            Assert.Contains("Local config/env drift blocked startup", combinedOutput);
+            Assert.Contains("headless session", combinedOutput);
+            Assert.Contains("Update-LocalSyncFactorsConfig.ps1", combinedOutput);
+            Assert.Contains(".env.worktree", combinedOutput);
         }
         finally
         {

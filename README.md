@@ -134,7 +134,7 @@ The current runtime keeps tracked samples and ignored local config under `config
 - `config/sample.empjob-confirmed.mapping-config.json`: sample mapping config for the current `EmpJob`-driven flow
 - `config/local*.json`: local editable copies created by the worktree bootstrap script when missing
 
-`pwsh ./scripts/Update-LocalSyncFactorsConfig.ps1` re-normalizes every tracked local JSON config against the checked-in samples. Existing local values stay in place for matching keys, sample defaults are added when new keys appear, obsolete local-only keys are removed, and the local files are rewritten into the sample key order and JSON layout.
+`pwsh ./scripts/Update-LocalSyncFactorsConfig.ps1` re-normalizes every tracked local JSON config and `.env.worktree` against the checked-in samples. Existing local values stay in place for matching keys, sample defaults are added when new keys appear, obsolete local-only keys are removed, and the local files are rewritten into the sample key order and layout.
 
 Sync config resolution currently works like this:
 
@@ -496,9 +496,9 @@ Useful variants:
 - `pwsh ./scripts/codex/run.ps1 -Service ui -Profile mock`
 - `pwsh ./scripts/codex/run.ps1 -Service api -SkipBuild`
 
-Before `run.ps1` launches services, it checks the tracked local JSON config files against their checked-in samples. In an interactive terminal it shows the drifted files once and offers to rewrite them in place while preserving current local values for matching fields. In a headless session it fails fast with a remediation message instead of guessing.
+Before `run.ps1` launches services, it checks the tracked local JSON config files and `.env.worktree` against their checked-in samples. In an interactive terminal it shows the drifted files once and offers to rewrite them in place while preserving current local values for matching fields. In a headless session it fails fast with a remediation message instead of guessing.
 
-If a headless run fails on config drift, repair the local files first:
+If a headless run fails on config/env drift, repair the local files first:
 
 ```powershell
 pwsh ./scripts/Update-LocalSyncFactorsConfig.ps1
