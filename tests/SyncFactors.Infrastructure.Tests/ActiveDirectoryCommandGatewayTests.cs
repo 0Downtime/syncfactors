@@ -359,6 +359,62 @@ public sealed class ActiveDirectoryCommandGatewayTests
         var employeeIdAttributes = attributes.Where(attribute => string.Equals(attribute.Name, "employeeID", StringComparison.OrdinalIgnoreCase)).ToArray();
         Assert.Single(employeeIdAttributes);
         Assert.Equal("20002", employeeIdAttributes[0].GetValues(typeof(string)).Cast<string>().Single());
+        Assert.Equal(
+            "514",
+            attributes.Single(attribute => string.Equals(attribute.Name, "userAccountControl", StringComparison.OrdinalIgnoreCase))
+                .GetValues(typeof(string))
+                .Cast<string>()
+                .Single());
+    }
+
+    [Fact]
+    public void SupportsPasswordProvisioningTransport_ReturnsFalseForPlainLdap()
+    {
+        var method = typeof(ActiveDirectoryCommandGateway).GetMethod("SupportsPasswordProvisioningTransport", BindingFlags.NonPublic | BindingFlags.Static);
+        Assert.NotNull(method);
+
+        var supported = Assert.IsType<bool>(method!.Invoke(null, ["ldap"]));
+
+        Assert.False(supported);
+    }
+
+    [Theory]
+    [InlineData("ldaps")]
+    [InlineData("starttls")]
+    public void SupportsPasswordProvisioningTransport_ReturnsTrueForSecureTransports(string effectiveTransport)
+    {
+        var method = typeof(ActiveDirectoryCommandGateway).GetMethod("SupportsPasswordProvisioningTransport", BindingFlags.NonPublic | BindingFlags.Static);
+        Assert.NotNull(method);
+
+        var supported = Assert.IsType<bool>(method!.Invoke(null, [effectiveTransport]));
+
+        Assert.True(supported);
+    }
+
+    [Fact]
+    public void GenerateRandomPassword_ReturnsComplexPassword()
+    {
+        var method = typeof(ActiveDirectoryCommandGateway).GetMethod("GenerateRandomPassword", BindingFlags.NonPublic | BindingFlags.Static);
+        Assert.NotNull(method);
+
+        var password = Assert.IsType<string>(method!.Invoke(null, null));
+
+        Assert.Equal(20, password.Length);
+        Assert.Contains(password, char.IsUpper);
+        Assert.Contains(password, char.IsLower);
+        Assert.Contains(password, char.IsDigit);
+        Assert.Contains(password, character => "!@#$%^&*-_=+?".Contains(character, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void EncodeUnicodePassword_WrapsPasswordInQuotesAndUsesUtf16()
+    {
+        var method = typeof(ActiveDirectoryCommandGateway).GetMethod("EncodeUnicodePassword", BindingFlags.NonPublic | BindingFlags.Static);
+        Assert.NotNull(method);
+
+        var bytes = Assert.IsType<byte[]>(method!.Invoke(null, ["Abc123!xyz"]));
+
+        Assert.Equal("\"Abc123!xyz\"", System.Text.Encoding.Unicode.GetString(bytes));
     }
 
     [Fact]

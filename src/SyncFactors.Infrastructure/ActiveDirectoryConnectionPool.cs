@@ -12,12 +12,12 @@ public interface IActiveDirectoryConnectionPool
 public sealed class ActiveDirectoryConnectionPool : IActiveDirectoryConnectionPool, IDisposable
 {
     private readonly ConcurrentDictionary<PoolKey, PoolBucket> _buckets = new();
-    private readonly Func<ActiveDirectoryConfig, ILogger, TimeSpan, LdapConnection> _connectionFactory;
+    private readonly Func<ActiveDirectoryConfig, ILogger, TimeSpan, ActiveDirectoryConnectionResult> _connectionFactory;
     private readonly int _maxIdleConnectionsPerKey;
     private bool _disposed;
 
     public ActiveDirectoryConnectionPool(
-        Func<ActiveDirectoryConfig, ILogger, TimeSpan, LdapConnection>? connectionFactory = null,
+        Func<ActiveDirectoryConfig, ILogger, TimeSpan, ActiveDirectoryConnectionResult>? connectionFactory = null,
         int maxIdleConnectionsPerKey = 8)
     {
         if (maxIdleConnectionsPerKey < 1)
@@ -25,7 +25,7 @@ public sealed class ActiveDirectoryConnectionPool : IActiveDirectoryConnectionPo
             throw new ArgumentOutOfRangeException(nameof(maxIdleConnectionsPerKey), "The pool must retain at least one idle connection per key.");
         }
 
-        _connectionFactory = connectionFactory ?? ActiveDirectoryConnectionFactory.CreateConnection;
+        _connectionFactory = connectionFactory ?? ((config, logger, timeout) => ActiveDirectoryConnectionFactory.CreateConnectionWithTransport(config, logger, timeout));
         _maxIdleConnectionsPerKey = maxIdleConnectionsPerKey;
     }
 
@@ -35,14 +35,14 @@ public sealed class ActiveDirectoryConnectionPool : IActiveDirectoryConnectionPo
 
         var key = PoolKey.FromConfig(config);
         var bucket = _buckets.GetOrAdd(key, static _ => new PoolBucket());
-        if (bucket.IdleConnections.TryTake(out var connection))
+        if (bucket.IdleConnections.TryTake(out var pooledConnection))
         {
             Interlocked.Decrement(ref bucket.IdleCount);
             logger.LogDebug("Reusing pooled AD connection. Server={Server}", config.Server);
-            return new ActiveDirectoryConnectionLease(this, key, bucket, connection);
+            return new ActiveDirectoryConnectionLease(this, key, bucket, pooledConnection);
         }
 
-        return new ActiveDirectoryConnectionLease(this, key, bucket, _connectionFactory(config, logger, timeout));
+        return new ActiveDirectoryConnectionLease(this, key, bucket, PooledConnection.From(_connectionFactory(config, logger, timeout)));
     }
 
     public void Dispose()
@@ -55,20 +55,20 @@ public sealed class ActiveDirectoryConnectionPool : IActiveDirectoryConnectionPo
         _disposed = true;
         foreach (var bucket in _buckets.Values)
         {
-            while (bucket.IdleConnections.TryTake(out var connection))
+            while (bucket.IdleConnections.TryTake(out var pooledConnection))
             {
-                connection.Dispose();
+                pooledConnection.Connection.Dispose();
             }
         }
 
         _buckets.Clear();
     }
 
-    private void Return(PoolKey key, PoolBucket bucket, LdapConnection connection, bool isReusable)
+    private void Return(PoolKey key, PoolBucket bucket, PooledConnection pooledConnection, bool isReusable)
     {
         if (_disposed || !isReusable)
         {
-            connection.Dispose();
+            pooledConnection.Connection.Dispose();
             return;
         }
 
@@ -76,11 +76,11 @@ public sealed class ActiveDirectoryConnectionPool : IActiveDirectoryConnectionPo
         if (nextIdleCount > _maxIdleConnectionsPerKey)
         {
             Interlocked.Decrement(ref bucket.IdleCount);
-            connection.Dispose();
+            pooledConnection.Connection.Dispose();
             return;
         }
 
-        bucket.IdleConnections.Add(connection);
+        bucket.IdleConnections.Add(pooledConnection);
     }
 
     public sealed class ActiveDirectoryConnectionLease : IDisposable
@@ -88,23 +88,29 @@ public sealed class ActiveDirectoryConnectionPool : IActiveDirectoryConnectionPo
         private readonly ActiveDirectoryConnectionPool _owner;
         private readonly PoolKey _key;
         private readonly PoolBucket _bucket;
-        private LdapConnection? _connection;
+        private PooledConnection? _pooledConnection;
         private bool _isReusable = true;
 
         internal ActiveDirectoryConnectionLease(
             ActiveDirectoryConnectionPool owner,
             PoolKey key,
             PoolBucket bucket,
-            LdapConnection connection)
+            PooledConnection pooledConnection)
         {
             _owner = owner;
             _key = key;
             _bucket = bucket;
-            _connection = connection;
+            _pooledConnection = pooledConnection;
         }
 
         public LdapConnection Connection =>
-            _connection ?? throw new ObjectDisposedException(nameof(ActiveDirectoryConnectionLease));
+            _pooledConnection?.Connection ?? throw new ObjectDisposedException(nameof(ActiveDirectoryConnectionLease));
+
+        public string EffectiveTransport =>
+            _pooledConnection?.EffectiveTransport ?? throw new ObjectDisposedException(nameof(ActiveDirectoryConnectionLease));
+
+        public bool UsedFallback =>
+            _pooledConnection?.UsedFallback ?? throw new ObjectDisposedException(nameof(ActiveDirectoryConnectionLease));
 
         public void Invalidate()
         {
@@ -113,20 +119,34 @@ public sealed class ActiveDirectoryConnectionPool : IActiveDirectoryConnectionPo
 
         public void Dispose()
         {
-            var connection = Interlocked.Exchange(ref _connection, null);
-            if (connection is null)
+            var pooledConnection = Interlocked.Exchange(ref _pooledConnection, null);
+            if (pooledConnection is null)
             {
                 return;
             }
 
-            _owner.Return(_key, _bucket, connection, _isReusable);
+            _owner.Return(_key, _bucket, pooledConnection, _isReusable);
         }
     }
 
     internal sealed class PoolBucket
     {
-        public ConcurrentBag<LdapConnection> IdleConnections { get; } = new();
+        public ConcurrentBag<PooledConnection> IdleConnections { get; } = new();
         public int IdleCount;
+    }
+
+    internal sealed record PooledConnection(
+        LdapConnection Connection,
+        string EffectiveTransport,
+        bool UsedFallback)
+    {
+        public static PooledConnection From(ActiveDirectoryConnectionResult result)
+        {
+            return new PooledConnection(
+                result.Connection,
+                result.EffectiveTransport,
+                result.UsedFallback);
+        }
     }
 
     internal readonly record struct PoolKey(

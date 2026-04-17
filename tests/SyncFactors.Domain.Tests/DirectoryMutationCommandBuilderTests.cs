@@ -252,6 +252,55 @@ public sealed class DirectoryMutationCommandBuilderTests
         Assert.Equal("45086@spireenergy.com", command.Mail);
     }
 
+    [Fact]
+    public void Build_FromPlan_LowercasesUserPrincipalNameAndMail()
+    {
+        var worker = new WorkerSnapshot(
+            WorkerId: "44522",
+            PreferredName: "Christopher",
+            LastName: "Brien",
+            Department: "Infrastructure & Security",
+            TargetOu: "OU=Employees,DC=example,DC=com",
+            IsPrehire: false,
+            Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase));
+
+        var plan = new PlannedWorkerAction(
+            Worker: worker,
+            DirectoryUser: new DirectoryUserSnapshot(
+                SamAccountName: null,
+                DistinguishedName: null,
+                Enabled: null,
+                DisplayName: null,
+                Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)),
+            Identity: new IdentityMatchResult("creates", MatchedExistingUser: false, SamAccountName: "44522", Reason: null, OperatorActionSummary: null),
+            ManagerDistinguishedName: null,
+            ProposedEmailAddress: "Christopher.Brien@SpireEnergy.com",
+            AttributeChanges:
+            [
+                new AttributeChange("UserPrincipalName", "resolved email local-part", "(unset)", "Christopher.Brien@SpireEnergy.com", true),
+                new AttributeChange("mail", "resolved email local-part", "(unset)", "Christopher.Brien@SpireEnergy.com", true)
+            ],
+            MissingSourceAttributes: [],
+            Bucket: "creates",
+            CurrentOu: string.Empty,
+            TargetOu: "OU=Employees,DC=example,DC=com",
+            CurrentEnabled: null,
+            TargetEnabled: true,
+            PrimaryAction: "CreateUser",
+            Operations: [new DirectoryOperation("CreateUser", "OU=Employees,DC=example,DC=com")],
+            ReviewCategory: null,
+            ReviewCaseType: null,
+            Reason: null,
+            CanAutoApply: true);
+
+        var command = new DirectoryMutationCommandBuilder().Build(plan);
+
+        Assert.Equal("christopher.brien@spireenergy.com", command.UserPrincipalName);
+        Assert.Equal("christopher.brien@spireenergy.com", command.Mail);
+        Assert.Equal("christopher.brien@spireenergy.com", command.Attributes["UserPrincipalName"]);
+        Assert.Equal("christopher.brien@spireenergy.com", command.Attributes["mail"]);
+    }
+
     private sealed class StubAttributeMappingProvider : IAttributeMappingProvider
     {
         public IReadOnlyList<AttributeMapping> GetEnabledMappings() =>

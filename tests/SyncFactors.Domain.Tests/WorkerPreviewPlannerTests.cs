@@ -120,6 +120,45 @@ public sealed class WorkerPreviewPlannerTests
     }
 
     [Fact]
+    public async Task PreviewAsync_LowercasesSyntheticUpnAndMailForCreates()
+    {
+        var worker = new WorkerSnapshot(
+            WorkerId: "44522",
+            PreferredName: "Christopher",
+            LastName: "Brien",
+            Department: "Infrastructure & Security",
+            TargetOu: "OU=Employees,DC=example,DC=com",
+            IsPrehire: false,
+            Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["company"] = "Spire Services, Inc.",
+                ["department"] = "Infrastructure & Security"
+            });
+
+        var planner = new WorkerPreviewPlanner(
+            new StubWorkerSource(worker),
+            new WorkerPlanningService(
+                new MixedCaseEmailDirectoryGateway(),
+                new StubIdentityMatcher(),
+                CreateLifecyclePolicy(),
+                new AttributeDiffService(
+                    new StubAttributeMappingProvider(),
+                    new StubWorkerPreviewLogWriter(),
+                    NullLogger<AttributeDiffService>.Instance),
+                new StubAttributeMappingProvider(),
+                NullLogger<WorkerPlanningService>.Instance),
+            new StubAttributeMappingProvider(),
+            new StubWorkerPreviewLogWriter(),
+            new StubRunRepository(),
+            NullLogger<WorkerPreviewPlanner>.Instance);
+
+        var preview = await planner.PreviewAsync("44522", CancellationToken.None);
+
+        Assert.Equal("christopher.brien@spireenergy.com", preview.DiffRows.Single(row => row.Attribute == "UserPrincipalName").After);
+        Assert.Equal("christopher.brien@spireenergy.com", preview.DiffRows.Single(row => row.Attribute == "mail").After);
+    }
+
+    [Fact]
     public async Task PreviewAsync_UsesExistingDirectoryUserWhenResolvingEmailLocalPart()
     {
         var worker = new WorkerSnapshot(
@@ -767,6 +806,31 @@ public sealed class WorkerPreviewPlannerTests
                 SamAccountName: "44522",
                 Reason: "Create preview",
                 OperatorActionSummary: "Create account preview");
+        }
+    }
+
+    private sealed class MixedCaseEmailDirectoryGateway : IDirectoryGateway
+    {
+        public Task<DirectoryUserSnapshot?> FindByWorkerAsync(WorkerSnapshot worker, CancellationToken cancellationToken)
+        {
+            _ = worker;
+            _ = cancellationToken;
+            return Task.FromResult<DirectoryUserSnapshot?>(null);
+        }
+
+        public Task<string?> ResolveManagerDistinguishedNameAsync(string managerId, CancellationToken cancellationToken)
+        {
+            _ = managerId;
+            _ = cancellationToken;
+            return Task.FromResult<string?>(null);
+        }
+
+        public Task<string> ResolveAvailableEmailLocalPartAsync(WorkerSnapshot worker, bool isCreate, CancellationToken cancellationToken)
+        {
+            _ = worker;
+            _ = isCreate;
+            _ = cancellationToken;
+            return Task.FromResult("Christopher.Brien");
         }
     }
 
