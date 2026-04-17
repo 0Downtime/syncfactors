@@ -282,9 +282,25 @@ try {
     }
 }
 catch [System.DirectoryServices.Protocols.LdapException] {
-    $errorRecord = $_.Exception
+    $exception = $_.Exception
+    $errorCode = if ($null -ne $exception -and $exception.PSObject.Properties.Name -contains 'ErrorCode') {
+        $exception.ErrorCode
+    }
+    elseif ($null -ne $exception -and $exception.PSObject.Properties.Name -contains 'HResult') {
+        $exception.HResult
+    }
+    else {
+        '(unavailable)'
+    }
+    $serverDetail = if ($null -ne $exception -and $exception.PSObject.Properties.Name -contains 'ServerErrorMessage') {
+        $exception.ServerErrorMessage
+    }
+    else {
+        $null
+    }
+
     Write-Error ("LDAP bind failed. Server='{0}' Port={1} Mode={2} ErrorCode={3} Message='{4}' ServerDetail='{5}'" -f `
-        $Server, $resolvedPort, $Mode, $errorRecord.ErrorCode, $errorRecord.Message, $errorRecord.ServerErrorMessage)
+        $Server, $resolvedPort, $Mode, $errorCode, $exception.Message, $serverDetail)
     exit 1
 }
 catch {
