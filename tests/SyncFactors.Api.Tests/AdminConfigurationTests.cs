@@ -108,6 +108,9 @@ public sealed class AdminConfigurationSnapshotBuilderTests
             deploymentGroup.Entries.Single(entry => entry.Label == "Realtime updates").SourceLabel);
         Assert.Equal(
             "Default",
+            deploymentGroup.Entries.Single(entry => entry.Label == "Dashboard health probes").SourceLabel);
+        Assert.Equal(
+            "Default",
             deploymentGroup.Entries.Single(entry => entry.Label == "Application Insights").SourceLabel);
     }
 
@@ -337,6 +340,7 @@ internal sealed class AdminConfigurationTestFixture : IDisposable
         if (includeHostToggles)
         {
             settings["SyncFactors:Realtime:Enabled"] = "false";
+            settings["SyncFactors:Dashboard:HealthProbes:Enabled"] = "false";
             settings["SyncFactors:SecurityHeaders:EnableContentSecurityPolicy"] = "true";
             settings["ApplicationInsights:ConnectionString"] = "InstrumentationKey=fake";
         }

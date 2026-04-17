@@ -49,6 +49,8 @@ var cspEnabled = builder.Configuration.GetValue<bool?>("SyncFactors:SecurityHead
     ?? !builder.Environment.IsDevelopment();
 var oidcEnabled = IsOidcEnabled(authSettings);
 var realtimeEnabled = builder.Configuration.GetValue<bool?>("SyncFactors:Realtime:Enabled") ?? true;
+var dashboardOptions = new DashboardOptions(
+    builder.Configuration.GetValue<bool?>("SyncFactors:Dashboard:HealthProbes:Enabled") ?? true);
 
 ValidateHttpsOnlyBindings(builder.Configuration);
 
@@ -58,6 +60,7 @@ builder.Services.AddSingleton(new SyncFactorsConfigPathResolver(
     builder.Configuration["SyncFactors:MappingConfigPath"]));
 builder.Services.AddSingleton(new ScaffoldDataPathResolver(builder.Configuration["SyncFactors:ScaffoldDataPath"]));
 builder.Services.AddSingleton<AdminConfigurationSnapshotBuilder>();
+builder.Services.AddSingleton(dashboardOptions);
 builder.Services.Configure<LocalAuthOptions>(builder.Configuration.GetSection("SyncFactors:Auth"));
 builder.Services.Configure<ForwardedHeadersOptions>(options =>
 {

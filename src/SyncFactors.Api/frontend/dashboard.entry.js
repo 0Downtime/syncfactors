@@ -98,6 +98,7 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
     const lastChecked = elements.root.querySelector("[data-health-last-checked]");
     const segments = Array.prototype.slice.call(elements.root.querySelectorAll("[data-probe-segment]"));
     const probeOrder = ["SuccessFactors", "Active Directory", "Worker Service", "SQLite"];
+    const healthProbesEnabled = (elements.root.getAttribute("data-health-probes-enabled") || "true").toLowerCase() !== "false";
     const valueNodes = {
         status: elements.statusRoot.querySelector("[data-status-value]"),
         stage: elements.statusRoot.querySelector("[data-stage-value]"),
@@ -1709,7 +1710,62 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
         setPanelLoading(elements.root, false);
     }
 
+    function renderHealthDisabled() {
+        latestHealthSnapshot = null;
+
+        if (healthList) {
+            healthList.innerHTML = "";
+
+            probeOrder.forEach(function (dependency) {
+                const card = document.createElement("article");
+                card.className = "connection-card";
+
+                const head = document.createElement("header");
+                head.className = "connection-head";
+
+                const title = document.createElement("h4");
+                title.textContent = dependency;
+                head.appendChild(title);
+
+                const badge = document.createElement("span");
+                setBadge(badge, "Disabled", "dim");
+                head.appendChild(badge);
+                card.appendChild(head);
+
+                const summary = document.createElement("p");
+                summary.className = "connection-summary";
+                summary.textContent = "Dashboard probing is turned off.";
+                card.appendChild(summary);
+
+                const detail = document.createElement("p");
+                detail.className = "connection-detail muted";
+                detail.textContent = "Enable dashboard health probes to run this dependency check.";
+                card.appendChild(detail);
+
+                healthList.appendChild(card);
+            });
+        }
+
+        setBadge(overallBadge, "Disabled", "dim");
+        if (lastChecked) {
+            lastChecked.textContent = "Dashboard health probes are disabled.";
+        }
+
+        segments.forEach(function (segment) {
+            const dependency = segment.getAttribute("data-probe-segment");
+            segment.className = "connection-segment dim";
+            segment.title = dependency + ": Dashboard probing is turned off.";
+        });
+
+        setPanelLoading(elements.root, false);
+    }
+
     async function loadHealth() {
+        if (!healthProbesEnabled) {
+            renderHealthDisabled();
+            return;
+        }
+
         if (isLoadingHealth) {
             return;
         }
@@ -1777,15 +1833,17 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
 
         if (immediate) {
             void loadDashboard();
-            void loadHealth();
             void loadSchedule();
+            if (healthProbesEnabled) {
+                void loadHealth();
+            }
         }
 
         if (!dashboardTimerId) {
             dashboardTimerId = window.setInterval(loadDashboard, dashboardPollIntervalMs);
         }
 
-        if (!healthTimerId) {
+        if (healthProbesEnabled && !healthTimerId) {
             healthTimerId = window.setInterval(loadHealth, healthPollIntervalMs);
         }
     }
@@ -1823,7 +1881,7 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
             return;
         }
 
-        if (message.type === "healthSnapshotUpdated" && message.healthSnapshot) {
+        if (healthProbesEnabled && message.type === "healthSnapshotUpdated" && message.healthSnapshot) {
             renderHealthSnapshot(message.healthSnapshot);
         }
     }
@@ -1867,7 +1925,9 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
                 setLiveState("live", "Push updates are active again.");
                 stopFallbackPolling();
                 void loadDashboard();
-                void loadHealth();
+                if (healthProbesEnabled) {
+                    void loadHealth();
+                }
             });
 
             connection.onclose(function () {
@@ -1901,6 +1961,9 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
 
     function startDashboard() {
         startScheduleTimer();
+        if (!healthProbesEnabled) {
+            renderHealthDisabled();
+        }
         startFallbackPolling();
         void startRealtimeConnection();
     }
