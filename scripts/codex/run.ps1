@@ -56,7 +56,6 @@ if ($Help) {
 
 . (Join-Path $scriptDir 'Load-WorktreeEnv.ps1')
 . (Join-Path $scriptDir '..' 'Start-SyncFactorsCommon.ps1')
-. (Join-Path $scriptDir '..' 'Sync-LocalConfigFormat.ps1')
 
 function ConvertTo-BooleanSetting {
     param(
@@ -292,6 +291,10 @@ function Get-RequiredSyncConfigSecretNames {
 }
 
 function Test-SecretPromptAvailable {
+    if (-not ([OperatingSystem]::IsWindows() -or $IsMacOS)) {
+        return $false
+    }
+
     if (-not [Environment]::UserInteractive) {
         return $false
     }
@@ -301,130 +304,6 @@ function Test-SecretPromptAvailable {
     }
     catch {
         return $false
-    }
-}
-
-function Get-RepoRelativePath {
-    param(
-        [Parameter(Mandatory)]
-        [string]$RepositoryRoot,
-        [Parameter(Mandatory)]
-        [string]$Path
-    )
-
-    return [System.IO.Path]::GetRelativePath(
-        [System.IO.Path]::GetFullPath($RepositoryRoot),
-        [System.IO.Path]::GetFullPath($Path))
-}
-
-function Get-LauncherInvocationCommand {
-    param(
-        [Parameter(Mandatory)]
-        [string]$ServiceName,
-        [Parameter(Mandatory)]
-        [string]$ProfileName,
-        [switch]$RestartSelected,
-        [switch]$SkipBuildStep
-    )
-
-    $parts = @(
-        'pwsh',
-        './scripts/codex/run.ps1',
-        '-Service', $ServiceName,
-        '-Profile', $ProfileName
-    )
-
-    if ($RestartSelected) {
-        $parts += '-Restart'
-    }
-
-    if ($SkipBuildStep) {
-        $parts += '-SkipBuild'
-    }
-
-    return ($parts -join ' ')
-}
-
-function Get-LocalConfigDriftRemediationMessage {
-    param(
-        [Parameter(Mandatory)]
-        [string]$RepositoryRoot,
-        [Parameter(Mandatory)]
-        [pscustomobject[]]$DriftedConfigs,
-        [Parameter(Mandatory)]
-        [string]$RunCommand
-    )
-
-    $lines = [System.Collections.Generic.List[string]]::new()
-    $lines.Add('Local config drift blocked startup because the launcher could not prompt in this headless session.')
-    $lines.Add('Drifted files:')
-    foreach ($config in $DriftedConfigs) {
-        $lines.Add("  - $(Get-RepoRelativePath -RepositoryRoot $RepositoryRoot -Path $config.LocalConfigPath)")
-    }
-
-    $lines.Add('Fix the local config files with:')
-    $lines.Add('  pwsh ./scripts/Update-LocalSyncFactorsConfig.ps1')
-    $lines.Add('Then rerun the launcher with:')
-    $lines.Add("  $RunCommand")
-
-    return $lines -join [Environment]::NewLine
-}
-
-function Prompt-ForLocalConfigRewrite {
-    param(
-        [Parameter(Mandatory)]
-        [string]$RepositoryRoot,
-        [Parameter(Mandatory)]
-        [pscustomobject[]]$DriftedConfigs
-    )
-
-    Write-Warning 'Local config files drifted from their tracked samples.'
-    foreach ($config in $DriftedConfigs) {
-        $localRelativePath = Get-RepoRelativePath -RepositoryRoot $RepositoryRoot -Path $config.LocalConfigPath
-        $sampleRelativePath = Get-RepoRelativePath -RepositoryRoot $RepositoryRoot -Path $config.SampleConfigPath
-        Write-Host "  $localRelativePath <- $sampleRelativePath" -ForegroundColor Yellow
-    }
-
-    $response = Read-Host 'Rewrite the drifted local config files to match the sample format now? [y/N]'
-    return $response -match '^(y|yes)$'
-}
-
-function Ensure-TrackedLocalConfigFormats {
-    param(
-        [Parameter(Mandatory)]
-        [string]$RepositoryRoot,
-        [Parameter(Mandatory)]
-        [string]$RunCommand
-    )
-
-    $driftedConfigs = @(Get-TrackedLocalConfigDrift -RepositoryRoot $RepositoryRoot)
-    if ($driftedConfigs.Length -eq 0) {
-        return
-    }
-
-    if (-not (Test-SecretPromptAvailable)) {
-        $message = Get-LocalConfigDriftRemediationMessage `
-            -RepositoryRoot $RepositoryRoot `
-            -DriftedConfigs $driftedConfigs `
-            -RunCommand $RunCommand
-        Write-Error $message
-        throw $message
-    }
-
-    if (-not (Prompt-ForLocalConfigRewrite -RepositoryRoot $RepositoryRoot -DriftedConfigs $driftedConfigs)) {
-        Write-Warning 'Continuing without rewriting the local config files. Run pwsh ./scripts/Update-LocalSyncFactorsConfig.ps1 when you want to realign them with the tracked samples.'
-        return
-    }
-
-    $results = @(Sync-TrackedLocalConfigFormats -RepositoryRoot $RepositoryRoot)
-    foreach ($result in $results) {
-        if ($result.BackupPath) {
-            Write-Host "Backed up $(Split-Path -Leaf $result.LocalConfigPath) -> $(Split-Path -Leaf $result.BackupPath)" -ForegroundColor DarkGray
-        }
-
-        if ($result.Drifted) {
-            Write-Host "Rewrote $(Get-RepoRelativePath -RepositoryRoot $RepositoryRoot -Path $result.LocalConfigPath) to match $(Get-RepoRelativePath -RepositoryRoot $RepositoryRoot -Path $result.SampleConfigPath)." -ForegroundColor Green
-        }
     }
 }
 
@@ -1064,12 +943,6 @@ else {
 $activeProfile = $env:SYNCFACTORS_RUN_PROFILE.ToLowerInvariant()
 $repoRoot = Resolve-ProjectRoot
 $worktreeEnvFile = Join-Path $repoRoot '.env.worktree'
-$launcherCommand = Get-LauncherInvocationCommand `
-    -ServiceName $Service `
-    -ProfileName $Profile `
-    -RestartSelected:$Restart `
-    -SkipBuildStep:$SkipBuild
-Ensure-TrackedLocalConfigFormats -RepositoryRoot $repoRoot -RunCommand $launcherCommand
 $runSettings = Get-CodexRunSettings -RepositoryRoot $repoRoot
 if ($Service -in @('api', 'ui', 'worker', 'stack')) {
     Assert-ConfigPathShapes `

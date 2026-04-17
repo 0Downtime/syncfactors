@@ -118,7 +118,6 @@ Copy-IgnoredLocalFilesFromPrimaryWorktreeIfMissing -PrimaryWorktreeRoot $primary
 Copy-IfMissing -SourcePath (Join-Path $repoRoot 'config/sample.mock-successfactors.real-ad.sync-config.json') -DestinationPath (Join-Path $repoRoot 'config/local.mock-successfactors.real-ad.sync-config.json')
 Copy-IfMissing -SourcePath (Join-Path $repoRoot 'config/sample.real-successfactors.real-ad.sync-config.json') -DestinationPath (Join-Path $repoRoot 'config/local.real-successfactors.real-ad.sync-config.json')
 Copy-IfMissing -SourcePath (Join-Path $repoRoot 'config/sample.empjob-confirmed.mapping-config.json') -DestinationPath (Join-Path $repoRoot 'config/local.syncfactors.mapping-config.json')
-Copy-IfMissing -SourcePath (Join-Path $repoRoot 'config/sample.empjob-confirmed.mapping-config.json') -DestinationPath (Join-Path $repoRoot 'config/local.empjob-confirmed.mapping-config.json')
 Copy-IfMissing -SourcePath (Join-Path $repoRoot 'config/sample.codex-run.json') -DestinationPath (Join-Path $repoRoot 'config/local.codex-run.json')
 Copy-IfMissing -SourcePath (Join-Path $repoRoot '.env.worktree.example') -DestinationPath (Join-Path $repoRoot '.env.worktree')
 

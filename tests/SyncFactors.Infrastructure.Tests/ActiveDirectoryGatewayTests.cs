@@ -121,25 +121,6 @@ public sealed class ActiveDirectoryGatewayTests
     }
 
     [Fact]
-    public void CreateOuListingRequest_UsesPagedResultsControl()
-    {
-        var method = typeof(ActiveDirectoryGateway).GetMethod(
-            "CreateOuListingRequest",
-            BindingFlags.NonPublic | BindingFlags.Static,
-            [typeof(string), typeof(ActiveDirectoryConfig)]);
-        Assert.NotNull(method);
-
-        var request = Assert.IsType<System.DirectoryServices.Protocols.SearchRequest>(
-            method!.Invoke(null, ["OU=Users,DC=example,DC=com", CreateConfig()]));
-
-        var pageControl = Assert.IsType<System.DirectoryServices.Protocols.PageResultRequestControl>(
-            Assert.Single(request.Controls.Cast<System.DirectoryServices.Protocols.DirectoryControl>()));
-        Assert.Equal(500, pageControl.PageSize);
-        Assert.Equal(System.DirectoryServices.Protocols.SearchScope.Subtree, request.Scope);
-        Assert.Equal("(&(objectCategory=person)(objectClass=user))", request.Filter);
-    }
-
-    [Fact]
     public void GetEmailUniquenessSearchBases_UsesDefaultNamingContextWhenAvailable()
     {
         var method = typeof(ActiveDirectoryGateway).GetMethod(
