@@ -493,7 +493,7 @@ function Get-TrackedLocalConfigDrift {
         }
     }
 
-    return ,$drifted.ToArray()
+    return $drifted.ToArray()
 }
 
 function Sync-ConfigFormat {
@@ -541,5 +541,5 @@ function Sync-TrackedLocalConfigFormats {
             -NoBackup:$NoBackup))
     }
 
-    return ,$results.ToArray()
+    return $results.ToArray()
 }
