@@ -147,19 +147,21 @@ Sync config resolution currently works like this:
 
 On Windows, `scripts/codex/Load-WorktreeEnv.ps1` checks the worktree-scoped Windows Credential Manager entry for each variable first, then falls back to `.env.worktree`, then `.env.worktree.example`, and finally built-in defaults where applicable.
 
-The checked-in example plus the built-in `scripts/codex/Load-WorktreeEnv.ps1` defaults currently resolve to:
+The checked-in `.env.worktree.example` currently defines:
 
 ```bash
+DOTNET_ENVIRONMENT=Development
+ASPNETCORE_ENVIRONMENT=Development
 SYNCFACTORS_RUN_PROFILE=mock
 SYNCFACTORS_CONFIG_PATH=
 SYNCFACTORS_MAPPING_CONFIG_PATH=./config/local.syncfactors.mapping-config.json
-SYNCFACTORS_SQLITE_PATH=state/runtime/syncfactors.db
+SYNCFACTORS_SQLITE_PATH=./state/runtime/syncfactors.db
 SYNCFACTORS_API_BIND_HOST=127.0.0.1
 SYNCFACTORS_API_PUBLIC_HOST=127.0.0.1
 SYNCFACTORS_API_PORT=5087
-NUGET_HTTP_CACHE_PATH=state/nuget/http-cache
-NUGET_PACKAGES=state/nuget/packages
-NUGET_PLUGINS_CACHE_PATH=state/nuget/plugin-cache
+NUGET_HTTP_CACHE_PATH=./state/nuget/http-cache
+NUGET_PACKAGES=./state/nuget/packages
+NUGET_PLUGINS_CACHE_PATH=./state/nuget/plugin-cache
 SYNCFACTORS_TLS_CERT_PATH=
 SYNCFACTORS_TLS_CERT_PASSWORD=
 MOCK_SF_PORT=18080
