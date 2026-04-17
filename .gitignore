@@ -43,6 +43,7 @@ package-lock.json
 local/
 config/local*/
 config/local*.json
+config/backup/
 config/local.variables
 config/Untitled-*.ps1
 reports/
