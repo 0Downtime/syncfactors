@@ -192,7 +192,7 @@ function New-LdapConnection {
             return (Test-LdapServerCertificate -Certificate $certificate)
         }.GetNewClosure()
         $callback = [System.DirectoryServices.Protocols.VerifyServerCertificateCallback]$callbackScriptBlock
-        $connection.SessionOptions.add_VerifyServerCertificate($callback)
+        $connection.SessionOptions.VerifyServerCertificate = $callback
     }
 
     if ($RequestedMode -eq 'ldaps') {
