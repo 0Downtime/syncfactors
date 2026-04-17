@@ -250,7 +250,16 @@ public sealed class SuccessFactorsWorkerSource(
             foreach (var worker in workers)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                yield return await EnrichWorkerAsync(config, worker, previewLookup, cancellationToken);
+                var enrichedWorker = await EnrichWorkerAsync(config, worker, previewLookup, cancellationToken);
+                if (!ShouldIncludeInSyncScope(enrichedWorker, query))
+                {
+                    logger.LogInformation(
+                        "Skipping worker from sync scope because emplStatus is null or empty. WorkerId={WorkerId}",
+                        enrichedWorker.WorkerId);
+                    continue;
+                }
+
+                yield return enrichedWorker;
             }
 
             if (string.IsNullOrWhiteSpace(nextRequestUri))
@@ -314,7 +323,16 @@ public sealed class SuccessFactorsWorkerSource(
             foreach (var worker in workers)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                yield return await EnrichWorkerAsync(config, worker, previewLookup, cancellationToken);
+                var enrichedWorker = await EnrichWorkerAsync(config, worker, previewLookup, cancellationToken);
+                if (!ShouldIncludeInSyncScope(enrichedWorker, query))
+                {
+                    logger.LogInformation(
+                        "Skipping worker from sync scope because emplStatus is null or empty. WorkerId={WorkerId}",
+                        enrichedWorker.WorkerId);
+                    continue;
+                }
+
+                yield return enrichedWorker;
             }
 
             if (workers.Length < pageSize)
@@ -1142,6 +1160,23 @@ public sealed class SuccessFactorsWorkerSource(
             : $"{statusField} in {string.Join(",", escapedStatuses)}";
 
         return $"{statusClause} and {dateField} ge datetime'{cutoff.ToString("yyyy-MM-ddTHH:mm:ss", CultureInfo.InvariantCulture)}'";
+    }
+
+    private static bool ShouldIncludeInSyncScope(WorkerSnapshot worker, SuccessFactorsQueryConfig query)
+    {
+        if (!QueryIncludesEmploymentStatus(query))
+        {
+            return true;
+        }
+
+        return worker.Attributes.TryGetValue("emplStatus", out var employmentStatus) &&
+               !string.IsNullOrWhiteSpace(employmentStatus);
+    }
+
+    private static bool QueryIncludesEmploymentStatus(SuccessFactorsQueryConfig query)
+    {
+        return query.Select.Any(static field =>
+            field.Contains("emplStatus", StringComparison.OrdinalIgnoreCase));
     }
 
     private static WorkerSnapshot? TryParseWorker(JsonElement root, SyncFactorsConfigDocument config, SuccessFactorsQueryConfig query, string workerId)
