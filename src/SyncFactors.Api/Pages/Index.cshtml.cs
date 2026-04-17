@@ -7,8 +7,9 @@ namespace SyncFactors.Api.Pages;
 
 public sealed class IndexModel(
     IDashboardSnapshotService dashboardSnapshotService,
-    DashboardOptions dashboardOptions,
-    ISyncScheduleStore syncScheduleStore) : PageModel
+    DashboardSettingsProvider dashboardSettingsProvider,
+    ISyncScheduleStore syncScheduleStore,
+    IWebHostEnvironment hostEnvironment) : PageModel
 {
     public RuntimeStatus Status { get; private set; } = new(
         Status: "Idle",
@@ -35,7 +36,23 @@ public sealed class IndexModel(
 
     public string? AttentionMessage { get; private set; }
 
-    public bool HealthProbesEnabled { get; } = dashboardOptions.HealthProbesEnabled;
+    public bool HealthProbesEnabled { get; private set; }
+
+    public bool DefaultHealthProbesEnabled { get; private set; }
+
+    public bool HealthProbesUseOverride { get; private set; }
+
+    public int HealthProbeIntervalSeconds { get; private set; }
+
+    public int DefaultHealthProbeIntervalSeconds { get; private set; }
+
+    public bool IsDevelopment { get; } = hostEnvironment.IsDevelopment();
+
+    [TempData]
+    public string? ErrorMessage { get; set; }
+
+    [TempData]
+    public string? SuccessMessage { get; set; }
 
     public SyncScheduleStatus Schedule { get; private set; } = new(
         Enabled: false,
@@ -50,9 +67,46 @@ public sealed class IndexModel(
         await LoadSnapshotAsync(cancellationToken);
     }
 
+    public async Task<IActionResult> OnPostSetHealthProbesAsync(bool enabled, CancellationToken cancellationToken)
+    {
+        if (!IsDevelopment || !User.IsInRole("Admin") && !User.IsInRole("BreakGlassAdmin"))
+        {
+            return Forbid();
+        }
+
+        var settings = await dashboardSettingsProvider.SetHealthProbesEnabledAsync(enabled, cancellationToken);
+        HealthProbesEnabled = settings.Enabled;
+        DefaultHealthProbesEnabled = settings.DefaultEnabled;
+        HealthProbesUseOverride = settings.IsOverride;
+        SuccessMessage = settings.Enabled
+            ? "Dashboard health probes enabled."
+            : "Dashboard health probes disabled.";
+        ErrorMessage = null;
+        return RedirectToPage();
+    }
+
+    public async Task<IActionResult> OnPostSetHealthProbeFrequencyAsync(int intervalSeconds, CancellationToken cancellationToken)
+    {
+        if (!IsDevelopment || !User.IsInRole("Admin") && !User.IsInRole("BreakGlassAdmin"))
+        {
+            return Forbid();
+        }
+
+        var settings = await dashboardSettingsProvider.SetHealthProbeIntervalSecondsAsync(intervalSeconds, cancellationToken);
+        HealthProbesEnabled = settings.Enabled;
+        DefaultHealthProbesEnabled = settings.DefaultEnabled;
+        HealthProbesUseOverride = settings.IsOverride;
+        HealthProbeIntervalSeconds = settings.IntervalSeconds;
+        DefaultHealthProbeIntervalSeconds = settings.DefaultIntervalSeconds;
+        SuccessMessage = $"Dashboard health probe frequency set to every {settings.IntervalSeconds} seconds.";
+        ErrorMessage = null;
+        return RedirectToPage();
+    }
+
     private async Task LoadSnapshotAsync(CancellationToken cancellationToken)
     {
         var snapshot = await dashboardSnapshotService.GetSnapshotAsync(cancellationToken);
+        var settings = await dashboardSettingsProvider.GetHealthProbeStateAsync(cancellationToken);
         Schedule = await syncScheduleStore.GetCurrentAsync(cancellationToken);
         Status = snapshot.Status;
         Runs = snapshot.Runs;
@@ -60,5 +114,10 @@ public sealed class IndexModel(
         LastCompletedRun = snapshot.LastCompletedRun;
         RequiresAttention = snapshot.RequiresAttention;
         AttentionMessage = snapshot.AttentionMessage;
+        HealthProbesEnabled = settings.Enabled;
+        DefaultHealthProbesEnabled = settings.DefaultEnabled;
+        HealthProbesUseOverride = settings.IsOverride;
+        HealthProbeIntervalSeconds = settings.IntervalSeconds;
+        DefaultHealthProbeIntervalSeconds = settings.DefaultIntervalSeconds;
     }
 }

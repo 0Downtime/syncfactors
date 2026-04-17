@@ -22,7 +22,7 @@ public sealed class DashboardRealtimeServiceTests
                 new HealthyDependencyHealthService()),
             hubContext,
             tracker,
-            new DashboardOptions(HealthProbesEnabled: true),
+            CreateDashboardSettingsProvider(true),
             new FixedTimeProvider(DateTimeOffset.Parse("2026-04-10T12:00:00Z")),
             NullLogger<DashboardRealtimeService>.Instance);
 
@@ -50,7 +50,7 @@ public sealed class DashboardRealtimeServiceTests
                 new ThrowingDependencyHealthService()),
             hubContext,
             tracker,
-            new DashboardOptions(HealthProbesEnabled: true),
+            CreateDashboardSettingsProvider(true),
             new FixedTimeProvider(DateTimeOffset.Parse("2026-04-10T12:00:00Z")),
             NullLogger<DashboardRealtimeService>.Instance);
 
@@ -78,7 +78,7 @@ public sealed class DashboardRealtimeServiceTests
                 new ThrowingDependencyHealthService()),
             hubContext,
             tracker,
-            new DashboardOptions(HealthProbesEnabled: false),
+            CreateDashboardSettingsProvider(false),
             new FixedTimeProvider(DateTimeOffset.Parse("2026-04-10T12:00:00Z")),
             NullLogger<DashboardRealtimeService>.Instance);
 
@@ -241,5 +241,33 @@ public sealed class DashboardRealtimeServiceTests
     private sealed class FixedTimeProvider(DateTimeOffset utcNow) : TimeProvider
     {
         public override DateTimeOffset GetUtcNow() => utcNow;
+    }
+
+    private static DashboardSettingsProvider CreateDashboardSettingsProvider(bool enabled)
+    {
+        return new DashboardSettingsProvider(
+            new DashboardOptions(DefaultHealthProbesEnabled: enabled, DefaultHealthProbeIntervalSeconds: 45),
+            new StubDashboardSettingsStore(enabled));
+    }
+
+    private sealed class StubDashboardSettingsStore(bool enabled) : IDashboardSettingsStore
+    {
+        public Task<bool?> GetHealthProbesEnabledOverrideAsync(CancellationToken cancellationToken)
+        {
+            _ = cancellationToken;
+            return Task.FromResult<bool?>(enabled);
+        }
+
+        public Task<int?> GetHealthProbeIntervalSecondsOverrideAsync(CancellationToken cancellationToken)
+        {
+            _ = cancellationToken;
+            return Task.FromResult<int?>(45);
+        }
+
+        public Task SaveHealthProbeOverrideAsync(bool enabled, int intervalSeconds, CancellationToken cancellationToken)
+        {
+            _ = cancellationToken;
+            return Task.CompletedTask;
+        }
     }
 }

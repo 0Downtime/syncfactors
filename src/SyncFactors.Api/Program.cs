@@ -50,7 +50,8 @@ var cspEnabled = builder.Configuration.GetValue<bool?>("SyncFactors:SecurityHead
 var oidcEnabled = IsOidcEnabled(authSettings);
 var realtimeEnabled = builder.Configuration.GetValue<bool?>("SyncFactors:Realtime:Enabled") ?? true;
 var dashboardOptions = new DashboardOptions(
-    builder.Configuration.GetValue<bool?>("SyncFactors:Dashboard:HealthProbes:Enabled") ?? true);
+    builder.Configuration.GetValue<bool?>("SyncFactors:Dashboard:HealthProbes:Enabled") ?? true,
+    builder.Configuration.GetValue<int?>("SyncFactors:Dashboard:HealthProbes:IntervalSeconds") ?? 45);
 
 ValidateHttpsOnlyBindings(builder.Configuration);
 
@@ -61,6 +62,7 @@ builder.Services.AddSingleton(new SyncFactorsConfigPathResolver(
 builder.Services.AddSingleton(new ScaffoldDataPathResolver(builder.Configuration["SyncFactors:ScaffoldDataPath"]));
 builder.Services.AddSingleton<AdminConfigurationSnapshotBuilder>();
 builder.Services.AddSingleton(dashboardOptions);
+builder.Services.AddSingleton<DashboardSettingsProvider>();
 builder.Services.Configure<LocalAuthOptions>(builder.Configuration.GetSection("SyncFactors:Auth"));
 builder.Services.Configure<ForwardedHeadersOptions>(options =>
 {
@@ -140,6 +142,7 @@ builder.Services.AddTransient<GraveyardDeletionQueueService>();
 builder.Services.AddSingleton<IRunQueueStore, SqliteRunQueueStore>();
 builder.Services.AddSingleton<RunQueueRecoveryService>();
 builder.Services.AddSingleton<ISyncScheduleStore, SqliteSyncScheduleStore>();
+builder.Services.AddSingleton<IDashboardSettingsStore, SqliteDashboardSettingsStore>();
 builder.Services.AddSingleton<DashboardRealtimeConnectionTracker>();
 builder.Services.AddTransient<IWorkerPlanningService, WorkerPlanningService>();
 builder.Services.AddSingleton<IDirectoryMutationCommandBuilder, DirectoryMutationCommandBuilder>();
@@ -363,6 +366,8 @@ readApi.MapGet("/dashboard", async (IDashboardSnapshotService dashboardSnapshotS
     var snapshot = await dashboardSnapshotService.GetSnapshotAsync(cancellationToken);
     return Results.Ok(snapshot);
 });
+
+readApi.MapGet("/dashboard/health", HealthEndpointMappings.GetDashboardHealthAsync);
 
 readApi.MapGet("/runs", async (int? page, int? pageSize, IRunRepository repository, CancellationToken cancellationToken) =>
 {

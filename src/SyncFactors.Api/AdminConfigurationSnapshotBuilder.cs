@@ -97,9 +97,13 @@ public sealed class AdminConfigurationSnapshotBuilder(
                             FormatEnabledDisabled(realtimeEnabled),
                             GetHostSource("SyncFactors:Realtime:Enabled")),
                         CreateEntry(
-                            "Dashboard health probes",
+                            "Dashboard health probes default",
                             FormatEnabledDisabled(dashboardHealthProbesEnabled),
                             GetHostSource("SyncFactors:Dashboard:HealthProbes:Enabled")),
+                        CreateEntry(
+                            "Dashboard health probe frequency default",
+                            $"{DashboardSettingsProvider.ClampHealthProbeIntervalSeconds(configuration.GetValue<int?>("SyncFactors:Dashboard:HealthProbes:IntervalSeconds") ?? 45)} seconds",
+                            GetHostSource("SyncFactors:Dashboard:HealthProbes:IntervalSeconds")),
                         CreateEntry(
                             "Content Security Policy",
                             FormatEnabledDisabled(cspEnabled),
