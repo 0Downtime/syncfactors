@@ -69,6 +69,16 @@ builder.Services.AddSingleton<IRunQueueStore, SqliteRunQueueStore>();
 builder.Services.AddSingleton<RunQueueRecoveryService>();
 builder.Services.AddSingleton<ISyncScheduleStore, SqliteSyncScheduleStore>();
 builder.Services.AddSingleton<IGraveyardRetentionStore, SqliteGraveyardRetentionStore>();
+builder.Services.AddHttpClient("SuccessFactorsAuth")
+    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+    {
+        AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate
+    });
+builder.Services.AddSingleton<ISuccessFactorsAccessTokenProvider>(serviceProvider =>
+    new SuccessFactorsAccessTokenProvider(
+        serviceProvider.GetRequiredService<IHttpClientFactory>(),
+        serviceProvider.GetRequiredService<TimeProvider>(),
+        serviceProvider.GetRequiredService<ILogger<SuccessFactorsAccessTokenProvider>>()));
 builder.Services.AddHttpClient<SuccessFactorsWorkerSource>()
     .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
     {

@@ -19,8 +19,13 @@ public sealed class DependencyHealthService(
     HttpClient httpClient,
     TimeProvider timeProvider,
     ILogger<DependencyHealthService> logger,
-    Func<ActiveDirectoryConfig, CancellationToken, Task<(string RequestedTransport, string EffectiveTransport, bool UsedFallback, int SuccessfulBaseCount, int SkippedBaseCount, string? SkippedBaseDetails)>>? activeDirectoryProbe = null) : IDependencyHealthService
+    Func<ActiveDirectoryConfig, CancellationToken, Task<(string RequestedTransport, string EffectiveTransport, bool UsedFallback, int SuccessfulBaseCount, int SkippedBaseCount, string? SkippedBaseDetails)>>? activeDirectoryProbe = null,
+    ISuccessFactorsAccessTokenProvider? accessTokenProvider = null,
+    IActiveDirectoryConnectionPool? activeDirectoryConnectionPool = null) : IDependencyHealthService
 {
+    private readonly ISuccessFactorsAccessTokenProvider _accessTokenProvider =
+        accessTokenProvider ?? new SuccessFactorsAccessTokenProvider(httpClient, timeProvider, NullLogger<SuccessFactorsAccessTokenProvider>.Instance);
+
     private static readonly TimeSpan ActiveDirectoryTimeout = TimeSpan.FromSeconds(10);
     private static readonly TimeSpan SuccessFactorsTimeout = TimeSpan.FromSeconds(10);
     private static readonly TimeSpan HealthyHeartbeatAge = TimeSpan.FromSeconds(45);
@@ -188,7 +193,7 @@ public sealed class DependencyHealthService(
             timeoutCts.CancelAfter(ActiveDirectoryTimeout);
 
             var transportTask = activeDirectoryProbe is null
-                ? ProbeActiveDirectoryTransportAsync(config, timeoutCts.Token)
+                ? ProbeActiveDirectoryTransportAsync(config, logger, activeDirectoryConnectionPool, timeoutCts.Token)
                 : activeDirectoryProbe(config, timeoutCts.Token);
 
             var transportResult = await transportTask.WaitAsync(ActiveDirectoryTimeout, cancellationToken);
@@ -404,53 +409,12 @@ public sealed class DependencyHealthService(
                 break;
 
             case "oauth" when auth.OAuth is not null:
-                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", await GetOAuthTokenAsync(auth.OAuth, cancellationToken));
+                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", await _accessTokenProvider.GetAccessTokenAsync(auth.OAuth, cancellationToken));
                 break;
 
             default:
                 throw new InvalidOperationException($"Unsupported SuccessFactors auth mode '{auth.Mode}'.");
         }
-    }
-
-    private async Task<string> GetOAuthTokenAsync(SuccessFactorsOAuthConfig oauth, CancellationToken cancellationToken)
-    {
-        using var request = new HttpRequestMessage(HttpMethod.Post, oauth.TokenUrl);
-        request.Content = new FormUrlEncodedContent(BuildTokenForm(oauth));
-        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
-
-        using var response = await httpClient.SendAsync(request, cancellationToken);
-        var body = await response.Content.ReadAsStringAsync(cancellationToken);
-        if (!response.IsSuccessStatusCode)
-        {
-            throw new InvalidOperationException($"OAuth token request failed with HTTP {(int)response.StatusCode}: {TrimForLog(body)}");
-        }
-
-        using var document = JsonDocument.Parse(body);
-        if (document.RootElement.TryGetProperty("access_token", out var accessToken) &&
-            accessToken.ValueKind == JsonValueKind.String &&
-            !string.IsNullOrWhiteSpace(accessToken.GetString()))
-        {
-            return accessToken.GetString()!;
-        }
-
-        throw new InvalidOperationException("OAuth token response did not contain an access_token.");
-    }
-
-    private static IReadOnlyList<KeyValuePair<string, string>> BuildTokenForm(SuccessFactorsOAuthConfig oauth)
-    {
-        var values = new List<KeyValuePair<string, string>>
-        {
-            new("grant_type", "client_credentials"),
-            new("client_id", oauth.ClientId),
-            new("client_secret", oauth.ClientSecret)
-        };
-
-        if (!string.IsNullOrWhiteSpace(oauth.CompanyId))
-        {
-            values.Add(new("company_id", oauth.CompanyId));
-        }
-
-        return values;
     }
 
     private static List<string> BuildSuccessFactorsProbeSelect(SuccessFactorsQueryConfig query)
@@ -588,35 +552,65 @@ public sealed class DependencyHealthService(
 
     private static Task<(string RequestedTransport, string EffectiveTransport, bool UsedFallback, int SuccessfulBaseCount, int SkippedBaseCount, string? SkippedBaseDetails)> ProbeActiveDirectoryTransportAsync(
         ActiveDirectoryConfig config,
+        ILogger logger,
+        IActiveDirectoryConnectionPool? activeDirectoryConnectionPool,
         CancellationToken cancellationToken)
     {
         return Task.Run(() =>
         {
-            var connectionResult = CreateLdapConnection(config);
-            using var connection = connectionResult.Connection;
+            ActiveDirectoryConnectionPool.ActiveDirectoryConnectionLease? lease = null;
+            ActiveDirectoryConnectionResult? connectionResult = null;
+            LdapConnection? connection = null;
 
-            var searchBases = GetActiveDirectorySearchBases(config);
-            var successfulBaseCount = 0;
-            var skippedBases = new List<string>();
-            foreach (var searchBase in searchBases)
+            try
             {
-                var (isSuccessful, failureReason) = ProbeActiveDirectorySearchBase(connection, config, searchBase);
-                if (isSuccessful)
+                if (activeDirectoryConnectionPool is not null)
                 {
-                    successfulBaseCount++;
-                    continue;
+                    lease = activeDirectoryConnectionPool.Lease(config, logger, ActiveDirectoryTimeout);
+                    connection = lease.Connection;
+                }
+                else
+                {
+                    connectionResult = CreateLdapConnection(config);
+                    connection = connectionResult.Connection;
                 }
 
-                skippedBases.Add($"{searchBase} ({failureReason ?? "lookup validation failed"})");
-            }
+                var searchBases = GetActiveDirectorySearchBases(config);
+                var successfulBaseCount = 0;
+                var skippedBases = new List<string>();
+                foreach (var searchBase in searchBases)
+                {
+                    var (isSuccessful, failureReason) = ProbeActiveDirectorySearchBase(connection, config, searchBase);
+                    if (isSuccessful)
+                    {
+                        successfulBaseCount++;
+                        continue;
+                    }
 
-            return (
-                connectionResult.RequestedTransport,
-                connectionResult.EffectiveTransport,
-                connectionResult.UsedFallback,
-                successfulBaseCount,
-                skippedBases.Count,
-                skippedBases.Count == 0 ? null : $"Skipped search bases: {string.Join("; ", skippedBases)}");
+                    skippedBases.Add($"{searchBase} ({failureReason ?? "lookup validation failed"})");
+                }
+
+                return (
+                    connectionResult?.RequestedTransport ?? config.Transport.Mode,
+                    lease?.EffectiveTransport ?? connectionResult?.EffectiveTransport ?? config.Transport.Mode,
+                    lease?.UsedFallback ?? connectionResult?.UsedFallback ?? false,
+                    successfulBaseCount,
+                    skippedBases.Count,
+                    skippedBases.Count == 0 ? null : $"Skipped search bases: {string.Join("; ", skippedBases)}");
+            }
+            catch
+            {
+                lease?.Invalidate();
+                throw;
+            }
+            finally
+            {
+                lease?.Dispose();
+                if (connectionResult is not null)
+                {
+                    connectionResult.Connection.Dispose();
+                }
+            }
         }, cancellationToken);
     }
 

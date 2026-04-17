@@ -1,6 +1,7 @@
 using SyncFactors.Contracts;
 using SyncFactors.Domain;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using System.Globalization;
 using System.Net;
 using System.Net.Http.Headers;
@@ -14,8 +15,12 @@ public sealed class SuccessFactorsWorkerSource(
     SyncFactorsConfigurationLoader configLoader,
     IDeltaSyncService deltaSyncService,
     ScaffoldWorkerSource fallbackSource,
-    ILogger<SuccessFactorsWorkerSource> logger) : IWorkerSource
+    ILogger<SuccessFactorsWorkerSource> logger,
+    ISuccessFactorsAccessTokenProvider? accessTokenProvider = null) : IWorkerSource
 {
+    private readonly ISuccessFactorsAccessTokenProvider _accessTokenProvider =
+        accessTokenProvider ?? new SuccessFactorsAccessTokenProvider(httpClient, TimeProvider.System, NullLogger<SuccessFactorsAccessTokenProvider>.Instance);
+
     private static readonly IReadOnlyDictionary<string, string> EntityNavigationAliases =
         new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
@@ -340,7 +345,7 @@ public sealed class SuccessFactorsWorkerSource(
                 break;
 
             case "oauth" when auth.OAuth is not null:
-                var accessToken = await GetOAuthTokenAsync(auth.OAuth, cancellationToken);
+                var accessToken = await _accessTokenProvider.GetAccessTokenAsync(auth.OAuth, cancellationToken);
                 request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
                 logger.LogDebug("Using OAuth bearer authentication for SuccessFactors request.");
                 break;
@@ -653,45 +658,6 @@ public sealed class SuccessFactorsWorkerSource(
         return worker.Attributes.Count(pair => !string.IsNullOrWhiteSpace(pair.Value));
     }
 
-    private async Task<string> GetOAuthTokenAsync(SuccessFactorsOAuthConfig oauth, CancellationToken cancellationToken)
-    {
-        using var request = new HttpRequestMessage(HttpMethod.Post, oauth.TokenUrl);
-        request.Content = new FormUrlEncodedContent(BuildTokenForm(oauth));
-        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
-        request.Headers.AcceptEncoding.Add(new StringWithQualityHeaderValue("gzip"));
-        request.Headers.AcceptEncoding.Add(new StringWithQualityHeaderValue("deflate"));
-        logger.LogDebug("Requesting SuccessFactors OAuth token.");
-
-        using var response = await httpClient.SendAsync(request, cancellationToken);
-        if (!response.IsSuccessStatusCode)
-        {
-            var body = await response.Content.ReadAsStringAsync(cancellationToken);
-            logger.LogError(
-                "SuccessFactors OAuth token request failed. StatusCode={StatusCode} ContentType={ContentType}",
-                (int)response.StatusCode,
-                response.Content.Headers.ContentType?.MediaType ?? "(none)");
-
-            throw CreateDetailedSuccessFactorsException(
-                messagePrefix: "SuccessFactors OAuth token request failed.",
-                response: response,
-                requestUri: oauth.TokenUrl,
-                body: body,
-                query: null);
-        }
-
-        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
-        using var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
-        if (document.RootElement.TryGetProperty("access_token", out var accessToken) && accessToken.ValueKind == JsonValueKind.String)
-        {
-            return accessToken.GetString()!;
-        }
-
-        throw ExternalSystemExceptionFactory.CreateSuccessFactorsException(
-            operation: "OAuth token request",
-            endpoint: oauth.TokenUrl,
-            summary: "The OAuth response did not contain an access_token.");
-    }
-
     private static string TrimForLog(string? value)
     {
         if (string.IsNullOrWhiteSpace(value))
@@ -933,23 +899,6 @@ public sealed class SuccessFactorsWorkerSource(
         }
 
         return currentSelectValues.FirstOrDefault(value => value.EndsWith($"/{propertyName}", StringComparison.Ordinal));
-    }
-
-    private static IEnumerable<KeyValuePair<string, string>> BuildTokenForm(SuccessFactorsOAuthConfig oauth)
-    {
-        var values = new List<KeyValuePair<string, string>>
-        {
-            new("grant_type", "client_credentials"),
-            new("client_id", oauth.ClientId),
-            new("client_secret", oauth.ClientSecret),
-        };
-
-        if (!string.IsNullOrWhiteSpace(oauth.CompanyId))
-        {
-            values.Add(new KeyValuePair<string, string>("company_id", oauth.CompanyId));
-        }
-
-        return values;
     }
 
     private static string BuildRequestUri(SyncFactorsConfigDocument config, SuccessFactorsQueryConfig query, string? workerId)

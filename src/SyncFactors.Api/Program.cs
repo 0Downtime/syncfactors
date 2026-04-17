@@ -111,6 +111,16 @@ builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<IWorkerPreviewLogWriter, FileWorkerPreviewLogWriter>();
 builder.Services.AddSingleton<IDeltaSyncStateStore, SqliteDeltaSyncStateStore>();
 builder.Services.AddSingleton<IDeltaSyncService, SuccessFactorsDeltaSyncService>();
+builder.Services.AddHttpClient("SuccessFactorsAuth")
+    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+    {
+        AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate
+    });
+builder.Services.AddSingleton<ISuccessFactorsAccessTokenProvider>(serviceProvider =>
+    new SuccessFactorsAccessTokenProvider(
+        serviceProvider.GetRequiredService<IHttpClientFactory>(),
+        serviceProvider.GetRequiredService<TimeProvider>(),
+        serviceProvider.GetRequiredService<ILogger<SuccessFactorsAccessTokenProvider>>()));
 builder.Services.AddHttpClient<SuccessFactorsWorkerSource>()
     .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
     {

@@ -507,6 +507,7 @@ public sealed class SuccessFactorsWorkerSourceIntegrationTests
             uri.Contains("personIdExternal", StringComparison.Ordinal) &&
             uri.Contains("asc", StringComparison.OrdinalIgnoreCase));
         Assert.Contains(logger.Messages, message => message.Contains("PagingMode=snapshot", StringComparison.Ordinal));
+        Assert.Equal(1, handler.TokenRequestCount);
     }
 
     [Fact]
@@ -1368,6 +1369,7 @@ public sealed class SuccessFactorsWorkerSourceIntegrationTests
     private sealed class MockSuccessFactorsHttpHandler(MockFixtureStore fixtureStore, ODataResponseBuilder responseBuilder) : HttpMessageHandler
     {
         public List<string> RequestUris { get; } = [];
+        public int TokenRequestCount { get; private set; }
 
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
@@ -1380,6 +1382,7 @@ public sealed class SuccessFactorsWorkerSourceIntegrationTests
 
             if (request.RequestUri.AbsolutePath.Equals("/oauth/token", StringComparison.OrdinalIgnoreCase))
             {
+                TokenRequestCount++;
                 var tokenJson = JsonSerializer.Serialize(new TokenResponse("mock-access-token", "Bearer", 3600));
                 return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
                 {

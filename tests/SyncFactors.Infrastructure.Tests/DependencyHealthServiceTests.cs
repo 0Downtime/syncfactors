@@ -482,6 +482,95 @@ public sealed class DependencyHealthServiceTests
     }
 
     [Fact]
+    public async Task GetSnapshotAsync_ReusesSuccessFactorsOAuthTokenAcrossSnapshots()
+    {
+        var tempRoot = Path.Combine(Path.GetTempPath(), "syncfactors-health-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempRoot);
+
+        var databasePath = Path.Combine(tempRoot, "runtime.db");
+        var pathResolver = new SqlitePathResolver(databasePath);
+        var initializer = new SqliteDatabaseInitializer(pathResolver);
+        await initializer.InitializeAsync(CancellationToken.None);
+
+        IWorkerHeartbeatStore heartbeatStore = new StubWorkerHeartbeatStore(
+            new WorkerHeartbeat(
+                Service: "SyncFactors.Worker",
+                State: "Idle",
+                Activity: "Waiting for scheduled work.",
+                StartedAt: DateTimeOffset.Parse("2026-03-27T12:00:00Z"),
+                LastSeenAt: DateTimeOffset.Parse("2026-03-27T12:00:15Z")));
+
+        var configLoader = new SyncFactorsConfigurationLoader(
+            new SyncFactorsConfigPathResolver(
+                Path.Combine(tempRoot, "sync-config.json"),
+                null));
+
+        await File.WriteAllTextAsync(
+            Path.Combine(tempRoot, "sync-config.json"),
+            """
+            {
+              "secrets": {},
+              "ad": {
+                "server": "ldap.example.invalid",
+                "username": "",
+                "bindPassword": "",
+                "defaultActiveOu": "OU=LabUsers,DC=example,DC=com",
+                "prehireOu": "OU=Prehire,DC=example,DC=com",
+                "graveyardOu": "OU=Graveyard,DC=example,DC=com",
+                "identityAttribute": "employeeID"
+              },
+              "successFactors": {
+                "baseUrl": "https://example.invalid/odata/v2",
+                "query": {
+                  "entitySet": "EmpJob",
+                  "identityField": "userId",
+                  "deltaField": "lastModifiedDateTime",
+                  "select": [ "userId" ],
+                  "expand": []
+                },
+                "auth": {
+                  "mode": "oauth",
+                  "oauth": {
+                    "tokenUrl": "https://example.invalid/oauth/token",
+                    "clientId": "client-id",
+                    "clientSecret": "client-secret",
+                    "companyId": "COMPANY"
+                  }
+                }
+              },
+              "sync": {
+                "enableBeforeStartDays": 7,
+                "deletionRetentionDays": 30
+              },
+              "safety": {
+                "maxCreatesPerRun": 25,
+                "maxDisablesPerRun": 25,
+                "maxDeletionsPerRun": 25
+              },
+              "reporting": {
+                "outputDirectory": "/tmp"
+              }
+            }
+            """);
+
+        var handler = new OAuthSuccessMessageHandler();
+        var service = new DependencyHealthService(
+            configLoader,
+            pathResolver,
+            heartbeatStore,
+            new HttpClient(handler),
+            new FakeTimeProvider(DateTimeOffset.Parse("2026-03-27T12:00:30Z")),
+            NullLogger<DependencyHealthService>.Instance,
+            activeDirectoryProbe: (_, _) => Task.FromResult(("ldaps", "ldaps", false, 1, 0, (string?)null)));
+
+        _ = await service.GetSnapshotAsync(CancellationToken.None);
+        _ = await service.GetSnapshotAsync(CancellationToken.None);
+
+        Assert.Equal(1, handler.TokenRequestCount);
+        Assert.Equal(2, handler.ReadRequestCount);
+    }
+
+    [Fact]
     public async Task GetSnapshotAsync_ReturnsHttpFailure_WhenSuccessFactorsErrorPayloadIsJsonString()
     {
         var tempRoot = Path.Combine(Path.GetTempPath(), "syncfactors-health-tests", Guid.NewGuid().ToString("N"));
@@ -732,6 +821,34 @@ public sealed class DependencyHealthServiceTests
         {
             _ = request;
             _ = cancellationToken;
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("""{"d":{"results":[{"userId":"10001"}]}}""")
+            });
+        }
+    }
+
+    private sealed class OAuthSuccessMessageHandler : HttpMessageHandler
+    {
+        public int TokenRequestCount { get; private set; }
+        public int ReadRequestCount { get; private set; }
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            _ = cancellationToken;
+
+            if (request.RequestUri!.AbsolutePath.Equals("/oauth/token", StringComparison.OrdinalIgnoreCase))
+            {
+                TokenRequestCount++;
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent("""{"access_token":"cached-token","token_type":"Bearer","expires_in":3600}""")
+                });
+            }
+
+            ReadRequestCount++;
+            Assert.Equal("Bearer", request.Headers.Authorization?.Scheme);
+            Assert.Equal("cached-token", request.Headers.Authorization?.Parameter);
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent("""{"d":{"results":[{"userId":"10001"}]}}""")
