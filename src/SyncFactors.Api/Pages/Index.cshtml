@@ -129,15 +129,15 @@
         </dl>
         <p class="callout danger @(string.IsNullOrWhiteSpace(Model.Status.ErrorMessage) ? "is-hidden" : null)" data-status-error>@Model.Status.ErrorMessage</p>
 
-        <section class="connection-section" data-connection-health>
+        <section class="connection-section" data-connection-health data-health-probes-enabled="@(Model.HealthProbesEnabled ? "true" : "false")">
             <div class="section-heading">
                 <div>
                     <p class="eyebrow">Connection</p>
                     <h3>Dependency Health</h3>
                 </div>
                 <div class="connection-overview">
-                    <span class="badge neutral" data-health-overall-badge>Loading</span>
-                    <span class="muted" data-health-last-checked>Probe has not run yet.</span>
+                    <span class="badge @(Model.HealthProbesEnabled ? "neutral" : "dim")" data-health-overall-badge>@(Model.HealthProbesEnabled ? "Loading" : "Disabled")</span>
+                    <span class="muted" data-health-last-checked>@(Model.HealthProbesEnabled ? "Probe has not run yet." : "Dashboard health probes are disabled.")</span>
                 </div>
             </div>
 
@@ -154,10 +154,10 @@
                     <article class="connection-card">
                         <header class="connection-head">
                             <h4>@dependency</h4>
-                            <span class="badge neutral">Waiting</span>
+                            <span class="badge @(Model.HealthProbesEnabled ? "neutral" : "dim")">@(Model.HealthProbesEnabled ? "Waiting" : "Disabled")</span>
                         </header>
-                        <p class="connection-summary">Probe pending.</p>
-                        <p class="connection-detail muted">The dashboard will run this check after the page settles.</p>
+                        <p class="connection-summary">@(Model.HealthProbesEnabled ? "Probe pending." : "Dashboard probing is turned off.")</p>
+                        <p class="connection-detail muted">@(Model.HealthProbesEnabled ? "The dashboard will run this check after the page settles." : "Enable dashboard health probes to run this dependency check.")</p>
                     </article>
                 }
             </div>

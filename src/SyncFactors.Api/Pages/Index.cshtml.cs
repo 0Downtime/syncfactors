@@ -7,6 +7,7 @@ namespace SyncFactors.Api.Pages;
 
 public sealed class IndexModel(
     IDashboardSnapshotService dashboardSnapshotService,
+    DashboardOptions dashboardOptions,
     ISyncScheduleStore syncScheduleStore) : PageModel
 {
     public RuntimeStatus Status { get; private set; } = new(
@@ -33,6 +34,8 @@ public sealed class IndexModel(
     public bool RequiresAttention { get; private set; }
 
     public string? AttentionMessage { get; private set; }
+
+    public bool HealthProbesEnabled { get; } = dashboardOptions.HealthProbesEnabled;
 
     public SyncScheduleStatus Schedule { get; private set; } = new(
         Enabled: false,

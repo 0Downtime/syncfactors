@@ -44,6 +44,7 @@ public sealed class AdminConfigurationSnapshotBuilder(
         var sqlitePath = sqlitePathResolver.ResolveConfiguredPath();
         var scaffoldDataPath = scaffoldDataPathResolver.Resolve();
         var realtimeEnabled = configuration.GetValue<bool?>("SyncFactors:Realtime:Enabled") ?? true;
+        var dashboardHealthProbesEnabled = configuration.GetValue<bool?>("SyncFactors:Dashboard:HealthProbes:Enabled") ?? true;
         var cspEnabled = configuration.GetValue<bool?>("SyncFactors:SecurityHeaders:EnableContentSecurityPolicy")
             ?? !hostEnvironment.IsDevelopment();
         var applicationInsightsConfigured = IsApplicationInsightsConfigured();
@@ -95,6 +96,10 @@ public sealed class AdminConfigurationSnapshotBuilder(
                             "Realtime updates",
                             FormatEnabledDisabled(realtimeEnabled),
                             GetHostSource("SyncFactors:Realtime:Enabled")),
+                        CreateEntry(
+                            "Dashboard health probes",
+                            FormatEnabledDisabled(dashboardHealthProbesEnabled),
+                            GetHostSource("SyncFactors:Dashboard:HealthProbes:Enabled")),
                         CreateEntry(
                             "Content Security Policy",
                             FormatEnabledDisabled(cspEnabled),

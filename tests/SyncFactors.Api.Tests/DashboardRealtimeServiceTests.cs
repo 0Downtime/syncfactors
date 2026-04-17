@@ -22,6 +22,7 @@ public sealed class DashboardRealtimeServiceTests
                 new HealthyDependencyHealthService()),
             hubContext,
             tracker,
+            new DashboardOptions(HealthProbesEnabled: true),
             new FixedTimeProvider(DateTimeOffset.Parse("2026-04-10T12:00:00Z")),
             NullLogger<DashboardRealtimeService>.Instance);
 
@@ -49,6 +50,7 @@ public sealed class DashboardRealtimeServiceTests
                 new ThrowingDependencyHealthService()),
             hubContext,
             tracker,
+            new DashboardOptions(HealthProbesEnabled: true),
             new FixedTimeProvider(DateTimeOffset.Parse("2026-04-10T12:00:00Z")),
             NullLogger<DashboardRealtimeService>.Instance);
 
@@ -61,6 +63,35 @@ public sealed class DashboardRealtimeServiceTests
         Assert.Contains(
             hubContext.Client.ReceivedMessages,
             message => string.Equals(message.Type, DashboardRealtimeEventTypes.DashboardSnapshotUpdated, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_DoesNotPublishHealthSnapshotsWhenDashboardHealthProbesAreDisabled()
+    {
+        var tracker = new DashboardRealtimeConnectionTracker();
+        tracker.Increment();
+
+        var hubContext = new StubHubContext();
+        var service = new DashboardRealtimeService(
+            new StubServiceScopeFactory(
+                new HealthyDashboardSnapshotService(),
+                new ThrowingDependencyHealthService()),
+            hubContext,
+            tracker,
+            new DashboardOptions(HealthProbesEnabled: false),
+            new FixedTimeProvider(DateTimeOffset.Parse("2026-04-10T12:00:00Z")),
+            NullLogger<DashboardRealtimeService>.Instance);
+
+        await service.StartAsync(CancellationToken.None);
+        await Task.Delay(TimeSpan.FromMilliseconds(2600));
+        await service.StopAsync(CancellationToken.None);
+
+        Assert.Contains(
+            hubContext.Client.ReceivedMessages,
+            message => string.Equals(message.Type, DashboardRealtimeEventTypes.DashboardSnapshotUpdated, StringComparison.Ordinal));
+        Assert.DoesNotContain(
+            hubContext.Client.ReceivedMessages,
+            message => string.Equals(message.Type, DashboardRealtimeEventTypes.HealthSnapshotUpdated, StringComparison.Ordinal));
     }
 
     private sealed class StubServiceScopeFactory(

@@ -10,6 +10,7 @@ public sealed class DashboardRealtimeService(
     IServiceScopeFactory scopeFactory,
     IHubContext<DashboardHub, IDashboardRealtimeClient> hubContext,
     DashboardRealtimeConnectionTracker connectionTracker,
+    DashboardOptions dashboardOptions,
     TimeProvider timeProvider,
     ILogger<DashboardRealtimeService> logger) : BackgroundService
 {
@@ -51,7 +52,7 @@ public sealed class DashboardRealtimeService(
                 }
 
                 var now = timeProvider.GetUtcNow();
-                if (now >= _nextHealthProbeAt)
+                if (dashboardOptions.HealthProbesEnabled && now >= _nextHealthProbeAt)
                 {
                     try
                     {
