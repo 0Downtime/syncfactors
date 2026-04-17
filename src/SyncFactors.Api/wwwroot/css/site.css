@@ -758,6 +758,53 @@ a:focus-visible {
   text-align: right;
 }
 
+.connection-toolbar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.connection-toolbar-actions {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.connection-toolbar-copy {
+  margin: 0;
+}
+
+.connection-toolbar-form {
+  margin: 0;
+}
+
+.connection-toolbar-frequency-form {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.connection-toolbar-frequency-form label {
+  display: grid;
+  gap: 6px;
+}
+
+.connection-toolbar-frequency-form input {
+  width: 128px;
+}
+
+.connection-toolbar-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+
 .connection-bar {
   display: grid;
   grid-template-columns: repeat(4, 1fr);

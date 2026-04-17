@@ -61,6 +61,20 @@
     </aside>
 </section>
 
+@if (!string.IsNullOrWhiteSpace(Model.ErrorMessage))
+{
+    <section class="panel">
+        <p class="callout danger">@Model.ErrorMessage</p>
+    </section>
+}
+
+@if (!string.IsNullOrWhiteSpace(Model.SuccessMessage))
+{
+    <section class="panel">
+        <p class="callout good">@Model.SuccessMessage</p>
+    </section>
+}
+
 @if (Model.RequiresAttention)
 {
     <section class="panel">
@@ -129,7 +143,7 @@
         </dl>
         <p class="callout danger @(string.IsNullOrWhiteSpace(Model.Status.ErrorMessage) ? "is-hidden" : null)" data-status-error>@Model.Status.ErrorMessage</p>
 
-        <section class="connection-section" data-connection-health data-health-probes-enabled="@(Model.HealthProbesEnabled ? "true" : "false")">
+        <section class="connection-section" data-connection-health data-health-probes-enabled="@(Model.HealthProbesEnabled ? "true" : "false")" data-health-probe-interval-ms="@(Model.HealthProbeIntervalSeconds * 1000)">
             <div class="section-heading">
                 <div>
                     <p class="eyebrow">Connection</p>
@@ -140,6 +154,37 @@
                     <span class="muted" data-health-last-checked>@(Model.HealthProbesEnabled ? "Probe has not run yet." : "Dashboard health probes are disabled.")</span>
                 </div>
             </div>
+
+            @if (Model.IsDevelopment && (User.IsInRole("Admin") || User.IsInRole("BreakGlassAdmin")))
+            {
+                <div class="connection-toolbar">
+                    <div>
+                        <p class="muted connection-toolbar-copy">
+                            Development-only override.
+                            Default for this environment is @(Model.DefaultHealthProbesEnabled ? "enabled" : "disabled").
+                            Default frequency is every @Model.DefaultHealthProbeIntervalSeconds seconds.
+                            @(Model.HealthProbesUseOverride ? "A runtime override is currently active." : "No runtime override is saved.")
+                        </p>
+                    </div>
+                    <div class="connection-toolbar-actions">
+                        <form method="post" asp-page-handler="SetHealthProbeFrequency" class="connection-toolbar-form connection-toolbar-frequency-form">
+                            <label>
+                                <span>Frequency (seconds)</span>
+                                <input type="number" name="intervalSeconds" value="@Model.HealthProbeIntervalSeconds" min="@SyncFactors.Api.DashboardSettingsProvider.MinHealthProbeIntervalSeconds" max="@SyncFactors.Api.DashboardSettingsProvider.MaxHealthProbeIntervalSeconds" step="1" />
+                            </label>
+                            <button class="link-button subtle-button" type="submit">Save frequency</button>
+                        </form>
+                        <form method="post" asp-page-handler="SetHealthProbes" class="connection-toolbar-form">
+                            <input type="hidden" name="enabled" value="@(Model.HealthProbesEnabled ? "false" : "true")" />
+                            <button class="link-button subtle-button" type="submit">@(Model.HealthProbesEnabled ? "Disable probes" : "Enable probes")</button>
+                        </form>
+                    </div>
+                </div>
+                <div class="connection-toolbar-meta">
+                    <span class="badge info">Current frequency: @Model.HealthProbeIntervalSeconds s</span>
+                    <span class="badge dim">Allowed range: @SyncFactors.Api.DashboardSettingsProvider.MinHealthProbeIntervalSeconds-@SyncFactors.Api.DashboardSettingsProvider.MaxHealthProbeIntervalSeconds s</span>
+                </div>
+            }
 
             <div class="connection-bar" aria-hidden="true">
                 <span class="connection-segment neutral" data-probe-segment="SuccessFactors"></span>

@@ -10,17 +10,17 @@ public sealed class DashboardRealtimeService(
     IServiceScopeFactory scopeFactory,
     IHubContext<DashboardHub, IDashboardRealtimeClient> hubContext,
     DashboardRealtimeConnectionTracker connectionTracker,
-    DashboardOptions dashboardOptions,
+    DashboardSettingsProvider dashboardSettingsProvider,
     TimeProvider timeProvider,
     ILogger<DashboardRealtimeService> logger) : BackgroundService
 {
     private static readonly TimeSpan DashboardInterval = TimeSpan.FromSeconds(2);
-    private static readonly TimeSpan HealthInterval = TimeSpan.FromSeconds(45);
     private static readonly JsonSerializerOptions SignatureSerializerOptions = new(JsonSerializerDefaults.Web);
 
     private string? _lastDashboardSignature;
     private string? _lastHealthSignature;
     private DateTimeOffset _nextHealthProbeAt;
+    private int? _lastHealthProbeIntervalSeconds;
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -52,7 +52,22 @@ public sealed class DashboardRealtimeService(
                 }
 
                 var now = timeProvider.GetUtcNow();
-                if (dashboardOptions.HealthProbesEnabled && now >= _nextHealthProbeAt)
+                var healthProbeState = await dashboardSettingsProvider.GetHealthProbeStateAsync(stoppingToken);
+                if (!healthProbeState.Enabled)
+                {
+                    _lastHealthSignature = null;
+                    _nextHealthProbeAt = DateTimeOffset.MinValue;
+                    _lastHealthProbeIntervalSeconds = null;
+                    continue;
+                }
+
+                if (_lastHealthProbeIntervalSeconds != healthProbeState.IntervalSeconds)
+                {
+                    _nextHealthProbeAt = DateTimeOffset.MinValue;
+                    _lastHealthProbeIntervalSeconds = healthProbeState.IntervalSeconds;
+                }
+
+                if (now >= _nextHealthProbeAt)
                 {
                     try
                     {
@@ -68,7 +83,7 @@ public sealed class DashboardRealtimeService(
                         logger.LogWarning(ex, "Health snapshot publish failed.");
                     }
 
-                    _nextHealthProbeAt = now.Add(HealthInterval);
+                    _nextHealthProbeAt = now.Add(TimeSpan.FromSeconds(healthProbeState.IntervalSeconds));
                 }
             }
         }
@@ -141,6 +156,7 @@ public sealed class DashboardRealtimeService(
         _lastDashboardSignature = null;
         _lastHealthSignature = null;
         _nextHealthProbeAt = DateTimeOffset.MinValue;
+        _lastHealthProbeIntervalSeconds = null;
     }
 
     private sealed record DashboardSnapshotSignature(

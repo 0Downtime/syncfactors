@@ -5,7 +5,7 @@ namespace SyncFactors.Infrastructure;
 
 public sealed class SqliteDatabaseInitializer(SqlitePathResolver pathResolver)
 {
-    private const int CurrentSchemaVersion = 10;
+    private const int CurrentSchemaVersion = 12;
 
     public async Task InitializeAsync(CancellationToken cancellationToken)
     {
@@ -98,6 +98,18 @@ public sealed class SqliteDatabaseInitializer(SqlitePathResolver pathResolver)
         {
             await ApplyVersion10Async(connection, transaction, cancellationToken);
             await InsertVersionAsync(connection, transaction, 10, cancellationToken);
+        }
+
+        if (!appliedVersions.Contains(11))
+        {
+            await ApplyVersion11Async(connection, transaction, cancellationToken);
+            await InsertVersionAsync(connection, transaction, 11, cancellationToken);
+        }
+
+        if (!appliedVersions.Contains(12))
+        {
+            await ApplyVersion12Async(connection, transaction, cancellationToken);
+            await InsertVersionAsync(connection, transaction, 12, cancellationToken);
         }
 
         await transaction.CommitAsync(cancellationToken);
@@ -378,6 +390,49 @@ public sealed class SqliteDatabaseInitializer(SqlitePathResolver pathResolver)
         }
     }
 
+    private static async Task ApplyVersion11Async(
+        SqliteConnection connection,
+        DbTransaction transaction,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = (SqliteTransaction)transaction;
+        command.CommandText =
+            """
+            CREATE TABLE IF NOT EXISTS dashboard_settings (
+              settings_key TEXT NOT NULL PRIMARY KEY,
+              health_probes_enabled INTEGER NOT NULL DEFAULT 1,
+              updated_at TEXT NOT NULL
+            );
+            """;
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task ApplyVersion12Async(
+        SqliteConnection connection,
+        DbTransaction transaction,
+        CancellationToken cancellationToken)
+    {
+        var hasDashboardSettingsTable = await TableExistsAsync(connection, transaction, "dashboard_settings", cancellationToken);
+        if (!hasDashboardSettingsTable)
+        {
+            return;
+        }
+
+        var columns = await GetTableColumnsAsync(connection, transaction, "dashboard_settings", cancellationToken);
+        if (!columns.Contains("health_probe_interval_seconds"))
+        {
+            await using var command = connection.CreateCommand();
+            command.Transaction = (SqliteTransaction)transaction;
+            command.CommandText =
+                """
+                ALTER TABLE dashboard_settings
+                ADD COLUMN health_probe_interval_seconds INTEGER NULL;
+                """;
+            await command.ExecuteNonQueryAsync(cancellationToken);
+        }
+    }
+
     private static async Task ApplyVersion4Async(
         SqliteConnection connection,
         DbTransaction transaction,
@@ -572,6 +627,7 @@ public sealed class SqliteDatabaseInitializer(SqlitePathResolver pathResolver)
         command.Transaction = (SqliteTransaction)transaction;
         command.CommandText = tableName switch
         {
+            "dashboard_settings" => "PRAGMA table_info(dashboard_settings);",
             "runs" => "PRAGMA table_info(runs);",
             "run_queue" => "PRAGMA table_info(run_queue);",
             "runtime_status" => "PRAGMA table_info(runtime_status);",

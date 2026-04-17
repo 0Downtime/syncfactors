@@ -108,7 +108,7 @@ public sealed class AdminConfigurationSnapshotBuilderTests
             deploymentGroup.Entries.Single(entry => entry.Label == "Realtime updates").SourceLabel);
         Assert.Equal(
             "Default",
-            deploymentGroup.Entries.Single(entry => entry.Label == "Dashboard health probes").SourceLabel);
+            deploymentGroup.Entries.Single(entry => entry.Label == "Dashboard health probes default").SourceLabel);
         Assert.Equal(
             "Default",
             deploymentGroup.Entries.Single(entry => entry.Label == "Application Insights").SourceLabel);

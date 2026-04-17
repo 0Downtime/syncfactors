@@ -9,7 +9,6 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
 
 (function () {
     const dashboardPollIntervalMs = 15000;
-    const healthPollIntervalMs = 60000;
     const progressAnimationDurationMs = 700;
     const progressDoneDelayMs = 240;
     const reduceMotionQuery = window.matchMedia ? window.matchMedia("(prefers-reduced-motion: reduce)") : null;
@@ -98,7 +97,10 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
     const lastChecked = elements.root.querySelector("[data-health-last-checked]");
     const segments = Array.prototype.slice.call(elements.root.querySelectorAll("[data-probe-segment]"));
     const probeOrder = ["SuccessFactors", "Active Directory", "Worker Service", "SQLite"];
-    const healthProbesEnabled = (elements.root.getAttribute("data-health-probes-enabled") || "true").toLowerCase() !== "false";
+    const initialHealthProbesEnabled = (elements.root.getAttribute("data-health-probes-enabled") || "true").toLowerCase() !== "false";
+    const healthPollIntervalMs = Math.max(
+        1000,
+        parseInt(elements.root.getAttribute("data-health-probe-interval-ms") || "45000", 10) || 45000);
     const valueNodes = {
         status: elements.statusRoot.querySelector("[data-status-value]"),
         stage: elements.statusRoot.querySelector("[data-stage-value]"),
@@ -1672,6 +1674,11 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
     }
 
     function renderHealthSnapshot(snapshot) {
+        if (snapshot && String(snapshot.status || "").toLowerCase() === "disabled") {
+            renderHealthDisabled();
+            return;
+        }
+
         latestHealthSnapshot = snapshot;
         const probes = Array.isArray(snapshot && snapshot.probes) ? snapshot.probes.slice() : [];
         probes.sort(function (left, right) {
@@ -1761,11 +1768,6 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
     }
 
     async function loadHealth() {
-        if (!healthProbesEnabled) {
-            renderHealthDisabled();
-            return;
-        }
-
         if (isLoadingHealth) {
             return;
         }
@@ -1773,7 +1775,7 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
         isLoadingHealth = true;
         setPanelLoading(elements.root, true);
         try {
-            const response = await fetch("/api/health", { headers: { Accept: "application/json" } });
+            const response = await fetch("/api/dashboard/health", { headers: { Accept: "application/json" } });
             if (!response.ok) {
                 throw new Error("Health probe request failed with HTTP " + response.status + ".");
             }
@@ -1833,17 +1835,15 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
 
         if (immediate) {
             void loadDashboard();
+            void loadHealth();
             void loadSchedule();
-            if (healthProbesEnabled) {
-                void loadHealth();
-            }
         }
 
         if (!dashboardTimerId) {
             dashboardTimerId = window.setInterval(loadDashboard, dashboardPollIntervalMs);
         }
 
-        if (healthProbesEnabled && !healthTimerId) {
+        if (!healthTimerId) {
             healthTimerId = window.setInterval(loadHealth, healthPollIntervalMs);
         }
     }
@@ -1881,7 +1881,7 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
             return;
         }
 
-        if (healthProbesEnabled && message.type === "healthSnapshotUpdated" && message.healthSnapshot) {
+        if (message.type === "healthSnapshotUpdated" && message.healthSnapshot) {
             renderHealthSnapshot(message.healthSnapshot);
         }
     }
@@ -1925,9 +1925,7 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
                 setLiveState("live", "Push updates are active again.");
                 stopFallbackPolling();
                 void loadDashboard();
-                if (healthProbesEnabled) {
-                    void loadHealth();
-                }
+                void loadHealth();
             });
 
             connection.onclose(function () {
@@ -1961,7 +1959,7 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
 
     function startDashboard() {
         startScheduleTimer();
-        if (!healthProbesEnabled) {
+        if (!initialHealthProbesEnabled) {
             renderHealthDisabled();
         }
         startFallbackPolling();

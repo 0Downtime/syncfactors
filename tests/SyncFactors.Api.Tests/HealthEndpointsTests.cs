@@ -15,6 +15,22 @@ public sealed class HealthEndpointsTests
     }
 
     [Fact]
+    public async Task DashboardHealth_ReturnsDisabledSnapshot_WhenDashboardHealthProbesAreDisabled()
+    {
+        var result = await HealthEndpointMappings.GetDashboardHealthAsync(
+            new StubDependencyHealthService(),
+            new DashboardSettingsProvider(
+                new DashboardOptions(DefaultHealthProbesEnabled: false, DefaultHealthProbeIntervalSeconds: 45),
+                new StubDashboardSettingsStore(enabledOverride: null)),
+            new StubTimeProvider(DateTimeOffset.Parse("2026-04-17T12:00:00Z")),
+            CancellationToken.None);
+
+        Assert.NotNull(result.Value);
+        Assert.Equal("Disabled", result.Value.Status);
+        Assert.Empty(result.Value.Probes);
+    }
+
+    [Fact]
     public void Healthz_ReturnsOkPayload()
     {
         var result = HealthEndpointMappings.GetHealthz();
@@ -44,5 +60,31 @@ public sealed class HealthEndpointsTests
                         IsStale: false)
                 ]));
         }
+    }
+
+    private sealed class StubDashboardSettingsStore(bool? enabledOverride) : IDashboardSettingsStore
+    {
+        public Task<bool?> GetHealthProbesEnabledOverrideAsync(CancellationToken cancellationToken)
+        {
+            _ = cancellationToken;
+            return Task.FromResult(enabledOverride);
+        }
+
+        public Task<int?> GetHealthProbeIntervalSecondsOverrideAsync(CancellationToken cancellationToken)
+        {
+            _ = cancellationToken;
+            return Task.FromResult<int?>(null);
+        }
+
+        public Task SaveHealthProbeOverrideAsync(bool enabled, int intervalSeconds, CancellationToken cancellationToken)
+        {
+            _ = cancellationToken;
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class StubTimeProvider(DateTimeOffset utcNow) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => utcNow;
     }
 }
