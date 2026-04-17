@@ -251,7 +251,7 @@ public sealed class SuccessFactorsWorkerSource(
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 var enrichedWorker = await EnrichWorkerAsync(config, worker, previewLookup, cancellationToken);
-                if (!ShouldIncludeInSyncScope(enrichedWorker, query))
+                if (!ShouldIncludeInSyncScope(enrichedWorker, config))
                 {
                     logger.LogInformation(
                         "Skipping worker from sync scope because emplStatus is null or empty. WorkerId={WorkerId}",
@@ -324,7 +324,7 @@ public sealed class SuccessFactorsWorkerSource(
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 var enrichedWorker = await EnrichWorkerAsync(config, worker, previewLookup, cancellationToken);
-                if (!ShouldIncludeInSyncScope(enrichedWorker, query))
+                if (!ShouldIncludeInSyncScope(enrichedWorker, config))
                 {
                     logger.LogInformation(
                         "Skipping worker from sync scope because emplStatus is null or empty. WorkerId={WorkerId}",
@@ -422,7 +422,10 @@ public sealed class SuccessFactorsWorkerSource(
         var attributes = new Dictionary<string, string?>(canonicalWorker.Attributes, StringComparer.OrdinalIgnoreCase);
         foreach (var pair in previewWorker.Attributes)
         {
-            attributes[pair.Key] = pair.Value;
+            if (!string.IsNullOrWhiteSpace(pair.Value))
+            {
+                attributes[pair.Key] = pair.Value;
+            }
         }
 
         return canonicalWorker with
@@ -1162,9 +1165,10 @@ public sealed class SuccessFactorsWorkerSource(
         return $"{statusClause} and {dateField} ge datetime'{cutoff.ToString("yyyy-MM-ddTHH:mm:ss", CultureInfo.InvariantCulture)}'";
     }
 
-    private static bool ShouldIncludeInSyncScope(WorkerSnapshot worker, SuccessFactorsQueryConfig query)
+    private static bool ShouldIncludeInSyncScope(WorkerSnapshot worker, SyncFactorsConfigDocument config)
     {
-        if (!QueryIncludesEmploymentStatus(query))
+        if (!QueryIncludesEmploymentStatus(config.SuccessFactors.Query) &&
+            !OptionalQueryIncludesEmploymentStatus(config.SuccessFactors.PreviewQuery))
         {
             return true;
         }
@@ -1177,6 +1181,11 @@ public sealed class SuccessFactorsWorkerSource(
     {
         return query.Select.Any(static field =>
             field.Contains("emplStatus", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static bool OptionalQueryIncludesEmploymentStatus(SuccessFactorsQueryConfig? query)
+    {
+        return query is not null && QueryIncludesEmploymentStatus(query);
     }
 
     private static WorkerSnapshot? TryParseWorker(JsonElement root, SyncFactorsConfigDocument config, SuccessFactorsQueryConfig query, string workerId)
@@ -1203,9 +1212,7 @@ public sealed class SuccessFactorsWorkerSource(
             ? GetNavigationObject(employment.Value, "userNav")
             : null;
         JsonElement? jobInfo = GetFirstNavigationResult(worker, "jobInfoNav")
-            ?? (worker.TryGetProperty("jobTitle", out _)
-                || worker.TryGetProperty("company", out _)
-                || worker.TryGetProperty("department", out _)
+            ?? (HasDirectJobInfoFields(worker)
                 ? (JsonElement?)worker.Clone()
                 : null)
             ?? (employment is { ValueKind: not JsonValueKind.Undefined }
@@ -1243,6 +1250,16 @@ public sealed class SuccessFactorsWorkerSource(
             TargetOu: config.Ad.DefaultActiveOu,
             IsPrehire: IsPrehire(startDate),
             Attributes: BuildAttributes(worker, personalInfo, employment, jobInfo));
+    }
+
+    private static bool HasDirectJobInfoFields(JsonElement worker)
+    {
+        return worker.TryGetProperty("jobTitle", out _) ||
+               worker.TryGetProperty("company", out _) ||
+               worker.TryGetProperty("department", out _) ||
+               worker.TryGetProperty("emplStatus", out _) ||
+               worker.TryGetProperty("startDate", out _) ||
+               worker.TryGetProperty("managerId", out _);
     }
 
     private static string CombineFilters(string? baseFilter, string deltaFilter)

@@ -1451,6 +1451,189 @@ public sealed class SuccessFactorsWorkerSourceIntegrationTests
         Assert.Equal("A", listedWorker.Attributes["emplStatus"]);
     }
 
+    [Fact]
+    public async Task ListWorkersAsync_PreservesCanonicalEmploymentStatus_WhenPreviewOmitsStatus()
+    {
+        using var client = new HttpClient(new PreviewMissingEmploymentStatusHttpHandler())
+        {
+            BaseAddress = new Uri("http://mock-successfactors.local")
+        };
+
+        var tempDirectory = Path.Combine(Path.GetTempPath(), "syncfactors-worker-source", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDirectory);
+
+        var syncConfigPath = Path.Combine(tempDirectory, "sync-config.json");
+        var mappingConfigPath = Path.Combine(tempDirectory, "mapping-config.json");
+        var scaffoldDataPath = Path.Combine(tempDirectory, "scaffold-data.json");
+
+        await File.WriteAllTextAsync(syncConfigPath, """
+        {
+          "secrets": {
+            "adServerEnv": null,
+            "adUsernameEnv": null,
+            "adBindPasswordEnv": null
+          },
+          "successFactors": {
+            "baseUrl": "http://mock-successfactors.local/odata/v2",
+            "auth": {
+              "mode": "basic",
+              "basic": {
+                "username": "mock-user",
+                "password": "mock-password"
+              }
+            },
+            "query": {
+              "entitySet": "EmpJob",
+              "identityField": "userId",
+              "deltaField": "lastModifiedDateTime",
+              "select": [
+                "userId",
+                "emplStatus",
+                "startDate"
+              ],
+              "expand": []
+            },
+            "previewQuery": {
+              "entitySet": "PerPerson",
+              "identityField": "personIdExternal",
+              "deltaField": "lastModifiedDateTime",
+              "select": [
+                "personIdExternal",
+                "employmentNav/userId",
+                "personalInfoNav/firstName"
+              ],
+              "expand": [
+                "employmentNav",
+                "personalInfoNav"
+              ]
+            }
+          },
+          "ad": {
+            "server": "ldap.example.test",
+            "username": "",
+            "bindPassword": "",
+            "identityAttribute": "employeeID",
+            "defaultActiveOu": "OU=LabUsers,DC=example,DC=com",
+            "prehireOu": "OU=Prehire,DC=example,DC=com",
+            "graveyardOu": "OU=LabGraveyard,DC=example,DC=com"
+          },
+          "sync": {
+            "enableBeforeStartDays": 7,
+            "deletionRetentionDays": 90
+          },
+          "safety": {
+            "maxCreatesPerRun": 10,
+            "maxDisablesPerRun": 10,
+            "maxDeletionsPerRun": 10
+          },
+          "reporting": {
+            "outputDirectory": "reports"
+          }
+        }
+        """);
+        File.Copy(Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "config", "sample.empjob-confirmed.mapping-config.json")), mappingConfigPath);
+        await File.WriteAllTextAsync(scaffoldDataPath, """{"workers":[],"directoryUsers":[]}""");
+
+        var configLoader = new SyncFactorsConfigurationLoader(new SyncFactorsConfigPathResolver(syncConfigPath, mappingConfigPath));
+        var scaffoldStore = new ScaffoldDataStore(new ScaffoldDataPathResolver(scaffoldDataPath));
+        var fallbackSource = new ScaffoldWorkerSource(scaffoldStore);
+        var workerSource = new SuccessFactorsWorkerSource(client, configLoader, new DisabledDeltaSyncService(), fallbackSource, NullLogger<SuccessFactorsWorkerSource>.Instance);
+
+        var workers = new List<WorkerSnapshot>();
+        await foreach (var worker in workerSource.ListWorkersAsync(WorkerListingMode.Full, CancellationToken.None))
+        {
+            workers.Add(worker);
+        }
+
+        var listedWorker = Assert.Single(workers);
+        Assert.Equal("A", listedWorker.Attributes["emplStatus"]);
+        Assert.Equal("preview-name", listedWorker.PreferredName);
+    }
+
+    [Fact]
+    public async Task ListWorkersAsync_ReadsEmploymentStatusFromTopLevelEmpJobFields()
+    {
+        using var client = new HttpClient(new TopLevelEmpJobEmploymentStatusHttpHandler())
+        {
+            BaseAddress = new Uri("http://mock-successfactors.local")
+        };
+
+        var tempDirectory = Path.Combine(Path.GetTempPath(), "syncfactors-worker-source", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDirectory);
+
+        var syncConfigPath = Path.Combine(tempDirectory, "sync-config.json");
+        var mappingConfigPath = Path.Combine(tempDirectory, "mapping-config.json");
+        var scaffoldDataPath = Path.Combine(tempDirectory, "scaffold-data.json");
+
+        await File.WriteAllTextAsync(syncConfigPath, """
+        {
+          "secrets": {
+            "adServerEnv": null,
+            "adUsernameEnv": null,
+            "adBindPasswordEnv": null
+          },
+          "successFactors": {
+            "baseUrl": "http://mock-successfactors.local/odata/v2",
+            "auth": {
+              "mode": "basic",
+              "basic": {
+                "username": "mock-user",
+                "password": "mock-password"
+              }
+            },
+            "query": {
+              "entitySet": "EmpJob",
+              "identityField": "userId",
+              "deltaField": "lastModifiedDateTime",
+              "select": [
+                "userId",
+                "startDate",
+                "emplStatus"
+              ],
+              "expand": []
+            }
+          },
+          "ad": {
+            "server": "ldap.example.test",
+            "username": "",
+            "bindPassword": "",
+            "identityAttribute": "employeeID",
+            "defaultActiveOu": "OU=LabUsers,DC=example,DC=com",
+            "prehireOu": "OU=Prehire,DC=example,DC=com",
+            "graveyardOu": "OU=LabGraveyard,DC=example,DC=com"
+          },
+          "sync": {
+            "enableBeforeStartDays": 7,
+            "deletionRetentionDays": 90
+          },
+          "safety": {
+            "maxCreatesPerRun": 10,
+            "maxDisablesPerRun": 10,
+            "maxDeletionsPerRun": 10
+          },
+          "reporting": {
+            "outputDirectory": "reports"
+          }
+        }
+        """);
+        File.Copy(Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "config", "sample.empjob-confirmed.mapping-config.json")), mappingConfigPath);
+        await File.WriteAllTextAsync(scaffoldDataPath, """{"workers":[],"directoryUsers":[]}""");
+
+        var configLoader = new SyncFactorsConfigurationLoader(new SyncFactorsConfigPathResolver(syncConfigPath, mappingConfigPath));
+        var scaffoldStore = new ScaffoldDataStore(new ScaffoldDataPathResolver(scaffoldDataPath));
+        var fallbackSource = new ScaffoldWorkerSource(scaffoldStore);
+        var workerSource = new SuccessFactorsWorkerSource(client, configLoader, new DisabledDeltaSyncService(), fallbackSource, NullLogger<SuccessFactorsWorkerSource>.Instance);
+
+        var workers = new List<WorkerSnapshot>();
+        await foreach (var worker in workerSource.ListWorkersAsync(WorkerListingMode.Full, CancellationToken.None))
+        {
+            workers.Add(worker);
+        }
+
+        var listedWorker = Assert.Single(workers);
+        Assert.Equal("A", listedWorker.Attributes["emplStatus"]);
+    }
+
     private sealed class MockSuccessFactorsHttpHandler(MockFixtureStore fixtureStore, ODataResponseBuilder responseBuilder) : HttpMessageHandler
     {
         public List<string> RequestUris { get; } = [];
@@ -1662,6 +1845,95 @@ public sealed class SuccessFactorsWorkerSourceIntegrationTests
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(resultsJson, Encoding.UTF8, "application/json")
+            });
+        }
+    }
+
+    private sealed class PreviewMissingEmploymentStatusHttpHandler : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            _ = cancellationToken;
+
+            if (request.RequestUri?.AbsolutePath.Equals("/odata/v2/EmpJob", StringComparison.OrdinalIgnoreCase) == true)
+            {
+                const string empJobJson = """
+                {
+                  "d": {
+                    "results": [
+                      {
+                        "userId": "active-worker",
+                        "personIdExternal": "person-1",
+                        "startDate": "2026-03-11T00:00:00Z",
+                        "emplStatus": "A"
+                      }
+                    ]
+                  }
+                }
+                """;
+
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(empJobJson, Encoding.UTF8, "application/json")
+                });
+            }
+
+            const string perPersonJson = """
+            {
+              "d": {
+                "results": [
+                  {
+                    "personIdExternal": "person-1",
+                    "personalInfoNav": {
+                      "results": [
+                        {
+                          "firstName": "preview-name"
+                        }
+                      ]
+                    },
+                    "employmentNav": {
+                      "results": [
+                        {
+                          "userId": "active-worker"
+                        }
+                      ]
+                    }
+                  }
+                ]
+              }
+            }
+            """;
+
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(perPersonJson, Encoding.UTF8, "application/json")
+            });
+        }
+    }
+
+    private sealed class TopLevelEmpJobEmploymentStatusHttpHandler : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            _ = cancellationToken;
+
+            const string empJobJson = """
+            {
+              "d": {
+                "results": [
+                  {
+                    "userId": "active-worker",
+                    "startDate": "2026-03-11T00:00:00Z",
+                    "emplStatus": "A"
+                  }
+                ]
+              }
+            }
+            """;
+
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(empJobJson, Encoding.UTF8, "application/json")
             });
         }
     }
