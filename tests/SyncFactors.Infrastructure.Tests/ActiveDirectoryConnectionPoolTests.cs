@@ -13,19 +13,27 @@ public sealed class ActiveDirectoryConnectionPoolTests
             connectionFactory: (_, _, _) =>
             {
                 factoryCalls++;
-                return new LdapConnection(new LdapDirectoryIdentifier("localhost"));
+                return new ActiveDirectoryConnectionResult(
+                    new LdapConnection(new LdapDirectoryIdentifier("localhost")),
+                    RequestedTransport: "ldaps",
+                    EffectiveTransport: "ldaps",
+                    UsedFallback: false);
             });
 
         LdapConnection firstConnection;
         using (var lease = pool.Lease(CreateConfig(), NullLogger.Instance, TimeSpan.FromSeconds(1)))
         {
             firstConnection = lease.Connection;
+            Assert.Equal("ldaps", lease.EffectiveTransport);
+            Assert.False(lease.UsedFallback);
         }
 
         using var secondLease = pool.Lease(CreateConfig(), NullLogger.Instance, TimeSpan.FromSeconds(1));
 
         Assert.Same(firstConnection, secondLease.Connection);
         Assert.Equal(1, factoryCalls);
+        Assert.Equal("ldaps", secondLease.EffectiveTransport);
+        Assert.False(secondLease.UsedFallback);
     }
 
     [Fact]
@@ -36,13 +44,19 @@ public sealed class ActiveDirectoryConnectionPoolTests
             connectionFactory: (_, _, _) =>
             {
                 factoryCalls++;
-                return new LdapConnection(new LdapDirectoryIdentifier("localhost"));
+                return new ActiveDirectoryConnectionResult(
+                    new LdapConnection(new LdapDirectoryIdentifier("localhost")),
+                    RequestedTransport: "ldaps",
+                    EffectiveTransport: "ldap",
+                    UsedFallback: true);
             });
 
         LdapConnection firstConnection;
         using (var lease = pool.Lease(CreateConfig(), NullLogger.Instance, TimeSpan.FromSeconds(1)))
         {
             firstConnection = lease.Connection;
+            Assert.Equal("ldap", lease.EffectiveTransport);
+            Assert.True(lease.UsedFallback);
             lease.Invalidate();
         }
 
@@ -50,6 +64,8 @@ public sealed class ActiveDirectoryConnectionPoolTests
 
         Assert.NotSame(firstConnection, secondLease.Connection);
         Assert.Equal(2, factoryCalls);
+        Assert.Equal("ldap", secondLease.EffectiveTransport);
+        Assert.True(secondLease.UsedFallback);
     }
 
     private static ActiveDirectoryConfig CreateConfig()

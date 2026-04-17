@@ -60,13 +60,16 @@ internal static class ActiveDirectoryAttributeConstraints
         }
 
         var normalizedAttribute = Normalize(attribute);
+        var normalizedValue = normalizedAttribute is "userPrincipalName" or "mail"
+            ? value.Trim().ToLowerInvariant()
+            : value;
         if (!MaxLengths.TryGetValue(normalizedAttribute, out var maxLength) ||
-            value.Length <= maxLength)
+            normalizedValue.Length <= maxLength)
         {
-            return value;
+            return normalizedValue;
         }
 
-        return value[..maxLength];
+        return normalizedValue[..maxLength];
     }
 
     private static string Normalize(string attribute)

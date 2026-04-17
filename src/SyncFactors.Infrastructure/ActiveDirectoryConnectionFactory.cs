@@ -209,7 +209,7 @@ internal static class ActiveDirectoryConnectionFactory
                 .Trim();
 }
 
-internal sealed record ActiveDirectoryConnectionResult(
+public sealed record ActiveDirectoryConnectionResult(
     LdapConnection Connection,
     string RequestedTransport,
     string EffectiveTransport,

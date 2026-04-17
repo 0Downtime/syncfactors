@@ -4,6 +4,8 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using System.DirectoryServices.Protocols;
 using System.Diagnostics;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace SyncFactors.Infrastructure;
 
@@ -13,6 +15,14 @@ public sealed class ActiveDirectoryCommandGateway(
     ILogger<ActiveDirectoryCommandGateway> logger) : IDirectoryCommandGateway
 {
     private static readonly TimeSpan LdapOperationTimeout = TimeSpan.FromSeconds(10);
+    private const int NormalAccountControl = 0x0200;
+    private const int AccountDisabledFlag = 0x0002;
+    private const int DisabledNormalAccountControl = NormalAccountControl | AccountDisabledFlag;
+    private const int RandomPasswordLength = 20;
+    private const string PasswordUppercaseCharacters = "ABCDEFGHJKLMNPQRSTUVWXYZ";
+    private const string PasswordLowercaseCharacters = "abcdefghijkmnopqrstuvwxyz";
+    private const string PasswordDigitCharacters = "23456789";
+    private const string PasswordSpecialCharacters = "!@#$%^&*-_=+?";
 
     private static readonly IReadOnlyDictionary<string, string> AttributeAliases =
         new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
@@ -37,7 +47,7 @@ public sealed class ActiveDirectoryCommandGateway(
             logger.LogInformation("Executing AD command. Action={Action} WorkerId={WorkerId} SamAccountName={SamAccountName}", command.Action, command.WorkerId, command.SamAccountName);
             lease = connectionPool.Lease(config, logger, LdapOperationTimeout);
             var result = await ExecuteWithTimeoutAsync(
-                operation: () => ExecuteCommand(lease.Connection, command, config, logger),
+                operation: () => ExecuteCommand(lease.Connection, command, config, logger, lease.EffectiveTransport),
                 operationName: $"command '{command.Action}'",
                 server: config.Server,
                 cancellationToken: cancellationToken);
@@ -67,7 +77,7 @@ public sealed class ActiveDirectoryCommandGateway(
         }
     }
 
-    private static DirectoryCommandResult ExecuteCommand(LdapConnection connection, DirectoryMutationCommand command, ActiveDirectoryConfig config, ILogger logger)
+    private static DirectoryCommandResult ExecuteCommand(LdapConnection connection, DirectoryMutationCommand command, ActiveDirectoryConfig config, ILogger logger, string effectiveTransport)
     {
         var operations = command.Operations.Count > 0
             ? command.Operations
@@ -78,7 +88,7 @@ public sealed class ActiveDirectoryCommandGateway(
         {
             distinguishedName = operation.Kind switch
             {
-                "CreateUser" => CreateUser(connection, command, config, logger).DistinguishedName,
+                "CreateUser" => CreateUser(connection, command, config, logger, effectiveTransport).DistinguishedName,
                 "UpdateUser" => UpdateUser(connection, command, config, logger, distinguishedName).DistinguishedName,
                 "MoveUser" => MoveUser(connection, command, config, logger, operation.TargetOu, distinguishedName).DistinguishedName,
                 "EnableUser" => SetAccountEnabled(connection, command, config, logger, true, distinguishedName).DistinguishedName,
@@ -97,7 +107,7 @@ public sealed class ActiveDirectoryCommandGateway(
             RunId: null);
     }
 
-    private static DirectoryCommandResult CreateUser(LdapConnection connection, DirectoryMutationCommand command, ActiveDirectoryConfig config, ILogger logger)
+    private static DirectoryCommandResult CreateUser(LdapConnection connection, DirectoryMutationCommand command, ActiveDirectoryConfig config, ILogger logger, string effectiveTransport)
     {
         var dn = $"CN={EscapeDnComponent(command.CommonName)},{command.TargetOu}";
         var attributes = BuildCreateAttributes(command, config);
@@ -126,13 +136,34 @@ public sealed class ActiveDirectoryCommandGateway(
 
         try
         {
+            var canProvisionPassword = SupportsPasswordProvisioningTransport(effectiveTransport);
             ExecuteModify(connection, request, logger, "create user add request", ("WorkerId", command.WorkerId), ("SamAccountName", command.SamAccountName));
+            if (canProvisionPassword)
+            {
+                step = "SetPassword";
+                SetPassword(connection, dn, GenerateRandomPassword(), config, logger, command.WorkerId, effectiveTransport);
+            }
+            else
+            {
+                logger.LogWarning(
+                    "Created AD user without initial password provisioning because the effective transport is not secure enough. WorkerId={WorkerId} SamAccountName={SamAccountName} EffectiveTransport={EffectiveTransport}",
+                    command.WorkerId,
+                    command.SamAccountName,
+                    effectiveTransport);
+            }
+
             step = "ResolveManager";
             managerDn ??= ResolveManagerDistinguishedName(connection, command.ManagerId, config);
             if (!string.IsNullOrWhiteSpace(managerDn))
             {
                 step = "SetManager";
                 SetManager(connection, dn, managerDn, logger, command.WorkerId);
+            }
+
+            if (command.EnableAccount && canProvisionPassword)
+            {
+                step = "EnableUser";
+                SetAccountEnabled(connection, command, config, logger, true, dn);
             }
         }
         catch (Exception ex) when (ex is LdapException or DirectoryOperationException)
@@ -143,8 +174,10 @@ public sealed class ActiveDirectoryCommandGateway(
                 ex,
                 BuildCreateFailureDetails(command, dn, config, attributes, step, managerDn));
         }
-
-        return new DirectoryCommandResult(true, command.Action, command.SamAccountName, dn, $"Created AD user {command.SamAccountName}.", null);
+        var message = SupportsPasswordProvisioningTransport(effectiveTransport)
+            ? $"Created AD user {command.SamAccountName}."
+            : $"Created AD user {command.SamAccountName} as disabled because initial password provisioning requires LDAPS or StartTLS.";
+        return new DirectoryCommandResult(true, command.Action, command.SamAccountName, dn, message, null);
     }
 
     private static IdentityConflictResult? FindIdentityConflict(
@@ -710,6 +743,17 @@ public sealed class ActiveDirectoryCommandGateway(
         return modification;
     }
 
+    private static DirectoryAttributeModification BuildReplaceBinaryModification(string attributeName, byte[] value)
+    {
+        var modification = new DirectoryAttributeModification
+        {
+            Name = attributeName,
+            Operation = DirectoryAttributeOperation.Replace
+        };
+        modification.Add(value);
+        return modification;
+    }
+
     private static DirectoryAttributeModification BuildDeleteModification(string attributeName)
     {
         return new DirectoryAttributeModification
@@ -728,7 +772,8 @@ public sealed class ActiveDirectoryCommandGateway(
             new("displayName", command.DisplayName),
             new("sAMAccountName", command.SamAccountName),
             new("userPrincipalName", command.UserPrincipalName),
-            new("mail", command.Mail)
+            new("mail", command.Mail),
+            new("userAccountControl", DisabledNormalAccountControl.ToString())
         };
 
         if (TryResolveCreateIdentityValue(command, config, out var identityValue))
@@ -965,10 +1010,10 @@ public sealed class ActiveDirectoryCommandGateway(
 
         if (existing?.Enabled == false)
         {
-            return 0x0202;
+            return DisabledNormalAccountControl;
         }
 
-        return 0x0200;
+        return NormalAccountControl;
     }
 
     private static bool? ParseEnabled(string? userAccountControl)
@@ -978,8 +1023,66 @@ public sealed class ActiveDirectoryCommandGateway(
             return null;
         }
 
-        const int AccountDisabledFlag = 0x0002;
         return (value & AccountDisabledFlag) == 0;
+    }
+
+    private static void SetPassword(
+        LdapConnection connection,
+        string distinguishedName,
+        string password,
+        ActiveDirectoryConfig config,
+        ILogger logger,
+        string workerId,
+        string effectiveTransport)
+    {
+        _ = config;
+        _ = workerId;
+        _ = effectiveTransport;
+        var request = new ModifyRequest(distinguishedName);
+        request.Modifications.Add(BuildReplaceBinaryModification("unicodePwd", EncodeUnicodePassword(password)));
+        ExecuteModify(connection, request, logger, "set password modify request", ("WorkerId", workerId), ("DistinguishedName", distinguishedName));
+    }
+
+    private static bool SupportsPasswordProvisioningTransport(string effectiveTransport)
+    {
+        return string.Equals(effectiveTransport, "ldaps", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(effectiveTransport, "starttls", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static byte[] EncodeUnicodePassword(string password)
+    {
+        return Encoding.Unicode.GetBytes($"\"{password}\"");
+    }
+
+    private static string GenerateRandomPassword()
+    {
+        var requiredCharacters = new[]
+        {
+            PasswordUppercaseCharacters[RandomNumberGenerator.GetInt32(PasswordUppercaseCharacters.Length)],
+            PasswordLowercaseCharacters[RandomNumberGenerator.GetInt32(PasswordLowercaseCharacters.Length)],
+            PasswordDigitCharacters[RandomNumberGenerator.GetInt32(PasswordDigitCharacters.Length)],
+            PasswordSpecialCharacters[RandomNumberGenerator.GetInt32(PasswordSpecialCharacters.Length)]
+        };
+        var allCharacters = PasswordUppercaseCharacters + PasswordLowercaseCharacters + PasswordDigitCharacters + PasswordSpecialCharacters;
+        var passwordCharacters = new char[RandomPasswordLength];
+
+        for (var index = 0; index < requiredCharacters.Length; index++)
+        {
+            passwordCharacters[index] = requiredCharacters[index];
+        }
+
+        for (var index = requiredCharacters.Length; index < passwordCharacters.Length; index++)
+        {
+            passwordCharacters[index] = allCharacters[RandomNumberGenerator.GetInt32(allCharacters.Length)];
+        }
+
+        for (var index = passwordCharacters.Length - 1; index > 0; index--)
+        {
+            var swapIndex = RandomNumberGenerator.GetInt32(index + 1);
+            (passwordCharacters[index], passwordCharacters[swapIndex]) = (passwordCharacters[swapIndex], passwordCharacters[index]);
+        }
+
+        return new string(passwordCharacters);
     }
 
     private static string BuildCompletionMessage(DirectoryMutationCommand command, IReadOnlyList<SyncFactors.Contracts.DirectoryOperation> operations)
