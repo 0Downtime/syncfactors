@@ -5,11 +5,11 @@ namespace SyncFactors.Infrastructure.Tests;
 public sealed class SyncFactorsConfigurationLoaderTests
 {
     [Fact]
-    public async Task GetSyncConfig_DefaultsIdentityPolicyToggleToFalse_WhenOmitted()
+    public async Task GetSyncConfig_DefaultsIdentityPolicyToggleToTrue_WhenOmitted()
     {
         var config = await LoadConfigAsync(identityPolicyJson: null);
 
-        Assert.False(config.Ad.IdentityPolicy.ResolveCreateConflictingUpnAndMail);
+        Assert.True(config.Ad.IdentityPolicy.ResolveCreateConflictingUpnAndMail);
     }
 
     [Fact]
