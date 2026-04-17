@@ -300,11 +300,11 @@ public sealed class SyncFactorsConfigurationLoader
     {
         if (!ad.TryGetObject("identityPolicy", out var identityPolicy))
         {
-            return new ActiveDirectoryIdentityPolicyConfig(ResolveCreateConflictingUpnAndMail: false);
+            return new ActiveDirectoryIdentityPolicyConfig(ResolveCreateConflictingUpnAndMail: true);
         }
 
         return new ActiveDirectoryIdentityPolicyConfig(
-            ResolveCreateConflictingUpnAndMail: identityPolicy.TryGetBoolean("resolveCreateConflictingUpnAndMail") ?? false);
+            ResolveCreateConflictingUpnAndMail: identityPolicy.TryGetBoolean("resolveCreateConflictingUpnAndMail") ?? true);
     }
 
     private static ActiveDirectoryTransportConfig LoadActiveDirectoryTransport(JsonElement ad)

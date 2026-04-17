@@ -144,7 +144,7 @@
       "trustedCertificateThumbprints": []
     },
     "identityPolicy": {
-      "resolveCreateConflictingUpnAndMail": false
+      "resolveCreateConflictingUpnAndMail": true
     },
     "defaultPassword": "",
     "ouRoutingRules": [
