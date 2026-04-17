@@ -134,6 +134,8 @@ The current runtime keeps tracked samples and ignored local config under `config
 - `config/sample.empjob-confirmed.mapping-config.json`: sample mapping config for the current `EmpJob`-driven flow
 - `config/local*.json`: local editable copies created by the worktree bootstrap script when missing
 
+`pwsh ./scripts/Update-LocalSyncFactorsConfig.ps1` re-normalizes every tracked local JSON config against the checked-in samples. Existing local values stay in place for matching keys, sample defaults are added when new keys appear, obsolete local-only keys are removed, and the local files are rewritten into the sample key order and JSON layout.
+
 Sync config resolution currently works like this:
 
 1. `.env.worktree` sets `SYNCFACTORS_RUN_PROFILE` to `mock` or `real`
@@ -452,6 +454,8 @@ That script:
 - creates `config/local.mock-successfactors.real-ad.sync-config.json` when missing
 - creates `config/local.real-successfactors.real-ad.sync-config.json` when missing
 - creates `config/local.syncfactors.mapping-config.json` when missing
+- creates `config/local.empjob-confirmed.mapping-config.json` when missing
+- creates `config/local.codex-run.json` when missing
 - creates `.env.worktree` from `.env.worktree.example` when missing
 - copies ignored local config from the primary worktree first when available
 
@@ -491,6 +495,16 @@ Useful variants:
 - `pwsh ./scripts/codex/run.ps1 -Service stack -Restart`
 - `pwsh ./scripts/codex/run.ps1 -Service ui -Profile mock`
 - `pwsh ./scripts/codex/run.ps1 -Service api -SkipBuild`
+
+Before `run.ps1` launches services, it checks the tracked local JSON config files against their checked-in samples. In an interactive terminal it shows the drifted files once and offers to rewrite them in place while preserving current local values for matching fields. In a headless session it fails fast with a remediation message instead of guessing.
+
+If a headless run fails on config drift, repair the local files first:
+
+```powershell
+pwsh ./scripts/Update-LocalSyncFactorsConfig.ps1
+```
+
+Then rerun your original `pwsh ./scripts/codex/run.ps1 ...` command.
 
 For remote UI access, set `SYNCFACTORS_API_BIND_HOST=0.0.0.0` and `SYNCFACTORS_API_PUBLIC_HOST=<dns-name-or-lan-ip>` before launching the API or stack, then browse to `https://<SYNCFACTORS_API_PUBLIC_HOST>:<SYNCFACTORS_API_PORT>/Login`.
 
