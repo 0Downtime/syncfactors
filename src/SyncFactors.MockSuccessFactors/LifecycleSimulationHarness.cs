@@ -140,6 +140,11 @@ internal sealed class LifecycleSimulationHarness(
                 .OrderBy(user => user.WorkerId, Comparer)
                 .ToArray();
             failures.AddRange(ValidateFinalExpectation(_scenario.FinalExpectation!, finalUsers));
+            var aggregateBucketCounts = BuildAggregateBucketCounts(reports);
+            var finalDirectoryTotals = new LifecycleSimulationDirectoryTotals(
+                TotalUsers: finalUsers.Length,
+                EnabledUsers: finalUsers.Count(user => user.Enabled),
+                DisabledUsers: finalUsers.Count(user => !user.Enabled));
 
             var completedAt = DateTimeOffset.UtcNow;
             return new LifecycleSimulationReport(
@@ -150,6 +155,8 @@ internal sealed class LifecycleSimulationHarness(
                 CompletedAtUtc: completedAt,
                 Failures: failures,
                 Iterations: reports,
+                AggregateBucketCounts: aggregateBucketCounts,
+                FinalDirectoryTotals: finalDirectoryTotals,
                 FinalDirectoryUsers: finalUsers);
         }
         finally
@@ -471,6 +478,23 @@ internal sealed class LifecycleSimulationHarness(
         };
     }
 
+    private static IReadOnlyDictionary<string, int> BuildAggregateBucketCounts(
+        IReadOnlyList<LifecycleSimulationIterationReport> iterations)
+    {
+        var counts = new Dictionary<string, int>(Comparer);
+        foreach (var iteration in iterations)
+        {
+            foreach (var pair in iteration.BucketCounts)
+            {
+                counts[pair.Key] = counts.TryGetValue(pair.Key, out var current)
+                    ? current + pair.Value
+                    : pair.Value;
+            }
+        }
+
+        return counts;
+    }
+
     private static int GetBucketCount(RunRecord run, string bucket)
     {
         return bucket switch
@@ -494,9 +518,15 @@ internal sealed class LifecycleSimulationHarness(
     {
         return entries
             .Where(entry => !string.IsNullOrWhiteSpace(entry.WorkerId))
+            .Select(entry => new
+            {
+                WorkerId = entry.WorkerId!,
+                Operations = GetOperationKinds(entry.Item)
+            })
+            .Where(entry => entry.Operations.Count > 0)
             .Select(entry => new LifecycleSimulationWorkerOperationResult(
-                WorkerId: entry.WorkerId!,
-                Operations: GetOperationKinds(entry.Item)))
+                WorkerId: entry.WorkerId,
+                Operations: entry.Operations))
             .OrderBy(entry => entry.WorkerId, Comparer)
             .ToArray();
     }

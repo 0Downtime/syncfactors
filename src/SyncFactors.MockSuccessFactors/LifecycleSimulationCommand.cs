@@ -78,17 +78,15 @@ public static class LifecycleSimulationCommand
             var fixtures = await LoadFixturesAsync(command.FixturePath, cancellationToken);
             var harness = new LifecycleSimulationHarness(command, scenario, fixtures);
             var report = await harness.RunAsync(cancellationToken);
+            string? jsonReportPath = null;
+            string? markdownReportPath = null;
 
             if (!string.IsNullOrWhiteSpace(command.ReportPath))
             {
-                Directory.CreateDirectory(Path.GetDirectoryName(command.ReportPath)!);
-                await File.WriteAllTextAsync(
-                    command.ReportPath,
-                    JsonSerializer.Serialize(report, JsonOptions),
-                    cancellationToken);
+                (jsonReportPath, markdownReportPath) = await WriteReportsAsync(report, command.ReportPath, cancellationToken);
             }
 
-            await WriteSummaryAsync(output, report, cancellationToken);
+            await WriteSummaryAsync(output, report, jsonReportPath, markdownReportPath, cancellationToken);
             return report.Passed ? 0 : 1;
         }
         catch (Exception ex)
@@ -122,34 +120,196 @@ public static class LifecycleSimulationCommand
             ?? new MockFixtureDocument([]);
     }
 
-    private static async Task WriteSummaryAsync(TextWriter output, LifecycleSimulationReport report, CancellationToken cancellationToken)
+    private static async Task<(string? JsonReportPath, string? MarkdownReportPath)> WriteReportsAsync(
+        LifecycleSimulationReport report,
+        string requestedPath,
+        CancellationToken cancellationToken)
     {
-        await output.WriteLineAsync($"Lifecycle simulation ({report.ScenarioName})");
-        await output.WriteLineAsync($"fixturePath={report.FixturePath}");
-        await output.WriteLineAsync($"passed={report.Passed}");
+        var extension = Path.GetExtension(requestedPath);
+        var requestedFullPath = Path.GetFullPath(requestedPath);
+        string jsonPath;
+        string markdownPath;
 
-        foreach (var iteration in report.Iterations)
+        if (string.Equals(extension, ".md", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(extension, ".txt", StringComparison.OrdinalIgnoreCase))
+        {
+            markdownPath = requestedFullPath;
+            jsonPath = Path.ChangeExtension(requestedFullPath, ".json");
+        }
+        else
+        {
+            jsonPath = requestedFullPath;
+            markdownPath = Path.ChangeExtension(requestedFullPath, ".md");
+        }
+
+        Directory.CreateDirectory(Path.GetDirectoryName(jsonPath)!);
+        Directory.CreateDirectory(Path.GetDirectoryName(markdownPath)!);
+
+        await File.WriteAllTextAsync(
+            jsonPath,
+            JsonSerializer.Serialize(report, JsonOptions),
+            cancellationToken);
+        await File.WriteAllTextAsync(
+            markdownPath,
+            BuildMarkdownReport(report),
+            cancellationToken);
+
+        return (jsonPath, markdownPath);
+    }
+
+    private static async Task WriteSummaryAsync(
+        TextWriter output,
+        LifecycleSimulationReport report,
+        string? jsonReportPath,
+        string? markdownReportPath,
+        CancellationToken cancellationToken)
+    {
+        var resultLabel = report.Passed ? "PASSED" : "FAILED";
+        var duration = report.CompletedAtUtc - report.StartedAtUtc;
+
+        await output.WriteLineAsync("Lifecycle Simulation Report");
+        await output.WriteLineAsync($"Scenario: {report.ScenarioName}");
+        await output.WriteLineAsync($"Result: {resultLabel}");
+        await output.WriteLineAsync($"Duration: {duration.TotalSeconds:F1}s");
+        await output.WriteLineAsync($"Fixture Path: {report.FixturePath}");
+        await output.WriteLineAsync($"Iterations: {report.Iterations.Count}");
+        await output.WriteLineAsync(
+            $"Final Directory Users: total={report.FinalDirectoryTotals.TotalUsers}, enabled={report.FinalDirectoryTotals.EnabledUsers}, disabled={report.FinalDirectoryTotals.DisabledUsers}");
+        await output.WriteLineAsync(
+            $"Aggregate Buckets: {FormatCounts(report.AggregateBucketCounts)}");
+
+        if (!string.IsNullOrWhiteSpace(markdownReportPath))
+        {
+            await output.WriteLineAsync($"Markdown Report: {markdownReportPath}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(jsonReportPath))
+        {
+            await output.WriteLineAsync($"Json Report: {jsonReportPath}");
+        }
+
+        await output.WriteLineAsync(string.Empty);
+        await output.WriteLineAsync("Iterations");
+
+        foreach (var iteration in report.Iterations.OrderBy(iteration => iteration.Order))
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var bucketCounts = iteration.BucketCounts.Count == 0
-                ? "none"
-                : string.Join(", ", iteration.BucketCounts.OrderBy(pair => pair.Key, StringComparer.OrdinalIgnoreCase).Select(pair => $"{pair.Key}={pair.Value}"));
-            await output.WriteLineAsync($"iteration[{iteration.Order}] {iteration.Name} status={iteration.RunStatus} buckets={bucketCounts}");
+            await output.WriteLineAsync(
+                $"{iteration.Order}. {iteration.Name} [{iteration.RunStatus}] buckets: {FormatCounts(iteration.BucketCounts)}");
+            foreach (var worker in iteration.WorkerOperations.OrderBy(worker => worker.WorkerId, StringComparer.OrdinalIgnoreCase))
+            {
+                await output.WriteLineAsync($"   {worker.WorkerId}: {string.Join(", ", worker.Operations)}");
+            }
+
             foreach (var failure in iteration.Failures)
             {
-                await output.WriteLineAsync($"  failure: {failure}");
+                await output.WriteLineAsync($"   failure: {failure}");
             }
         }
 
-        foreach (var failure in report.Failures)
+        await output.WriteLineAsync(string.Empty);
+        await output.WriteLineAsync("Final Directory State");
+        foreach (var user in report.FinalDirectoryUsers.OrderBy(user => user.WorkerId, StringComparer.OrdinalIgnoreCase))
         {
-            await output.WriteLineAsync($"failure: {failure}");
+            await output.WriteLineAsync(
+                $"{user.WorkerId}: sam={user.SamAccountName} ou={user.ParentOu} enabled={user.Enabled} displayName={user.DisplayName ?? "(unset)"}");
         }
 
-        if (!string.IsNullOrWhiteSpace(report.FinalDirectoryUsers.FirstOrDefault()?.WorkerId))
+        if (report.Failures.Count > 0)
         {
-            await output.WriteLineAsync($"finalDirectoryUsers={report.FinalDirectoryUsers.Count}");
+            await output.WriteLineAsync(string.Empty);
+            await output.WriteLineAsync("Failures");
+            foreach (var failure in report.Failures)
+            {
+                await output.WriteLineAsync($"- {failure}");
+            }
         }
+    }
+
+    private static string BuildMarkdownReport(LifecycleSimulationReport report)
+    {
+        var lines = new List<string>
+        {
+            "# Lifecycle Simulation Report",
+            string.Empty,
+            $"- Scenario: `{report.ScenarioName}`",
+            $"- Result: **{(report.Passed ? "PASSED" : "FAILED")}**",
+            $"- Duration: `{(report.CompletedAtUtc - report.StartedAtUtc).TotalSeconds:F1}s`",
+            $"- Fixture Path: `{report.FixturePath}`",
+            $"- Iterations: `{report.Iterations.Count}`",
+            $"- Final Directory Users: `{report.FinalDirectoryTotals.TotalUsers}` total, `{report.FinalDirectoryTotals.EnabledUsers}` enabled, `{report.FinalDirectoryTotals.DisabledUsers}` disabled",
+            $"- Aggregate Buckets: `{FormatCounts(report.AggregateBucketCounts)}`",
+            string.Empty,
+            "## Iterations",
+            string.Empty
+        };
+
+        foreach (var iteration in report.Iterations.OrderBy(iteration => iteration.Order))
+        {
+            lines.Add($"### {iteration.Order}. {iteration.Name}");
+            lines.Add(string.Empty);
+            lines.Add($"- Status: `{iteration.RunStatus}`");
+            lines.Add($"- Run ID: `{iteration.RunId}`");
+            lines.Add($"- Buckets: `{FormatCounts(iteration.BucketCounts)}`");
+            if (iteration.WorkerOperations.Count > 0)
+            {
+                lines.Add("- Worker Operations:");
+                foreach (var worker in iteration.WorkerOperations.OrderBy(worker => worker.WorkerId, StringComparer.OrdinalIgnoreCase))
+                {
+                    lines.Add($"  - `{worker.WorkerId}`: `{string.Join(", ", worker.Operations)}`");
+                }
+            }
+
+            if (iteration.Failures.Count > 0)
+            {
+                lines.Add("- Failures:");
+                foreach (var failure in iteration.Failures)
+                {
+                    lines.Add($"  - {failure}");
+                }
+            }
+
+            lines.Add(string.Empty);
+        }
+
+        lines.Add("## Final Directory State");
+        lines.Add(string.Empty);
+        lines.Add("| Worker | SAM | Parent OU | Enabled | Display Name |");
+        lines.Add("| --- | --- | --- | --- | --- |");
+        foreach (var user in report.FinalDirectoryUsers.OrderBy(user => user.WorkerId, StringComparer.OrdinalIgnoreCase))
+        {
+            lines.Add($"| {user.WorkerId} | {user.SamAccountName} | {user.ParentOu} | {user.Enabled} | {user.DisplayName ?? "(unset)"} |");
+        }
+
+        if (report.Failures.Count > 0)
+        {
+            lines.Add(string.Empty);
+            lines.Add("## Failures");
+            lines.Add(string.Empty);
+            foreach (var failure in report.Failures)
+            {
+                lines.Add($"- {failure}");
+            }
+        }
+
+        lines.Add(string.Empty);
+        return string.Join(Environment.NewLine, lines);
+    }
+
+    private static string FormatCounts(IReadOnlyDictionary<string, int> counts)
+    {
+        if (counts.Count == 0)
+        {
+            return "none";
+        }
+
+        var nonZeroCounts = counts
+            .Where(pair => pair.Value > 0)
+            .OrderBy(pair => pair.Key, StringComparer.OrdinalIgnoreCase)
+            .Select(pair => $"{pair.Key}={pair.Value}")
+            .ToArray();
+
+        return nonZeroCounts.Length == 0 ? "none" : string.Join(", ", nonZeroCounts);
     }
 
     internal static string ResolveDefaultFixturePath()
