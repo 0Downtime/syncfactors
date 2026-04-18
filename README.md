@@ -1,6 +1,24 @@
-# [Alpha] SyncFactors
+<h1 align="center">[Alpha] SyncFactors</h1>
 
-<p>
+<p align="center">
+  <img src="src/SyncFactors.Api/wwwroot/images/syncfactors-logo-black.png#gh-light-mode-only" alt="SyncFactors" width="420" />
+  <img src="src/SyncFactors.Api/wwwroot/images/syncfactors-logo-white.png#gh-dark-mode-only" alt="SyncFactors" width="420" />
+</p>
+
+<p align="center">
+  <strong>Local-first identity sync orchestration for operators.</strong><br />
+  ASP.NET Core UI, background worker execution, SQLite runtime state, and review-first sync workflows.
+</p>
+
+<p align="center">
+  <a href="#current-state">Current State</a> •
+  <a href="#local-development">Local Development</a> •
+  <a href="#config-model">Config Model</a> •
+  <a href="docs/architecture.md">Architecture</a> •
+  <a href="docs/empjob-ad-mapping.md">EmpJob Mapping</a>
+</p>
+
+<p align="center">
   <a href="https://github.com/0Downtime/syncfactors/actions/workflows/test.yml">
     <img src="https://github.com/0Downtime/syncfactors/actions/workflows/test.yml/badge.svg?branch=main" alt="Tests" />
   </a>
@@ -19,11 +37,6 @@
   <a href="https://github.com/0Downtime/syncfactors/search?l=C%23">
     <img src="https://img.shields.io/github/languages/top/0Downtime/syncfactors" alt="Top Language" />
   </a>
-</p>
-
-<p>
-  <img src="src/SyncFactors.Api/wwwroot/images/syncfactors-logo-black.png#gh-light-mode-only" alt="SyncFactors" width="420" />
-  <img src="src/SyncFactors.Api/wwwroot/images/syncfactors-logo-white.png#gh-dark-mode-only" alt="SyncFactors" width="420" />
 </p>
 
 `SyncFactors` is the current .NET-based SyncFactors implementation and repository root.
