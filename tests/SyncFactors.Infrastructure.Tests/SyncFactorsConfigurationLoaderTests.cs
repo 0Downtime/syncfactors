@@ -138,6 +138,26 @@ public sealed class SyncFactorsConfigurationLoaderTests
     }
 
     [Fact]
+    public async Task GetSyncConfig_DefaultsRealSyncEnabledToTrue_WhenOmitted()
+    {
+        var config = await LoadConfigAsync(adJson: null);
+
+        Assert.True(config.Sync.RealSyncEnabled);
+    }
+
+    [Fact]
+    public async Task GetSyncConfig_LoadsRealSyncEnabled_WhenExplicitlyFalse()
+    {
+        var config = await LoadConfigAsync(
+            adJson: null,
+            syncJson: """
+              "realSyncEnabled": false
+            """);
+
+        Assert.False(config.Sync.RealSyncEnabled);
+    }
+
+    [Fact]
     public async Task Loader_TrimsIdentityAttributeAndMappingIdentifiers()
     {
         var tempRoot = Path.Combine(Path.GetTempPath(), "syncfactors-config-loader", Guid.NewGuid().ToString("N"));

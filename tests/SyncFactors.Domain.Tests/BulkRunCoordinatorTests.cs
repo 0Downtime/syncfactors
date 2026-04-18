@@ -28,6 +28,7 @@ public sealed class BulkRunCoordinatorTests
             new StubDirectoryCommandGateway(),
             new StubDirectoryGateway(),
             new CapturingRunLifecycleService(),
+            new RealSyncSettings(),
             new WorkerRunSettings(MaxCreatesPerRun: 10),
             CreateLifecycleSettings(),
             NullLogger<BulkRunCoordinator>.Instance,
@@ -73,6 +74,7 @@ public sealed class BulkRunCoordinatorTests
             new SuccessfulDirectoryCommandGateway(),
             new StubDirectoryGateway(),
             new CapturingRunLifecycleService(),
+            new RealSyncSettings(),
             new WorkerRunSettings(MaxCreatesPerRun: 10),
             CreateLifecycleSettings(),
             NullLogger<BulkRunCoordinator>.Instance,
@@ -99,6 +101,46 @@ public sealed class BulkRunCoordinatorTests
     }
 
     [Fact]
+    public async Task ExecuteAsync_LiveRun_RejectsWhenRealSyncIsDisabled()
+    {
+        CapturingRunLifecycleService.Entries.Clear();
+        CapturingRunLifecycleService.Reset();
+        var coordinator = new BulkRunCoordinator(
+            new StubWorkerSource([CreateWorker("10001")]),
+            new CapturingDeltaSyncService(),
+            new StubRunQueueStore(),
+            new StubGraveyardRetentionStore(),
+            new StubWorkerPlanningService(),
+            new StubDirectoryMutationCommandBuilder(),
+            new SuccessfulDirectoryCommandGateway(),
+            new StubDirectoryGateway(),
+            new CapturingRunLifecycleService(),
+            new RealSyncSettings(Enabled: false),
+            new WorkerRunSettings(MaxCreatesPerRun: 10),
+            CreateLifecycleSettings(),
+            NullLogger<BulkRunCoordinator>.Instance,
+            TimeProvider.System);
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => coordinator.ExecuteAsync(
+            new RunQueueRequest(
+                RequestId: "req-live-disabled",
+                Mode: "BulkSync",
+                DryRun: false,
+                RunTrigger: "AdHoc",
+                RequestedBy: "test",
+                Status: "Pending",
+                RequestedAt: DateTimeOffset.UtcNow,
+                StartedAt: null,
+                CompletedAt: null,
+                RunId: null,
+                ErrorMessage: null),
+            maxDegreeOfParallelism: 1,
+            CancellationToken.None));
+
+        Assert.Equal("Real AD sync is disabled for this environment.", exception.Message);
+    }
+
+    [Fact]
     public async Task ExecuteAsync_LiveRun_DoesNotAdvanceDeltaCheckpointWhenRunHasConflicts()
     {
         CapturingRunLifecycleService.Entries.Clear();
@@ -114,6 +156,7 @@ public sealed class BulkRunCoordinatorTests
             new FailingDirectoryCommandGateway(),
             new StubDirectoryGateway(),
             new CapturingRunLifecycleService(),
+            new RealSyncSettings(),
             new WorkerRunSettings(MaxCreatesPerRun: 10),
             CreateLifecycleSettings(),
             NullLogger<BulkRunCoordinator>.Instance,
@@ -154,6 +197,7 @@ public sealed class BulkRunCoordinatorTests
             new SuccessfulDirectoryCommandGateway(),
             new StubDirectoryGateway(),
             new CapturingRunLifecycleService(),
+            new RealSyncSettings(),
             new WorkerRunSettings(MaxCreatesPerRun: 1),
             CreateLifecycleSettings(),
             NullLogger<BulkRunCoordinator>.Instance,
@@ -198,6 +242,7 @@ public sealed class BulkRunCoordinatorTests
             new SuccessfulDirectoryCommandGateway(),
             new StubDirectoryGateway(),
             new CapturingRunLifecycleService(),
+            new RealSyncSettings(),
             new WorkerRunSettings(MaxCreatesPerRun: 10, MaxDeletionsPerRun: 5),
             CreateLifecycleSettings(),
             NullLogger<BulkRunCoordinator>.Instance,
@@ -240,6 +285,7 @@ public sealed class BulkRunCoordinatorTests
             new SuccessfulDirectoryCommandGateway(),
             new StubDirectoryGateway(),
             new CapturingRunLifecycleService(),
+            new RealSyncSettings(),
             new WorkerRunSettings(MaxCreatesPerRun: 10),
             CreateLifecycleSettings(),
             NullLogger<BulkRunCoordinator>.Instance,
@@ -286,6 +332,7 @@ public sealed class BulkRunCoordinatorTests
             new SuccessfulDirectoryCommandGateway(),
             new StubDirectoryGateway(activeUsers: activeOuUsers),
             new CapturingRunLifecycleService(),
+            new RealSyncSettings(),
             new WorkerRunSettings(MaxCreatesPerRun: 10),
             CreateLifecycleSettings(),
             NullLogger<BulkRunCoordinator>.Instance,

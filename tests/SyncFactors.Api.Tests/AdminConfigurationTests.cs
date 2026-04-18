@@ -190,6 +190,20 @@ public sealed class AdminConfigurationSnapshotBuilderTests
             "CN=M365-E3-Prestage,OU=Groups,DC=example,DC=com, CN=VPN-Users,OU=Groups,DC=example,DC=com",
             identityGroup.Entries.Single(entry => entry.Label == "Licensing groups").DisplayValue);
     }
+
+    [Fact]
+    public void Build_ShowsRealSyncToggle()
+    {
+        using var fixture = AdminConfigurationTestFixture.Create();
+
+        var snapshot = fixture.Builder.Build();
+        var operationsSection = snapshot.Sections.Single(section => section.Title == "Sync, Safety, Alerts, and Reporting");
+        var syncPolicyGroup = operationsSection.Groups.Single(group => group.Title == "Sync Policy");
+
+        Assert.Equal(
+            "Enabled",
+            syncPolicyGroup.Entries.Single(entry => entry.Label == "Real sync enabled").DisplayValue);
+    }
 }
 
 internal sealed class AdminConfigurationTestFixture : IDisposable

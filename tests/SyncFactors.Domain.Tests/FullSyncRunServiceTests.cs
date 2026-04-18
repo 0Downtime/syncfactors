@@ -51,6 +51,25 @@ public sealed class FullSyncRunServiceTests
     }
 
     [Fact]
+    public async Task LaunchAsync_LiveRun_RejectsWhenRealSyncIsDisabled()
+    {
+        var worker = CreateWorker("10001", managerId: "90001");
+        var service = CreateService(
+            workers: [worker],
+            directoryGateway: new StubDirectoryGateway(managerDistinguishedName: "CN=Manager,OU=LabUsers,DC=example,DC=com"),
+            directoryCommandGateway: new CapturingDirectoryCommandGateway(),
+            realSyncSettings: new RealSyncSettings(Enabled: false),
+            runRepository: out _,
+            runtimeStatusStore: out _);
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => service.LaunchAsync(
+            new LaunchFullRunRequest(DryRun: false, AcknowledgeRealSync: true),
+            CancellationToken.None));
+
+        Assert.Equal("Real AD sync is disabled for this environment.", exception.Message);
+    }
+
+    [Fact]
     public async Task LaunchAsync_CreateGuardrailExceeded_RebucketsAdditionalCreates()
     {
         var workers = new[]
@@ -293,6 +312,7 @@ public sealed class FullSyncRunServiceTests
             new StubDirectoryGateway(managerDistinguishedName: null),
             runRepository,
             runtimeStatusStore,
+            new RealSyncSettings(),
             new WorkerRunSettings(MaxCreatesPerRun: 10, MaxDisablesPerRun: 10),
             CreateConfiguredStatusLifecycleSettings(),
             NullLogger<FullSyncRunService>.Instance);
@@ -340,6 +360,7 @@ public sealed class FullSyncRunServiceTests
             new StubDirectoryGateway(managerDistinguishedName: null),
             runRepository,
             runtimeStatusStore,
+            new RealSyncSettings(),
             new WorkerRunSettings(MaxCreatesPerRun: 10, MaxDisablesPerRun: 10),
             CreateConfiguredStatusLifecycleSettings(),
             NullLogger<FullSyncRunService>.Instance);
@@ -368,8 +389,26 @@ public sealed class FullSyncRunServiceTests
             workers,
             directoryGateway,
             directoryCommandGateway,
+            new RealSyncSettings(),
+            out runRepository,
+            out runtimeStatusStore);
+    }
+
+    private static FullSyncRunService CreateService(
+        IReadOnlyList<WorkerSnapshot> workers,
+        IDirectoryGateway directoryGateway,
+        IDirectoryCommandGateway directoryCommandGateway,
+        RealSyncSettings realSyncSettings,
+        out CapturingRunRepository runRepository,
+        out CapturingRuntimeStatusStore runtimeStatusStore)
+    {
+        return CreateService(
+            workers,
+            directoryGateway,
+            directoryCommandGateway,
             settings: null,
             planningService: null,
+            realSyncSettings,
             out runRepository,
             out runtimeStatusStore);
     }
@@ -384,11 +423,33 @@ public sealed class FullSyncRunServiceTests
         out CapturingRuntimeStatusStore runtimeStatusStore)
     {
         return CreateService(
+            workers,
+            directoryGateway,
+            directoryCommandGateway,
+            settings,
+            planningService,
+            new RealSyncSettings(),
+            out runRepository,
+            out runtimeStatusStore);
+    }
+
+    private static FullSyncRunService CreateService(
+        IReadOnlyList<WorkerSnapshot> workers,
+        IDirectoryGateway directoryGateway,
+        IDirectoryCommandGateway directoryCommandGateway,
+        WorkerRunSettings? settings,
+        IWorkerPlanningService? planningService,
+        RealSyncSettings realSyncSettings,
+        out CapturingRunRepository runRepository,
+        out CapturingRuntimeStatusStore runtimeStatusStore)
+    {
+        return CreateService(
             new StubWorkerSource(workers),
             directoryGateway,
             directoryCommandGateway,
             settings,
             planningService,
+            realSyncSettings,
             new CapturingRuntimeStatusStore(),
             out runRepository,
             out runtimeStatusStore);
@@ -405,8 +466,26 @@ public sealed class FullSyncRunServiceTests
             workerSource,
             directoryGateway,
             directoryCommandGateway,
+            new RealSyncSettings(),
+            runtimeStatusStore,
+            out runRepository);
+    }
+
+    private static FullSyncRunService CreateService(
+        IWorkerSource workerSource,
+        IDirectoryGateway directoryGateway,
+        IDirectoryCommandGateway directoryCommandGateway,
+        RealSyncSettings realSyncSettings,
+        CapturingRuntimeStatusStore runtimeStatusStore,
+        out CapturingRunRepository runRepository)
+    {
+        return CreateService(
+            workerSource,
+            directoryGateway,
+            directoryCommandGateway,
             settings: null,
             planningService: null,
+            realSyncSettings,
             runtimeStatusStore,
             out runRepository,
             out _);
@@ -418,6 +497,29 @@ public sealed class FullSyncRunServiceTests
         IDirectoryCommandGateway directoryCommandGateway,
         WorkerRunSettings? settings,
         IWorkerPlanningService? planningService,
+        CapturingRuntimeStatusStore runtimeStatusStore,
+        out CapturingRunRepository runRepository,
+        out CapturingRuntimeStatusStore resolvedRuntimeStatusStore)
+    {
+        return CreateService(
+            workerSource,
+            directoryGateway,
+            directoryCommandGateway,
+            settings,
+            planningService,
+            new RealSyncSettings(),
+            runtimeStatusStore,
+            out runRepository,
+            out resolvedRuntimeStatusStore);
+    }
+
+    private static FullSyncRunService CreateService(
+        IWorkerSource workerSource,
+        IDirectoryGateway directoryGateway,
+        IDirectoryCommandGateway directoryCommandGateway,
+        WorkerRunSettings? settings,
+        IWorkerPlanningService? planningService,
+        RealSyncSettings realSyncSettings,
         CapturingRuntimeStatusStore runtimeStatusStore,
         out CapturingRunRepository runRepository,
         out CapturingRuntimeStatusStore resolvedRuntimeStatusStore)
@@ -439,6 +541,7 @@ public sealed class FullSyncRunServiceTests
             directoryGateway,
             runRepository,
             resolvedRuntimeStatusStore,
+            realSyncSettings,
             settings ?? new WorkerRunSettings(MaxCreatesPerRun: 10, MaxDisablesPerRun: 10),
             CreateLifecycleSettings(),
             NullLogger<FullSyncRunService>.Instance);

@@ -21,6 +21,7 @@ public sealed class SyncScheduleCoordinatorTests
         var coordinator = new SyncScheduleCoordinator(
             scheduleStore,
             queueStore,
+            new RealSyncSettings(),
             new FakeTimeProvider(DateTimeOffset.Parse("2026-03-30T12:00:00Z")),
             NullLogger<SyncScheduleCoordinator>.Instance);
 
@@ -32,6 +33,32 @@ public sealed class SyncScheduleCoordinatorTests
         Assert.Equal("Scheduled", queueStore.LastRequest.RunTrigger);
         Assert.Equal("Sync schedule", queueStore.LastRequest.RequestedBy);
         Assert.Equal(DateTimeOffset.Parse("2026-03-30T12:00:00Z"), scheduleStore.LastSuccessfulEnqueueAt);
+    }
+
+    [Fact]
+    public async Task TryEnqueueDueRunAsync_QueuesDryRun_WhenRealSyncIsDisabled()
+    {
+        var queueStore = new CapturingRunQueueStore();
+        var scheduleStore = new StubSyncScheduleStore(
+            new SyncScheduleStatus(
+                Enabled: true,
+                IntervalMinutes: 30,
+                NextRunAt: DateTimeOffset.Parse("2026-03-30T11:30:00Z"),
+                LastScheduledRunAt: null,
+                LastEnqueueAttemptAt: null,
+                LastEnqueueError: null));
+        var coordinator = new SyncScheduleCoordinator(
+            scheduleStore,
+            queueStore,
+            new RealSyncSettings(Enabled: false),
+            new FakeTimeProvider(DateTimeOffset.Parse("2026-03-30T12:00:00Z")),
+            NullLogger<SyncScheduleCoordinator>.Instance);
+
+        var queued = await coordinator.TryEnqueueDueRunAsync(CancellationToken.None);
+
+        Assert.True(queued);
+        Assert.NotNull(queueStore.LastRequest);
+        Assert.True(queueStore.LastRequest!.DryRun);
     }
 
     [Fact]
@@ -49,6 +76,7 @@ public sealed class SyncScheduleCoordinatorTests
         var coordinator = new SyncScheduleCoordinator(
             scheduleStore,
             queueStore,
+            new RealSyncSettings(),
             new FakeTimeProvider(DateTimeOffset.Parse("2026-03-30T12:00:00Z")),
             NullLogger<SyncScheduleCoordinator>.Instance);
 
