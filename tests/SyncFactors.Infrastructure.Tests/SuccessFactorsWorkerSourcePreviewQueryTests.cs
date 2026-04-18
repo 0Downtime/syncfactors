@@ -10,7 +10,7 @@ namespace SyncFactors.Infrastructure.Tests;
 public sealed class SuccessFactorsWorkerSourcePreviewQueryTests
 {
     [Fact]
-    public async Task GetWorkerAsync_UsesPreviewQueryForPreviewResolution()
+    public async Task GetWorkerAsync_UsesPreviewQueryToResolveIdentity_AndMergesCanonicalSyncData()
     {
         var tempRoot = Path.Combine(Path.GetTempPath(), "syncfactors-preview-query-tests", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(tempRoot);
@@ -40,7 +40,7 @@ public sealed class SuccessFactorsWorkerSourcePreviewQueryTests
                       "entitySet": "EmpJob",
                       "identityField": "userId",
                       "deltaField": "lastModifiedDateTime",
-                      "select": [ "userId", "jobTitle" ],
+                      "select": [ "userId", "jobTitle", "department" ],
                       "expand": []
                     },
                     "previewQuery": {
@@ -49,6 +49,7 @@ public sealed class SuccessFactorsWorkerSourcePreviewQueryTests
                       "deltaField": "lastModifiedDateTime",
                       "select": [
                         "personIdExternal",
+                        "employmentNav/userNav/userId",
                         "personalInfoNav/firstName",
                         "personalInfoNav/lastName",
                         "employmentNav/jobInfoNav/departmentNav/name_localized"
@@ -56,6 +57,7 @@ public sealed class SuccessFactorsWorkerSourcePreviewQueryTests
                       "expand": [
                         "personalInfoNav",
                         "employmentNav",
+                        "employmentNav/userNav",
                         "employmentNav/jobInfoNav",
                         "employmentNav/jobInfoNav/departmentNav"
                       ]
@@ -107,8 +109,9 @@ public sealed class SuccessFactorsWorkerSourcePreviewQueryTests
             Assert.Equal("Ada", worker.PreferredName);
             Assert.Equal("Lovelace", worker.LastName);
             Assert.Equal("Platform", worker.Department);
+            Assert.Equal("Engineer", worker.Attributes["jobTitle"]);
             Assert.Contains(handler.RequestUris, uri => uri.Contains("/PerPerson?", StringComparison.Ordinal));
-            Assert.DoesNotContain(handler.RequestUris, uri => uri.Contains("/EmpJob?", StringComparison.Ordinal));
+            Assert.Contains(handler.RequestUris, uri => uri.Contains("/EmpJob?", StringComparison.Ordinal) && uri.Contains("U10000", StringComparison.Ordinal));
         }
         finally
         {
@@ -157,17 +160,12 @@ public sealed class SuccessFactorsWorkerSourcePreviewQueryTests
                         "results": [
                           {
                             "personIdExternal": "10000",
-                            "personalInfoNav": {
-                              "results": [
-                                {
-                                  "firstName": "Ada",
-                                  "lastName": "Lovelace"
-                                }
-                              ]
-                            },
                             "employmentNav": {
                               "results": [
                                 {
+                                  "userNav": {
+                                    "userId": "U10000"
+                                  },
                                   "jobInfoNav": {
                                     "results": [
                                       {
@@ -179,7 +177,35 @@ public sealed class SuccessFactorsWorkerSourcePreviewQueryTests
                                   }
                                 }
                               ]
+                            },
+                            "personalInfoNav": {
+                              "results": [
+                                {
+                                  "firstName": "Ada",
+                                  "lastName": "Lovelace"
+                                }
+                              ]
                             }
+                          }
+                        ]
+                      }
+                    }
+                    """));
+            }
+
+            if (request.RequestUri is not null &&
+                request.RequestUri.AbsoluteUri.Contains("/EmpJob?", StringComparison.Ordinal) &&
+                request.RequestUri.AbsoluteUri.Contains("U10000", StringComparison.Ordinal))
+            {
+                return Task.FromResult(JsonResponse(
+                    """
+                    {
+                      "d": {
+                        "results": [
+                          {
+                            "userId": "U10000",
+                            "jobTitle": "Engineer",
+                            "department": "Core Systems"
                           }
                         ]
                       }
