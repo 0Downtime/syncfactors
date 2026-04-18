@@ -17,13 +17,22 @@ public sealed class WorkerPlanningService(
 
     public async Task<PlannedWorkerAction> PlanAsync(WorkerSnapshot worker, string? logPath, CancellationToken cancellationToken)
     {
-        var directoryUser = await directoryGateway.FindByWorkerAsync(worker, cancellationToken)
-            ?? new DirectoryUserSnapshot(
-                SamAccountName: null,
-                DistinguishedName: null,
-                Enabled: null,
-                DisplayName: null,
-                Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase));
+        var directoryUser = new DirectoryUserSnapshot(
+            SamAccountName: null,
+            DistinguishedName: null,
+            Enabled: null,
+            DisplayName: null,
+            Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase));
+        var identityReview = default((string ReviewCategory, string ReviewCaseType, string Reason)?);
+        try
+        {
+            directoryUser = await directoryGateway.FindByWorkerAsync(worker, cancellationToken) ?? directoryUser;
+        }
+        catch (AmbiguousDirectoryIdentityException ex)
+        {
+            logger.LogWarning(ex, "Worker identity lookup is ambiguous. WorkerId={WorkerId}", worker.WorkerId);
+            identityReview = ("DirectoryIdentity", "AmbiguousWorkerIdentity", ex.Message);
+        }
 
         var managerId = worker.Attributes.TryGetValue("managerId", out var resolvedManagerId) ? resolvedManagerId : null;
         string? managerDistinguishedName = null;
@@ -32,6 +41,15 @@ public sealed class WorkerPlanningService(
             try
             {
                 managerDistinguishedName = await directoryGateway.ResolveManagerDistinguishedNameAsync(managerId, cancellationToken);
+            }
+            catch (AmbiguousDirectoryIdentityException ex)
+            {
+                logger.LogWarning(
+                    ex,
+                    "Manager identity lookup is ambiguous during worker planning. WorkerId={WorkerId} ManagerId={ManagerId}",
+                    worker.WorkerId,
+                    managerId);
+                identityReview ??= ("DirectoryIdentity", "AmbiguousManagerIdentity", ex.Message);
             }
             catch (Exception ex)
             {
@@ -49,8 +67,9 @@ public sealed class WorkerPlanningService(
         var proposedEmailAddress = string.Empty;
         var attributeChanges = new List<AttributeChange>();
         IReadOnlyList<MissingSourceAttributeRow> missingSourceAttributes = [];
+        var hasAmbiguousWorkerIdentity = string.Equals(identityReview?.ReviewCaseType, "AmbiguousWorkerIdentity", StringComparison.Ordinal);
 
-        if (!suppressInactiveCreateValidation)
+        if (!suppressInactiveCreateValidation && !hasAmbiguousWorkerIdentity)
         {
             proposedEmailAddress = identity.MatchedExistingUser
                 ? directoryUser.Attributes.TryGetValue("UserPrincipalName", out var existingUserPrincipalName) && !string.IsNullOrWhiteSpace(existingUserPrincipalName)
@@ -76,6 +95,14 @@ public sealed class WorkerPlanningService(
         string? reviewCaseType = null;
         string? reviewCategory = null;
         string? reason = lifecycle.Reason ?? identity.Reason;
+
+        if (identityReview is not null)
+        {
+            bucket = "manualReview";
+            reviewCategory = identityReview.Value.ReviewCategory;
+            reviewCaseType = identityReview.Value.ReviewCaseType;
+            reason = identityReview.Value.Reason;
+        }
 
         if (missingSourceAttributes.Count > 0)
         {

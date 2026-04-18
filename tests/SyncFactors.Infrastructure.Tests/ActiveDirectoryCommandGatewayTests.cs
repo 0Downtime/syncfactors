@@ -153,6 +153,114 @@ public sealed class ActiveDirectoryCommandGatewayTests
     }
 
     [Fact]
+    public void BuildProvisioningGroupRemovalRequests_UsesDeleteMemberModifications()
+    {
+        var method = typeof(ActiveDirectoryCommandGateway).GetMethod("BuildProvisioningGroupRemovalRequests", BindingFlags.NonPublic | BindingFlags.Static);
+        Assert.NotNull(method);
+
+        var config = new ActiveDirectoryConfig(
+            Server: "localhost",
+            Port: 636,
+            Username: "bind",
+            BindPassword: "secret",
+            IdentityAttribute: "employeeID",
+            DefaultActiveOu: "OU=Active,DC=example,DC=com",
+            PrehireOu: "OU=Prehire,DC=example,DC=com",
+            GraveyardOu: "OU=Graveyard,DC=example,DC=com",
+            Transport: new ActiveDirectoryTransportConfig("ldaps", false, true, true, []),
+            IdentityPolicy: new ActiveDirectoryIdentityPolicyConfig(false),
+            LicensingGroups:
+            [
+                "CN=M365-E3-Prestage,OU=Groups,DC=example,DC=com"
+            ]);
+
+        var requests = Assert.IsAssignableFrom<IReadOnlyList<ModifyRequest>>(method!.Invoke(null, ["CN=45086,OU=Users,DC=example,DC=com", config]));
+
+        var modification = Assert.Single(requests.Single().Modifications.Cast<DirectoryAttributeModification>());
+        Assert.Equal("member", modification.Name);
+        Assert.Equal(DirectoryAttributeOperation.Delete, modification.Operation);
+        Assert.Equal("CN=45086,OU=Users,DC=example,DC=com", modification[0]?.ToString());
+    }
+
+    [Fact]
+    public void ShouldRemoveProvisioningGroups_ReturnsTrueForDisabledGraveyardUsers()
+    {
+        var method = typeof(ActiveDirectoryCommandGateway).GetMethod("ShouldRemoveProvisioningGroups", BindingFlags.NonPublic | BindingFlags.Static);
+        Assert.NotNull(method);
+
+        var command = new DirectoryMutationCommand(
+            Action: "DisableUser",
+            WorkerId: "45086",
+            ManagerId: null,
+            ManagerDistinguishedName: null,
+            SamAccountName: "45086",
+            CommonName: "45086",
+            UserPrincipalName: "45086@example.com",
+            Mail: "45086@example.com",
+            TargetOu: "OU=Graveyard,DC=example,DC=com",
+            DisplayName: "Worker, Example",
+            CurrentDistinguishedName: "CN=45086,OU=Employees,DC=example,DC=com",
+            EnableAccount: false,
+            Operations: [new SyncFactors.Contracts.DirectoryOperation("DisableUser")],
+            Attributes: new Dictionary<string, string?>());
+        var config = new ActiveDirectoryConfig(
+            Server: "localhost",
+            Port: 636,
+            Username: "bind",
+            BindPassword: "secret",
+            IdentityAttribute: "employeeID",
+            DefaultActiveOu: "OU=Active,DC=example,DC=com",
+            PrehireOu: "OU=Prehire,DC=example,DC=com",
+            GraveyardOu: "OU=Graveyard,DC=example,DC=com",
+            Transport: new ActiveDirectoryTransportConfig("ldaps", false, true, true, []),
+            IdentityPolicy: new ActiveDirectoryIdentityPolicyConfig(false),
+            LicensingGroups: ["CN=M365-E3-Prestage,OU=Groups,DC=example,DC=com"]);
+
+        var shouldRemove = Assert.IsType<bool>(method!.Invoke(null, [command, config, "CN=45086,OU=Graveyard,DC=example,DC=com"]));
+
+        Assert.True(shouldRemove);
+    }
+
+    [Fact]
+    public void ShouldRemoveProvisioningGroups_ReturnsFalseForLeaveUsers()
+    {
+        var method = typeof(ActiveDirectoryCommandGateway).GetMethod("ShouldRemoveProvisioningGroups", BindingFlags.NonPublic | BindingFlags.Static);
+        Assert.NotNull(method);
+
+        var command = new DirectoryMutationCommand(
+            Action: "DisableUser",
+            WorkerId: "45086",
+            ManagerId: null,
+            ManagerDistinguishedName: null,
+            SamAccountName: "45086",
+            CommonName: "45086",
+            UserPrincipalName: "45086@example.com",
+            Mail: "45086@example.com",
+            TargetOu: "OU=Leave,DC=example,DC=com",
+            DisplayName: "Worker, Example",
+            CurrentDistinguishedName: "CN=45086,OU=Employees,DC=example,DC=com",
+            EnableAccount: false,
+            Operations: [new SyncFactors.Contracts.DirectoryOperation("DisableUser")],
+            Attributes: new Dictionary<string, string?>());
+        var config = new ActiveDirectoryConfig(
+            Server: "localhost",
+            Port: 636,
+            Username: "bind",
+            BindPassword: "secret",
+            IdentityAttribute: "employeeID",
+            DefaultActiveOu: "OU=Active,DC=example,DC=com",
+            PrehireOu: "OU=Prehire,DC=example,DC=com",
+            GraveyardOu: "OU=Graveyard,DC=example,DC=com",
+            Transport: new ActiveDirectoryTransportConfig("ldaps", false, true, true, []),
+            IdentityPolicy: new ActiveDirectoryIdentityPolicyConfig(false),
+            LicensingGroups: ["CN=M365-E3-Prestage,OU=Groups,DC=example,DC=com"]);
+
+        var shouldRemove = Assert.IsType<bool>(method!.Invoke(null, [command, config, "CN=45086,OU=Leave,DC=example,DC=com"]));
+
+        Assert.False(shouldRemove);
+    }
+
+    [Fact]
     public void BuildIdentityConflictDetails_IncludesExistingAccountContext()
     {
         var method = typeof(ActiveDirectoryCommandGateway).GetMethod("BuildIdentityConflictDetails", BindingFlags.NonPublic | BindingFlags.Static);

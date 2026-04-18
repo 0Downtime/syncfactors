@@ -236,11 +236,13 @@ public sealed class ActiveDirectoryGateway(
             config.IdentityAttribute,
             FormatLookupClauses(lookupClauses));
 
-        var entry = FindFirstEntryMatchingAny(
+        var entry = FindUniqueEntryMatchingAny(
             connection,
             GetSearchBases(config),
             lookupClauses,
             config.IdentityAttribute,
+            lookupKind: "worker identity",
+            lookupValue: worker.WorkerId,
             logger,
             "worker lookup search");
         if (entry is null)
@@ -547,12 +549,13 @@ public sealed class ActiveDirectoryGateway(
 
     private static string? ResolveDistinguishedName(LdapConnection connection, string workerId, ActiveDirectoryConfig config, ILogger logger)
     {
-        var entry = FindFirstEntry(
+        var entry = FindUniqueEntry(
             connection,
             GetSearchBases(config),
             searchAttribute: config.IdentityAttribute,
             searchValue: workerId,
             "distinguishedName",
+            lookupKind: "manager identity",
             logger,
             "manager DN search");
         return entry is null ? null : GetAttribute(entry, "distinguishedName");
@@ -655,15 +658,18 @@ public sealed class ActiveDirectoryGateway(
         return entry is null ? null : GetAttribute(entry, "defaultNamingContext");
     }
 
-    private static SearchResultEntry? FindFirstEntry(
+    private static SearchResultEntry? FindUniqueEntry(
         LdapConnection connection,
         IReadOnlyList<string> searchBases,
         string searchAttribute,
         string searchValue,
         string additionalAttribute,
+        string lookupKind,
         ILogger logger,
         string operation)
     {
+        var matches = new List<SearchResultEntry>();
+        var seenDistinguishedNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var searchBase in searchBases)
         {
             var request = CreateSearchRequest(
@@ -692,14 +698,69 @@ public sealed class ActiveDirectoryGateway(
                 continue;
             }
 
-            var entry = response.Entries.Cast<SearchResultEntry>().FirstOrDefault();
-            if (entry is not null)
+            foreach (var entry in response.Entries.Cast<SearchResultEntry>())
             {
-                return entry;
+                var distinguishedName = entry.DistinguishedName;
+                if (string.IsNullOrWhiteSpace(distinguishedName) || seenDistinguishedNames.Add(distinguishedName))
+                {
+                    matches.Add(entry);
+                }
             }
         }
 
-        return null;
+        return EnsureSingleMatch(matches, lookupKind, searchValue, searchAttribute);
+    }
+
+    private static SearchResultEntry? FindUniqueEntryMatchingAny(
+        LdapConnection connection,
+        IReadOnlyList<string> searchBases,
+        IReadOnlyList<(string Attribute, string Value)> searchClauses,
+        string additionalAttribute,
+        string lookupKind,
+        string lookupValue,
+        ILogger logger,
+        string operation)
+    {
+        var matches = new List<SearchResultEntry>();
+        var seenDistinguishedNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var searchBase in searchBases)
+        {
+            var request = CreateSearchRequest(
+                searchBase,
+                searchClauses,
+                additionalAttribute);
+
+            SearchResponse response;
+            try
+            {
+                response = ExecuteSearch(
+                    connection,
+                    request,
+                    logger,
+                    operation);
+            }
+            catch (DirectoryOperationException ex) when (IsReferralException(ex))
+            {
+                logger.LogWarning(ex, "Skipping AD search base because the server returned a referral. SearchBase={SearchBase} Operation={Operation}", searchBase, operation);
+                continue;
+            }
+            catch (LdapException ex) when (IsReferralException(ex))
+            {
+                logger.LogWarning(ex, "Skipping AD search base because the LDAP client encountered a referral. SearchBase={SearchBase} Operation={Operation}", searchBase, operation);
+                continue;
+            }
+
+            foreach (var entry in response.Entries.Cast<SearchResultEntry>())
+            {
+                var distinguishedName = entry.DistinguishedName;
+                if (string.IsNullOrWhiteSpace(distinguishedName) || seenDistinguishedNames.Add(distinguishedName))
+                {
+                    matches.Add(entry);
+                }
+            }
+        }
+
+        return EnsureSingleMatch(matches, lookupKind, lookupValue, ResolveIdentityAttribute(searchClauses));
     }
 
     private static SearchResultEntry? FindFirstEntryMatchingAny(
@@ -745,6 +806,57 @@ public sealed class ActiveDirectoryGateway(
         }
 
         return null;
+    }
+
+    private static SearchResultEntry? EnsureSingleMatch(
+        IReadOnlyList<SearchResultEntry> matches,
+        string lookupKind,
+        string lookupValue,
+        string identityAttribute)
+    {
+        if (matches.Count <= 1)
+        {
+            return matches.FirstOrDefault();
+        }
+
+        throw CreateAmbiguousDirectoryIdentityException(
+            lookupKind,
+            lookupValue,
+            identityAttribute,
+            matches
+                .Select(match => match.DistinguishedName)
+                .Where(distinguishedName => !string.IsNullOrWhiteSpace(distinguishedName))
+                .Cast<string>()
+                .OrderBy(distinguishedName => distinguishedName, StringComparer.OrdinalIgnoreCase)
+                .ToArray());
+    }
+
+    private static AmbiguousDirectoryIdentityException CreateAmbiguousDirectoryIdentityException(
+        string lookupKind,
+        string lookupValue,
+        string identityAttribute,
+        IReadOnlyList<string> distinguishedNames)
+    {
+        return new AmbiguousDirectoryIdentityException(
+            lookupKind,
+            lookupValue,
+            identityAttribute,
+            distinguishedNames);
+    }
+
+    private static string ResolveIdentityAttribute(IReadOnlyList<(string Attribute, string Value)> searchClauses)
+    {
+        if (searchClauses.Count == 0)
+        {
+            return "identity attribute";
+        }
+
+        return string.Join(
+            ", ",
+            searchClauses
+                .Select(clause => clause.Attribute)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(attribute => attribute, StringComparer.OrdinalIgnoreCase));
     }
 
     private static SearchRequest CreateSearchRequest(
