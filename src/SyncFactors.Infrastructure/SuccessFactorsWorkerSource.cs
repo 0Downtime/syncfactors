@@ -35,6 +35,20 @@ public sealed class SuccessFactorsWorkerSource(
         }
 
         var config = configLoader.GetSyncConfig();
+        var previewQuery = config.SuccessFactors.PreviewQuery;
+        if (previewQuery is not null)
+        {
+            var previewWorker = await TryResolveWorkerAsync(config, previewQuery, workerId, cancellationToken);
+            if (previewWorker is not null)
+            {
+                previewWorker = NormalizeWorkerIdentity(previewWorker, previewQuery.IdentityField);
+                logger.LogInformation("Resolved worker from SuccessFactors preview query.");
+                return previewWorker;
+            }
+
+            logger.LogWarning("Preview query did not resolve worker. Falling back to primary SuccessFactors query.");
+        }
+
         var canonicalWorker = await TryResolveWorkerAsync(config, config.SuccessFactors.Query, workerId, cancellationToken);
         var worker = canonicalWorker is null
             ? null
