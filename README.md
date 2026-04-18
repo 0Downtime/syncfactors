@@ -111,6 +111,12 @@ Run the checked-in lifecycle simulator sample:
 pwsh ./scripts/Test-SyncFactorsLifecycleSimulation.ps1
 ```
 
+Run the focused multi-user sample:
+
+```powershell
+pwsh ./scripts/Test-SyncFactorsLifecycleSimulation.ps1 -Sample multi
+```
+
 Run the focused single-worker sample:
 
 ```powershell
@@ -131,16 +137,17 @@ The bash wrapper does the same thing:
 
 The simulator uses:
 
-- default scenario: `config/mock-successfactors/sample-lifecycle-multiuser-scenario.json`
+- default scenario: `config/mock-successfactors/sample-lifecycle-population-scenario.json`
 - default fixtures: `config/mock-successfactors/sample-lifecycle-multiuser-fixtures.json`
-- default report: `state/runtime/lifecycle-simulation-multiuser-report.md`
-- sibling JSON report: `state/runtime/lifecycle-simulation-multiuser-report.json`
+- default report: `state/runtime/lifecycle-simulation-population-report.md`
+- sibling JSON report: `state/runtime/lifecycle-simulation-population-report.json`
+- focused multi-user sample: `config/mock-successfactors/sample-lifecycle-multiuser-scenario.json`
 - focused single-worker sample: `config/mock-successfactors/sample-lifecycle-scenario.json`
 
 You can also call the CLI directly:
 
 ```powershell
-dotnet run --project ./src/SyncFactors.MockSuccessFactors -- simulate-lifecycle --scenario ./config/mock-successfactors/sample-lifecycle-multiuser-scenario.json --fixtures ./config/mock-successfactors/sample-lifecycle-multiuser-fixtures.json --report ./state/runtime/lifecycle-simulation-multiuser-report.md
+dotnet run --project ./src/SyncFactors.MockSuccessFactors -- simulate-lifecycle --scenario ./config/mock-successfactors/sample-lifecycle-population-scenario.json --fixtures ./config/mock-successfactors/sample-lifecycle-multiuser-fixtures.json --report ./state/runtime/lifecycle-simulation-population-report.md
 ```
 
 The API UI now has a small frontend bundle under `src/SyncFactors.Api`. Install the frontend dependencies once per checkout:
