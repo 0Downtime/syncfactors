@@ -53,7 +53,10 @@
 
 Current dashboard snapshot:
 
-![SyncFactors operator dashboard](docs/images/readme-dashboard.png)
+<p align="center">
+  <img src="docs/images/readme-dashboard-light.png#gh-light-mode-only" alt="SyncFactors operator dashboard" />
+  <img src="docs/images/readme-dashboard-dark.png#gh-dark-mode-only" alt="SyncFactors operator dashboard" />
+</p>
 
 ## Goals
 
