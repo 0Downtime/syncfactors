@@ -73,6 +73,26 @@ public sealed class LifecycleSimulationCommandTests
     }
 
     [Fact]
+    public async Task RunAsync_CheckedInFailureSample_Passes_AndWritesMarkdownAndJsonReports()
+    {
+        var projectRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", ".."));
+        var scenarioPath = Path.Combine(projectRoot, "config", "mock-successfactors", "sample-lifecycle-failure-scenario.json");
+        var fixturePath = Path.Combine(projectRoot, "config", "mock-successfactors", "sample-lifecycle-failure-fixtures.json");
+        using var temp = new TempSimulationWorkspace();
+        var reportPath = Path.Combine(temp.Root, "checked-in-failure-sample-report.md");
+
+        var exitCode = await LifecycleSimulationCommand.RunAsync(
+            new LifecycleSimulationRequest(scenarioPath, fixturePath, null, reportPath),
+            new StringWriter(),
+            CancellationToken.None);
+
+        Assert.Equal(0, exitCode);
+        Assert.True(File.Exists(reportPath));
+        Assert.True(File.Exists(Path.ChangeExtension(reportPath, ".json")));
+        Assert.Contains("Lifecycle Simulation Report", await File.ReadAllTextAsync(reportPath), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task StatefulDirectoryCommandGateway_AppliesCreateMoveDisableEnableAndUpdate()
     {
         var state = new LifecycleSimulationHarness.LifecycleSimulationDirectoryState([]);
@@ -143,6 +163,40 @@ public sealed class LifecycleSimulationCommandTests
     }
 
     [Fact]
+    public async Task StatefulDirectoryCommandGateway_RejectsDuplicateSamAccountNameOnCreate()
+    {
+        var state = new LifecycleSimulationHarness.LifecycleSimulationDirectoryState(
+        [
+            new LifecycleSimulationDirectoryUserInput(
+                WorkerId: "90020",
+                SamAccountName: "10020",
+                ParentOu: "OU=LabUsers,DC=example,DC=com",
+                Enabled: true,
+                DisplayName: "Conflict Owner, Existing",
+                Attributes: new Dictionary<string, string?> { ["employeeID"] = "90020" })
+        ]);
+        var gateway = new LifecycleSimulationHarness.StatefulDirectoryCommandGateway(state);
+
+        var createCommand = new DirectoryMutationCommand(
+            Action: "CreateUser",
+            WorkerId: "10020",
+            ManagerId: null,
+            ManagerDistinguishedName: null,
+            SamAccountName: "10020",
+            CommonName: "10020",
+            UserPrincipalName: "taylor.conflict@Exampleenergy.com",
+            Mail: "taylor.conflict@Exampleenergy.com",
+            TargetOu: "OU=LabUsers,DC=example,DC=com",
+            DisplayName: "Conflict, Taylor",
+            CurrentDistinguishedName: null,
+            EnableAccount: true,
+            Operations: [new DirectoryOperation("CreateUser", "OU=LabUsers,DC=example,DC=com")],
+            Attributes: new Dictionary<string, string?> { ["employeeID"] = "10020" });
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => gateway.ExecuteAsync(createCommand, CancellationToken.None));
+    }
+
+    [Fact]
     public async Task RunAsync_EndToEndLifecycleScenario_PassesAndWritesReport()
     {
         using var temp = new TempSimulationWorkspace();
@@ -155,6 +209,7 @@ public sealed class LifecycleSimulationCommandTests
 
         var scenarioPath = temp.WriteScenario(new LifecycleSimulationScenario(
             Name: "employee-lifecycle",
+            RunSettings: null,
             InitialDirectoryUsers: [],
             Iterations:
             [
@@ -254,6 +309,7 @@ public sealed class LifecycleSimulationCommandTests
         using var temp = new TempSimulationWorkspace();
         var scenarioPath = temp.WriteScenario(new LifecycleSimulationScenario(
             Name: "wrong-bucket",
+            RunSettings: null,
             InitialDirectoryUsers: [],
             Iterations:
             [
@@ -282,6 +338,7 @@ public sealed class LifecycleSimulationCommandTests
         using var temp = new TempSimulationWorkspace();
         var scenarioPath = temp.WriteScenario(new LifecycleSimulationScenario(
             Name: "unknown-worker",
+            RunSettings: null,
             InitialDirectoryUsers: [],
             Iterations:
             [
@@ -311,6 +368,7 @@ public sealed class LifecycleSimulationCommandTests
         using var temp = new TempSimulationWorkspace();
         var scenarioPath = temp.WriteScenario(new LifecycleSimulationScenario(
             Name: "unsupported-field",
+            RunSettings: null,
             InitialDirectoryUsers: [],
             Iterations:
             [
@@ -340,6 +398,7 @@ public sealed class LifecycleSimulationCommandTests
         using var temp = new TempSimulationWorkspace();
         var scenarioPath = temp.WriteScenario(new LifecycleSimulationScenario(
             Name: "invalid-order",
+            RunSettings: null,
             InitialDirectoryUsers: [],
             Iterations:
             [

@@ -4,7 +4,7 @@ param(
     [string]$FixturePath,
     [string]$ReportPath,
     [switch]$ExpectedFailure,
-    [ValidateSet('single', 'multi', 'population')]
+    [ValidateSet('single', 'multi', 'population', 'failure')]
     [string]$Sample = 'population',
     [int]$Iterations,
     [switch]$SkipBuild
@@ -28,6 +28,9 @@ if ([string]::IsNullOrWhiteSpace($ScenarioPath)) {
     elseif ($Sample -eq 'multi') {
         'sample-lifecycle-multiuser-scenario.json'
     }
+    elseif ($Sample -eq 'failure') {
+        'sample-lifecycle-failure-scenario.json'
+    }
     else {
         'sample-lifecycle-population-scenario.json'
     }
@@ -37,6 +40,9 @@ if ([string]::IsNullOrWhiteSpace($ScenarioPath)) {
 if ([string]::IsNullOrWhiteSpace($FixturePath)) {
     $fixtureFile = if ($ExpectedFailure -or $Sample -eq 'single') {
         'sample-lifecycle-fixtures.json'
+    }
+    elseif ($Sample -eq 'failure') {
+        'sample-lifecycle-failure-fixtures.json'
     }
     else {
         'sample-lifecycle-multiuser-fixtures.json'
@@ -53,6 +59,9 @@ if ([string]::IsNullOrWhiteSpace($ReportPath)) {
     }
     elseif ($Sample -eq 'multi') {
         'lifecycle-simulation-multiuser-report.md'
+    }
+    elseif ($Sample -eq 'failure') {
+        'lifecycle-simulation-failure-report.md'
     }
     else {
         'lifecycle-simulation-population-report.md'

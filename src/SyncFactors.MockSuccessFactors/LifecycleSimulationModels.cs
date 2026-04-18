@@ -10,9 +10,15 @@ public sealed record LifecycleSimulationRequest(
 
 internal sealed record LifecycleSimulationScenario(
     [property: JsonPropertyName("name")] string? Name,
+    [property: JsonPropertyName("runSettings")] LifecycleSimulationRunSettings? RunSettings,
     [property: JsonPropertyName("initialDirectoryUsers")] IReadOnlyList<LifecycleSimulationDirectoryUserInput>? InitialDirectoryUsers,
     [property: JsonPropertyName("iterations")] IReadOnlyList<LifecycleSimulationIteration>? Iterations,
     [property: JsonPropertyName("finalExpectation")] FinalDirectoryExpectation? FinalExpectation);
+
+internal sealed record LifecycleSimulationRunSettings(
+    [property: JsonPropertyName("maxCreatesPerRun")] int? MaxCreatesPerRun,
+    [property: JsonPropertyName("maxDisablesPerRun")] int? MaxDisablesPerRun,
+    [property: JsonPropertyName("maxDeletionsPerRun")] int? MaxDeletionsPerRun);
 
 internal sealed record LifecycleSimulationIteration(
     [property: JsonPropertyName("order")] int Order,
