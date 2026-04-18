@@ -63,6 +63,8 @@ internal sealed record LifecycleSimulationReport(
     DateTimeOffset CompletedAtUtc,
     IReadOnlyList<string> Failures,
     IReadOnlyList<LifecycleSimulationIterationReport> Iterations,
+    IReadOnlyDictionary<string, int> AggregateBucketCounts,
+    LifecycleSimulationDirectoryTotals FinalDirectoryTotals,
     IReadOnlyList<LifecycleSimulationDirectoryUserState> FinalDirectoryUsers);
 
 internal sealed record LifecycleSimulationIterationReport(
@@ -86,3 +88,8 @@ internal sealed record LifecycleSimulationDirectoryUserState(
     bool Enabled,
     string? DisplayName,
     IReadOnlyDictionary<string, string?> Attributes);
+
+internal sealed record LifecycleSimulationDirectoryTotals(
+    int TotalUsers,
+    int EnabledUsers,
+    int DisabledUsers);

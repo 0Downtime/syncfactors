@@ -1,0 +1,260 @@
+{
+  "name": "employee-lifecycle-multiuser",
+  "initialDirectoryUsers": [
+    {
+      "workerId": "10002",
+      "samAccountName": "10002",
+      "parentOu": "OU=LabUsers,DC=example,DC=com",
+      "enabled": true,
+      "displayName": "Sample102, Alex",
+      "attributes": {
+        "employeeID": "10002",
+        "displayName": "Sample102, Alex",
+        "UserPrincipalName": "alex.sample102@spireenergy.com",
+        "mail": "alex.sample102@spireenergy.com",
+        "company": "Legacy CORP",
+        "streetAddress": "2 Old Campus"
+      }
+    },
+    {
+      "workerId": "10004",
+      "samAccountName": "10004",
+      "parentOu": "OU=LabUsers,DC=example,DC=com",
+      "enabled": true,
+      "displayName": "Sample104, Morgan",
+      "attributes": {
+        "employeeID": "10004",
+        "displayName": "Sample104, Morgan",
+        "UserPrincipalName": "morgan.sample104@spireenergy.com",
+        "mail": "morgan.sample104@spireenergy.com",
+        "company": "CORP",
+        "streetAddress": "104 Example Way"
+      }
+    },
+    {
+      "workerId": "10007",
+      "samAccountName": "10007",
+      "parentOu": "OU=LabUsers,DC=example,DC=com",
+      "enabled": true,
+      "displayName": "Sample107, Jamie",
+      "attributes": {
+        "employeeID": "10007",
+        "displayName": "Sample107, Jamie",
+        "UserPrincipalName": "jamie.sample107@spireenergy.com",
+        "mail": "jamie.sample107@spireenergy.com",
+        "company": "CORP",
+        "streetAddress": "107 Example Way"
+      }
+    }
+  ],
+  "iterations": [
+    {
+      "order": 1,
+      "name": "baseline-sync",
+      "mutations": [],
+      "expectation": {
+        "runStatus": "Succeeded",
+        "bucketCounts": {
+          "creates": 2,
+          "updates": 1,
+          "disables": 1,
+          "graveyardMoves": 1
+        },
+        "workerOperations": [
+          {
+            "workerId": "10001",
+            "operations": [
+              "CreateUser"
+            ]
+          },
+          {
+            "workerId": "10002",
+            "operations": [
+              "UpdateUser"
+            ]
+          },
+          {
+            "workerId": "10003",
+            "operations": [
+              "CreateUser"
+            ]
+          },
+          {
+            "workerId": "10004",
+            "operations": [
+              "UpdateUser",
+              "DisableUser"
+            ]
+          },
+          {
+            "workerId": "10007",
+            "operations": [
+              "MoveUser",
+              "UpdateUser",
+              "DisableUser"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "order": 2,
+      "name": "status-and-attribute-changes",
+      "mutations": [
+        {
+          "workerId": "10002",
+          "set": {
+            "company": "CORP West",
+            "locationAddress": "202 Example Way"
+          }
+        },
+        {
+          "workerId": "10003",
+          "set": {
+            "startDate": "2026-03-15T00:00:00Z",
+            "lifecycleState": "active"
+          }
+        },
+        {
+          "workerId": "10004",
+          "set": {
+            "employmentStatus": "A",
+            "lifecycleState": "active"
+          }
+        }
+      ],
+      "expectation": {
+        "runStatus": "Succeeded",
+        "bucketCounts": {
+          "updates": 1,
+          "enables": 2,
+          "unchanged": 2
+        },
+        "workerOperations": [
+          {
+            "workerId": "10002",
+            "operations": [
+              "UpdateUser"
+            ]
+          },
+          {
+            "workerId": "10003",
+            "operations": [
+              "MoveUser",
+              "EnableUser"
+            ]
+          },
+          {
+            "workerId": "10004",
+            "operations": [
+              "EnableUser"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "order": 3,
+      "name": "termination-and-follow-up-updates",
+      "mutations": [
+        {
+          "workerId": "10001",
+          "set": {
+            "employmentStatus": "T",
+            "endDate": "2026-04-01T00:00:00Z",
+            "lifecycleState": "terminated"
+          }
+        },
+        {
+          "workerId": "10003",
+          "set": {
+            "company": "CORP Digital",
+            "locationAddress": "303 Example Way"
+          }
+        }
+      ],
+      "expectation": {
+        "runStatus": "Succeeded",
+        "bucketCounts": {
+          "updates": 1,
+          "graveyardMoves": 1,
+          "unchanged": 3
+        },
+        "workerOperations": [
+          {
+            "workerId": "10001",
+            "operations": [
+              "MoveUser",
+              "DisableUser"
+            ]
+          },
+          {
+            "workerId": "10003",
+            "operations": [
+              "UpdateUser"
+            ]
+          }
+        ]
+      }
+    }
+  ],
+  "finalExpectation": {
+    "requireExactUserSet": true,
+    "directoryUsers": [
+      {
+        "workerId": "10001",
+        "samAccountName": "10001",
+        "parentOu": "OU=LabGraveyard,DC=example,DC=com",
+        "enabled": false,
+        "displayName": "Sample101, Winnie",
+        "attributes": {
+          "employeeID": "10001"
+        }
+      },
+      {
+        "workerId": "10002",
+        "samAccountName": "10002",
+        "parentOu": "OU=LabUsers,DC=example,DC=com",
+        "enabled": true,
+        "displayName": "Sample102, Alex",
+        "attributes": {
+          "employeeID": "10002",
+          "company": "CORP West",
+          "streetAddress": "202 Example Way"
+        }
+      },
+      {
+        "workerId": "10003",
+        "samAccountName": "10003",
+        "parentOu": "OU=LabUsers,DC=example,DC=com",
+        "enabled": true,
+        "displayName": "Sample103, Casey",
+        "attributes": {
+          "employeeID": "10003",
+          "company": "CORP Digital",
+          "streetAddress": "303 Example Way"
+        }
+      },
+      {
+        "workerId": "10004",
+        "samAccountName": "10004",
+        "parentOu": "OU=LabUsers,DC=example,DC=com",
+        "enabled": true,
+        "displayName": "Sample104, Morgan",
+        "attributes": {
+          "employeeID": "10004"
+        }
+      },
+      {
+        "workerId": "10007",
+        "samAccountName": "10007",
+        "parentOu": "OU=LabGraveyard,DC=example,DC=com",
+        "enabled": false,
+        "displayName": "Sample107, Jamie",
+        "attributes": {
+          "employeeID": "10007"
+        }
+      }
+    ]
+  }
+}

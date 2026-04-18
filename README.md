@@ -82,6 +82,7 @@ Current dashboard snapshot:
 - Worker preview flow that stages one worker, persists the preview, and supports explicit apply from the saved fingerprint
 - Authentication modes for local break-glass, OIDC-only, or hybrid SSO plus break-glass access, with local user management when break-glass is enabled
 - Mock SuccessFactors API for local development, fixture playback, and synthetic worker population
+- Lifecycle simulator for deterministic employee-state progression without a live SuccessFactors endpoint
 - Delete-all testing reset flow from the Sync page that clears configured AD test OUs
 - Active Directory health checks that validate lookup behavior across configured search bases instead of only doing a bind/base-object probe
 - Due graveyard retention report processing from the worker when alerts are configured
@@ -102,6 +103,44 @@ Primary commands from the repository root:
 ```powershell
 dotnet build ./SyncFactors.Next.sln
 dotnet test ./SyncFactors.Next.sln
+```
+
+Run the checked-in lifecycle simulator sample:
+
+```powershell
+pwsh ./scripts/Test-SyncFactorsLifecycleSimulation.ps1
+```
+
+Run the focused single-worker sample:
+
+```powershell
+pwsh ./scripts/Test-SyncFactorsLifecycleSimulation.ps1 -Sample single
+```
+
+Expected-failure sample that proves assertions are enforced:
+
+```powershell
+pwsh ./scripts/Test-SyncFactorsLifecycleSimulation.ps1 -ExpectedFailure
+```
+
+The bash wrapper does the same thing:
+
+```bash
+./scripts/test-syncfactors-lifecycle-simulation.sh
+```
+
+The simulator uses:
+
+- default scenario: `config/mock-successfactors/sample-lifecycle-multiuser-scenario.json`
+- default fixtures: `config/mock-successfactors/sample-lifecycle-multiuser-fixtures.json`
+- default report: `state/runtime/lifecycle-simulation-multiuser-report.md`
+- sibling JSON report: `state/runtime/lifecycle-simulation-multiuser-report.json`
+- focused single-worker sample: `config/mock-successfactors/sample-lifecycle-scenario.json`
+
+You can also call the CLI directly:
+
+```powershell
+dotnet run --project ./src/SyncFactors.MockSuccessFactors -- simulate-lifecycle --scenario ./config/mock-successfactors/sample-lifecycle-multiuser-scenario.json --fixtures ./config/mock-successfactors/sample-lifecycle-multiuser-fixtures.json --report ./state/runtime/lifecycle-simulation-multiuser-report.md
 ```
 
 The API UI now has a small frontend bundle under `src/SyncFactors.Api`. Install the frontend dependencies once per checkout:

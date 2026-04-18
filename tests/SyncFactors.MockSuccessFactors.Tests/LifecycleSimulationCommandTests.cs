@@ -33,6 +33,26 @@ public sealed class LifecycleSimulationCommandTests
     }
 
     [Fact]
+    public async Task RunAsync_CheckedInMultiUserSample_Passes_AndWritesMarkdownAndJsonReports()
+    {
+        var projectRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", ".."));
+        var scenarioPath = Path.Combine(projectRoot, "config", "mock-successfactors", "sample-lifecycle-multiuser-scenario.json");
+        var fixturePath = Path.Combine(projectRoot, "config", "mock-successfactors", "sample-lifecycle-multiuser-fixtures.json");
+        using var temp = new TempSimulationWorkspace();
+        var reportPath = Path.Combine(temp.Root, "checked-in-sample-report.md");
+
+        var exitCode = await LifecycleSimulationCommand.RunAsync(
+            new LifecycleSimulationRequest(scenarioPath, fixturePath, null, reportPath),
+            new StringWriter(),
+            CancellationToken.None);
+
+        Assert.Equal(0, exitCode);
+        Assert.True(File.Exists(reportPath));
+        Assert.True(File.Exists(Path.ChangeExtension(reportPath, ".json")));
+        Assert.Contains("Lifecycle Simulation Report", await File.ReadAllTextAsync(reportPath), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task StatefulDirectoryCommandGateway_AppliesCreateMoveDisableEnableAndUpdate()
     {
         var state = new LifecycleSimulationHarness.LifecycleSimulationDirectoryState([]);
@@ -197,8 +217,9 @@ public sealed class LifecycleSimulationCommandTests
             CancellationToken.None);
 
         Assert.Equal(0, exitCode);
-        Assert.Contains("passed=True", output.ToString(), StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Result: PASSED", output.ToString(), StringComparison.OrdinalIgnoreCase);
         Assert.True(File.Exists(reportPath));
+        Assert.True(File.Exists(Path.ChangeExtension(reportPath, ".md")));
 
         var report = JsonSerializer.Deserialize<LifecycleSimulationReport>(await File.ReadAllTextAsync(reportPath), JsonOptions);
         Assert.NotNull(report);
