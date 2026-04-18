@@ -32,6 +32,11 @@ builder.Services.AddSingleton(serviceProvider =>
 builder.Services.AddSingleton(serviceProvider =>
 {
     var config = serviceProvider.GetRequiredService<SyncFactorsConfigurationLoader>().GetSyncConfig();
+    return new SyncFactors.Contracts.RealSyncSettings(config.Sync.RealSyncEnabled);
+});
+builder.Services.AddSingleton(serviceProvider =>
+{
+    var config = serviceProvider.GetRequiredService<SyncFactorsConfigurationLoader>().GetSyncConfig();
     return new SyncFactors.Contracts.GraveyardDeletionQueueSettings(
         RetentionDays: config.Sync.DeletionRetentionDays,
         AutoDeleteEnabled: config.Sync.AutoDeleteFromGraveyard);

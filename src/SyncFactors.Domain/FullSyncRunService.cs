@@ -12,12 +12,18 @@ public sealed class FullSyncRunService(
     IDirectoryGateway directoryGateway,
     IRunRepository runRepository,
     IRuntimeStatusStore runtimeStatusStore,
+    RealSyncSettings realSyncSettings,
     WorkerRunSettings settings,
     LifecyclePolicySettings lifecycleSettings,
     ILogger<FullSyncRunService> logger) : IFullSyncRunService
 {
     public async Task<RunLaunchResult> LaunchAsync(LaunchFullRunRequest request, CancellationToken cancellationToken)
     {
+        if (!request.DryRun && !realSyncSettings.Enabled)
+        {
+            throw new InvalidOperationException("Real AD sync is disabled for this environment.");
+        }
+
         if (!request.DryRun && !request.AcknowledgeRealSync)
         {
             throw new InvalidOperationException("Acknowledge the real AD sync before starting a live run.");

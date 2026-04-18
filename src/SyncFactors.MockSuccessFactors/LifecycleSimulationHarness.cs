@@ -98,6 +98,7 @@ internal sealed class LifecycleSimulationHarness(
                 directoryGateway,
                 runRepository,
                 runtimeStatusStore,
+                new RealSyncSettings(),
                 runSettings,
                 lifecycleSettings,
                 NullLogger<FullSyncRunService>.Instance);

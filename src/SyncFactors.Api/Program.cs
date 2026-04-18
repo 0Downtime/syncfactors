@@ -88,6 +88,11 @@ builder.Services.AddSingleton(serviceProvider =>
 builder.Services.AddSingleton(serviceProvider =>
 {
     var config = serviceProvider.GetRequiredService<SyncFactorsConfigurationLoader>().GetSyncConfig();
+    return new RealSyncSettings(config.Sync.RealSyncEnabled);
+});
+builder.Services.AddSingleton(serviceProvider =>
+{
+    var config = serviceProvider.GetRequiredService<SyncFactorsConfigurationLoader>().GetSyncConfig();
     return new GraveyardDeletionQueueSettings(
         RetentionDays: config.Sync.DeletionRetentionDays,
         AutoDeleteEnabled: config.Sync.AutoDeleteFromGraveyard);
@@ -550,9 +555,15 @@ operatorApi.MapPost("/runs/delete-all", async (
     DeleteAllUsersRequest request,
     ClaimsPrincipal user,
     IRunQueueStore queueStore,
+    RealSyncSettings realSyncSettings,
     ISecurityAuditService audit,
     CancellationToken cancellationToken) =>
 {
+    if (!realSyncSettings.Enabled)
+    {
+        return Results.BadRequest(new { error = "Real AD sync is disabled for this environment." });
+    }
+
     if (await queueStore.HasPendingOrActiveRunAsync(cancellationToken))
     {
         return Results.Conflict(new { error = "A run is already pending or in progress." });

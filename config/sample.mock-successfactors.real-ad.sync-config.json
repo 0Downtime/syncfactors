@@ -158,6 +158,7 @@
     "enableBeforeStartDays": 7,
     "deletionRetentionDays": 90,
     "maxDegreeOfParallelism": 2,
+    "realSyncEnabled": true,
     "autoDeleteFromGraveyard": false
   },
   "safety": {

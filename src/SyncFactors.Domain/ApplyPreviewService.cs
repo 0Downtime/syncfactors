@@ -15,10 +15,16 @@ public sealed class ApplyPreviewService(
     IDirectoryCommandGateway directoryCommandGateway,
     IRunRepository runRepository,
     IRuntimeStatusStore runtimeStatusStore,
+    RealSyncSettings realSyncSettings,
     ILogger<ApplyPreviewService> logger) : IApplyPreviewService
 {
     public async Task<DirectoryCommandResult> ApplyAsync(ApplyPreviewRequest request, CancellationToken cancellationToken)
     {
+        if (!realSyncSettings.Enabled)
+        {
+            throw new InvalidOperationException("Real AD sync is disabled for this environment.");
+        }
+
         logger.LogInformation("Starting preview apply flow. WorkerId={WorkerId} PreviewRunId={PreviewRunId}", request.WorkerId, request.PreviewRunId);
         var preview = await runRepository.GetWorkerPreviewAsync(request.PreviewRunId, cancellationToken);
         if (preview is null)
