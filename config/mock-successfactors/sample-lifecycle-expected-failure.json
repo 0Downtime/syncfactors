@@ -1,0 +1,29 @@
+{
+  "name": "employee-lifecycle-expected-failure",
+  "initialDirectoryUsers": [],
+  "iterations": [
+    {
+      "order": 1,
+      "name": "wrong-create-expectation",
+      "mutations": [],
+      "expectation": {
+        "runStatus": "Succeeded",
+        "bucketCounts": {
+          "creates": 0
+        },
+        "workerOperations": [
+          {
+            "workerId": "10003",
+            "operations": [
+              "CreateUser"
+            ]
+          }
+        ]
+      }
+    }
+  ],
+  "finalExpectation": {
+    "requireExactUserSet": false,
+    "directoryUsers": []
+  }
+}

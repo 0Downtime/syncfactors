@@ -1,0 +1,181 @@
+{
+  "name": "employee-lifecycle",
+  "initialDirectoryUsers": [],
+  "iterations": [
+    {
+      "order": 1,
+      "name": "preboarding-create",
+      "mutations": [],
+      "expectation": {
+        "runStatus": "Succeeded",
+        "bucketCounts": {
+          "creates": 1
+        },
+        "workerOperations": [
+          {
+            "workerId": "10003",
+            "operations": [
+              "CreateUser"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "order": 2,
+      "name": "active-enable",
+      "mutations": [
+        {
+          "workerId": "10003",
+          "set": {
+            "startDate": "2026-03-15T00:00:00Z",
+            "lifecycleState": "active"
+          }
+        }
+      ],
+      "expectation": {
+        "runStatus": "Succeeded",
+        "bucketCounts": {
+          "enables": 1
+        },
+        "workerOperations": [
+          {
+            "workerId": "10003",
+            "operations": [
+              "MoveUser",
+              "EnableUser"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "order": 3,
+      "name": "mapped-update",
+      "mutations": [
+        {
+          "workerId": "10003",
+          "set": {
+            "company": "CORP West",
+            "locationAddress": "300 Example Way"
+          }
+        }
+      ],
+      "expectation": {
+        "runStatus": "Succeeded",
+        "bucketCounts": {
+          "updates": 1
+        },
+        "workerOperations": [
+          {
+            "workerId": "10003",
+            "operations": [
+              "UpdateUser"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "order": 4,
+      "name": "leave-disable",
+      "mutations": [
+        {
+          "workerId": "10003",
+          "set": {
+            "employmentStatus": "U",
+            "emplStatus": "U"
+          }
+        }
+      ],
+      "expectation": {
+        "runStatus": "Succeeded",
+        "bucketCounts": {
+          "disables": 1
+        },
+        "workerOperations": [
+          {
+            "workerId": "10003",
+            "operations": [
+              "DisableUser"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "order": 5,
+      "name": "active-reenable",
+      "mutations": [
+        {
+          "workerId": "10003",
+          "set": {
+            "employmentStatus": "A",
+            "emplStatus": "A"
+          }
+        }
+      ],
+      "expectation": {
+        "runStatus": "Succeeded",
+        "bucketCounts": {
+          "enables": 1
+        },
+        "workerOperations": [
+          {
+            "workerId": "10003",
+            "operations": [
+              "EnableUser"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "order": 6,
+      "name": "terminated-graveyard",
+      "mutations": [
+        {
+          "workerId": "10003",
+          "set": {
+            "employmentStatus": "T",
+            "emplStatus": "T",
+            "endDate": "2026-04-01T00:00:00Z",
+            "lifecycleState": "terminated"
+          }
+        }
+      ],
+      "expectation": {
+        "runStatus": "Succeeded",
+        "bucketCounts": {
+          "graveyardMoves": 1
+        },
+        "workerOperations": [
+          {
+            "workerId": "10003",
+            "operations": [
+              "MoveUser",
+              "DisableUser"
+            ]
+          }
+        ]
+      }
+    }
+  ],
+  "finalExpectation": {
+    "requireExactUserSet": true,
+    "directoryUsers": [
+      {
+        "workerId": "10003",
+        "samAccountName": "10003",
+        "parentOu": "OU=LabGraveyard,DC=example,DC=com",
+        "enabled": false,
+        "displayName": "Sample103, Casey",
+        "attributes": {
+          "employeeID": "10003",
+          "company": "CORP West",
+          "streetAddress": "300 Example Way"
+        }
+      }
+    ]
+  }
+}
