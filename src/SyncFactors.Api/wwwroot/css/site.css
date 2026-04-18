@@ -1134,7 +1134,12 @@ a:focus-visible {
 }
 
 .recent-runs-table {
+  width: 100%;
   table-layout: fixed;
+}
+
+.table-scroll .data-table.recent-runs-table {
+  min-width: 100%;
 }
 
 .recent-runs-table tbody tr {
@@ -1180,6 +1185,9 @@ a:focus-visible {
 .recent-runs-table td {
   padding: 7px 8px;
   font-size: 0.88rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: middle;
 }
 
 .recent-runs-table .badge {
@@ -1218,15 +1226,22 @@ a:focus-visible {
 }
 
 .recent-runs-table__workers {
-  width: 4.5rem;
+  width: 5.5rem;
 }
 
 .recent-runs-table__actions {
-  width: 4rem;
+  width: 5rem;
 }
 
 .recent-runs-table__summary {
   min-width: 0;
+}
+
+.recent-runs-table__summary .summary-value {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 @media (max-width: 1280px) {
