@@ -640,6 +640,24 @@ dotnet run --project src/SyncFactors.MockSuccessFactors -- \
   --manifest /tmp/sanitized-fixtures.manifest.json
 ```
 
+Validate that an exported or fixture-backed SuccessFactors payload still fits the current sync design with:
+
+```powershell
+pwsh ./scripts/Validate-SuccessFactorsContract.ps1 `
+  -InputPath ./config/mock-successfactors/sample-export.json `
+  -ReportPath ./state/runtime/successfactors-contract-report.json
+```
+
+The validator accepts both sanitized OData export payloads like `config/mock-successfactors/sample-export.json` and mock fixture documents that contain a top-level `workers` array. It fails on missing worker identity fields, duplicate worker or user identities, unsupported employment statuses, invalid date fields, and broken date ordering. Missing managers are reported as warnings so you can spot reference integrity drift without blocking every partial export.
+
+The bash wrapper does the same thing:
+
+```bash
+./scripts/validate-successfactors-contract.sh \
+  -InputPath ./config/mock-successfactors/sample-export.json \
+  -ReportPath ./state/runtime/successfactors-contract-report.json
+```
+
 The mock intentionally supports the query shapes used by the current SyncFactors client: OAuth or Basic auth, `PerPerson` for preview, `EmpJob` for the main worker query, `$format=json`, `$filter` on `personIdExternal` or `userId`, and the current `$select` and `$expand` paths used by the client.
 
 If you need to capture a real `PerPerson` payload before sanitizing it, use:
