@@ -35,6 +35,7 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
         { key: "disables", label: "Disables", tone: "warn", runMix: true },
         { key: "graveyardMoves", label: "Graveyard Moves", tone: "dim", runMix: true },
         { key: "deletions", label: "Deletions", tone: "bad", runMix: true },
+        { key: "quarantined", label: "Quarantined", tone: "warn", runMix: true },
         { key: "manualReview", label: "Manual Review", tone: "warn", runMix: true },
         { key: "conflicts", label: "Conflicts", tone: "bad", runMix: true },
         { key: "guardrailFailures", label: "Guardrails", tone: "dim", runMix: true },
@@ -537,6 +538,10 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
 
         if (run.deletions) {
             parts.push(run.deletions + " deletions");
+        }
+
+        if (run.quarantined) {
+            parts.push(run.quarantined + " quarantined");
         }
 
         if (run.conflicts) {

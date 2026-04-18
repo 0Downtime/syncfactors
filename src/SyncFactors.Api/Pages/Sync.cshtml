@@ -36,7 +36,7 @@
                 <p class="eyebrow">Operations Surface</p>
                 <h2>Runtime Readiness</h2>
             </div>
-            <span class="sync-status-badge badge @StatusClass(Model.Status.Status)" data-sync-runtime-badge>@Model.Status.Status</span>
+            <span class="sync-status-badge badge @SyncFactors.Api.UiRunFormatting.StatusBadgeTone(Model.Status.Status)" data-sync-runtime-badge>@Model.Status.Status</span>
         </div>
         <div class="sync-status-grid">
             <section class="sync-status-card" data-tone="info">
@@ -216,7 +216,7 @@
                     <tr>
                         <td>@SyncFactors.Api.UiDateTimeFormatter.FormatDateTime(run.StartedAt)</td>
                         <td>@run.RunTrigger</td>
-                        <td><span class="badge @StatusClass(run.Status)">@run.Status</span></td>
+                        <td><span class="badge @SyncFactors.Api.UiRunFormatting.StatusBadgeTone(run.Status)">@run.Status</span></td>
                         <td>@run.SyncScope</td>
                         <td>@(run.DryRun ? "Yes" : "No")</td>
                         <td>@run.TotalWorkers</td>
@@ -242,17 +242,5 @@
         </div>
     }
 </section>
-
-@functions {
-    private static string StatusClass(string status) =>
-        status.ToLowerInvariant() switch
-        {
-            "succeeded" => "good",
-            "failed" => "bad",
-            "inprogress" => "warn",
-            "canceled" => "neutral",
-            _ => "neutral",
-        };
-}
 
 <script src="~/js/sync.js" asp-append-version="true"></script>

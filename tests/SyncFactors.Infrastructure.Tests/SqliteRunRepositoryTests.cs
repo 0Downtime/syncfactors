@@ -32,7 +32,7 @@ public sealed class SqliteRunRepositoryTests
             Assert.Equal(1, run.Updates);
             Assert.Equal(1, run.Conflicts);
             Assert.Equal(0, run.ManualReview);
-            Assert.Equal(2, run.ProcessedWorkers);
+            Assert.Equal(3, run.ProcessedWorkers);
             Assert.Equal(3, run.TotalWorkers);
         }
         finally
@@ -66,6 +66,8 @@ public sealed class SqliteRunRepositoryTests
             Assert.Equal(1, detail!.Run.Creates);
             Assert.Equal(1, detail.Run.GuardrailFailures);
             Assert.Equal(1, detail.Run.ManualReview);
+            Assert.Equal(3, detail.Run.ProcessedWorkers);
+            Assert.Equal(3, detail.Run.TotalWorkers);
             Assert.Equal(1, detail.BucketCounts["creates"]);
             Assert.Equal(1, detail.BucketCounts["guardrailFailures"]);
             Assert.Equal(1, detail.BucketCounts["manualReview"]);

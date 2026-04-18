@@ -34,7 +34,7 @@
             <div><dt>Trigger</dt><dd>@Model.Run.Run.RunTrigger</dd></div>
             <div><dt>Requested By</dt><dd>@(Model.Run.Run.RequestedBy ?? "n/a")</dd></div>
             <div><dt>Run Type</dt><dd><span class="badge @runContext.ToneCssClass">@runContext.Label</span></dd></div>
-            <div><dt>Status</dt><dd><span class="badge @StatusClass(Model.Run.Run.Status)">@Model.Run.Run.Status</span></dd></div>
+            <div><dt>Status</dt><dd><span class="badge @SyncFactors.Api.UiRunFormatting.StatusBadgeTone(Model.Run.Run.Status)">@Model.Run.Run.Status</span></dd></div>
             <div><dt>Processed</dt><dd>@Model.Run.Run.ProcessedWorkers</dd></div>
             <div><dt>Total</dt><dd>@Model.Run.Run.TotalWorkers</dd></div>
         </dl>
@@ -321,15 +321,6 @@
 </section>
 
 @functions {
-    private static string StatusClass(string status) =>
-        status.ToLowerInvariant() switch
-        {
-            "succeeded" => "good",
-            "failed" => "bad",
-            "inprogress" => "warn",
-            _ => "neutral",
-        };
-
     private static string? GetSavedPreviewRunId(SyncFactors.Contracts.RunEntry entry)
     {
         if (string.Equals(entry.ArtifactType, "WorkerPreview", StringComparison.OrdinalIgnoreCase))
