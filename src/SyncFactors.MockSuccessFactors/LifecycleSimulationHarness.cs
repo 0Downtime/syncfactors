@@ -12,6 +12,7 @@ internal sealed class LifecycleSimulationHarness(
     MockFixtureDocument fixtures)
 {
     private static readonly StringComparer Comparer = StringComparer.OrdinalIgnoreCase;
+    private static readonly WorkerRunSettings DefaultRunSettings = new(MaxCreatesPerRun: 50, MaxDisablesPerRun: 50, MaxDeletionsPerRun: 10);
     private static readonly IReadOnlySet<string> SupportedMutationFields = new HashSet<string>(Comparer)
     {
         "personIdExternal",
@@ -81,6 +82,7 @@ internal sealed class LifecycleSimulationHarness(
             var runtimeStatusStore = new InMemoryRuntimeStatusStore();
             var mappingProvider = new AttributeMappingProvider(configLoader, NullLogger<AttributeMappingProvider>.Instance);
             var lifecycleSettings = BuildLifecycleSettings(configLoader);
+            var runSettings = ResolveRunSettings(_scenario.RunSettings);
             var planningService = new WorkerPlanningService(
                 directoryGateway,
                 new IdentityMatcher(),
@@ -96,7 +98,7 @@ internal sealed class LifecycleSimulationHarness(
                 directoryGateway,
                 runRepository,
                 runtimeStatusStore,
-                new WorkerRunSettings(MaxCreatesPerRun: 50, MaxDisablesPerRun: 50, MaxDeletionsPerRun: 10),
+                runSettings,
                 lifecycleSettings,
                 NullLogger<FullSyncRunService>.Instance);
 
@@ -183,6 +185,13 @@ internal sealed class LifecycleSimulationHarness(
             throw new InvalidOperationException("Lifecycle simulation scenario must contain a finalExpectation section.");
         }
 
+        if (scenario.RunSettings is not null)
+        {
+            ValidateRunSetting("maxCreatesPerRun", scenario.RunSettings.MaxCreatesPerRun);
+            ValidateRunSetting("maxDisablesPerRun", scenario.RunSettings.MaxDisablesPerRun);
+            ValidateRunSetting("maxDeletionsPerRun", scenario.RunSettings.MaxDeletionsPerRun);
+        }
+
         var expectedOrder = 1;
         foreach (var iteration in scenario.Iterations)
         {
@@ -221,6 +230,14 @@ internal sealed class LifecycleSimulationHarness(
         }
     }
 
+    private static void ValidateRunSetting(string name, int? value)
+    {
+        if (value is not null && value < 0)
+        {
+            throw new InvalidOperationException($"Scenario run setting '{name}' must be zero or greater.");
+        }
+    }
+
     private static LifecyclePolicySettings BuildLifecycleSettings(SyncFactorsConfigurationLoader configLoader)
     {
         var config = configLoader.GetSyncConfig();
@@ -233,6 +250,19 @@ internal sealed class LifecycleSimulationHarness(
             LeaveOu: config.Ad.LeaveOu,
             LeaveStatusValues: config.Sync.LeaveStatusValues,
             DirectoryIdentityAttribute: config.Ad.IdentityAttribute);
+    }
+
+    private static WorkerRunSettings ResolveRunSettings(LifecycleSimulationRunSettings? settings)
+    {
+        if (settings is null)
+        {
+            return DefaultRunSettings;
+        }
+
+        return new WorkerRunSettings(
+            MaxCreatesPerRun: settings.MaxCreatesPerRun ?? DefaultRunSettings.MaxCreatesPerRun,
+            MaxDisablesPerRun: settings.MaxDisablesPerRun ?? DefaultRunSettings.MaxDisablesPerRun,
+            MaxDeletionsPerRun: settings.MaxDeletionsPerRun ?? DefaultRunSettings.MaxDeletionsPerRun);
     }
 
     private static async Task<string> WriteSyncConfigAsync(string root, CancellationToken cancellationToken)
@@ -917,6 +947,8 @@ internal sealed class LifecycleSimulationHarness(
                 throw new InvalidOperationException($"Directory user '{command.WorkerId}' already exists.");
             }
 
+            EnsureIdentityIsAvailable(command, workerIdToIgnore: null);
+
             var attributes = CreateBaseAttributes(command);
             _users[command.WorkerId] = new LifecycleSimulationDirectoryUserRecord(
                 WorkerId: command.WorkerId,
@@ -930,6 +962,7 @@ internal sealed class LifecycleSimulationHarness(
         private void ApplyUpdate(DirectoryMutationCommand command)
         {
             var current = GetRequiredUser(command.WorkerId);
+            EnsureIdentityIsAvailable(command, command.WorkerId);
             var attributes = new Dictionary<string, string?>(current.Attributes, Comparer);
             foreach (var pair in CreateBaseAttributes(command))
             {
@@ -957,6 +990,42 @@ internal sealed class LifecycleSimulationHarness(
         {
             var current = GetRequiredUser(workerId);
             _users[workerId] = current with { Enabled = enabled };
+        }
+
+        private void EnsureIdentityIsAvailable(DirectoryMutationCommand command, string? workerIdToIgnore)
+        {
+            EnsureUniqueIdentityValue("sAMAccountName", command.SamAccountName, workerIdToIgnore);
+            EnsureUniqueIdentityValue("UserPrincipalName", command.UserPrincipalName, workerIdToIgnore);
+            EnsureUniqueIdentityValue("mail", command.Mail, workerIdToIgnore);
+        }
+
+        private void EnsureUniqueIdentityValue(string attributeName, string? value, string? workerIdToIgnore)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return;
+            }
+
+            foreach (var user in _users.Values)
+            {
+                if (!string.IsNullOrWhiteSpace(workerIdToIgnore) &&
+                    string.Equals(user.WorkerId, workerIdToIgnore, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                string? existingValue = attributeName switch
+                {
+                    "sAMAccountName" => user.SamAccountName,
+                    _ => user.Attributes.TryGetValue(attributeName, out var resolvedValue) ? resolvedValue : null
+                };
+
+                if (string.Equals(existingValue, value, StringComparison.OrdinalIgnoreCase))
+                {
+                    throw new InvalidOperationException(
+                        $"Simulated directory identity conflict: {attributeName} '{value}' is already assigned to worker '{user.WorkerId}'.");
+                }
+            }
         }
 
         private LifecycleSimulationDirectoryUserRecord GetRequiredUser(string workerId)

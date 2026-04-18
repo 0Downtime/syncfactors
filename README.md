@@ -117,6 +117,12 @@ Run the focused multi-user sample:
 pwsh ./scripts/Test-SyncFactorsLifecycleSimulation.ps1 -Sample multi
 ```
 
+Run the failure-behavior sample that validates conflicts and guardrail rebucketing:
+
+```powershell
+pwsh ./scripts/Test-SyncFactorsLifecycleSimulation.ps1 -Sample failure
+```
+
 Run the focused single-worker sample:
 
 ```powershell
@@ -142,6 +148,7 @@ The simulator uses:
 - default report: `state/runtime/lifecycle-simulation-population-report.md`
 - sibling JSON report: `state/runtime/lifecycle-simulation-population-report.json`
 - focused multi-user sample: `config/mock-successfactors/sample-lifecycle-multiuser-scenario.json`
+- focused failure sample: `config/mock-successfactors/sample-lifecycle-failure-scenario.json`
 - focused single-worker sample: `config/mock-successfactors/sample-lifecycle-scenario.json`
 
 You can also call the CLI directly:
