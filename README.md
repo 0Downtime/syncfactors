@@ -22,7 +22,8 @@
 </p>
 
 <p>
-  <img src="src/SyncFactors.Api/wwwroot/images/syncfactors-logo-black.png" alt="SyncFactors" width="420" />
+  <img src="src/SyncFactors.Api/wwwroot/images/syncfactors-logo-black.png#gh-light-mode-only" alt="SyncFactors" width="420" />
+  <img src="src/SyncFactors.Api/wwwroot/images/syncfactors-logo-white.png#gh-dark-mode-only" alt="SyncFactors" width="420" />
 </p>
 
 `SyncFactors` is the current .NET-based SyncFactors implementation and repository root.
