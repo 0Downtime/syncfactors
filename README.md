@@ -122,6 +122,14 @@ dotnet build ./SyncFactors.Next.sln
 dotnet test ./SyncFactors.Next.sln
 ```
 
+Run the local validation entrypoint:
+
+```powershell
+pwsh ./scripts/Validate-SyncFactors.ps1
+```
+
+That command builds the solution, runs the solution test suite, and then runs the lifecycle simulation master suite as an explicit final gate.
+
 Run the checked-in lifecycle simulator sample:
 
 ```powershell
