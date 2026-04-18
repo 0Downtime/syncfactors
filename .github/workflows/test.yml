@@ -40,6 +40,9 @@ jobs:
       - name: Run .NET test suite
         run: dotnet test ./SyncFactors.Next.sln --configuration Release --no-build --logger "trx;LogFileName=test-results.trx" --results-directory ./artifacts/test-results
 
+      - name: Run lifecycle simulation master suite
+        run: dotnet test ./tests/SyncFactors.MockSuccessFactors.Tests/SyncFactors.MockSuccessFactors.Tests.csproj --configuration Release --no-build --filter "FullyQualifiedName~RunAsync_CheckedInSimulationMasterSuite_CoversAllCheckedInScenarios" --logger "trx;LogFileName=lifecycle-simulation-master-results.trx" --results-directory ./artifacts/test-results
+
       - name: Install CycloneDX
         run: dotnet tool install --global CycloneDX --version 5.5.0
 

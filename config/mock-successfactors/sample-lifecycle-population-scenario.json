@@ -1,0 +1,850 @@
+{
+  "name": "employee-lifecycle-population",
+  "initialDirectoryUsers": [
+    {
+      "workerId": "10002",
+      "samAccountName": "10002",
+      "parentOu": "OU=LabUsers,DC=example,DC=com",
+      "enabled": true,
+      "displayName": "Sample102, Alex",
+      "attributes": {
+        "employeeID": "10002",
+        "displayName": "Sample102, Alex",
+        "UserPrincipalName": "alex.sample102@Exampleenergy.com",
+        "mail": "alex.sample102@Exampleenergy.com",
+        "company": "Legacy CORP",
+        "streetAddress": "2 Old Campus"
+      }
+    },
+    {
+      "workerId": "10004",
+      "samAccountName": "10004",
+      "parentOu": "OU=LabUsers,DC=example,DC=com",
+      "enabled": true,
+      "displayName": "Sample104, Morgan",
+      "attributes": {
+        "employeeID": "10004",
+        "displayName": "Sample104, Morgan",
+        "UserPrincipalName": "morgan.sample104@Exampleenergy.com",
+        "mail": "morgan.sample104@Exampleenergy.com",
+        "company": "CORP",
+        "streetAddress": "104 Example Way"
+      }
+    },
+    {
+      "workerId": "10007",
+      "samAccountName": "10007",
+      "parentOu": "OU=LabUsers,DC=example,DC=com",
+      "enabled": true,
+      "displayName": "Sample107, Jamie",
+      "attributes": {
+        "employeeID": "10007",
+        "displayName": "Sample107, Jamie",
+        "UserPrincipalName": "jamie.sample107@Exampleenergy.com",
+        "mail": "jamie.sample107@Exampleenergy.com",
+        "company": "CORP",
+        "streetAddress": "107 Example Way"
+      }
+    },
+    {
+      "workerId": "10009",
+      "samAccountName": "10009",
+      "parentOu": "OU=LabGraveyard,DC=example,DC=com",
+      "enabled": false,
+      "displayName": "Sample109, Jordan",
+      "attributes": {
+        "employeeID": "10009",
+        "displayName": "Sample109, Jordan",
+        "UserPrincipalName": "jordan.sample109@Exampleenergy.com",
+        "mail": "jordan.sample109@Exampleenergy.com",
+        "company": "Legacy CORP",
+        "streetAddress": "Old Graveyard Campus"
+      }
+    },
+    {
+      "workerId": "10010",
+      "samAccountName": "10010",
+      "parentOu": "OU=LabUsers,DC=example,DC=com",
+      "enabled": true,
+      "displayName": "Sample110, Avery",
+      "attributes": {
+        "employeeID": "10010",
+        "displayName": "Sample110, Avery",
+        "UserPrincipalName": "avery.sample110@Exampleenergy.com",
+        "mail": "avery.sample110@Exampleenergy.com",
+        "company": "CORP",
+        "streetAddress": "110 Example Way"
+      }
+    }
+  ],
+  "iterations": [
+    {
+      "order": 1,
+      "name": "baseline-expansion",
+      "mutations": [
+        {
+          "workerId": "10009",
+          "worker": {
+            "personIdExternal": "10009",
+            "personId": "10009",
+            "perPersonUuid": "uuid-10009",
+            "userName": "user.10009",
+            "userId": "user.10009",
+            "email": "jordan.sample109@example.test",
+            "emailType": "B",
+            "firstName": "Taylor",
+            "lastName": "Sample109",
+            "preferredName": "Jordan",
+            "displayName": "Jordan Sample109",
+            "startDate": "2024-02-12T00:00:00Z",
+            "endDate": null,
+            "firstDateWorked": "2024-02-12T00:00:00Z",
+            "lastDateWorked": null,
+            "isContingentWorker": "false",
+            "department": "Sales",
+            "departmentName": "Regional Sales",
+            "departmentId": "DEPT-002",
+            "departmentCostCenter": "CC-200",
+            "company": "CORP",
+            "companyId": "COMP-001",
+            "location": {
+              "name": "Regional West",
+              "address": "109 Example Way",
+              "city": "Riverbend",
+              "zipCode": "10009",
+              "customString4": "Suite 9"
+            },
+            "jobTitle": "Account Executive",
+            "position": "POS-10002",
+            "payGrade": "PG-06",
+            "businessUnit": "Sales",
+            "businessUnitId": "BU-10009",
+            "division": "Commercial",
+            "divisionId": "DIV-10009",
+            "costCenter": "CC-910",
+            "costCenterDescription": "Regional Sales",
+            "costCenterId": "CC910",
+            "employeeClass": "Employee",
+            "employeeType": "Regular",
+            "managerId": "90010",
+            "peopleGroup": "Commercial",
+            "leadershipLevel": "IC-3",
+            "region": "West",
+            "geozone": "Mountain",
+            "bargainingUnit": "Non-Union",
+            "unionJobCode": "UJ-910",
+            "cintasUniformCategory": "Standard",
+            "cintasUniformAllotment": "Monthly",
+            "employmentStatus": "A",
+            "lifecycleState": "active",
+            "twoCharCountryCode": "US",
+            "businessPhoneNumber": "5550102",
+            "businessPhoneAreaCode": "314",
+            "businessPhoneCountryCode": "1",
+            "businessPhoneExtension": "102",
+            "cellPhoneNumber": "5551102",
+            "cellPhoneAreaCode": "618",
+            "cellPhoneCountryCode": "1",
+            "activeEmploymentsCount": "1",
+            "latestTerminationDate": null,
+            "lastModifiedDateTime": "2026-03-24T13:00:00Z",
+            "scenarioTags": [
+              "rehire",
+              "return-from-graveyard"
+            ]
+          }
+        },
+        {
+          "workerId": "10010",
+          "worker": {
+            "personIdExternal": "10010",
+            "personId": "10010",
+            "perPersonUuid": "uuid-10010",
+            "userName": "user.10010",
+            "userId": "user.10010",
+            "email": "avery.sample110@example.test",
+            "emailType": "B",
+            "firstName": "Chris",
+            "lastName": "Sample110",
+            "preferredName": "Avery",
+            "displayName": "Avery Sample110",
+            "startDate": "2025-08-18T00:00:00Z",
+            "endDate": null,
+            "firstDateWorked": "2025-08-18T00:00:00Z",
+            "lastDateWorked": null,
+            "isContingentWorker": "false",
+            "department": "Support",
+            "departmentName": "Customer Support",
+            "departmentId": "DEPT-001",
+            "departmentCostCenter": "CC-100",
+            "company": "CORP",
+            "companyId": "COMP-001",
+            "location": {
+              "name": "Lake Office",
+              "address": "110 Example Way",
+              "city": "Lakeview",
+              "zipCode": "10010",
+              "customString4": "Floor 2"
+            },
+            "jobTitle": "Support Specialist",
+            "position": "POS-10001",
+            "payGrade": "PG-07",
+            "businessUnit": "Customer Care",
+            "businessUnitId": "BU-10010",
+            "division": "Operations",
+            "divisionId": "DIV-10010",
+            "costCenter": "CC-920",
+            "costCenterDescription": "Customer Support",
+            "costCenterId": "CC920",
+            "employeeClass": "Employee",
+            "employeeType": "Regular",
+            "managerId": "90011",
+            "peopleGroup": "Customer Care",
+            "leadershipLevel": "IC-1",
+            "region": "Central",
+            "geozone": "Lakes",
+            "bargainingUnit": "Non-Union",
+            "unionJobCode": "UJ-920",
+            "cintasUniformCategory": "Standard",
+            "cintasUniformAllotment": "Monthly",
+            "employmentStatus": "A",
+            "lifecycleState": "active",
+            "twoCharCountryCode": "US",
+            "businessPhoneNumber": "5550101",
+            "businessPhoneAreaCode": "212",
+            "businessPhoneCountryCode": "1",
+            "businessPhoneExtension": "101",
+            "cellPhoneNumber": "5551101",
+            "cellPhoneAreaCode": "917",
+            "cellPhoneCountryCode": "1",
+            "activeEmploymentsCount": "1",
+            "latestTerminationDate": null,
+            "lastModifiedDateTime": "2026-03-24T13:00:00Z",
+            "scenarioTags": [
+              "source-removal"
+            ]
+          }
+        },
+        {
+          "workerId": "10011",
+          "worker": {
+            "personIdExternal": "10011",
+            "personId": "10011",
+            "perPersonUuid": "uuid-10011",
+            "userName": "user.10011",
+            "userId": "user.10011",
+            "email": "parker.sample111@example.test",
+            "emailType": "B",
+            "firstName": "Riley",
+            "lastName": "Sample111",
+            "preferredName": "Parker",
+            "displayName": "Parker Sample111",
+            "startDate": "2099-05-01T00:00:00Z",
+            "endDate": null,
+            "firstDateWorked": null,
+            "lastDateWorked": null,
+            "isContingentWorker": "false",
+            "department": "Engineering",
+            "departmentName": "Platform Engineering",
+            "departmentId": "DEPT-001",
+            "departmentCostCenter": "CC-100",
+            "company": "CORP",
+            "companyId": "COMP-001",
+            "location": {
+              "name": "North Campus",
+              "address": "111 Example Way",
+              "city": "Northport",
+              "zipCode": "10011",
+              "customString4": "Lab 4"
+            },
+            "jobTitle": "Platform Associate",
+            "position": "POS-10003",
+            "payGrade": "PG-05",
+            "businessUnit": "Technology",
+            "businessUnitId": "BU-10011",
+            "division": "Digital",
+            "divisionId": "DIV-10011",
+            "costCenter": "CC-930",
+            "costCenterDescription": "Platform Engineering",
+            "costCenterId": "CC930",
+            "employeeClass": "Employee",
+            "employeeType": "Regular",
+            "managerId": "90012",
+            "peopleGroup": "Technology",
+            "leadershipLevel": "IC-1",
+            "region": "Central",
+            "geozone": "North Metro",
+            "bargainingUnit": "Non-Union",
+            "unionJobCode": "UJ-930",
+            "cintasUniformCategory": "Starter",
+            "cintasUniformAllotment": "Onboarding",
+            "employmentStatus": "A",
+            "lifecycleState": "preboarding",
+            "twoCharCountryCode": "US",
+            "businessPhoneNumber": "5550103",
+            "businessPhoneAreaCode": "212",
+            "businessPhoneCountryCode": "1",
+            "businessPhoneExtension": "103",
+            "cellPhoneNumber": "5551103",
+            "cellPhoneAreaCode": "917",
+            "cellPhoneCountryCode": "1",
+            "activeEmploymentsCount": "1",
+            "latestTerminationDate": null,
+            "lastModifiedDateTime": "2026-03-24T13:00:00Z",
+            "scenarioTags": [
+              "prehire",
+              "new-hire-wave"
+            ]
+          }
+        }
+      ],
+      "expectation": {
+        "runStatus": "Succeeded",
+        "bucketCounts": {
+          "creates": 3,
+          "updates": 3,
+          "disables": 1,
+          "graveyardMoves": 1
+        },
+        "workerOperations": [
+          {
+            "workerId": "10001",
+            "operations": [
+              "CreateUser"
+            ]
+          },
+          {
+            "workerId": "10002",
+            "operations": [
+              "UpdateUser"
+            ]
+          },
+          {
+            "workerId": "10003",
+            "operations": [
+              "CreateUser"
+            ]
+          },
+          {
+            "workerId": "10004",
+            "operations": [
+              "UpdateUser",
+              "DisableUser"
+            ]
+          },
+          {
+            "workerId": "10007",
+            "operations": [
+              "MoveUser",
+              "UpdateUser",
+              "DisableUser"
+            ]
+          },
+          {
+            "workerId": "10009",
+            "operations": [
+              "MoveUser",
+              "UpdateUser",
+              "EnableUser"
+            ]
+          },
+          {
+            "workerId": "10010",
+            "operations": [
+              "UpdateUser"
+            ]
+          },
+          {
+            "workerId": "10011",
+            "operations": [
+              "CreateUser"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "order": 2,
+      "name": "activation-and-appearance",
+      "mutations": [
+        {
+          "workerId": "10002",
+          "set": {
+            "company": "CORP West",
+            "locationAddress": "202 Example Way"
+          }
+        },
+        {
+          "workerId": "10003",
+          "set": {
+            "startDate": "2026-03-15T00:00:00Z",
+            "lifecycleState": "active"
+          }
+        },
+        {
+          "workerId": "10004",
+          "set": {
+            "employmentStatus": "A",
+            "lifecycleState": "active"
+          }
+        },
+        {
+          "workerId": "10011",
+          "set": {
+            "startDate": "2026-04-15T00:00:00Z",
+            "lifecycleState": "active"
+          }
+        },
+        {
+          "workerId": "10012",
+          "worker": {
+            "personIdExternal": "10012",
+            "personId": "10012",
+            "perPersonUuid": "uuid-10012",
+            "userName": "user.10012",
+            "userId": "user.10012",
+            "email": "quinn.sample112@example.test",
+            "emailType": "B",
+            "firstName": "Skyler",
+            "lastName": "Sample112",
+            "preferredName": "Quinn",
+            "displayName": "Quinn Sample112",
+            "startDate": "2026-04-12T00:00:00Z",
+            "endDate": null,
+            "firstDateWorked": "2026-04-12T00:00:00Z",
+            "lastDateWorked": null,
+            "isContingentWorker": "false",
+            "department": "Finance",
+            "departmentName": "Revenue Operations",
+            "departmentId": "DEPT-002",
+            "departmentCostCenter": "CC-200",
+            "company": "CORP",
+            "companyId": "COMP-001",
+            "location": {
+              "name": "South Campus",
+              "address": "112 Example Way",
+              "city": "Southport",
+              "zipCode": "10012",
+              "customString4": "Wing B"
+            },
+            "jobTitle": "Revenue Analyst",
+            "position": "POS-10002",
+            "payGrade": "PG-06",
+            "businessUnit": "Finance",
+            "businessUnitId": "BU-10012",
+            "division": "Shared Services",
+            "divisionId": "DIV-10012",
+            "costCenter": "CC-940",
+            "costCenterDescription": "Revenue Operations",
+            "costCenterId": "CC940",
+            "employeeClass": "Employee",
+            "employeeType": "Regular",
+            "managerId": "90013",
+            "peopleGroup": "Finance",
+            "leadershipLevel": "IC-2",
+            "region": "South",
+            "geozone": "Delta",
+            "bargainingUnit": "Non-Union",
+            "unionJobCode": "UJ-940",
+            "cintasUniformCategory": "Standard",
+            "cintasUniformAllotment": "Monthly",
+            "employmentStatus": "A",
+            "lifecycleState": "active",
+            "twoCharCountryCode": "US",
+            "businessPhoneNumber": "5550102",
+            "businessPhoneAreaCode": "314",
+            "businessPhoneCountryCode": "1",
+            "businessPhoneExtension": "102",
+            "cellPhoneNumber": "5551102",
+            "cellPhoneAreaCode": "618",
+            "cellPhoneCountryCode": "1",
+            "activeEmploymentsCount": "1",
+            "latestTerminationDate": null,
+            "lastModifiedDateTime": "2026-03-24T13:00:00Z",
+            "scenarioTags": [
+              "new-hire",
+              "attribute-drift"
+            ]
+          }
+        },
+        {
+          "workerId": "10010",
+          "removeFromSource": true
+        }
+      ],
+      "expectation": {
+        "runStatus": "Succeeded",
+        "bucketCounts": {
+          "creates": 1,
+          "updates": 1,
+          "enables": 3,
+          "unchanged": 3
+        },
+        "workerOperations": [
+          {
+            "workerId": "10002",
+            "operations": [
+              "UpdateUser"
+            ]
+          },
+          {
+            "workerId": "10003",
+            "operations": [
+              "MoveUser",
+              "EnableUser"
+            ]
+          },
+          {
+            "workerId": "10004",
+            "operations": [
+              "EnableUser"
+            ]
+          },
+          {
+            "workerId": "10011",
+            "operations": [
+              "MoveUser",
+              "EnableUser"
+            ]
+          },
+          {
+            "workerId": "10012",
+            "operations": [
+              "CreateUser"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "order": 3,
+      "name": "churn-and-prehire-wave",
+      "mutations": [
+        {
+          "workerId": "10001",
+          "set": {
+            "employmentStatus": "T",
+            "emplStatus": "T",
+            "endDate": "2026-04-01T00:00:00Z",
+            "lifecycleState": "terminated"
+          }
+        },
+        {
+          "workerId": "10003",
+          "set": {
+            "company": "CORP Digital",
+            "locationAddress": "303 Example Way"
+          }
+        },
+        {
+          "workerId": "10009",
+          "set": {
+            "employmentStatus": "U",
+            "emplStatus": "U",
+            "lifecycleState": "paid-leave"
+          }
+        },
+        {
+          "workerId": "10012",
+          "set": {
+            "managerId": "90099",
+            "department": "Revenue Strategy",
+            "locationAddress": "412 Example Way"
+          }
+        },
+        {
+          "workerId": "10013",
+          "worker": {
+            "personIdExternal": "10013",
+            "personId": "10013",
+            "perPersonUuid": "uuid-10013",
+            "userName": "user.10013",
+            "userId": "user.10013",
+            "email": "morgan.sample113@example.test",
+            "emailType": "B",
+            "firstName": "Devon",
+            "lastName": "Sample113",
+            "preferredName": "Morgan",
+            "displayName": "Morgan Sample113",
+            "startDate": "2099-06-01T00:00:00Z",
+            "endDate": null,
+            "firstDateWorked": null,
+            "lastDateWorked": null,
+            "isContingentWorker": "false",
+            "department": "HR",
+            "departmentName": "People Operations",
+            "departmentId": "DEPT-001",
+            "departmentCostCenter": "CC-100",
+            "company": "CORP",
+            "companyId": "COMP-001",
+            "location": {
+              "name": "West Campus",
+              "address": "113 Example Way",
+              "city": "Westfield",
+              "zipCode": "10013",
+              "customString4": "Atrium"
+            },
+            "jobTitle": "People Coordinator",
+            "position": "POS-10003",
+            "payGrade": "PG-05",
+            "businessUnit": "HR",
+            "businessUnitId": "BU-10013",
+            "division": "Corporate Services",
+            "divisionId": "DIV-10013",
+            "costCenter": "CC-950",
+            "costCenterDescription": "People Operations",
+            "costCenterId": "CC950",
+            "employeeClass": "Employee",
+            "employeeType": "Regular",
+            "managerId": "90014",
+            "peopleGroup": "Corporate",
+            "leadershipLevel": "IC-1",
+            "region": "West",
+            "geozone": "Pacific",
+            "bargainingUnit": "Non-Union",
+            "unionJobCode": "UJ-950",
+            "cintasUniformCategory": "Starter",
+            "cintasUniformAllotment": "Onboarding",
+            "employmentStatus": "A",
+            "lifecycleState": "preboarding",
+            "twoCharCountryCode": "US",
+            "businessPhoneNumber": "5550103",
+            "businessPhoneAreaCode": "212",
+            "businessPhoneCountryCode": "1",
+            "businessPhoneExtension": "103",
+            "cellPhoneNumber": "5551103",
+            "cellPhoneAreaCode": "917",
+            "cellPhoneCountryCode": "1",
+            "activeEmploymentsCount": "1",
+            "latestTerminationDate": null,
+            "lastModifiedDateTime": "2026-03-24T13:00:00Z",
+            "scenarioTags": [
+              "prehire",
+              "late-wave"
+            ]
+          }
+        }
+      ],
+      "expectation": {
+        "runStatus": "Succeeded",
+        "bucketCounts": {
+          "creates": 1,
+          "updates": 2,
+          "disables": 1,
+          "graveyardMoves": 1,
+          "unchanged": 4
+        },
+        "workerOperations": [
+          {
+            "workerId": "10001",
+            "operations": [
+              "MoveUser",
+              "DisableUser"
+            ]
+          },
+          {
+            "workerId": "10003",
+            "operations": [
+              "UpdateUser"
+            ]
+          },
+          {
+            "workerId": "10009",
+            "operations": [
+              "DisableUser"
+            ]
+          },
+          {
+            "workerId": "10012",
+            "operations": [
+              "UpdateUser"
+            ]
+          },
+          {
+            "workerId": "10013",
+            "operations": [
+              "CreateUser"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "order": 4,
+      "name": "return-and-cleanup",
+      "mutations": [
+        {
+          "workerId": "10009",
+          "set": {
+            "employmentStatus": "A",
+            "emplStatus": "A",
+            "lifecycleState": "active"
+          }
+        },
+        {
+          "workerId": "10011",
+          "set": {
+            "employmentStatus": "T",
+            "emplStatus": "T",
+            "endDate": "2026-04-16T00:00:00Z",
+            "lifecycleState": "terminated"
+          }
+        },
+        {
+          "workerId": "10013",
+          "set": {
+            "startDate": "2026-04-20T00:00:00Z",
+            "lifecycleState": "active"
+          }
+        },
+        {
+          "workerId": "10012",
+          "removeFromSource": true
+        }
+      ],
+      "expectation": {
+        "runStatus": "Succeeded",
+        "bucketCounts": {
+          "enables": 2,
+          "graveyardMoves": 1,
+          "unchanged": 5
+        },
+        "workerOperations": [
+          {
+            "workerId": "10009",
+            "operations": [
+              "EnableUser"
+            ]
+          },
+          {
+            "workerId": "10011",
+            "operations": [
+              "MoveUser",
+              "DisableUser"
+            ]
+          },
+          {
+            "workerId": "10013",
+            "operations": [
+              "MoveUser",
+              "EnableUser"
+            ]
+          }
+        ]
+      }
+    }
+  ],
+  "finalExpectation": {
+    "requireExactUserSet": true,
+    "directoryUsers": [
+      {
+        "workerId": "10001",
+        "samAccountName": "10001",
+        "parentOu": "OU=LabGraveyard,DC=example,DC=com",
+        "enabled": false,
+        "displayName": "Sample101, Winnie",
+        "attributes": {
+          "employeeID": "10001"
+        }
+      },
+      {
+        "workerId": "10002",
+        "samAccountName": "10002",
+        "parentOu": "OU=LabUsers,DC=example,DC=com",
+        "enabled": true,
+        "displayName": "Sample102, Alex",
+        "attributes": {
+          "employeeID": "10002",
+          "company": "CORP West",
+          "streetAddress": "202 Example Way"
+        }
+      },
+      {
+        "workerId": "10003",
+        "samAccountName": "10003",
+        "parentOu": "OU=LabUsers,DC=example,DC=com",
+        "enabled": true,
+        "displayName": "Sample103, Casey",
+        "attributes": {
+          "employeeID": "10003",
+          "company": "CORP Digital",
+          "streetAddress": "303 Example Way"
+        }
+      },
+      {
+        "workerId": "10004",
+        "samAccountName": "10004",
+        "parentOu": "OU=LabUsers,DC=example,DC=com",
+        "enabled": true,
+        "displayName": "Sample104, Morgan",
+        "attributes": {
+          "employeeID": "10004"
+        }
+      },
+      {
+        "workerId": "10007",
+        "samAccountName": "10007",
+        "parentOu": "OU=LabGraveyard,DC=example,DC=com",
+        "enabled": false,
+        "displayName": "Sample107, Jamie",
+        "attributes": {
+          "employeeID": "10007"
+        }
+      },
+      {
+        "workerId": "10009",
+        "samAccountName": "10009",
+        "parentOu": "OU=LabUsers,DC=example,DC=com",
+        "enabled": true,
+        "displayName": "Sample109, Jordan",
+        "attributes": {
+          "employeeID": "10009",
+          "company": "CORP",
+          "streetAddress": "109 Example Way"
+        }
+      },
+      {
+        "workerId": "10010",
+        "samAccountName": "10010",
+        "parentOu": "OU=LabUsers,DC=example,DC=com",
+        "enabled": true,
+        "displayName": "Sample110, Avery",
+        "attributes": {
+          "employeeID": "10010",
+          "streetAddress": "110 Example Way"
+        }
+      },
+      {
+        "workerId": "10011",
+        "samAccountName": "10011",
+        "parentOu": "OU=LabGraveyard,DC=example,DC=com",
+        "enabled": false,
+        "displayName": "Sample111, Parker",
+        "attributes": {
+          "employeeID": "10011"
+        }
+      },
+      {
+        "workerId": "10012",
+        "samAccountName": "10012",
+        "parentOu": "OU=LabUsers,DC=example,DC=com",
+        "enabled": true,
+        "displayName": "Sample112, Quinn",
+        "attributes": {
+          "employeeID": "10012",
+          "streetAddress": "412 Example Way"
+        }
+      },
+      {
+        "workerId": "10013",
+        "samAccountName": "10013",
+        "parentOu": "OU=LabUsers,DC=example,DC=com",
+        "enabled": true,
+        "displayName": "Sample113, Morgan",
+        "attributes": {
+          "employeeID": "10013"
+        }
+      }
+    ]
+  }
+}

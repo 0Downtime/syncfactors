@@ -9,6 +9,13 @@ if (command is not null)
     return;
 }
 
+var lifecycleSimulationCommand = LifecycleSimulationCommand.TryParse(args);
+if (lifecycleSimulationCommand is not null)
+{
+    Environment.ExitCode = await LifecycleSimulationCommand.RunAsync(lifecycleSimulationCommand, Console.Out, CancellationToken.None);
+    return;
+}
+
 var builder = WebApplication.CreateBuilder(args);
 if (string.IsNullOrWhiteSpace(builder.Configuration["urls"]) &&
     string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("ASPNETCORE_URLS")))
