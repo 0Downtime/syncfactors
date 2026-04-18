@@ -98,6 +98,11 @@ public sealed class ActiveDirectoryCommandGateway(
             };
         }
 
+        if (ShouldRemoveProvisioningGroups(command, config, distinguishedName))
+        {
+            RemoveUserFromProvisioningGroups(connection, distinguishedName!, config, logger, command.WorkerId, command.SamAccountName);
+        }
+
         return new DirectoryCommandResult(
             Succeeded: true,
             Action: command.Action,
@@ -360,10 +365,13 @@ public sealed class ActiveDirectoryCommandGateway(
 
     private static DirectoryUserSnapshot? FindExistingUser(LdapConnection connection, string workerId, ActiveDirectoryConfig config)
     {
-        var entry = FindFirstEntry(
+        var entry = FindUniqueEntry(
             connection,
             GetSearchBases(config),
             $"({EscapeLdapFilter(config.IdentityAttribute)}={EscapeLdapFilter(workerId)})",
+            lookupKind: "worker identity",
+            lookupValue: workerId,
+            identityAttribute: config.IdentityAttribute,
             NullLogger<ActiveDirectoryCommandGateway>.Instance,
             "find existing user search",
             ("WorkerId", workerId),
@@ -388,10 +396,13 @@ public sealed class ActiveDirectoryCommandGateway(
 
     private static DirectoryUserSnapshot? FindExistingUserByDistinguishedName(LdapConnection connection, string distinguishedName)
     {
-        var entry = FindFirstEntry(
+        var entry = FindUniqueEntry(
             connection,
             [distinguishedName],
             "(objectClass=*)",
+            lookupKind: "distinguished name",
+            lookupValue: distinguishedName,
+            identityAttribute: "distinguishedName",
             NullLogger<ActiveDirectoryCommandGateway>.Instance,
             "find existing user by distinguished name search",
             ("DistinguishedName", distinguishedName));
@@ -420,10 +431,13 @@ public sealed class ActiveDirectoryCommandGateway(
             return null;
         }
 
-        var entry = FindFirstEntry(
+        var entry = FindUniqueEntry(
             connection,
             GetSearchBases(config),
             $"({EscapeLdapFilter(config.IdentityAttribute)}={EscapeLdapFilter(managerId)})",
+            lookupKind: "manager identity",
+            lookupValue: managerId,
+            identityAttribute: config.IdentityAttribute,
             logger ?? NullLogger<ActiveDirectoryCommandGateway>.Instance,
             "command manager DN search",
             ("ManagerId", managerId),
@@ -543,6 +557,40 @@ public sealed class ActiveDirectoryCommandGateway(
             {
                 logger.LogInformation(
                     "Provisioned user is already a member of the configured group. WorkerId={WorkerId} SamAccountName={SamAccountName} GroupDistinguishedName={GroupDistinguishedName} UserDistinguishedName={UserDistinguishedName}",
+                    workerId,
+                    samAccountName,
+                    request.DistinguishedName,
+                    userDistinguishedName);
+            }
+        }
+    }
+
+    private static void RemoveUserFromProvisioningGroups(
+        LdapConnection connection,
+        string userDistinguishedName,
+        ActiveDirectoryConfig config,
+        ILogger logger,
+        string workerId,
+        string samAccountName)
+    {
+        foreach (var request in BuildProvisioningGroupRemovalRequests(userDistinguishedName, config))
+        {
+            try
+            {
+                ExecuteModify(
+                    connection,
+                    request,
+                    logger,
+                    "remove user from provisioning group modify request",
+                    ("WorkerId", workerId),
+                    ("SamAccountName", samAccountName),
+                    ("GroupDistinguishedName", request.DistinguishedName),
+                    ("UserDistinguishedName", userDistinguishedName));
+            }
+            catch (DirectoryOperationException ex) when (IsMissingGroupMembershipException(ex))
+            {
+                logger.LogInformation(
+                    "Provisioned user is already absent from the configured group. WorkerId={WorkerId} SamAccountName={SamAccountName} GroupDistinguishedName={GroupDistinguishedName} UserDistinguishedName={UserDistinguishedName}",
                     workerId,
                     samAccountName,
                     request.DistinguishedName,
@@ -813,6 +861,17 @@ public sealed class ActiveDirectoryCommandGateway(
         };
     }
 
+    private static DirectoryAttributeModification BuildDeleteModification(string attributeName, string value)
+    {
+        var modification = new DirectoryAttributeModification
+        {
+            Name = attributeName,
+            Operation = DirectoryAttributeOperation.Delete
+        };
+        modification.Add(value);
+        return modification;
+    }
+
     private static IReadOnlyList<ModifyRequest> BuildProvisioningGroupRequests(string userDistinguishedName, ActiveDirectoryConfig config)
     {
         return (config.LicensingGroups ?? [])
@@ -823,6 +882,21 @@ public sealed class ActiveDirectoryCommandGateway(
             {
                 var request = new ModifyRequest(groupDistinguishedName);
                 request.Modifications.Add(BuildAddModification("member", userDistinguishedName));
+                return request;
+            })
+            .ToArray();
+    }
+
+    private static IReadOnlyList<ModifyRequest> BuildProvisioningGroupRemovalRequests(string userDistinguishedName, ActiveDirectoryConfig config)
+    {
+        return (config.LicensingGroups ?? [])
+            .Where(groupDistinguishedName => !string.IsNullOrWhiteSpace(groupDistinguishedName))
+            .Select(groupDistinguishedName => groupDistinguishedName.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Select(groupDistinguishedName =>
+            {
+                var request = new ModifyRequest(groupDistinguishedName);
+                request.Modifications.Add(BuildDeleteModification("member", userDistinguishedName));
                 return request;
             })
             .ToArray();
@@ -1008,11 +1082,97 @@ public sealed class ActiveDirectoryCommandGateway(
                exception.Message.Contains("attribute or value exists", StringComparison.OrdinalIgnoreCase);
     }
 
+    private static bool IsMissingGroupMembershipException(DirectoryOperationException exception)
+    {
+        return exception.Response?.ResultCode == ResultCode.NoSuchAttribute ||
+               exception.Message.Contains("no such attribute", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool ShouldRemoveProvisioningGroups(
+        DirectoryMutationCommand command,
+        ActiveDirectoryConfig config,
+        string? distinguishedName)
+    {
+        return !string.IsNullOrWhiteSpace(distinguishedName) &&
+               (config.LicensingGroups?.Count ?? 0) > 0 &&
+               !command.EnableAccount &&
+               string.Equals(command.TargetOu, config.GraveyardOu, StringComparison.OrdinalIgnoreCase);
+    }
+
     private static string NormalizeAttributeName(string attributeName)
     {
         return AttributeAliases.TryGetValue(attributeName, out var normalized)
             ? normalized
             : attributeName;
+    }
+
+    private static SearchResultEntry? FindUniqueEntry(
+        LdapConnection connection,
+        IReadOnlyList<string> searchBases,
+        string filter,
+        string lookupKind,
+        string lookupValue,
+        string identityAttribute,
+        ILogger logger,
+        string operation,
+        params (string Key, object? Value)[] context)
+    {
+        var matches = new List<SearchResultEntry>();
+        var seenDistinguishedNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var searchBase in searchBases)
+        {
+            var request = new SearchRequest(
+                searchBase,
+                filter,
+                SearchScope.Subtree,
+                "sAMAccountName",
+                "cn",
+                "distinguishedName",
+                "displayName",
+                "userAccountControl",
+                "userPrincipalName",
+                "mail");
+            SearchResponse response;
+            try
+            {
+                response = ExecuteSearch(connection, request, logger, operation, [.. context, ("SearchBase", searchBase)]);
+            }
+            catch (DirectoryOperationException ex) when (IsReferralException(ex))
+            {
+                logger.LogWarning(ex, "Skipping AD command search base because the server returned a referral. SearchBase={SearchBase} Operation={Operation}", searchBase, operation);
+                continue;
+            }
+            catch (LdapException ex) when (IsReferralException(ex))
+            {
+                logger.LogWarning(ex, "Skipping AD command search base because the LDAP client encountered a referral. SearchBase={SearchBase} Operation={Operation}", searchBase, operation);
+                continue;
+            }
+
+            foreach (var entry in response.Entries.Cast<SearchResultEntry>())
+            {
+                var distinguishedName = entry.DistinguishedName;
+                if (string.IsNullOrWhiteSpace(distinguishedName) || seenDistinguishedNames.Add(distinguishedName))
+                {
+                    matches.Add(entry);
+                }
+            }
+        }
+
+        if (matches.Count <= 1)
+        {
+            return matches.FirstOrDefault();
+        }
+
+        throw new AmbiguousDirectoryIdentityException(
+            lookupKind,
+            lookupValue,
+            identityAttribute,
+            matches
+                .Select(match => match.DistinguishedName)
+                .Where(distinguishedName => !string.IsNullOrWhiteSpace(distinguishedName))
+                .Cast<string>()
+                .OrderBy(distinguishedName => distinguishedName, StringComparer.OrdinalIgnoreCase)
+                .ToArray());
     }
 
     private static SearchResultEntry? FindFirstEntry(

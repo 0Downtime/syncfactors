@@ -1,6 +1,7 @@
 using System.Reflection;
 using System.Linq;
 using SyncFactors.Infrastructure;
+using SyncFactors.Domain;
 
 namespace SyncFactors.Infrastructure.Tests;
 
@@ -239,6 +240,31 @@ public sealed class ActiveDirectoryGatewayTests
         Assert.Equal(2, clauses.Count);
         Assert.Contains(("employeeID", "10000"), clauses);
         Assert.Contains(("sAMAccountName", "10000"), clauses);
+    }
+
+    [Fact]
+    public void CreateAmbiguousDirectoryIdentityException_IncludesLookupContext()
+    {
+        var method = typeof(ActiveDirectoryGateway).GetMethod(
+            "CreateAmbiguousDirectoryIdentityException",
+            BindingFlags.NonPublic | BindingFlags.Static);
+        Assert.NotNull(method);
+
+        var exception = Assert.IsType<AmbiguousDirectoryIdentityException>(method!.Invoke(
+            null,
+            [
+                "manager identity",
+                "10000",
+                "employeeID",
+                new[]
+                {
+                    "CN=10000,OU=Users,DC=example,DC=com",
+                    "CN=user.10000,OU=Users,DC=example,DC=com"
+                }
+            ]));
+
+        Assert.Contains("10000", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("employeeID", exception.Message, StringComparison.Ordinal);
     }
 
     private static string InvokeResolver(string baseLocalPart, Func<string, bool> candidateExists)
