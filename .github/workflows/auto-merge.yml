@@ -19,7 +19,7 @@ concurrency:
 jobs:
   enable:
     name: Enable auto-merge
-    if: github.event.pull_request.base.ref == 'main' && github.event.pull_request.state == 'open' && github.event.pull_request.draft == false
+    if: github.event.pull_request.base.ref == 'main' && github.event.pull_request.state == 'open' && github.event.pull_request.draft == false && github.event.pull_request.head.repo.fork == false && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     steps:
       - name: Enable GitHub auto-merge for the pull request

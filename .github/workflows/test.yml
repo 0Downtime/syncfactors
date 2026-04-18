@@ -18,7 +18,9 @@ jobs:
     name: dotnet
     runs-on: ubuntu-latest
     permissions:
+      attestations: write
       contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
@@ -43,6 +45,12 @@ jobs:
 
       - name: Generate SBOM
         run: ~/.dotnet/tools/dotnet-CycloneDX ./SyncFactors.Next.sln --output ./artifacts/sbom --json
+
+      - name: Attest SBOM build provenance
+        if: hashFiles('artifacts/sbom/*') != '' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false)
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
+        with:
+          subject-path: artifacts/sbom/*
 
       - name: Upload SBOM
         if: always() && hashFiles('artifacts/sbom/*') != ''
