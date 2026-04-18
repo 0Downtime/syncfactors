@@ -151,6 +151,8 @@ The simulator uses:
 - focused failure sample: `config/mock-successfactors/sample-lifecycle-failure-scenario.json`
 - focused single-worker sample: `config/mock-successfactors/sample-lifecycle-scenario.json`
 
+The checked-in simulator scenarios also roll up into a master test in CI. When desired lifecycle behavior changes, update the scenario and fixture files first so the master suite remains the executable contract for expected sync behavior.
+
 You can also call the CLI directly:
 
 ```powershell

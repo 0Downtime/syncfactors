@@ -12,6 +12,89 @@ public sealed class LifecycleSimulationCommandTests
         PropertyNameCaseInsensitive = true,
         WriteIndented = true
     };
+    private static readonly string ProjectRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", ".."));
+
+    [Fact]
+    public async Task RunAsync_CheckedInSimulationMasterSuite_CoversAllCheckedInScenarios()
+    {
+        var scenarios = new[]
+        {
+            new CheckedInSimulationCase(
+                Name: "single",
+                ScenarioPath: Path.Combine(ProjectRoot, "config", "mock-successfactors", "sample-lifecycle-scenario.json"),
+                FixturePath: Path.Combine(ProjectRoot, "config", "mock-successfactors", "sample-lifecycle-fixtures.json"),
+                ExpectedExitCode: 0),
+            new CheckedInSimulationCase(
+                Name: "multi",
+                ScenarioPath: Path.Combine(ProjectRoot, "config", "mock-successfactors", "sample-lifecycle-multiuser-scenario.json"),
+                FixturePath: Path.Combine(ProjectRoot, "config", "mock-successfactors", "sample-lifecycle-multiuser-fixtures.json"),
+                ExpectedExitCode: 0),
+            new CheckedInSimulationCase(
+                Name: "population",
+                ScenarioPath: Path.Combine(ProjectRoot, "config", "mock-successfactors", "sample-lifecycle-population-scenario.json"),
+                FixturePath: Path.Combine(ProjectRoot, "config", "mock-successfactors", "sample-lifecycle-multiuser-fixtures.json"),
+                ExpectedExitCode: 0),
+            new CheckedInSimulationCase(
+                Name: "failure",
+                ScenarioPath: Path.Combine(ProjectRoot, "config", "mock-successfactors", "sample-lifecycle-failure-scenario.json"),
+                FixturePath: Path.Combine(ProjectRoot, "config", "mock-successfactors", "sample-lifecycle-failure-fixtures.json"),
+                ExpectedExitCode: 0),
+            new CheckedInSimulationCase(
+                Name: "expected-failure",
+                ScenarioPath: Path.Combine(ProjectRoot, "config", "mock-successfactors", "sample-lifecycle-expected-failure.json"),
+                FixturePath: Path.Combine(ProjectRoot, "config", "mock-successfactors", "sample-lifecycle-fixtures.json"),
+                ExpectedExitCode: 1)
+        };
+
+        using var temp = new TempSimulationWorkspace();
+        var failures = new List<string>();
+
+        foreach (var simulationCase in scenarios)
+        {
+            var reportPath = Path.Combine(temp.Root, $"{simulationCase.Name}-master-report.md");
+            using var output = new StringWriter();
+
+            var exitCode = await LifecycleSimulationCommand.RunAsync(
+                new LifecycleSimulationRequest(simulationCase.ScenarioPath, simulationCase.FixturePath, null, reportPath),
+                output,
+                CancellationToken.None);
+
+            if (exitCode != simulationCase.ExpectedExitCode)
+            {
+                failures.Add($"case '{simulationCase.Name}' expected exit code {simulationCase.ExpectedExitCode} but found {exitCode}.");
+            }
+
+            if (!File.Exists(reportPath))
+            {
+                failures.Add($"case '{simulationCase.Name}' did not write markdown report '{reportPath}'.");
+            }
+
+            if (!File.Exists(Path.ChangeExtension(reportPath, ".json")))
+            {
+                failures.Add($"case '{simulationCase.Name}' did not write json report '{Path.ChangeExtension(reportPath, ".json")}'.");
+            }
+
+            var summary = output.ToString();
+            if (!summary.Contains("Lifecycle Simulation Report", StringComparison.Ordinal))
+            {
+                failures.Add($"case '{simulationCase.Name}' did not emit the console summary header.");
+            }
+
+            if (simulationCase.ExpectedExitCode == 0 &&
+                !summary.Contains("Result: PASSED", StringComparison.OrdinalIgnoreCase))
+            {
+                failures.Add($"case '{simulationCase.Name}' did not report a passing simulation summary.");
+            }
+
+            if (simulationCase.ExpectedExitCode != 0 &&
+                !summary.Contains("Result: FAILED", StringComparison.OrdinalIgnoreCase))
+            {
+                failures.Add($"case '{simulationCase.Name}' did not report a failing simulation summary.");
+            }
+        }
+
+        Assert.True(failures.Count == 0, string.Join(Environment.NewLine, failures));
+    }
 
     [Fact]
     public void TryParse_AcceptsExpectedArguments()
@@ -35,9 +118,8 @@ public sealed class LifecycleSimulationCommandTests
     [Fact]
     public async Task RunAsync_CheckedInMultiUserSample_Passes_AndWritesMarkdownAndJsonReports()
     {
-        var projectRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", ".."));
-        var scenarioPath = Path.Combine(projectRoot, "config", "mock-successfactors", "sample-lifecycle-multiuser-scenario.json");
-        var fixturePath = Path.Combine(projectRoot, "config", "mock-successfactors", "sample-lifecycle-multiuser-fixtures.json");
+        var scenarioPath = Path.Combine(ProjectRoot, "config", "mock-successfactors", "sample-lifecycle-multiuser-scenario.json");
+        var fixturePath = Path.Combine(ProjectRoot, "config", "mock-successfactors", "sample-lifecycle-multiuser-fixtures.json");
         using var temp = new TempSimulationWorkspace();
         var reportPath = Path.Combine(temp.Root, "checked-in-sample-report.md");
 
@@ -55,9 +137,8 @@ public sealed class LifecycleSimulationCommandTests
     [Fact]
     public async Task RunAsync_CheckedInPopulationSample_Passes_AndWritesMarkdownAndJsonReports()
     {
-        var projectRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", ".."));
-        var scenarioPath = Path.Combine(projectRoot, "config", "mock-successfactors", "sample-lifecycle-population-scenario.json");
-        var fixturePath = Path.Combine(projectRoot, "config", "mock-successfactors", "sample-lifecycle-multiuser-fixtures.json");
+        var scenarioPath = Path.Combine(ProjectRoot, "config", "mock-successfactors", "sample-lifecycle-population-scenario.json");
+        var fixturePath = Path.Combine(ProjectRoot, "config", "mock-successfactors", "sample-lifecycle-multiuser-fixtures.json");
         using var temp = new TempSimulationWorkspace();
         var reportPath = Path.Combine(temp.Root, "checked-in-population-sample-report.md");
 
@@ -75,9 +156,8 @@ public sealed class LifecycleSimulationCommandTests
     [Fact]
     public async Task RunAsync_CheckedInFailureSample_Passes_AndWritesMarkdownAndJsonReports()
     {
-        var projectRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", ".."));
-        var scenarioPath = Path.Combine(projectRoot, "config", "mock-successfactors", "sample-lifecycle-failure-scenario.json");
-        var fixturePath = Path.Combine(projectRoot, "config", "mock-successfactors", "sample-lifecycle-failure-fixtures.json");
+        var scenarioPath = Path.Combine(ProjectRoot, "config", "mock-successfactors", "sample-lifecycle-failure-scenario.json");
+        var fixturePath = Path.Combine(ProjectRoot, "config", "mock-successfactors", "sample-lifecycle-failure-fixtures.json");
         using var temp = new TempSimulationWorkspace();
         var reportPath = Path.Combine(temp.Root, "checked-in-failure-sample-report.md");
 
@@ -472,4 +552,10 @@ public sealed class LifecycleSimulationCommandTests
             }
         }
     }
+
+    private sealed record CheckedInSimulationCase(
+        string Name,
+        string ScenarioPath,
+        string FixturePath,
+        int ExpectedExitCode);
 }
