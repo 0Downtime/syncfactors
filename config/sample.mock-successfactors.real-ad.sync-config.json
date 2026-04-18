@@ -137,6 +137,7 @@
     "transport": {
       "mode": "ldaps",
       "allowLdapFallback": false,
+      "allowCreateEnableWithoutPasswordProvisioning": false,
       "requireCertificateValidation": true,
       "requireSigning": true,
       "trustedCertificateThumbprints": []

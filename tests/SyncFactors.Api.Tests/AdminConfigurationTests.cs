@@ -176,6 +176,20 @@ public sealed class AdminConfigurationSnapshotBuilderTests
             "Hidden",
             oauthGroup.Entries.Single(entry => entry.Label == "Client secret").DisplayValue);
     }
+
+    [Fact]
+    public void Build_ShowsConfiguredLicensingGroups()
+    {
+        using var fixture = AdminConfigurationTestFixture.Create();
+
+        var snapshot = fixture.Builder.Build();
+        var activeDirectorySection = snapshot.Sections.Single(section => section.Title == "Active Directory");
+        var identityGroup = activeDirectorySection.Groups.Single(group => group.Title == "Identity");
+
+        Assert.Equal(
+            "CN=M365-E3-Prestage,OU=Groups,DC=example,DC=com, CN=VPN-Users,OU=Groups,DC=example,DC=com",
+            identityGroup.Entries.Single(entry => entry.Label == "Licensing groups").DisplayValue);
+    }
 }
 
 internal sealed class AdminConfigurationTestFixture : IDisposable
@@ -473,6 +487,10 @@ internal sealed class AdminConfigurationTestFixture : IDisposable
             "graveyardOu": "OU=Graveyard,DC=example,DC=com",
             "leaveOu": "OU=Leave,DC=example,DC=com",
             "upnSuffix": "example.com",
+            "licensingGroups": [
+              "CN=M365-E3-Prestage,OU=Groups,DC=example,DC=com",
+              "CN=VPN-Users,OU=Groups,DC=example,DC=com"
+            ],
             "transport": {
               "mode": "ldaps",
               "allowLdapFallback": false,

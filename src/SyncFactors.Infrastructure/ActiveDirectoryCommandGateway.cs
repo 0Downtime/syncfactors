@@ -137,6 +137,7 @@ public sealed class ActiveDirectoryCommandGateway(
         try
         {
             var canProvisionPassword = SupportsPasswordProvisioningTransport(effectiveTransport);
+            var canEnableCreatedAccount = CanEnableCreatedAccount(command, config, effectiveTransport);
             ExecuteModify(connection, request, logger, "create user add request", ("WorkerId", command.WorkerId), ("SamAccountName", command.SamAccountName));
             if (canProvisionPassword)
             {
@@ -160,7 +161,13 @@ public sealed class ActiveDirectoryCommandGateway(
                 SetManager(connection, dn, managerDn, logger, command.WorkerId);
             }
 
-            if (command.EnableAccount && canProvisionPassword)
+            if ((config.LicensingGroups?.Count ?? 0) > 0)
+            {
+                step = "AddProvisioningGroups";
+                AddUserToProvisioningGroups(connection, dn, config, logger, command.WorkerId, command.SamAccountName);
+            }
+
+            if (canEnableCreatedAccount)
             {
                 step = "EnableUser";
                 SetAccountEnabled(connection, command, config, logger, true, dn);
@@ -174,9 +181,7 @@ public sealed class ActiveDirectoryCommandGateway(
                 ex,
                 BuildCreateFailureDetails(command, dn, config, attributes, step, managerDn));
         }
-        var message = SupportsPasswordProvisioningTransport(effectiveTransport)
-            ? $"Created AD user {command.SamAccountName}."
-            : $"Created AD user {command.SamAccountName} as disabled because initial password provisioning requires LDAPS or StartTLS.";
+        var message = BuildCreateCompletionMessage(command, config, effectiveTransport);
         return new DirectoryCommandResult(true, command.Action, command.SamAccountName, dn, message, null);
     }
 
@@ -512,6 +517,40 @@ public sealed class ActiveDirectoryCommandGateway(
         ExecuteModify(connection, request, logger, "set manager modify request", ("WorkerId", workerId), ("DistinguishedName", distinguishedName));
     }
 
+    private static void AddUserToProvisioningGroups(
+        LdapConnection connection,
+        string userDistinguishedName,
+        ActiveDirectoryConfig config,
+        ILogger logger,
+        string workerId,
+        string samAccountName)
+    {
+        foreach (var request in BuildProvisioningGroupRequests(userDistinguishedName, config))
+        {
+            try
+            {
+                ExecuteModify(
+                    connection,
+                    request,
+                    logger,
+                    "add user to provisioning group modify request",
+                    ("WorkerId", workerId),
+                    ("SamAccountName", samAccountName),
+                    ("GroupDistinguishedName", request.DistinguishedName),
+                    ("UserDistinguishedName", userDistinguishedName));
+            }
+            catch (DirectoryOperationException ex) when (IsExistingGroupMembershipException(ex))
+            {
+                logger.LogInformation(
+                    "Provisioned user is already a member of the configured group. WorkerId={WorkerId} SamAccountName={SamAccountName} GroupDistinguishedName={GroupDistinguishedName} UserDistinguishedName={UserDistinguishedName}",
+                    workerId,
+                    samAccountName,
+                    request.DistinguishedName,
+                    userDistinguishedName);
+            }
+        }
+    }
+
     private static void RenameUser(LdapConnection connection, string distinguishedName, string commonName, ILogger logger, string workerId)
     {
         var parentDistinguishedName = GetParentDistinguishedName(distinguishedName);
@@ -743,6 +782,17 @@ public sealed class ActiveDirectoryCommandGateway(
         return modification;
     }
 
+    private static DirectoryAttributeModification BuildAddModification(string attributeName, string value)
+    {
+        var modification = new DirectoryAttributeModification
+        {
+            Name = attributeName,
+            Operation = DirectoryAttributeOperation.Add
+        };
+        modification.Add(value);
+        return modification;
+    }
+
     private static DirectoryAttributeModification BuildReplaceBinaryModification(string attributeName, byte[] value)
     {
         var modification = new DirectoryAttributeModification
@@ -761,6 +811,21 @@ public sealed class ActiveDirectoryCommandGateway(
             Name = attributeName,
             Operation = DirectoryAttributeOperation.Delete
         };
+    }
+
+    private static IReadOnlyList<ModifyRequest> BuildProvisioningGroupRequests(string userDistinguishedName, ActiveDirectoryConfig config)
+    {
+        return (config.LicensingGroups ?? [])
+            .Where(groupDistinguishedName => !string.IsNullOrWhiteSpace(groupDistinguishedName))
+            .Select(groupDistinguishedName => groupDistinguishedName.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Select(groupDistinguishedName =>
+            {
+                var request = new ModifyRequest(groupDistinguishedName);
+                request.Modifications.Add(BuildAddModification("member", userDistinguishedName));
+                return request;
+            })
+            .ToArray();
     }
 
     private static List<DirectoryAttribute> BuildCreateAttributes(DirectoryMutationCommand command, ActiveDirectoryConfig config)
@@ -937,6 +1002,12 @@ public sealed class ActiveDirectoryCommandGateway(
             || string.Equals(attributeName, "manager", StringComparison.OrdinalIgnoreCase);
     }
 
+    private static bool IsExistingGroupMembershipException(DirectoryOperationException exception)
+    {
+        return exception.Response?.ResultCode == ResultCode.AttributeOrValueExists ||
+               exception.Message.Contains("attribute or value exists", StringComparison.OrdinalIgnoreCase);
+    }
+
     private static string NormalizeAttributeName(string attributeName)
     {
         return AttributeAliases.TryGetValue(attributeName, out var normalized)
@@ -1043,6 +1114,28 @@ public sealed class ActiveDirectoryCommandGateway(
         ExecuteModify(connection, request, logger, "set password modify request", ("WorkerId", workerId), ("DistinguishedName", distinguishedName));
     }
 
+    private static bool CanEnableCreatedAccount(DirectoryMutationCommand command, ActiveDirectoryConfig config, string effectiveTransport)
+    {
+        return command.EnableAccount &&
+               (SupportsPasswordProvisioningTransport(effectiveTransport) ||
+                config.Transport.AllowCreateEnableWithoutPasswordProvisioning);
+    }
+
+    private static string BuildCreateCompletionMessage(DirectoryMutationCommand command, ActiveDirectoryConfig config, string effectiveTransport)
+    {
+        if (SupportsPasswordProvisioningTransport(effectiveTransport))
+        {
+            return $"Created AD user {command.SamAccountName}.";
+        }
+
+        if (CanEnableCreatedAccount(command, config, effectiveTransport))
+        {
+            return $"Created and enabled AD user {command.SamAccountName} without initial password provisioning.";
+        }
+
+        return $"Created AD user {command.SamAccountName} as disabled because initial password provisioning requires LDAPS or StartTLS.";
+    }
+
     private static bool SupportsPasswordProvisioningTransport(string effectiveTransport)
     {
         return string.Equals(effectiveTransport, "ldaps", StringComparison.OrdinalIgnoreCase) ||
@@ -1128,7 +1221,7 @@ public sealed class ActiveDirectoryCommandGateway(
     {
         TryGetDirectoryAttributeValue(attributes, config.IdentityAttribute, out var identityValue);
 
-        return $"Step={step} WorkerId={command.WorkerId} SamAccountName={command.SamAccountName} DistinguishedName={distinguishedName} TargetOu={FormatDetailValue(command.TargetOu)} UserPrincipalName={FormatDetailValue(command.UserPrincipalName)} Mail={FormatDetailValue(command.Mail)} IdentityAttribute={config.IdentityAttribute} IdentityValue={FormatDetailValue(identityValue)} ManagerId={FormatDetailValue(command.ManagerId)} ManagerDistinguishedName={FormatDetailValue(managerDistinguishedName)}";
+        return $"Step={step} WorkerId={command.WorkerId} SamAccountName={command.SamAccountName} DistinguishedName={distinguishedName} TargetOu={FormatDetailValue(command.TargetOu)} UserPrincipalName={FormatDetailValue(command.UserPrincipalName)} Mail={FormatDetailValue(command.Mail)} IdentityAttribute={config.IdentityAttribute} IdentityValue={FormatDetailValue(identityValue)} LicensingGroups={FormatDetailValues(config.LicensingGroups)} ManagerId={FormatDetailValue(command.ManagerId)} ManagerDistinguishedName={FormatDetailValue(managerDistinguishedName)}";
     }
 
     private static string BuildIdentityConflictSummary(DirectoryMutationCommand command, IdentityConflictResult conflict)
@@ -1163,6 +1256,15 @@ public sealed class ActiveDirectoryCommandGateway(
         string step)
     {
         return $"Step={step} WorkerId={command.WorkerId} SamAccountName={command.SamAccountName} DistinguishedName={FormatDetailValue(distinguishedName)} CurrentCn={FormatDetailValue(currentCn)} DesiredCn={FormatDetailValue(command.CommonName)} Attributes={FormatModificationAttributeNames(modifications)} ManagerId={FormatDetailValue(command.ManagerId)}";
+    }
+
+    private static string FormatDetailValues(IEnumerable<string>? values)
+    {
+        var items = values?
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Select(value => value.Trim())
+            .ToArray() ?? [];
+        return items.Length == 0 ? "(none)" : string.Join(";", items);
     }
 
     private static string FormatModificationAttributeNames(DirectoryAttributeModificationCollection? modifications)

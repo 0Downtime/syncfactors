@@ -70,14 +70,16 @@ public sealed record ActiveDirectoryConfig(
     ActiveDirectoryTransportConfig Transport,
     ActiveDirectoryIdentityPolicyConfig IdentityPolicy,
     string? LeaveOu = null,
-    string UpnSuffix = DirectoryIdentityFormatter.CorporateEmailDomain);
+    string UpnSuffix = DirectoryIdentityFormatter.CorporateEmailDomain,
+    IReadOnlyList<string>? LicensingGroups = null);
 
 public sealed record ActiveDirectoryTransportConfig(
     string Mode,
     bool AllowLdapFallback,
     bool RequireCertificateValidation,
     bool RequireSigning,
-    IReadOnlyList<string> TrustedCertificateThumbprints);
+    IReadOnlyList<string> TrustedCertificateThumbprints,
+    bool AllowCreateEnableWithoutPasswordProvisioning = false);
 
 public sealed record ActiveDirectoryIdentityPolicyConfig(
     bool ResolveCreateConflictingUpnAndMail);
