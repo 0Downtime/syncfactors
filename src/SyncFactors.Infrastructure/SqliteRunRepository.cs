@@ -168,8 +168,8 @@ public sealed class SqliteRunRepository(SqlitePathResolver pathResolver) : IRunR
                 StartedAt: ParseDate(row.StartedAt) ?? DateTimeOffset.MinValue,
                 CompletedAt: ParseDate(row.CompletedAt),
                 DurationSeconds: row.DurationSeconds,
-                ProcessedWorkers: Sum(row.Creates, row.Updates, row.Enables, row.Disables, row.GraveyardMoves, row.Deletions, row.Unchanged),
-                TotalWorkers: Sum(row.Creates, row.Updates, row.Enables, row.Disables, row.GraveyardMoves, row.Deletions, row.Quarantined, row.Conflicts, row.GuardrailFailures, row.ManualReview, row.Unchanged),
+                ProcessedWorkers: CountAccountedWorkers(row),
+                TotalWorkers: CountAccountedWorkers(row),
                 Creates: row.Creates,
                 Updates: row.Updates,
                 Enables: row.Enables,
@@ -888,6 +888,19 @@ public sealed class SqliteRunRepository(SqlitePathResolver pathResolver) : IRunR
 
     private static int Sum(params int[] values) => values.Sum();
 
+    private static int CountAccountedWorkers(RunRow row) => Sum(
+        row.Creates,
+        row.Updates,
+        row.Enables,
+        row.Disables,
+        row.GraveyardMoves,
+        row.Deletions,
+        row.Quarantined,
+        row.Conflicts,
+        row.GuardrailFailures,
+        row.ManualReview,
+        row.Unchanged);
+
     private static void AddRunEntryFilterParameters(
         SqliteCommand command,
         string runId,
@@ -942,8 +955,8 @@ public sealed class SqliteRunRepository(SqlitePathResolver pathResolver) : IRunR
             StartedAt: ParseDate(row.StartedAt) ?? DateTimeOffset.MinValue,
             CompletedAt: ParseDate(row.CompletedAt),
             DurationSeconds: row.DurationSeconds,
-            ProcessedWorkers: Sum(row.Creates, row.Updates, row.Enables, row.Disables, row.GraveyardMoves, row.Deletions, row.Unchanged),
-            TotalWorkers: Sum(row.Creates, row.Updates, row.Enables, row.Disables, row.GraveyardMoves, row.Deletions, row.Quarantined, row.Conflicts, row.GuardrailFailures, row.ManualReview, row.Unchanged),
+            ProcessedWorkers: CountAccountedWorkers(row),
+            TotalWorkers: CountAccountedWorkers(row),
             Creates: row.Creates,
             Updates: row.Updates,
             Enables: row.Enables,

@@ -24,7 +24,7 @@
                 {
                     <div data-active-run-card>
                         <p><strong data-active-run-id>@Model.ActiveRun.RunId</strong></p>
-                        <p class="muted" data-active-run-summary>@Model.ActiveRun.Mode · @Model.ActiveRun.ProcessedWorkers / @Model.ActiveRun.TotalWorkers workers</p>
+                        <p class="muted" data-active-run-summary>@SyncFactors.Api.UiRunFormatting.RunCardSummary(Model.ActiveRun)</p>
                         <p class="muted" data-active-run-dates>Start @SyncFactors.Api.UiDateTimeFormatter.FormatDateTime(Model.ActiveRun.StartedAt) · End @(Model.ActiveRun.CompletedAt is null ? "In progress" : SyncFactors.Api.UiDateTimeFormatter.FormatDateTime(Model.ActiveRun.CompletedAt.Value))</p>
                         <p><a asp-page="/Runs/Detail" asp-route-runId="@Model.ActiveRun.RunId" data-active-run-link>Open active run</a></p>
                     </div>
@@ -41,7 +41,7 @@
                 {
                     <div data-last-run-card>
                         <p><strong data-last-run-id>@Model.LastCompletedRun.RunId</strong></p>
-                        <p class="muted" data-last-run-summary>@Model.LastCompletedRun.Status · @Model.LastCompletedRun.Mode · @Model.LastCompletedRun.TotalWorkers workers</p>
+                        <p class="muted" data-last-run-summary>@SyncFactors.Api.UiRunFormatting.RunCardSummary(Model.LastCompletedRun)</p>
                         <p class="muted" data-last-run-dates>Start @SyncFactors.Api.UiDateTimeFormatter.FormatDateTime(Model.LastCompletedRun.StartedAt) · End @SyncFactors.Api.UiDateTimeFormatter.FormatDateTime(Model.LastCompletedRun.CompletedAt, "Unknown")</p>
                         <p><a asp-page="/Runs/Detail" asp-route-runId="@Model.LastCompletedRun.RunId" data-last-run-link>Review last run</a></p>
                     </div>
@@ -267,10 +267,10 @@
                         <td class="recent-runs-table__started">@SyncFactors.Api.UiDateTimeFormatter.FormatDateTime(run.StartedAt)</td>
                         <td class="recent-runs-table__trigger">@run.RunTrigger</td>
                         <td class="recent-runs-table__mode">@run.Mode</td>
-                        <td class="recent-runs-table__status"><span class="badge @StatusClass(run.Status)">@run.Status</span></td>
+                        <td class="recent-runs-table__status"><span class="badge @SyncFactors.Api.UiRunFormatting.StatusBadgeTone(run.Status)">@run.Status</span></td>
                         <td class="recent-runs-table__dry-run">@(run.DryRun ? "Yes" : "No")</td>
                         <td class="recent-runs-table__workers">@run.TotalWorkers</td>
-                        <td class="recent-runs-table__summary" title="@RunSummaryLine(run)"><span class="summary-value">@RunSummaryLine(run)</span></td>
+                        <td class="recent-runs-table__summary" title="@SyncFactors.Api.UiRunFormatting.RunBucketSummary(run)"><span class="summary-value">@SyncFactors.Api.UiRunFormatting.RunBucketSummary(run)</span></td>
                         <td class="recent-runs-table__actions"><a asp-page="/Runs/Detail" asp-route-runId="@run.RunId">Open</a></td>
                     </tr>
                 }
@@ -283,32 +283,6 @@
 <script src="~/dist/dashboard.js" asp-append-version="true"></script>
 
 @functions {
-    private static string StatusClass(string status) =>
-        status.ToLowerInvariant() switch
-        {
-            "succeeded" => "good",
-            "failed" => "bad",
-            "inprogress" => "info",
-            "planned" or "pending" or "cancelrequested" => "warn",
-            "canceled" or "cancelled" => "dim",
-            _ => "neutral",
-        };
-
-    private static string RunSummaryLine(SyncFactors.Contracts.RunSummary run)
-    {
-        var parts = new List<string>();
-        if (run.Creates > 0) parts.Add($"{run.Creates} creates");
-        if (run.Updates > 0) parts.Add($"{run.Updates} updates");
-        if (run.Enables > 0) parts.Add($"{run.Enables} enables");
-        if (run.Disables > 0) parts.Add($"{run.Disables} disables");
-        if (run.GraveyardMoves > 0) parts.Add($"{run.GraveyardMoves} graveyard moves");
-        if (run.Deletions > 0) parts.Add($"{run.Deletions} deletions");
-        if (run.Conflicts > 0) parts.Add($"{run.Conflicts} conflicts");
-        if (run.ManualReview > 0) parts.Add($"{run.ManualReview} manual review");
-        if (run.GuardrailFailures > 0) parts.Add($"{run.GuardrailFailures} guardrails");
-        return parts.Count == 0 ? "No materialized bucket counts yet" : string.Join(" · ", parts);
-    }
-
     private static string StatusVisualState(SyncFactors.Contracts.RuntimeStatus status)
     {
         var currentStatus = status.Status?.Trim() ?? string.Empty;

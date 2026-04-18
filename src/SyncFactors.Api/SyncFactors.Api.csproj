@@ -17,6 +17,7 @@
     <Compile Include="AdminConfigurationSnapshotBuilder.cs" />
     <Compile Include="SpaApiModels.cs" />
     <Compile Include="UiDateTimeFormatter.cs" />
+    <Compile Include="UiRunFormatting.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="Pages\Index.cshtml.cs" />
