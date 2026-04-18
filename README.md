@@ -130,6 +130,18 @@ pwsh ./scripts/Validate-SyncFactors.ps1
 
 That command builds the solution, runs the solution test suite, and then runs the lifecycle simulation master suite as an explicit final gate.
 
+To validate a sanitized SuccessFactors export or fixture-style worker document against the expected source contract:
+
+```powershell
+pwsh ./scripts/Validate-SuccessFactorsContract.ps1 -InputPath ./config/mock-successfactors/sample-export.json
+```
+
+You can also fold that into the broader validation command:
+
+```powershell
+pwsh ./scripts/Validate-SyncFactors.ps1 -SuccessFactorsContractPath ./config/mock-successfactors/sample-export.json
+```
+
 Run the checked-in lifecycle simulator sample:
 
 ```powershell
@@ -507,6 +519,8 @@ pwsh ./scripts/Configure-EntraOidcAppRegistration.ps1 `
 For Active Directory binds, the current .NET LDAP integration uses simple bind semantics. Set `SF_AD_SYNC_AD_USERNAME` to a UPN such as `svc_successfactors@example.local`, not a down-level logon name such as `EXAMPLE\svc_successfactors`, or AD may reject the credentials even when the password is correct.
 
 If your primary AD transport is `ldaps` or `starttls` and you need an explicit downgrade path for troubleshooting, set `ad.transport.allowLdapFallback` to `true`. SyncFactors will try the configured secure transport first and only retry plain LDAP on port `389` when the configured port was the secure default. Leave this disabled unless you intentionally want that behavior.
+
+If you intentionally need create-time account enablement even when the effective transport is plain `ldap`, set `ad.transport.allowCreateEnableWithoutPasswordProvisioning` to `true`. This lets SyncFactors enable the newly created account during the same create operation even though it still cannot set `unicodePwd` without `ldaps` or `starttls`.
 
 For full-sync `EmpJob` queries, `successFactors.query.inactiveRetentionDays` can extend the source filter to keep recently inactive workers in scope without hand-writing the date cutoff in `baseFilter`. With the default fields, a config like `"baseFilter": "emplStatus in 'A','U'"` plus `"inactiveRetentionDays": 180` expands to include terminated (`emplStatus eq 'T'`) workers whose `endDate` is within the last 180 days. Override `inactiveStatusField`, `inactiveStatusValues`, or `inactiveDateField` if your tenant uses different fields or status codes.
 

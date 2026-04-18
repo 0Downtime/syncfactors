@@ -345,6 +345,7 @@ public sealed class AdminConfigurationSnapshotBuilder(
                     [
                         CreateEntry("Identity attribute", sync.Ad.IdentityAttribute, SyncConfigSource),
                         CreateEntry("UPN suffix", sync.Ad.UpnSuffix, SyncConfigSource),
+                        CreateEntry("Licensing groups", FormatCollection(sync.Ad.LicensingGroups ?? []), SyncConfigSource),
                         CreateEntry(
                             "Resolve conflicting UPN/mail",
                             FormatEnabledDisabled(sync.Ad.IdentityPolicy.ResolveCreateConflictingUpnAndMail),
@@ -358,6 +359,10 @@ public sealed class AdminConfigurationSnapshotBuilder(
                         CreateEntry(
                             "Allow LDAP fallback",
                             FormatEnabledDisabled(sync.Ad.Transport.AllowLdapFallback),
+                            SyncConfigSource),
+                        CreateEntry(
+                            "Allow create-time enable without password",
+                            FormatEnabledDisabled(sync.Ad.Transport.AllowCreateEnableWithoutPasswordProvisioning),
                             SyncConfigSource),
                         CreateEntry(
                             "Require certificate validation",

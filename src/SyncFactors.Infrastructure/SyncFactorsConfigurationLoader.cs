@@ -99,7 +99,11 @@ public sealed class SyncFactorsConfigurationLoader
                 Transport: LoadActiveDirectoryTransport(document.GetRequiredObject("ad")),
                 IdentityPolicy: LoadActiveDirectoryIdentityPolicy(document.GetRequiredObject("ad")),
                 LeaveOu: document.GetRequiredObject("ad").TryGetString("leaveOu"),
-                UpnSuffix: DirectoryIdentityFormatter.NormalizeEmailDomain(document.GetRequiredObject("ad").TryGetString("upnSuffix"))),
+                UpnSuffix: DirectoryIdentityFormatter.NormalizeEmailDomain(document.GetRequiredObject("ad").TryGetString("upnSuffix")),
+                LicensingGroups: document.GetRequiredObject("ad").TryGetStringArray("licensingGroups")?
+                    .Select(item => NormalizeRequiredValue(item, "ad.licensingGroups[]"))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToArray() ?? []),
             Sync: new SyncPolicyConfig(
                 EnableBeforeStartDays: document.GetRequiredObject("sync").GetRequiredInt32("enableBeforeStartDays"),
                 DeletionRetentionDays: document.GetRequiredObject("sync").GetRequiredInt32("deletionRetentionDays"),
@@ -316,7 +320,8 @@ public sealed class SyncFactorsConfigurationLoader
                 AllowLdapFallback: false,
                 RequireCertificateValidation: true,
                 RequireSigning: true,
-                TrustedCertificateThumbprints: []);
+                TrustedCertificateThumbprints: [],
+                AllowCreateEnableWithoutPasswordProvisioning: false);
         }
 
         return new ActiveDirectoryTransportConfig(
@@ -324,6 +329,7 @@ public sealed class SyncFactorsConfigurationLoader
             AllowLdapFallback: transport.TryGetBoolean("allowLdapFallback") ?? false,
             RequireCertificateValidation: transport.TryGetBoolean("requireCertificateValidation") ?? true,
             RequireSigning: transport.TryGetBoolean("requireSigning") ?? true,
-            TrustedCertificateThumbprints: transport.TryGetStringArray("trustedCertificateThumbprints") ?? []);
+            TrustedCertificateThumbprints: transport.TryGetStringArray("trustedCertificateThumbprints") ?? [],
+            AllowCreateEnableWithoutPasswordProvisioning: transport.TryGetBoolean("allowCreateEnableWithoutPasswordProvisioning") ?? false);
     }
 }

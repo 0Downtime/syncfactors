@@ -2,7 +2,9 @@
 param(
     [switch]$SkipBuild,
     [switch]$SkipSolutionTests,
-    [switch]$SkipSimulationMasterSuite
+    [switch]$SkipSimulationMasterSuite,
+    [string]$SuccessFactorsContractPath,
+    [string]$SuccessFactorsContractReportPath
 )
 
 Set-StrictMode -Version Latest
@@ -20,6 +22,7 @@ Write-Host "Project Root: $projectRoot"
 Write-Host "Build: $(if ($SkipBuild) { 'skipped' } else { 'enabled' })"
 Write-Host "Solution Tests: $(if ($SkipSolutionTests) { 'skipped' } else { 'enabled' })"
 Write-Host "Simulation Master Suite: $(if ($SkipSimulationMasterSuite) { 'skipped' } else { 'enabled' })"
+Write-Host "SuccessFactors Contract Validation: $(if ([string]::IsNullOrWhiteSpace($SuccessFactorsContractPath)) { 'disabled' } else { 'enabled' })"
 
 Push-Location $projectRoot
 try {
@@ -43,6 +46,20 @@ try {
         dotnet test $mockTestsProjectPath --no-build --filter $simulationMasterFilter
         if ($LASTEXITCODE -ne 0) {
             throw "Lifecycle simulation master suite failed."
+        }
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($SuccessFactorsContractPath)) {
+        Write-Host "`n==> Running SuccessFactors contract validation" -ForegroundColor Cyan
+        $contractValidationScriptPath = Join-Path $PSScriptRoot 'Validate-SuccessFactorsContract.ps1'
+        $validationArguments = @('-InputPath', $SuccessFactorsContractPath)
+        if (-not [string]::IsNullOrWhiteSpace($SuccessFactorsContractReportPath)) {
+            $validationArguments += @('-ReportPath', $SuccessFactorsContractReportPath)
+        }
+
+        & $contractValidationScriptPath @validationArguments
+        if ($LASTEXITCODE -ne 0) {
+            throw "SuccessFactors contract validation failed."
         }
     }
 }

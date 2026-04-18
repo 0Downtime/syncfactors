@@ -93,7 +93,8 @@ public sealed class ActiveDirectoryCommandGatewayTests
             PrehireOu: "OU=Prehire,DC=example,DC=com",
             GraveyardOu: "OU=Graveyard,DC=example,DC=com",
             Transport: new ActiveDirectoryTransportConfig("ldap", false, false, false, []),
-            IdentityPolicy: new ActiveDirectoryIdentityPolicyConfig(false));
+            IdentityPolicy: new ActiveDirectoryIdentityPolicyConfig(false),
+            LicensingGroups: ["CN=M365-E3-Prestage,OU=Groups,DC=example,DC=com"]);
         var attributes = new List<DirectoryAttribute>
         {
             new("sAMAccountName", "45086"),
@@ -110,8 +111,45 @@ public sealed class ActiveDirectoryCommandGatewayTests
         Assert.Contains("Mail=45086@example.com", details, StringComparison.Ordinal);
         Assert.Contains("IdentityAttribute=employeeID", details, StringComparison.Ordinal);
         Assert.Contains("IdentityValue=45086", details, StringComparison.Ordinal);
+        Assert.Contains("LicensingGroups=CN=M365-E3-Prestage,OU=Groups,DC=example,DC=com", details, StringComparison.Ordinal);
         Assert.Contains("ManagerId=90001", details, StringComparison.Ordinal);
         Assert.Contains("ManagerDistinguishedName=(unset)", details, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuildProvisioningGroupRequests_UsesDistinctTrimmedConfiguredGroups()
+    {
+        var method = typeof(ActiveDirectoryCommandGateway).GetMethod("BuildProvisioningGroupRequests", BindingFlags.NonPublic | BindingFlags.Static);
+        Assert.NotNull(method);
+
+        var config = new ActiveDirectoryConfig(
+            Server: "localhost",
+            Port: 636,
+            Username: "bind",
+            BindPassword: "secret",
+            IdentityAttribute: "employeeID",
+            DefaultActiveOu: "OU=Active,DC=example,DC=com",
+            PrehireOu: "OU=Prehire,DC=example,DC=com",
+            GraveyardOu: "OU=Graveyard,DC=example,DC=com",
+            Transport: new ActiveDirectoryTransportConfig("ldaps", false, true, true, []),
+            IdentityPolicy: new ActiveDirectoryIdentityPolicyConfig(false),
+            LicensingGroups:
+            [
+                " CN=M365-E3-Prestage,OU=Groups,DC=example,DC=com ",
+                "CN=VPN-Users,OU=Groups,DC=example,DC=com",
+                "CN=M365-E3-Prestage,OU=Groups,DC=example,DC=com"
+            ]);
+
+        var requests = Assert.IsAssignableFrom<IReadOnlyList<ModifyRequest>>(method!.Invoke(null, ["CN=45086,OU=Users,DC=example,DC=com", config]));
+
+        Assert.Equal(2, requests.Count);
+        Assert.Equal("CN=M365-E3-Prestage,OU=Groups,DC=example,DC=com", requests[0].DistinguishedName);
+        Assert.Equal("CN=VPN-Users,OU=Groups,DC=example,DC=com", requests[1].DistinguishedName);
+
+        var modification = Assert.Single(requests[0].Modifications.Cast<DirectoryAttributeModification>());
+        Assert.Equal("member", modification.Name);
+        Assert.Equal(DirectoryAttributeOperation.Add, modification.Operation);
+        Assert.Equal("CN=45086,OU=Users,DC=example,DC=com", modification[0]?.ToString());
     }
 
     [Fact]
@@ -391,6 +429,119 @@ public sealed class ActiveDirectoryCommandGatewayTests
         Assert.True(supported);
     }
 
+    [Fact]
+    public void CanEnableCreatedAccount_ReturnsFalseForPlainLdapByDefault()
+    {
+        var method = typeof(ActiveDirectoryCommandGateway).GetMethod("CanEnableCreatedAccount", BindingFlags.NonPublic | BindingFlags.Static);
+        Assert.NotNull(method);
+
+        var command = new DirectoryMutationCommand(
+            Action: "CreateUser",
+            WorkerId: "10001",
+            ManagerId: null,
+            ManagerDistinguishedName: null,
+            SamAccountName: "user.10001",
+            CommonName: "user.10001",
+            UserPrincipalName: "user.10001@example.com",
+            Mail: "user.10001@example.com",
+            TargetOu: "OU=Users,DC=example,DC=com",
+            DisplayName: "Sample, User",
+            CurrentDistinguishedName: null,
+            EnableAccount: true,
+            Operations: [new SyncFactors.Contracts.DirectoryOperation("CreateUser")],
+            Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase));
+        var config = new ActiveDirectoryConfig(
+            Server: "localhost",
+            Port: 389,
+            Username: "bind",
+            BindPassword: "secret",
+            IdentityAttribute: "employeeID",
+            DefaultActiveOu: "OU=Active,DC=example,DC=com",
+            PrehireOu: "OU=Prehire,DC=example,DC=com",
+            GraveyardOu: "OU=Graveyard,DC=example,DC=com",
+            Transport: new ActiveDirectoryTransportConfig("ldap", false, false, false, []),
+            IdentityPolicy: new ActiveDirectoryIdentityPolicyConfig(false));
+
+        var allowed = Assert.IsType<bool>(method!.Invoke(null, [command, config, "ldap"]));
+
+        Assert.False(allowed);
+    }
+
+    [Fact]
+    public void CanEnableCreatedAccount_ReturnsTrueForPlainLdapWhenFlagEnabled()
+    {
+        var method = typeof(ActiveDirectoryCommandGateway).GetMethod("CanEnableCreatedAccount", BindingFlags.NonPublic | BindingFlags.Static);
+        Assert.NotNull(method);
+
+        var command = new DirectoryMutationCommand(
+            Action: "CreateUser",
+            WorkerId: "10001",
+            ManagerId: null,
+            ManagerDistinguishedName: null,
+            SamAccountName: "user.10001",
+            CommonName: "user.10001",
+            UserPrincipalName: "user.10001@example.com",
+            Mail: "user.10001@example.com",
+            TargetOu: "OU=Users,DC=example,DC=com",
+            DisplayName: "Sample, User",
+            CurrentDistinguishedName: null,
+            EnableAccount: true,
+            Operations: [new SyncFactors.Contracts.DirectoryOperation("CreateUser")],
+            Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase));
+        var config = new ActiveDirectoryConfig(
+            Server: "localhost",
+            Port: 389,
+            Username: "bind",
+            BindPassword: "secret",
+            IdentityAttribute: "employeeID",
+            DefaultActiveOu: "OU=Active,DC=example,DC=com",
+            PrehireOu: "OU=Prehire,DC=example,DC=com",
+            GraveyardOu: "OU=Graveyard,DC=example,DC=com",
+            Transport: new ActiveDirectoryTransportConfig("ldap", false, false, false, [], true),
+            IdentityPolicy: new ActiveDirectoryIdentityPolicyConfig(false));
+
+        var allowed = Assert.IsType<bool>(method!.Invoke(null, [command, config, "ldap"]));
+
+        Assert.True(allowed);
+    }
+
+    [Fact]
+    public void BuildCreateCompletionMessage_ReportsEnabledAccountWhenPlainLdapFlagIsEnabled()
+    {
+        var method = typeof(ActiveDirectoryCommandGateway).GetMethod("BuildCreateCompletionMessage", BindingFlags.NonPublic | BindingFlags.Static);
+        Assert.NotNull(method);
+
+        var command = new DirectoryMutationCommand(
+            Action: "CreateUser",
+            WorkerId: "10001",
+            ManagerId: null,
+            ManagerDistinguishedName: null,
+            SamAccountName: "user.10001",
+            CommonName: "user.10001",
+            UserPrincipalName: "user.10001@example.com",
+            Mail: "user.10001@example.com",
+            TargetOu: "OU=Users,DC=example,DC=com",
+            DisplayName: "Sample, User",
+            CurrentDistinguishedName: null,
+            EnableAccount: true,
+            Operations: [new SyncFactors.Contracts.DirectoryOperation("CreateUser")],
+            Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase));
+        var config = new ActiveDirectoryConfig(
+            Server: "localhost",
+            Port: 389,
+            Username: "bind",
+            BindPassword: "secret",
+            IdentityAttribute: "employeeID",
+            DefaultActiveOu: "OU=Active,DC=example,DC=com",
+            PrehireOu: "OU=Prehire,DC=example,DC=com",
+            GraveyardOu: "OU=Graveyard,DC=example,DC=com",
+            Transport: new ActiveDirectoryTransportConfig("ldap", false, false, false, [], true),
+            IdentityPolicy: new ActiveDirectoryIdentityPolicyConfig(false));
+
+        var message = Assert.IsType<string>(method!.Invoke(null, [command, config, "ldap"]));
+
+        Assert.Equal("Created and enabled AD user user.10001 without initial password provisioning.", message);
+    }
     [Fact]
     public void GenerateRandomPassword_ReturnsComplexPassword()
     {

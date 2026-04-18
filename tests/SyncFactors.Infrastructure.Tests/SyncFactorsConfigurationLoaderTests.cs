@@ -7,7 +7,7 @@ public sealed class SyncFactorsConfigurationLoaderTests
     [Fact]
     public async Task GetSyncConfig_DefaultsIdentityPolicyToggleToTrue_WhenOmitted()
     {
-        var config = await LoadConfigAsync(identityPolicyJson: null);
+        var config = await LoadConfigAsync(adJson: null);
 
         Assert.True(config.Ad.IdentityPolicy.ResolveCreateConflictingUpnAndMail);
     }
@@ -37,9 +37,30 @@ public sealed class SyncFactorsConfigurationLoaderTests
     }
 
     [Fact]
+    public async Task GetSyncConfig_DefaultsCreateTimeEnableWithoutPasswordProvisioningToFalse_WhenOmitted()
+    {
+        var config = await LoadConfigAsync(adJson: null);
+
+        Assert.False(config.Ad.Transport.AllowCreateEnableWithoutPasswordProvisioning);
+    }
+
+    [Fact]
+    public async Task GetSyncConfig_LoadsCreateTimeEnableWithoutPasswordProvisioning_WhenExplicitlyTrue()
+    {
+        var config = await LoadConfigAsync("""
+          "transport": {
+            "mode": "ldap",
+            "allowCreateEnableWithoutPasswordProvisioning": true
+          },
+        """);
+
+        Assert.True(config.Ad.Transport.AllowCreateEnableWithoutPasswordProvisioning);
+    }
+
+    [Fact]
     public async Task GetSyncConfig_DefaultsUpnSuffix_WhenOmitted()
     {
-        var config = await LoadConfigAsync(identityPolicyJson: null);
+        var config = await LoadConfigAsync(adJson: null);
 
         Assert.Equal("spireenergy.com", config.Ad.UpnSuffix);
     }
@@ -58,9 +79,28 @@ public sealed class SyncFactorsConfigurationLoaderTests
     }
 
     [Fact]
+    public async Task GetSyncConfig_LoadsLicensingGroups_WhenConfigured()
+    {
+        var config = await LoadConfigAsync("""
+          "licensingGroups": [
+            " CN=M365-E3-Prestage,OU=Groups,DC=example,DC=com ",
+            "CN=VPN-Users,OU=Groups,DC=example,DC=com",
+            "CN=M365-E3-Prestage,OU=Groups,DC=example,DC=com"
+          ],
+        """);
+
+        Assert.Equal(
+            [
+                "CN=M365-E3-Prestage,OU=Groups,DC=example,DC=com",
+                "CN=VPN-Users,OU=Groups,DC=example,DC=com"
+            ],
+            config.Ad.LicensingGroups);
+    }
+
+    [Fact]
     public async Task GetSyncConfig_DefaultsAutoDeleteFromGraveyardToFalse_WhenOmitted()
     {
-        var config = await LoadConfigAsync(identityPolicyJson: null);
+        var config = await LoadConfigAsync(adJson: null);
 
         Assert.False(config.Sync.AutoDeleteFromGraveyard);
     }
@@ -69,7 +109,7 @@ public sealed class SyncFactorsConfigurationLoaderTests
     public async Task GetSyncConfig_LoadsAutoDeleteFromGraveyard_WhenExplicitlyTrue()
     {
         var config = await LoadConfigAsync(
-            identityPolicyJson: null,
+            adJson: null,
             syncJson: """
               "autoDeleteFromGraveyard": true
             """);
@@ -80,7 +120,7 @@ public sealed class SyncFactorsConfigurationLoaderTests
     [Fact]
     public async Task GetSyncConfig_DefaultsMaxDegreeOfParallelismToTwo_WhenOmitted()
     {
-        var config = await LoadConfigAsync(identityPolicyJson: null);
+        var config = await LoadConfigAsync(adJson: null);
 
         Assert.Equal(2, config.Sync.MaxDegreeOfParallelism);
     }
@@ -89,7 +129,7 @@ public sealed class SyncFactorsConfigurationLoaderTests
     public async Task GetSyncConfig_LoadsMaxDegreeOfParallelism_WhenExplicitlyConfigured()
     {
         var config = await LoadConfigAsync(
-            identityPolicyJson: null,
+            adJson: null,
             syncJson: """
               "maxDegreeOfParallelism": 6
             """);
@@ -179,10 +219,13 @@ public sealed class SyncFactorsConfigurationLoaderTests
         Assert.Equal("Trim", attributeMapping.Transform);
     }
 
-    private static async Task<SyncFactorsConfigDocument> LoadConfigAsync(string? identityPolicyJson, string? syncJson = null)
+    private static async Task<SyncFactorsConfigDocument> LoadConfigAsync(string? adJson, string? syncJson = null)
     {
         var tempRoot = Path.Combine(Path.GetTempPath(), "syncfactors-config-loader", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(tempRoot);
+        var renderedAdJson = string.IsNullOrWhiteSpace(adJson)
+            ? string.Empty
+            : $"{Environment.NewLine}{adJson.Trim()}";
         var renderedSyncJson = string.IsNullOrWhiteSpace(syncJson)
             ? string.Empty
             : $",{Environment.NewLine}{syncJson.Trim()}";
@@ -222,7 +265,7 @@ public sealed class SyncFactorsConfigurationLoaderTests
             "defaultActiveOu": "OU=LabUsers,DC=example,DC=com",
             "prehireOu": "OU=Prehire,DC=example,DC=com",
             "graveyardOu": "OU=LabGraveyard,DC=example,DC=com",
-        {{identityPolicyJson ?? string.Empty}}
+        {{renderedAdJson}}
             "defaultPassword": "ignored-by-loader"
           },
           "sync": {
