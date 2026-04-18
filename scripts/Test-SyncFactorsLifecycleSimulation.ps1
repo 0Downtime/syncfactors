@@ -4,8 +4,8 @@ param(
     [string]$FixturePath,
     [string]$ReportPath,
     [switch]$ExpectedFailure,
-    [ValidateSet('single', 'multi')]
-    [string]$Sample = 'multi',
+    [ValidateSet('single', 'multi', 'population')]
+    [string]$Sample = 'population',
     [int]$Iterations,
     [switch]$SkipBuild
 )
@@ -25,8 +25,11 @@ if ([string]::IsNullOrWhiteSpace($ScenarioPath)) {
     elseif ($Sample -eq 'single') {
         'sample-lifecycle-scenario.json'
     }
-    else {
+    elseif ($Sample -eq 'multi') {
         'sample-lifecycle-multiuser-scenario.json'
+    }
+    else {
+        'sample-lifecycle-population-scenario.json'
     }
     $ScenarioPath = Join-Path $projectRoot "config/mock-successfactors/$scenarioFile"
 }
@@ -48,8 +51,11 @@ if ([string]::IsNullOrWhiteSpace($ReportPath)) {
     elseif ($Sample -eq 'single') {
         'lifecycle-simulation-report.md'
     }
-    else {
+    elseif ($Sample -eq 'multi') {
         'lifecycle-simulation-multiuser-report.md'
+    }
+    else {
+        'lifecycle-simulation-population-report.md'
     }
     $ReportPath = Join-Path $projectRoot "state/runtime/$reportName"
 }
