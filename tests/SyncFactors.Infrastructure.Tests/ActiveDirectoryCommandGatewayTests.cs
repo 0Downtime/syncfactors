@@ -847,6 +847,50 @@ public sealed class ActiveDirectoryCommandGatewayTests
         Assert.Equal("user.10001", identityValue);
     }
 
+    [Theory]
+    [InlineData("sAMAccountName", "user.10001")]
+    [InlineData("userPrincipalName", "user.10001@example.com")]
+    [InlineData("mail", "user.10001@example.com")]
+    public void ResolveIdentityLookupValue_FallsBackToCommandIdentityForStandardAttributes(string identityAttribute, string expectedValue)
+    {
+        var method = typeof(ActiveDirectoryCommandGateway).GetMethod("ResolveIdentityLookupValue", BindingFlags.NonPublic | BindingFlags.Static);
+        Assert.NotNull(method);
+
+        var command = new DirectoryMutationCommand(
+            Action: "UpdateUser",
+            WorkerId: "10001",
+            ManagerId: null,
+            ManagerDistinguishedName: null,
+            SamAccountName: "user.10001",
+            CommonName: "user.10001",
+            UserPrincipalName: "user.10001@example.com",
+            Mail: "user.10001@example.com",
+            TargetOu: "OU=Users,DC=example,DC=com",
+            DisplayName: "Sample, User",
+            CurrentDistinguishedName: "CN=user.10001,OU=Users,DC=example,DC=com",
+            EnableAccount: true,
+            Operations: [new SyncFactors.Contracts.DirectoryOperation("UpdateUser")],
+            Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["department"] = "IT"
+            });
+        var config = new ActiveDirectoryConfig(
+            Server: "localhost",
+            Port: 389,
+            Username: "bind",
+            BindPassword: "secret",
+            IdentityAttribute: identityAttribute,
+            DefaultActiveOu: "OU=Active,DC=example,DC=com",
+            PrehireOu: "OU=Prehire,DC=example,DC=com",
+            GraveyardOu: "OU=Graveyard,DC=example,DC=com",
+            Transport: new ActiveDirectoryTransportConfig("ldap", false, false, false, []),
+            IdentityPolicy: new ActiveDirectoryIdentityPolicyConfig(false));
+
+        var identityValue = Assert.IsType<string>(method!.Invoke(null, [command, config]));
+
+        Assert.Equal(expectedValue, identityValue);
+    }
+
     private static DirectoryAttributeModification CreateModification(string name)
     {
         return new DirectoryAttributeModification

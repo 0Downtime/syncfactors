@@ -1020,9 +1020,27 @@ public sealed class ActiveDirectoryCommandGateway(
         DirectoryMutationCommand command,
         ActiveDirectoryConfig config)
     {
-        return TryGetConfiguredIdentityAttributeValue(command, config, out var identityValue)
-            ? identityValue
-            : command.WorkerId;
+        if (TryGetConfiguredIdentityAttributeValue(command, config, out var identityValue))
+        {
+            return identityValue;
+        }
+
+        if (string.Equals(config.IdentityAttribute, "sAMAccountName", StringComparison.OrdinalIgnoreCase))
+        {
+            return command.SamAccountName;
+        }
+
+        if (string.Equals(config.IdentityAttribute, "userPrincipalName", StringComparison.OrdinalIgnoreCase))
+        {
+            return command.UserPrincipalName;
+        }
+
+        if (string.Equals(config.IdentityAttribute, "mail", StringComparison.OrdinalIgnoreCase))
+        {
+            return command.Mail;
+        }
+
+        return command.WorkerId;
     }
 
     private static bool TryGetDirectoryAttributeValue(
