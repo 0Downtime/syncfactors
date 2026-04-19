@@ -1,5 +1,6 @@
 using System.Reflection;
 using System.Linq;
+using System.DirectoryServices.Protocols;
 using SyncFactors.Infrastructure;
 using SyncFactors.Domain;
 
@@ -265,6 +266,45 @@ public sealed class ActiveDirectoryGatewayTests
 
         Assert.Contains("10000", exception.Message, StringComparison.Ordinal);
         Assert.Contains("employeeID", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ShouldRetryTransientLdapFailure_ReturnsTrue_ForUnavailableServerOnFirstAttempt()
+    {
+        var method = typeof(ActiveDirectoryGateway).GetMethod(
+            "ShouldRetryTransientLdapFailure",
+            BindingFlags.NonPublic | BindingFlags.Static);
+        Assert.NotNull(method);
+
+        var shouldRetry = Assert.IsType<bool>(method!.Invoke(null, [new LdapException("The LDAP server is unavailable."), 0]));
+
+        Assert.True(shouldRetry);
+    }
+
+    [Fact]
+    public void ShouldRetryTransientLdapFailure_ReturnsFalse_AfterRetryBudgetIsExhausted()
+    {
+        var method = typeof(ActiveDirectoryGateway).GetMethod(
+            "ShouldRetryTransientLdapFailure",
+            BindingFlags.NonPublic | BindingFlags.Static);
+        Assert.NotNull(method);
+
+        var shouldRetry = Assert.IsType<bool>(method!.Invoke(null, [new LdapException("The LDAP server is unavailable."), 1]));
+
+        Assert.False(shouldRetry);
+    }
+
+    [Fact]
+    public void ShouldRetryTransientLdapFailure_ReturnsFalse_ForNonTransientLdapFailures()
+    {
+        var method = typeof(ActiveDirectoryGateway).GetMethod(
+            "ShouldRetryTransientLdapFailure",
+            BindingFlags.NonPublic | BindingFlags.Static);
+        Assert.NotNull(method);
+
+        var shouldRetry = Assert.IsType<bool>(method!.Invoke(null, [new LdapException("Invalid credentials."), 0]));
+
+        Assert.False(shouldRetry);
     }
 
     private static string InvokeResolver(string baseLocalPart, Func<string, bool> candidateExists)

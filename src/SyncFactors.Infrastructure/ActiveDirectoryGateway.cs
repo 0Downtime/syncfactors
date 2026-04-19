@@ -17,6 +17,7 @@ public sealed class ActiveDirectoryGateway(
     private static readonly TimeSpan LdapOperationTimeout = TimeSpan.FromSeconds(10);
     private static readonly Regex LdapAttributeNamePattern = new("^[A-Za-z][A-Za-z0-9-]*$", RegexOptions.Compiled);
     private const int OuListingPageSize = 500;
+    private const int MaxTransientLdapRetries = 1;
 
     public async Task<DirectoryUserSnapshot?> FindByWorkerAsync(WorkerSnapshot worker, CancellationToken cancellationToken)
     {
@@ -26,45 +27,19 @@ public sealed class ActiveDirectoryGateway(
             throw new InvalidOperationException("AD server was not configured.");
         }
 
-        ActiveDirectoryConnectionPool.ActiveDirectoryConnectionLease? lease = null;
-        try
+        var directoryUser = await ExecuteWithTransientLdapRetryAsync(
+            config,
+            operationName: "lookup",
+            cancellationToken,
+            lease => QueryDirectory(lease.Connection, worker, config, attributeMappingProvider.GetEnabledMappings(), logger));
+        if (directoryUser is not null)
         {
-            lease = connectionPool.Lease(config, logger, LdapOperationTimeout);
-            var directoryUser = await ExecuteWithTimeoutAsync(
-                operation: () => QueryDirectory(lease.Connection, worker, config, attributeMappingProvider.GetEnabledMappings(), logger),
-                operationName: "lookup",
-                server: config.Server,
-                cancellationToken: cancellationToken);
-            if (directoryUser is not null)
-            {
-                logger.LogInformation("Resolved directory user from AD.");
-                return directoryUser;
-            }
+            logger.LogInformation("Resolved directory user from AD.");
+            return directoryUser;
+        }
 
-            logger.LogInformation("No AD user matched the requested worker.");
-            return null;
-        }
-        catch (LdapException ex)
-        {
-            lease?.Invalidate();
-            logger.LogError(ex, "AD lookup failed with LDAP exception.");
-            throw ExternalSystemExceptionFactory.CreateActiveDirectoryException("lookup", config, ex);
-        }
-        catch (DirectoryOperationException ex)
-        {
-            lease?.Invalidate();
-            logger.LogError(ex, "AD lookup failed with directory operation exception.");
-            throw ExternalSystemExceptionFactory.CreateActiveDirectoryException("lookup", config, ex);
-        }
-        catch
-        {
-            lease?.Invalidate();
-            throw;
-        }
-        finally
-        {
-            lease?.Dispose();
-        }
+        logger.LogInformation("No AD user matched the requested worker.");
+        return null;
     }
 
     public async Task<string> ResolveAvailableEmailLocalPartAsync(WorkerSnapshot worker, bool isCreate, CancellationToken cancellationToken)
@@ -85,49 +60,23 @@ public sealed class ActiveDirectoryGateway(
             throw new InvalidOperationException("AD server was not configured.");
         }
 
-        ActiveDirectoryConnectionPool.ActiveDirectoryConnectionLease? lease = null;
-        try
+        if (!isCreate)
         {
-            if (!isCreate)
-            {
-                return baseLocalPart;
-            }
+            return baseLocalPart;
+        }
 
-            lease = connectionPool.Lease(config, logger, LdapOperationTimeout);
-            return await ExecuteWithTimeoutAsync(
-                operation: () => ResolveAvailableEmailLocalPart(
-                    lease.Connection,
-                    worker,
-                    config,
-                    baseLocalPart,
-                    existingDirectoryUser?.SamAccountName,
-                    config.IdentityPolicy.ResolveCreateConflictingUpnAndMail,
-                    logger),
-                operationName: "email local-part lookup",
-                server: config.Server,
-                cancellationToken: cancellationToken);
-        }
-        catch (LdapException ex)
-        {
-            lease?.Invalidate();
-            logger.LogError(ex, "AD email local-part lookup failed with LDAP exception.");
-            throw ExternalSystemExceptionFactory.CreateActiveDirectoryException("email local-part lookup", config, ex);
-        }
-        catch (DirectoryOperationException ex)
-        {
-            lease?.Invalidate();
-            logger.LogError(ex, "AD email local-part lookup failed with directory operation exception.");
-            throw ExternalSystemExceptionFactory.CreateActiveDirectoryException("email local-part lookup", config, ex);
-        }
-        catch
-        {
-            lease?.Invalidate();
-            throw;
-        }
-        finally
-        {
-            lease?.Dispose();
-        }
+        return await ExecuteWithTransientLdapRetryAsync(
+            config,
+            operationName: "email local-part lookup",
+            cancellationToken,
+            lease => ResolveAvailableEmailLocalPart(
+                lease.Connection,
+                worker,
+                config,
+                baseLocalPart,
+                existingDirectoryUser?.SamAccountName,
+                config.IdentityPolicy.ResolveCreateConflictingUpnAndMail,
+                logger));
     }
 
     public async Task<string?> ResolveManagerDistinguishedNameAsync(string managerId, CancellationToken cancellationToken)
@@ -143,37 +92,11 @@ public sealed class ActiveDirectoryGateway(
             throw new InvalidOperationException("AD server was not configured.");
         }
 
-        ActiveDirectoryConnectionPool.ActiveDirectoryConnectionLease? lease = null;
-        try
-        {
-            lease = connectionPool.Lease(config, logger, LdapOperationTimeout);
-            return await ExecuteWithTimeoutAsync(
-                operation: () => ResolveDistinguishedName(lease.Connection, managerId, config, logger),
-                operationName: "manager lookup",
-                server: config.Server,
-                cancellationToken: cancellationToken);
-        }
-        catch (LdapException ex)
-        {
-            lease?.Invalidate();
-            logger.LogError(ex, "AD manager DN lookup failed with LDAP exception.");
-            throw ExternalSystemExceptionFactory.CreateActiveDirectoryException("manager lookup", config, ex);
-        }
-        catch (DirectoryOperationException ex)
-        {
-            lease?.Invalidate();
-            logger.LogError(ex, "AD manager DN lookup failed with directory operation exception.");
-            throw ExternalSystemExceptionFactory.CreateActiveDirectoryException("manager lookup", config, ex);
-        }
-        catch
-        {
-            lease?.Invalidate();
-            throw;
-        }
-        finally
-        {
-            lease?.Dispose();
-        }
+        return await ExecuteWithTransientLdapRetryAsync(
+            config,
+            operationName: "manager lookup",
+            cancellationToken,
+            lease => ResolveDistinguishedName(lease.Connection, managerId, config, logger));
     }
 
     public async Task<IReadOnlyList<DirectoryUserSnapshot>> ListUsersInOuAsync(string ouDistinguishedName, CancellationToken cancellationToken)
@@ -189,36 +112,61 @@ public sealed class ActiveDirectoryGateway(
             throw new InvalidOperationException("AD server was not configured.");
         }
 
-        ActiveDirectoryConnectionPool.ActiveDirectoryConnectionLease? lease = null;
-        try
+        return await ExecuteWithTransientLdapRetryAsync(
+            config,
+            operationName: "ou listing",
+            cancellationToken,
+            lease => QueryUsersInOu(lease.Connection, ouDistinguishedName, config, logger));
+    }
+
+    private async Task<T> ExecuteWithTransientLdapRetryAsync<T>(
+        ActiveDirectoryConfig config,
+        string operationName,
+        CancellationToken cancellationToken,
+        Func<ActiveDirectoryConnectionPool.ActiveDirectoryConnectionLease, T> operation)
+    {
+        for (var attempt = 0; ; attempt++)
         {
-            lease = connectionPool.Lease(config, logger, LdapOperationTimeout);
-            return await ExecuteWithTimeoutAsync(
-                operation: () => QueryUsersInOu(lease.Connection, ouDistinguishedName, config, logger),
-                operationName: "ou listing",
-                server: config.Server,
-                cancellationToken: cancellationToken);
-        }
-        catch (LdapException ex)
-        {
-            lease?.Invalidate();
-            logger.LogError(ex, "AD OU listing failed with LDAP exception.");
-            throw ExternalSystemExceptionFactory.CreateActiveDirectoryException("ou listing", config, ex);
-        }
-        catch (DirectoryOperationException ex)
-        {
-            lease?.Invalidate();
-            logger.LogError(ex, "AD OU listing failed with directory operation exception.");
-            throw ExternalSystemExceptionFactory.CreateActiveDirectoryException("ou listing", config, ex);
-        }
-        catch
-        {
-            lease?.Invalidate();
-            throw;
-        }
-        finally
-        {
-            lease?.Dispose();
+            ActiveDirectoryConnectionPool.ActiveDirectoryConnectionLease? lease = null;
+            try
+            {
+                lease = connectionPool.Lease(config, logger, LdapOperationTimeout);
+                return await ExecuteWithTimeoutAsync(
+                    operation: () => operation(lease),
+                    operationName,
+                    server: config.Server,
+                    cancellationToken);
+            }
+            catch (LdapException ex) when (ShouldRetryTransientLdapFailure(ex, attempt))
+            {
+                lease?.Invalidate();
+                logger.LogWarning(
+                    ex,
+                    "AD {Operation} hit a transient LDAP availability failure. Retrying with a fresh connection. Attempt={Attempt}",
+                    operationName,
+                    attempt + 1);
+            }
+            catch (LdapException ex)
+            {
+                lease?.Invalidate();
+                logger.LogError(ex, "AD {Operation} failed with LDAP exception.", operationName);
+                throw ExternalSystemExceptionFactory.CreateActiveDirectoryException(operationName, config, ex);
+            }
+            catch (DirectoryOperationException ex)
+            {
+                lease?.Invalidate();
+                logger.LogError(ex, "AD {Operation} failed with directory operation exception.", operationName);
+                throw ExternalSystemExceptionFactory.CreateActiveDirectoryException(operationName, config, ex);
+            }
+            catch
+            {
+                lease?.Invalidate();
+                throw;
+            }
+            finally
+            {
+                lease?.Dispose();
+            }
         }
     }
 
@@ -1059,6 +1007,12 @@ public sealed class ActiveDirectoryGateway(
         {
             throw ExternalSystemExceptionFactory.CreateActiveDirectoryTimeoutException(operationName, server, LdapOperationTimeout, ex);
         }
+    }
+
+    private static bool ShouldRetryTransientLdapFailure(LdapException exception, int attempt)
+    {
+        return attempt < MaxTransientLdapRetries &&
+               string.Equals(exception.Message, "The LDAP server is unavailable.", StringComparison.OrdinalIgnoreCase);
     }
 
     private static SearchResponse ExecuteSearch(
