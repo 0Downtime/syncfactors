@@ -116,6 +116,9 @@ static void LogConfiguredEndpoints(IHost host)
     var activeDirectoryPort = ResolveActiveDirectoryPort(config.Ad);
     var usesGlobalCatalog = activeDirectoryPort is 3268 or 3269;
 
+    logger.LogInformation(
+        "[AD-TRANSPORT] Active Directory startup transport: {ActiveDirectoryStartupTransport}.",
+        ActiveDirectoryTransportModeFormatter.DescribeStartupTransport(config.Ad.Transport.Mode));
     logger.LogWarning("========== AD ENDPOINT DIAGNOSTIC ==========");
     logger.LogWarning(
         "[AD-ENDPOINT] ActiveDirectoryServer={ActiveDirectoryServer} ActiveDirectoryPort={ActiveDirectoryPort} ActiveDirectoryAccount={ActiveDirectoryAccount} ActiveDirectorySimpleBindPrincipalFormat={ActiveDirectorySimpleBindPrincipalFormat} ActiveDirectoryTransport={ActiveDirectoryTransport} ActiveDirectoryUsesGlobalCatalog={ActiveDirectoryUsesGlobalCatalog} SuccessFactorsBaseUrl={SuccessFactorsBaseUrl} SuccessFactorsAccount={SuccessFactorsAccount}",
