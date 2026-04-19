@@ -186,6 +186,7 @@
             var showReason = Model.ShouldShowReason(entry);
             var showReviewCase = !string.IsNullOrWhiteSpace(entry.ReviewCaseType);
             var execution = Model.DescribeEntryExecution(entry);
+            var diagnosticSections = diagnostics is null ? [] : Model.GetFailureDiagnosticSections(diagnostics);
             <article class="entry-card">
                 <header class="entry-head">
                     <div class="entry-identity">
@@ -229,6 +230,28 @@
                 {
                     <p class="callout warn">@failureSummary</p>
                 }
+                @if (diagnosticSections.Count > 0)
+                {
+                    <div class="preview-inspector-grid failure-inspector-grid">
+                        @foreach (var section in diagnosticSections)
+                        {
+                            <article class="preview-inspector-card failure-inspector-card" data-tone="@section.ToneCssClass">
+                                <div class="preview-inspector-head">
+                                    <div>
+                                        <h2>@section.Title</h2>
+                                        <p class="muted">@section.Summary</p>
+                                    </div>
+                                </div>
+                                <dl class="kv preview-meta failure-inspector-meta">
+                                    @foreach (var item in section.Items)
+                                    {
+                                        <div><dt>@item.Label</dt><dd>@item.Value</dd></div>
+                                    }
+                                </dl>
+                            </article>
+                        }
+                    </div>
+                }
                 @if (showReason || showReviewCase)
                 {
                     <dl class="kv preview-meta">
@@ -241,19 +264,21 @@
                             <div><dt>Review Case</dt><dd>@entry.ReviewCaseType</dd></div>
                         }
                     </dl>
-                    @if (diagnostics is not null && (diagnostics.Details.Count > 0 || !string.IsNullOrWhiteSpace(diagnostics.Guidance)))
-                    {
-                        <dl class="kv preview-meta">
-                            @foreach (var item in diagnostics.Details)
-                            {
-                                <div><dt>@item.Label</dt><dd>@item.Value</dd></div>
-                            }
-                            @if (!string.IsNullOrWhiteSpace(diagnostics.Guidance))
-                            {
-                                <div><dt>Next Check</dt><dd>@diagnostics.Guidance</dd></div>
-                            }
-                        </dl>
-                    }
+                }
+                @if (diagnostics is not null &&
+                     diagnosticSections.Count == 0 &&
+                     (diagnostics.Details.Count > 0 || !string.IsNullOrWhiteSpace(diagnostics.Guidance)))
+                {
+                    <dl class="kv preview-meta">
+                        @foreach (var item in diagnostics.Details)
+                        {
+                            <div><dt>@item.Label</dt><dd>@item.Value</dd></div>
+                        }
+                        @if (!string.IsNullOrWhiteSpace(diagnostics.Guidance))
+                        {
+                            <div><dt>Next Check</dt><dd>@diagnostics.Guidance</dd></div>
+                        }
+                    </dl>
                 }
                 @if (entry.OperationSummary is not null)
                 {

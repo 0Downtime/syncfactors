@@ -182,11 +182,18 @@ public sealed class ActiveDirectoryCommandGateway(
         }
         catch (Exception ex) when (ex is LdapException or DirectoryOperationException)
         {
+            var details = BuildCreateFailureDetails(command, dn, config, attributes, step, managerDn);
+            if (IsCreateEntryAlreadyExistsFailure(ex))
+            {
+                var existingConflict = TryResolveCreateExistingAccountConflict(connection, command, config, logger, dn);
+                details = BuildCreateFailureDetails(command, dn, config, attributes, step, managerDn, existingConflict);
+            }
+
             throw ExternalSystemExceptionFactory.CreateActiveDirectoryException(
                 "command 'CreateUser'",
                 config,
                 ex,
-                BuildCreateFailureDetails(command, dn, config, attributes, step, managerDn));
+                details);
         }
         var message = BuildCreateCompletionMessage(command, config, effectiveTransport);
         return new DirectoryCommandResult(true, command.Action, command.SamAccountName, dn, message, null);
@@ -422,7 +429,9 @@ public sealed class ActiveDirectoryCommandGateway(
             {
                 ["cn"] = GetAttribute(entry, "cn"),
                 ["displayName"] = GetAttribute(entry, "displayName"),
-                ["userAccountControl"] = GetAttribute(entry, "userAccountControl")
+                ["userAccountControl"] = GetAttribute(entry, "userAccountControl"),
+                ["userPrincipalName"] = GetAttribute(entry, "userPrincipalName"),
+                ["mail"] = GetAttribute(entry, "mail")
             });
     }
 
@@ -1343,6 +1352,25 @@ public sealed class ActiveDirectoryCommandGateway(
                string.Equals(effectiveTransport, "starttls", StringComparison.OrdinalIgnoreCase);
     }
 
+    private static bool IsCreateEntryAlreadyExistsFailure(Exception exception)
+    {
+        return exception switch
+        {
+            LdapException ldapException => ContainsEntryExistsCode(ldapException.Message) ||
+                                           ContainsEntryExistsCode(ldapException.ServerErrorMessage),
+            DirectoryOperationException directoryOperationException => ContainsEntryExistsCode(directoryOperationException.Message),
+            _ => false
+        };
+    }
+
+    private static bool ContainsEntryExistsCode(string? value)
+    {
+        return !string.IsNullOrWhiteSpace(value) &&
+               (value.Contains("ENTRY_EXISTS", StringComparison.OrdinalIgnoreCase) ||
+                value.Contains("The object exists", StringComparison.OrdinalIgnoreCase) ||
+                value.Contains("00000524", StringComparison.OrdinalIgnoreCase));
+    }
+
     private static bool IsPasswordRestrictionFailure(Exception exception)
     {
         return exception switch
@@ -1440,11 +1468,41 @@ public sealed class ActiveDirectoryCommandGateway(
         ActiveDirectoryConfig config,
         IReadOnlyList<DirectoryAttribute> attributes,
         string step,
-        string? managerDistinguishedName)
+        string? managerDistinguishedName,
+        ExistingAccountDetails? existingAccount = null)
     {
         TryGetDirectoryAttributeValue(attributes, config.IdentityAttribute, out var identityValue);
 
-        return $"Step={step} WorkerId={command.WorkerId} SamAccountName={command.SamAccountName} DistinguishedName={distinguishedName} TargetOu={FormatDetailValue(command.TargetOu)} UserPrincipalName={FormatDetailValue(command.UserPrincipalName)} Mail={FormatDetailValue(command.Mail)} IdentityAttribute={config.IdentityAttribute} IdentityValue={FormatDetailValue(identityValue)} LicensingGroups={FormatDetailValues(config.LicensingGroups)} ManagerId={FormatDetailValue(command.ManagerId)} ManagerDistinguishedName={FormatDetailValue(managerDistinguishedName)}";
+        return $"Step={step} WorkerId={command.WorkerId} SamAccountName={command.SamAccountName} DistinguishedName={distinguishedName} TargetOu={FormatDetailValue(command.TargetOu)} UserPrincipalName={FormatDetailValue(command.UserPrincipalName)} Mail={FormatDetailValue(command.Mail)} IdentityAttribute={config.IdentityAttribute} IdentityValue={FormatDetailValue(identityValue)} LicensingGroups={FormatDetailValues(config.LicensingGroups)} ExistingSamAccountName={FormatDetailValue(existingAccount?.SamAccountName)} ExistingDisplayName={FormatDetailValue(existingAccount?.DisplayName)} ExistingDistinguishedName={FormatDetailValue(existingAccount?.DistinguishedName)} ExistingUserPrincipalName={FormatDetailValue(existingAccount?.UserPrincipalName)} ExistingMail={FormatDetailValue(existingAccount?.Mail)} ManagerId={FormatDetailValue(command.ManagerId)} ManagerDistinguishedName={FormatDetailValue(managerDistinguishedName)}";
+    }
+
+    private static ExistingAccountDetails? TryResolveCreateExistingAccountConflict(
+        LdapConnection connection,
+        DirectoryMutationCommand command,
+        ActiveDirectoryConfig config,
+        ILogger logger,
+        string distinguishedName)
+    {
+        var existingByDistinguishedName = FindExistingUserByDistinguishedName(connection, distinguishedName);
+        if (existingByDistinguishedName is not null)
+        {
+            return new ExistingAccountDetails(
+                existingByDistinguishedName.SamAccountName,
+                existingByDistinguishedName.DisplayName,
+                existingByDistinguishedName.DistinguishedName,
+                existingByDistinguishedName.Attributes.TryGetValue("userPrincipalName", out var existingUserPrincipalName) ? existingUserPrincipalName : null,
+                existingByDistinguishedName.Attributes.TryGetValue("mail", out var existingMail) ? existingMail : null);
+        }
+
+        var identityConflict = FindIdentityConflict(connection, command, config, logger);
+        return identityConflict is null
+            ? null
+            : new ExistingAccountDetails(
+                identityConflict.ExistingSamAccountName,
+                null,
+                identityConflict.ExistingDistinguishedName,
+                identityConflict.ExistingUserPrincipalName,
+                identityConflict.ExistingMail);
     }
 
     private static string BuildIdentityConflictSummary(DirectoryMutationCommand command, IdentityConflictResult conflict)
@@ -1558,4 +1616,11 @@ public sealed class ActiveDirectoryCommandGateway(
         string? ExistingDistinguishedName,
         string? ExistingUserPrincipalName,
         string? ExistingMail);
+
+    private sealed record ExistingAccountDetails(
+        string? SamAccountName,
+        string? DisplayName,
+        string? DistinguishedName,
+        string? UserPrincipalName,
+        string? Mail);
 }

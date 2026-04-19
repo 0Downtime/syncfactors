@@ -210,6 +210,80 @@ public sealed class RunDetailModelTests
     }
 
     [Fact]
+    public void GetFailureDiagnostics_ParsesExistingCreateConflictDetails()
+    {
+        var model = new DetailModel(new RunEntriesQueryService(new StubRunRepository()));
+
+        var diagnostics = model.GetFailureDiagnostics(new RunEntry(
+            EntryId: "entry-existing-create-conflict",
+            RunId: "bulk-1",
+            ArtifactType: "BulkRun",
+            Mode: "BulkSync",
+            Bucket: "conflicts",
+            BucketLabel: "Conflicts",
+            WorkerId: "30008382",
+            SamAccountName: "30008382",
+            Reason: "Active Directory command 'CreateUser' failed against LDAP server 'localhost'. The object exists. 00000524: UpdErr: DSID-031A11FA, problem 6005 (ENTRY_EXISTS), data 0 Details: Step=CreateUser WorkerId=30008382 SamAccountName=30008382 DistinguishedName=CN=30008382,OU=POWERSHELL,OU=ExampleQA-Users,DC=ExampleQA,DC=biz TargetOu=OU=POWERSHELL,OU=ExampleQA-Users,DC=ExampleQA,DC=biz UserPrincipalName=david.ramsey@example.com Mail=david.ramsey@example.com IdentityAttribute=sAMAccountName IdentityValue=30008382 LicensingGroups=(none) ExistingSamAccountName=30008382 ExistingDisplayName=Ramsey, David ExistingDistinguishedName=CN=30008382,OU=POWERSHELL,OU=ExampleQA-Users,DC=ExampleQA,DC=biz ExistingUserPrincipalName=david.ramsey@example.com ExistingMail=david.ramsey@example.com ManagerId=38256 ManagerDistinguishedName=(unset) Next check: Check the target OU, manager resolution, and whether the account already exists with unexpected state.",
+            ReviewCategory: null,
+            ReviewCaseType: null,
+            StartedAt: DateTimeOffset.UtcNow,
+            ChangeCount: 0,
+            OperationSummary: null,
+            FailureSummary: null,
+            PrimarySummary: null,
+            TopChangedAttributes: [],
+            DiffRows: [],
+            Item: JsonDocument.Parse("""{}""").RootElement.Clone()));
+
+        Assert.NotNull(diagnostics);
+        Assert.Contains(diagnostics!.Details, item => item.Label == "Existing SAM" && item.Value == "30008382");
+        Assert.Contains(diagnostics.Details, item => item.Label == "Existing Display Name" && item.Value == "Ramsey, David");
+        Assert.Contains(diagnostics.Details, item => item.Label == "Existing Distinguished Name" && item.Value == "CN=30008382,OU=POWERSHELL,OU=ExampleQA-Users,DC=ExampleQA,DC=biz");
+        Assert.Contains(diagnostics.Details, item => item.Label == "Existing UPN" && item.Value == "david.ramsey@example.com");
+        Assert.Contains(diagnostics.Details, item => item.Label == "Existing Mail" && item.Value == "david.ramsey@example.com");
+    }
+
+    [Fact]
+    public void GetFailureDiagnosticSections_GroupsRequestedExistingAndContextDetails()
+    {
+        var model = new DetailModel(new RunEntriesQueryService(new StubRunRepository()));
+        var diagnostics = model.GetFailureDiagnostics(new RunEntry(
+            EntryId: "entry-existing-create-conflict",
+            RunId: "bulk-1",
+            ArtifactType: "BulkRun",
+            Mode: "BulkSync",
+            Bucket: "conflicts",
+            BucketLabel: "Conflicts",
+            WorkerId: "30008382",
+            SamAccountName: "30008382",
+            Reason: "Active Directory command 'CreateUser' failed against LDAP server 'localhost'. The object exists. 00000524: UpdErr: DSID-031A11FA, problem 6005 (ENTRY_EXISTS), data 0 Details: Step=CreateUser WorkerId=30008382 SamAccountName=30008382 DistinguishedName=CN=30008382,OU=POWERSHELL,OU=ExampleQA-Users,DC=ExampleQA,DC=biz TargetOu=OU=POWERSHELL,OU=ExampleQA-Users,DC=ExampleQA,DC=biz UserPrincipalName=david.ramsey@example.com Mail=david.ramsey@example.com IdentityAttribute=sAMAccountName IdentityValue=30008382 LicensingGroups=(none) ExistingSamAccountName=30008382 ExistingDisplayName=Ramsey, David ExistingDistinguishedName=CN=30008382,OU=POWERSHELL,OU=ExampleQA-Users,DC=ExampleQA,DC=biz ExistingUserPrincipalName=david.ramsey@example.com ExistingMail=david.ramsey@example.com ManagerId=38256 ManagerDistinguishedName=(unset) Next check: Check the target OU, manager resolution, and whether the account already exists with unexpected state.",
+            ReviewCategory: null,
+            ReviewCaseType: null,
+            StartedAt: DateTimeOffset.UtcNow,
+            ChangeCount: 0,
+            OperationSummary: null,
+            FailureSummary: null,
+            PrimarySummary: null,
+            TopChangedAttributes: [],
+            DiffRows: [],
+            Item: JsonDocument.Parse("""{}""").RootElement.Clone()));
+
+        Assert.NotNull(diagnostics);
+
+        var sections = model.GetFailureDiagnosticSections(diagnostics!);
+
+        Assert.Equal(3, sections.Count);
+        Assert.Equal("Requested Directory State", sections[0].Title);
+        Assert.Contains(sections[0].Items, item => item.Label == "UPN" && item.Value == "david.ramsey@example.com");
+        Assert.Contains(sections[0].Items, item => item.Label == "Licensing Groups" && item.Value == "(none)");
+        Assert.Equal("Existing AD Account", sections[1].Title);
+        Assert.Contains(sections[1].Items, item => item.Label == "Existing Display Name" && item.Value == "Ramsey, David");
+        Assert.Equal("Failure Context", sections[2].Title);
+        Assert.Contains(sections[2].Items, item => item.Label == "Step" && item.Value == "CreateUser");
+        Assert.Contains(sections[2].Items, item => item.Label == "Next Check" && item.Value == "Check the target OU, manager resolution, and whether the account already exists with unexpected state.");
+    }
+
+    [Fact]
     public void GetPrimarySummaryDisplay_SuppressesDuplicateFailureSummary()
     {
         var model = new DetailModel(new RunEntriesQueryService(new StubRunRepository()));

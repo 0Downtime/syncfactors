@@ -11,6 +11,32 @@ namespace SyncFactors.Api.Pages.Runs;
 public sealed class DetailModel(RunEntriesQueryService queryService) : PageModel
 {
     public const int EntriesPerPage = 15;
+    private static readonly HashSet<string> RequestedDirectoryStateLabels = new(StringComparer.Ordinal)
+    {
+        "Worker ID",
+        "SAM",
+        "Distinguished Name",
+        "Target OU",
+        "UPN",
+        "Mail",
+        "Identity Attribute",
+        "Identity Value",
+        "Licensing Groups",
+        "Manager ID",
+        "Manager Distinguished Name"
+    };
+
+    private static readonly HashSet<string> ExistingAccountLabels = new(StringComparer.Ordinal)
+    {
+        "Conflicting Attribute",
+        "Conflicting Value",
+        "Existing SAM",
+        "Existing Display Name",
+        "Existing Distinguished Name",
+        "Existing UPN",
+        "Existing Mail"
+    };
+
     private static readonly JsonSerializerOptions ExportSerializerOptions = new(JsonSerializerDefaults.Web)
     {
         WriteIndented = true
@@ -97,6 +123,54 @@ public sealed class DetailModel(RunEntriesQueryService queryService) : PageModel
 
     public string? GetFailureSummaryDisplay(RunEntry entry)
         => GetFailureDiagnostics(entry)?.Summary ?? entry.FailureSummary;
+
+    public IReadOnlyList<FailureDiagnosticSection> GetFailureDiagnosticSections(FailureDiagnostics diagnostics)
+    {
+        var requested = diagnostics.Details
+            .Where(item => RequestedDirectoryStateLabels.Contains(item.Label))
+            .ToArray();
+        var existing = diagnostics.Details
+            .Where(item => ExistingAccountLabels.Contains(item.Label))
+            .ToArray();
+        var context = diagnostics.Details
+            .Where(item => !RequestedDirectoryStateLabels.Contains(item.Label) && !ExistingAccountLabels.Contains(item.Label))
+            .ToList();
+
+        if (!string.IsNullOrWhiteSpace(diagnostics.Guidance))
+        {
+            context.Add(new FailureDiagnosticItem("Next Check", diagnostics.Guidance));
+        }
+
+        var sections = new List<FailureDiagnosticSection>();
+        if (requested.Length > 0)
+        {
+            sections.Add(new FailureDiagnosticSection(
+                "Requested Directory State",
+                "info",
+                "Inputs SyncFactors used for this worker.",
+                requested));
+        }
+
+        if (existing.Length > 0)
+        {
+            sections.Add(new FailureDiagnosticSection(
+                "Existing AD Account",
+                "warn",
+                "The object already present in Active Directory.",
+                existing));
+        }
+
+        if (context.Count > 0)
+        {
+            sections.Add(new FailureDiagnosticSection(
+                "Failure Context",
+                existing.Length > 0 ? "warn" : "neutral",
+                "Where the operation failed and what to verify next.",
+                context));
+        }
+
+        return sections;
+    }
 
     public string? GetPrimarySummaryDisplay(RunEntry entry)
     {
@@ -738,6 +812,12 @@ public sealed class DetailModel(RunEntriesQueryService queryService) : PageModel
     public sealed record EntryExecutionFact(
         string Label,
         string Value);
+
+    public sealed record FailureDiagnosticSection(
+        string Title,
+        string ToneCssClass,
+        string Summary,
+        IReadOnlyList<FailureDiagnosticItem> Items);
 
     public sealed record RunPopulationComparisonDisplay(
         int SuccessFactorsActive,
