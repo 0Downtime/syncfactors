@@ -187,6 +187,8 @@
             var showReviewCase = !string.IsNullOrWhiteSpace(entry.ReviewCaseType);
             var execution = Model.DescribeEntryExecution(entry);
             var diagnosticSections = diagnostics is null ? [] : Model.GetFailureDiagnosticSections(diagnostics);
+            var manualReviewSections = entry.Bucket == "manualReview" ? Model.GetManualReviewDiagnosticSections(entry) : [];
+            var groupedDiagnosticSections = diagnosticSections.Count > 0 ? diagnosticSections : manualReviewSections;
             <article class="entry-card">
                 <header class="entry-head">
                     <div class="entry-identity">
@@ -230,20 +232,20 @@
                 {
                     <p class="callout warn">@failureSummary</p>
                 }
-                @if (diagnosticSections.Count > 0)
+                @if (groupedDiagnosticSections.Count > 0)
                 {
                     <div class="preview-inspector-grid failure-inspector-grid">
-                        @foreach (var section in diagnosticSections)
+                        @foreach (var diagnosticSection in groupedDiagnosticSections)
                         {
-                            <article class="preview-inspector-card failure-inspector-card" data-tone="@section.ToneCssClass">
+                            <article class="preview-inspector-card failure-inspector-card" data-tone="@diagnosticSection.ToneCssClass">
                                 <div class="preview-inspector-head">
                                     <div>
-                                        <h2>@section.Title</h2>
-                                        <p class="muted">@section.Summary</p>
+                                        <h2>@diagnosticSection.Title</h2>
+                                        <p class="muted">@diagnosticSection.Summary</p>
                                     </div>
                                 </div>
                                 <dl class="kv preview-meta failure-inspector-meta">
-                                    @foreach (var item in section.Items)
+                                    @foreach (var item in diagnosticSection.Items)
                                     {
                                         <div><dt>@item.Label</dt><dd>@item.Value</dd></div>
                                     }
@@ -266,7 +268,7 @@
                     </dl>
                 }
                 @if (diagnostics is not null &&
-                     diagnosticSections.Count == 0 &&
+                     groupedDiagnosticSections.Count == 0 &&
                      (diagnostics.Details.Count > 0 || !string.IsNullOrWhiteSpace(diagnostics.Guidance)))
                 {
                     <dl class="kv preview-meta">

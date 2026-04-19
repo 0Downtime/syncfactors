@@ -5,6 +5,7 @@ using SyncFactors.Contracts;
 using SyncFactors.Domain;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 
 namespace SyncFactors.Api.Pages.Runs;
 
@@ -167,6 +168,91 @@ public sealed class DetailModel(RunEntriesQueryService queryService) : PageModel
                 existing.Length > 0 ? "warn" : "neutral",
                 "Where the operation failed and what to verify next.",
                 context));
+        }
+
+        return sections;
+    }
+
+    public IReadOnlyList<FailureDiagnosticSection> GetManualReviewDiagnosticSections(RunEntry entry)
+    {
+        if (!string.Equals(entry.Bucket, "manualReview", StringComparison.OrdinalIgnoreCase))
+        {
+            return [];
+        }
+
+        var sections = new List<FailureDiagnosticSection>();
+        var reviewItems = new List<FailureDiagnosticItem>();
+        AddIfPresent(reviewItems, "Review Category", entry.ReviewCategory ?? GetItemString(entry.Item, "reviewCategory"));
+        AddIfPresent(reviewItems, "Review Case", entry.ReviewCaseType ?? GetItemString(entry.Item, "reviewCaseType"));
+        AddIfPresent(reviewItems, "Worker ID", entry.WorkerId);
+        AddIfPresent(reviewItems, "SAM", entry.SamAccountName);
+        AddIfPresent(reviewItems, "Current Distinguished Name", GetItemString(entry.Item, "currentDistinguishedName"));
+        AddIfPresent(reviewItems, "Current OU", GetItemString(entry.Item, "currentOu"));
+        AddIfPresent(reviewItems, "Target OU", GetItemString(entry.Item, "targetOu"));
+        AddIfPresent(reviewItems, "Manager ID", GetItemString(entry.Item, "managerId"));
+        AddIfPresent(reviewItems, "Manager Distinguished Name", GetItemString(entry.Item, "managerDistinguishedName"));
+        AddIfPresent(reviewItems, "Proposed Email", GetItemString(entry.Item, "proposedEmailAddress"));
+        AddIfPresent(reviewItems, "Matched Existing User", FormatNullableBoolean(GetItemBoolean(entry.Item, "matchedExistingUser")));
+        AddIfPresent(reviewItems, "Current Enabled", FormatNullableBoolean(GetItemBoolean(entry.Item, "currentEnabled")));
+        AddIfPresent(reviewItems, "Proposed Enable", FormatNullableBoolean(GetItemBoolean(entry.Item, "proposedEnable")));
+
+        if (reviewItems.Count > 0)
+        {
+            sections.Add(new FailureDiagnosticSection(
+                "Manual Review Decision",
+                "warn",
+                "Why SyncFactors stopped before making any AD change.",
+                reviewItems));
+        }
+
+        var missingSourceItems = GetItemArray(entry.Item, "missingSourceAttributes")
+            .Select(attribute => new FailureDiagnosticItem(
+                GetItemString(attribute, "attribute") ?? "Required Attribute",
+                GetItemString(attribute, "reason") ?? "Required source attribute has no value."))
+            .ToArray();
+        if (missingSourceItems.Length > 0)
+        {
+            sections.Add(new FailureDiagnosticSection(
+                "Missing Required Inputs",
+                "warn",
+                "Source values that must be resolved before auto-apply can continue.",
+                missingSourceItems));
+        }
+
+        var ambiguousIdentity = ParseAmbiguousDirectoryIdentityReason(entry.Reason);
+        if (ambiguousIdentity is not null)
+        {
+            var ambiguousItems = new List<FailureDiagnosticItem>
+            {
+                new("Lookup Kind", ambiguousIdentity.LookupKind),
+                new("Lookup Value", ambiguousIdentity.LookupValue),
+                new("Identity Attribute", ambiguousIdentity.IdentityAttribute)
+            };
+
+            for (var index = 0; index < ambiguousIdentity.MatchedEntries.Count; index++)
+            {
+                ambiguousItems.Add(new FailureDiagnosticItem($"Matched Entry {index + 1}", ambiguousIdentity.MatchedEntries[index]));
+            }
+
+            sections.Add(new FailureDiagnosticSection(
+                "Ambiguous AD Matches",
+                "warn",
+                "Multiple AD objects matched the same lookup, so SyncFactors could not safely choose one.",
+                ambiguousItems));
+        }
+
+        var changedAttributeItems = GetItemArray(entry.Item, "changedAttributeDetails")
+            .Select(change => BuildChangedAttributeDiagnostic(change))
+            .Where(item => item is not null)
+            .Cast<FailureDiagnosticItem>()
+            .ToArray();
+        if (changedAttributeItems.Length > 0)
+        {
+            sections.Add(new FailureDiagnosticSection(
+                "Planned Attribute Changes",
+                "neutral",
+                "Changes that were staged but not applied because review is required.",
+                changedAttributeItems));
         }
 
         return sections;
@@ -588,6 +674,26 @@ public sealed class DetailModel(RunEntriesQueryService queryService) : PageModel
     private static string FormatCount(int count, string noun)
         => count == 1 ? $"1 {noun}" : $"{count} {noun}s";
 
+    private static FailureDiagnosticItem? BuildChangedAttributeDiagnostic(JsonElement change)
+    {
+        var attribute = GetItemString(change, "targetAttribute");
+        if (string.IsNullOrWhiteSpace(attribute))
+        {
+            return null;
+        }
+
+        var before = GetItemString(change, "currentAdValue");
+        var after = GetItemString(change, "proposedValue");
+        var source = GetItemString(change, "sourceField");
+        var value = $"{FormatMissingValue(before)} -> {FormatMissingValue(after)}";
+        if (!string.IsNullOrWhiteSpace(source))
+        {
+            value += $" (source: {source})";
+        }
+
+        return new FailureDiagnosticItem(attribute, value);
+    }
+
     private static string? GetItemString(JsonElement item, string propertyName)
     {
         if (item.ValueKind != JsonValueKind.Object || !item.TryGetProperty(propertyName, out var property))
@@ -642,6 +748,57 @@ public sealed class DetailModel(RunEntriesQueryService queryService) : PageModel
 
     private static bool StringEquals(string? left, string? right)
         => string.Equals(left?.Trim(), right?.Trim(), StringComparison.OrdinalIgnoreCase);
+
+    private static string? FormatNullableBoolean(bool? value)
+    {
+        return value switch
+        {
+            true => "true",
+            false => "false",
+            _ => null
+        };
+    }
+
+    private static string FormatMissingValue(string? value)
+        => string.IsNullOrWhiteSpace(value) ? "(unset)" : value;
+
+    private static void AddIfPresent(ICollection<FailureDiagnosticItem> items, string label, string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return;
+        }
+
+        items.Add(new FailureDiagnosticItem(label, value));
+    }
+
+    private static AmbiguousIdentityReviewDetails? ParseAmbiguousDirectoryIdentityReason(string? reason)
+    {
+        if (string.IsNullOrWhiteSpace(reason))
+        {
+            return null;
+        }
+
+        var match = Regex.Match(
+            reason,
+            "^Ambiguous AD (?<lookupKind>.+?) lookup for '(?<lookupValue>.*?)' via (?<identityAttribute>.+?)\\. Matched entries: (?<matchedEntries>.+?)\\.$",
+            RegexOptions.CultureInvariant);
+        if (!match.Success)
+        {
+            return null;
+        }
+
+        var matchedEntries = match.Groups["matchedEntries"].Value
+            .Split(", CN=", StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
+            .Select((value, index) => index == 0 ? value : $"CN={value}")
+            .ToArray();
+
+        return new AmbiguousIdentityReviewDetails(
+            match.Groups["lookupKind"].Value,
+            match.Groups["lookupValue"].Value,
+            match.Groups["identityAttribute"].Value,
+            matchedEntries);
+    }
 
     private static byte[] BuildJsonlExport(RunEntriesExportResult export)
     {
@@ -818,6 +975,12 @@ public sealed class DetailModel(RunEntriesQueryService queryService) : PageModel
         string ToneCssClass,
         string Summary,
         IReadOnlyList<FailureDiagnosticItem> Items);
+
+    private sealed record AmbiguousIdentityReviewDetails(
+        string LookupKind,
+        string LookupValue,
+        string IdentityAttribute,
+        IReadOnlyList<string> MatchedEntries);
 
     public sealed record RunPopulationComparisonDisplay(
         int SuccessFactorsActive,
