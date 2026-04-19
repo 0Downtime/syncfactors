@@ -12,6 +12,7 @@
     <Compile Include="DashboardOptions.cs" />
     <Compile Include="DashboardRealtimeModels.cs" />
     <Compile Include="DashboardRealtimeService.cs" />
+    <Compile Include="DirectoryServiceRegistrationExtensions.cs" />
     <Compile Include="DirectoryServiceRuntimeSelector.cs" />
     <Compile Include="HealthEndpointMappings.cs" />
     <Compile Include="LauncherProbe.cs" />

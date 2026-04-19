@@ -110,8 +110,6 @@ builder.Services.AddSingleton(serviceProvider =>
         config.Sync.LeaveStatusValues,
         config.Ad.IdentityAttribute);
 });
-builder.Services.AddSingleton<ScaffoldDirectoryGateway>();
-builder.Services.AddSingleton<ScaffoldDirectoryCommandGateway>();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<IWorkerPreviewLogWriter, FileWorkerPreviewLogWriter>();
 builder.Services.AddSingleton<IDeltaSyncStateStore, SqliteDeltaSyncStateStore>();
@@ -127,22 +125,7 @@ builder.Services.AddHttpClient<IDependencyHealthService, DependencyHealthService
         AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate
     });
 builder.Services.AddTransient<IWorkerSource>(serviceProvider => serviceProvider.GetRequiredService<SuccessFactorsWorkerSource>());
-builder.Services.AddTransient<IDirectoryGateway>(serviceProvider =>
-{
-    var config = serviceProvider.GetRequiredService<SyncFactorsConfigurationLoader>().GetSyncConfig();
-    var runProfile = Environment.GetEnvironmentVariable("SYNCFACTORS_RUN_PROFILE");
-    return SyncFactors.Api.DirectoryServiceRuntimeSelector.UseScaffoldDirectoryServices(config, runProfile)
-        ? serviceProvider.GetRequiredService<ScaffoldDirectoryGateway>()
-        : serviceProvider.GetRequiredService<ActiveDirectoryGateway>();
-});
-builder.Services.AddTransient<IDirectoryCommandGateway>(serviceProvider =>
-{
-    var config = serviceProvider.GetRequiredService<SyncFactorsConfigurationLoader>().GetSyncConfig();
-    var runProfile = Environment.GetEnvironmentVariable("SYNCFACTORS_RUN_PROFILE");
-    return SyncFactors.Api.DirectoryServiceRuntimeSelector.UseScaffoldDirectoryServices(config, runProfile)
-        ? serviceProvider.GetRequiredService<ScaffoldDirectoryCommandGateway>()
-        : serviceProvider.GetRequiredService<ActiveDirectoryCommandGateway>();
-});
+builder.Services.AddDirectoryRuntimeServices();
 builder.Services.AddSingleton<IAttributeMappingProvider, AttributeMappingProvider>();
 builder.Services.AddSingleton<IIdentityMatcher, IdentityMatcher>();
 builder.Services.AddSingleton<ILifecyclePolicy, LifecyclePolicy>();
