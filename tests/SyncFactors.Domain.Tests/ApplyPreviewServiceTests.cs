@@ -67,6 +67,7 @@ public sealed class ApplyPreviewServiceTests
             directoryCommandGateway,
             new StubRunRepository(preview),
             new StubRuntimeStatusStore(),
+            new RealSyncSettings(),
             NullLogger<ApplyPreviewService>.Instance);
 
         await service.ApplyAsync(
@@ -147,6 +148,7 @@ public sealed class ApplyPreviewServiceTests
             new ThrowingDirectoryCommandGateway(new InvalidOperationException("LDAP bind failed.")),
             runRepository,
             runtimeStatusStore,
+            new RealSyncSettings(),
             NullLogger<ApplyPreviewService>.Instance);
 
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => service.ApplyAsync(
@@ -220,6 +222,7 @@ public sealed class ApplyPreviewServiceTests
             new ThrowingDirectoryCommandGateway(new InvalidOperationException("LDAP bind failed.\nServer said no.")),
             runRepository,
             runtimeStatusStore,
+            new RealSyncSettings(),
             NullLogger<ApplyPreviewService>.Instance);
 
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => service.ApplyAsync(
@@ -290,6 +293,7 @@ public sealed class ApplyPreviewServiceTests
             new CapturingDirectoryCommandGateway(),
             new StubRunRepository(preview),
             new StubRuntimeStatusStore(),
+            new RealSyncSettings(),
             NullLogger<ApplyPreviewService>.Instance);
 
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => service.ApplyAsync(
@@ -301,6 +305,72 @@ public sealed class ApplyPreviewServiceTests
             CancellationToken.None));
 
         Assert.Equal("Acknowledge the real AD sync before applying this preview.", exception.Message);
+    }
+
+    [Fact]
+    public async Task ApplyAsync_RejectsWhenRealSyncIsDisabled()
+    {
+        var worker = new WorkerSnapshot(
+            WorkerId: "10001",
+            PreferredName: "Winnie",
+            LastName: "Sample101",
+            Department: "IT",
+            TargetOu: "OU=LabUsers,DC=example,DC=com",
+            IsPrehire: false,
+            Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase));
+
+        var preview = new WorkerPreviewResult(
+            ReportPath: null,
+            RunId: "preview-10001-disabled",
+            PreviousRunId: null,
+            Fingerprint: "fingerprint-disabled",
+            Mode: "Preview",
+            Status: "Planned",
+            ErrorMessage: null,
+            ArtifactType: "WorkerPreview",
+            SuccessFactorsAuth: "NativeScaffold",
+            WorkerId: worker.WorkerId,
+            Buckets: ["updates"],
+            MatchedExistingUser: true,
+            ReviewCategory: null,
+            ReviewCaseType: null,
+            Reason: null,
+            OperatorActionSummary: null,
+            SamAccountName: "10001",
+            ManagerDistinguishedName: null,
+            TargetOu: worker.TargetOu,
+            CurrentDistinguishedName: "CN=Sample101\\, Winnie,OU=LabUsers,DC=example,DC=com",
+            CurrentEnabled: true,
+            ProposedEnable: true,
+            OperationSummary: null,
+            DiffRows:
+            [
+                new DiffRow("UserPrincipalName", "resolved email local-part", "(unset)", "preview.email@Exampleenergy.com", true)
+            ],
+            SourceAttributes: [],
+            UsedSourceAttributes: [],
+            UnusedSourceAttributes: [],
+            MissingSourceAttributes: [],
+            Entries: []);
+
+        var service = new ApplyPreviewService(
+            new StubWorkerSource(worker),
+            new DirectoryMutationCommandBuilder(),
+            new CapturingDirectoryCommandGateway(),
+            new StubRunRepository(preview),
+            new StubRuntimeStatusStore(),
+            new RealSyncSettings(Enabled: false),
+            NullLogger<ApplyPreviewService>.Instance);
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => service.ApplyAsync(
+            new ApplyPreviewRequest(
+                WorkerId: worker.WorkerId,
+                PreviewRunId: preview.RunId!,
+                PreviewFingerprint: preview.Fingerprint,
+                AcknowledgeRealSync: true),
+            CancellationToken.None));
+
+        Assert.Equal("Real AD sync is disabled for this environment.", exception.Message);
     }
 
     [Fact]
@@ -365,6 +435,7 @@ public sealed class ApplyPreviewServiceTests
             directoryCommandGateway,
             new StubRunRepository(preview),
             new StubRuntimeStatusStore(),
+            new RealSyncSettings(),
             NullLogger<ApplyPreviewService>.Instance);
 
         await service.ApplyAsync(

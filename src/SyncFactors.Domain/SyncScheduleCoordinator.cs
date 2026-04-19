@@ -6,6 +6,7 @@ namespace SyncFactors.Domain;
 public sealed class SyncScheduleCoordinator(
     ISyncScheduleStore scheduleStore,
     IRunQueueStore runQueueStore,
+    RealSyncSettings realSyncSettings,
     TimeProvider timeProvider,
     ILogger<SyncScheduleCoordinator> logger)
 {
@@ -38,7 +39,7 @@ public sealed class SyncScheduleCoordinator(
         {
             await runQueueStore.EnqueueAsync(
                 new StartRunRequest(
-                    DryRun: false,
+                    DryRun: !realSyncSettings.Enabled,
                     RunTrigger: "Scheduled",
                     RequestedBy: "Sync schedule"),
                 cancellationToken);

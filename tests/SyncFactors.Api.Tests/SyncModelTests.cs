@@ -15,7 +15,7 @@ public sealed class SyncModelTests
     {
         var queueStore = new CapturingRunQueueStore();
         var scheduleStore = new StubSyncScheduleStore();
-        var model = new SyncModel(CreateDashboardService(), queueStore, scheduleStore);
+        var model = new SyncModel(CreateDashboardService(), queueStore, new RealSyncSettings(), scheduleStore);
 
         await model.OnGetAsync(CancellationToken.None);
 
@@ -28,7 +28,7 @@ public sealed class SyncModelTests
     public async Task OnPostStartRunAsync_QueuesDryRunByDefault()
     {
         var queueStore = new CapturingRunQueueStore();
-        var model = new SyncModel(CreateDashboardService(), queueStore, new StubSyncScheduleStore());
+        var model = new SyncModel(CreateDashboardService(), queueStore, new RealSyncSettings(), new StubSyncScheduleStore());
 
         var result = await model.OnPostStartRunAsync(CancellationToken.None);
 
@@ -46,7 +46,7 @@ public sealed class SyncModelTests
     public async Task OnPostStartRunAsync_QueuesLiveRunWhenSelected()
     {
         var queueStore = new CapturingRunQueueStore();
-        var model = new SyncModel(CreateDashboardService(), queueStore, new StubSyncScheduleStore())
+        var model = new SyncModel(CreateDashboardService(), queueStore, new RealSyncSettings(), new StubSyncScheduleStore())
         {
             RunMode = "LiveRun"
         };
@@ -62,10 +62,27 @@ public sealed class SyncModelTests
     }
 
     [Fact]
+    public async Task OnPostStartRunAsync_RejectsLiveRunWhenRealSyncIsDisabled()
+    {
+        var queueStore = new CapturingRunQueueStore();
+        var model = new SyncModel(CreateDashboardService(), queueStore, new RealSyncSettings(Enabled: false), new StubSyncScheduleStore())
+        {
+            RunMode = "LiveRun"
+        };
+
+        var result = await model.OnPostStartRunAsync(CancellationToken.None);
+
+        Assert.IsType<RedirectToPageResult>(result);
+        Assert.Null(queueStore.LastRequest);
+        Assert.Equal("Live provisioning is disabled for this environment. Queue a dry run instead.", model.ErrorMessage);
+        Assert.Null(model.SuccessMessage);
+    }
+
+    [Fact]
     public async Task OnPostStartRunAsync_UsesAuthenticatedUsernameWhenAvailable()
     {
         var queueStore = new CapturingRunQueueStore();
-        var model = new SyncModel(CreateDashboardService(), queueStore, new StubSyncScheduleStore());
+        var model = new SyncModel(CreateDashboardService(), queueStore, new RealSyncSettings(), new StubSyncScheduleStore());
         AttachAuthenticatedUser(model, "operator@example.com");
 
         await model.OnPostStartRunAsync(CancellationToken.None);
@@ -77,7 +94,7 @@ public sealed class SyncModelTests
     public async Task OnPostDeleteAllUsersAsync_QueuesDeleteAllUsersRunWhenPhraseMatches()
     {
         var queueStore = new CapturingRunQueueStore();
-        var model = new SyncModel(CreateDashboardService(), queueStore, new StubSyncScheduleStore())
+        var model = new SyncModel(CreateDashboardService(), queueStore, new RealSyncSettings(), new StubSyncScheduleStore())
         {
             DeleteAllUsersConfirmationText = SyncModel.DeleteAllUsersConfirmationPhrase
         };
@@ -94,10 +111,27 @@ public sealed class SyncModelTests
     }
 
     [Fact]
+    public async Task OnPostDeleteAllUsersAsync_RejectsQueueWhenRealSyncIsDisabled()
+    {
+        var queueStore = new CapturingRunQueueStore();
+        var model = new SyncModel(CreateDashboardService(), queueStore, new RealSyncSettings(Enabled: false), new StubSyncScheduleStore())
+        {
+            DeleteAllUsersConfirmationText = SyncModel.DeleteAllUsersConfirmationPhrase
+        };
+
+        var result = await model.OnPostDeleteAllUsersAsync(CancellationToken.None);
+
+        Assert.IsType<RedirectToPageResult>(result);
+        Assert.Null(queueStore.LastRequest);
+        Assert.Equal("Real AD sync is disabled for this environment.", model.ErrorMessage);
+        Assert.Null(model.SuccessMessage);
+    }
+
+    [Fact]
     public async Task OnPostDeleteAllUsersAsync_RejectsInvalidConfirmationPhrase()
     {
         var queueStore = new CapturingRunQueueStore();
-        var model = new SyncModel(CreateDashboardService(), queueStore, new StubSyncScheduleStore())
+        var model = new SyncModel(CreateDashboardService(), queueStore, new RealSyncSettings(), new StubSyncScheduleStore())
         {
             DeleteAllUsersConfirmationText = "delete all users"
         };
@@ -117,7 +151,7 @@ public sealed class SyncModelTests
         {
             HasPendingOrActiveRun = true
         };
-        var model = new SyncModel(CreateDashboardService(), queueStore, new StubSyncScheduleStore());
+        var model = new SyncModel(CreateDashboardService(), queueStore, new RealSyncSettings(), new StubSyncScheduleStore());
 
         var result = await model.OnPostStartRunAsync(CancellationToken.None);
 
@@ -134,7 +168,7 @@ public sealed class SyncModelTests
         {
             PendingOrActiveRun = new RunQueueRequest("req-1", "BulkSync", true, "AdHoc", "Sync page", "InProgress", DateTimeOffset.UtcNow, DateTimeOffset.UtcNow, null, "bulk-1", null)
         };
-        var model = new SyncModel(CreateDashboardService(), queueStore, new StubSyncScheduleStore());
+        var model = new SyncModel(CreateDashboardService(), queueStore, new RealSyncSettings(), new StubSyncScheduleStore());
 
         var result = await model.OnPostCancelRunAsync(CancellationToken.None);
 
@@ -148,7 +182,7 @@ public sealed class SyncModelTests
     public async Task OnPostSaveScheduleAsync_UpdatesSchedule()
     {
         var scheduleStore = new StubSyncScheduleStore();
-        var model = new SyncModel(CreateDashboardService(), new CapturingRunQueueStore(), scheduleStore)
+        var model = new SyncModel(CreateDashboardService(), new CapturingRunQueueStore(), new RealSyncSettings(), scheduleStore)
         {
             ScheduleEnabled = true,
             IntervalMinutes = 45
@@ -162,6 +196,21 @@ public sealed class SyncModelTests
         Assert.Equal(45, scheduleStore.LastUpdateRequest.IntervalMinutes);
         Assert.True(model.Schedule.Enabled);
         Assert.Equal(45, model.Schedule.IntervalMinutes);
+    }
+
+    [Fact]
+    public async Task OnPostSaveScheduleAsync_UsesDryRunLabelWhenRealSyncIsDisabled()
+    {
+        var scheduleStore = new StubSyncScheduleStore();
+        var model = new SyncModel(CreateDashboardService(), new CapturingRunQueueStore(), new RealSyncSettings(Enabled: false), scheduleStore)
+        {
+            ScheduleEnabled = true,
+            IntervalMinutes = 45
+        };
+
+        await model.OnPostSaveScheduleAsync(CancellationToken.None);
+
+        Assert.Equal("Recurring dry-run sync enabled every 45 minutes.", model.SuccessMessage);
     }
 
     private static IDashboardSnapshotService CreateDashboardService()

@@ -10,12 +10,18 @@ public sealed class DeleteAllUsersCoordinator(
     IDirectoryCommandGateway directoryCommandGateway,
     IRunLifecycleService runLifecycleService,
     LifecyclePolicySettings lifecycleSettings,
+    RealSyncSettings realSyncSettings,
     WorkerRunSettings settings,
     ILogger<DeleteAllUsersCoordinator> logger,
     TimeProvider timeProvider)
 {
     public async Task<string> ExecuteAsync(RunQueueRequest request, CancellationToken cancellationToken)
     {
+        if (!request.DryRun && !realSyncSettings.Enabled)
+        {
+            throw new InvalidOperationException("Real AD sync is disabled for this environment.");
+        }
+
         using var runCancellationSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         var runCancellationToken = runCancellationSource.Token;
         var cancellationMonitor = MonitorCancellationAsync(request.RequestId, runCancellationSource, cancellationToken);

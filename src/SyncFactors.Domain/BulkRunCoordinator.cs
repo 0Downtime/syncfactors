@@ -15,6 +15,7 @@ public sealed class BulkRunCoordinator(
     IDirectoryCommandGateway directoryCommandGateway,
     IDirectoryGateway directoryGateway,
     IRunLifecycleService runLifecycleService,
+    RealSyncSettings realSyncSettings,
     WorkerRunSettings settings,
     LifecyclePolicySettings lifecycleSettings,
     ILogger<BulkRunCoordinator> logger,
@@ -22,6 +23,11 @@ public sealed class BulkRunCoordinator(
 {
     public async Task<string> ExecuteAsync(RunQueueRequest request, int maxDegreeOfParallelism, CancellationToken cancellationToken)
     {
+        if (!request.DryRun && !realSyncSettings.Enabled)
+        {
+            throw new InvalidOperationException("Real AD sync is disabled for this environment.");
+        }
+
         using var runCancellationSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         var runCancellationToken = runCancellationSource.Token;
         var cancellationMonitor = MonitorCancellationAsync(request.RequestId, runCancellationSource, cancellationToken);

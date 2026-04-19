@@ -8,6 +8,7 @@ namespace SyncFactors.Api.Pages;
 public sealed class SyncModel(
     IDashboardSnapshotService dashboardSnapshotService,
     IRunQueueStore runQueueStore,
+    RealSyncSettings realSyncSettings,
     ISyncScheduleStore syncScheduleStore) : PageModel
 {
     private const int RunsPageSize = 25;
@@ -75,6 +76,10 @@ public sealed class SyncModel(
 
     public bool CanLaunchSync => !string.Equals(Status.Status, "InProgress", StringComparison.OrdinalIgnoreCase);
 
+    public bool RealSyncEnabled => realSyncSettings.Enabled;
+
+    public bool ScheduledRunsAreDryRunOnly => !realSyncSettings.Enabled;
+
     [TempData]
     public string? ErrorMessage { get; set; }
 
@@ -91,6 +96,13 @@ public sealed class SyncModel(
         if (await runQueueStore.HasPendingOrActiveRunAsync(cancellationToken))
         {
             ErrorMessage = "A run is already pending or in progress.";
+            SuccessMessage = null;
+            return RedirectToPage(new { PageNumber });
+        }
+
+        if (string.Equals(RunMode, LiveRunMode, StringComparison.Ordinal) && !realSyncSettings.Enabled)
+        {
+            ErrorMessage = "Live provisioning is disabled for this environment. Queue a dry run instead.";
             SuccessMessage = null;
             return RedirectToPage(new { PageNumber });
         }
@@ -115,6 +127,13 @@ public sealed class SyncModel(
         if (await runQueueStore.HasPendingOrActiveRunAsync(cancellationToken))
         {
             ErrorMessage = "A run is already pending or in progress.";
+            SuccessMessage = null;
+            return RedirectToPage(new { PageNumber });
+        }
+
+        if (!realSyncSettings.Enabled)
+        {
+            ErrorMessage = "Real AD sync is disabled for this environment.";
             SuccessMessage = null;
             return RedirectToPage(new { PageNumber });
         }
@@ -162,7 +181,9 @@ public sealed class SyncModel(
             cancellationToken);
 
         SuccessMessage = Schedule.Enabled
-            ? $"Recurring sync enabled every {Schedule.IntervalMinutes} minutes."
+            ? ScheduledRunsAreDryRunOnly
+                ? $"Recurring dry-run sync enabled every {Schedule.IntervalMinutes} minutes."
+                : $"Recurring sync enabled every {Schedule.IntervalMinutes} minutes."
             : "Recurring sync disabled.";
 
         await LoadSnapshotAsync(cancellationToken);
