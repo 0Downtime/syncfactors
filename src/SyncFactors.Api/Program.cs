@@ -735,6 +735,9 @@ static void LogConfiguredEndpoints(WebApplication app)
     var authOptions = app.Services.GetRequiredService<Microsoft.Extensions.Options.IOptions<LocalAuthOptions>>().Value;
     var activeDirectoryPort = ResolveActiveDirectoryPort(config.Ad);
     var usesGlobalCatalog = activeDirectoryPort is 3268 or 3269;
+    app.Logger.LogInformation(
+        "[AD-TRANSPORT] Active Directory startup transport: {ActiveDirectoryStartupTransport}.",
+        ActiveDirectoryTransportModeFormatter.DescribeStartupTransport(config.Ad.Transport.Mode));
     app.Logger.LogWarning("========== AD ENDPOINT DIAGNOSTIC ==========");
     app.Logger.LogWarning(
         "[AD-ENDPOINT] ActiveDirectoryServer={ActiveDirectoryServer} ActiveDirectoryPort={ActiveDirectoryPort} ActiveDirectoryAccount={ActiveDirectoryAccount} ActiveDirectorySimpleBindPrincipalFormat={ActiveDirectorySimpleBindPrincipalFormat} ActiveDirectoryTransport={ActiveDirectoryTransport} ActiveDirectoryUsesGlobalCatalog={ActiveDirectoryUsesGlobalCatalog} SuccessFactorsBaseUrl={SuccessFactorsBaseUrl} SuccessFactorsAccount={SuccessFactorsAccount} AuthMode={AuthMode}",
