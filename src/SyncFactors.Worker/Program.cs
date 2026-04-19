@@ -80,8 +80,10 @@ builder.Services.AddHttpClient<SuccessFactorsWorkerSource>()
         AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate
     });
 builder.Services.AddTransient<IWorkerSource>(serviceProvider => serviceProvider.GetRequiredService<SuccessFactorsWorkerSource>());
-builder.Services.AddTransient<IDirectoryGateway, ActiveDirectoryGateway>();
-builder.Services.AddTransient<IDirectoryCommandGateway, ActiveDirectoryCommandGateway>();
+builder.Services.AddTransient<ActiveDirectoryGateway>();
+builder.Services.AddTransient<IDirectoryGateway>(serviceProvider => serviceProvider.GetRequiredService<ActiveDirectoryGateway>());
+builder.Services.AddTransient<ActiveDirectoryCommandGateway>();
+builder.Services.AddTransient<IDirectoryCommandGateway>(serviceProvider => serviceProvider.GetRequiredService<ActiveDirectoryCommandGateway>());
 builder.Services.AddTransient<IEmailSender, SmtpEmailSender>();
 builder.Services.AddSingleton<IAttributeMappingProvider, AttributeMappingProvider>();
 builder.Services.AddSingleton<IIdentityMatcher, IdentityMatcher>();
