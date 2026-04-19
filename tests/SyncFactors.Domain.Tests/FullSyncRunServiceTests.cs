@@ -311,6 +311,7 @@ public sealed class FullSyncRunServiceTests
             directoryGateway,
             fullRunRepository,
             new CapturingRuntimeStatusStore(),
+            new RealSyncSettings(),
             new WorkerRunSettings(MaxCreatesPerRun: 10, MaxDisablesPerRun: 10),
             CreateLifecycleSettings(),
             NullLogger<FullSyncRunService>.Instance);
