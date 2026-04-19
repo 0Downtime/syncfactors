@@ -278,6 +278,61 @@ public sealed class FullSyncRunServiceTests
     }
 
     [Fact]
+    public async Task LaunchAsync_DryRun_MatchesPreviewForBucketOperationsAndChangedAttributes()
+    {
+        var worker = CreateWorker("10001", managerId: "90001");
+        var workerSource = new StubWorkerSource([worker]);
+        var directoryGateway = new StubDirectoryGateway(managerDistinguishedName: "CN=Manager,OU=LabUsers,DC=example,DC=com");
+        var planningService = new WorkerPlanningService(
+            directoryGateway,
+            new IdentityMatcher(),
+            CreateLifecyclePolicy(),
+            new StubAttributeDiffService(),
+            new StubAttributeMappingProvider(),
+            NullLogger<WorkerPlanningService>.Instance);
+
+        var previewRepository = new CapturingRunRepository();
+        var previewPlanner = new WorkerPreviewPlanner(
+            workerSource,
+            planningService,
+            new StubAttributeMappingProvider(),
+            new StubWorkerPreviewLogWriter(),
+            previewRepository,
+            NullLogger<WorkerPreviewPlanner>.Instance);
+
+        var preview = await previewPlanner.PreviewAsync(worker.WorkerId, CancellationToken.None);
+
+        var fullRunRepository = new CapturingRunRepository();
+        var service = new FullSyncRunService(
+            workerSource,
+            planningService,
+            new DirectoryMutationCommandBuilder(),
+            new CapturingDirectoryCommandGateway(),
+            directoryGateway,
+            fullRunRepository,
+            new CapturingRuntimeStatusStore(),
+            new RealSyncSettings(),
+            new WorkerRunSettings(MaxCreatesPerRun: 10, MaxDisablesPerRun: 10),
+            CreateLifecycleSettings(),
+            NullLogger<FullSyncRunService>.Instance);
+
+        await service.LaunchAsync(
+            new LaunchFullRunRequest(DryRun: true, AcknowledgeRealSync: false),
+            CancellationToken.None);
+
+        var previewEntry = previewRepository.ReplacedEntries.Single().entries.Single();
+        var fullRunEntry = fullRunRepository.ReplacedEntries.Single().entries.Single();
+
+        Assert.Equal(preview.Buckets.Single(), fullRunEntry.Bucket);
+        Assert.Equal(
+            previewEntry.Item.GetProperty("operations").EnumerateArray().Select(item => item.GetRawText()).ToArray(),
+            fullRunEntry.Item.GetProperty("operations").EnumerateArray().Select(item => item.GetRawText()).ToArray());
+        Assert.Equal(
+            previewEntry.Item.GetProperty("changedAttributeDetails").EnumerateArray().Select(item => item.GetRawText()).ToArray(),
+            fullRunEntry.Item.GetProperty("changedAttributeDetails").EnumerateArray().Select(item => item.GetRawText()).ToArray());
+    }
+
+    [Fact]
     public async Task LaunchAsync_TerminatedWorkerWithoutExistingUser_UsingConfiguredSuccessFactorsPath_DoesNotExecuteCreate()
     {
         var worker = new WorkerSnapshot(
@@ -671,6 +726,22 @@ public sealed class FullSyncRunServiceTests
     private sealed class StubAttributeMappingProvider : IAttributeMappingProvider
     {
         public IReadOnlyList<AttributeMapping> GetEnabledMappings() => [];
+    }
+
+    private sealed class StubWorkerPreviewLogWriter : IWorkerPreviewLogWriter
+    {
+        public string CreateLogPath(string workerId, DateTimeOffset startedAt)
+        {
+            return $"/tmp/{workerId}-{startedAt:yyyyMMddHHmmss}.log";
+        }
+
+        public Task AppendAsync(string logPath, WorkerPreviewLogEntry entry, CancellationToken cancellationToken)
+        {
+            _ = logPath;
+            _ = entry;
+            _ = cancellationToken;
+            return Task.CompletedTask;
+        }
     }
 
     private sealed class RequiredGivenNameMappingProvider : IAttributeMappingProvider

@@ -35,16 +35,54 @@ public sealed class SuccessFactorsWorkerSource(
         }
 
         var config = configLoader.GetSyncConfig();
-        var canonicalWorker = await TryResolveWorkerAsync(config, config.SuccessFactors.Query, workerId, cancellationToken);
+        var previewQuery = config.SuccessFactors.PreviewQuery;
+        var primaryQuery = config.SuccessFactors.Query;
+        WorkerSnapshot? previewWorker = null;
+
+        if (previewQuery is not null)
+        {
+            previewWorker = await TryResolveWorkerAsync(config, previewQuery, workerId, cancellationToken);
+            if (previewWorker is not null)
+            {
+                previewWorker = NormalizeWorkerIdentity(previewWorker, previewQuery.IdentityField);
+            }
+        }
+
+        var canonicalWorker = await TryResolveWorkerAsync(config, primaryQuery, workerId, cancellationToken);
+        if (canonicalWorker is null && previewWorker is not null)
+        {
+            var canonicalIdentity = ResolveIdentityValue(primaryQuery.IdentityField, previewWorker);
+            if (!string.IsNullOrWhiteSpace(canonicalIdentity) &&
+                !string.Equals(canonicalIdentity, workerId, StringComparison.Ordinal))
+            {
+                canonicalWorker = await TryResolveWorkerAsync(
+                    config,
+                    primaryQuery,
+                    canonicalIdentity,
+                    cancellationToken,
+                    fallbackWorkerId: previewWorker.WorkerId);
+            }
+        }
+
         var worker = canonicalWorker is null
             ? null
-            : await EnrichWorkerAsync(config, canonicalWorker, previewLookup: null, cancellationToken);
+            : previewWorker is null
+                ? await EnrichWorkerAsync(config, canonicalWorker, previewLookup: null, cancellationToken)
+                : MergeWorkerSnapshots(canonicalWorker, previewWorker);
 
         if (worker is not null)
         {
-            worker = NormalizeWorkerIdentity(worker, config.SuccessFactors.Query.IdentityField);
+            worker = previewWorker is null
+                ? NormalizeWorkerIdentity(worker, primaryQuery.IdentityField)
+                : NormalizeWorkerIdentity(worker, previewQuery?.IdentityField ?? primaryQuery.IdentityField);
             logger.LogInformation("Resolved worker from SuccessFactors.");
             return worker;
+        }
+
+        if (previewWorker is not null)
+        {
+            logger.LogWarning("Preview query resolved worker, but primary SuccessFactors query did not. Returning preview-only worker snapshot.");
+            return previewWorker;
         }
 
         logger.LogWarning("No worker was returned from SuccessFactors. Falling back to scaffold worker source.");
@@ -1573,7 +1611,7 @@ public sealed class SuccessFactorsWorkerSource(
             ["firstDateWorked"] = GetString(employment, "firstDateWorked"),
             ["lastDateWorked"] = GetString(employment, "lastDateWorked"),
             ["isContingentWorker"] = GetString(employment, "isContingentWorker"),
-            ["userId"] = GetString(employment, "userId") ?? GetString(worker, "userId"),
+            ["userId"] = GetString(userNav, "userId") ?? GetString(employment, "userId") ?? GetString(worker, "userId"),
             ["addressLine1"] = GetString(userNav, "addressLine1"),
             ["addressLine2"] = GetString(userNav, "addressLine2"),
             ["addressLine3"] = GetString(userNav, "addressLine3"),
