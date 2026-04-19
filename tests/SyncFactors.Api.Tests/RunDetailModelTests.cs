@@ -284,6 +284,119 @@ public sealed class RunDetailModelTests
     }
 
     [Fact]
+    public void GetManualReviewDiagnosticSections_GroupsMissingRequiredInputs()
+    {
+        var model = new DetailModel(new RunEntriesQueryService(new StubRunRepository()));
+        var entry = new RunEntry(
+            EntryId: "entry-manual-missing",
+            RunId: "bulk-1",
+            ArtifactType: "BulkRun",
+            Mode: "BulkSync",
+            Bucket: "manualReview",
+            BucketLabel: "Manual Review",
+            WorkerId: "45086",
+            SamAccountName: "45086",
+            Reason: "Required mapping for employeeType has no value.",
+            ReviewCategory: "RequiredMapping",
+            ReviewCaseType: "MissingRequiredSourceAttribute",
+            StartedAt: DateTimeOffset.UtcNow,
+            ChangeCount: 1,
+            OperationSummary: null,
+            FailureSummary: null,
+            PrimarySummary: null,
+            TopChangedAttributes: [],
+            DiffRows: [],
+            Item: JsonDocument.Parse(
+                """
+                {
+                  "workerId": "45086",
+                  "samAccountName": "45086",
+                  "reviewCategory": "RequiredMapping",
+                  "reviewCaseType": "MissingRequiredSourceAttribute",
+                  "targetOu": "OU=Users,DC=example,DC=com",
+                  "currentOu": "OU=Prehire,DC=example,DC=com",
+                  "managerId": "90001",
+                  "managerDistinguishedName": "CN=90001,OU=Users,DC=example,DC=com",
+                  "proposedEmailAddress": "45086@example.com",
+                  "matchedExistingUser": true,
+                  "currentEnabled": false,
+                  "proposedEnable": true,
+                  "missingSourceAttributes": [
+                    {
+                      "attribute": "employeeType",
+                      "reason": "Required mapping for employeeType has no value."
+                    }
+                  ],
+                  "changedAttributeDetails": [
+                    {
+                      "targetAttribute": "department",
+                      "sourceField": "department",
+                      "currentAdValue": "Old",
+                      "proposedValue": "New"
+                    }
+                  ]
+                }
+                """).RootElement.Clone());
+
+        var sections = model.GetManualReviewDiagnosticSections(entry);
+
+        Assert.Equal(3, sections.Count);
+        Assert.Equal("Manual Review Decision", sections[0].Title);
+        Assert.Contains(sections[0].Items, item => item.Label == "Review Category" && item.Value == "RequiredMapping");
+        Assert.Contains(sections[0].Items, item => item.Label == "Proposed Email" && item.Value == "45086@example.com");
+        Assert.Equal("Missing Required Inputs", sections[1].Title);
+        Assert.Contains(sections[1].Items, item => item.Label == "employeeType" && item.Value == "Required mapping for employeeType has no value.");
+        Assert.Equal("Planned Attribute Changes", sections[2].Title);
+        Assert.Contains(sections[2].Items, item => item.Label == "department" && item.Value == "Old -> New (source: department)");
+    }
+
+    [Fact]
+    public void GetManualReviewDiagnosticSections_GroupsAmbiguousDirectoryMatches()
+    {
+        var model = new DetailModel(new RunEntriesQueryService(new StubRunRepository()));
+        var entry = new RunEntry(
+            EntryId: "entry-manual-ambiguous",
+            RunId: "bulk-1",
+            ArtifactType: "BulkRun",
+            Mode: "BulkSync",
+            Bucket: "manualReview",
+            BucketLabel: "Manual Review",
+            WorkerId: "10000",
+            SamAccountName: null,
+            Reason: "Ambiguous AD manager identity lookup for '10000' via employeeID. Matched entries: CN=10000,OU=Users,DC=example,DC=com, CN=user.10000,OU=Users,DC=example,DC=com.",
+            ReviewCategory: "DirectoryIdentity",
+            ReviewCaseType: "AmbiguousManagerIdentity",
+            StartedAt: DateTimeOffset.UtcNow,
+            ChangeCount: 0,
+            OperationSummary: null,
+            FailureSummary: null,
+            PrimarySummary: null,
+            TopChangedAttributes: [],
+            DiffRows: [],
+            Item: JsonDocument.Parse(
+                """
+                {
+                  "workerId": "10000",
+                  "reviewCategory": "DirectoryIdentity",
+                  "reviewCaseType": "AmbiguousManagerIdentity",
+                  "targetOu": "OU=Users,DC=example,DC=com",
+                  "managerId": "10000"
+                }
+                """).RootElement.Clone());
+
+        var sections = model.GetManualReviewDiagnosticSections(entry);
+
+        Assert.Equal(2, sections.Count);
+        Assert.Equal("Manual Review Decision", sections[0].Title);
+        Assert.Contains(sections[0].Items, item => item.Label == "Review Case" && item.Value == "AmbiguousManagerIdentity");
+        Assert.Equal("Ambiguous AD Matches", sections[1].Title);
+        Assert.Contains(sections[1].Items, item => item.Label == "Lookup Kind" && item.Value == "manager identity");
+        Assert.Contains(sections[1].Items, item => item.Label == "Identity Attribute" && item.Value == "employeeID");
+        Assert.Contains(sections[1].Items, item => item.Label == "Matched Entry 1" && item.Value == "CN=10000,OU=Users,DC=example,DC=com");
+        Assert.Contains(sections[1].Items, item => item.Label == "Matched Entry 2" && item.Value == "CN=user.10000,OU=Users,DC=example,DC=com");
+    }
+
+    [Fact]
     public void GetPrimarySummaryDisplay_SuppressesDuplicateFailureSummary()
     {
         var model = new DetailModel(new RunEntriesQueryService(new StubRunRepository()));

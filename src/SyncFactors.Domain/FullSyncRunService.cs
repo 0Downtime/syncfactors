@@ -347,15 +347,25 @@ public sealed class FullSyncRunService(
             {
                 workerId = plan.Worker.WorkerId,
                 samAccountName = plan.Identity.SamAccountName,
+                reviewCategory = plan.ReviewCategory,
+                reviewCaseType = plan.ReviewCaseType,
                 targetOu = plan.TargetOu,
+                currentDistinguishedName = plan.DirectoryUser.DistinguishedName,
                 emplStatus = ResolveSourceAttribute(plan.Worker.Attributes, "emplStatus"),
                 endDate = ResolveSourceAttribute(plan.Worker.Attributes, "endDate"),
                 currentOu = plan.CurrentOu,
+                managerId = plan.Worker.Attributes.TryGetValue("managerId", out var managerId) ? managerId : null,
                 managerDistinguishedName = plan.ManagerDistinguishedName,
                 reason = message,
                 matchedExistingUser = plan.Identity.MatchedExistingUser,
                 proposedEnable = plan.TargetEnabled,
                 currentEnabled = plan.CurrentEnabled,
+                proposedEmailAddress = plan.ProposedEmailAddress,
+                missingSourceAttributes = plan.MissingSourceAttributes.Select(attribute => new
+                {
+                    attribute = attribute.Attribute,
+                    reason = attribute.Reason
+                }).ToArray(),
                 operations = plan.Operations.Select(operation => new
                 {
                     kind = operation.Kind,
