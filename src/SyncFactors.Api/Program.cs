@@ -88,6 +88,11 @@ builder.Services.AddSingleton(serviceProvider =>
 builder.Services.AddSingleton(serviceProvider =>
 {
     var config = serviceProvider.GetRequiredService<SyncFactorsConfigurationLoader>().GetSyncConfig();
+    return new RealSyncSettings(config.Sync.RealSyncEnabled);
+});
+builder.Services.AddSingleton(serviceProvider =>
+{
+    var config = serviceProvider.GetRequiredService<SyncFactorsConfigurationLoader>().GetSyncConfig();
     return new GraveyardDeletionQueueSettings(
         RetentionDays: config.Sync.DeletionRetentionDays,
         AutoDeleteEnabled: config.Sync.AutoDeleteFromGraveyard);
@@ -122,8 +127,22 @@ builder.Services.AddHttpClient<IDependencyHealthService, DependencyHealthService
         AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate
     });
 builder.Services.AddTransient<IWorkerSource>(serviceProvider => serviceProvider.GetRequiredService<SuccessFactorsWorkerSource>());
-builder.Services.AddTransient<IDirectoryGateway, ActiveDirectoryGateway>();
-builder.Services.AddTransient<IDirectoryCommandGateway, ActiveDirectoryCommandGateway>();
+builder.Services.AddTransient<IDirectoryGateway>(serviceProvider =>
+{
+    var config = serviceProvider.GetRequiredService<SyncFactorsConfigurationLoader>().GetSyncConfig();
+    var runProfile = Environment.GetEnvironmentVariable("SYNCFACTORS_RUN_PROFILE");
+    return SyncFactors.Api.DirectoryServiceRuntimeSelector.UseScaffoldDirectoryServices(config, runProfile)
+        ? serviceProvider.GetRequiredService<ScaffoldDirectoryGateway>()
+        : serviceProvider.GetRequiredService<ActiveDirectoryGateway>();
+});
+builder.Services.AddTransient<IDirectoryCommandGateway>(serviceProvider =>
+{
+    var config = serviceProvider.GetRequiredService<SyncFactorsConfigurationLoader>().GetSyncConfig();
+    var runProfile = Environment.GetEnvironmentVariable("SYNCFACTORS_RUN_PROFILE");
+    return SyncFactors.Api.DirectoryServiceRuntimeSelector.UseScaffoldDirectoryServices(config, runProfile)
+        ? serviceProvider.GetRequiredService<ScaffoldDirectoryCommandGateway>()
+        : serviceProvider.GetRequiredService<ActiveDirectoryCommandGateway>();
+});
 builder.Services.AddSingleton<IAttributeMappingProvider, AttributeMappingProvider>();
 builder.Services.AddSingleton<IIdentityMatcher, IdentityMatcher>();
 builder.Services.AddSingleton<ILifecyclePolicy, LifecyclePolicy>();
@@ -550,9 +569,15 @@ operatorApi.MapPost("/runs/delete-all", async (
     DeleteAllUsersRequest request,
     ClaimsPrincipal user,
     IRunQueueStore queueStore,
+    RealSyncSettings realSyncSettings,
     ISecurityAuditService audit,
     CancellationToken cancellationToken) =>
 {
+    if (!realSyncSettings.Enabled)
+    {
+        return Results.BadRequest(new { error = "Real AD sync is disabled for this environment." });
+    }
+
     if (await queueStore.HasPendingOrActiveRunAsync(cancellationToken))
     {
         return Results.Conflict(new { error = "A run is already pending or in progress." });

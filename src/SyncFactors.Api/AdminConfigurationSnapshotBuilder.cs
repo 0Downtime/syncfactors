@@ -410,6 +410,7 @@ public sealed class AdminConfigurationSnapshotBuilder(
                         CreateEntry("Enable before start days", sync.Sync.EnableBeforeStartDays.ToString(), SyncConfigSource),
                         CreateEntry("Deletion retention days", sync.Sync.DeletionRetentionDays.ToString(), SyncConfigSource),
                         CreateEntry("Max degree of parallelism", sync.Sync.MaxDegreeOfParallelism.ToString(), SyncConfigSource),
+                        CreateEntry("Real sync enabled", FormatEnabledDisabled(sync.Sync.RealSyncEnabled), SyncConfigSource),
                         CreateEntry("Auto-delete from graveyard", FormatEnabledDisabled(sync.Sync.AutoDeleteFromGraveyard), SyncConfigSource),
                         CreateEntry("Leave status values", FormatCollection(sync.Sync.LeaveStatusValues), SyncConfigSource)
                     ]),

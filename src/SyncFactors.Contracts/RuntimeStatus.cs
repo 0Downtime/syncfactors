@@ -193,6 +193,9 @@ public sealed record UpdateSyncScheduleRequest(
     bool Enabled,
     int IntervalMinutes);
 
+public sealed record RealSyncSettings(
+    bool Enabled = true);
+
 public sealed record WorkerRunSettings(
     int MaxCreatesPerRun,
     int MaxDisablesPerRun = int.MaxValue,

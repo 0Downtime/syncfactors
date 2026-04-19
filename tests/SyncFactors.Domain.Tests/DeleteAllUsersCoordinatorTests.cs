@@ -68,6 +68,28 @@ public sealed class DeleteAllUsersCoordinatorTests
     }
 
     [Fact]
+    public async Task ExecuteAsync_LiveRun_RejectsWhenRealSyncIsDisabled()
+    {
+        CapturingRunLifecycleService.Reset();
+        var coordinator = CreateCoordinator(
+            directoryGateway: new StubDirectoryGateway(new Dictionary<string, IReadOnlyList<DirectoryUserSnapshot>>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["OU=LabUsers,DC=example,DC=com"] =
+                [
+                    CreateDirectoryUser("10001", "lab10001", "OU=LabUsers,DC=example,DC=com")
+                ]
+            }),
+            commandGateway: new CapturingDirectoryCommandGateway(),
+            realSyncSettings: new RealSyncSettings(Enabled: false));
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => coordinator.ExecuteAsync(
+            new RunQueueRequest("req-live", "DeleteAllUsers", false, "DeleteAllUsers", "test", "Pending", DateTimeOffset.UtcNow, null, null, null, null),
+            CancellationToken.None));
+
+        Assert.Equal("Real AD sync is disabled for this environment.", exception.Message);
+    }
+
+    [Fact]
     public async Task ExecuteAsync_DeletionGuardrailExceeded_FailsRun()
     {
         CapturingRunLifecycleService.Reset();
@@ -95,7 +117,8 @@ public sealed class DeleteAllUsersCoordinatorTests
     private static DeleteAllUsersCoordinator CreateCoordinator(
         IDirectoryGateway directoryGateway,
         IDirectoryCommandGateway commandGateway,
-        WorkerRunSettings? workerRunSettings = null)
+        WorkerRunSettings? workerRunSettings = null,
+        RealSyncSettings? realSyncSettings = null)
     {
         return new DeleteAllUsersCoordinator(
             new StubRunQueueStore(),
@@ -111,6 +134,7 @@ public sealed class DeleteAllUsersCoordinatorTests
                 LeaveOu: "OU=Leave,DC=example,DC=com",
                 LeaveStatusValues: [],
                 DirectoryIdentityAttribute: "employeeID"),
+            realSyncSettings ?? new RealSyncSettings(),
             workerRunSettings ?? new WorkerRunSettings(MaxCreatesPerRun: 10, MaxDisablesPerRun: 10, MaxDeletionsPerRun: 10),
             NullLogger<DeleteAllUsersCoordinator>.Instance,
             TimeProvider.System);

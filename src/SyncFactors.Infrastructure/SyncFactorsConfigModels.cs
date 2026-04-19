@@ -88,6 +88,7 @@ public sealed record SyncPolicyConfig(
     int EnableBeforeStartDays,
     int DeletionRetentionDays,
     int MaxDegreeOfParallelism = 2,
+    bool RealSyncEnabled = true,
     bool AutoDeleteFromGraveyard = false,
     IReadOnlyList<string>? LeaveStatusValues = null);
 

@@ -102,6 +102,10 @@
     <article class="panel sync-ad-hoc-panel">
         <h2>Ad Hoc Run</h2>
         <p class="muted">Full-source sync only. Dry-run is the default and safest option.</p>
+        @if (!Model.RealSyncEnabled)
+        {
+            <p class="callout warn">Live provisioning is disabled in this environment. Ad hoc runs are limited to dry run.</p>
+        }
         @if (Model.HasPendingOrActiveRun)
         {
             <p class="callout warn">A run is already pending or active. You can request cancellation and the worker will stop gracefully.</p>
@@ -111,7 +115,7 @@
                 <span>Run type</span>
                 <select asp-for="RunMode" disabled="@Model.HasPendingOrActiveRun">
                     <option value="DryRun">Dry run</option>
-                    <option value="LiveRun">Live provisioning</option>
+                    <option value="LiveRun" disabled="@(!Model.RealSyncEnabled)">Live provisioning</option>
                 </select>
             </label>
             <div class="filter-actions">
@@ -125,9 +129,14 @@
 
     <article class="panel sync-schedule-panel">
         <h2>Recurring Schedule</h2>
+        @if (Model.ScheduledRunsAreDryRunOnly)
+        {
+            <p class="callout warn">Scheduled runs will queue as dry runs while live provisioning is disabled in this environment.</p>
+        }
         <dl class="kv">
             <div><dt>Enabled</dt><dd>@(Model.Schedule.Enabled ? "Yes" : "No")</dd></div>
             <div><dt>Interval</dt><dd>@Model.Schedule.IntervalMinutes minutes</dd></div>
+            <div><dt>Scheduled mode</dt><dd>@(Model.ScheduledRunsAreDryRunOnly ? "Dry run only" : "Live sync")</dd></div>
             <div><dt>Next Run</dt><dd>@SyncFactors.Api.UiDateTimeFormatter.FormatDateTime(Model.Schedule.NextRunAt, "Not scheduled")</dd></div>
             <div><dt>Last Scheduled</dt><dd>@SyncFactors.Api.UiDateTimeFormatter.FormatDateTime(Model.Schedule.LastScheduledRunAt, "Never")</dd></div>
             <div><dt>Last Enqueue Attempt</dt><dd>@SyncFactors.Api.UiDateTimeFormatter.FormatDateTime(Model.Schedule.LastEnqueueAttemptAt, "Never")</dd></div>

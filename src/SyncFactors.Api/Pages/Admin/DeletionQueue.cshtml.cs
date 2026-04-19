@@ -155,5 +155,5 @@ public sealed class DeletionQueueModel(
         value.Contains(filter, StringComparison.OrdinalIgnoreCase);
 
     private string GetActingUserId() =>
-        User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.Identity?.Name ?? "unknown";
+        User.Identity?.Name ?? User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "unknown";
 }
