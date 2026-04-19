@@ -656,13 +656,58 @@ public sealed class ActiveDirectoryCommandGatewayTests
         var method = typeof(ActiveDirectoryCommandGateway).GetMethod("GenerateRandomPassword", BindingFlags.NonPublic | BindingFlags.Static);
         Assert.NotNull(method);
 
-        var password = Assert.IsType<string>(method!.Invoke(null, null));
+        var password = Assert.IsType<string>(method!.Invoke(null, [20]));
 
         Assert.Equal(20, password.Length);
         Assert.Contains(password, char.IsUpper);
         Assert.Contains(password, char.IsLower);
         Assert.Contains(password, char.IsDigit);
         Assert.Contains(password, character => "!@#$%^&*-_=+?".Contains(character, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void GenerateRandomPassword_AllowsExplicitFallbackLength()
+    {
+        var method = typeof(ActiveDirectoryCommandGateway).GetMethod("GenerateRandomPassword", BindingFlags.NonPublic | BindingFlags.Static);
+        Assert.NotNull(method);
+
+        var password = Assert.IsType<string>(method!.Invoke(null, [14]));
+
+        Assert.Equal(14, password.Length);
+        Assert.Contains(password, char.IsUpper);
+        Assert.Contains(password, char.IsLower);
+        Assert.Contains(password, char.IsDigit);
+        Assert.Contains(password, character => "!@#$%^&*-_=+?".Contains(character, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void IsPasswordRestrictionFailure_ReturnsTrueForDirectoryOperationException()
+    {
+        var method = typeof(ActiveDirectoryCommandGateway).GetMethod("IsPasswordRestrictionFailure", BindingFlags.NonPublic | BindingFlags.Static);
+        Assert.NotNull(method);
+
+        var exception = new DirectoryOperationException(
+            "The server cannot handle directory requests. 0000052D: SvcErr: DSID-031A126C, problem 5003 (WILL_NOT_PERFORM), data 0");
+
+        var result = Assert.IsType<bool>(method!.Invoke(null, [exception]));
+
+        Assert.True(result);
+    }
+
+    [Fact]
+    public void IsPasswordRestrictionFailure_ReturnsTrueForLdapServerErrorMessage()
+    {
+        var method = typeof(ActiveDirectoryCommandGateway).GetMethod("IsPasswordRestrictionFailure", BindingFlags.NonPublic | BindingFlags.Static);
+        Assert.NotNull(method);
+
+        var exception = new LdapException(
+            53,
+            "The server cannot handle directory requests.",
+            "0000052D: SvcErr: DSID-031A126C, problem 5003 (WILL_NOT_PERFORM), data 0");
+
+        var result = Assert.IsType<bool>(method!.Invoke(null, [exception]));
+
+        Assert.True(result);
     }
 
     [Fact]

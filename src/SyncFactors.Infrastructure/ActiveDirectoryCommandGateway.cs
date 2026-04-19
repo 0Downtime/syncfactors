@@ -19,10 +19,12 @@ public sealed class ActiveDirectoryCommandGateway(
     private const int AccountDisabledFlag = 0x0002;
     private const int DisabledNormalAccountControl = NormalAccountControl | AccountDisabledFlag;
     private const int RandomPasswordLength = 20;
+    private const int PasswordRestrictionFallbackLength = 14;
     private const string PasswordUppercaseCharacters = "ABCDEFGHJKLMNPQRSTUVWXYZ";
     private const string PasswordLowercaseCharacters = "abcdefghijkmnopqrstuvwxyz";
     private const string PasswordDigitCharacters = "23456789";
     private const string PasswordSpecialCharacters = "!@#$%^&*-_=+?";
+    private const string PasswordRestrictionErrorCode = "0000052D";
 
     private static readonly IReadOnlyDictionary<string, string> AttributeAliases =
         new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
@@ -499,7 +501,28 @@ public sealed class ActiveDirectoryCommandGateway(
             : currentValue | AccountDisabledFlag;
         var request = new ModifyRequest(distinguishedName);
         request.Modifications.Add(BuildReplaceModification("userAccountControl", targetValue.ToString()));
-        ExecuteModify(connection, request, logger, enabled ? "enable user modify request" : "disable user modify request", ("WorkerId", command.WorkerId));
+
+        try
+        {
+            ExecuteModify(connection, request, logger, enabled ? "enable user modify request" : "disable user modify request", ("WorkerId", command.WorkerId));
+        }
+        catch (Exception ex) when (enabled && IsPasswordRestrictionFailure(ex))
+        {
+            if (!SupportsPasswordProvisioningTransport(config.Transport.Mode))
+            {
+                throw;
+            }
+
+            logger.LogWarning(
+                ex,
+                "AD enable failed due to password policy. Resetting a compliant password before retrying enable. WorkerId={WorkerId} SamAccountName={SamAccountName} DistinguishedName={DistinguishedName}",
+                command.WorkerId,
+                command.SamAccountName,
+                distinguishedName);
+            SetPassword(connection, distinguishedName, GenerateRandomPassword(PasswordRestrictionFallbackLength), config, logger, command.WorkerId, config.Transport.Mode);
+            ExecuteModify(connection, request, logger, "enable user modify request after password reset", ("WorkerId", command.WorkerId));
+        }
+
         return new DirectoryCommandResult(true, command.Action, command.SamAccountName, distinguishedName, enabled ? $"Enabled AD user {command.SamAccountName}." : $"Disabled AD user {command.SamAccountName}.", null);
     }
 
@@ -1320,13 +1343,35 @@ public sealed class ActiveDirectoryCommandGateway(
                string.Equals(effectiveTransport, "starttls", StringComparison.OrdinalIgnoreCase);
     }
 
+    private static bool IsPasswordRestrictionFailure(Exception exception)
+    {
+        return exception switch
+        {
+            LdapException ldapException => ContainsPasswordRestrictionCode(ldapException.Message) ||
+                                           ContainsPasswordRestrictionCode(ldapException.ServerErrorMessage),
+            DirectoryOperationException directoryOperationException => ContainsPasswordRestrictionCode(directoryOperationException.Message),
+            _ => false
+        };
+    }
+
+    private static bool ContainsPasswordRestrictionCode(string? value)
+    {
+        return !string.IsNullOrWhiteSpace(value) &&
+               value.Contains(PasswordRestrictionErrorCode, StringComparison.OrdinalIgnoreCase);
+    }
+
     private static byte[] EncodeUnicodePassword(string password)
     {
         return Encoding.Unicode.GetBytes($"\"{password}\"");
     }
 
-    private static string GenerateRandomPassword()
+    private static string GenerateRandomPassword(int length = RandomPasswordLength)
     {
+        if (length < 4)
+        {
+            throw new ArgumentOutOfRangeException(nameof(length), "Password length must be at least 4 to satisfy complexity requirements.");
+        }
+
         var requiredCharacters = new[]
         {
             PasswordUppercaseCharacters[RandomNumberGenerator.GetInt32(PasswordUppercaseCharacters.Length)],
@@ -1335,7 +1380,7 @@ public sealed class ActiveDirectoryCommandGateway(
             PasswordSpecialCharacters[RandomNumberGenerator.GetInt32(PasswordSpecialCharacters.Length)]
         };
         var allCharacters = PasswordUppercaseCharacters + PasswordLowercaseCharacters + PasswordDigitCharacters + PasswordSpecialCharacters;
-        var passwordCharacters = new char[RandomPasswordLength];
+        var passwordCharacters = new char[length];
 
         for (var index = 0; index < requiredCharacters.Length; index++)
         {
