@@ -96,8 +96,19 @@ public sealed class AdminDeletionQueueModelTests
         Assert.IsType<RedirectToPageResult>(result);
         Assert.Equal("10001", store.LastWorkerId);
         Assert.True(store.LastIsOnHold);
-        Assert.Equal("admin-1", store.LastActingUserId);
+        Assert.Equal("admin", store.LastActingUserId);
         Assert.Equal("Placed a deletion hold for worker 10001.", model.SuccessMessage);
+    }
+
+    [Fact]
+    public async Task OnPostPlaceHoldAsync_PrefersUsernameOverOpaqueNameIdentifier()
+    {
+        var store = new CapturingRetentionStore([CreateRecord("10001", false)]);
+        var model = CreateModel(store, actingUserId: "local-opaque-id", username: "codexadmin");
+
+        await model.OnPostPlaceHoldAsync("10001", CancellationToken.None);
+
+        Assert.Equal("codexadmin", store.LastActingUserId);
     }
 
     [Fact]
@@ -114,7 +125,10 @@ public sealed class AdminDeletionQueueModelTests
         Assert.Equal("Removed the deletion hold for worker 10001.", model.SuccessMessage);
     }
 
-    private static DeletionQueueModel CreateModel(CapturingRetentionStore store, string actingUserId = "admin-1")
+    private static DeletionQueueModel CreateModel(
+        CapturingRetentionStore store,
+        string actingUserId = "admin-1",
+        string username = "admin")
     {
         var workerIds = recordsFromStore(store)
             .Select(record => record.WorkerId)
@@ -144,7 +158,7 @@ public sealed class AdminDeletionQueueModelTests
                     User = new ClaimsPrincipal(new ClaimsIdentity(
                     [
                         new Claim(ClaimTypes.NameIdentifier, actingUserId),
-                        new Claim(ClaimTypes.Name, "admin"),
+                        new Claim(ClaimTypes.Name, username),
                         new Claim(ClaimTypes.Role, "Admin")
                     ], "Cookies"))
                 }

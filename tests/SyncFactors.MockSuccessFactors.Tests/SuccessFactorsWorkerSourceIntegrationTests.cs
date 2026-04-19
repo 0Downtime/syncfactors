@@ -2137,6 +2137,12 @@ public sealed class SuccessFactorsWorkerSourceIntegrationTests
             var filter = query.TryGetValue("$filter", out var filterValue) ? filterValue.ToString() : string.Empty;
 
             if (request.RequestUri.AbsolutePath.Equals("/odata/v2/PerPerson", StringComparison.OrdinalIgnoreCase) &&
+                filter.Contains("personIdExternal eq 'user.10001'", StringComparison.Ordinal))
+            {
+                return Task.FromResult(JsonResponse("""{"d":{"results":[]}}"""));
+            }
+
+            if (request.RequestUri.AbsolutePath.Equals("/odata/v2/PerPerson", StringComparison.OrdinalIgnoreCase) &&
                 filter.Contains("userId eq 'user.10001'", StringComparison.Ordinal))
             {
                 return Task.FromResult(JsonResponse("""{"d":{"results":[]}}"""));
