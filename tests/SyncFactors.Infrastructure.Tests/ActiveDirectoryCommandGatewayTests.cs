@@ -103,7 +103,7 @@ public sealed class ActiveDirectoryCommandGatewayTests
             new("employeeID", "45086")
         };
 
-        var details = Assert.IsType<string>(method!.Invoke(null, [command, "CN=45086,OU=Users,DC=example,DC=com", config, attributes, "CreateUser", null]));
+        var details = Assert.IsType<string>(method!.Invoke(null, [command, "CN=45086,OU=Users,DC=example,DC=com", config, attributes, "CreateUser", null, null]));
 
         Assert.Contains("Step=CreateUser", details, StringComparison.Ordinal);
         Assert.Contains("TargetOu=OU=Users,DC=example,DC=com", details, StringComparison.Ordinal);
@@ -112,8 +112,71 @@ public sealed class ActiveDirectoryCommandGatewayTests
         Assert.Contains("IdentityAttribute=employeeID", details, StringComparison.Ordinal);
         Assert.Contains("IdentityValue=45086", details, StringComparison.Ordinal);
         Assert.Contains("LicensingGroups=CN=M365-E3-Prestage,OU=Groups,DC=example,DC=com", details, StringComparison.Ordinal);
+        Assert.Contains("ExistingSamAccountName=(unset)", details, StringComparison.Ordinal);
+        Assert.Contains("ExistingDisplayName=(unset)", details, StringComparison.Ordinal);
+        Assert.Contains("ExistingDistinguishedName=(unset)", details, StringComparison.Ordinal);
         Assert.Contains("ManagerId=90001", details, StringComparison.Ordinal);
         Assert.Contains("ManagerDistinguishedName=(unset)", details, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuildCreateFailureDetails_IncludesExistingAccountContext()
+    {
+        var method = typeof(ActiveDirectoryCommandGateway).GetMethod("BuildCreateFailureDetails", BindingFlags.NonPublic | BindingFlags.Static);
+        Assert.NotNull(method);
+
+        var command = new DirectoryMutationCommand(
+            Action: "CreateUser",
+            WorkerId: "30008382",
+            ManagerId: "38256",
+            ManagerDistinguishedName: null,
+            SamAccountName: "30008382",
+            CommonName: "30008382",
+            UserPrincipalName: "david.ramsey@example.com",
+            Mail: "david.ramsey@example.com",
+            TargetOu: "OU=POWERSHELL,OU=SpireQA-Users,DC=spireQA,DC=biz",
+            DisplayName: "Ramsey, David",
+            CurrentDistinguishedName: null,
+            EnableAccount: true,
+            Operations: [new SyncFactors.Contracts.DirectoryOperation("CreateUser")],
+            Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["sAMAccountName"] = "30008382"
+            });
+        var config = new ActiveDirectoryConfig(
+            Server: "localhost",
+            Port: 636,
+            Username: "bind",
+            BindPassword: "secret",
+            IdentityAttribute: "sAMAccountName",
+            DefaultActiveOu: "OU=POWERSHELL,OU=SpireQA-Users,DC=spireQA,DC=biz",
+            PrehireOu: "OU=Prehire,OU=SpireQA-Users,DC=spireQA,DC=biz",
+            GraveyardOu: "OU=GRAVEYARD,OU=SpireQA-Users,DC=spireQA,DC=biz",
+            Transport: new ActiveDirectoryTransportConfig("ldaps", false, true, true, []),
+            IdentityPolicy: new ActiveDirectoryIdentityPolicyConfig(false));
+        var attributes = new List<DirectoryAttribute>
+        {
+            new("sAMAccountName", "30008382"),
+            new("userPrincipalName", "david.ramsey@example.com"),
+            new("mail", "david.ramsey@example.com")
+        };
+        var existingAccountType = typeof(ActiveDirectoryCommandGateway).GetNestedType("ExistingAccountDetails", BindingFlags.NonPublic);
+        Assert.NotNull(existingAccountType);
+        var existingAccount = Activator.CreateInstance(
+            existingAccountType!,
+            "30008382",
+            "Ramsey, David",
+            "CN=30008382,OU=POWERSHELL,OU=SpireQA-Users,DC=spireQA,DC=biz",
+            "david.ramsey@example.com",
+            "david.ramsey@example.com");
+
+        var details = Assert.IsType<string>(method!.Invoke(null, [command, "CN=30008382,OU=POWERSHELL,OU=SpireQA-Users,DC=spireQA,DC=biz", config, attributes, "CreateUser", null, existingAccount!]));
+
+        Assert.Contains("ExistingSamAccountName=30008382", details, StringComparison.Ordinal);
+        Assert.Contains("ExistingDisplayName=Ramsey, David", details, StringComparison.Ordinal);
+        Assert.Contains("ExistingDistinguishedName=CN=30008382,OU=POWERSHELL,OU=SpireQA-Users,DC=spireQA,DC=biz", details, StringComparison.Ordinal);
+        Assert.Contains("ExistingUserPrincipalName=david.ramsey@example.com", details, StringComparison.Ordinal);
+        Assert.Contains("ExistingMail=david.ramsey@example.com", details, StringComparison.Ordinal);
     }
 
     [Fact]

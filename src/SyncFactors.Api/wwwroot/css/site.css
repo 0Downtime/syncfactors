@@ -2535,6 +2535,12 @@ a:focus-visible {
   margin-bottom: 18px;
 }
 
+.failure-inspector-grid {
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  margin-top: 16px;
+  margin-bottom: 12px;
+}
+
 .preview-inspector-card,
 .sync-status-card {
   min-width: 0;
@@ -2554,6 +2560,10 @@ a:focus-visible {
 .preview-inspector-card[data-tone="good"],
 .sync-status-card[data-tone="good"] {
   border-color: color-mix(in srgb, var(--good) 30%, var(--line));
+}
+
+.failure-inspector-card[data-tone="neutral"] {
+  border-color: color-mix(in srgb, var(--line) 84%, transparent);
 }
 
 .metric-strip,
@@ -2644,6 +2654,10 @@ a:focus-visible {
 .sync-status-card h3,
 .preview-inspector-card h2 {
   margin: 0;
+}
+
+.failure-inspector-meta {
+  margin-top: 0;
 }
 
 .sync-status-badge {
