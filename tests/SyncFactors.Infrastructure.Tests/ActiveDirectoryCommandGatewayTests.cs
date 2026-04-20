@@ -1,5 +1,6 @@
 using System.DirectoryServices.Protocols;
 using System.Reflection;
+using Microsoft.Extensions.Logging.Abstractions;
 using SyncFactors.Contracts;
 using SyncFactors.Infrastructure;
 
@@ -7,6 +8,12 @@ namespace SyncFactors.Infrastructure.Tests;
 
 public sealed class ActiveDirectoryCommandGatewayTests
 {
+    private static T ThrowCreateConflictLookupFailure<T>()
+    {
+        throw new DirectoryOperationException(
+            "The object does not exist. 0000208D: NameErr: DSID-0310028D, problem 2001 (NO_OBJECT), data 0");
+    }
+
     [Fact]
     public void GetParentDistinguishedName_IgnoresEscapedCommaInCommonName()
     {
@@ -224,6 +231,69 @@ public sealed class ActiveDirectoryCommandGatewayTests
         Assert.Contains("UserPrincipalName=kimberly.turner@example.com", details, StringComparison.Ordinal);
         Assert.Contains("Mail=kimberly.turner@example.com", details, StringComparison.Ordinal);
         Assert.Contains("CreateAttributes=objectClass,cn,displayName,sAMAccountName,userPrincipalName,mail,userAccountControl", details, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void TryAugmentCreateFailureDetailsWithExistingAccountConflict_FallsBackWhenConflictLookupThrows()
+    {
+        var method = typeof(ActiveDirectoryCommandGateway).GetMethod("TryAugmentCreateFailureDetailsWithExistingAccountConflict", BindingFlags.NonPublic | BindingFlags.Static);
+        Assert.NotNull(method);
+
+        var command = new DirectoryMutationCommand(
+            Action: "CreateUser",
+            WorkerId: "45086",
+            ManagerId: "43114",
+            ManagerDistinguishedName: "CN=43114,OU=POWERSHELL,OU=ExampleQA-Users,DC=ExampleQA,DC=biz",
+            SamAccountName: "45086",
+            CommonName: "45086",
+            UserPrincipalName: "brian.oliver@example.com",
+            Mail: "brian.oliver@example.com",
+            TargetOu: "OU=POWERSHELL,OU=ExampleQA-Users,DC=ExampleQA,DC=biz",
+            DisplayName: "Oliver, Brian",
+            CurrentDistinguishedName: null,
+            EnableAccount: true,
+            Operations: [new SyncFactors.Contracts.DirectoryOperation("CreateUser")],
+            Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["sAMAccountName"] = "45086"
+            });
+        var config = new ActiveDirectoryConfig(
+            Server: "example-env-01.Exampleqa.biz",
+            Port: 636,
+            Username: "bind",
+            BindPassword: "secret",
+            IdentityAttribute: "sAMAccountName",
+            DefaultActiveOu: "OU=POWERSHELL,OU=ExampleQA-Users,DC=ExampleQA,DC=biz",
+            PrehireOu: "OU=Prehire,OU=ExampleQA-Users,DC=ExampleQA,DC=biz",
+            GraveyardOu: "OU=GRAVEYARD,OU=ExampleQA-Users,DC=ExampleQA,DC=biz",
+            Transport: new ActiveDirectoryTransportConfig("ldaps", false, true, true, []),
+            IdentityPolicy: new ActiveDirectoryIdentityPolicyConfig(false));
+        var attributes = new List<DirectoryAttribute>
+        {
+            new("objectClass", "top", "person", "organizationalPerson", "user"),
+            new("cn", "45086"),
+            new("displayName", "Oliver, Brian"),
+            new("sAMAccountName", "45086"),
+            new("userPrincipalName", "brian.oliver@example.com"),
+            new("mail", "brian.oliver@example.com"),
+            new("userAccountControl", "514")
+        };
+        var fallbackDetails =
+            "Step=CreateUserAddRequest WorkerId=45086 SamAccountName=45086 DistinguishedName=CN=45086,OU=POWERSHELL,OU=ExampleQA-Users,DC=ExampleQA,DC=biz " +
+            "TargetOu=OU=POWERSHELL,OU=ExampleQA-Users,DC=ExampleQA,DC=biz UserPrincipalName=brian.oliver@example.com Mail=brian.oliver@example.com";
+        var existingAccountType = typeof(ActiveDirectoryCommandGateway).GetNestedType("ExistingAccountDetails", BindingFlags.NonPublic);
+        Assert.NotNull(existingAccountType);
+        var delegateType = typeof(Func<>).MakeGenericType(existingAccountType!);
+        var throwMethod = typeof(ActiveDirectoryCommandGatewayTests).GetMethod(nameof(ThrowCreateConflictLookupFailure), BindingFlags.NonPublic | BindingFlags.Static);
+        Assert.NotNull(throwMethod);
+        var resolveConflict = Delegate.CreateDelegate(delegateType, throwMethod!.MakeGenericMethod(existingAccountType!));
+
+        var details = Assert.IsType<string>(method!.Invoke(null, [resolveConflict, command, "CN=45086,OU=POWERSHELL,OU=ExampleQA-Users,DC=ExampleQA,DC=biz", config, attributes, "CreateUserAddRequest", command.ManagerDistinguishedName, NullLogger<ActiveDirectoryCommandGateway>.Instance, fallbackDetails]));
+
+        Assert.Contains("Step=CreateUserAddRequest", details, StringComparison.Ordinal);
+        Assert.Contains("DistinguishedName=CN=45086,OU=POWERSHELL,OU=ExampleQA-Users,DC=ExampleQA,DC=biz", details, StringComparison.Ordinal);
+        Assert.Contains("ConflictResolutionLookupFailed=true", details, StringComparison.Ordinal);
+        Assert.Contains("ConflictResolutionLookupError=The object does not exist. 0000208D: NameErr: DSID-0310028D, problem 2001 (NO_OBJECT), data 0", details, StringComparison.Ordinal);
     }
 
     [Fact]
