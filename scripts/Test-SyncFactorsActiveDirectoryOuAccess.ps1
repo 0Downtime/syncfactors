@@ -511,6 +511,65 @@ function Invoke-SyncFactorsConfiguredActiveDirectoryOuProbe {
     return [SyncFactorsLauncherAdOuProbe]::Probe($probeConfig)
 }
 
+function Get-SyncFactorsBindDomainLabel {
+    param(
+        [AllowNull()]
+        [string]$Username,
+        [Parameter(Mandatory)]
+        [string]$Server
+    )
+
+    if (-not [string]::IsNullOrWhiteSpace($Username)) {
+        $trimmedUsername = $Username.Trim()
+        $separatorIndex = $trimmedUsername.IndexOf('\', [System.StringComparison]::Ordinal)
+        if ($separatorIndex -gt 0) {
+            return $trimmedUsername.Substring(0, $separatorIndex)
+        }
+
+        $atIndex = $trimmedUsername.LastIndexOf('@')
+        if ($atIndex -gt 0 -and $atIndex -lt ($trimmedUsername.Length - 1)) {
+            return $trimmedUsername.Substring($atIndex + 1)
+        }
+
+        if ($trimmedUsername.Contains('DC=', [System.StringComparison]::OrdinalIgnoreCase)) {
+            $components = [regex]::Matches($trimmedUsername, '(?i)(?:^|,)DC=([^,]+)') |
+                ForEach-Object { $_.Groups[1].Value.Trim() } |
+                Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+            if ($components.Count -gt 0) {
+                return ($components -join '.')
+            }
+        }
+    }
+
+    return $Server
+}
+
+function Write-SyncFactorsConfiguredAdBindSummary {
+    param(
+        [Parameter(Mandatory)]
+        [pscustomobject]$Configuration
+    )
+
+    $bindUser = if ([string]::IsNullOrWhiteSpace([string]$Configuration.Username)) {
+        'anonymous'
+    }
+    else {
+        [string]$Configuration.Username
+    }
+
+    $bindDomain = Get-SyncFactorsBindDomainLabel `
+        -Username ([string]$Configuration.Username) `
+        -Server ([string]$Configuration.Server)
+    $transportMode = if ([string]::IsNullOrWhiteSpace([string]$Configuration.TransportMode)) {
+        'ldap'
+    }
+    else {
+        [string]$Configuration.TransportMode
+    }
+
+    Write-Host "AD OU precheck bind identity: user='$bindUser', domain='$bindDomain', server='$($Configuration.Server)', transport='$transportMode'." -ForegroundColor DarkGray
+}
+
 function Format-SyncFactorsActiveDirectoryOuFailureMessage {
     param(
         [Parameter(Mandatory)]
@@ -545,6 +604,7 @@ function Assert-SyncFactorsConfiguredAdOusAccessible {
         throw "Configured AD OU precheck did not find any OU targets in '$ConfigPath'."
     }
 
+    Write-SyncFactorsConfiguredAdBindSummary -Configuration $configuration
     $probeResult = Invoke-SyncFactorsConfiguredActiveDirectoryOuProbe -Configuration $configuration
     $failures = @($probeResult.Checks | Where-Object { -not $_.Exists -or -not $_.Writable })
     if ($failures.Count -gt 0) {
