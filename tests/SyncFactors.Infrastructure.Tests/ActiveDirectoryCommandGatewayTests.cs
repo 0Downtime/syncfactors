@@ -111,6 +111,7 @@ public sealed class ActiveDirectoryCommandGatewayTests
         Assert.Contains("Mail=45086@example.com", details, StringComparison.Ordinal);
         Assert.Contains("IdentityAttribute=employeeID", details, StringComparison.Ordinal);
         Assert.Contains("IdentityValue=45086", details, StringComparison.Ordinal);
+        Assert.Contains("CreateAttributes=sAMAccountName,userPrincipalName,mail,employeeID", details, StringComparison.Ordinal);
         Assert.Contains("LicensingGroups=CN=M365-E3-Prestage,OU=Groups,DC=example,DC=com", details, StringComparison.Ordinal);
         Assert.Contains("ExistingSamAccountName=(unset)", details, StringComparison.Ordinal);
         Assert.Contains("ExistingDisplayName=(unset)", details, StringComparison.Ordinal);
@@ -222,6 +223,7 @@ public sealed class ActiveDirectoryCommandGatewayTests
         Assert.Contains("TargetOu=OU=POWERSHELL,OU=SpireQA-Users,DC=spireQA,DC=biz", details, StringComparison.Ordinal);
         Assert.Contains("UserPrincipalName=kimberly.turner@example.com", details, StringComparison.Ordinal);
         Assert.Contains("Mail=kimberly.turner@example.com", details, StringComparison.Ordinal);
+        Assert.Contains("CreateAttributes=objectClass,cn,displayName,sAMAccountName,userPrincipalName,mail,userAccountControl", details, StringComparison.Ordinal);
     }
 
     [Fact]
