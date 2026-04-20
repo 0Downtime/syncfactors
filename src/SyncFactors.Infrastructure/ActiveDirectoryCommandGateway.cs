@@ -60,13 +60,13 @@ public sealed class ActiveDirectoryCommandGateway(
         {
             lease?.Invalidate();
             logger.LogError(ex, "AD command failed with LDAP exception. Action={Action} WorkerId={WorkerId} Server={Server}", command.Action, command.WorkerId, config.Server);
-            throw ExternalSystemExceptionFactory.CreateActiveDirectoryException($"command '{command.Action}'", config, ex);
+            throw ExternalSystemExceptionFactory.CreateActiveDirectoryException($"command '{command.Action}'", config, ex, TryBuildOuterCatchFailureDetails(command, config));
         }
         catch (DirectoryOperationException ex)
         {
             lease?.Invalidate();
             logger.LogError(ex, "AD command failed with directory operation exception. Action={Action} WorkerId={WorkerId} Server={Server}", command.Action, command.WorkerId, config.Server);
-            throw ExternalSystemExceptionFactory.CreateActiveDirectoryException($"command '{command.Action}'", config, ex);
+            throw ExternalSystemExceptionFactory.CreateActiveDirectoryException($"command '{command.Action}'", config, ex, TryBuildOuterCatchFailureDetails(command, config));
         }
         catch
         {
@@ -119,33 +119,46 @@ public sealed class ActiveDirectoryCommandGateway(
         var dn = $"CN={EscapeDnComponent(command.CommonName)},{command.TargetOu}";
         var attributes = BuildCreateAttributes(command, config);
         var request = new AddRequest(dn, [.. attributes]);
-        string step = "CreateUser";
+        string step = "PreflightIdentityConflictSearch";
         string? managerDn = command.ManagerDistinguishedName;
-        var identityConflict = FindIdentityConflict(connection, command, config, logger);
-        if (identityConflict is not null)
-        {
-            throw ExternalSystemExceptionFactory.CreateActiveDirectoryValidationException(
-                "command 'CreateUser'",
-                config,
-                BuildIdentityConflictSummary(command, identityConflict),
-                BuildIdentityConflictDetails(command, dn, config, identityConflict),
-                "Resolve the existing AD account that already owns this UPN or mail value, or change the planned suffix/value before retrying.");
-        }
-
-        logger.LogInformation(
-            "Prepared AD create identity payload. WorkerId={WorkerId} SamAccountName={SamAccountName} DistinguishedName={DistinguishedName} IdentityAttribute={IdentityAttribute} IdentityWriteValue={IdentityWriteValue}",
-            command.WorkerId,
-            command.SamAccountName,
-            dn,
-            config.IdentityAttribute,
-            TryGetDirectoryAttributeValue(attributes, config.IdentityAttribute, out var identityWriteValue) ? identityWriteValue : null);
-        LogRequestAttributes("CreateUser", command.WorkerId, attributes, logger);
 
         try
         {
+            var identityConflict = FindIdentityConflict(connection, command, config, logger);
+            if (identityConflict is not null)
+            {
+                throw ExternalSystemExceptionFactory.CreateActiveDirectoryValidationException(
+                    "command 'CreateUser'",
+                    config,
+                    BuildIdentityConflictSummary(command, identityConflict),
+                    BuildIdentityConflictDetails(command, dn, config, identityConflict),
+                    "Resolve the existing AD account that already owns this UPN or mail value, or change the planned suffix/value before retrying.");
+            }
+
+            logger.LogInformation(
+                "Prepared AD create identity payload. WorkerId={WorkerId} SamAccountName={SamAccountName} DistinguishedName={DistinguishedName} IdentityAttribute={IdentityAttribute} IdentityWriteValue={IdentityWriteValue}",
+                command.WorkerId,
+                command.SamAccountName,
+                dn,
+                config.IdentityAttribute,
+                TryGetDirectoryAttributeValue(attributes, config.IdentityAttribute, out var identityWriteValue) ? identityWriteValue : null);
+            logger.LogInformation(
+                "Prepared AD create add request attributes. WorkerId={WorkerId} SamAccountName={SamAccountName} DistinguishedName={DistinguishedName} CreateAttributes={CreateAttributes}",
+                command.WorkerId,
+                command.SamAccountName,
+                dn,
+                FormatDirectoryAttributesForLog(attributes));
+            LogRequestAttributes("CreateUser", command.WorkerId, attributes, logger);
+
+            step = "CreateUserAddRequest";
             var canProvisionPassword = SupportsPasswordProvisioningTransport(effectiveTransport);
             var canEnableCreatedAccount = CanEnableCreatedAccount(command, config, effectiveTransport);
             ExecuteModify(connection, request, logger, "create user add request", ("WorkerId", command.WorkerId), ("SamAccountName", command.SamAccountName));
+            logger.LogInformation(
+                "Completed AD create add request. WorkerId={WorkerId} SamAccountName={SamAccountName} DistinguishedName={DistinguishedName}",
+                command.WorkerId,
+                command.SamAccountName,
+                dn);
             if (canProvisionPassword)
             {
                 step = "SetPassword";
@@ -1462,6 +1475,31 @@ public sealed class ActiveDirectoryCommandGateway(
         return $"Step=RenameUser WorkerId={command.WorkerId} SamAccountName={command.SamAccountName} DistinguishedName={distinguishedName} CurrentCn={FormatDetailValue(currentCn)} DesiredCn={FormatDetailValue(command.CommonName)}";
     }
 
+    private static string? TryBuildOuterCatchFailureDetails(DirectoryMutationCommand command, ActiveDirectoryConfig config)
+    {
+        if (!string.Equals(command.Action, "CreateUser", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        try
+        {
+            var distinguishedName = $"CN={EscapeDnComponent(command.CommonName)},{command.TargetOu}";
+            var attributes = BuildCreateAttributes(command, config);
+            return BuildCreateFailureDetails(
+                command,
+                distinguishedName,
+                config,
+                attributes,
+                "ExecuteAsyncOuterCatch",
+                command.ManagerDistinguishedName);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     private static string BuildCreateFailureDetails(
         DirectoryMutationCommand command,
         string distinguishedName,
@@ -1473,7 +1511,7 @@ public sealed class ActiveDirectoryCommandGateway(
     {
         TryGetDirectoryAttributeValue(attributes, config.IdentityAttribute, out var identityValue);
 
-        return $"Step={step} WorkerId={command.WorkerId} SamAccountName={command.SamAccountName} DistinguishedName={distinguishedName} TargetOu={FormatDetailValue(command.TargetOu)} UserPrincipalName={FormatDetailValue(command.UserPrincipalName)} Mail={FormatDetailValue(command.Mail)} IdentityAttribute={config.IdentityAttribute} IdentityValue={FormatDetailValue(identityValue)} LicensingGroups={FormatDetailValues(config.LicensingGroups)} ExistingSamAccountName={FormatDetailValue(existingAccount?.SamAccountName)} ExistingDisplayName={FormatDetailValue(existingAccount?.DisplayName)} ExistingDistinguishedName={FormatDetailValue(existingAccount?.DistinguishedName)} ExistingUserPrincipalName={FormatDetailValue(existingAccount?.UserPrincipalName)} ExistingMail={FormatDetailValue(existingAccount?.Mail)} ManagerId={FormatDetailValue(command.ManagerId)} ManagerDistinguishedName={FormatDetailValue(managerDistinguishedName)}";
+        return $"Step={step} WorkerId={command.WorkerId} SamAccountName={command.SamAccountName} DistinguishedName={distinguishedName} TargetOu={FormatDetailValue(command.TargetOu)} UserPrincipalName={FormatDetailValue(command.UserPrincipalName)} Mail={FormatDetailValue(command.Mail)} IdentityAttribute={config.IdentityAttribute} IdentityValue={FormatDetailValue(identityValue)} CreateAttributes={FormatDirectoryAttributeNames(attributes)} LicensingGroups={FormatDetailValues(config.LicensingGroups)} ExistingSamAccountName={FormatDetailValue(existingAccount?.SamAccountName)} ExistingDisplayName={FormatDetailValue(existingAccount?.DisplayName)} ExistingDistinguishedName={FormatDetailValue(existingAccount?.DistinguishedName)} ExistingUserPrincipalName={FormatDetailValue(existingAccount?.UserPrincipalName)} ExistingMail={FormatDetailValue(existingAccount?.Mail)} ManagerId={FormatDetailValue(command.ManagerId)} ManagerDistinguishedName={FormatDetailValue(managerDistinguishedName)}";
     }
 
     private static ExistingAccountDetails? TryResolveCreateExistingAccountConflict(
@@ -1546,6 +1584,43 @@ public sealed class ActiveDirectoryCommandGateway(
             .Select(value => value.Trim())
             .ToArray() ?? [];
         return items.Length == 0 ? "(none)" : string.Join(";", items);
+    }
+
+    private static string FormatDirectoryAttributeNames(IEnumerable<DirectoryAttribute> attributes)
+    {
+        var names = attributes
+            .Select(attribute => attribute.Name)
+            .Where(name => !string.IsNullOrWhiteSpace(name))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        return names.Length == 0 ? "(none)" : string.Join(",", names);
+    }
+
+    private static string FormatDirectoryAttributesForLog(IEnumerable<DirectoryAttribute> attributes)
+    {
+        var items = attributes
+            .Select(attribute => $"{attribute.Name}=[{FormatDirectoryAttributeValuesForLog(attribute)}]")
+            .ToArray();
+
+        return items.Length == 0 ? "(none)" : string.Join("; ", items);
+    }
+
+    private static string FormatDirectoryAttributeValuesForLog(DirectoryAttribute attribute)
+    {
+        var stringValues = attribute
+            .GetValues(typeof(string))
+            .Cast<object?>()
+            .Select(value => value?.ToString())
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .ToArray();
+
+        if (stringValues.Length > 0)
+        {
+            return string.Join("|", stringValues);
+        }
+
+        return string.Join("|", attribute.Cast<object?>().Select(value => value?.ToString() ?? "(null)"));
     }
 
     private static string FormatModificationAttributeNames(DirectoryAttributeModificationCollection? modifications)

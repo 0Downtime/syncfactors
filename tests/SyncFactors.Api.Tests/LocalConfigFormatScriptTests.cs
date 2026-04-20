@@ -422,6 +422,48 @@ public sealed class LocalConfigFormatScriptTests
         }
     }
 
+    [Fact]
+    public async Task RunScript_AdOuPrecheckFailure_BlocksStartupWithOuDetails()
+    {
+        var tempRepo = await CreateMinimalScriptRepoAsync();
+        try
+        {
+            var envFilePath = Path.Combine(tempRepo.FullName, ".env.worktree");
+            var envContent = await File.ReadAllTextAsync(envFilePath);
+            envContent = envContent.Replace(
+                "SF_AD_SYNC_AD_SERVER=" + Environment.NewLine,
+                "SF_AD_SYNC_AD_SERVER=stub.example.test" + Environment.NewLine,
+                StringComparison.Ordinal);
+            await File.WriteAllTextAsync(envFilePath, envContent);
+
+            await File.WriteAllTextAsync(
+                Path.Combine(tempRepo.FullName, "scripts", "Test-SyncFactorsActiveDirectoryOuAccess.ps1"),
+                """
+                function Assert-SyncFactorsConfiguredAdOusAccessible {
+                    param([string]$ConfigPath)
+
+                    throw "Configured AD OU precheck failed against LDAP server 'stub.example.test'. defaultActiveOu='OU=Missing,DC=example,DC=com' failed: directory object was not found."
+                }
+                """);
+
+            var result = await InvokePowerShellFileAsync(
+                workingDirectory: tempRepo.FullName,
+                filePath: Path.Combine(tempRepo.FullName, "scripts", "codex", "run.ps1"),
+                "-Service", "worker",
+                "-SkipBuild");
+
+            Assert.NotEqual(0, result.ExitCode);
+            var combinedOutput = result.StandardOutput + result.StandardError;
+            Assert.Contains("Configured AD OU precheck failed", combinedOutput);
+            Assert.Contains("defaultActiveOu='OU=Missing,DC=example,DC=com'", combinedOutput);
+            Assert.DoesNotContain("dotnet build failed", combinedOutput, StringComparison.OrdinalIgnoreCase);
+        }
+        finally
+        {
+            tempRepo.Delete(recursive: true);
+        }
+    }
+
     private static async Task<DirectoryInfo> CreateMinimalScriptRepoAsync()
     {
         var tempRepo = Directory.CreateTempSubdirectory("syncfactors-script-repo");
@@ -431,6 +473,7 @@ public sealed class LocalConfigFormatScriptTests
         {
             "scripts/Sync-LocalConfigFormat.ps1",
             "scripts/Update-LocalSyncFactorsConfig.ps1",
+            "scripts/Test-SyncFactorsActiveDirectoryOuAccess.ps1",
             "scripts/Start-SyncFactorsCommon.ps1",
             "scripts/codex/run.ps1",
             "scripts/codex/Load-WorktreeEnv.ps1",
