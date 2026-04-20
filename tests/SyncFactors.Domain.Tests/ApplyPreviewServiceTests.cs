@@ -308,6 +308,77 @@ public sealed class ApplyPreviewServiceTests
     }
 
     [Fact]
+    public async Task ApplyAsync_RejectsPreviewWhenRequiredSourceAttributesAreMissing()
+    {
+        var worker = new WorkerSnapshot(
+            WorkerId: "10001",
+            PreferredName: "Winnie",
+            LastName: "Sample101",
+            Department: "IT",
+            TargetOu: "OU=LabUsers,DC=example,DC=com",
+            IsPrehire: false,
+            Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase));
+
+        var preview = new WorkerPreviewResult(
+            ReportPath: null,
+            RunId: "preview-10001-missing-required",
+            PreviousRunId: null,
+            Fingerprint: "fingerprint-missing-required",
+            Mode: "Preview",
+            Status: "Planned",
+            ErrorMessage: null,
+            ArtifactType: "WorkerPreview",
+            SuccessFactorsAuth: "NativeScaffold",
+            WorkerId: worker.WorkerId,
+            Buckets: ["unchanged"],
+            MatchedExistingUser: false,
+            ReviewCategory: null,
+            ReviewCaseType: null,
+            Reason: "Required mapping for employeeType has no value.",
+            OperatorActionSummary: null,
+            SamAccountName: "10001",
+            ManagerDistinguishedName: null,
+            TargetOu: worker.TargetOu,
+            CurrentDistinguishedName: null,
+            CurrentEnabled: null,
+            ProposedEnable: true,
+            OperationSummary: null,
+            DiffRows:
+            [
+                new DiffRow("UserPrincipalName", "resolved email local-part", "(unset)", "preview.email@Exampleenergy.com", true)
+            ],
+            SourceAttributes: [],
+            UsedSourceAttributes: [],
+            UnusedSourceAttributes: [],
+            MissingSourceAttributes:
+            [
+                new MissingSourceAttributeRow("employeeType", "Required mapping for employeeType has no value.")
+            ],
+            Entries: []);
+
+        var directoryCommandGateway = new CapturingDirectoryCommandGateway();
+        var service = new ApplyPreviewService(
+            new StubWorkerSource(worker),
+            new DirectoryMutationCommandBuilder(),
+            directoryCommandGateway,
+            new StubRunRepository(preview),
+            new StubRuntimeStatusStore(),
+            new RealSyncSettings(),
+            NullLogger<ApplyPreviewService>.Instance);
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => service.ApplyAsync(
+            new ApplyPreviewRequest(
+                WorkerId: worker.WorkerId,
+                PreviewRunId: preview.RunId!,
+                PreviewFingerprint: preview.Fingerprint,
+                AcknowledgeRealSync: true),
+            CancellationToken.None));
+
+        Assert.Equal("Preview cannot be applied because required source attributes are missing.", exception.Message);
+        Assert.Null(directoryCommandGateway.LastCommand);
+    }
+
+    [Fact]
     public async Task ApplyAsync_RejectsWhenRealSyncIsDisabled()
     {
         var worker = new WorkerSnapshot(

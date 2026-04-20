@@ -106,9 +106,9 @@ public sealed class WorkerPlanningService(
 
         if (missingSourceAttributes.Count > 0)
         {
-            bucket = "manualReview";
-            reviewCategory = "RequiredMapping";
-            reviewCaseType = "MissingRequiredSourceAttribute";
+            bucket = "unchanged";
+            reviewCategory = null;
+            reviewCaseType = null;
             reason = missingSourceAttributes[0].Reason;
         }
         var targetEnabled = lifecycle.TargetEnabled;

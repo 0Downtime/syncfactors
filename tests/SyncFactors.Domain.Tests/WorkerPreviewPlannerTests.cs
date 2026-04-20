@@ -433,6 +433,51 @@ public sealed class WorkerPreviewPlannerTests
     }
 
     [Fact]
+    public async Task PreviewAsync_MissingRequiredAttributes_IsLoggedAsUnchangedWithoutReview()
+    {
+        var worker = new WorkerSnapshot(
+            WorkerId: "44522",
+            PreferredName: "Christopher",
+            LastName: "Brien",
+            Department: "Infrastructure & Security",
+            TargetOu: "OU=Employees,DC=example,DC=com",
+            IsPrehire: false,
+            Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["personIdExternal"] = "44522",
+                ["firstName"] = "Christopher",
+                ["lastName"] = "Brien"
+            });
+
+        var mappingProvider = new RequiredEmployeeTypeMappingProvider();
+        var runRepository = new CapturingRunRepository();
+        var planner = new WorkerPreviewPlanner(
+            new StubWorkerSource(worker),
+            new WorkerPlanningService(
+                new StubDirectoryGateway(),
+                new StubIdentityMatcher(),
+                CreateLifecyclePolicy(),
+                new StubAttributeDiffService(),
+                mappingProvider,
+                NullLogger<WorkerPlanningService>.Instance),
+            mappingProvider,
+            new StubWorkerPreviewLogWriter(),
+            runRepository,
+            NullLogger<WorkerPreviewPlanner>.Instance);
+
+        var preview = await planner.PreviewAsync("44522", CancellationToken.None);
+
+        Assert.Equal("unchanged", preview.Buckets.Single());
+        Assert.Null(preview.ReviewCategory);
+        Assert.Null(preview.ReviewCaseType);
+        Assert.Equal("Required mapping for employeeType has no value.", preview.Reason);
+        Assert.Single(preview.MissingSourceAttributes);
+        Assert.Equal("employeeType", preview.MissingSourceAttributes.Single().Attribute);
+        Assert.Empty(preview.Entries.Single().Item.GetProperty("operations").EnumerateArray());
+        Assert.Equal("unchanged", runRepository.ReplacedEntries.Single().entries.Single().Bucket);
+    }
+
+    [Fact]
     public async Task PreviewAsync_DoesNotRequireReviewWhenManagerCannotBeResolved()
     {
         var worker = new WorkerSnapshot(
@@ -1012,6 +1057,14 @@ public sealed class WorkerPreviewPlannerTests
         public IReadOnlyList<AttributeMapping> GetEnabledMappings() =>
         [
             new AttributeMapping("emailNav[?(@.isPrimary == true)].emailAddress", "UserPrincipalName", Required: true, Transform: "Lower")
+        ];
+    }
+
+    private sealed class RequiredEmployeeTypeMappingProvider : IAttributeMappingProvider
+    {
+        public IReadOnlyList<AttributeMapping> GetEnabledMappings() =>
+        [
+            new AttributeMapping("employeeType", "employeeType", Required: true, Transform: "Trim")
         ];
     }
 
