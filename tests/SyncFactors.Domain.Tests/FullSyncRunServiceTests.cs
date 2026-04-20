@@ -433,6 +433,59 @@ public sealed class FullSyncRunServiceTests
         Assert.Empty(entry.Item.GetProperty("changedAttributeDetails").EnumerateArray());
     }
 
+    [Fact]
+    public async Task LaunchAsync_ActiveWorkerWithMissingRequiredAttributes_IsLoggedAsUnchangedWithoutProvisioning()
+    {
+        var worker = new WorkerSnapshot(
+            WorkerId: "10004",
+            PreferredName: "Winnie",
+            LastName: "Sample101",
+            Department: "IT",
+            TargetOu: "OU=LabUsers,DC=example,DC=com",
+            IsPrehire: false,
+            Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["firstName"] = "Winnie",
+                ["lastName"] = "Sample101"
+            });
+
+        var runRepository = new CapturingRunRepository();
+        var runtimeStatusStore = new CapturingRuntimeStatusStore();
+        var directoryCommandGateway = new CapturingDirectoryCommandGateway();
+        var mappingProvider = new RequiredEmployeeTypeMappingProvider();
+        var service = new FullSyncRunService(
+            new StubWorkerSource([worker]),
+            new WorkerPlanningService(
+                new StubDirectoryGateway(managerDistinguishedName: null),
+                new IdentityMatcher(),
+                CreateLifecyclePolicy(),
+                new StubAttributeDiffService(),
+                mappingProvider,
+                NullLogger<WorkerPlanningService>.Instance),
+            new DirectoryMutationCommandBuilder(),
+            directoryCommandGateway,
+            new StubDirectoryGateway(managerDistinguishedName: null),
+            runRepository,
+            runtimeStatusStore,
+            new RealSyncSettings(),
+            new WorkerRunSettings(MaxCreatesPerRun: 10, MaxDisablesPerRun: 10),
+            CreateLifecycleSettings(),
+            NullLogger<FullSyncRunService>.Instance);
+
+        var result = await service.LaunchAsync(
+            new LaunchFullRunRequest(DryRun: false, AcknowledgeRealSync: true),
+            CancellationToken.None);
+
+        var entry = runRepository.ReplacedEntries.Single().entries.Single();
+
+        Assert.Equal("Succeeded", result.Status);
+        Assert.Equal(0, directoryCommandGateway.ExecuteCount);
+        Assert.Equal("unchanged", entry.Bucket);
+        Assert.Equal("Required mapping for employeeType has no value.", entry.Reason);
+        Assert.False(entry.Item.TryGetProperty("reviewCaseType", out var reviewCaseType) && !string.IsNullOrWhiteSpace(reviewCaseType.GetString()));
+        Assert.Single(entry.Item.GetProperty("missingSourceAttributes").EnumerateArray());
+    }
+
     private static FullSyncRunService CreateService(
         IReadOnlyList<WorkerSnapshot> workers,
         IDirectoryGateway directoryGateway,
@@ -749,6 +802,14 @@ public sealed class FullSyncRunServiceTests
         public IReadOnlyList<AttributeMapping> GetEnabledMappings() =>
         [
             new AttributeMapping("personalInfoNav[0].firstName", "GivenName", Required: true, Transform: "Trim")
+        ];
+    }
+
+    private sealed class RequiredEmployeeTypeMappingProvider : IAttributeMappingProvider
+    {
+        public IReadOnlyList<AttributeMapping> GetEnabledMappings() =>
+        [
+            new AttributeMapping("employeeType", "employeeType", Required: true, Transform: "Trim")
         ];
     }
 

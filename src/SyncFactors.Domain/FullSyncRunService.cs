@@ -340,7 +340,7 @@ public sealed class FullSyncRunService(
             }
             else if (bucket == "unchanged")
             {
-                message = $"No synced attributes changed for {worker.WorkerId}.";
+                message = plan.Reason ?? $"No synced attributes changed for {worker.WorkerId}.";
             }
 
             var item = ToJsonElement(new
