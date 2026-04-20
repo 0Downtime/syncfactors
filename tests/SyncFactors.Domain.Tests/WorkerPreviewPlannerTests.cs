@@ -231,6 +231,50 @@ public sealed class WorkerPreviewPlannerTests
     }
 
     [Fact]
+    public async Task PreviewAsync_PersistsProvisioningDecisionTree()
+    {
+        var worker = new WorkerSnapshot(
+            WorkerId: "44522",
+            PreferredName: "Christopher",
+            LastName: "Brien",
+            Department: "Infrastructure & Security",
+            TargetOu: "OU=Employees,DC=example,DC=com",
+            IsPrehire: false,
+            Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["emplStatus"] = "64300",
+                ["company"] = "Spire Services, Inc.",
+                ["department"] = "Infrastructure & Security"
+            });
+
+        var runRepository = new CapturingRunRepository();
+        var planner = new WorkerPreviewPlanner(
+            new StubWorkerSource(worker),
+            new WorkerPlanningService(
+                new StubDirectoryGateway(),
+                new StubIdentityMatcher(),
+                CreateLifecyclePolicy(),
+                new StubAttributeDiffService(),
+                new StubAttributeMappingProvider(),
+                NullLogger<WorkerPlanningService>.Instance),
+            new StubAttributeMappingProvider(),
+            new StubWorkerPreviewLogWriter(),
+            runRepository,
+            NullLogger<WorkerPreviewPlanner>.Instance);
+
+        var preview = await planner.PreviewAsync("44522", CancellationToken.None);
+
+        Assert.NotNull(preview.DecisionSteps);
+        Assert.NotEmpty(preview.DecisionSteps!);
+        Assert.Contains(preview.DecisionSteps!, step => step.Step == "Provisioning Decision" && step.Outcome == "Yes");
+
+        var decisionTree = runRepository.ReplacedEntries.Single().entries.Single().Item.GetProperty("decisionTree").EnumerateArray().ToArray();
+        Assert.True(decisionTree.Length >= 2);
+        Assert.Equal("Source Worker", decisionTree[0].GetProperty("step").GetString());
+        Assert.Equal("Provisioning Decision", decisionTree[^1].GetProperty("step").GetString());
+    }
+
+    [Fact]
     public async Task PreviewAsync_TerminatedWorkerWithoutExistingUser_SkipsRequiredMappingReviewAndSyntheticDiffs()
     {
         var worker = new WorkerSnapshot(

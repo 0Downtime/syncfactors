@@ -119,7 +119,9 @@ public sealed class WorkerPreviewPlanner(
                     + $"\"currentAdValue\":{ToJsonString(row.Before == "(unset)" ? null : row.Before)},"
                     + $"\"proposedValue\":{ToJsonString(row.After == "(unset)" ? null : row.After)}"
                     + "}"))
-            + "]"
+            + "],"
+            + "\"decisionTree\":"
+            + SerializeDecisionTree(preview.DecisionSteps)
             + "}");
 
         await runRepository.SaveRunAsync(runRecord, cancellationToken);
@@ -192,7 +194,9 @@ public sealed class WorkerPreviewPlanner(
                     + $"\"currentAdValue\":{ToJsonString(row.Before == "(unset)" ? null : row.Before)},"
                     + $"\"proposedValue\":{ToJsonString(row.After)}"
                     + "}"))
-            + "]"
+            + "],"
+            + "\"decisionTree\":"
+            + SerializeDecisionTree(plan.DecisionSteps)
             + "}");
 
         return new WorkerPreviewResult(
@@ -234,7 +238,8 @@ public sealed class WorkerPreviewPlanner(
                 new WorkerPreviewEntry(
                     Bucket: plan.Bucket,
                     Item: AddOperations(item, plan.Operations))
-            ]);
+            ],
+            DecisionSteps: plan.DecisionSteps ?? []);
     }
 
     private static JsonElement ParseJson(string json)
@@ -289,6 +294,19 @@ public sealed class WorkerPreviewPlanner(
         return JsonSerializer.Serialize(preview);
     }
 
+    private static string SerializeDecisionTree(IReadOnlyList<ProvisioningDecisionStep>? decisionSteps)
+    {
+        return "["
+            + string.Join(",", (decisionSteps ?? [])
+                .Select(step => "{"
+                    + $"\"step\":\"{Escape(step.Step)}\","
+                    + $"\"outcome\":\"{Escape(step.Outcome)}\","
+                    + $"\"detail\":{ToJsonString(step.Detail)},"
+                    + $"\"tone\":{ToJsonString(step.Tone)}"
+                    + "}"))
+            + "]";
+    }
+
     private static JsonElement AddOperations(JsonElement item, IReadOnlyList<DirectoryOperation> operations)
     {
         return ParseJson(
@@ -308,6 +326,8 @@ public sealed class WorkerPreviewPlanner(
             + "],"
             + "\"changedAttributeDetails\":"
             + item.GetProperty("changedAttributeDetails").GetRawText()
+            + ",\"decisionTree\":"
+            + item.GetProperty("decisionTree").GetRawText()
             + "}");
     }
 

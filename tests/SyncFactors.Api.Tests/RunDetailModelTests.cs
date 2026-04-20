@@ -400,6 +400,59 @@ public sealed class RunDetailModelTests
     }
 
     [Fact]
+    public void GetProvisioningDecisionSteps_ReadsStructuredDecisionTree()
+    {
+        var model = new DetailModel(new RunEntriesQueryService(new StubRunRepository()));
+        var entry = new RunEntry(
+            EntryId: "entry-decision-tree",
+            RunId: "bulk-1",
+            ArtifactType: "BulkRun",
+            Mode: "BulkSync",
+            Bucket: "updates",
+            BucketLabel: "Updates",
+            WorkerId: "44522",
+            SamAccountName: "44522",
+            Reason: null,
+            ReviewCategory: null,
+            ReviewCaseType: null,
+            StartedAt: DateTimeOffset.UtcNow,
+            ChangeCount: 1,
+            OperationSummary: null,
+            FailureSummary: null,
+            PrimarySummary: null,
+            TopChangedAttributes: [],
+            DiffRows: [],
+            Item: JsonDocument.Parse(
+                """
+                {
+                  "decisionTree": [
+                    {
+                      "step": "Directory Identity",
+                      "outcome": "Matched Existing User",
+                      "detail": "Matched AD account '44522'.",
+                      "tone": "good"
+                    },
+                    {
+                      "step": "Provisioning Decision",
+                      "outcome": "Yes",
+                      "detail": "Real sync can update the matched AD account.",
+                      "tone": "warn"
+                    }
+                  ]
+                }
+                """).RootElement.Clone());
+
+        var steps = model.GetProvisioningDecisionSteps(entry);
+
+        Assert.Equal(2, steps.Count);
+        Assert.Equal("Directory Identity", steps[0].Step);
+        Assert.Equal("Matched Existing User", steps[0].Outcome);
+        Assert.Equal("good", steps[0].Tone);
+        Assert.Equal("Provisioning Decision", steps[1].Step);
+        Assert.Equal("warn", steps[1].Tone);
+    }
+
+    [Fact]
     public void GetPrimarySummaryDisplay_SuppressesDuplicateFailureSummary()
     {
         var model = new DetailModel(new RunEntriesQueryService(new StubRunRepository()));
