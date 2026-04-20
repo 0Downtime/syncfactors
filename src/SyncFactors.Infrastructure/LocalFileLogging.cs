@@ -9,11 +9,15 @@ public static class LocalFileLogging
     {
         if (string.IsNullOrWhiteSpace(configuredValue))
         {
-            return false;
+            return true;
         }
 
         return configuredValue.Trim().ToLowerInvariant() switch
         {
+            "0" => false,
+            "off" => false,
+            "false" => false,
+            "no" => false,
             "1" => true,
             "on" => true,
             "true" => true,
@@ -29,7 +33,7 @@ public static class LocalFileLogging
             return Path.GetFullPath(configuredDirectory);
         }
 
-        return Path.Combine(SyncFactorsRuntimePaths.GetRuntimeRoot(), "logs");
+        return Path.GetFullPath("logs");
     }
 
     public static string ResolveRollingFilePath(string processName, string? configuredDirectory)

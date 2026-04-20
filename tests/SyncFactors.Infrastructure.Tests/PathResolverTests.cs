@@ -171,9 +171,18 @@ public sealed class PathResolverTests
         Assert.Equal(Path.GetFullPath(relativePath), LocalFileLogging.ResolveDirectory(relativePath));
     }
 
+    [Fact]
+    public void LocalFileLogging_DefaultsToProjectLogsDirectory()
+    {
+        Assert.Equal(Path.GetFullPath("logs"), LocalFileLogging.ResolveDirectory(null));
+    }
+
     [Theory]
-    [InlineData(null, false)]
-    [InlineData("", false)]
+    [InlineData(null, true)]
+    [InlineData("", true)]
+    [InlineData("0", false)]
+    [InlineData("off", false)]
+    [InlineData("no", false)]
     [InlineData("false", false)]
     [InlineData("true", true)]
     [InlineData("TRUE", true)]
