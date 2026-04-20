@@ -57,6 +57,7 @@ if ($Help) {
 . (Join-Path $scriptDir 'Load-WorktreeEnv.ps1')
 . (Join-Path $scriptDir '..' 'Start-SyncFactorsCommon.ps1')
 . (Join-Path $scriptDir '..' 'Sync-LocalConfigFormat.ps1')
+. (Join-Path $scriptDir '..' 'Test-SyncFactorsActiveDirectoryOuAccess.ps1')
 
 function ConvertTo-BooleanSetting {
     param(
@@ -621,6 +622,21 @@ function Ensure-RequiredSecureStoreValues {
     }
 }
 
+function Ensure-ConfiguredActiveDirectoryOusAccessible {
+    param(
+        [Parameter(Mandatory)]
+        [string]$ServiceName,
+        [Parameter(Mandatory)]
+        [string]$ResolvedConfigPath
+    )
+
+    if ($ServiceName -notin @('worker', 'stack')) {
+        return
+    }
+
+    Assert-SyncFactorsConfiguredAdOusAccessible -ConfigPath $ResolvedConfigPath
+}
+
 function Resolve-ProfileConfigPath {
     param(
         [Parameter(Mandatory)]
@@ -1088,6 +1104,9 @@ $requiredSecretNames = @(Get-RequiredSecretNamesForService `
     -ResolvedConfigPath $env:SYNCFACTORS_RESOLVED_CONFIG_PATH_ABS `
     -ProbeNoBuild:$SkipBuild)
 Ensure-RequiredSecureStoreValues -RepositoryRoot $repoRoot -EnvFilePath $worktreeEnvFile -VariableNames $requiredSecretNames
+Ensure-ConfiguredActiveDirectoryOusAccessible `
+    -ServiceName $Service `
+    -ResolvedConfigPath $env:SYNCFACTORS_RESOLVED_CONFIG_PATH_ABS
 
 function Invoke-PrestartGitPull {
     param(
