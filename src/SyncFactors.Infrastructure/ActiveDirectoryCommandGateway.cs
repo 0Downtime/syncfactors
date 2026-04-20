@@ -119,30 +119,32 @@ public sealed class ActiveDirectoryCommandGateway(
         var dn = $"CN={EscapeDnComponent(command.CommonName)},{command.TargetOu}";
         var attributes = BuildCreateAttributes(command, config);
         var request = new AddRequest(dn, [.. attributes]);
-        string step = "CreateUser";
+        string step = "PreflightIdentityConflictSearch";
         string? managerDn = command.ManagerDistinguishedName;
-        var identityConflict = FindIdentityConflict(connection, command, config, logger);
-        if (identityConflict is not null)
-        {
-            throw ExternalSystemExceptionFactory.CreateActiveDirectoryValidationException(
-                "command 'CreateUser'",
-                config,
-                BuildIdentityConflictSummary(command, identityConflict),
-                BuildIdentityConflictDetails(command, dn, config, identityConflict),
-                "Resolve the existing AD account that already owns this UPN or mail value, or change the planned suffix/value before retrying.");
-        }
-
-        logger.LogInformation(
-            "Prepared AD create identity payload. WorkerId={WorkerId} SamAccountName={SamAccountName} DistinguishedName={DistinguishedName} IdentityAttribute={IdentityAttribute} IdentityWriteValue={IdentityWriteValue}",
-            command.WorkerId,
-            command.SamAccountName,
-            dn,
-            config.IdentityAttribute,
-            TryGetDirectoryAttributeValue(attributes, config.IdentityAttribute, out var identityWriteValue) ? identityWriteValue : null);
-        LogRequestAttributes("CreateUser", command.WorkerId, attributes, logger);
 
         try
         {
+            var identityConflict = FindIdentityConflict(connection, command, config, logger);
+            if (identityConflict is not null)
+            {
+                throw ExternalSystemExceptionFactory.CreateActiveDirectoryValidationException(
+                    "command 'CreateUser'",
+                    config,
+                    BuildIdentityConflictSummary(command, identityConflict),
+                    BuildIdentityConflictDetails(command, dn, config, identityConflict),
+                    "Resolve the existing AD account that already owns this UPN or mail value, or change the planned suffix/value before retrying.");
+            }
+
+            logger.LogInformation(
+                "Prepared AD create identity payload. WorkerId={WorkerId} SamAccountName={SamAccountName} DistinguishedName={DistinguishedName} IdentityAttribute={IdentityAttribute} IdentityWriteValue={IdentityWriteValue}",
+                command.WorkerId,
+                command.SamAccountName,
+                dn,
+                config.IdentityAttribute,
+                TryGetDirectoryAttributeValue(attributes, config.IdentityAttribute, out var identityWriteValue) ? identityWriteValue : null);
+            LogRequestAttributes("CreateUser", command.WorkerId, attributes, logger);
+
+            step = "CreateUser";
             var canProvisionPassword = SupportsPasswordProvisioningTransport(effectiveTransport);
             var canEnableCreatedAccount = CanEnableCreatedAccount(command, config, effectiveTransport);
             ExecuteModify(connection, request, logger, "create user add request", ("WorkerId", command.WorkerId), ("SamAccountName", command.SamAccountName));
