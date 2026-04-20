@@ -381,6 +381,15 @@ public sealed class FullSyncRunService(
                         proposedValue = change.After == "(unset)" ? null : change.After
                     })
                     .ToArray(),
+                decisionTree = (plan.DecisionSteps ?? [])
+                    .Select(step => new
+                    {
+                        step = step.Step,
+                        outcome = step.Outcome,
+                        detail = step.Detail,
+                        tone = step.Tone
+                    })
+                    .ToArray(),
                 succeeded,
                 message
             });
