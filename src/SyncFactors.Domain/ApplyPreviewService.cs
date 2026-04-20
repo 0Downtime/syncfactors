@@ -247,6 +247,11 @@ public sealed class ApplyPreviewService(
             throw new InvalidOperationException($"Preview requires review before apply. Review case: {preview.ReviewCaseType}.");
         }
 
+        if (preview.MissingSourceAttributes.Count > 0)
+        {
+            throw new InvalidOperationException("Preview cannot be applied because required source attributes are missing.");
+        }
+
         if (string.IsNullOrWhiteSpace(preview.SamAccountName))
         {
             throw new InvalidOperationException("Preview cannot be applied because the SAM account name is missing.");
