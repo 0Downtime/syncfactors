@@ -198,8 +198,16 @@ public sealed class ActiveDirectoryCommandGateway(
             var details = BuildCreateFailureDetails(command, dn, config, attributes, step, managerDn);
             if (IsCreateEntryAlreadyExistsFailure(ex))
             {
-                var existingConflict = TryResolveCreateExistingAccountConflict(connection, command, config, logger, dn);
-                details = BuildCreateFailureDetails(command, dn, config, attributes, step, managerDn, existingConflict);
+                details = TryAugmentCreateFailureDetailsWithExistingAccountConflict(
+                    () => TryResolveCreateExistingAccountConflict(connection, command, config, logger, dn),
+                    command,
+                    dn,
+                    config,
+                    attributes,
+                    step,
+                    managerDn,
+                    logger,
+                    details);
             }
 
             throw ExternalSystemExceptionFactory.CreateActiveDirectoryException(
@@ -1541,6 +1549,34 @@ public sealed class ActiveDirectoryCommandGateway(
                 identityConflict.ExistingDistinguishedName,
                 identityConflict.ExistingUserPrincipalName,
                 identityConflict.ExistingMail);
+    }
+
+    private static string TryAugmentCreateFailureDetailsWithExistingAccountConflict(
+        Func<ExistingAccountDetails?> resolveConflict,
+        DirectoryMutationCommand command,
+        string distinguishedName,
+        ActiveDirectoryConfig config,
+        IReadOnlyList<DirectoryAttribute> attributes,
+        string step,
+        string? managerDistinguishedName,
+        ILogger logger,
+        string fallbackDetails)
+    {
+        try
+        {
+            var existingConflict = resolveConflict();
+            return BuildCreateFailureDetails(command, distinguishedName, config, attributes, step, managerDistinguishedName, existingConflict);
+        }
+        catch (Exception conflictEx) when (conflictEx is LdapException or DirectoryOperationException)
+        {
+            logger.LogWarning(
+                conflictEx,
+                "AD create conflict-resolution lookup failed after entry-exists failure. WorkerId={WorkerId} SamAccountName={SamAccountName} DistinguishedName={DistinguishedName}",
+                command.WorkerId,
+                command.SamAccountName,
+                distinguishedName);
+            return $"{fallbackDetails} ConflictResolutionLookupFailed=true ConflictResolutionLookupError={FormatDetailValue(conflictEx.Message)}";
+        }
     }
 
     private static string BuildIdentityConflictSummary(DirectoryMutationCommand command, IdentityConflictResult conflict)
