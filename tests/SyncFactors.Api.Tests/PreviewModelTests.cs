@@ -121,15 +121,16 @@ public sealed class PreviewModelTests
     public void ActiveDirectoryFailureDiagnostics_Parse_HandlesCreateFailureContext()
     {
         var diagnostics = ActiveDirectoryFailureDiagnostics.Parse(
-            "Active Directory command 'CreateUser' failed against LDAP server '192.0.2.10'. A value in the request is invalid. LDAP error code 19. Server detail: 000021C8: AtrErr: DSID-03200E96, problem 1005 (CONSTRAINT_ATT_TYPE), Att 90290 (userPrincipalName) Details: Step=CreateUser WorkerId=45086 SamAccountName=45086 DistinguishedName=CN=45086,OU=Users,DC=example,DC=com TargetOu=OU=Users,DC=example,DC=com UserPrincipalName=45086@example.com Mail=45086@example.com IdentityAttribute=employeeID IdentityValue=45086 ManagerId=90001 ManagerDistinguishedName=CN=Manager,OU=Users,DC=example,DC=com Next check: Check the target OU, manager resolution, and whether the account already exists with unexpected state.");
+            "Active Directory command 'CreateUser' failed against LDAP server '192.0.2.10'. A value in the request is invalid. LDAP error code 19. Server detail: 000021C8: AtrErr: DSID-03200E96, problem 1005 (CONSTRAINT_ATT_TYPE), Att 90290 (userPrincipalName) Details: Step=CreateUserAddRequest WorkerId=45086 SamAccountName=45086 DistinguishedName=CN=45086,OU=Users,DC=example,DC=com TargetOu=OU=Users,DC=example,DC=com UserPrincipalName=45086@example.com Mail=45086@example.com IdentityAttribute=employeeID IdentityValue=45086 CreateAttributes=objectClass,cn,displayName,sAMAccountName,userPrincipalName,mail,userAccountControl,employeeID ManagerId=90001 ManagerDistinguishedName=CN=Manager,OU=Users,DC=example,DC=com Next check: Check the target OU, manager resolution, and whether the account already exists with unexpected state.");
 
         Assert.NotNull(diagnostics);
-        Assert.Contains(diagnostics!.Details, item => item.Label == "Step" && item.Value == "CreateUser");
+        Assert.Contains(diagnostics!.Details, item => item.Label == "Step" && item.Value == "CreateUserAddRequest");
         Assert.Contains(diagnostics.Details, item => item.Label == "Target OU" && item.Value == "OU=Users,DC=example,DC=com");
         Assert.Contains(diagnostics.Details, item => item.Label == "UPN" && item.Value == "45086@example.com");
         Assert.Contains(diagnostics.Details, item => item.Label == "Mail" && item.Value == "45086@example.com");
         Assert.Contains(diagnostics.Details, item => item.Label == "Identity Attribute" && item.Value == "employeeID");
         Assert.Contains(diagnostics.Details, item => item.Label == "Identity Value" && item.Value == "45086");
+        Assert.Contains(diagnostics.Details, item => item.Label == "Create Attributes" && item.Value == "objectClass,cn,displayName,sAMAccountName,userPrincipalName,mail,userAccountControl,employeeID");
         Assert.Contains(diagnostics.Details, item => item.Label == "Manager Distinguished Name" && item.Value == "CN=Manager,OU=Users,DC=example,DC=com");
     }
 

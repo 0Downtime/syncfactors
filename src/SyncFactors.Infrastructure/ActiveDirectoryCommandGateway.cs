@@ -142,12 +142,23 @@ public sealed class ActiveDirectoryCommandGateway(
                 dn,
                 config.IdentityAttribute,
                 TryGetDirectoryAttributeValue(attributes, config.IdentityAttribute, out var identityWriteValue) ? identityWriteValue : null);
+            logger.LogInformation(
+                "Prepared AD create add request attributes. WorkerId={WorkerId} SamAccountName={SamAccountName} DistinguishedName={DistinguishedName} CreateAttributes={CreateAttributes}",
+                command.WorkerId,
+                command.SamAccountName,
+                dn,
+                FormatDirectoryAttributesForLog(attributes));
             LogRequestAttributes("CreateUser", command.WorkerId, attributes, logger);
 
-            step = "CreateUser";
+            step = "CreateUserAddRequest";
             var canProvisionPassword = SupportsPasswordProvisioningTransport(effectiveTransport);
             var canEnableCreatedAccount = CanEnableCreatedAccount(command, config, effectiveTransport);
             ExecuteModify(connection, request, logger, "create user add request", ("WorkerId", command.WorkerId), ("SamAccountName", command.SamAccountName));
+            logger.LogInformation(
+                "Completed AD create add request. WorkerId={WorkerId} SamAccountName={SamAccountName} DistinguishedName={DistinguishedName}",
+                command.WorkerId,
+                command.SamAccountName,
+                dn);
             if (canProvisionPassword)
             {
                 step = "SetPassword";
@@ -1500,7 +1511,7 @@ public sealed class ActiveDirectoryCommandGateway(
     {
         TryGetDirectoryAttributeValue(attributes, config.IdentityAttribute, out var identityValue);
 
-        return $"Step={step} WorkerId={command.WorkerId} SamAccountName={command.SamAccountName} DistinguishedName={distinguishedName} TargetOu={FormatDetailValue(command.TargetOu)} UserPrincipalName={FormatDetailValue(command.UserPrincipalName)} Mail={FormatDetailValue(command.Mail)} IdentityAttribute={config.IdentityAttribute} IdentityValue={FormatDetailValue(identityValue)} LicensingGroups={FormatDetailValues(config.LicensingGroups)} ExistingSamAccountName={FormatDetailValue(existingAccount?.SamAccountName)} ExistingDisplayName={FormatDetailValue(existingAccount?.DisplayName)} ExistingDistinguishedName={FormatDetailValue(existingAccount?.DistinguishedName)} ExistingUserPrincipalName={FormatDetailValue(existingAccount?.UserPrincipalName)} ExistingMail={FormatDetailValue(existingAccount?.Mail)} ManagerId={FormatDetailValue(command.ManagerId)} ManagerDistinguishedName={FormatDetailValue(managerDistinguishedName)}";
+        return $"Step={step} WorkerId={command.WorkerId} SamAccountName={command.SamAccountName} DistinguishedName={distinguishedName} TargetOu={FormatDetailValue(command.TargetOu)} UserPrincipalName={FormatDetailValue(command.UserPrincipalName)} Mail={FormatDetailValue(command.Mail)} IdentityAttribute={config.IdentityAttribute} IdentityValue={FormatDetailValue(identityValue)} CreateAttributes={FormatDirectoryAttributeNames(attributes)} LicensingGroups={FormatDetailValues(config.LicensingGroups)} ExistingSamAccountName={FormatDetailValue(existingAccount?.SamAccountName)} ExistingDisplayName={FormatDetailValue(existingAccount?.DisplayName)} ExistingDistinguishedName={FormatDetailValue(existingAccount?.DistinguishedName)} ExistingUserPrincipalName={FormatDetailValue(existingAccount?.UserPrincipalName)} ExistingMail={FormatDetailValue(existingAccount?.Mail)} ManagerId={FormatDetailValue(command.ManagerId)} ManagerDistinguishedName={FormatDetailValue(managerDistinguishedName)}";
     }
 
     private static ExistingAccountDetails? TryResolveCreateExistingAccountConflict(
@@ -1573,6 +1584,43 @@ public sealed class ActiveDirectoryCommandGateway(
             .Select(value => value.Trim())
             .ToArray() ?? [];
         return items.Length == 0 ? "(none)" : string.Join(";", items);
+    }
+
+    private static string FormatDirectoryAttributeNames(IEnumerable<DirectoryAttribute> attributes)
+    {
+        var names = attributes
+            .Select(attribute => attribute.Name)
+            .Where(name => !string.IsNullOrWhiteSpace(name))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        return names.Length == 0 ? "(none)" : string.Join(",", names);
+    }
+
+    private static string FormatDirectoryAttributesForLog(IEnumerable<DirectoryAttribute> attributes)
+    {
+        var items = attributes
+            .Select(attribute => $"{attribute.Name}=[{FormatDirectoryAttributeValuesForLog(attribute)}]")
+            .ToArray();
+
+        return items.Length == 0 ? "(none)" : string.Join("; ", items);
+    }
+
+    private static string FormatDirectoryAttributeValuesForLog(DirectoryAttribute attribute)
+    {
+        var stringValues = attribute
+            .GetValues(typeof(string))
+            .Cast<object?>()
+            .Select(value => value?.ToString())
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .ToArray();
+
+        if (stringValues.Length > 0)
+        {
+            return string.Join("|", stringValues);
+        }
+
+        return string.Join("|", attribute.Cast<object?>().Select(value => value?.ToString() ?? "(null)"));
     }
 
     private static string FormatModificationAttributeNames(DirectoryAttributeModificationCollection? modifications)
