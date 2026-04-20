@@ -185,6 +185,7 @@ public sealed class SyncFactorsLauncherAdOuProbeCheck
     public bool Writable { get; set; }
     public string WriteCheck { get; set; } = string.Empty;
     public string? Message { get; set; }
+    public string? EvaluationDetails { get; set; }
 }
 
 public static class SyncFactorsLauncherAdOuProbe
@@ -253,7 +254,7 @@ public static class SyncFactorsLauncherAdOuProbe
             var response = (SearchResponse)connection.SendRequest(request, Timeout);
             if (response.ResultCode == ResultCode.NoSuchObject)
             {
-                return CreateFailure(target, exists: false, "missing", "directory object was not found");
+                return CreateFailure(target, exists: false, "missing", "directory object was not found", null);
             }
 
             if (response.ResultCode != ResultCode.Success)
@@ -261,7 +262,7 @@ public static class SyncFactorsLauncherAdOuProbe
                 var message = string.IsNullOrWhiteSpace(response.ErrorMessage)
                     ? response.ResultCode.ToString()
                     : response.ErrorMessage.Trim();
-                return CreateFailure(target, exists: false, "search", message);
+                return CreateFailure(target, exists: false, "search", message, null);
             }
 
             var entry = response.Entries.Count > 0
@@ -269,28 +270,24 @@ public static class SyncFactorsLauncherAdOuProbe
                 : null;
             if (entry is null)
             {
-                return CreateFailure(target, exists: false, "search", "directory search returned no entry");
+                return CreateFailure(target, exists: false, "search", "directory search returned no entry", null);
             }
 
+            var objectClasses = GetAttributeValues(entry, "objectClass");
             var effectiveAllowedChildren = GetAttributeValues(entry, "allowedChildClassesEffective");
+            var schemaAllowedChildren = GetAttributeValues(entry, "allowedChildClasses");
+            var evaluationDetails = BuildEvaluationDetails(objectClasses, effectiveAllowedChildren, schemaAllowedChildren);
             if (effectiveAllowedChildren.Length == 0)
             {
                 return CreateFailure(
                     target,
                     exists: true,
                     "allowedChildClassesEffective",
-                    "OU exists, but the server did not return allowedChildClassesEffective so create-child permissions could not be confirmed");
+                    "OU exists, but the server did not return allowedChildClassesEffective so create-child permissions could not be confirmed",
+                    evaluationDetails);
             }
 
-            var canCreateUsers = false;
-            foreach (var childClass in effectiveAllowedChildren)
-            {
-                if (string.Equals(childClass, "user", StringComparison.OrdinalIgnoreCase))
-                {
-                    canCreateUsers = true;
-                    break;
-                }
-            }
+            var canCreateUsers = ContainsIgnoreCase(effectiveAllowedChildren, "user");
 
             if (!canCreateUsers)
             {
@@ -298,7 +295,8 @@ public static class SyncFactorsLauncherAdOuProbe
                     target,
                     exists: true,
                     "allowedChildClassesEffective",
-                    "OU exists, but the bind account does not have effective permission to create user objects there");
+                    "OU exists, but the bind account does not have effective permission to create user objects there",
+                    evaluationDetails);
             }
 
             return new SyncFactorsLauncherAdOuProbeCheck
@@ -308,20 +306,21 @@ public static class SyncFactorsLauncherAdOuProbe
                 Exists = true,
                 Writable = true,
                 WriteCheck = "allowedChildClassesEffective",
-                Message = null
+                Message = null,
+                EvaluationDetails = evaluationDetails
             };
         }
         catch (DirectoryOperationException ex) when (ex.Response?.ResultCode == ResultCode.NoSuchObject)
         {
-            return CreateFailure(target, exists: false, "missing", "directory object was not found");
+            return CreateFailure(target, exists: false, "missing", "directory object was not found", null);
         }
         catch (DirectoryOperationException ex) when (ex.Response?.ResultCode == ResultCode.InsufficientAccessRights)
         {
-            return CreateFailure(target, exists: true, "search", "OU exists, but the bind account cannot read it well enough to validate permissions");
+            return CreateFailure(target, exists: true, "search", "OU exists, but the bind account cannot read it well enough to validate permissions", null);
         }
         catch (LdapException ex)
         {
-            return CreateFailure(target, exists: false, "search", ex.Message);
+            return CreateFailure(target, exists: false, "search", ex.Message, null);
         }
     }
 
@@ -329,7 +328,8 @@ public static class SyncFactorsLauncherAdOuProbe
         SyncFactorsLauncherAdOuProbeTarget target,
         bool exists,
         string writeCheck,
-        string message)
+        string message,
+        string? evaluationDetails)
     {
         return new SyncFactorsLauncherAdOuProbeCheck
         {
@@ -338,8 +338,34 @@ public static class SyncFactorsLauncherAdOuProbe
             Exists = exists,
             Writable = false,
             WriteCheck = writeCheck,
-            Message = message
+            Message = message,
+            EvaluationDetails = evaluationDetails
         };
+    }
+
+    private static string BuildEvaluationDetails(
+        string[] objectClasses,
+        string[] effectiveAllowedChildren,
+        string[] schemaAllowedChildren)
+    {
+        return $"objectClass=[{string.Join(",", objectClasses)}]; " +
+               $"allowedChildClassesEffectiveContainsUser={ContainsIgnoreCase(effectiveAllowedChildren, "user").ToString().ToLowerInvariant()}; " +
+               $"allowedChildClassesEffective=[{string.Join(",", effectiveAllowedChildren)}]; " +
+               $"allowedChildClassesContainsUser={ContainsIgnoreCase(schemaAllowedChildren, "user").ToString().ToLowerInvariant()}; " +
+               $"allowedChildClasses=[{string.Join(",", schemaAllowedChildren)}]";
+    }
+
+    private static bool ContainsIgnoreCase(string[] values, string expected)
+    {
+        foreach (var value in values)
+        {
+            if (string.Equals(value, expected, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static string[] GetAttributeValues(SearchResultEntry entry, string attributeName)
@@ -570,6 +596,25 @@ function Write-SyncFactorsConfiguredAdBindSummary {
     Write-Host "AD OU precheck bind identity: user='$bindUser', domain='$bindDomain', server='$($Configuration.Server)', transport='$transportMode'." -ForegroundColor DarkGray
 }
 
+function Write-SyncFactorsConfiguredAdProbeEvaluation {
+    param(
+        [Parameter(Mandatory)]
+        [object]$ProbeResult
+    )
+
+    foreach ($check in @($ProbeResult.Checks)) {
+        $status = if ($check.Writable) { 'writable' } elseif ($check.Exists) { 'not-writable' } else { 'missing' }
+        $details = if ([string]::IsNullOrWhiteSpace([string]$check.EvaluationDetails)) {
+            'no attribute diagnostics returned'
+        }
+        else {
+            [string]$check.EvaluationDetails
+        }
+
+        Write-Host "AD OU precheck evaluation: name='$($check.Name)', status='$status', writeCheck='$($check.WriteCheck)', dn='$($check.DistinguishedName)', details=$details" -ForegroundColor DarkGray
+    }
+}
+
 function Format-SyncFactorsActiveDirectoryOuFailureMessage {
     param(
         [Parameter(Mandatory)]
@@ -583,7 +628,12 @@ function Format-SyncFactorsActiveDirectoryOuFailureMessage {
     $summary.Add("Requested transport='$($ProbeResult.RequestedTransport)', effective transport='$($ProbeResult.EffectiveTransport)', usedFallback=$($ProbeResult.UsedFallback.ToString().ToLowerInvariant()).")
 
     foreach ($check in @($ProbeResult.Checks | Where-Object { -not $_.Exists -or -not $_.Writable })) {
-        $summary.Add("$($check.Name)='$($check.DistinguishedName)' failed: $($check.Message)")
+        $line = "$($check.Name)='$($check.DistinguishedName)' failed: $($check.Message)"
+        if (-not [string]::IsNullOrWhiteSpace([string]$check.EvaluationDetails)) {
+            $line = "$line Evaluation: $($check.EvaluationDetails)"
+        }
+
+        $summary.Add($line)
     }
 
     return $summary -join ' '
@@ -606,6 +656,7 @@ function Assert-SyncFactorsConfiguredAdOusAccessible {
 
     Write-SyncFactorsConfiguredAdBindSummary -Configuration $configuration
     $probeResult = Invoke-SyncFactorsConfiguredActiveDirectoryOuProbe -Configuration $configuration
+    Write-SyncFactorsConfiguredAdProbeEvaluation -ProbeResult $probeResult
     $failures = @($probeResult.Checks | Where-Object { -not $_.Exists -or -not $_.Writable })
     if ($failures.Count -gt 0) {
         throw (Format-SyncFactorsActiveDirectoryOuFailureMessage -Server $configuration.Server -ProbeResult $probeResult)
