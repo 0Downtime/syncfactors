@@ -148,6 +148,7 @@ using System.Collections.Generic;
 using System.DirectoryServices.Protocols;
 using System.Net;
 using System.Security.Cryptography.X509Certificates;
+using System.Text;
 
 public sealed class SyncFactorsLauncherAdOuProbeConfig
 {
@@ -383,7 +384,7 @@ public static class SyncFactorsLauncherAdOuProbe
                 continue;
             }
 
-            var text = value.ToString();
+            var text = ConvertAttributeValueToText(value);
             if (!string.IsNullOrWhiteSpace(text))
             {
                 values.Add(text.Trim());
@@ -391,6 +392,19 @@ public static class SyncFactorsLauncherAdOuProbe
         }
 
         return values.ToArray();
+    }
+
+    private static string? ConvertAttributeValueToText(object value)
+    {
+        if (value is byte[] bytes)
+        {
+            var decoded = Encoding.UTF8.GetString(bytes).TrimEnd('\0');
+            return string.IsNullOrWhiteSpace(decoded)
+                ? Convert.ToHexString(bytes)
+                : decoded;
+        }
+
+        return value.ToString();
     }
 
     private static LdapConnection CreateConnectionForMode(SyncFactorsLauncherAdOuProbeConfig config, string mode)
