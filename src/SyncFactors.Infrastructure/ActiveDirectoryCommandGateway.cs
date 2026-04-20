@@ -60,13 +60,13 @@ public sealed class ActiveDirectoryCommandGateway(
         {
             lease?.Invalidate();
             logger.LogError(ex, "AD command failed with LDAP exception. Action={Action} WorkerId={WorkerId} Server={Server}", command.Action, command.WorkerId, config.Server);
-            throw ExternalSystemExceptionFactory.CreateActiveDirectoryException($"command '{command.Action}'", config, ex);
+            throw ExternalSystemExceptionFactory.CreateActiveDirectoryException($"command '{command.Action}'", config, ex, TryBuildOuterCatchFailureDetails(command, config));
         }
         catch (DirectoryOperationException ex)
         {
             lease?.Invalidate();
             logger.LogError(ex, "AD command failed with directory operation exception. Action={Action} WorkerId={WorkerId} Server={Server}", command.Action, command.WorkerId, config.Server);
-            throw ExternalSystemExceptionFactory.CreateActiveDirectoryException($"command '{command.Action}'", config, ex);
+            throw ExternalSystemExceptionFactory.CreateActiveDirectoryException($"command '{command.Action}'", config, ex, TryBuildOuterCatchFailureDetails(command, config));
         }
         catch
         {
@@ -1462,6 +1462,31 @@ public sealed class ActiveDirectoryCommandGateway(
     private static string BuildUpdateRenameFailureDetails(DirectoryMutationCommand command, string distinguishedName, string? currentCn)
     {
         return $"Step=RenameUser WorkerId={command.WorkerId} SamAccountName={command.SamAccountName} DistinguishedName={distinguishedName} CurrentCn={FormatDetailValue(currentCn)} DesiredCn={FormatDetailValue(command.CommonName)}";
+    }
+
+    private static string? TryBuildOuterCatchFailureDetails(DirectoryMutationCommand command, ActiveDirectoryConfig config)
+    {
+        if (!string.Equals(command.Action, "CreateUser", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        try
+        {
+            var distinguishedName = $"CN={EscapeDnComponent(command.CommonName)},{command.TargetOu}";
+            var attributes = BuildCreateAttributes(command, config);
+            return BuildCreateFailureDetails(
+                command,
+                distinguishedName,
+                config,
+                attributes,
+                "ExecuteAsyncOuterCatch",
+                command.ManagerDistinguishedName);
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     private static string BuildCreateFailureDetails(
