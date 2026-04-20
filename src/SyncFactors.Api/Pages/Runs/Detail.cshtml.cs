@@ -263,6 +263,18 @@ public sealed class DetailModel(RunEntriesQueryService queryService) : PageModel
         return sections;
     }
 
+    public IReadOnlyList<ProvisioningDecisionStep> GetProvisioningDecisionSteps(RunEntry entry)
+    {
+        return GetItemArray(entry.Item, "decisionTree")
+            .Select(item => new ProvisioningDecisionStep(
+                Step: GetItemString(item, "step") ?? string.Empty,
+                Outcome: GetItemString(item, "outcome") ?? string.Empty,
+                Detail: GetItemString(item, "detail") ?? string.Empty,
+                Tone: NormalizeDecisionTone(GetItemString(item, "tone"))))
+            .Where(step => !string.IsNullOrWhiteSpace(step.Step))
+            .ToArray();
+    }
+
     public string? GetPrimarySummaryDisplay(RunEntry entry)
     {
         var primarySummary = entry.PrimarySummary?.Trim();
@@ -753,6 +765,16 @@ public sealed class DetailModel(RunEntriesQueryService queryService) : PageModel
 
     private static bool StringEquals(string? left, string? right)
         => string.Equals(left?.Trim(), right?.Trim(), StringComparison.OrdinalIgnoreCase);
+
+    private static string NormalizeDecisionTone(string? tone)
+    {
+        return tone?.Trim().ToLowerInvariant() switch
+        {
+            "good" => "good",
+            "warn" => "warn",
+            _ => "neutral"
+        };
+    }
 
     private static string? FormatNullableBoolean(bool? value)
     {
