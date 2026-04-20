@@ -111,6 +111,7 @@ public sealed class ActiveDirectoryCommandGatewayTests
         Assert.Contains("Mail=45086@example.com", details, StringComparison.Ordinal);
         Assert.Contains("IdentityAttribute=employeeID", details, StringComparison.Ordinal);
         Assert.Contains("IdentityValue=45086", details, StringComparison.Ordinal);
+        Assert.Contains("CreateAttributes=sAMAccountName,userPrincipalName,mail,employeeID", details, StringComparison.Ordinal);
         Assert.Contains("LicensingGroups=CN=M365-E3-Prestage,OU=Groups,DC=example,DC=com", details, StringComparison.Ordinal);
         Assert.Contains("ExistingSamAccountName=(unset)", details, StringComparison.Ordinal);
         Assert.Contains("ExistingDisplayName=(unset)", details, StringComparison.Ordinal);
@@ -177,6 +178,52 @@ public sealed class ActiveDirectoryCommandGatewayTests
         Assert.Contains("ExistingDistinguishedName=CN=30008382,OU=POWERSHELL,OU=SpireQA-Users,DC=spireQA,DC=biz", details, StringComparison.Ordinal);
         Assert.Contains("ExistingUserPrincipalName=david.ramsey@example.com", details, StringComparison.Ordinal);
         Assert.Contains("ExistingMail=david.ramsey@example.com", details, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void TryBuildOuterCatchFailureDetails_ForCreateUser_IncludesDistinguishedNameAndTargetOu()
+    {
+        var method = typeof(ActiveDirectoryCommandGateway).GetMethod("TryBuildOuterCatchFailureDetails", BindingFlags.NonPublic | BindingFlags.Static);
+        Assert.NotNull(method);
+
+        var command = new DirectoryMutationCommand(
+            Action: "CreateUser",
+            WorkerId: "45511",
+            ManagerId: null,
+            ManagerDistinguishedName: null,
+            SamAccountName: "45511",
+            CommonName: "45511",
+            UserPrincipalName: "kimberly.turner@example.com",
+            Mail: "kimberly.turner@example.com",
+            TargetOu: "OU=POWERSHELL,OU=SpireQA-Users,DC=spireQA,DC=biz",
+            DisplayName: "Turner, Kimberly",
+            CurrentDistinguishedName: null,
+            EnableAccount: true,
+            Operations: [new SyncFactors.Contracts.DirectoryOperation("CreateUser")],
+            Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["sAMAccountName"] = "45511"
+            });
+        var config = new ActiveDirectoryConfig(
+            Server: "localhost",
+            Port: 636,
+            Username: "bind",
+            BindPassword: "secret",
+            IdentityAttribute: "sAMAccountName",
+            DefaultActiveOu: "OU=POWERSHELL,OU=SpireQA-Users,DC=spireQA,DC=biz",
+            PrehireOu: "OU=Prehire,OU=SpireQA-Users,DC=spireQA,DC=biz",
+            GraveyardOu: "OU=GRAVEYARD,OU=SpireQA-Users,DC=spireQA,DC=biz",
+            Transport: new ActiveDirectoryTransportConfig("ldaps", false, true, true, []),
+            IdentityPolicy: new ActiveDirectoryIdentityPolicyConfig(false));
+
+        var details = Assert.IsType<string>(method!.Invoke(null, [command, config]));
+
+        Assert.Contains("Step=ExecuteAsyncOuterCatch", details, StringComparison.Ordinal);
+        Assert.Contains("DistinguishedName=CN=45511,OU=POWERSHELL,OU=SpireQA-Users,DC=spireQA,DC=biz", details, StringComparison.Ordinal);
+        Assert.Contains("TargetOu=OU=POWERSHELL,OU=SpireQA-Users,DC=spireQA,DC=biz", details, StringComparison.Ordinal);
+        Assert.Contains("UserPrincipalName=kimberly.turner@example.com", details, StringComparison.Ordinal);
+        Assert.Contains("Mail=kimberly.turner@example.com", details, StringComparison.Ordinal);
+        Assert.Contains("CreateAttributes=objectClass,cn,displayName,sAMAccountName,userPrincipalName,mail,userAccountControl", details, StringComparison.Ordinal);
     }
 
     [Fact]
