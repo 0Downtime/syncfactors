@@ -1,4 +1,3 @@
-using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using SyncFactors.Contracts;
 
@@ -116,6 +115,23 @@ public sealed class WorkerPlanningService(
         bucket = ResolveBucket(bucket, directoryUser, lifecycle.TargetOu, targetEnabled, attributeChanges, operations);
         var primaryAction = ResolvePrimaryAction(bucket, operations);
         var canAutoApply = operations.Count > 0;
+        var decisionSteps = BuildDecisionSteps(
+            worker,
+            directoryUser,
+            managerId,
+            managerDistinguishedName,
+            identityReview,
+            identity,
+            lifecycle,
+            suppressInactiveCreateValidation,
+            hasAmbiguousWorkerIdentity,
+            proposedEmailAddress,
+            attributeChanges,
+            missingSourceAttributes,
+            bucket,
+            operations,
+            reason,
+            canAutoApply);
 
         logger.LogInformation(
             "Planned worker action. Bucket={Bucket} AutoApply={CanAutoApply} MissingRequiredCount={MissingRequiredCount}",
@@ -141,7 +157,8 @@ public sealed class WorkerPlanningService(
             ReviewCategory: reviewCategory,
             ReviewCaseType: reviewCaseType,
             Reason: reason,
-            CanAutoApply: canAutoApply);
+            CanAutoApply: canAutoApply,
+            DecisionSteps: decisionSteps);
     }
 
     private static bool ShouldSuppressInactiveCreateValidation(
@@ -310,6 +327,284 @@ public sealed class WorkerPlanningService(
             })
             .ToArray();
     }
+
+    private static IReadOnlyList<ProvisioningDecisionStep> BuildDecisionSteps(
+        WorkerSnapshot worker,
+        DirectoryUserSnapshot directoryUser,
+        string? managerId,
+        string? managerDistinguishedName,
+        (string ReviewCategory, string ReviewCaseType, string Reason)? identityReview,
+        IdentityMatchResult identity,
+        LifecycleDecision lifecycle,
+        bool suppressInactiveCreateValidation,
+        bool hasAmbiguousWorkerIdentity,
+        string? proposedEmailAddress,
+        IReadOnlyList<AttributeChange> attributeChanges,
+        IReadOnlyList<MissingSourceAttributeRow> missingSourceAttributes,
+        string bucket,
+        IReadOnlyList<DirectoryOperation> operations,
+        string? reason,
+        bool canAutoApply)
+    {
+        var steps = new List<ProvisioningDecisionStep>();
+        var employmentStatus = ResolveWorkerAttribute(worker.Attributes, "emplStatus")
+            ?? ResolveWorkerAttribute(worker.Attributes, "employeeStatus");
+        var sourceSummary = $"Worker {worker.WorkerId} targets '{worker.TargetOu}'.";
+        if (!string.IsNullOrWhiteSpace(employmentStatus))
+        {
+            sourceSummary += $" Employment status='{employmentStatus}'.";
+        }
+
+        sourceSummary += worker.IsPrehire
+            ? " Worker is marked as prehire."
+            : " Worker is not marked as prehire.";
+        steps.Add(new ProvisioningDecisionStep("Source Worker", "Loaded", sourceSummary));
+
+        if (string.Equals(identityReview?.ReviewCaseType, "AmbiguousWorkerIdentity", StringComparison.Ordinal))
+        {
+            var review = identityReview!.Value;
+            steps.Add(new ProvisioningDecisionStep("Directory Identity", "Blocked", review.Reason, "warn"));
+        }
+        else if (identity.MatchedExistingUser)
+        {
+            steps.Add(new ProvisioningDecisionStep(
+                "Directory Identity",
+                "Matched Existing User",
+                $"Matched AD account '{identity.SamAccountName}', so planning continues against the existing object.",
+                "good"));
+        }
+        else
+        {
+            steps.Add(new ProvisioningDecisionStep(
+                "Directory Identity",
+                "No Existing User",
+                $"No AD account matched worker {worker.WorkerId}. Planning continues as a new account using SAM '{identity.SamAccountName}'."));
+        }
+
+        if (string.IsNullOrWhiteSpace(managerId))
+        {
+            steps.Add(new ProvisioningDecisionStep("Manager Resolution", "Skipped", "No source managerId was available for manager linking."));
+        }
+        else if (string.Equals(identityReview?.ReviewCaseType, "AmbiguousManagerIdentity", StringComparison.Ordinal))
+        {
+            var review = identityReview!.Value;
+            steps.Add(new ProvisioningDecisionStep("Manager Resolution", "Blocked", review.Reason, "warn"));
+        }
+        else if (!string.IsNullOrWhiteSpace(managerDistinguishedName))
+        {
+            steps.Add(new ProvisioningDecisionStep(
+                "Manager Resolution",
+                "Resolved",
+                $"managerId '{managerId}' resolved to '{managerDistinguishedName}'.",
+                "good"));
+        }
+        else
+        {
+            steps.Add(new ProvisioningDecisionStep(
+                "Manager Resolution",
+                "Unresolved",
+                $"managerId '{managerId}' did not resolve to an AD distinguished name. Planning continues without a manager update.",
+                "warn"));
+        }
+
+        steps.Add(new ProvisioningDecisionStep(
+            "Lifecycle Policy",
+            DescribeBucket(lifecycle.Bucket),
+            $"{lifecycle.Reason} Target OU='{lifecycle.TargetOu}'. Target enabled={FormatBooleanState(lifecycle.TargetEnabled)}."));
+
+        if (suppressInactiveCreateValidation)
+        {
+            steps.Add(new ProvisioningDecisionStep(
+                "Required Inputs",
+                "Skipped",
+                "Inactive worker has no existing AD account, so diff generation and required-mapping validation were skipped."));
+        }
+        else if (hasAmbiguousWorkerIdentity)
+        {
+            steps.Add(new ProvisioningDecisionStep(
+                "Required Inputs",
+                "Skipped",
+                "Required-mapping validation was skipped because worker identity resolution is ambiguous.",
+                "warn"));
+        }
+        else if (missingSourceAttributes.Count > 0)
+        {
+            var missingList = string.Join(", ", missingSourceAttributes
+                .Select(attribute => attribute.Attribute)
+                .Distinct(StringComparer.OrdinalIgnoreCase));
+            steps.Add(new ProvisioningDecisionStep(
+                "Required Inputs",
+                "Blocked",
+                $"Automatic sync is blocked until required mapped source values are populated: {missingList}.",
+                "warn"));
+        }
+        else
+        {
+            steps.Add(new ProvisioningDecisionStep(
+                "Required Inputs",
+                "Passed",
+                "All required mapped source values needed for automatic sync are populated.",
+                "good"));
+        }
+
+        if (suppressInactiveCreateValidation)
+        {
+            steps.Add(new ProvisioningDecisionStep(
+                "Email Resolution",
+                "Skipped",
+                "No proposed email was computed because the worker will not be created or updated automatically."));
+        }
+        else if (hasAmbiguousWorkerIdentity)
+        {
+            steps.Add(new ProvisioningDecisionStep(
+                "Email Resolution",
+                "Skipped",
+                "No proposed email was computed because identity review blocked automatic planning.",
+                "warn"));
+        }
+        else if (string.IsNullOrWhiteSpace(proposedEmailAddress))
+        {
+            steps.Add(new ProvisioningDecisionStep(
+                "Email Resolution",
+                "Unavailable",
+                "Planner did not produce a proposed email address.",
+                "warn"));
+        }
+        else if (identity.MatchedExistingUser)
+        {
+            steps.Add(new ProvisioningDecisionStep(
+                "Email Resolution",
+                "Resolved",
+                $"Planning will use '{proposedEmailAddress}' while evaluating the matched AD account.",
+                "good"));
+        }
+        else
+        {
+            steps.Add(new ProvisioningDecisionStep(
+                "Email Resolution",
+                "Resolved",
+                $"Planning resolved '{proposedEmailAddress}' for the new AD account.",
+                "good"));
+        }
+
+        if (suppressInactiveCreateValidation)
+        {
+            steps.Add(new ProvisioningDecisionStep(
+                "Attribute Diff",
+                "Skipped",
+                "No mapped attribute diff was generated because automatic create/update planning was skipped."));
+        }
+        else if (hasAmbiguousWorkerIdentity)
+        {
+            steps.Add(new ProvisioningDecisionStep(
+                "Attribute Diff",
+                "Skipped",
+                "No mapped attribute diff was generated because worker identity review blocked planning.",
+                "warn"));
+        }
+        else
+        {
+            var changedCount = attributeChanges.Count(change => change.Changed);
+            steps.Add(new ProvisioningDecisionStep(
+                "Attribute Diff",
+                changedCount > 0 ? "Changes Detected" : "No Changes",
+                changedCount > 0
+                    ? $"{changedCount} mapped attribute change{(changedCount == 1 ? string.Empty : "s")} were staged."
+                    : "The worker already matches the mapped AD attribute values.",
+                changedCount > 0 ? "good" : "neutral"));
+        }
+
+        steps.Add(new ProvisioningDecisionStep(
+            "Directory Operations",
+            operations.Count == 0 ? "None Planned" : $"{operations.Count} Planned",
+            operations.Count == 0
+                ? $"Final bucket '{DescribeBucket(bucket)}' produced no directory operations."
+                : $"Final bucket '{DescribeBucket(bucket)}' will run {string.Join("; ", operations.Select(DescribeOperation))}.",
+            operations.Count == 0 ? "neutral" : "good"));
+
+        if (string.Equals(bucket, "manualReview", StringComparison.OrdinalIgnoreCase))
+        {
+            steps.Add(new ProvisioningDecisionStep(
+                "Provisioning Decision",
+                "No",
+                $"Do not auto-provision. {reason ?? "Manual review is required before any AD write can occur."}",
+                "warn"));
+        }
+        else if (!canAutoApply)
+        {
+            steps.Add(new ProvisioningDecisionStep(
+                "Provisioning Decision",
+                "No",
+                string.Equals(bucket, "unchanged", StringComparison.OrdinalIgnoreCase)
+                    ? "Do not provision because the worker already matches the target AD state."
+                    : "Do not auto-provision because planning produced no directory operations."));
+        }
+        else
+        {
+            steps.Add(new ProvisioningDecisionStep(
+                "Provisioning Decision",
+                "Yes",
+                identity.MatchedExistingUser
+                    ? $"Yes. Real sync can update AD account '{identity.SamAccountName}' through {string.Join(", ", operations.Select(DescribeOperationShort))}."
+                    : $"Yes. Real sync can provision new AD account '{identity.SamAccountName}' through {string.Join(", ", operations.Select(DescribeOperationShort))}.",
+                "good"));
+        }
+
+        return steps;
+    }
+
+    private static string? ResolveWorkerAttribute(IReadOnlyDictionary<string, string?> attributes, string attribute)
+    {
+        foreach (var key in new[]
+                 {
+                     attribute,
+                     SourceAttributePathNormalizer.Normalize(attribute),
+                     $"employmentNav[0].jobInfoNav[0].{attribute}",
+                     $"employmentNav/jobInfoNav/{attribute}"
+                 })
+        {
+            if (attributes.TryGetValue(key, out var value) && !string.IsNullOrWhiteSpace(value))
+            {
+                return value;
+            }
+        }
+
+        return null;
+    }
+
+    private static string DescribeBucket(string bucket) =>
+        bucket switch
+        {
+            "creates" => "Create",
+            "updates" => "Update",
+            "enables" => "Enable",
+            "disables" => "Disable",
+            "graveyardMoves" => "Move To Graveyard",
+            "manualReview" => "Manual Review",
+            "unchanged" => "No Change",
+            _ => bucket
+        };
+
+    private static string FormatBooleanState(bool value) => value ? "true" : "false";
+
+    private static string DescribeOperation(DirectoryOperation operation)
+    {
+        var action = DescribeOperationShort(operation);
+        return string.IsNullOrWhiteSpace(operation.TargetOu)
+            ? action
+            : $"{action} in '{operation.TargetOu}'";
+    }
+
+    private static string DescribeOperationShort(DirectoryOperation operation) =>
+        operation.Kind switch
+        {
+            "CreateUser" => "create account",
+            "MoveUser" => "move account",
+            "UpdateUser" => "update attributes",
+            "EnableUser" => "enable account",
+            "DisableUser" => "disable account",
+            _ => operation.Kind
+        };
 
     internal static IReadOnlyList<MissingSourceAttributeRow> BuildMissingSourceAttributes(
         WorkerSnapshot worker,

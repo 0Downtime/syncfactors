@@ -2600,6 +2600,50 @@ a:focus-visible {
   font-size: 0.92rem;
 }
 
+.decision-tree {
+  margin-top: 18px;
+}
+
+.decision-tree-list {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.decision-step {
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--panel-strong) 82%, transparent), color-mix(in srgb, var(--panel-alt) 94%, transparent));
+}
+
+.decision-step[data-decision-tone="good"] {
+  border-color: color-mix(in srgb, var(--good) 30%, var(--line));
+}
+
+.decision-step[data-decision-tone="warn"] {
+  border-color: color-mix(in srgb, var(--warn) 36%, var(--line));
+}
+
+.decision-step-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.decision-step-head strong {
+  font-size: 0.95rem;
+}
+
+.decision-step p {
+  margin: 0;
+}
+
 .diff-chip {
   cursor: pointer;
   transition:
