@@ -245,6 +245,12 @@ public sealed record AttributeChange(
     string After,
     bool Changed);
 
+public sealed record ProvisioningDecisionStep(
+    string Step,
+    string Outcome,
+    string Detail,
+    string Tone = "neutral");
+
 public sealed record PlannedWorkerAction(
     WorkerSnapshot Worker,
     DirectoryUserSnapshot DirectoryUser,
@@ -263,7 +269,8 @@ public sealed record PlannedWorkerAction(
     string? ReviewCategory,
     string? ReviewCaseType,
     string? Reason,
-    bool CanAutoApply);
+    bool CanAutoApply,
+    IReadOnlyList<ProvisioningDecisionStep>? DecisionSteps = null);
 
 public sealed record DirectoryOperation(
     string Kind,
@@ -385,7 +392,8 @@ public sealed record WorkerPreviewResult(
     IReadOnlyList<SourceAttributeRow> UsedSourceAttributes,
     IReadOnlyList<SourceAttributeRow> UnusedSourceAttributes,
     IReadOnlyList<MissingSourceAttributeRow> MissingSourceAttributes,
-    IReadOnlyList<WorkerPreviewEntry> Entries);
+    IReadOnlyList<WorkerPreviewEntry> Entries,
+    IReadOnlyList<ProvisioningDecisionStep>? DecisionSteps = null);
 
 public sealed record WorkerPreviewEntry(
     string Bucket,

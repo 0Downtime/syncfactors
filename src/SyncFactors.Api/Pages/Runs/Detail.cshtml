@@ -189,6 +189,7 @@
             var diagnosticSections = diagnostics is null ? [] : Model.GetFailureDiagnosticSections(diagnostics);
             var manualReviewSections = entry.Bucket == "manualReview" ? Model.GetManualReviewDiagnosticSections(entry) : [];
             var groupedDiagnosticSections = diagnosticSections.Count > 0 ? diagnosticSections : manualReviewSections;
+            var decisionSteps = Model.GetProvisioningDecisionSteps(entry);
             <article class="entry-card">
                 <header class="entry-head">
                     <div class="entry-identity">
@@ -224,6 +225,30 @@
                         <div><dt>@fact.Label</dt><dd>@fact.Value</dd></div>
                     }
                 </dl>
+                @if (decisionSteps.Count > 0)
+                {
+                    <section class="decision-tree">
+                        <div class="section-heading">
+                            <div>
+                                <h4>Provisioning Decision Tree</h4>
+                                <p class="muted">Each planner branch that decided whether this worker should be provisioned, updated, skipped, or held for review.</p>
+                            </div>
+                            <span class="badge neutral">@decisionSteps.Count steps</span>
+                        </div>
+                        <ol class="decision-tree-list">
+                            @foreach (var step in decisionSteps)
+                            {
+                                <li class="decision-step" data-decision-tone="@step.Tone">
+                                    <div class="decision-step-head">
+                                        <strong>@step.Step</strong>
+                                        <span class="badge @step.Tone">@step.Outcome</span>
+                                    </div>
+                                    <p>@step.Detail</p>
+                                </li>
+                            }
+                        </ol>
+                    </section>
+                }
                 @if (!string.IsNullOrWhiteSpace(primarySummary))
                 {
                     <p class="entry-summary">@primarySummary</p>
