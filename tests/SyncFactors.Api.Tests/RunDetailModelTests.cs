@@ -318,6 +318,7 @@ public sealed class RunDetailModelTests
                   "managerId": "90001",
                   "managerDistinguishedName": "CN=90001,OU=Users,DC=example,DC=com",
                   "proposedEmailAddress": "45086@example.com",
+                  "emplStatus": "64304",
                   "matchedExistingUser": true,
                   "currentEnabled": false,
                   "proposedEnable": true,
@@ -343,7 +344,9 @@ public sealed class RunDetailModelTests
         Assert.Equal(3, sections.Count);
         Assert.Equal("Manual Review Decision", sections[0].Title);
         Assert.Contains(sections[0].Items, item => item.Label == "Review Category" && item.Value == "RequiredMapping");
+        Assert.Contains(sections[0].Items, item => item.Label == "Missing Attribute" && item.Value == "employeeType");
         Assert.Contains(sections[0].Items, item => item.Label == "Proposed Email" && item.Value == "45086@example.com");
+        Assert.Contains(sections[0].Items, item => item.Label == "Employment Status" && item.Value == "64304 - Paid Leave");
         Assert.Equal("Missing Required Inputs", sections[1].Title);
         Assert.Contains(sections[1].Items, item => item.Label == "employeeType" && item.Value == "Required mapping for employeeType has no value.");
         Assert.Equal("Planned Attribute Changes", sections[2].Title);
