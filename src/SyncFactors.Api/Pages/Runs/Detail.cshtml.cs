@@ -181,9 +181,18 @@ public sealed class DetailModel(RunEntriesQueryService queryService) : PageModel
         }
 
         var sections = new List<FailureDiagnosticSection>();
+        var missingSourceItems = GetItemArray(entry.Item, "missingSourceAttributes")
+            .Select(attribute => new FailureDiagnosticItem(
+                GetItemString(attribute, "attribute") ?? "Required Attribute",
+                GetItemString(attribute, "reason") ?? "Required source attribute has no value."))
+            .ToArray();
         var reviewItems = new List<FailureDiagnosticItem>();
         AddIfPresent(reviewItems, "Review Category", entry.ReviewCategory ?? GetItemString(entry.Item, "reviewCategory"));
         AddIfPresent(reviewItems, "Review Case", entry.ReviewCaseType ?? GetItemString(entry.Item, "reviewCaseType"));
+        AddIfPresent(
+            reviewItems,
+            missingSourceItems.Length == 1 ? "Missing Attribute" : "Missing Attributes",
+            FormatMissingAttributeSummary(missingSourceItems));
         AddIfPresent(reviewItems, "Worker ID", entry.WorkerId);
         AddIfPresent(reviewItems, "SAM", entry.SamAccountName);
         AddIfPresent(reviewItems, "Current Distinguished Name", GetItemString(entry.Item, "currentDistinguishedName"));
@@ -192,6 +201,7 @@ public sealed class DetailModel(RunEntriesQueryService queryService) : PageModel
         AddIfPresent(reviewItems, "Manager ID", GetItemString(entry.Item, "managerId"));
         AddIfPresent(reviewItems, "Manager Distinguished Name", GetItemString(entry.Item, "managerDistinguishedName"));
         AddIfPresent(reviewItems, "Proposed Email", GetItemString(entry.Item, "proposedEmailAddress"));
+        AddIfPresent(reviewItems, "Employment Status", GetEmploymentStatusDisplay(entry));
         AddIfPresent(reviewItems, "Matched Existing User", FormatNullableBoolean(GetItemBoolean(entry.Item, "matchedExistingUser")));
         AddIfPresent(reviewItems, "Current Enabled", FormatNullableBoolean(GetItemBoolean(entry.Item, "currentEnabled")));
         AddIfPresent(reviewItems, "Proposed Enable", FormatNullableBoolean(GetItemBoolean(entry.Item, "proposedEnable")));
@@ -205,11 +215,6 @@ public sealed class DetailModel(RunEntriesQueryService queryService) : PageModel
                 reviewItems));
         }
 
-        var missingSourceItems = GetItemArray(entry.Item, "missingSourceAttributes")
-            .Select(attribute => new FailureDiagnosticItem(
-                GetItemString(attribute, "attribute") ?? "Required Attribute",
-                GetItemString(attribute, "reason") ?? "Required source attribute has no value."))
-            .ToArray();
         if (missingSourceItems.Length > 0)
         {
             sections.Add(new FailureDiagnosticSection(
@@ -761,6 +766,17 @@ public sealed class DetailModel(RunEntriesQueryService queryService) : PageModel
 
     private static string FormatMissingValue(string? value)
         => string.IsNullOrWhiteSpace(value) ? "(unset)" : value;
+
+    private static string? FormatMissingAttributeSummary(IReadOnlyList<FailureDiagnosticItem> missingSourceItems)
+    {
+        var names = missingSourceItems
+            .Select(item => item.Label)
+            .Where(label => !string.IsNullOrWhiteSpace(label) && !string.Equals(label, "Required Attribute", StringComparison.OrdinalIgnoreCase))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        return names.Length > 0 ? string.Join(", ", names) : null;
+    }
 
     private static void AddIfPresent(ICollection<FailureDiagnosticItem> items, string label, string? value)
     {
