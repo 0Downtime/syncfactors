@@ -110,13 +110,13 @@
                 <p class="dashboard-status-caption muted" data-status-caption>@StatusCaption(Model.Status)</p>
             </div>
         </section>
-        <section class="dashboard-progress" aria-label="Run progress">
+        <section class="dashboard-progress" data-progress-state="@ProgressVisualState(Model.Status)" aria-label="Run progress">
             <div class="dashboard-progress-head">
                 <p class="eyebrow">Worker Progress</p>
-                <p class="dashboard-progress-value" data-progress-caption>@ProgressPercent(Model.Status)%</p>
+                <p class="dashboard-progress-value" data-progress-caption>@ProgressLabel(Model.Status)</p>
             </div>
             <div class="dashboard-progress-track" aria-hidden="true">
-                <span class="dashboard-progress-fill" data-progress-fill style="width: @(ProgressPercent(Model.Status))%;"></span>
+                <span class="dashboard-progress-fill" data-progress-fill style="width: @(ProgressFillWidth(Model.Status))%;"></span>
             </div>
             <p class="muted dashboard-progress-copy" data-progress-copy>@ProgressCopy(Model.Status)</p>
         </section>
@@ -376,9 +376,9 @@
         status.Stage.Equals("Canceled", StringComparison.OrdinalIgnoreCase) ||
         status.Stage.Equals("Cancelled", StringComparison.OrdinalIgnoreCase);
 
-    private static int ProgressPercent(SyncFactors.Contracts.RuntimeStatus status)
+    private static int WorkerProgressPercent(SyncFactors.Contracts.RuntimeStatus status)
     {
-        if (IsCanceledState(status) || status.TotalWorkers <= 0)
+        if (status.TotalWorkers <= 0)
         {
             return 0;
         }
@@ -386,8 +386,131 @@
         return (int)Math.Round((status.ProcessedWorkers / (double)status.TotalWorkers) * 100, MidpointRounding.AwayFromZero);
     }
 
-    private static string ProgressCopy(SyncFactors.Contracts.RuntimeStatus status) =>
-        IsCanceledState(status) || status.TotalWorkers <= 0
-            ? "No active worker progress has been recorded yet."
-            : $"{status.ProcessedWorkers} of {status.TotalWorkers} workers are accounted for in the current run.";
+    private static string ProgressVisualState(SyncFactors.Contracts.RuntimeStatus status)
+    {
+        var currentStatus = status.Status?.Trim() ?? string.Empty;
+        var currentStage = status.Stage?.Trim() ?? string.Empty;
+
+        if (currentStatus.Equals("Failed", StringComparison.OrdinalIgnoreCase))
+        {
+            return "failed";
+        }
+
+        if (currentStatus.Equals("CancelRequested", StringComparison.OrdinalIgnoreCase))
+        {
+            return "canceling";
+        }
+
+        if (currentStatus.Equals("Canceled", StringComparison.OrdinalIgnoreCase) ||
+            currentStatus.Equals("Cancelled", StringComparison.OrdinalIgnoreCase) ||
+            currentStage.Equals("Canceled", StringComparison.OrdinalIgnoreCase) ||
+            currentStage.Equals("Cancelled", StringComparison.OrdinalIgnoreCase))
+        {
+            return "canceled";
+        }
+
+        if (currentStatus.Equals("Planned", StringComparison.OrdinalIgnoreCase) ||
+            currentStatus.Equals("Pending", StringComparison.OrdinalIgnoreCase))
+        {
+            return "queued";
+        }
+
+        if (currentStatus.Equals("InProgress", StringComparison.OrdinalIgnoreCase))
+        {
+            if (currentStage.Equals("Planning", StringComparison.OrdinalIgnoreCase))
+            {
+                return "planning";
+            }
+
+            if (currentStage.Equals("ApplyPreview", StringComparison.OrdinalIgnoreCase))
+            {
+                return "applypreview";
+            }
+
+            return "syncing";
+        }
+
+        if ((currentStatus.Equals("Idle", StringComparison.OrdinalIgnoreCase) || currentStatus.Equals("Succeeded", StringComparison.OrdinalIgnoreCase)) &&
+            currentStage.Equals("Completed", StringComparison.OrdinalIgnoreCase) &&
+            status.TotalWorkers > 0)
+        {
+            return "complete";
+        }
+
+        return "idle";
+    }
+
+    private static int ProgressFillWidth(SyncFactors.Contracts.RuntimeStatus status)
+    {
+        var actualPercent = WorkerProgressPercent(status);
+
+        return ProgressVisualState(status) switch
+        {
+            "queued" => 16,
+            "canceling" => 32,
+            "planning" => Math.Max(actualPercent, 18),
+            "applypreview" => Math.Max(actualPercent, 38),
+            "syncing" => status.TotalWorkers > 0 ? Math.Max(actualPercent, 12) : 26,
+            "complete" => 100,
+            "failed" => status.TotalWorkers > 0 ? Math.Max(actualPercent, 18) : 100,
+            "canceled" => 18,
+            _ => 8,
+        };
+    }
+
+    private static string ProgressLabel(SyncFactors.Contracts.RuntimeStatus status)
+    {
+        var actualPercent = WorkerProgressPercent(status);
+
+        return ProgressVisualState(status) switch
+        {
+            "queued" => "Queued",
+            "canceling" => "Canceling",
+            "planning" => "Planning",
+            "applypreview" => actualPercent > 0 ? $"Applying {actualPercent}%" : "Applying Preview",
+            "syncing" => actualPercent > 0 ? $"Syncing {actualPercent}%" : "Syncing",
+            "complete" => "Done",
+            "failed" => "Failed",
+            "canceled" => "Canceled",
+            _ => "Idle",
+        };
+    }
+
+    private static string ProgressCopy(SyncFactors.Contracts.RuntimeStatus status)
+    {
+        var visualState = ProgressVisualState(status);
+        var stage = DisplayStage(status.Stage);
+
+        return visualState switch
+        {
+            "queued" =>
+                string.IsNullOrWhiteSpace(status.RunId)
+                    ? "The next sync is queued and waiting for the worker service."
+                    : $"Run {status.RunId} is queued and waiting for the worker service.",
+            "canceling" =>
+                "Cancellation has been requested. The worker will stop after the current operation.",
+            "planning" =>
+                "Building the sync plan before directory changes are applied.",
+            "applypreview" =>
+                string.IsNullOrWhiteSpace(status.CurrentWorkerId)
+                    ? "Applying the reviewed preview to Active Directory."
+                    : $"Applying the reviewed preview for worker {status.CurrentWorkerId}.",
+            "syncing" when status.TotalWorkers > 0 =>
+                $"{status.ProcessedWorkers} of {status.TotalWorkers} workers are accounted for in the current run.",
+            "syncing" =>
+                $"Sync activity is running during {stage}.",
+            "complete" =>
+                $"{status.ProcessedWorkers} of {status.TotalWorkers} workers were processed in the last completed run.",
+            "failed" =>
+                string.IsNullOrWhiteSpace(status.ErrorMessage)
+                    ? $"The sync failed during {stage}."
+                    : status.ErrorMessage!,
+            "canceled" =>
+                "The last sync was canceled before worker progress completed.",
+            _ =>
+                status.LastUpdatedAt is null
+                    ? "No active worker progress has been recorded yet."
+                    : $"Last worker activity was {stage}.",
+        };
+    }
 }
