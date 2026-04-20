@@ -24,16 +24,20 @@ public sealed class ActiveDirectoryConnectionPoolTests
         using (var lease = pool.Lease(CreateConfig(), NullLogger.Instance, TimeSpan.FromSeconds(1)))
         {
             firstConnection = lease.Connection;
+            Assert.Equal("ldaps", lease.RequestedTransport);
             Assert.Equal("ldaps", lease.EffectiveTransport);
             Assert.False(lease.UsedFallback);
+            Assert.False(lease.WasReused);
         }
 
         using var secondLease = pool.Lease(CreateConfig(), NullLogger.Instance, TimeSpan.FromSeconds(1));
 
         Assert.Same(firstConnection, secondLease.Connection);
         Assert.Equal(1, factoryCalls);
+        Assert.Equal("ldaps", secondLease.RequestedTransport);
         Assert.Equal("ldaps", secondLease.EffectiveTransport);
         Assert.False(secondLease.UsedFallback);
+        Assert.True(secondLease.WasReused);
     }
 
     [Fact]
@@ -55,8 +59,10 @@ public sealed class ActiveDirectoryConnectionPoolTests
         using (var lease = pool.Lease(CreateConfig(), NullLogger.Instance, TimeSpan.FromSeconds(1)))
         {
             firstConnection = lease.Connection;
+            Assert.Equal("ldaps", lease.RequestedTransport);
             Assert.Equal("ldap", lease.EffectiveTransport);
             Assert.True(lease.UsedFallback);
+            Assert.False(lease.WasReused);
             lease.Invalidate();
         }
 
@@ -64,8 +70,10 @@ public sealed class ActiveDirectoryConnectionPoolTests
 
         Assert.NotSame(firstConnection, secondLease.Connection);
         Assert.Equal(2, factoryCalls);
+        Assert.Equal("ldaps", secondLease.RequestedTransport);
         Assert.Equal("ldap", secondLease.EffectiveTransport);
         Assert.True(secondLease.UsedFallback);
+        Assert.False(secondLease.WasReused);
     }
 
     [Fact]
@@ -96,8 +104,10 @@ public sealed class ActiveDirectoryConnectionPoolTests
         using var lease = pool.Lease(CreateConfig(), NullLogger.Instance, TimeSpan.FromSeconds(1));
 
         Assert.Equal(2, factoryCalls);
+        Assert.Equal("ldaps", lease.RequestedTransport);
         Assert.Equal("ldaps", lease.EffectiveTransport);
         Assert.False(lease.UsedFallback);
+        Assert.False(lease.WasReused);
     }
 
     private static ActiveDirectoryConfig CreateConfig()

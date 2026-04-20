@@ -131,6 +131,15 @@ public sealed class ActiveDirectoryGateway(
             try
             {
                 lease = connectionPool.Lease(config, logger, LdapOperationTimeout);
+                logger.LogInformation(
+                    "AD {Operation} acquired {ConnectionSource} connection. Server={Server} RequestedTransport={RequestedTransport} EffectiveTransport={EffectiveTransport} UsedFallback={UsedFallback} Attempt={Attempt}",
+                    operationName,
+                    lease.WasReused ? "pooled" : "fresh",
+                    config.Server,
+                    lease.RequestedTransport,
+                    lease.EffectiveTransport,
+                    lease.UsedFallback,
+                    attempt + 1);
                 return await ExecuteWithTimeoutAsync(
                     operation: () => operation(lease),
                     operationName,
@@ -143,20 +152,43 @@ public sealed class ActiveDirectoryGateway(
                 connectionPool.InvalidateIdleConnections(config);
                 logger.LogWarning(
                     ex,
-                    "AD {Operation} hit a transient LDAP availability failure. Flushed pooled idle connections and retrying with a fresh connection. Attempt={Attempt}",
+                    "AD {Operation} hit a transient LDAP availability failure. Server={Server} ConnectionSource={ConnectionSource} RequestedTransport={RequestedTransport} EffectiveTransport={EffectiveTransport} UsedFallback={UsedFallback} Attempt={Attempt}. Flushed pooled idle connections and retrying with a fresh connection.",
                     operationName,
+                    config.Server,
+                    lease?.WasReused == true ? "pooled" : "fresh",
+                    lease?.RequestedTransport,
+                    lease?.EffectiveTransport,
+                    lease?.UsedFallback,
                     attempt + 1);
             }
             catch (LdapException ex)
             {
                 lease?.Invalidate();
-                logger.LogError(ex, "AD {Operation} failed with LDAP exception.", operationName);
+                logger.LogError(
+                    ex,
+                    "AD {Operation} failed with LDAP exception. Server={Server} ConnectionSource={ConnectionSource} RequestedTransport={RequestedTransport} EffectiveTransport={EffectiveTransport} UsedFallback={UsedFallback} Attempt={Attempt}",
+                    operationName,
+                    config.Server,
+                    lease?.WasReused == true ? "pooled" : "fresh",
+                    lease?.RequestedTransport,
+                    lease?.EffectiveTransport,
+                    lease?.UsedFallback,
+                    attempt + 1);
                 throw ExternalSystemExceptionFactory.CreateActiveDirectoryException(operationName, config, ex);
             }
             catch (DirectoryOperationException ex)
             {
                 lease?.Invalidate();
-                logger.LogError(ex, "AD {Operation} failed with directory operation exception.", operationName);
+                logger.LogError(
+                    ex,
+                    "AD {Operation} failed with directory operation exception. Server={Server} ConnectionSource={ConnectionSource} RequestedTransport={RequestedTransport} EffectiveTransport={EffectiveTransport} UsedFallback={UsedFallback} Attempt={Attempt}",
+                    operationName,
+                    config.Server,
+                    lease?.WasReused == true ? "pooled" : "fresh",
+                    lease?.RequestedTransport,
+                    lease?.EffectiveTransport,
+                    lease?.UsedFallback,
+                    attempt + 1);
                 throw ExternalSystemExceptionFactory.CreateActiveDirectoryException(operationName, config, ex);
             }
             catch
@@ -179,15 +211,17 @@ public sealed class ActiveDirectoryGateway(
         ILogger logger)
     {
         var lookupClauses = BuildLookupClauses(worker, config.IdentityAttribute, mappings);
+        var searchBases = GetSearchBases(config);
         logger.LogInformation(
-            "Starting AD worker lookup. WorkerId={WorkerId} IdentityAttribute={IdentityAttribute} Clauses={Clauses}",
+            "Starting AD worker lookup. WorkerId={WorkerId} IdentityAttribute={IdentityAttribute} Clauses={Clauses} SearchBases={SearchBases}",
             worker.WorkerId,
             config.IdentityAttribute,
-            FormatLookupClauses(lookupClauses));
+            FormatLookupClauses(lookupClauses),
+            FormatSearchBases(searchBases));
 
         var entry = FindUniqueEntryMatchingAny(
             connection,
-            GetSearchBases(config),
+            searchBases,
             lookupClauses,
             config.IdentityAttribute,
             lookupKind: "worker identity",
@@ -197,10 +231,11 @@ public sealed class ActiveDirectoryGateway(
         if (entry is null)
         {
             logger.LogInformation(
-                "No AD entry matched worker lookup. WorkerId={WorkerId} IdentityAttribute={IdentityAttribute} Clauses={Clauses}",
+                "No AD entry matched worker lookup. WorkerId={WorkerId} IdentityAttribute={IdentityAttribute} Clauses={Clauses} SearchBases={SearchBases}",
                 worker.WorkerId,
                 config.IdentityAttribute,
-                FormatLookupClauses(lookupClauses));
+                FormatLookupClauses(lookupClauses),
+                FormatSearchBases(searchBases));
             return null;
         }
 
@@ -284,6 +319,11 @@ public sealed class ActiveDirectoryGateway(
     private static string FormatLookupClauses(IReadOnlyList<(string Attribute, string Value)> clauses)
     {
         return string.Join(" | ", clauses.Select(clause => $"{clause.Attribute}={clause.Value}"));
+    }
+
+    private static string FormatSearchBases(IReadOnlyList<string> searchBases)
+    {
+        return string.Join(" | ", searchBases);
     }
 
     private static string FormatReturnedAttributeNames(SearchResultEntry entry)
