@@ -7,6 +7,7 @@ namespace SyncFactors.Infrastructure;
 public interface IActiveDirectoryConnectionPool
 {
     ActiveDirectoryConnectionPool.ActiveDirectoryConnectionLease Lease(ActiveDirectoryConfig config, ILogger logger, TimeSpan timeout);
+    void InvalidateIdleConnections(ActiveDirectoryConfig config);
 }
 
 public sealed class ActiveDirectoryConnectionPool : IActiveDirectoryConnectionPool, IDisposable
@@ -43,6 +44,23 @@ public sealed class ActiveDirectoryConnectionPool : IActiveDirectoryConnectionPo
         }
 
         return new ActiveDirectoryConnectionLease(this, key, bucket, PooledConnection.From(_connectionFactory(config, logger, timeout)));
+    }
+
+    public void InvalidateIdleConnections(ActiveDirectoryConfig config)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        var key = PoolKey.FromConfig(config);
+        if (!_buckets.TryGetValue(key, out var bucket))
+        {
+            return;
+        }
+
+        while (bucket.IdleConnections.TryTake(out var pooledConnection))
+        {
+            Interlocked.Decrement(ref bucket.IdleCount);
+            pooledConnection.Connection.Dispose();
+        }
     }
 
     public void Dispose()
