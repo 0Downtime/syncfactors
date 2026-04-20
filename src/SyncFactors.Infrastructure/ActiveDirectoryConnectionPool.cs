@@ -40,10 +40,10 @@ public sealed class ActiveDirectoryConnectionPool : IActiveDirectoryConnectionPo
         {
             Interlocked.Decrement(ref bucket.IdleCount);
             logger.LogDebug("Reusing pooled AD connection. Server={Server}", config.Server);
-            return new ActiveDirectoryConnectionLease(this, key, bucket, pooledConnection);
+            return new ActiveDirectoryConnectionLease(this, key, bucket, pooledConnection, wasReused: true);
         }
 
-        return new ActiveDirectoryConnectionLease(this, key, bucket, PooledConnection.From(_connectionFactory(config, logger, timeout)));
+        return new ActiveDirectoryConnectionLease(this, key, bucket, PooledConnection.From(_connectionFactory(config, logger, timeout)), wasReused: false);
     }
 
     public void InvalidateIdleConnections(ActiveDirectoryConfig config)
@@ -113,22 +113,29 @@ public sealed class ActiveDirectoryConnectionPool : IActiveDirectoryConnectionPo
             ActiveDirectoryConnectionPool owner,
             PoolKey key,
             PoolBucket bucket,
-            PooledConnection pooledConnection)
+            PooledConnection pooledConnection,
+            bool wasReused)
         {
             _owner = owner;
             _key = key;
             _bucket = bucket;
             _pooledConnection = pooledConnection;
+            WasReused = wasReused;
         }
 
         public LdapConnection Connection =>
             _pooledConnection?.Connection ?? throw new ObjectDisposedException(nameof(ActiveDirectoryConnectionLease));
+
+        public string RequestedTransport =>
+            _pooledConnection?.RequestedTransport ?? throw new ObjectDisposedException(nameof(ActiveDirectoryConnectionLease));
 
         public string EffectiveTransport =>
             _pooledConnection?.EffectiveTransport ?? throw new ObjectDisposedException(nameof(ActiveDirectoryConnectionLease));
 
         public bool UsedFallback =>
             _pooledConnection?.UsedFallback ?? throw new ObjectDisposedException(nameof(ActiveDirectoryConnectionLease));
+
+        public bool WasReused { get; }
 
         public void Invalidate()
         {
@@ -155,6 +162,7 @@ public sealed class ActiveDirectoryConnectionPool : IActiveDirectoryConnectionPo
 
     internal sealed record PooledConnection(
         LdapConnection Connection,
+        string RequestedTransport,
         string EffectiveTransport,
         bool UsedFallback)
     {
@@ -162,6 +170,7 @@ public sealed class ActiveDirectoryConnectionPool : IActiveDirectoryConnectionPo
         {
             return new PooledConnection(
                 result.Connection,
+                result.RequestedTransport,
                 result.EffectiveTransport,
                 result.UsedFallback);
         }
