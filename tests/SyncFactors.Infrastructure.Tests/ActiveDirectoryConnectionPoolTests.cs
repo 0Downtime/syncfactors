@@ -68,6 +68,38 @@ public sealed class ActiveDirectoryConnectionPoolTests
         Assert.True(secondLease.UsedFallback);
     }
 
+    [Fact]
+    public void InvalidateIdleConnections_DropsAllReturnedConnectionsForConfig()
+    {
+        var factoryCalls = 0;
+        using var pool = new ActiveDirectoryConnectionPool(
+            connectionFactory: (_, _, _) =>
+            {
+                factoryCalls++;
+                return new ActiveDirectoryConnectionResult(
+                    new LdapConnection(new LdapDirectoryIdentifier("localhost")),
+                    RequestedTransport: "ldaps",
+                    EffectiveTransport: "ldaps",
+                    UsedFallback: false);
+            });
+
+        using (pool.Lease(CreateConfig(), NullLogger.Instance, TimeSpan.FromSeconds(1)))
+        {
+        }
+
+        using (pool.Lease(CreateConfig(), NullLogger.Instance, TimeSpan.FromSeconds(1)))
+        {
+        }
+
+        pool.InvalidateIdleConnections(CreateConfig());
+
+        using var lease = pool.Lease(CreateConfig(), NullLogger.Instance, TimeSpan.FromSeconds(1));
+
+        Assert.Equal(2, factoryCalls);
+        Assert.Equal("ldaps", lease.EffectiveTransport);
+        Assert.False(lease.UsedFallback);
+    }
+
     private static ActiveDirectoryConfig CreateConfig()
     {
         return new ActiveDirectoryConfig(

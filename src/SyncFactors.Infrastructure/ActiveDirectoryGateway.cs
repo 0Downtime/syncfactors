@@ -140,9 +140,10 @@ public sealed class ActiveDirectoryGateway(
             catch (LdapException ex) when (ShouldRetryTransientLdapFailure(ex, attempt))
             {
                 lease?.Invalidate();
+                connectionPool.InvalidateIdleConnections(config);
                 logger.LogWarning(
                     ex,
-                    "AD {Operation} hit a transient LDAP availability failure. Retrying with a fresh connection. Attempt={Attempt}",
+                    "AD {Operation} hit a transient LDAP availability failure. Flushed pooled idle connections and retrying with a fresh connection. Attempt={Attempt}",
                     operationName,
                     attempt + 1);
             }
