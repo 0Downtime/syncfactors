@@ -273,7 +273,8 @@ public sealed class ActiveDirectoryGatewayTests
     {
         var method = typeof(ActiveDirectoryGateway).GetMethod(
             "ShouldRetryTransientLdapFailure",
-            BindingFlags.NonPublic | BindingFlags.Static);
+            BindingFlags.NonPublic | BindingFlags.Static,
+            [typeof(LdapException), typeof(int)]);
         Assert.NotNull(method);
 
         var shouldRetry = Assert.IsType<bool>(method!.Invoke(null, [new LdapException("The LDAP server is unavailable."), 0]));
@@ -286,7 +287,8 @@ public sealed class ActiveDirectoryGatewayTests
     {
         var method = typeof(ActiveDirectoryGateway).GetMethod(
             "ShouldRetryTransientLdapFailure",
-            BindingFlags.NonPublic | BindingFlags.Static);
+            BindingFlags.NonPublic | BindingFlags.Static,
+            [typeof(LdapException), typeof(int)]);
         Assert.NotNull(method);
 
         var shouldRetry = Assert.IsType<bool>(method!.Invoke(null, [new LdapException("The LDAP server is unavailable."), 1]));
@@ -299,10 +301,57 @@ public sealed class ActiveDirectoryGatewayTests
     {
         var method = typeof(ActiveDirectoryGateway).GetMethod(
             "ShouldRetryTransientLdapFailure",
-            BindingFlags.NonPublic | BindingFlags.Static);
+            BindingFlags.NonPublic | BindingFlags.Static,
+            [typeof(LdapException), typeof(int)]);
         Assert.NotNull(method);
 
         var shouldRetry = Assert.IsType<bool>(method!.Invoke(null, [new LdapException("Invalid credentials."), 0]));
+
+        Assert.False(shouldRetry);
+    }
+
+    [Fact]
+    public void ShouldRetryTransientLdapFailure_ReturnsTrue_ForMarkedTimeoutOnFirstAttempt()
+    {
+        var method = typeof(ActiveDirectoryGateway).GetMethod(
+            "ShouldRetryTransientLdapFailure",
+            BindingFlags.NonPublic | BindingFlags.Static,
+            [typeof(InvalidOperationException), typeof(int)]);
+        Assert.NotNull(method);
+
+        var timeoutException = CreateTimeoutException();
+
+        var shouldRetry = Assert.IsType<bool>(method!.Invoke(null, [timeoutException, 0]));
+
+        Assert.True(shouldRetry);
+    }
+
+    [Fact]
+    public void ShouldRetryTransientLdapFailure_ReturnsFalse_ForMarkedTimeoutAfterRetryBudgetIsExhausted()
+    {
+        var method = typeof(ActiveDirectoryGateway).GetMethod(
+            "ShouldRetryTransientLdapFailure",
+            BindingFlags.NonPublic | BindingFlags.Static,
+            [typeof(InvalidOperationException), typeof(int)]);
+        Assert.NotNull(method);
+
+        var timeoutException = CreateTimeoutException();
+
+        var shouldRetry = Assert.IsType<bool>(method!.Invoke(null, [timeoutException, 1]));
+
+        Assert.False(shouldRetry);
+    }
+
+    [Fact]
+    public void ShouldRetryTransientLdapFailure_ReturnsFalse_ForUnmarkedInvalidOperationException()
+    {
+        var method = typeof(ActiveDirectoryGateway).GetMethod(
+            "ShouldRetryTransientLdapFailure",
+            BindingFlags.NonPublic | BindingFlags.Static,
+            [typeof(InvalidOperationException), typeof(int)]);
+        Assert.NotNull(method);
+
+        var shouldRetry = Assert.IsType<bool>(method!.Invoke(null, [new InvalidOperationException("AD lookup failed."), 0]));
 
         Assert.False(shouldRetry);
     }
@@ -316,6 +365,20 @@ public sealed class ActiveDirectoryGatewayTests
         Assert.NotNull(method);
 
         return Assert.IsType<string>(method!.Invoke(null, ["10001", baseLocalPart, candidateExists]));
+    }
+
+    private static InvalidOperationException CreateTimeoutException()
+    {
+        var method = typeof(SyncFactorsConfigurationLoader).Assembly
+            .GetType("SyncFactors.Infrastructure.ExternalSystemExceptionFactory")
+            ?.GetMethod(
+                "CreateActiveDirectoryTimeoutException",
+                BindingFlags.Public | BindingFlags.Static,
+                [typeof(string), typeof(string), typeof(TimeSpan), typeof(Exception)]);
+        Assert.NotNull(method);
+
+        return Assert.IsType<InvalidOperationException>(
+            method!.Invoke(null, ["lookup", "ldap.example.test", TimeSpan.FromSeconds(10), new TimeoutException("Timed out.")]));
     }
 
     private static ActiveDirectoryConfig CreateConfig()
