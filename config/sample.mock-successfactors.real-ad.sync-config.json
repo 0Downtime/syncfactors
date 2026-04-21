@@ -129,7 +129,7 @@
     "port": 636,
     "username": "",
     "bindPassword": "",
-    "identityAttribute": "employeeID",
+    "identityAttribute": "sAMAccountName",
     "upnSuffix": "example.com",
     "defaultActiveOu": "OU=LabUsers,DC=example,DC=com",
     "prehireOu": "OU=Prehire,DC=example,DC=com",

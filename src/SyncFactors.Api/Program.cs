@@ -755,7 +755,7 @@ static void LogConfiguredEndpoints(WebApplication app)
     if (usesGlobalCatalog)
     {
         app.Logger.LogCritical(
-            "[AD-ENDPOINT] Active Directory is configured to use Global Catalog port {ActiveDirectoryPort}. Attributes outside the partial attribute set, including employeeID by default, may read back as empty.",
+            "[AD-ENDPOINT] Active Directory is configured to use Global Catalog port {ActiveDirectoryPort}. Attributes outside the partial attribute set, especially custom identity attributes such as employeeID, may read back as empty.",
             activeDirectoryPort);
     }
 }

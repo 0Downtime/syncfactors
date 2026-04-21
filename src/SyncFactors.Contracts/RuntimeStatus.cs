@@ -213,7 +213,7 @@ public sealed record LifecyclePolicySettings(
     IReadOnlyList<string> InactiveStatusValues,
     string? LeaveOu = null,
     IReadOnlyList<string>? LeaveStatusValues = null,
-    string DirectoryIdentityAttribute = "employeeID");
+    string DirectoryIdentityAttribute = "sAMAccountName");
 
 public sealed record WorkerSnapshot(
     string WorkerId,
