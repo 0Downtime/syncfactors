@@ -105,6 +105,11 @@ public sealed class ActiveDirectoryCommandGateway(
             RemoveUserFromProvisioningGroups(connection, distinguishedName!, config, logger, command.WorkerId, command.SamAccountName);
         }
 
+        if (ShouldVerifyGraveyardMove(command, operations, config))
+        {
+            VerifyGraveyardMoveOutcome(connection, command, config, logger, distinguishedName);
+        }
+
         return new DirectoryCommandResult(
             Succeeded: true,
             Action: command.Action,
@@ -1168,6 +1173,81 @@ public sealed class ActiveDirectoryCommandGateway(
                (config.LicensingGroups?.Count ?? 0) > 0 &&
                !command.EnableAccount &&
                string.Equals(command.TargetOu, config.GraveyardOu, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool ShouldVerifyGraveyardMove(
+        DirectoryMutationCommand command,
+        IReadOnlyList<SyncFactors.Contracts.DirectoryOperation> operations,
+        ActiveDirectoryConfig config)
+    {
+        return !string.IsNullOrWhiteSpace(command.TargetOu) &&
+               string.Equals(command.TargetOu, config.GraveyardOu, StringComparison.OrdinalIgnoreCase) &&
+               operations.Any(operation =>
+                   string.Equals(operation.Kind, "MoveUser", StringComparison.OrdinalIgnoreCase) &&
+                   string.Equals(operation.TargetOu, config.GraveyardOu, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static void VerifyGraveyardMoveOutcome(
+        LdapConnection connection,
+        DirectoryMutationCommand command,
+        ActiveDirectoryConfig config,
+        ILogger logger,
+        string? distinguishedName)
+    {
+        var identityLookupValue = ResolveIdentityLookupValue(command, config);
+        var reloadedUser = !string.IsNullOrWhiteSpace(distinguishedName)
+            ? FindExistingUserByDistinguishedName(connection, distinguishedName)
+            : null;
+        reloadedUser ??= FindExistingUser(connection, identityLookupValue, config);
+
+        if (reloadedUser is null)
+        {
+            throw ExternalSystemExceptionFactory.CreateActiveDirectoryValidationException(
+                $"command '{command.Action}'",
+                config,
+                "Read-after-write verification could not reload the AD user after the graveyard move.",
+                BuildGraveyardVerificationFailureDetails(command, config, identityLookupValue, distinguishedName, actualUser: null),
+                "Confirm the identity lookup matched the intended AD object and that the account is still searchable immediately after the move.");
+        }
+
+        var actualParentOu = DirectoryDistinguishedName.GetParentOu(reloadedUser.DistinguishedName);
+        var isInGraveyardOu = string.Equals(actualParentOu, config.GraveyardOu, StringComparison.OrdinalIgnoreCase);
+        var isDisabled = reloadedUser.Enabled == false;
+        if (!isInGraveyardOu || !isDisabled)
+        {
+            var summary = !isInGraveyardOu && !isDisabled
+                ? "Read-after-write verification found the account outside the graveyard OU and still enabled."
+                : !isInGraveyardOu
+                    ? "Read-after-write verification found the account outside the graveyard OU."
+                    : "Read-after-write verification found the account still enabled.";
+            throw ExternalSystemExceptionFactory.CreateActiveDirectoryValidationException(
+                $"command '{command.Action}'",
+                config,
+                summary,
+                BuildGraveyardVerificationFailureDetails(command, config, identityLookupValue, distinguishedName, reloadedUser),
+                "Confirm the account was moved into the configured graveyard OU and that the disable operation persisted.");
+        }
+
+        logger.LogInformation(
+            "Verified graveyard move readback. WorkerId={WorkerId} SamAccountName={SamAccountName} DistinguishedName={DistinguishedName} ParentOu={ParentOu} Enabled={Enabled}",
+            command.WorkerId,
+            reloadedUser.SamAccountName,
+            reloadedUser.DistinguishedName,
+            actualParentOu,
+            reloadedUser.Enabled);
+    }
+
+    private static string BuildGraveyardVerificationFailureDetails(
+        DirectoryMutationCommand command,
+        ActiveDirectoryConfig config,
+        string identityLookupValue,
+        string? expectedDistinguishedName,
+        DirectoryUserSnapshot? actualUser)
+    {
+        var actualParentOu = actualUser is null
+            ? null
+            : DirectoryDistinguishedName.GetParentOu(actualUser.DistinguishedName);
+        return $"Step=VerifyGraveyardMove WorkerId={command.WorkerId} SamAccountName={command.SamAccountName} IdentityAttribute={config.IdentityAttribute} IdentityLookupValue={FormatDetailValue(identityLookupValue)} ExpectedDistinguishedName={FormatDetailValue(expectedDistinguishedName)} ExpectedParentOu={FormatDetailValue(config.GraveyardOu)} ExpectedEnabled=false ActualDistinguishedName={FormatDetailValue(actualUser?.DistinguishedName)} ActualParentOu={FormatDetailValue(actualParentOu)} ActualEnabled={FormatDetailValue(actualUser?.Enabled?.ToString()?.ToLowerInvariant())}";
     }
 
     private static string NormalizeAttributeName(string attributeName)
