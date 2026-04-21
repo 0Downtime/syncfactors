@@ -609,7 +609,7 @@ When you run `-Service stack`, the launched services depend on the active profil
 - `mock`: starts the mock SuccessFactors API, the SyncFactors API, and the worker
 - `real`: starts the SyncFactors API and the worker
 
-Before `-Service stack` launches anything, the runner now does `git pull --ff-only` by default when the current branch has an upstream. Toggle that behavior in `config/local.codex-run.json`:
+At the start of `run.ps1`, before it loads the rest of the launcher helpers, `-Service stack` now does `git pull --ff-only` by default when the current branch has an upstream. If that pull changes `HEAD`, the launcher restarts itself so the updated scripts are used for the actual run. Toggle that behavior in `config/local.codex-run.json`:
 
 ```json
 {
