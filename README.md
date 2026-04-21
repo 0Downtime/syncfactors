@@ -270,7 +270,7 @@ SF_AD_SYNC_AD_BIND_PASSWORD=
 SF_AD_SYNC_AD_DEFAULT_PASSWORD=
 ```
 
-`.env.worktree.example` also carries the Entra/OIDC keys as commented placeholders until you intentionally enable SSO for that worktree.
+`.env.worktree.example` also carries the Entra/OIDC keys and optional auth session tuning values as commented placeholders until you intentionally enable SSO for that worktree.
 
 On macOS, you can keep sensitive `SF_AD_SYNC_*` values out of `.env.worktree` entirely and store them in the login Keychain instead. The launchers fall back to the Keychain service named by `SYNCFACTORS_KEYCHAIN_SERVICE` when those variables are blank in `.env.worktree`. To store one:
 
@@ -351,6 +351,8 @@ For Microsoft Entra ID OIDC in local development, add the ASP.NET config-bound e
 
 ```bash
 SYNCFACTORS__AUTH__MODE=oidc
+SYNCFACTORS__AUTH__IDLETIMEOUTMINUTES=480
+SYNCFACTORS__AUTH__ABSOLUTESESSIONHOURS=168
 SYNCFACTORS__AUTH__OIDC__AUTHORITY=https://login.microsoftonline.com/<tenant-id>/v2.0
 SYNCFACTORS__AUTH__OIDC__CLIENTID=<application-client-id>
 SYNCFACTORS__AUTH__OIDC__CLIENTSECRET=<client-secret>
@@ -358,6 +360,8 @@ SYNCFACTORS__AUTH__OIDC__VIEWERGROUPS__0=<entra-group-object-id>
 SYNCFACTORS__AUTH__OIDC__OPERATORGROUPS__0=<entra-group-object-id>
 SYNCFACTORS__AUTH__OIDC__ADMINGROUPS__0=<entra-group-object-id>
 ```
+
+`SYNCFACTORS__AUTH__IDLETIMEOUTMINUTES` controls how long an idle browser session can sit before the next refresh requires re-authentication. `SYNCFACTORS__AUTH__ABSOLUTESESSIONHOURS` caps the total cookie lifetime even with sliding expiration. The app now defaults to an 8-hour idle timeout and a 7-day absolute lifetime, which is usually enough to avoid repeated OIDC prompts during normal use while still forcing periodic re-authentication. If you need stricter or looser settings, the supported ranges are 15-1440 minutes for idle timeout and 8-720 hours for absolute lifetime.
 
 Use tenant-specific authorities, not `common`, so group and issuer checks stay deterministic for a single-tenant admin tool. Configure the Entra app registration with redirect URIs that match the public HTTPS host and port. For the default local setup:
 
@@ -529,6 +533,8 @@ Queued bulk runs read worker concurrency from `sync.maxDegreeOfParallelism`. The
 ## Authentication Modes
 
 The API serves the same operator UI in all auth modes and protects it with cookie auth after sign-in.
+
+By default, the cookie session uses sliding expiration with an 8-hour idle timeout and a 7-day absolute lifetime. Override those with `SyncFactors:Auth:IdleTimeoutMinutes` and `SyncFactors:Auth:AbsoluteSessionHours` when your environment needs a different balance between convenience and forced re-authentication.
 
 - `local-break-glass`: the default appsettings mode. Local usernames and password hashes live in SQLite, and `/Admin/Users` manages those local accounts.
 - `oidc`: enterprise OIDC sign-in only. The login page redirects or offers SSO, and local user management is disabled.

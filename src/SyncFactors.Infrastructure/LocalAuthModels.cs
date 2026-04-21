@@ -35,13 +35,20 @@ public sealed record LocalUserCommandResult(
 
 public sealed class LocalAuthOptions
 {
+    public const int MinAbsoluteSessionHours = 8;
+    public const int MaxAbsoluteSessionHours = 720;
+    public const int MinIdleTimeoutMinutes = 15;
+    public const int MaxIdleTimeoutMinutes = 1440;
+    public const int MinRememberMeSessionHours = 1;
+    public const int MaxRememberMeSessionHours = 2160;
+
     public string Mode { get; set; } = "local-break-glass";
 
-    public int AbsoluteSessionHours { get; set; } = 12;
+    public int AbsoluteSessionHours { get; set; } = 168;
 
-    public int IdleTimeoutMinutes { get; set; } = 20;
+    public int IdleTimeoutMinutes { get; set; } = 480;
 
-    public int RememberMeSessionHours { get; set; } = 8;
+    public int RememberMeSessionHours { get; set; } = 720;
 
     public bool AllowRememberMe { get; set; }
 
@@ -50,6 +57,15 @@ public sealed class LocalAuthOptions
     public LocalBreakGlassOptions LocalBreakGlass { get; set; } = new();
 
     public OidcOptions Oidc { get; set; } = new();
+
+    public TimeSpan GetAbsoluteSessionLifetime() =>
+        TimeSpan.FromHours(Math.Clamp(AbsoluteSessionHours, MinAbsoluteSessionHours, MaxAbsoluteSessionHours));
+
+    public TimeSpan GetIdleTimeout() =>
+        TimeSpan.FromMinutes(Math.Clamp(IdleTimeoutMinutes, MinIdleTimeoutMinutes, MaxIdleTimeoutMinutes));
+
+    public TimeSpan GetRememberMeSessionLifetime() =>
+        TimeSpan.FromHours(Math.Clamp(RememberMeSessionHours, MinRememberMeSessionHours, MaxRememberMeSessionHours));
 }
 
 public sealed class BootstrapAdminOptions

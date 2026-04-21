@@ -85,9 +85,10 @@ public sealed class LoginModel(ILocalAuthService localAuthService, IOptions<Loca
             new AuthenticationProperties
             {
                 IsPersistent = rememberMe,
-                ExpiresUtc = DateTimeOffset.UtcNow.AddHours(rememberMe
-                    ? Math.Max(1, authOptions.Value.RememberMeSessionHours)
-                    : Math.Clamp(authOptions.Value.AbsoluteSessionHours, 8, 12))
+                ExpiresUtc = DateTimeOffset.UtcNow.Add(
+                    rememberMe
+                        ? authOptions.Value.GetRememberMeSessionLifetime()
+                        : authOptions.Value.GetAbsoluteSessionLifetime())
             });
         await localAuthService.RecordSuccessfulLoginAsync(result.User.UserId, cancellationToken);
         return LocalRedirect(ResolveReturnUrl());

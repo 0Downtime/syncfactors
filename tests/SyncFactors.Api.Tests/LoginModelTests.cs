@@ -79,6 +79,48 @@ public sealed class LoginModelTests
     }
 
     [Fact]
+    public async Task OnPostAsync_UsesConfiguredAbsoluteSessionLifetime()
+    {
+        var authenticationService = new CapturingAuthenticationService();
+        var options = new LocalAuthOptions
+        {
+            Mode = "local-break-glass",
+            AbsoluteSessionHours = 168,
+            LocalBreakGlass = new LocalBreakGlassOptions
+            {
+                Enabled = true
+            }
+        };
+        var model = CreateModel(
+            new StubLocalAuthService(new LocalUserRecord(
+                UserId: "user-1",
+                Username: "operator",
+                NormalizedUsername: "OPERATOR",
+                PasswordHash: "hash",
+                Role: "Admin",
+                IsActive: true,
+                CreatedAt: DateTimeOffset.UtcNow,
+                UpdatedAt: DateTimeOffset.UtcNow,
+                LastLoginAt: null,
+                FailedLoginCount: 0,
+                LockoutEndAt: null)),
+            authenticationService,
+            options);
+        model.Username = "operator";
+        model.Password = "secret";
+
+        var before = DateTimeOffset.UtcNow;
+        await model.OnPostAsync(CancellationToken.None);
+        var after = DateTimeOffset.UtcNow;
+
+        var expiresUtc = Assert.IsType<DateTimeOffset>(authenticationService.LastProperties?.ExpiresUtc);
+        Assert.InRange(
+            expiresUtc,
+            before.AddHours(168).AddSeconds(-5),
+            after.AddHours(168).AddSeconds(5));
+    }
+
+    [Fact]
     public async Task OnPostAsync_ReturnsPageWhenCredentialsAreInvalid()
     {
         var model = CreateModel(new StubLocalAuthService(null), new CapturingAuthenticationService());

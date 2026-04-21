@@ -105,10 +105,10 @@ public static class LocalSessionManager
             new AuthenticationProperties
             {
                 IsPersistent = persistent,
-                ExpiresUtc = DateTimeOffset.UtcNow.AddHours(
+                ExpiresUtc = DateTimeOffset.UtcNow.Add(
                     persistent
-                        ? Math.Max(1, authOptions.RememberMeSessionHours)
-                        : Math.Clamp(authOptions.AbsoluteSessionHours, 8, 12))
+                        ? authOptions.GetRememberMeSessionLifetime()
+                        : authOptions.GetAbsoluteSessionLifetime())
             });
     }
 
