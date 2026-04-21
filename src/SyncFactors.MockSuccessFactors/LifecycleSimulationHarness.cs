@@ -302,7 +302,7 @@ internal sealed class LifecycleSimulationHarness(
             "server": "ldap.example.test",
             "username": "",
             "bindPassword": "",
-            "identityAttribute": "employeeID",
+            "identityAttribute": "sAMAccountName",
             "defaultActiveOu": "OU=LabUsers,DC=example,DC=com",
             "prehireOu": "OU=Prehire,DC=example,DC=com",
             "graveyardOu": "OU=LabGraveyard,DC=example,DC=com"
