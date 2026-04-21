@@ -2,7 +2,7 @@
   "mappings": [
     {
       "source": "personIdExternal",
-      "target": "employeeID",
+      "target": "sAMAccountName",
       "enabled": true,
       "required": true,
       "transform": "Trim"
