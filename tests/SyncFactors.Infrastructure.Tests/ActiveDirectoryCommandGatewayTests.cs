@@ -441,6 +441,144 @@ public sealed class ActiveDirectoryCommandGatewayTests
     }
 
     [Fact]
+    public void ShouldVerifyGraveyardMove_ReturnsTrueForMoveIntoConfiguredGraveyardOu()
+    {
+        var method = typeof(ActiveDirectoryCommandGateway).GetMethod("ShouldVerifyGraveyardMove", BindingFlags.NonPublic | BindingFlags.Static);
+        Assert.NotNull(method);
+
+        var command = new DirectoryMutationCommand(
+            Action: "MoveUser",
+            WorkerId: "45086",
+            ManagerId: null,
+            ManagerDistinguishedName: null,
+            SamAccountName: "45086",
+            CommonName: "45086",
+            UserPrincipalName: "45086@example.com",
+            Mail: "45086@example.com",
+            TargetOu: "OU=Graveyard,DC=example,DC=com",
+            DisplayName: "Worker, Example",
+            CurrentDistinguishedName: "CN=45086,OU=Employees,DC=example,DC=com",
+            EnableAccount: false,
+            Operations:
+            [
+                new SyncFactors.Contracts.DirectoryOperation("MoveUser", "OU=Graveyard,DC=example,DC=com"),
+                new SyncFactors.Contracts.DirectoryOperation("DisableUser")
+            ],
+            Attributes: new Dictionary<string, string?>());
+        var config = new ActiveDirectoryConfig(
+            Server: "localhost",
+            Port: 636,
+            Username: "bind",
+            BindPassword: "secret",
+            IdentityAttribute: "employeeID",
+            DefaultActiveOu: "OU=Active,DC=example,DC=com",
+            PrehireOu: "OU=Prehire,DC=example,DC=com",
+            GraveyardOu: "OU=Graveyard,DC=example,DC=com",
+            Transport: new ActiveDirectoryTransportConfig("ldaps", false, true, true, []),
+            IdentityPolicy: new ActiveDirectoryIdentityPolicyConfig(false));
+
+        var shouldVerify = Assert.IsType<bool>(method!.Invoke(null, [command, command.Operations, config]));
+
+        Assert.True(shouldVerify);
+    }
+
+    [Fact]
+    public void ShouldVerifyGraveyardMove_ReturnsFalseWhenNoMoveIsPlanned()
+    {
+        var method = typeof(ActiveDirectoryCommandGateway).GetMethod("ShouldVerifyGraveyardMove", BindingFlags.NonPublic | BindingFlags.Static);
+        Assert.NotNull(method);
+
+        var command = new DirectoryMutationCommand(
+            Action: "DisableUser",
+            WorkerId: "45086",
+            ManagerId: null,
+            ManagerDistinguishedName: null,
+            SamAccountName: "45086",
+            CommonName: "45086",
+            UserPrincipalName: "45086@example.com",
+            Mail: "45086@example.com",
+            TargetOu: "OU=Graveyard,DC=example,DC=com",
+            DisplayName: "Worker, Example",
+            CurrentDistinguishedName: "CN=45086,OU=Graveyard,DC=example,DC=com",
+            EnableAccount: false,
+            Operations:
+            [
+                new SyncFactors.Contracts.DirectoryOperation("UpdateUser"),
+                new SyncFactors.Contracts.DirectoryOperation("DisableUser")
+            ],
+            Attributes: new Dictionary<string, string?>());
+        var config = new ActiveDirectoryConfig(
+            Server: "localhost",
+            Port: 636,
+            Username: "bind",
+            BindPassword: "secret",
+            IdentityAttribute: "employeeID",
+            DefaultActiveOu: "OU=Active,DC=example,DC=com",
+            PrehireOu: "OU=Prehire,DC=example,DC=com",
+            GraveyardOu: "OU=Graveyard,DC=example,DC=com",
+            Transport: new ActiveDirectoryTransportConfig("ldaps", false, true, true, []),
+            IdentityPolicy: new ActiveDirectoryIdentityPolicyConfig(false));
+
+        var shouldVerify = Assert.IsType<bool>(method!.Invoke(null, [command, command.Operations, config]));
+
+        Assert.False(shouldVerify);
+    }
+
+    [Fact]
+    public void BuildGraveyardVerificationFailureDetails_IncludesExpectedAndActualState()
+    {
+        var method = typeof(ActiveDirectoryCommandGateway).GetMethod("BuildGraveyardVerificationFailureDetails", BindingFlags.NonPublic | BindingFlags.Static);
+        Assert.NotNull(method);
+
+        var command = new DirectoryMutationCommand(
+            Action: "MoveUser",
+            WorkerId: "45086",
+            ManagerId: null,
+            ManagerDistinguishedName: null,
+            SamAccountName: "45086",
+            CommonName: "45086",
+            UserPrincipalName: "45086@example.com",
+            Mail: "45086@example.com",
+            TargetOu: "OU=Graveyard,DC=example,DC=com",
+            DisplayName: "Worker, Example",
+            CurrentDistinguishedName: "CN=45086,OU=Employees,DC=example,DC=com",
+            EnableAccount: false,
+            Operations:
+            [
+                new SyncFactors.Contracts.DirectoryOperation("MoveUser", "OU=Graveyard,DC=example,DC=com"),
+                new SyncFactors.Contracts.DirectoryOperation("DisableUser")
+            ],
+            Attributes: new Dictionary<string, string?>());
+        var config = new ActiveDirectoryConfig(
+            Server: "localhost",
+            Port: 636,
+            Username: "bind",
+            BindPassword: "secret",
+            IdentityAttribute: "employeeID",
+            DefaultActiveOu: "OU=Active,DC=example,DC=com",
+            PrehireOu: "OU=Prehire,DC=example,DC=com",
+            GraveyardOu: "OU=Graveyard,DC=example,DC=com",
+            Transport: new ActiveDirectoryTransportConfig("ldaps", false, true, true, []),
+            IdentityPolicy: new ActiveDirectoryIdentityPolicyConfig(false));
+        var actual = new DirectoryUserSnapshot(
+            SamAccountName: "45086",
+            DistinguishedName: "CN=45086,OU=Employees,DC=example,DC=com",
+            Enabled: true,
+            DisplayName: "Worker, Example",
+            Attributes: new Dictionary<string, string?>());
+
+        var details = Assert.IsType<string>(method!.Invoke(null, [command, config, "45086", "CN=45086,OU=Graveyard,DC=example,DC=com", actual]));
+
+        Assert.Contains("Step=VerifyGraveyardMove", details, StringComparison.Ordinal);
+        Assert.Contains("IdentityAttribute=employeeID", details, StringComparison.Ordinal);
+        Assert.Contains("IdentityLookupValue=45086", details, StringComparison.Ordinal);
+        Assert.Contains("ExpectedParentOu=OU=Graveyard,DC=example,DC=com", details, StringComparison.Ordinal);
+        Assert.Contains("ActualDistinguishedName=CN=45086,OU=Employees,DC=example,DC=com", details, StringComparison.Ordinal);
+        Assert.Contains("ActualParentOu=OU=Employees,DC=example,DC=com", details, StringComparison.Ordinal);
+        Assert.Contains("ActualEnabled=true", details, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void BuildIdentityConflictDetails_IncludesExistingAccountContext()
     {
         var method = typeof(ActiveDirectoryCommandGateway).GetMethod("BuildIdentityConflictDetails", BindingFlags.NonPublic | BindingFlags.Static);
