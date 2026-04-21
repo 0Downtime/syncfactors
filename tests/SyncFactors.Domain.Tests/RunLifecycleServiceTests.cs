@@ -7,6 +7,32 @@ namespace SyncFactors.Domain.Tests;
 public sealed class RunLifecycleServiceTests
 {
     [Fact]
+    public async Task StartRunAsync_SavesStartingRuntimeStatus()
+    {
+        var runtimeStatusStore = new CapturingRuntimeStatusStore();
+        var runRepository = new CapturingRunRepository(runDetail: null);
+        var service = new RunLifecycleService(runtimeStatusStore, runRepository);
+
+        await service.StartRunAsync(
+            runId: "run-1",
+            mode: "BulkSync",
+            dryRun: true,
+            runTrigger: "AdHoc",
+            requestedBy: "test",
+            totalWorkers: 0,
+            initialAction: "Starting queued request req-1",
+            cancellationToken: CancellationToken.None);
+
+        var savedRuntime = Assert.Single(runtimeStatusStore.SavedStatuses);
+        Assert.Equal("InProgress", savedRuntime.Status);
+        Assert.Equal("Starting", savedRuntime.Stage);
+        Assert.Equal("BulkSync", savedRuntime.Mode);
+        Assert.Equal(0, savedRuntime.ProcessedWorkers);
+        Assert.Equal(0, savedRuntime.TotalWorkers);
+        Assert.Equal("Starting queued request req-1", savedRuntime.LastAction);
+    }
+
+    [Fact]
     public async Task CancelRunAsync_ResetsRuntimeProgress()
     {
         var runtimeStatusStore = new CapturingRuntimeStatusStore();
