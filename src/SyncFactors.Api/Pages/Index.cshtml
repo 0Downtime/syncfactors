@@ -308,6 +308,11 @@
 
         if (currentStatus.Equals("InProgress", StringComparison.OrdinalIgnoreCase))
         {
+            if (currentStage.Equals("Starting", StringComparison.OrdinalIgnoreCase))
+            {
+                return "starting";
+            }
+
             return "syncing";
         }
 
@@ -327,6 +332,7 @@
 
         return visualState switch
         {
+            "starting" => "Starting a new sync run",
             "syncing" => status.TotalWorkers > 0
                 ? $"Syncing worker {Math.Min(status.ProcessedWorkers + (string.IsNullOrWhiteSpace(status.CurrentWorkerId) ? 0 : 1), status.TotalWorkers)} of {status.TotalWorkers}"
                 : "Syncing directory changes",
@@ -344,6 +350,10 @@
 
         return visualState switch
         {
+            "starting" =>
+                string.IsNullOrWhiteSpace(status.RunId)
+                    ? "The worker has claimed the next run and is preparing to process workers."
+                    : $"Run {status.RunId} has been claimed and is preparing worker data.",
             "syncing" when !string.IsNullOrWhiteSpace(status.CurrentWorkerId) =>
                 $"{stage} on worker {status.CurrentWorkerId}. {status.ProcessedWorkers} of {status.TotalWorkers} processed.",
             "syncing" =>
@@ -417,6 +427,11 @@
 
         if (currentStatus.Equals("InProgress", StringComparison.OrdinalIgnoreCase))
         {
+            if (currentStage.Equals("Starting", StringComparison.OrdinalIgnoreCase))
+            {
+                return "starting";
+            }
+
             if (currentStage.Equals("Planning", StringComparison.OrdinalIgnoreCase))
             {
                 return "planning";
@@ -446,6 +461,7 @@
 
         return ProgressVisualState(status) switch
         {
+            "starting" => 18,
             "queued" => 16,
             "canceling" => 32,
             "planning" => Math.Max(actualPercent, 18),
@@ -464,6 +480,7 @@
 
         return ProgressVisualState(status) switch
         {
+            "starting" => "Starting",
             "queued" => "Queued",
             "canceling" => "Canceling",
             "planning" => "Planning",
@@ -483,6 +500,10 @@
 
         return visualState switch
         {
+            "starting" =>
+                string.IsNullOrWhiteSpace(status.RunId)
+                    ? "The worker has claimed the run and is loading source workers."
+                    : $"Run {status.RunId} has started and is loading source workers.",
             "queued" =>
                 string.IsNullOrWhiteSpace(status.RunId)
                     ? "The next sync is queued and waiting for the worker service."
