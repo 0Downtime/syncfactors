@@ -10,7 +10,6 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
 (function () {
     const dashboardPollIntervalMs = 15000;
     const progressAnimationDurationMs = 700;
-    const progressDoneDelayMs = 240;
     const reduceMotionQuery = window.matchMedia ? window.matchMedia("(prefers-reduced-motion: reduce)") : null;
     const supportsViewTransitions = typeof document.startViewTransition === "function";
     const usDateTimeFormatter = new Intl.DateTimeFormat("en-US", {
@@ -66,6 +65,7 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
         statusCaption: document.querySelector("[data-status-caption]"),
         liveBadge: document.querySelector("[data-live-status-badge]"),
         liveCaption: document.querySelector("[data-live-status-caption]"),
+        progressRoot: document.querySelector(".dashboard-progress"),
         progressFill: document.querySelector("[data-progress-fill]"),
         progressCaption: document.querySelector("[data-progress-caption]"),
         progressCopy: document.querySelector("[data-progress-copy]"),
@@ -129,8 +129,6 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
     let latestHealthSnapshot = null;
     let latestScheduleSnapshot = null;
     let latestProgressPercent = 0;
-    let progressDoneTimerId = null;
-    let isProgressDoneShown = false;
     let selectedRunId = null;
     let selectedBucketKey = null;
     let hoveredRunId = null;
@@ -263,24 +261,153 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
         return stage.replace(/inprogress/ig, "in progress").toLowerCase();
     }
 
-    function isCanceledState(status) {
-        const currentStatus = (status && status.status ? status.status : "").toLowerCase();
-        const currentStage = (status && status.stage ? status.stage : "").toLowerCase();
-        return currentStatus === "canceled" ||
-            currentStatus === "cancelled" ||
-            currentStage === "canceled" ||
-            currentStage === "cancelled";
+    function workerProgressPercent(status) {
+        const totalWorkers = status && status.totalWorkers ? status.totalWorkers : 0;
+        const processedWorkers = status && status.processedWorkers ? status.processedWorkers : 0;
+
+        if (totalWorkers <= 0) {
+            return 0;
+        }
+
+        return Math.round((processedWorkers / totalWorkers) * 100);
     }
 
     function progressSnapshot(status) {
-        if (isCanceledState(status)) {
-            return { processed: 0, total: 0 };
-        }
-
         return {
             processed: status && status.processedWorkers ? status.processedWorkers : 0,
             total: status && status.totalWorkers ? status.totalWorkers : 0
         };
+    }
+
+    function progressVisualState(status) {
+        const currentStatus = (status && status.status ? status.status : "").toLowerCase();
+        const currentStage = (status && status.stage ? status.stage : "").toLowerCase();
+
+        if (currentStatus === "failed") {
+            return "failed";
+        }
+
+        if (currentStatus === "cancelrequested") {
+            return "canceling";
+        }
+
+        if (currentStatus === "canceled" ||
+            currentStatus === "cancelled" ||
+            currentStage === "canceled" ||
+            currentStage === "cancelled") {
+            return "canceled";
+        }
+
+        if (currentStatus === "planned" || currentStatus === "pending") {
+            return "queued";
+        }
+
+        if (currentStatus === "inprogress") {
+            if (currentStage === "planning") {
+                return "planning";
+            }
+
+            if (currentStage === "applypreview") {
+                return "applypreview";
+            }
+
+            return "syncing";
+        }
+
+        if ((currentStatus === "idle" || currentStatus === "succeeded") &&
+            currentStage === "completed" &&
+            (status.totalWorkers || 0) > 0) {
+            return "complete";
+        }
+
+        return "idle";
+    }
+
+    function progressFillWidth(status) {
+        const actualPercent = workerProgressPercent(status);
+        const state = progressVisualState(status);
+
+        switch (state) {
+            case "queued":
+                return 16;
+            case "canceling":
+                return 32;
+            case "planning":
+                return Math.max(actualPercent, 18);
+            case "applypreview":
+                return Math.max(actualPercent, 38);
+            case "syncing":
+                return status && status.totalWorkers ? Math.max(actualPercent, 12) : 26;
+            case "complete":
+                return 100;
+            case "failed":
+                return status && status.totalWorkers ? Math.max(actualPercent, 18) : 100;
+            case "canceled":
+                return 18;
+            default:
+                return 8;
+        }
+    }
+
+    function progressLabel(status) {
+        const actualPercent = workerProgressPercent(status);
+
+        switch (progressVisualState(status)) {
+            case "queued":
+                return "Queued";
+            case "canceling":
+                return "Canceling";
+            case "planning":
+                return "Planning";
+            case "applypreview":
+                return actualPercent > 0 ? "Applying " + actualPercent + "%" : "Applying Preview";
+            case "syncing":
+                return actualPercent > 0 ? "Syncing " + actualPercent + "%" : "Syncing";
+            case "complete":
+                return "Done";
+            case "failed":
+                return "Failed";
+            case "canceled":
+                return "Canceled";
+            default:
+                return "Idle";
+        }
+    }
+
+    function buildProgressCopy(status) {
+        const state = progressVisualState(status);
+        const stage = displayStage(status && status.stage ? status.stage : null);
+        const processedWorkers = status && status.processedWorkers ? status.processedWorkers : 0;
+        const totalWorkers = status && status.totalWorkers ? status.totalWorkers : 0;
+
+        switch (state) {
+            case "queued":
+                return status && status.runId
+                    ? "Run " + status.runId + " is queued and waiting for the worker service."
+                    : "The next sync is queued and waiting for the worker service.";
+            case "canceling":
+                return "Cancellation has been requested. The worker will stop after the current operation.";
+            case "planning":
+                return "Building the sync plan before directory changes are applied.";
+            case "applypreview":
+                return status && status.currentWorkerId
+                    ? "Applying the reviewed preview for worker " + status.currentWorkerId + "."
+                    : "Applying the reviewed preview to Active Directory.";
+            case "syncing":
+                return totalWorkers > 0
+                    ? processedWorkers + " of " + totalWorkers + " workers are accounted for in the current run."
+                    : "Sync activity is running during " + stage + ".";
+            case "complete":
+                return processedWorkers + " of " + totalWorkers + " workers were processed in the last completed run.";
+            case "failed":
+                return textOrFallback(status && status.errorMessage ? status.errorMessage : null, "The sync failed during " + stage + ".");
+            case "canceled":
+                return "The last sync was canceled before worker progress completed.";
+            default:
+                return status && status.lastUpdatedAt
+                    ? "Last worker activity was " + stage + "."
+                    : "No active worker progress has been recorded yet.";
+        }
     }
 
     function visualState(status) {
@@ -478,41 +605,6 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
         flashUpdate(element);
     }
 
-    function clearProgressDoneTimer() {
-        if (!progressDoneTimerId) {
-            return;
-        }
-
-        window.clearTimeout(progressDoneTimerId);
-        progressDoneTimerId = null;
-    }
-
-    function scheduleProgressDoneLabel(nextPercent, total) {
-        if (!elements.progressCaption) {
-            return;
-        }
-
-        if (nextPercent < 100 || total <= 0) {
-            clearProgressDoneTimer();
-            isProgressDoneShown = false;
-            return;
-        }
-
-        if (isProgressDoneShown || progressDoneTimerId) {
-            return;
-        }
-
-        const delayMs = motionAllowed()
-            ? progressAnimationDurationMs + progressDoneDelayMs
-            : progressDoneDelayMs;
-
-        progressDoneTimerId = window.setTimeout(function () {
-            progressDoneTimerId = null;
-            isProgressDoneShown = true;
-            updateText(elements.progressCaption, "Done");
-        }, delayMs);
-    }
-
     function runSummary(run) {
         const parts = [];
 
@@ -583,41 +675,29 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
     }
 
     function animateProgress(status) {
-        if (!elements.progressFill || !elements.progressCaption || !elements.progressCopy) {
+        if (!elements.progressRoot || !elements.progressFill || !elements.progressCaption || !elements.progressCopy) {
             return;
         }
 
-        const progress = progressSnapshot(status);
-        const processed = progress.processed;
-        const total = progress.total;
-        const nextPercent = total > 0 ? Math.round((processed / total) * 100) : 0;
-        const summary = total > 0
-            ? processed + " of " + total + " workers are accounted for in the current run."
-            : "No active worker progress has been recorded yet.";
+        const nextState = progressVisualState(status);
+        const nextPercent = progressFillWidth(status);
+        const summary = buildProgressCopy(status);
+        const label = progressLabel(status);
+        const previousState = elements.progressRoot.getAttribute("data-progress-state");
 
+        elements.progressRoot.setAttribute("data-progress-state", nextState);
         updateText(elements.progressCopy, summary);
+        updateText(elements.progressCaption, label);
 
-        if (nextPercent >= 100 && total > 0 && isProgressDoneShown) {
-            elements.progressFill.style.width = nextPercent + "%";
-            return;
+        if (previousState !== nextState) {
+            flashUpdate(elements.progressRoot);
         }
 
         if (!motionAllowed()) {
             elements.progressFill.style.width = nextPercent + "%";
-            elements.progressCaption.textContent = nextPercent + "%";
             latestProgressPercent = nextPercent;
-            isProgressDoneShown = false;
-            scheduleProgressDoneLabel(nextPercent, total);
             return;
         }
-
-        animate(latestProgressPercent, nextPercent, {
-            duration: 0.6,
-            ease: "ease-out",
-            onUpdate: function (latest) {
-                elements.progressCaption.textContent = Math.round(latest) + "%";
-            }
-        });
 
         animate(elements.progressFill, { width: nextPercent + "%" }, {
             duration: progressAnimationDurationMs / 1000,
@@ -625,8 +705,6 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
         });
 
         latestProgressPercent = nextPercent;
-        isProgressDoneShown = false;
-        scheduleProgressDoneLabel(nextPercent, total);
     }
 
     function renderSignal(status) {
