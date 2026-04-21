@@ -185,7 +185,7 @@ var authenticationBuilder = builder.Services.AddAuthentication(options =>
             ? CookieSecurePolicy.SameAsRequest
             : CookieSecurePolicy.Always;
         options.SlidingExpiration = true;
-        options.ExpireTimeSpan = TimeSpan.FromMinutes(Math.Clamp(authSettings.IdleTimeoutMinutes, 15, 30));
+        options.ExpireTimeSpan = authSettings.GetIdleTimeout();
         options.Events = new CookieAuthenticationEvents
         {
             OnRedirectToLogin = context => HandleAuthRedirectAsync(context, StatusCodes.Status401Unauthorized),
@@ -693,14 +693,19 @@ static void ValidateAuthConfiguration(WebApplication app)
         throw new InvalidOperationException("SyncFactors:Auth mode 'oidc' requires OIDC authority and client ID.");
     }
 
-    if (authOptions.IdleTimeoutMinutes is < 15 or > 30)
+    if (authOptions.IdleTimeoutMinutes is < LocalAuthOptions.MinIdleTimeoutMinutes or > LocalAuthOptions.MaxIdleTimeoutMinutes)
     {
-        throw new InvalidOperationException("SyncFactors:Auth:IdleTimeoutMinutes must be between 15 and 30.");
+        throw new InvalidOperationException($"SyncFactors:Auth:IdleTimeoutMinutes must be between {LocalAuthOptions.MinIdleTimeoutMinutes} and {LocalAuthOptions.MaxIdleTimeoutMinutes}.");
     }
 
-    if (authOptions.AbsoluteSessionHours is < 8 or > 12)
+    if (authOptions.AbsoluteSessionHours is < LocalAuthOptions.MinAbsoluteSessionHours or > LocalAuthOptions.MaxAbsoluteSessionHours)
     {
-        throw new InvalidOperationException("SyncFactors:Auth:AbsoluteSessionHours must be between 8 and 12.");
+        throw new InvalidOperationException($"SyncFactors:Auth:AbsoluteSessionHours must be between {LocalAuthOptions.MinAbsoluteSessionHours} and {LocalAuthOptions.MaxAbsoluteSessionHours}.");
+    }
+
+    if (authOptions.RememberMeSessionHours is < LocalAuthOptions.MinRememberMeSessionHours or > LocalAuthOptions.MaxRememberMeSessionHours)
+    {
+        throw new InvalidOperationException($"SyncFactors:Auth:RememberMeSessionHours must be between {LocalAuthOptions.MinRememberMeSessionHours} and {LocalAuthOptions.MaxRememberMeSessionHours}.");
     }
 }
 
@@ -806,7 +811,7 @@ static Task ValidateCookiePrincipalAsync(Microsoft.AspNetCore.Authentication.Coo
 
     var issuedAtValue = identity.FindFirst(SecurityClaimTypes.SessionIssuedAt)?.Value;
     if (!DateTimeOffset.TryParse(issuedAtValue, out var issuedAt) ||
-        DateTimeOffset.UtcNow - issuedAt > TimeSpan.FromHours(authSettings.AbsoluteSessionHours))
+        DateTimeOffset.UtcNow - issuedAt > authSettings.GetAbsoluteSessionLifetime())
     {
         context.RejectPrincipal();
         return context.HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
