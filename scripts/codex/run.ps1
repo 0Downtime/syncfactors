@@ -13,7 +13,9 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$scriptPath = $MyInvocation.MyCommand.Path
+$scriptDir = Split-Path -Parent $scriptPath
+$repoRoot = (Resolve-Path (Join-Path (Split-Path -Parent $scriptDir) '..')).ProviderPath
 
 function Show-Usage {
     @'
@@ -53,11 +55,6 @@ if ($Help) {
     Show-Usage
     exit 0
 }
-
-. (Join-Path $scriptDir 'Load-WorktreeEnv.ps1')
-. (Join-Path $scriptDir '..' 'Start-SyncFactorsCommon.ps1')
-. (Join-Path $scriptDir '..' 'Sync-LocalConfigFormat.ps1')
-. (Join-Path $scriptDir '..' 'Test-SyncFactorsActiveDirectoryOuAccess.ps1')
 
 function ConvertTo-BooleanSetting {
     param(
@@ -126,6 +123,132 @@ function Get-CodexRunSettings {
 
     return [pscustomobject]$settings
 }
+
+function Get-CurrentLauncherArgumentList {
+    $arguments = @(
+        '-NoProfile',
+        '-File', $scriptPath,
+        '-Service', $Service,
+        '-Profile', $Profile
+    )
+
+    if ($Restart) {
+        $arguments += '-Restart'
+    }
+
+    if ($SkipBuild) {
+        $arguments += '-SkipBuild'
+    }
+
+    return $arguments
+}
+
+function Get-PowerShellExecutablePath {
+    $pwshCommand = Get-Command 'pwsh' -ErrorAction SilentlyContinue
+    if ($null -ne $pwshCommand -and -not [string]::IsNullOrWhiteSpace($pwshCommand.Source)) {
+        return $pwshCommand.Source
+    }
+
+    $executableName = if ($IsWindows) { 'pwsh.exe' } else { 'pwsh' }
+    return Join-Path $PSHOME $executableName
+}
+
+function Invoke-PrestartGitPull {
+    param(
+        [Parameter(Mandatory)]
+        [string]$RepositoryRoot,
+        [Parameter(Mandatory)]
+        [pscustomobject]$RunSettings
+    )
+
+    if (-not $RunSettings.GitPullBeforeStackStart) {
+        if (-not [string]::IsNullOrWhiteSpace($RunSettings.ConfigPath)) {
+            Write-Host "Skipping git pull before stack start because git.pullBeforeStackStart is disabled in $($RunSettings.ConfigPath)." -ForegroundColor DarkGray
+        }
+        else {
+            Write-Host 'Skipping git pull before stack start because the setting is disabled.' -ForegroundColor DarkGray
+        }
+
+        return
+    }
+
+    if (-not (Get-Command 'git' -ErrorAction SilentlyContinue)) {
+        Write-Warning 'git is unavailable; skipping pull before stack start.'
+        return
+    }
+
+    $branchName = ''
+    try {
+        $branchName = (& git -C $RepositoryRoot branch --show-current 2>$null).Trim()
+    }
+    catch {
+        $branchName = ''
+    }
+
+    if ([string]::IsNullOrWhiteSpace($branchName)) {
+        Write-Warning 'Current worktree is not on a named branch; skipping pull before stack start.'
+        return
+    }
+
+    $upstreamName = ''
+    try {
+        $upstreamName = (& git -C $RepositoryRoot rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' 2>$null).Trim()
+    }
+    catch {
+        $upstreamName = ''
+    }
+
+    if ([string]::IsNullOrWhiteSpace($upstreamName)) {
+        Write-Warning "Branch '$branchName' has no upstream; skipping pull before stack start."
+        return
+    }
+
+    $headBefore = ''
+    try {
+        $headBefore = (& git -C $RepositoryRoot rev-parse HEAD 2>$null).Trim()
+    }
+    catch {
+        $headBefore = ''
+    }
+
+    Write-Host "Running git pull --ff-only for $branchName ($upstreamName) before starting the stack..." -ForegroundColor Cyan
+    & git -C $RepositoryRoot pull --ff-only
+    if ($LASTEXITCODE -ne 0) {
+        throw 'git pull --ff-only failed before starting the stack.'
+    }
+
+    $headAfter = ''
+    try {
+        $headAfter = (& git -C $RepositoryRoot rev-parse HEAD 2>$null).Trim()
+    }
+    catch {
+        $headAfter = ''
+    }
+
+    if ($headBefore -eq $headAfter) {
+        return
+    }
+
+    Write-Host "Git updated the worktree ($headBefore -> $headAfter). Relaunching the launcher so the latest scripts are used..." -ForegroundColor Cyan
+    $pwshExecutable = Get-PowerShellExecutablePath
+    $relaunchArguments = Get-CurrentLauncherArgumentList
+    & $pwshExecutable @relaunchArguments
+    if ($null -eq $LASTEXITCODE) {
+        exit 0
+    }
+
+    exit $LASTEXITCODE
+}
+
+$runSettings = Get-CodexRunSettings -RepositoryRoot $repoRoot
+if ($Service -eq 'stack') {
+    Invoke-PrestartGitPull -RepositoryRoot $repoRoot -RunSettings $runSettings
+}
+
+. (Join-Path $scriptDir 'Load-WorktreeEnv.ps1')
+. (Join-Path $scriptDir '..' 'Start-SyncFactorsCommon.ps1')
+. (Join-Path $scriptDir '..' 'Sync-LocalConfigFormat.ps1')
+. (Join-Path $scriptDir '..' 'Test-SyncFactorsActiveDirectoryOuAccess.ps1')
 
 function Get-HashtableValue {
     param(
@@ -1084,7 +1207,6 @@ else {
 }
 
 $activeProfile = $env:SYNCFACTORS_RUN_PROFILE.ToLowerInvariant()
-$repoRoot = Resolve-ProjectRoot
 $worktreeEnvFile = Join-Path $repoRoot '.env.worktree'
 $launcherCommand = Get-LauncherInvocationCommand `
     -ServiceName $Service `
@@ -1092,7 +1214,6 @@ $launcherCommand = Get-LauncherInvocationCommand `
     -RestartSelected:$Restart `
     -SkipBuildStep:$SkipBuild
 Ensure-TrackedLocalConfigFormats -RepositoryRoot $repoRoot -RunCommand $launcherCommand
-$runSettings = Get-CodexRunSettings -RepositoryRoot $repoRoot
 if ($Service -in @('api', 'ui', 'worker', 'stack')) {
     Assert-ConfigPathShapes `
         -ResolvedConfigPath $env:SYNCFACTORS_RESOLVED_CONFIG_PATH_ABS `
@@ -1107,67 +1228,6 @@ Ensure-RequiredSecureStoreValues -RepositoryRoot $repoRoot -EnvFilePath $worktre
 Ensure-ConfiguredActiveDirectoryOusAccessible `
     -ServiceName $Service `
     -ResolvedConfigPath $env:SYNCFACTORS_RESOLVED_CONFIG_PATH_ABS
-
-function Invoke-PrestartGitPull {
-    param(
-        [Parameter(Mandatory)]
-        [string]$RepositoryRoot,
-        [Parameter(Mandatory)]
-        [pscustomobject]$RunSettings
-    )
-
-    if (-not $RunSettings.GitPullBeforeStackStart) {
-        if (-not [string]::IsNullOrWhiteSpace($RunSettings.ConfigPath)) {
-            Write-Host "Skipping git pull before stack start because git.pullBeforeStackStart is disabled in $($RunSettings.ConfigPath)." -ForegroundColor DarkGray
-        }
-        else {
-            Write-Host 'Skipping git pull before stack start because the setting is disabled.' -ForegroundColor DarkGray
-        }
-
-        return
-    }
-
-    if (-not (Get-Command 'git' -ErrorAction SilentlyContinue)) {
-        Write-Warning 'git is unavailable; skipping pull before stack start.'
-        return
-    }
-
-    $branchName = ''
-    try {
-        $branchName = (& git -C $RepositoryRoot branch --show-current 2>$null).Trim()
-    }
-    catch {
-        $branchName = ''
-    }
-
-    if ([string]::IsNullOrWhiteSpace($branchName)) {
-        Write-Warning 'Current worktree is not on a named branch; skipping pull before stack start.'
-        return
-    }
-
-    $upstreamName = ''
-    try {
-        $upstreamName = (& git -C $RepositoryRoot rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' 2>$null).Trim()
-    }
-    catch {
-        $upstreamName = ''
-    }
-
-    if ([string]::IsNullOrWhiteSpace($upstreamName)) {
-        Write-Warning "Branch '$branchName' has no upstream; skipping pull before stack start."
-        return
-    }
-
-    Write-Host "Running git pull --ff-only for $branchName ($upstreamName) before starting the stack..." -ForegroundColor Cyan
-    & git -C $RepositoryRoot pull --ff-only
-    if ($LASTEXITCODE -ne 0) {
-        throw 'git pull --ff-only failed before starting the stack.'
-    }
-}
-
-if ($Service -eq 'stack') {
-    Invoke-PrestartGitPull -RepositoryRoot $repoRoot -RunSettings $runSettings
-}
 
 if ($Restart) {
     $preserveHostedTerminals = $false

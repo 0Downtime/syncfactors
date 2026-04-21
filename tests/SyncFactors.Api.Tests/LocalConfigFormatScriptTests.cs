@@ -391,6 +391,62 @@ public sealed class LocalConfigFormatScriptTests
     }
 
     [Fact]
+    public async Task RunScript_StackGitPullUpdate_RelaunchesBeforeLaterConfigValidation()
+    {
+        var tempRepo = await CreateMinimalScriptRepoAsync();
+        try
+        {
+            var runScriptPath = Path.Combine(tempRepo.FullName, "scripts", "codex", "run.ps1");
+            var runScript = await File.ReadAllTextAsync(runScriptPath);
+            const string marker = "$scriptPath = $MyInvocation.MyCommand.Path";
+            Assert.Contains(marker, runScript);
+            runScript = runScript.Replace(
+                marker,
+                marker + Environment.NewLine + "Add-Content -Path (Join-Path (Get-Location) 'relaunch-count.txt') -Value 'start'",
+                StringComparison.Ordinal);
+            await File.WriteAllTextAsync(runScriptPath, runScript);
+
+            await File.WriteAllTextAsync(
+                Path.Combine(tempRepo.FullName, "config", "local.codex-run.json"),
+                """
+                {
+                  "git": {
+                    "pullBeforeStackStart": true,
+                    "obsolete": true
+                  }
+                }
+                """);
+
+            var fakeGitDirectory = Path.Combine(tempRepo.FullName, ".test-bin");
+            Directory.CreateDirectory(fakeGitDirectory);
+            await CreateFakeGitAsync(fakeGitDirectory, Path.Combine(tempRepo.FullName, "fake-git-head.txt"));
+
+            var result = await InvokePowerShellFileAsync(
+                workingDirectory: tempRepo.FullName,
+                filePath: runScriptPath,
+                environment: new Dictionary<string, string?>
+                {
+                    ["PATH"] = fakeGitDirectory + Path.PathSeparator + Environment.GetEnvironmentVariable("PATH")
+                },
+                "-Service", "stack",
+                "-SkipBuild");
+
+            Assert.NotEqual(0, result.ExitCode);
+            Assert.Contains("Local config/env drift blocked startup", result.StandardOutput + result.StandardError);
+
+            var relaunchEntries = await File.ReadAllLinesAsync(Path.Combine(tempRepo.FullName, "relaunch-count.txt"));
+            Assert.Equal(2, relaunchEntries.Length);
+
+            var headState = await File.ReadAllTextAsync(Path.Combine(tempRepo.FullName, "fake-git-head.txt"));
+            Assert.Equal("updated", headState.Trim());
+        }
+        finally
+        {
+            tempRepo.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task RunScript_HeadlessFailure_ExplainsHowToFixWorktreeEnvDrift()
     {
         var tempRepo = await CreateMinimalScriptRepoAsync();
@@ -517,7 +573,14 @@ public sealed class LocalConfigFormatScriptTests
         await source.CopyToAsync(destination);
     }
 
-    private static async Task<PowerShellProcessResult> InvokePowerShellFileAsync(string workingDirectory, string filePath, params string[] arguments)
+    private static async Task<PowerShellProcessResult> InvokePowerShellFileAsync(string workingDirectory, string filePath, params string[] arguments) =>
+        await InvokePowerShellFileAsync(workingDirectory, filePath, environment: null, arguments);
+
+    private static async Task<PowerShellProcessResult> InvokePowerShellFileAsync(
+        string workingDirectory,
+        string filePath,
+        IReadOnlyDictionary<string, string?>? environment,
+        params string[] arguments)
     {
         var startInfo = new ProcessStartInfo("pwsh")
         {
@@ -533,6 +596,14 @@ public sealed class LocalConfigFormatScriptTests
         foreach (var argument in arguments)
         {
             startInfo.ArgumentList.Add(argument);
+        }
+
+        if (environment is not null)
+        {
+            foreach (var entry in environment)
+            {
+                startInfo.Environment[entry.Key] = entry.Value;
+            }
         }
 
         return await InvokeProcessAsync(startInfo);
@@ -576,6 +647,81 @@ public sealed class LocalConfigFormatScriptTests
 
     private static string GetRepositoryFile(string relativePath) =>
         Path.Combine(GetRepositoryRoot(), relativePath.Replace('/', Path.DirectorySeparatorChar));
+
+    private static async Task CreateFakeGitAsync(string binDirectory, string headStatePath)
+    {
+        await File.WriteAllTextAsync(headStatePath, "initial" + Environment.NewLine);
+
+        var fakeGitScriptPath = Path.Combine(binDirectory, "fake-git.ps1");
+        var escapedHeadStatePath = headStatePath.Replace("'", "''");
+        await File.WriteAllTextAsync(
+            fakeGitScriptPath,
+            $$"""
+            $arguments = @($args)
+            if ($arguments.Length -ge 2 -and $arguments[0] -eq '-C') {
+                $arguments = $arguments[2..($arguments.Length - 1)]
+            }
+
+            $headStatePath = '{{escapedHeadStatePath}}'
+            if ($arguments.Length -eq 2 -and $arguments[0] -eq 'branch' -and $arguments[1] -eq '--show-current') {
+                Write-Output 'main'
+                exit 0
+            }
+
+            if ($arguments.Length -eq 4 -and $arguments[0] -eq 'rev-parse' -and $arguments[1] -eq '--abbrev-ref' -and $arguments[2] -eq '--symbolic-full-name' -and $arguments[3] -eq '@{upstream}') {
+                Write-Output 'origin/main'
+                exit 0
+            }
+
+            if ($arguments.Length -eq 2 -and $arguments[0] -eq 'rev-parse' -and $arguments[1] -eq 'HEAD') {
+                $state = (Get-Content -Path $headStatePath -Raw).Trim()
+                if ($state -eq 'initial') {
+                    Write-Output 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+                }
+                else {
+                    Write-Output 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
+                }
+
+                exit 0
+            }
+
+            if ($arguments.Length -eq 2 -and $arguments[0] -eq 'pull' -and $arguments[1] -eq '--ff-only') {
+                $state = (Get-Content -Path $headStatePath -Raw).Trim()
+                if ($state -eq 'initial') {
+                    Set-Content -Path $headStatePath -Value 'updated'
+                }
+
+                exit 0
+            }
+
+            throw "Unexpected fake git command: $($arguments -join ' ')"
+            """);
+
+        if (OperatingSystem.IsWindows())
+        {
+            await File.WriteAllTextAsync(
+                Path.Combine(binDirectory, "git.cmd"),
+                $"""
+                @echo off
+                pwsh -NoProfile -File "{fakeGitScriptPath}" %*
+                """);
+            return;
+        }
+
+        var wrapperPath = Path.Combine(binDirectory, "git");
+        var escapedScriptPath = fakeGitScriptPath.Replace("\"", "\\\"");
+        await File.WriteAllTextAsync(
+            wrapperPath,
+            $$"""
+            #!/usr/bin/env bash
+            exec pwsh -NoProfile -File "{{escapedScriptPath}}" "$@"
+            """);
+        File.SetUnixFileMode(
+            wrapperPath,
+            UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute |
+            UnixFileMode.GroupRead | UnixFileMode.GroupExecute |
+            UnixFileMode.OtherRead | UnixFileMode.OtherExecute);
+    }
 
     private sealed record PowerShellProcessResult(int ExitCode, string StandardOutput, string StandardError);
 }
