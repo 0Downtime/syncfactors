@@ -720,6 +720,45 @@ public sealed class RunDetailModelTests
     }
 
     [Fact]
+    public async Task DescribeEntryExecution_RealSyncAppliedVerifiedDisable_ShowsVerified()
+    {
+        var model = new DetailModel(new RunEntriesQueryService(new StubRunRepository(CreateRunDetail(dryRun: false))))
+        {
+            RunId = "bulk-1"
+        };
+
+        await model.OnGetAsync(CancellationToken.None);
+
+        var entry = new RunEntry(
+            EntryId: "entry-disable-verified",
+            RunId: "bulk-1",
+            ArtifactType: "BulkRun",
+            Mode: "BulkSync",
+            Bucket: "graveyardMoves",
+            BucketLabel: "Graveyard Moves",
+            WorkerId: "40774",
+            SamAccountName: "40774",
+            Reason: null,
+            ReviewCategory: null,
+            ReviewCaseType: null,
+            StartedAt: DateTimeOffset.UtcNow,
+            ChangeCount: 1,
+            OperationSummary: null,
+            FailureSummary: null,
+            PrimarySummary: null,
+            TopChangedAttributes: ["enabled"],
+            DiffRows: [new DiffRow("enabled", null, "true", "false", true)],
+            Item: JsonDocument.Parse("""{"action":"MoveUser","applied":true,"succeeded":true,"operations":[{"kind":"MoveUser","targetOu":"OU=Graveyard,DC=example,DC=com"},{"kind":"DisableUser"}],"currentEnabled":true,"proposedEnable":false,"verifiedEnabled":false,"verifiedDistinguishedName":"CN=40774,OU=Graveyard,DC=example,DC=com","verifiedParentOu":"OU=Graveyard,DC=example,DC=com"}""").RootElement.Clone());
+
+        var status = model.DescribeEntryExecution(entry);
+
+        Assert.Equal("Applied", status.Label);
+        Assert.Equal("good", status.ToneCssClass);
+        Assert.Contains(status.Facts, fact => fact.Label == "Execution" && fact.Value == "Executed");
+        Assert.Contains(status.Facts, fact => fact.Label == "Result" && fact.Value == "AD write verified");
+    }
+
+    [Fact]
     public async Task DescribeEntryExecution_PreviewDisable_ShowsPreviewOnly()
     {
         var model = new DetailModel(new RunEntriesQueryService(new StubRunRepository(CreateRunDetail(

@@ -191,6 +191,7 @@ public sealed class BulkRunCoordinator(
                         string? action = null;
                         var applied = false;
                         var succeeded = true;
+                        DirectoryCommandResult? commandResult = null;
 
                         if (plan.CanAutoApply && string.Equals(bucket, "creates", StringComparison.OrdinalIgnoreCase))
                         {
@@ -264,6 +265,7 @@ public sealed class BulkRunCoordinator(
                             {
                                 var command = mutationCommandBuilder.Build(plan);
                                 var result = await directoryCommandGateway.ExecuteAsync(command, ct);
+                                commandResult = result;
                                 applied = true;
                                 succeeded = result.Succeeded;
                                 reason = result.Message;
@@ -281,7 +283,7 @@ public sealed class BulkRunCoordinator(
                             }
                         }
 
-                        var item = BuildEntryItem(plan, request.DryRun, bucket, action, applied, succeeded, reason);
+                        var item = BuildEntryItem(plan, request.DryRun, bucket, action, applied, succeeded, reason, commandResult);
                         await UpdateGraveyardRetentionAsync(plan, ct);
                         await channel.Writer.WriteAsync(
                             new WorkerRunResult(
@@ -509,7 +511,7 @@ public sealed class BulkRunCoordinator(
             : plan.Bucket;
     }
 
-    private static JsonElement BuildEntryItem(PlannedWorkerAction plan, bool dryRun, string bucket, string? action, bool applied, bool succeeded, string? reason)
+    private static JsonElement BuildEntryItem(PlannedWorkerAction plan, bool dryRun, string bucket, string? action, bool applied, bool succeeded, string? reason, DirectoryCommandResult? commandResult = null)
     {
         var changedRows = plan.AttributeChanges
             .Where(change => change.Changed)
@@ -542,6 +544,9 @@ public sealed class BulkRunCoordinator(
               "succeeded": {{(succeeded ? "true" : "false")}},
               "currentEnabled": {{ToJsonNullableBoolean(plan.CurrentEnabled)}},
               "proposedEnable": {{ToJsonNullableBoolean(plan.TargetEnabled)}},
+              "verifiedEnabled": {{ToJsonNullableBoolean(commandResult?.VerifiedEnabled)}},
+              "verifiedDistinguishedName": {{ToJsonString(commandResult?.VerifiedDistinguishedName)}},
+              "verifiedParentOu": {{ToJsonString(commandResult?.VerifiedParentOu)}},
               "operations": [
                 {{string.Join(",", plan.Operations.Select(operation =>
                     $$"""

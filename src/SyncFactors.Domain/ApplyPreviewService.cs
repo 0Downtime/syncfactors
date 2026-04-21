@@ -154,6 +154,16 @@ public sealed class ApplyPreviewService(
         return serialized[1..^1];
     }
 
+    private static string ToJsonString(string? value)
+    {
+        return value is null ? "null" : $"\"{Escape(value)}\"";
+    }
+
+    private static string ToJsonNullableBoolean(bool? value)
+    {
+        return value.HasValue ? (value.Value ? "true" : "false") : "null";
+    }
+
     private async Task PersistApplyOutcomeAsync(
         string workerId,
         WorkerPreviewResult preview,
@@ -173,6 +183,9 @@ public sealed class ApplyPreviewService(
             + $"\"samAccountName\":\"{Escape(result.SamAccountName)}\","
             + $"\"succeeded\":{(result.Succeeded ? "true" : "false")},"
             + $"\"message\":\"{Escape(result.Message)}\","
+            + $"\"verifiedEnabled\":{ToJsonNullableBoolean(result.VerifiedEnabled)},"
+            + $"\"verifiedDistinguishedName\":{ToJsonString(result.VerifiedDistinguishedName)},"
+            + $"\"verifiedParentOu\":{ToJsonString(result.VerifiedParentOu)},"
             + $"\"sourcePreviewRunId\":\"{Escape(preview.RunId ?? request.PreviewRunId)}\","
             + $"\"sourcePreviewFingerprint\":\"{Escape(preview.Fingerprint)}\""
             + "}");

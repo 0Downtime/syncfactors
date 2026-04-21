@@ -298,6 +298,7 @@ public sealed class FullSyncRunService(
                 ? $"Planned {action} for {plan.Identity.SamAccountName}."
                 : $"Prepared {action} for {plan.Identity.SamAccountName}.";
             string? distinguishedName = plan.DirectoryUser.DistinguishedName;
+            DirectoryCommandResult? commandResult = null;
 
             if (string.Equals(bucket, "creates", StringComparison.OrdinalIgnoreCase) &&
                 createCount + 1 > settings.MaxCreatesPerRun)
@@ -319,6 +320,7 @@ public sealed class FullSyncRunService(
                 try
                 {
                     var result = await directoryCommandGateway.ExecuteAsync(mutationCommandBuilder.Build(plan), cancellationToken);
+                    commandResult = result;
                     succeeded = result.Succeeded;
                     distinguishedName = result.DistinguishedName ?? distinguishedName;
                     message = result.Message;
@@ -360,6 +362,9 @@ public sealed class FullSyncRunService(
                 matchedExistingUser = plan.Identity.MatchedExistingUser,
                 proposedEnable = plan.TargetEnabled,
                 currentEnabled = plan.CurrentEnabled,
+                verifiedEnabled = commandResult?.VerifiedEnabled,
+                verifiedDistinguishedName = commandResult?.VerifiedDistinguishedName,
+                verifiedParentOu = commandResult?.VerifiedParentOu,
                 proposedEmailAddress = plan.ProposedEmailAddress,
                 missingSourceAttributes = plan.MissingSourceAttributes.Select(attribute => new
                 {

@@ -82,6 +82,18 @@
             <div><dt>Action</dt><dd>@Model.ApplyResult.Action</dd></div>
             <div><dt>SAM</dt><dd>@Model.ApplyResult.SamAccountName</dd></div>
             <div><dt>Distinguished Name</dt><dd>@(Model.ApplyResult.DistinguishedName ?? "n/a")</dd></div>
+            @if (Model.ApplyResult.VerifiedDistinguishedName is not null)
+            {
+                <div><dt>Verified Distinguished Name</dt><dd>@Model.ApplyResult.VerifiedDistinguishedName</dd></div>
+            }
+            @if (Model.ApplyResult.VerifiedParentOu is not null)
+            {
+                <div><dt>Verified OU</dt><dd>@Model.ApplyResult.VerifiedParentOu</dd></div>
+            }
+            @if (Model.ApplyResult.VerifiedEnabled.HasValue)
+            {
+                <div><dt>Verified Enabled</dt><dd>@(Model.ApplyResult.VerifiedEnabled.Value ? "true" : "false")</dd></div>
+            }
             <div><dt>Run</dt><dd>
                 @if (!string.IsNullOrWhiteSpace(Model.ApplyResult.RunId))
                 {
