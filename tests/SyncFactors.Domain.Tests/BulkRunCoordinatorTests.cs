@@ -8,6 +8,47 @@ namespace SyncFactors.Domain.Tests;
 public sealed class BulkRunCoordinatorTests
 {
     [Fact]
+    public async Task ExecuteAsync_MarksRunStartingBeforeEnumeratingWorkers()
+    {
+        CapturingRunLifecycleService.Entries.Clear();
+        CapturingRunLifecycleService.Reset();
+        var lifecycle = new CapturingRunLifecycleService();
+        var coordinator = new BulkRunCoordinator(
+            new AssertingStartWorkerSource(() => CapturingRunLifecycleService.StartCalls > 0, [CreateWorker("10001")]),
+            new CapturingDeltaSyncService(),
+            new StubRunQueueStore(),
+            new StubGraveyardRetentionStore(),
+            new StubWorkerPlanningService(),
+            new StubDirectoryMutationCommandBuilder(),
+            new StubDirectoryCommandGateway(),
+            new StubDirectoryGateway(),
+            lifecycle,
+            new RealSyncSettings(),
+            new WorkerRunSettings(MaxCreatesPerRun: 10),
+            CreateLifecycleSettings(),
+            NullLogger<BulkRunCoordinator>.Instance,
+            TimeProvider.System);
+
+        await coordinator.ExecuteAsync(
+            new RunQueueRequest(
+                RequestId: "req-starting",
+                Mode: "BulkSync",
+                DryRun: true,
+                RunTrigger: "AdHoc",
+                RequestedBy: "test",
+                Status: "Pending",
+                RequestedAt: DateTimeOffset.UtcNow,
+                StartedAt: null,
+                CompletedAt: null,
+                RunId: null,
+                ErrorMessage: null),
+            maxDegreeOfParallelism: 1,
+            CancellationToken.None);
+
+        Assert.True(CapturingRunLifecycleService.StartCalls > 0);
+    }
+
+    [Fact]
     public async Task ExecuteAsync_ContinuesWhenWorkerPlanningFails()
     {
         CapturingRunLifecycleService.Entries.Clear();
@@ -418,6 +459,28 @@ public sealed class BulkRunCoordinatorTests
         }
     }
 
+    private sealed class AssertingStartWorkerSource(Func<bool> hasStarted, IReadOnlyList<WorkerSnapshot> workers) : IWorkerSource
+    {
+        public Task<WorkerSnapshot?> GetWorkerAsync(string workerId, CancellationToken cancellationToken)
+        {
+            _ = cancellationToken;
+            return Task.FromResult(workers.FirstOrDefault(worker => worker.WorkerId == workerId));
+        }
+
+        public async IAsyncEnumerable<WorkerSnapshot> ListWorkersAsync(WorkerListingMode mode, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
+        {
+            _ = mode;
+            Assert.True(hasStarted());
+
+            foreach (var worker in workers)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                yield return worker;
+                await Task.Yield();
+            }
+        }
+    }
+
     private sealed class StubDirectoryGateway(
         IReadOnlyList<DirectoryUserSnapshot>? activeUsers = null,
         IReadOnlyList<DirectoryUserSnapshot>? graveyardUsers = null) : IDirectoryGateway
@@ -727,12 +790,14 @@ public sealed class BulkRunCoordinatorTests
     private sealed class CapturingRunLifecycleService : IRunLifecycleService
     {
         public static List<RunEntryRecord> Entries { get; } = [];
+        public static int StartCalls { get; private set; }
         public static int CompletedCalls { get; private set; }
         public static int FailedCalls { get; private set; }
         public static JsonElement? LastCompletedReport { get; private set; }
 
         public static void Reset()
         {
+            StartCalls = 0;
             CompletedCalls = 0;
             FailedCalls = 0;
             LastCompletedReport = null;
@@ -755,6 +820,7 @@ public sealed class BulkRunCoordinatorTests
             _ = totalWorkers;
             _ = initialAction;
             _ = cancellationToken;
+            StartCalls++;
             Entries.Clear();
             return Task.CompletedTask;
         }

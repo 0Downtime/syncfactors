@@ -125,7 +125,7 @@ public sealed class RunLifecycleService(
         await runtimeStatusStore.SaveAsync(
             new RuntimeStatus(
                 Status: "InProgress",
-                Stage: mode,
+                Stage: "Starting",
                 RunId: runId,
                 Mode: mode,
                 DryRun: dryRun,

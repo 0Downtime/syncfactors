@@ -303,6 +303,10 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
         }
 
         if (currentStatus === "inprogress") {
+            if (currentStage === "starting") {
+                return "starting";
+            }
+
             if (currentStage === "planning") {
                 return "planning";
             }
@@ -328,6 +332,8 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
         const state = progressVisualState(status);
 
         switch (state) {
+            case "starting":
+                return 18;
             case "queued":
                 return 16;
             case "canceling":
@@ -353,6 +359,8 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
         const actualPercent = workerProgressPercent(status);
 
         switch (progressVisualState(status)) {
+            case "starting":
+                return "Starting";
             case "queued":
                 return "Queued";
             case "canceling":
@@ -381,6 +389,10 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
         const totalWorkers = status && status.totalWorkers ? status.totalWorkers : 0;
 
         switch (state) {
+            case "starting":
+                return status && status.runId
+                    ? "Run " + status.runId + " has started and is loading source workers."
+                    : "The worker has claimed the run and is loading source workers.";
             case "queued":
                 return status && status.runId
                     ? "Run " + status.runId + " is queued and waiting for the worker service."
@@ -427,6 +439,10 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
         }
 
         if (currentStatus === "inprogress") {
+            if (currentStage === "starting") {
+                return "starting";
+            }
+
             return "syncing";
         }
 
@@ -446,6 +462,8 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
         const activeWorkerOffset = status.currentWorkerId ? 1 : 0;
 
         switch (state) {
+            case "starting":
+                return "Starting a new sync run";
             case "syncing":
                 return totalWorkers > 0
                     ? "Syncing worker " + Math.min(processedWorkers + activeWorkerOffset, totalWorkers) + " of " + totalWorkers
@@ -468,6 +486,10 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
         const totalWorkers = status.totalWorkers || 0;
 
         switch (state) {
+            case "starting":
+                return status.runId
+                    ? "Run " + status.runId + " has been claimed and is preparing worker data."
+                    : "The worker has claimed the next run and is preparing to process workers.";
             case "syncing":
                 if (status.currentWorkerId) {
                     return stage + " on worker " + status.currentWorkerId + ". " + processedWorkers + " of " + totalWorkers + " processed.";
