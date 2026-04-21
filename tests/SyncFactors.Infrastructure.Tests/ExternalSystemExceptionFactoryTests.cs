@@ -78,6 +78,33 @@ public sealed class ExternalSystemExceptionFactoryTests
     }
 
     [Fact]
+    public void CreateActiveDirectoryTimeoutException_PreservesMessageAndMarksRetryMetadata()
+    {
+        var factoryType = typeof(SyncFactorsConfigurationLoader).Assembly
+            .GetType("SyncFactors.Infrastructure.ExternalSystemExceptionFactory");
+        Assert.NotNull(factoryType);
+
+        var method = factoryType!.GetMethod(
+            "CreateActiveDirectoryTimeoutException",
+            BindingFlags.Public | BindingFlags.Static,
+            [typeof(string), typeof(string), typeof(TimeSpan), typeof(Exception)]);
+        Assert.NotNull(method);
+
+        var markerField = factoryType.GetField(
+            "RetryableActiveDirectoryTimeoutMarkerKey",
+            BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.Public);
+        Assert.NotNull(markerField);
+        var markerKey = Assert.IsType<string>(markerField!.GetRawConstantValue());
+
+        var exception = Assert.IsType<InvalidOperationException>(
+            method!.Invoke(null, ["lookup", "example-env-01.Exampleqa.biz", TimeSpan.FromSeconds(10), new TimeoutException("Timed out.")]));
+
+        Assert.Equal("Active Directory lookup timed out against LDAP server 'example-env-01.Exampleqa.biz' after 10 seconds.", exception.Message);
+        Assert.True(exception.Data.Contains(markerKey));
+        Assert.Equal(true, exception.Data[markerKey]);
+    }
+
+    [Fact]
     public void CreateActiveDirectoryException_ReportsMissingOuGuidance_ForNoObjectDirectoryOperation()
     {
         var method = typeof(SyncFactorsConfigurationLoader).Assembly

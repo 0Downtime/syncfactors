@@ -4,6 +4,8 @@ namespace SyncFactors.Infrastructure;
 
 internal static class ExternalSystemExceptionFactory
 {
+    internal const string RetryableActiveDirectoryTimeoutMarkerKey = "SyncFactors.Infrastructure.RetryableActiveDirectoryTimeout";
+
     public static InvalidOperationException CreateActiveDirectoryValidationException(string operation, ActiveDirectoryConfig config, string summary, string? details, string guidance)
     {
         var server = config.Server;
@@ -37,9 +39,11 @@ internal static class ExternalSystemExceptionFactory
 
     public static InvalidOperationException CreateActiveDirectoryTimeoutException(string operation, string server, TimeSpan timeout, Exception? innerException = null)
     {
-        return new InvalidOperationException(
+        var exception = new InvalidOperationException(
             $"Active Directory {operation} timed out against LDAP server '{server}' after {timeout.TotalSeconds:0} seconds.",
             innerException);
+        exception.Data[RetryableActiveDirectoryTimeoutMarkerKey] = true;
+        return exception;
     }
 
     public static InvalidOperationException CreateSuccessFactorsException(string operation, string endpoint, string summary, Exception? innerException = null)
@@ -195,6 +199,11 @@ internal static class ExternalSystemExceptionFactory
         }
 
         return string.Join(" ", parts);
+    }
+
+    internal static bool IsRetryableActiveDirectoryTimeout(Exception exception)
+    {
+        return exception.Data[RetryableActiveDirectoryTimeoutMarkerKey] as bool? == true;
     }
 
     private static int GetDefaultPort(string mode) =>

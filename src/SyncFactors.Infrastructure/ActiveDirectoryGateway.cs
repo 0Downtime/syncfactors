@@ -161,6 +161,21 @@ public sealed class ActiveDirectoryGateway(
                     lease?.UsedFallback,
                     attempt + 1);
             }
+            catch (InvalidOperationException ex) when (ShouldRetryTransientLdapFailure(ex, attempt))
+            {
+                lease?.Invalidate();
+                connectionPool.InvalidateIdleConnections(config);
+                logger.LogWarning(
+                    ex,
+                    "AD {Operation} hit a transient LDAP timeout. Server={Server} ConnectionSource={ConnectionSource} RequestedTransport={RequestedTransport} EffectiveTransport={EffectiveTransport} UsedFallback={UsedFallback} Attempt={Attempt}. Flushed pooled idle connections and retrying with a fresh connection.",
+                    operationName,
+                    config.Server,
+                    lease?.WasReused == true ? "pooled" : "fresh",
+                    lease?.RequestedTransport,
+                    lease?.EffectiveTransport,
+                    lease?.UsedFallback,
+                    attempt + 1);
+            }
             catch (LdapException ex)
             {
                 lease?.Invalidate();
@@ -1054,6 +1069,12 @@ public sealed class ActiveDirectoryGateway(
     {
         return attempt < MaxTransientLdapRetries &&
                string.Equals(exception.Message, "The LDAP server is unavailable.", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool ShouldRetryTransientLdapFailure(InvalidOperationException exception, int attempt)
+    {
+        return attempt < MaxTransientLdapRetries &&
+               ExternalSystemExceptionFactory.IsRetryableActiveDirectoryTimeout(exception);
     }
 
     private static SearchResponse ExecuteSearch(
