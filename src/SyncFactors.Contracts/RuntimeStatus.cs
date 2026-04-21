@@ -298,7 +298,10 @@ public sealed record DirectoryCommandResult(
     string SamAccountName,
     string? DistinguishedName,
     string Message,
-    string? RunId);
+    string? RunId,
+    bool? VerifiedEnabled = null,
+    string? VerifiedDistinguishedName = null,
+    string? VerifiedParentOu = null);
 
 public sealed record DiffRow(
     string Attribute,
