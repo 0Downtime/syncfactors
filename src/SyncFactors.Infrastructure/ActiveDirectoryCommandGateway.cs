@@ -85,6 +85,7 @@ public sealed class ActiveDirectoryCommandGateway(
             ? command.Operations
             : [new SyncFactors.Contracts.DirectoryOperation(command.Action, command.TargetOu)];
         string? distinguishedName = command.CurrentDistinguishedName;
+        DirectoryUserSnapshot? verifiedUser = null;
 
         foreach (var operation in operations)
         {
@@ -107,7 +108,7 @@ public sealed class ActiveDirectoryCommandGateway(
 
         if (ShouldVerifyGraveyardMove(command, operations, config))
         {
-            VerifyGraveyardMoveOutcome(connection, command, config, logger, distinguishedName);
+            verifiedUser = VerifyGraveyardMoveOutcome(connection, command, config, logger, distinguishedName);
         }
 
         return new DirectoryCommandResult(
@@ -116,7 +117,10 @@ public sealed class ActiveDirectoryCommandGateway(
             SamAccountName: command.SamAccountName,
             DistinguishedName: distinguishedName,
             Message: BuildCompletionMessage(command, operations),
-            RunId: null);
+            RunId: null,
+            VerifiedEnabled: verifiedUser?.Enabled,
+            VerifiedDistinguishedName: verifiedUser?.DistinguishedName,
+            VerifiedParentOu: verifiedUser is null ? null : DirectoryDistinguishedName.GetParentOu(verifiedUser.DistinguishedName));
     }
 
     private static DirectoryCommandResult CreateUser(LdapConnection connection, DirectoryMutationCommand command, ActiveDirectoryConfig config, ILogger logger, string effectiveTransport)
@@ -1187,7 +1191,7 @@ public sealed class ActiveDirectoryCommandGateway(
                    string.Equals(operation.TargetOu, config.GraveyardOu, StringComparison.OrdinalIgnoreCase));
     }
 
-    private static void VerifyGraveyardMoveOutcome(
+    private static DirectoryUserSnapshot VerifyGraveyardMoveOutcome(
         LdapConnection connection,
         DirectoryMutationCommand command,
         ActiveDirectoryConfig config,
@@ -1235,6 +1239,8 @@ public sealed class ActiveDirectoryCommandGateway(
             reloadedUser.DistinguishedName,
             actualParentOu,
             reloadedUser.Enabled);
+
+        return reloadedUser;
     }
 
     private static string BuildGraveyardVerificationFailureDetails(
