@@ -1397,6 +1397,23 @@ a:focus-visible {
   --progress-sheen-duration: 3.4s;
 }
 
+.dashboard-progress[data-progress-state="starting"] {
+  --progress-border: color-mix(in srgb, var(--info) 24%, var(--line) 76%);
+  --progress-surface:
+    linear-gradient(180deg, color-mix(in srgb, var(--info-bg) 76%, transparent), transparent),
+    linear-gradient(90deg, color-mix(in srgb, var(--accent-soft) 38%, transparent), transparent),
+    var(--panel-alt);
+  --progress-track-border: color-mix(in srgb, var(--info) 20%, var(--line) 80%);
+  --progress-track-overlay: repeating-linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--info) 10%, transparent) 0 8px,
+    transparent 8px 16px);
+  --progress-fill-start: color-mix(in srgb, var(--info) 84%, white 16%);
+  --progress-fill-end: color-mix(in srgb, var(--accent) 74%, white 26%);
+  --progress-fill-shadow: 0 0 0 1px color-mix(in srgb, var(--info) 16%, transparent);
+  --progress-sheen-duration: 1.8s;
+}
+
 .dashboard-progress[data-progress-state="queued"] {
   --progress-border: color-mix(in srgb, var(--warn) 28%, var(--line) 72%);
   --progress-surface:
@@ -1677,6 +1694,26 @@ a:focus-visible {
     0 0 0 8px color-mix(in srgb, var(--dim-bg) 85%, transparent),
     0 8px 18px color-mix(in srgb, var(--line-strong) 24%, transparent);
   animation-duration: 4.2s;
+}
+
+.dashboard-status-signal[data-signal-state="starting"] .dashboard-status-orbit-outer {
+  border-top-color: color-mix(in srgb, var(--info) 86%, transparent);
+  border-right-color: color-mix(in srgb, var(--accent) 26%, transparent);
+  animation-duration: 2.2s;
+}
+
+.dashboard-status-signal[data-signal-state="starting"] .dashboard-status-orbit-inner {
+  border-bottom-color: color-mix(in srgb, var(--accent) 74%, transparent);
+  border-left-color: color-mix(in srgb, var(--info) 24%, transparent);
+  animation-duration: 1.6s;
+}
+
+.dashboard-status-signal[data-signal-state="starting"] .dashboard-status-core {
+  background: radial-gradient(circle at 30% 30%, rgba(255, 255, 255, 0.96), color-mix(in srgb, var(--info) 84%, white 16%));
+  box-shadow:
+    0 0 0 9px color-mix(in srgb, var(--info-bg) 84%, transparent),
+    0 10px 24px color-mix(in srgb, var(--info) 18%, transparent);
+  animation-duration: 1.6s;
 }
 
 .dashboard-status-signal[data-signal-state="queued"] .dashboard-status-orbit-outer,

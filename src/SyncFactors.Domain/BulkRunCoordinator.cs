@@ -33,6 +33,21 @@ public sealed class BulkRunCoordinator(
         var cancellationMonitor = MonitorCancellationAsync(request.RequestId, runCancellationSource, cancellationToken);
         var syncScope = await DetermineSyncScopeAsync(cancellationToken);
         var extractionStartedAt = timeProvider.GetUtcNow();
+        var runId = $"bulk-{timeProvider.GetUtcNow():yyyyMMddHHmmssfff}";
+        var startedAt = timeProvider.GetUtcNow();
+        var tally = new RunTally(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+        RunPopulationTotals? populationTotals = null;
+
+        await runLifecycleService.StartRunAsync(
+            runId,
+            mode: "BulkSync",
+            dryRun: request.DryRun,
+            runTrigger: request.RunTrigger,
+            requestedBy: request.RequestedBy,
+            totalWorkers: 0,
+            initialAction: $"Starting queued request {request.RequestId}",
+            cancellationToken);
+
         var workers = new List<WorkerSnapshot>();
         GuardrailExceededException? guardrailFailure = null;
         try
@@ -47,14 +62,40 @@ public sealed class BulkRunCoordinator(
             if (!cancellationToken.IsCancellationRequested &&
                 await runQueueStore.IsCancellationRequestedAsync(request.RequestId, CancellationToken.None))
             {
-                throw new RunCanceledException(runId: null, "Run canceled by operator.");
+                await runLifecycleService.CancelRunAsync(
+                    runId,
+                    mode: "BulkSync",
+                    dryRun: request.DryRun,
+                    processedWorkers: 0,
+                    totalWorkers: 0,
+                    currentWorkerId: null,
+                    reason: "Run canceled by operator.",
+                    tally: tally,
+                    report: BuildReport(runId, request, tally, totalWorkers: 0, startedAt, syncScope, populationTotals),
+                    startedAt: startedAt,
+                    cancellationToken);
+                throw new RunCanceledException(runId, "Run canceled by operator.");
             }
 
             throw;
         }
+        catch (Exception ex)
+        {
+            await runLifecycleService.FailRunAsync(
+                runId,
+                mode: "BulkSync",
+                dryRun: request.DryRun,
+                processedWorkers: 0,
+                totalWorkers: 0,
+                currentWorkerId: null,
+                errorMessage: ex.Message,
+                tally: tally,
+                report: BuildReport(runId, request, tally, totalWorkers: 0, startedAt, syncScope, populationTotals),
+                startedAt: startedAt,
+                cancellationToken);
+            throw;
+        }
 
-        var runId = $"bulk-{timeProvider.GetUtcNow():yyyyMMddHHmmssfff}";
-        var startedAt = timeProvider.GetUtcNow();
         var totalWorkers = workers.Count;
         var successFactorsActiveCount = RunPopulationTotalsBuilder.CountSuccessFactorsActiveWorkers(workers, lifecycleSettings);
         logger.LogInformation(
@@ -65,11 +106,9 @@ public sealed class BulkRunCoordinator(
             request.RequestedBy,
             totalWorkers);
         var channel = Channel.CreateUnbounded<WorkerRunResult>();
-        var tally = new RunTally(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
         var processedWorkers = 0;
         var createCount = 0;
         var disableCount = 0;
-        RunPopulationTotals? populationTotals = null;
 
         async Task<RunPopulationTotals?> GetPopulationTotalsAsync()
         {
@@ -98,16 +137,6 @@ public sealed class BulkRunCoordinator(
 
             return populationTotals;
         }
-
-        await runLifecycleService.StartRunAsync(
-            runId,
-            mode: "BulkSync",
-            dryRun: request.DryRun,
-            runTrigger: request.RunTrigger,
-            requestedBy: request.RequestedBy,
-            totalWorkers: totalWorkers,
-            initialAction: $"Executing queued request {request.RequestId}",
-            cancellationToken);
 
         var writerTask = Task.Run(async () =>
         {
