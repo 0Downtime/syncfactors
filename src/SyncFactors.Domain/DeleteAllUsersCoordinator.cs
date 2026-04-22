@@ -26,6 +26,9 @@ public sealed class DeleteAllUsersCoordinator(
         var runCancellationToken = runCancellationSource.Token;
         var cancellationMonitor = MonitorCancellationAsync(request.RequestId, runCancellationSource, cancellationToken);
 
+        var runId = $"delete-all-{timeProvider.GetUtcNow():yyyyMMddHHmmssfff}";
+        using var logScope = RunLoggingScope.Begin(logger, runId, mode: "DeleteAllUsers", request.RequestId);
+
         var users = new List<DeleteCandidate>();
         try
         {
@@ -42,7 +45,6 @@ public sealed class DeleteAllUsersCoordinator(
             throw;
         }
 
-        var runId = $"delete-all-{timeProvider.GetUtcNow():yyyyMMddHHmmssfff}";
         var startedAt = timeProvider.GetUtcNow();
         var totalWorkers = users.Count;
         var tally = new RunTally(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);

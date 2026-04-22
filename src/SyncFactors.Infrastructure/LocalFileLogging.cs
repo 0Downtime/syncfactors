@@ -40,4 +40,25 @@ public static class LocalFileLogging
     {
         return Path.Combine(ResolveDirectory(configuredDirectory), $"{processName}-.log");
     }
+
+    public static string ResolveRunLogDirectory(string? configuredDirectory)
+    {
+        return Path.Combine(ResolveDirectory(configuredDirectory), "runs");
+    }
+
+    public static string ResolveRunLogPath(string runId, string? configuredDirectory)
+    {
+        if (string.IsNullOrWhiteSpace(runId))
+        {
+            throw new ArgumentException("Run ID is required.", nameof(runId));
+        }
+
+        return Path.Combine(ResolveRunLogDirectory(configuredDirectory), $"{MakeSafeFileName(runId)}.log");
+    }
+
+    private static string MakeSafeFileName(string value)
+    {
+        var invalidChars = Path.GetInvalidFileNameChars();
+        return new string(value.Select(ch => invalidChars.Contains(ch) ? '_' : ch).ToArray());
+    }
 }

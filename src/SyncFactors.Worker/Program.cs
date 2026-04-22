@@ -222,6 +222,7 @@ static void ConfigureLocalFileLogging(
         .CreateLogger();
 
     logging.AddSerilog(logger, dispose: true);
+    logging.AddProvider(new RunScopedFileLoggerProvider(directoryValue));
 }
 
 static void ConfigureApplicationInsights(HostApplicationBuilder builder)
