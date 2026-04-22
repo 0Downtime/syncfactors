@@ -31,6 +31,7 @@ public sealed class GraveyardAutoDeleteCoordinator(
         }
 
         var runId = $"graveyard-auto-delete-{timeProvider.GetUtcNow():yyyyMMddHHmmssfff}";
+        using var logScope = RunLoggingScope.Begin(logger, runId, mode: "GraveyardAutoDelete");
         var startedAt = timeProvider.GetUtcNow();
         var tally = new RunTally(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
         var processedWorkers = 0;

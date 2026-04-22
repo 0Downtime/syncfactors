@@ -32,6 +32,7 @@ public sealed class FullSyncRunService(
         var startedAt = DateTimeOffset.UtcNow;
         var runId = $"full-sync-{startedAt:yyyyMMddHHmmss}";
         var mode = request.DryRun ? "FullSyncDryRun" : "FullSyncLive";
+        using var logScope = RunLoggingScope.Begin(logger, runId, mode);
         var startStatus = new RuntimeStatus(
             Status: "InProgress",
             Stage: "Planning",

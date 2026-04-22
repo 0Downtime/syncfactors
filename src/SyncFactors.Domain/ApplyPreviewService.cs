@@ -25,6 +25,10 @@ public sealed class ApplyPreviewService(
             throw new InvalidOperationException("Real AD sync is disabled for this environment.");
         }
 
+        var startedAt = DateTimeOffset.UtcNow;
+        var runId = $"apply-{request.WorkerId}-{startedAt:yyyyMMddHHmmss}";
+        using var logScope = RunLoggingScope.Begin(logger, runId, mode: "ApplyPreview");
+
         logger.LogInformation("Starting preview apply flow. WorkerId={WorkerId} PreviewRunId={PreviewRunId}", request.WorkerId, request.PreviewRunId);
         var preview = await runRepository.GetWorkerPreviewAsync(request.PreviewRunId, cancellationToken);
         if (preview is null)
@@ -59,9 +63,6 @@ public sealed class ApplyPreviewService(
         var command = commandBuilder.Build(worker, preview);
         var action = command.Action;
         logger.LogInformation("Prepared directory mutation command. WorkerId={WorkerId} Action={Action} SamAccountName={SamAccountName}", worker.WorkerId, action, command.SamAccountName);
-
-        var startedAt = DateTimeOffset.UtcNow;
-        var runId = $"apply-{worker.WorkerId}-{startedAt:yyyyMMddHHmmss}";
 
         await runtimeStatusStore.SaveAsync(
             new RuntimeStatus(

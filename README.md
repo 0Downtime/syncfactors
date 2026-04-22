@@ -337,7 +337,7 @@ SYNCFACTORS_LOCAL_FILE_LOGGING_ENABLED=true
 SYNCFACTORS_LOCAL_LOG_DIRECTORY=
 ```
 
-When enabled, the API writes `api-*.log` and the worker writes `worker-*.log` with daily rotation and 7 retained files. Leave `SYNCFACTORS_LOCAL_LOG_DIRECTORY` blank to use the default runtime log directory under `%LocalAppData%/SyncFactors/logs` on Windows or `${XDG_DATA_HOME:-~/.local/share}/SyncFactors/logs` on macOS/Linux. This does not change preview artifact logs under `preview-logs`.
+When enabled, the API writes `api-*.log` and the worker writes `worker-*.log` with daily rotation and 7 retained files. Sync execution logs are also duplicated into one file per run under `runs/<runId>.log` in the same log directory. Leave `SYNCFACTORS_LOCAL_LOG_DIRECTORY` blank to use the default runtime log directory under `%LocalAppData%/SyncFactors/logs` on Windows or `${XDG_DATA_HOME:-~/.local/share}/SyncFactors/logs` on macOS/Linux. This does not change preview artifact logs under `preview-logs`.
 
 To send API and worker telemetry to Azure Application Insights, set:
 
