@@ -13,6 +13,10 @@ public sealed class MockSuccessFactorsOptions
     public MockSyntheticPopulationOptions SyntheticPopulation { get; set; } = new();
 
     public MockEmpJobOptions EmpJob { get; set; } = new();
+
+    public MockRuntimeOptions Runtime { get; set; } = new();
+
+    public MockAdminOptions Admin { get; set; } = new();
 }
 
 public sealed class MockSyntheticPopulationOptions
@@ -44,6 +48,20 @@ public sealed class MockEmpJobOptions
     public bool IncludeTaggedPrehiresInDefaultListing { get; set; } = true;
 }
 
+public sealed class MockRuntimeOptions
+{
+    public string FixturePath { get; set; } = string.Empty;
+}
+
+public sealed class MockAdminOptions
+{
+    public bool Enabled { get; set; } = true;
+
+    public bool RequireLoopback { get; set; } = true;
+
+    public string Path { get; set; } = "/admin";
+}
+
 public sealed class MockSuccessFactorsOptionsSetup : IConfigureOptions<MockSuccessFactorsOptions>
 {
     public void Configure(MockSuccessFactorsOptions options)
@@ -58,19 +76,36 @@ public sealed class MockSuccessFactorsOptionsSetup : IConfigureOptions<MockSucce
             if (File.Exists(outputContentPath))
             {
                 options.FixturePath = outputContentPath;
-                return;
             }
-
-            options.FixturePath = Path.GetFullPath(Path.Combine(
-                AppContext.BaseDirectory,
-                "..",
-                "..",
-                "..",
-                "..",
-                "..",
-                "config",
-                "mock-successfactors",
-                "baseline-fixtures.json"));
+            else
+            {
+                options.FixturePath = ResolveRepoRelativePath("config", "mock-successfactors", "baseline-fixtures.json");
+            }
         }
+
+        if (string.IsNullOrWhiteSpace(options.Runtime.FixturePath))
+        {
+            options.Runtime.FixturePath = ResolveRepoRelativePath("state", "runtime", "mock-successfactors.runtime-fixtures.json");
+        }
+
+        if (string.IsNullOrWhiteSpace(options.Admin.Path))
+        {
+            options.Admin.Path = "/admin";
+        }
+    }
+
+    private static string ResolveRepoRelativePath(params string[] segments)
+    {
+        var paths = new List<string>
+        {
+            AppContext.BaseDirectory,
+            "..",
+            "..",
+            "..",
+            "..",
+            ".."
+        };
+        paths.AddRange(segments);
+        return Path.GetFullPath(Path.Combine(paths.ToArray()));
     }
 }

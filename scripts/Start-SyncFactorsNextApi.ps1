@@ -37,5 +37,11 @@ Write-Host "Logging: SyncFactors=Debug" -ForegroundColor Cyan
 if (Test-SyncFactorsLocalFileLoggingEnabled) {
     Write-Host "Local file logging: $(Get-SyncFactorsLocalLogDirectory -ProjectRoot $projectRoot)" -ForegroundColor Cyan
 }
+if (-not [string]::IsNullOrWhiteSpace($env:SYNCFACTORS_LAUNCHER_PORTAL_URL)) {
+    Write-Host "Portal UI: $($env:SYNCFACTORS_LAUNCHER_PORTAL_URL)" -ForegroundColor Cyan
+}
+if (-not [string]::IsNullOrWhiteSpace($env:SYNCFACTORS_LAUNCHER_MOCK_ADMIN_URL)) {
+    Write-Host "Mock SF Admin UI: $($env:SYNCFACTORS_LAUNCHER_MOCK_ADMIN_URL)" -ForegroundColor Cyan
+}
 
 Invoke-DotnetProjectRun -ProjectPath $apiProjectPath -ProjectRoot $projectRoot -SkipBuild:$SkipBuild
