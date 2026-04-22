@@ -6,7 +6,7 @@ public static class ActiveDirectoryTransportModeFormatter
     {
         if (string.IsNullOrWhiteSpace(mode))
         {
-            return "ldap";
+            return "ldaps";
         }
 
         var trimmedMode = mode.Trim();
