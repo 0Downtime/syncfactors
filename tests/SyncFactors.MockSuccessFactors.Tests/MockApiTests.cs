@@ -16,6 +16,7 @@ public sealed class MockApiTests
         bool includeTaggedPrehiresInDefaultListing = true,
         string? fixturePath = null)
     {
+        var runtimePath = Path.Combine(Path.GetTempPath(), $"mock-successfactors-runtime-{Guid.NewGuid():N}.json");
         return new MockFixtureStore(Options.Create(new MockSuccessFactorsOptions
         {
             FixturePath = fixturePath ?? FixturePath,
@@ -27,6 +28,10 @@ public sealed class MockApiTests
             {
                 Enabled = syntheticPopulationEnabled,
                 TargetWorkerCount = targetWorkerCount
+            },
+            Runtime = new MockRuntimeOptions
+            {
+                FixturePath = runtimePath
             }
         }));
     }
