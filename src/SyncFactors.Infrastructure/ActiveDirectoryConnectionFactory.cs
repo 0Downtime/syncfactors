@@ -74,7 +74,15 @@ internal static class ActiveDirectoryConnectionFactory
 
         if (!string.Equals(mode, "ldap", StringComparison.OrdinalIgnoreCase))
         {
-            connection.SessionOptions.VerifyServerCertificate += (_, certificate) => ValidateServerCertificate(certificate, config.Transport);
+            if (OperatingSystem.IsWindows())
+            {
+                connection.SessionOptions.VerifyServerCertificate += (_, certificate) => ValidateServerCertificate(certificate, config.Transport);
+            }
+            else if (RequiresCustomCertificateValidation(config.Transport))
+            {
+                throw new PlatformNotSupportedException(
+                    "SyncFactors AD transport is configured to bypass or pin LDAP certificates, but custom LDAP certificate callbacks are unsupported on this platform. On macOS/Linux, trust the certificate in the OS store, use a DNS host name that matches the certificate SAN, set requireCertificateValidation=true, and leave trustedCertificateThumbprints empty.");
+            }
         }
 
         if (string.Equals(mode, "ldaps", StringComparison.OrdinalIgnoreCase))
@@ -176,6 +184,12 @@ internal static class ActiveDirectoryConnectionFactory
         chain.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
         chain.ChainPolicy.VerificationFlags = X509VerificationFlags.NoFlag;
         return chain.Build(certificate2);
+    }
+
+    private static bool RequiresCustomCertificateValidation(ActiveDirectoryTransportConfig transport)
+    {
+        return !transport.RequireCertificateValidation ||
+               transport.TrustedCertificateThumbprints.Any(thumbprint => !string.IsNullOrWhiteSpace(thumbprint));
     }
 
     private static bool ShouldTryPlainLdapFallback(ActiveDirectoryConfig config, string mode) =>

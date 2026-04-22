@@ -431,7 +431,14 @@ public static class SyncFactorsLauncherAdOuProbe
 
         if (!string.Equals(mode, "ldap", StringComparison.OrdinalIgnoreCase))
         {
-            connection.SessionOptions.VerifyServerCertificate += (_, certificate) => ValidateServerCertificate(certificate, config);
+            if (OperatingSystem.IsWindows())
+            {
+                connection.SessionOptions.VerifyServerCertificate += (_, certificate) => ValidateServerCertificate(certificate, config);
+            }
+            else if (RequiresCustomCertificateValidation(config))
+            {
+                throw new PlatformNotSupportedException("Custom LDAP certificate override is unsupported on this platform. Trust the LDAPS certificate in the OS store, connect with a DNS name that matches the certificate SAN, set requireCertificateValidation=true, and leave trustedCertificateThumbprints empty.");
+            }
         }
 
         if (string.Equals(mode, "ldaps", StringComparison.OrdinalIgnoreCase))
@@ -480,6 +487,12 @@ public static class SyncFactorsLauncherAdOuProbe
         chain.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
         chain.ChainPolicy.VerificationFlags = X509VerificationFlags.NoFlag;
         return chain.Build(certificate2);
+    }
+
+    private static bool RequiresCustomCertificateValidation(SyncFactorsLauncherAdOuProbeConfig config)
+    {
+        return !config.RequireCertificateValidation ||
+               config.TrustedCertificateThumbprints.Any(thumbprint => !string.IsNullOrWhiteSpace(thumbprint));
     }
 
     private static int GetPortForMode(int? configuredPort, string requestedMode, string configuredMode)
