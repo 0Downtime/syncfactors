@@ -1105,6 +1105,104 @@ public sealed class SuccessFactorsWorkerSourceIntegrationTests
     }
 
     [Fact]
+    public async Task WorkerSource_PrefersCurrentEmploymentSegment_WhenPerPersonReturnsMultipleEmployments()
+    {
+        using var client = new HttpClient(new MultiEmploymentPerPersonHttpHandler())
+        {
+            BaseAddress = new Uri("http://mock-successfactors.local")
+        };
+
+        var tempDirectory = Path.Combine(Path.GetTempPath(), "syncfactors-worker-source", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDirectory);
+
+        var syncConfigPath = Path.Combine(tempDirectory, "sync-config.json");
+        var mappingConfigPath = Path.Combine(tempDirectory, "mapping-config.json");
+        var scaffoldDataPath = Path.Combine(tempDirectory, "scaffold-data.json");
+
+        await File.WriteAllTextAsync(syncConfigPath, """
+        {
+          "secrets": {
+            "adServerEnv": null,
+            "adUsernameEnv": null,
+            "adBindPasswordEnv": null
+          },
+          "successFactors": {
+            "baseUrl": "http://mock-successfactors.local/odata/v2",
+            "auth": {
+              "mode": "basic",
+              "basic": {
+                "username": "mock-user",
+                "password": "mock-password"
+              }
+            },
+            "query": {
+              "entitySet": "PerPerson",
+              "identityField": "personIdExternal",
+              "deltaField": "lastModifiedDateTime",
+              "select": [
+                "personIdExternal",
+                "personalInfoNav/firstName",
+                "personalInfoNav/lastName",
+                "employmentNav/startDate",
+                "employmentNav/endDate",
+                "employmentNav/userId",
+                "employmentNav/jobInfoNav/startDate",
+                "employmentNav/jobInfoNav/endDate",
+                "employmentNav/jobInfoNav/emplStatus",
+                "employmentNav/userNav/manager/empInfo/personIdExternal"
+              ],
+              "expand": [
+                "personalInfoNav",
+                "employmentNav",
+                "employmentNav/jobInfoNav",
+                "employmentNav/userNav",
+                "employmentNav/userNav/manager",
+                "employmentNav/userNav/manager/empInfo"
+              ]
+            }
+          },
+          "ad": {
+            "server": "ldap.example.test",
+            "username": "",
+            "bindPassword": "",
+            "identityAttribute": "employeeID",
+            "defaultActiveOu": "OU=LabUsers,DC=example,DC=com",
+            "prehireOu": "OU=Prehire,DC=example,DC=com",
+            "graveyardOu": "OU=LabGraveyard,DC=example,DC=com"
+          },
+          "sync": {
+            "enableBeforeStartDays": 7,
+            "deletionRetentionDays": 90
+          },
+          "safety": {
+            "maxCreatesPerRun": 10,
+            "maxDisablesPerRun": 10,
+            "maxDeletionsPerRun": 10
+          },
+          "reporting": {
+            "outputDirectory": "reports"
+          }
+        }
+        """);
+        File.Copy(Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "config", "sample.empjob-confirmed.mapping-config.json")), mappingConfigPath);
+        await File.WriteAllTextAsync(scaffoldDataPath, """{"workers":[],"directoryUsers":[]}""");
+
+        var configLoader = new SyncFactorsConfigurationLoader(new SyncFactorsConfigPathResolver(syncConfigPath, mappingConfigPath));
+        var scaffoldStore = new ScaffoldDataStore(new ScaffoldDataPathResolver(scaffoldDataPath));
+        var fallbackSource = new ScaffoldWorkerSource(scaffoldStore);
+        var workerSource = new SuccessFactorsWorkerSource(client, configLoader, new DisabledDeltaSyncService(), fallbackSource, NullLogger<SuccessFactorsWorkerSource>.Instance);
+
+        var worker = await workerSource.GetWorkerAsync("44004", CancellationToken.None);
+
+        Assert.NotNull(worker);
+        Assert.Equal("44004", worker!.WorkerId);
+        Assert.Equal("A", worker.Attributes["emplStatus"]);
+        Assert.Equal("43553", worker.Attributes["managerId"]);
+        Assert.Equal("44004", worker.Attributes["userId"]);
+        Assert.Equal("2025-01-01T00:00:00Z", worker.Attributes["startDate"]);
+    }
+
+    [Fact]
     public async Task WorkerSource_IncludesResponseBody_WhenSuccessFactorsReturnsBadRequest()
     {
         using var client = new HttpClient(new ErroringSuccessFactorsHttpHandler())
@@ -1941,6 +2039,85 @@ public sealed class SuccessFactorsWorkerSourceIntegrationTests
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(empJobJson, Encoding.UTF8, "application/json")
+            });
+        }
+    }
+
+    private sealed class MultiEmploymentPerPersonHttpHandler : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            _ = cancellationToken;
+
+            const string perPersonJson = """
+            {
+              "d": {
+                "results": [
+                  {
+                    "personIdExternal": "44004",
+                    "personalInfoNav": {
+                      "results": [
+                        {
+                          "firstName": "Casey",
+                          "lastName": "Example"
+                        }
+                      ]
+                    },
+                    "employmentNav": {
+                      "results": [
+                        {
+                          "userId": "44004-old",
+                          "startDate": "2024-01-01T00:00:00Z",
+                          "endDate": "2024-12-31T00:00:00Z",
+                          "userNav": {
+                            "manager": {
+                              "empInfo": {
+                                "personIdExternal": "40667"
+                              }
+                            }
+                          },
+                          "jobInfoNav": {
+                            "results": [
+                              {
+                                "startDate": "2024-01-01T00:00:00Z",
+                                "endDate": "2024-12-31T00:00:00Z",
+                                "emplStatus": "T"
+                              }
+                            ]
+                          }
+                        },
+                        {
+                          "userId": "44004",
+                          "startDate": "2025-01-01T00:00:00Z",
+                          "endDate": "9999-12-31T00:00:00Z",
+                          "userNav": {
+                            "manager": {
+                              "empInfo": {
+                                "personIdExternal": "43553"
+                              }
+                            }
+                          },
+                          "jobInfoNav": {
+                            "results": [
+                              {
+                                "startDate": "2025-01-01T00:00:00Z",
+                                "endDate": "9999-12-31T00:00:00Z",
+                                "emplStatus": "A"
+                              }
+                            ]
+                          }
+                        }
+                      ]
+                    }
+                  }
+                ]
+              }
+            }
+            """;
+
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(perPersonJson, Encoding.UTF8, "application/json")
             });
         }
     }
