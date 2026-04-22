@@ -17,6 +17,8 @@ $scriptPath = $MyInvocation.MyCommand.Path
 $scriptDir = Split-Path -Parent $scriptPath
 $repoRoot = (Resolve-Path (Join-Path (Split-Path -Parent $scriptDir) '..')).ProviderPath
 
+. (Join-Path $scriptDir '..' 'SyncFactorsJson.ps1')
+
 function Show-Usage {
     @'
 Usage:
@@ -98,7 +100,7 @@ function Get-CodexRunSettings {
 
     try {
         $rawConfig = Get-Content -Path $configPath -Raw
-        $parsedConfig = ConvertFrom-Json -InputObject $rawConfig -AsHashtable
+        $parsedConfig = ConvertFrom-SyncFactorsJson -InputObject $rawConfig
     }
     catch {
         throw "Failed to read runner settings from '$configPath'. $_"
@@ -149,7 +151,7 @@ function Get-PowerShellExecutablePath {
         return $pwshCommand.Source
     }
 
-    $executableName = if ($IsWindows) { 'pwsh.exe' } else { 'pwsh' }
+    $executableName = if ([OperatingSystem]::IsWindows()) { 'pwsh.exe' } else { 'pwsh' }
     return Join-Path $PSHOME $executableName
 }
 
@@ -278,7 +280,7 @@ function Get-JsonConfigDocument {
     }
 
     try {
-        $document = ConvertFrom-Json -InputObject (Get-Content -Path $Path -Raw) -AsHashtable
+        $document = ConvertFrom-SyncFactorsJson -InputObject (Get-Content -Path $Path -Raw)
     }
     catch {
         throw "Failed to parse $Label file '$Path' as JSON. $_"
@@ -374,7 +376,7 @@ function Get-RequiredSyncConfigSecretNames {
         return @()
     }
 
-    $document = ConvertFrom-Json -InputObject (Get-Content -Path $ConfigPath -Raw) -AsHashtable
+    $document = ConvertFrom-SyncFactorsJson -InputObject (Get-Content -Path $ConfigPath -Raw)
     if ($document -isnot [System.Collections.IDictionary]) {
         throw "Sync config '$ConfigPath' must contain a JSON object."
     }

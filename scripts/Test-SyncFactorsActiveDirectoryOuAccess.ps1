@@ -1,6 +1,8 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+. (Join-Path $PSScriptRoot 'SyncFactorsJson.ps1')
+
 function Get-SyncFactorsHashtableValue {
     param(
         [AllowNull()]
@@ -71,7 +73,7 @@ function Get-SyncFactorsConfiguredActiveDirectoryTargets {
     }
 
     try {
-        $document = ConvertFrom-Json -InputObject (Get-Content -Path $ConfigPath -Raw) -AsHashtable
+        $document = ConvertFrom-SyncFactorsJson -InputObject (Get-Content -Path $ConfigPath -Raw)
     }
     catch {
         throw "Failed to parse sync config '$ConfigPath' for the Active Directory OU precheck. $_"
