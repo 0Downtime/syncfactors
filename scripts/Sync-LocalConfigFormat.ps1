@@ -4,7 +4,10 @@ param()
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+. (Join-Path $PSScriptRoot 'SyncFactorsBackup.ps1')
 . (Join-Path $PSScriptRoot 'SyncFactorsJson.ps1')
+
+$script:SyncFactorsRepositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).ProviderPath
 
 function Get-TrackedLocalConfigPairs {
     param(
@@ -512,9 +515,9 @@ function Sync-ConfigFormat {
 
     if ($status.Drifted) {
         if (-not $NoBackup -and (Test-Path $LocalConfigPath)) {
-            $timestamp = Get-Date -Format 'yyyyMMddHHmmss'
-            $backupPath = "$LocalConfigPath.$timestamp.bak"
-            Copy-Item -Path $LocalConfigPath -Destination $backupPath
+            $backupPath = New-SyncFactorsBackup `
+                -RepositoryRoot $script:SyncFactorsRepositoryRoot `
+                -SourcePath $LocalConfigPath
         }
 
         Write-ConfigJsonFile -Path $LocalConfigPath -Value $status.NormalizedDocument
