@@ -35,6 +35,7 @@ public sealed class BulkRunCoordinator(
         var extractionStartedAt = timeProvider.GetUtcNow();
         var runId = $"bulk-{timeProvider.GetUtcNow():yyyyMMddHHmmssfff}";
         var startedAt = timeProvider.GetUtcNow();
+        using var logScope = RunLoggingScope.Begin(logger, runId, mode: "BulkSync", request.RequestId);
         var tally = new RunTally(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
         RunPopulationTotals? populationTotals = null;
 
