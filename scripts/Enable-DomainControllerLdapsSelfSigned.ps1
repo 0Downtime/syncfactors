@@ -39,6 +39,12 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+function Assert-Windows {
+    if (-not [OperatingSystem]::IsWindows()) {
+        throw 'This script only runs on Windows and must be executed on the domain controller from an elevated PowerShell session.'
+    }
+}
+
 function Test-IsAdministrator {
     $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
     $principal = [Security.Principal.WindowsPrincipal]::new($identity)
@@ -135,6 +141,7 @@ function Test-LdapsListener {
     }
 }
 
+Assert-Windows
 Assert-Administrator
 
 $resolvedDnsNames = if ($DnsName -and $DnsName.Count -gt 0) {
