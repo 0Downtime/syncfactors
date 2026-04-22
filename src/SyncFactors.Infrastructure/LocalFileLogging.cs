@@ -46,6 +46,11 @@ public static class LocalFileLogging
         return Path.Combine(ResolveDirectory(configuredDirectory), "runs");
     }
 
+    public static string ResolvePreviewLogDirectory(string? configuredDirectory)
+    {
+        return Path.Combine(ResolveDirectory(configuredDirectory), "preview-logs");
+    }
+
     public static string ResolveRunLogPath(string runId, string? configuredDirectory)
     {
         if (string.IsNullOrWhiteSpace(runId))
