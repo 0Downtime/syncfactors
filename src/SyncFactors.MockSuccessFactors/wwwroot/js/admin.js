@@ -250,11 +250,27 @@
         let current = target;
         for (let index = 0; index < segments.length - 1; index += 1) {
             const segment = segments[index];
-            current[segment] = current[segment] || {};
+            if (!isSafePathSegment(segment)) {
+                throw new Error("Unsupported payload path segment.");
+            }
+
+            if (!Object.prototype.hasOwnProperty.call(current, segment) || typeof current[segment] !== "object" || current[segment] === null) {
+                current[segment] = Object.create(null);
+            }
+
             current = current[segment];
         }
 
-        current[segments[segments.length - 1]] = value;
+        const leafSegment = segments[segments.length - 1];
+        if (!isSafePathSegment(leafSegment)) {
+            throw new Error("Unsupported payload path segment.");
+        }
+
+        current[leafSegment] = value;
+    }
+
+    function isSafePathSegment(segment) {
+        return segment !== "__proto__" && segment !== "prototype" && segment !== "constructor";
     }
 
     function normalizeValue(value) {
