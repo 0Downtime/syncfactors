@@ -30,13 +30,16 @@ public sealed class FixtureGenerationCommandTests
 
         using var fixtureDocument = JsonDocument.Parse(await File.ReadAllTextAsync(outputPath));
         var worker = fixtureDocument.RootElement.GetProperty("workers")[0];
+        var workerId = worker.GetProperty("personIdExternal").GetString()!;
+        var expectedName = MockNameCatalog.GetNameProfile(int.Parse(workerId) - 10_000, includePreferredName: true);
         Assert.Matches("^\\d{5}$", worker.GetProperty("personIdExternal").GetString()!);
         Assert.Matches("^\\d{5}$", worker.GetProperty("personId").GetString()!);
         Assert.StartsWith("uuid-", worker.GetProperty("perPersonUuid").GetString());
         Assert.EndsWith("@example.test", worker.GetProperty("email").GetString());
         Assert.Equal("B", worker.GetProperty("emailType").GetString());
-        Assert.DoesNotContain("Jane", worker.GetProperty("firstName").GetString(), StringComparison.OrdinalIgnoreCase);
-        Assert.StartsWith("Preferred", worker.GetProperty("preferredName").GetString());
+        Assert.Equal(expectedName.FirstName, worker.GetProperty("firstName").GetString());
+        Assert.Equal(expectedName.LastName, worker.GetProperty("lastName").GetString());
+        Assert.Equal(expectedName.PreferredName, worker.GetProperty("preferredName").GetString());
         Assert.StartsWith("Department-", worker.GetProperty("department").GetString());
         Assert.StartsWith("DepartmentName-", worker.GetProperty("departmentName").GetString());
         Assert.StartsWith("COMP-", worker.GetProperty("companyId").GetString());
