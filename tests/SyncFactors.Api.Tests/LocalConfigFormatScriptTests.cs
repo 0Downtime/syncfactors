@@ -527,6 +527,8 @@ public sealed class LocalConfigFormatScriptTests
 
         foreach (var relativePath in new[]
         {
+            "scripts/SyncFactorsBackup.ps1",
+            "scripts/SyncFactorsJson.ps1",
             "scripts/Sync-LocalConfigFormat.ps1",
             "scripts/Update-LocalSyncFactorsConfig.ps1",
             "scripts/Test-SyncFactorsActiveDirectoryOuAccess.ps1",
