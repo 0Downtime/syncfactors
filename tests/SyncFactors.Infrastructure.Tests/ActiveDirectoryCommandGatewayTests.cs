@@ -176,15 +176,36 @@ public sealed class ActiveDirectoryCommandGatewayTests
             "Ramsey, David",
             "CN=30008382,OU=POWERSHELL,OU=SpireQA-Users,DC=spireQA,DC=biz",
             "david.ramsey@example.com",
-            "david.ramsey@example.com");
+            "david.ramsey@example.com",
+            new[] { "top", "person", "organizationalPerson", "user" },
+            "Found",
+            null,
+            "NotAttempted",
+            null,
+            "Completed",
+            null,
+            new[] { "CN=30008382,OU=POWERSHELL,OU=SpireQA-Users,DC=spireQA,DC=biz" },
+            new[] { "CN=30008382,OU=POWERSHELL,OU=SpireQA-Users,DC=spireQA,DC=biz" },
+            new[] { "CN=30008382,OU=POWERSHELL,OU=SpireQA-Users,DC=spireQA,DC=biz" },
+            new[] { "CN=30008382,OU=POWERSHELL,OU=SpireQA-Users,DC=spireQA,DC=biz" },
+            new[] { "CN=30008382,OU=POWERSHELL,OU=SpireQA-Users,DC=spireQA,DC=biz" });
 
         var details = Assert.IsType<string>(method!.Invoke(null, [command, "CN=30008382,OU=POWERSHELL,OU=SpireQA-Users,DC=spireQA,DC=biz", config, attributes, "CreateUser", null, existingAccount!]));
 
+        Assert.Contains("ExactDnLookupOutcome=Found", details, StringComparison.Ordinal);
+        Assert.Contains("ExistingObjectClasses=top;person;organizationalPerson;user", details, StringComparison.Ordinal);
         Assert.Contains("ExistingSamAccountName=30008382", details, StringComparison.Ordinal);
         Assert.Contains("ExistingDisplayName=Ramsey, David", details, StringComparison.Ordinal);
         Assert.Contains("ExistingDistinguishedName=CN=30008382,OU=POWERSHELL,OU=SpireQA-Users,DC=spireQA,DC=biz", details, StringComparison.Ordinal);
         Assert.Contains("ExistingUserPrincipalName=david.ramsey@example.com", details, StringComparison.Ordinal);
         Assert.Contains("ExistingMail=david.ramsey@example.com", details, StringComparison.Ordinal);
+        Assert.Contains("IdentityConflictLookupOutcome=NotAttempted", details, StringComparison.Ordinal);
+        Assert.Contains("DomainCollisionLookupOutcome=Completed", details, StringComparison.Ordinal);
+        Assert.Contains("DomainCnMatches=CN=30008382,OU=POWERSHELL,OU=SpireQA-Users,DC=spireQA,DC=biz", details, StringComparison.Ordinal);
+        Assert.Contains("DomainNameMatches=CN=30008382,OU=POWERSHELL,OU=SpireQA-Users,DC=spireQA,DC=biz", details, StringComparison.Ordinal);
+        Assert.Contains("DomainSamAccountNameMatches=CN=30008382,OU=POWERSHELL,OU=SpireQA-Users,DC=spireQA,DC=biz", details, StringComparison.Ordinal);
+        Assert.Contains("DomainUserPrincipalNameMatches=CN=30008382,OU=POWERSHELL,OU=SpireQA-Users,DC=spireQA,DC=biz", details, StringComparison.Ordinal);
+        Assert.Contains("DomainMailMatches=CN=30008382,OU=POWERSHELL,OU=SpireQA-Users,DC=spireQA,DC=biz", details, StringComparison.Ordinal);
     }
 
     [Fact]

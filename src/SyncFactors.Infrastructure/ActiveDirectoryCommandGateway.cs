@@ -832,6 +832,28 @@ public sealed class ActiveDirectoryCommandGateway(
         return attribute.Count == 0 ? null : attribute[0]?.ToString();
     }
 
+    private static IReadOnlyList<string> GetAttributeValues(SearchResultEntry entry, string attributeName)
+    {
+        var resolvedAttributeName = ResolveAttributeName(entry, attributeName);
+        if (resolvedAttributeName is null)
+        {
+            return [];
+        }
+
+        var values = entry.Attributes[resolvedAttributeName].GetValues(typeof(string));
+        if (values is null)
+        {
+            return [];
+        }
+
+        return values
+            .Cast<object?>()
+            .Select(value => value?.ToString())
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Cast<string>()
+            .ToArray();
+    }
+
     private static string? ResolveAttributeName(SearchResultEntry entry, string attributeName)
     {
         if (entry.Attributes.Contains(attributeName))
@@ -1605,7 +1627,7 @@ public sealed class ActiveDirectoryCommandGateway(
     {
         TryGetDirectoryAttributeValue(attributes, config.IdentityAttribute, out var identityValue);
 
-        return $"Step={step} WorkerId={command.WorkerId} SamAccountName={command.SamAccountName} DistinguishedName={distinguishedName} TargetOu={FormatDetailValue(command.TargetOu)} UserPrincipalName={FormatDetailValue(command.UserPrincipalName)} Mail={FormatDetailValue(command.Mail)} IdentityAttribute={config.IdentityAttribute} IdentityValue={FormatDetailValue(identityValue)} CreateAttributes={FormatDirectoryAttributeNames(attributes)} LicensingGroups={FormatDetailValues(config.LicensingGroups)} ExistingSamAccountName={FormatDetailValue(existingAccount?.SamAccountName)} ExistingDisplayName={FormatDetailValue(existingAccount?.DisplayName)} ExistingDistinguishedName={FormatDetailValue(existingAccount?.DistinguishedName)} ExistingUserPrincipalName={FormatDetailValue(existingAccount?.UserPrincipalName)} ExistingMail={FormatDetailValue(existingAccount?.Mail)} ManagerId={FormatDetailValue(command.ManagerId)} ManagerDistinguishedName={FormatDetailValue(managerDistinguishedName)}";
+        return $"Step={step} WorkerId={command.WorkerId} SamAccountName={command.SamAccountName} DistinguishedName={distinguishedName} TargetOu={FormatDetailValue(command.TargetOu)} UserPrincipalName={FormatDetailValue(command.UserPrincipalName)} Mail={FormatDetailValue(command.Mail)} IdentityAttribute={config.IdentityAttribute} IdentityValue={FormatDetailValue(identityValue)} CreateAttributes={FormatDirectoryAttributeNames(attributes)} LicensingGroups={FormatDetailValues(config.LicensingGroups)} ExactDnLookupOutcome={FormatDetailValue(existingAccount?.ExactDnLookupOutcome)} ExactDnLookupError={FormatDetailValue(existingAccount?.ExactDnLookupError)} ExistingObjectClasses={FormatDetailValues(existingAccount?.ObjectClasses)} ExistingSamAccountName={FormatDetailValue(existingAccount?.SamAccountName)} ExistingDisplayName={FormatDetailValue(existingAccount?.DisplayName)} ExistingDistinguishedName={FormatDetailValue(existingAccount?.DistinguishedName)} ExistingUserPrincipalName={FormatDetailValue(existingAccount?.UserPrincipalName)} ExistingMail={FormatDetailValue(existingAccount?.Mail)} IdentityConflictLookupOutcome={FormatDetailValue(existingAccount?.IdentityConflictLookupOutcome)} IdentityConflictLookupError={FormatDetailValue(existingAccount?.IdentityConflictLookupError)} DomainCollisionLookupOutcome={FormatDetailValue(existingAccount?.DomainCollisionLookupOutcome)} DomainCollisionLookupError={FormatDetailValue(existingAccount?.DomainCollisionLookupError)} DomainCnMatches={FormatDetailValues(existingAccount?.DomainCnMatches)} DomainNameMatches={FormatDetailValues(existingAccount?.DomainNameMatches)} DomainSamAccountNameMatches={FormatDetailValues(existingAccount?.DomainSamAccountNameMatches)} DomainUserPrincipalNameMatches={FormatDetailValues(existingAccount?.DomainUserPrincipalNameMatches)} DomainMailMatches={FormatDetailValues(existingAccount?.DomainMailMatches)} ManagerId={FormatDetailValue(command.ManagerId)} ManagerDistinguishedName={FormatDetailValue(managerDistinguishedName)}";
     }
 
     private static ExistingAccountDetails? TryResolveCreateExistingAccountConflict(
@@ -1615,26 +1637,85 @@ public sealed class ActiveDirectoryCommandGateway(
         ILogger logger,
         string distinguishedName)
     {
-        var existingByDistinguishedName = FindExistingUserByDistinguishedName(connection, distinguishedName);
-        if (existingByDistinguishedName is not null)
+        string? exactDnLookupOutcome;
+        string? exactDnLookupError = null;
+        SearchResultEntry? exactDnEntry = null;
+        try
         {
-            return new ExistingAccountDetails(
-                existingByDistinguishedName.SamAccountName,
-                existingByDistinguishedName.DisplayName,
-                existingByDistinguishedName.DistinguishedName,
-                existingByDistinguishedName.Attributes.TryGetValue("userPrincipalName", out var existingUserPrincipalName) ? existingUserPrincipalName : null,
-                existingByDistinguishedName.Attributes.TryGetValue("mail", out var existingMail) ? existingMail : null);
+            exactDnEntry = FindEntryAtDistinguishedName(connection, distinguishedName, logger);
+            exactDnLookupOutcome = exactDnEntry is null ? "NotFound" : "Found";
+        }
+        catch (Exception ex) when (ex is LdapException or DirectoryOperationException)
+        {
+            exactDnLookupOutcome = "LookupFailed";
+            exactDnLookupError = ex.Message;
         }
 
-        var identityConflict = FindIdentityConflict(connection, command, config, logger);
+        if (exactDnEntry is not null)
+        {
+            var domainCollisions = TryResolveDomainCreateConflictCandidates(connection, command, config, logger);
+            return BuildExistingAccountDetailsFromSearchEntry(
+                exactDnEntry,
+                exactDnLookupOutcome,
+                exactDnLookupError,
+                identityConflictLookupOutcome: "NotAttempted",
+                identityConflictLookupError: null,
+                domainCollisions);
+        }
+
+        string? identityConflictLookupOutcome;
+        string? identityConflictLookupError = null;
+        IdentityConflictResult? identityConflict = null;
+        try
+        {
+            identityConflict = FindIdentityConflict(connection, command, config, logger);
+            identityConflictLookupOutcome = identityConflict is null ? "NotFound" : "Found";
+        }
+        catch (Exception ex) when (ex is LdapException or DirectoryOperationException)
+        {
+            identityConflictLookupOutcome = "LookupFailed";
+            identityConflictLookupError = ex.Message;
+        }
+
+        var domainCollisionDetails = TryResolveDomainCreateConflictCandidates(connection, command, config, logger);
+
         return identityConflict is null
-            ? null
+            ? new ExistingAccountDetails(
+                SamAccountName: null,
+                DisplayName: null,
+                DistinguishedName: null,
+                UserPrincipalName: null,
+                Mail: null,
+                ObjectClasses: [],
+                ExactDnLookupOutcome: exactDnLookupOutcome,
+                ExactDnLookupError: exactDnLookupError,
+                IdentityConflictLookupOutcome: identityConflictLookupOutcome,
+                IdentityConflictLookupError: identityConflictLookupError,
+                DomainCollisionLookupOutcome: domainCollisionDetails.LookupOutcome,
+                DomainCollisionLookupError: domainCollisionDetails.LookupError,
+                DomainCnMatches: domainCollisionDetails.CnMatches,
+                DomainNameMatches: domainCollisionDetails.NameMatches,
+                DomainSamAccountNameMatches: domainCollisionDetails.SamAccountNameMatches,
+                DomainUserPrincipalNameMatches: domainCollisionDetails.UserPrincipalNameMatches,
+                DomainMailMatches: domainCollisionDetails.MailMatches)
             : new ExistingAccountDetails(
-                identityConflict.ExistingSamAccountName,
-                null,
-                identityConflict.ExistingDistinguishedName,
-                identityConflict.ExistingUserPrincipalName,
-                identityConflict.ExistingMail);
+                SamAccountName: identityConflict.ExistingSamAccountName,
+                DisplayName: null,
+                DistinguishedName: identityConflict.ExistingDistinguishedName,
+                UserPrincipalName: identityConflict.ExistingUserPrincipalName,
+                Mail: identityConflict.ExistingMail,
+                ObjectClasses: [],
+                ExactDnLookupOutcome: exactDnLookupOutcome,
+                ExactDnLookupError: exactDnLookupError,
+                IdentityConflictLookupOutcome: identityConflictLookupOutcome,
+                IdentityConflictLookupError: identityConflictLookupError,
+                DomainCollisionLookupOutcome: domainCollisionDetails.LookupOutcome,
+                DomainCollisionLookupError: domainCollisionDetails.LookupError,
+                DomainCnMatches: domainCollisionDetails.CnMatches,
+                DomainNameMatches: domainCollisionDetails.NameMatches,
+                DomainSamAccountNameMatches: domainCollisionDetails.SamAccountNameMatches,
+                DomainUserPrincipalNameMatches: domainCollisionDetails.UserPrincipalNameMatches,
+                DomainMailMatches: domainCollisionDetails.MailMatches);
     }
 
     private static string TryAugmentCreateFailureDetailsWithExistingAccountConflict(
@@ -1663,6 +1744,148 @@ public sealed class ActiveDirectoryCommandGateway(
                 distinguishedName);
             return $"{fallbackDetails} ConflictResolutionLookupFailed=true ConflictResolutionLookupError={FormatDetailValue(conflictEx.Message)}";
         }
+    }
+
+    private static SearchResultEntry? FindEntryAtDistinguishedName(LdapConnection connection, string distinguishedName, ILogger logger)
+    {
+        var request = new SearchRequest(
+            distinguishedName,
+            "(objectClass=*)",
+            SearchScope.Base,
+            "sAMAccountName",
+            "cn",
+            "name",
+            "distinguishedName",
+            "displayName",
+            "userAccountControl",
+            "userPrincipalName",
+            "mail",
+            "objectClass");
+        var response = ExecuteSearch(
+            connection,
+            request,
+            logger,
+            "create conflict exact-dn search",
+            ("DistinguishedName", distinguishedName));
+        return response.Entries.Cast<SearchResultEntry>().FirstOrDefault();
+    }
+
+    private static ExistingAccountDetails BuildExistingAccountDetailsFromSearchEntry(
+        SearchResultEntry entry,
+        string? exactDnLookupOutcome,
+        string? exactDnLookupError,
+        string? identityConflictLookupOutcome,
+        string? identityConflictLookupError,
+        DomainCollisionDetails domainCollisions)
+    {
+        var objectClasses = GetAttributeValues(entry, "objectClass");
+        return new ExistingAccountDetails(
+            SamAccountName: GetAttribute(entry, "sAMAccountName"),
+            DisplayName: GetAttribute(entry, "displayName") ?? GetAttribute(entry, "name") ?? GetAttribute(entry, "cn"),
+            DistinguishedName: GetAttribute(entry, "distinguishedName") ?? entry.DistinguishedName,
+            UserPrincipalName: GetAttribute(entry, "userPrincipalName"),
+            Mail: GetAttribute(entry, "mail"),
+            ObjectClasses: objectClasses,
+            ExactDnLookupOutcome: exactDnLookupOutcome,
+            ExactDnLookupError: exactDnLookupError,
+            IdentityConflictLookupOutcome: identityConflictLookupOutcome,
+            IdentityConflictLookupError: identityConflictLookupError,
+            DomainCollisionLookupOutcome: domainCollisions.LookupOutcome,
+            DomainCollisionLookupError: domainCollisions.LookupError,
+            DomainCnMatches: domainCollisions.CnMatches,
+            DomainNameMatches: domainCollisions.NameMatches,
+            DomainSamAccountNameMatches: domainCollisions.SamAccountNameMatches,
+            DomainUserPrincipalNameMatches: domainCollisions.UserPrincipalNameMatches,
+            DomainMailMatches: domainCollisions.MailMatches);
+    }
+
+    private static DomainCollisionDetails TryResolveDomainCreateConflictCandidates(
+        LdapConnection connection,
+        DirectoryMutationCommand command,
+        ActiveDirectoryConfig config,
+        ILogger logger)
+    {
+        try
+        {
+            var searchBases = GetIdentityConflictSearchBases(connection, config, logger);
+            var cnMatches = FindMatchingDistinguishedNames(connection, searchBases, "cn", command.CommonName, logger, "create conflict domain cn search");
+            var nameMatches = FindMatchingDistinguishedNames(connection, searchBases, "name", command.CommonName, logger, "create conflict domain name search");
+            var samMatches = FindMatchingDistinguishedNames(connection, searchBases, "sAMAccountName", command.SamAccountName, logger, "create conflict domain sam search");
+            var upnMatches = FindMatchingDistinguishedNames(connection, searchBases, "userPrincipalName", command.UserPrincipalName, logger, "create conflict domain upn search");
+            var mailMatches = FindMatchingDistinguishedNames(connection, searchBases, "mail", command.Mail, logger, "create conflict domain mail search");
+            return new DomainCollisionDetails(
+                LookupOutcome: "Completed",
+                LookupError: null,
+                CnMatches: cnMatches,
+                NameMatches: nameMatches,
+                SamAccountNameMatches: samMatches,
+                UserPrincipalNameMatches: upnMatches,
+                MailMatches: mailMatches);
+        }
+        catch (Exception ex) when (ex is LdapException or DirectoryOperationException)
+        {
+            return new DomainCollisionDetails(
+                LookupOutcome: "LookupFailed",
+                LookupError: ex.Message,
+                CnMatches: [],
+                NameMatches: [],
+                SamAccountNameMatches: [],
+                UserPrincipalNameMatches: [],
+                MailMatches: []);
+        }
+    }
+
+    private static IReadOnlyList<string> FindMatchingDistinguishedNames(
+        LdapConnection connection,
+        IReadOnlyList<string> searchBases,
+        string attributeName,
+        string? attributeValue,
+        ILogger logger,
+        string operation)
+    {
+        if (string.IsNullOrWhiteSpace(attributeValue))
+        {
+            return [];
+        }
+
+        var matches = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var filter = $"({EscapeLdapFilter(attributeName)}={EscapeLdapFilter(attributeValue)})";
+        foreach (var searchBase in searchBases)
+        {
+            var request = new SearchRequest(
+                searchBase,
+                filter,
+                SearchScope.Subtree,
+                "distinguishedName");
+            SearchResponse response;
+            try
+            {
+                response = ExecuteSearch(connection, request, logger, operation, ("SearchBase", searchBase), ("Attribute", attributeName), ("Value", attributeValue));
+            }
+            catch (DirectoryOperationException ex) when (IsReferralException(ex))
+            {
+                logger.LogWarning(ex, "Skipping AD create conflict domain search base because the server returned a referral. SearchBase={SearchBase} Operation={Operation}", searchBase, operation);
+                continue;
+            }
+            catch (LdapException ex) when (IsReferralException(ex))
+            {
+                logger.LogWarning(ex, "Skipping AD create conflict domain search base because the LDAP client encountered a referral. SearchBase={SearchBase} Operation={Operation}", searchBase, operation);
+                continue;
+            }
+
+            foreach (var entry in response.Entries.Cast<SearchResultEntry>())
+            {
+                var distinguishedName = GetAttribute(entry, "distinguishedName") ?? entry.DistinguishedName;
+                if (!string.IsNullOrWhiteSpace(distinguishedName))
+                {
+                    matches.Add(distinguishedName);
+                }
+            }
+        }
+
+        return matches
+            .OrderBy(value => value, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
     }
 
     private static string BuildIdentityConflictSummary(DirectoryMutationCommand command, IdentityConflictResult conflict)
@@ -1819,5 +2042,26 @@ public sealed class ActiveDirectoryCommandGateway(
         string? DisplayName,
         string? DistinguishedName,
         string? UserPrincipalName,
-        string? Mail);
+        string? Mail,
+        IReadOnlyList<string> ObjectClasses,
+        string? ExactDnLookupOutcome,
+        string? ExactDnLookupError,
+        string? IdentityConflictLookupOutcome,
+        string? IdentityConflictLookupError,
+        string? DomainCollisionLookupOutcome,
+        string? DomainCollisionLookupError,
+        IReadOnlyList<string> DomainCnMatches,
+        IReadOnlyList<string> DomainNameMatches,
+        IReadOnlyList<string> DomainSamAccountNameMatches,
+        IReadOnlyList<string> DomainUserPrincipalNameMatches,
+        IReadOnlyList<string> DomainMailMatches);
+
+    private sealed record DomainCollisionDetails(
+        string LookupOutcome,
+        string? LookupError,
+        IReadOnlyList<string> CnMatches,
+        IReadOnlyList<string> NameMatches,
+        IReadOnlyList<string> SamAccountNameMatches,
+        IReadOnlyList<string> UserPrincipalNameMatches,
+        IReadOnlyList<string> MailMatches);
 }
