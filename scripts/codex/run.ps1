@@ -574,7 +574,7 @@ function Ensure-TrackedLocalConfigFormats {
     )
     foreach ($result in $results) {
         if ($result.BackupPath) {
-            Write-Host "Backed up $(Split-Path -Leaf $result.LocalConfigPath) -> $(Split-Path -Leaf $result.BackupPath)" -ForegroundColor DarkGray
+            Write-Host "Backed up $(Get-RepoRelativePath -RepositoryRoot $RepositoryRoot -Path $result.LocalConfigPath) -> $(Get-RepoRelativePath -RepositoryRoot $RepositoryRoot -Path $result.BackupPath)" -ForegroundColor DarkGray
         }
 
         if ($result.Drifted) {
