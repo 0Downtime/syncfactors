@@ -119,7 +119,7 @@ public sealed class SyncModel(
             ? "Live provisioning run queued."
             : "Dry-run sync queued.";
         ErrorMessage = null;
-        return RedirectToPage(new { PageNumber });
+        return RedirectToPage("/Index");
     }
 
     public async Task<IActionResult> OnPostDeleteAllUsersAsync(CancellationToken cancellationToken)
