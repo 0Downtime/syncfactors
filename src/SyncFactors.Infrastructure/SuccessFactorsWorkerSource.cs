@@ -1245,16 +1245,16 @@ public sealed class SuccessFactorsWorkerSource(
             return null;
         }
         var personalInfo = GetFirstNavigationResult(worker, "personalInfoNav");
-        var employment = GetFirstNavigationResult(worker, "employmentNav");
+        var employment = GetPreferredEmploymentResult(worker);
         var userNav = employment is { ValueKind: not JsonValueKind.Undefined }
             ? GetNavigationObject(employment.Value, "userNav")
             : null;
-        JsonElement? jobInfo = GetFirstNavigationResult(worker, "jobInfoNav")
+        JsonElement? jobInfo = GetPreferredJobInfoResult(worker)
             ?? (HasDirectJobInfoFields(worker)
                 ? (JsonElement?)worker.Clone()
                 : null)
             ?? (employment is { ValueKind: not JsonValueKind.Undefined }
-                ? GetFirstNavigationResult(employment.Value, "jobInfoNav")
+                ? GetPreferredJobInfoResult(employment.Value)
                 : null);
 
         var preferredName =
@@ -1477,6 +1477,89 @@ public sealed class SuccessFactorsWorkerSource(
         }
 
         return null;
+    }
+
+    private static JsonElement? GetPreferredEmploymentResult(JsonElement worker)
+    {
+        return GetBestNavigationResult(
+            worker,
+            "employmentNav",
+            employment =>
+            {
+                var jobInfo = GetPreferredJobInfoResult(employment);
+                return BuildTemporalSelectionKey(
+                    GetString(jobInfo, "startDate") ?? GetString(employment, "startDate"),
+                    GetString(jobInfo, "endDate") ?? GetString(employment, "endDate"));
+            });
+    }
+
+    private static JsonElement? GetPreferredJobInfoResult(JsonElement element)
+    {
+        return GetBestNavigationResult(
+            element,
+            "jobInfoNav",
+            jobInfo => BuildTemporalSelectionKey(
+                GetString(jobInfo, "startDate"),
+                GetString(jobInfo, "endDate")));
+    }
+
+    private static JsonElement? GetBestNavigationResult(
+        JsonElement element,
+        string propertyName,
+        Func<JsonElement, (int IsCurrent, long EndDateTicks, long StartDateTicks)> scoreSelector)
+    {
+        if (!element.TryGetProperty(propertyName, out var navigation) ||
+            navigation.ValueKind != JsonValueKind.Object ||
+            !navigation.TryGetProperty("results", out var results) ||
+            results.ValueKind != JsonValueKind.Array)
+        {
+            return null;
+        }
+
+        JsonElement? best = null;
+        (int IsCurrent, long EndDateTicks, long StartDateTicks) bestScore = default;
+        foreach (var item in results.EnumerateArray())
+        {
+            var candidate = item.Clone();
+            var candidateScore = scoreSelector(candidate);
+            if (best is null || candidateScore.CompareTo(bestScore) > 0)
+            {
+                best = candidate;
+                bestScore = candidateScore;
+            }
+        }
+
+        return best;
+    }
+
+    private static (int IsCurrent, long EndDateTicks, long StartDateTicks) BuildTemporalSelectionKey(string? startDate, string? endDate)
+    {
+        return (
+            IsCurrentEmploymentWindow(endDate) ? 1 : 0,
+            ParseDateTicks(endDate),
+            ParseDateTicks(startDate));
+    }
+
+    private static bool IsCurrentEmploymentWindow(string? endDate)
+    {
+        if (string.IsNullOrWhiteSpace(endDate))
+        {
+            return true;
+        }
+
+        if (SourceDateParser.TryParse(endDate, out var parsedEndDate))
+        {
+            return parsedEndDate.Date >= DateTimeOffset.UtcNow.Date;
+        }
+
+        return false;
+    }
+
+    private static long ParseDateTicks(string? value)
+    {
+        return SourceDateParser.TryParse(value, out var parsed)
+            ? parsed.UtcTicks
+            : long.MinValue;
     }
 
     private static IReadOnlyDictionary<string, string?> BuildAttributes(
