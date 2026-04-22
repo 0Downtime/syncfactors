@@ -674,6 +674,46 @@ public sealed class WorkerPreviewPlannerTests
     }
 
     [Fact]
+    public async Task PreviewAsync_RequiresReviewWhenSourcePersonalInfoIsAmbiguous()
+    {
+        var worker = new WorkerSnapshot(
+            WorkerId: "44522",
+            PreferredName: "Christopher",
+            LastName: "Brien",
+            Department: "Infrastructure & Security",
+            TargetOu: "OU=Employees,DC=example,DC=com",
+            IsPrehire: false,
+            Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["_syncfactors.reviewCategory"] = "SourceData",
+                ["_syncfactors.reviewCaseType"] = "AmbiguousPersonalInfo",
+                ["_syncfactors.reviewReason"] = "SuccessFactors returned multiple personalInfoNav rows for this worker."
+            });
+
+        var planner = new WorkerPreviewPlanner(
+            new StubWorkerSource(worker),
+            new WorkerPlanningService(
+                new StubDirectoryGateway(),
+                new StubIdentityMatcher(),
+                CreateLifecyclePolicy(),
+                new StubAttributeDiffService(),
+                new StubAttributeMappingProvider(),
+                NullLogger<WorkerPlanningService>.Instance),
+            new StubAttributeMappingProvider(),
+            new StubWorkerPreviewLogWriter(),
+            new StubRunRepository(),
+            NullLogger<WorkerPreviewPlanner>.Instance);
+
+        var preview = await planner.PreviewAsync("44522", CancellationToken.None);
+
+        Assert.Equal("SourceData", preview.ReviewCategory);
+        Assert.Equal("AmbiguousPersonalInfo", preview.ReviewCaseType);
+        Assert.Contains("multiple personalInfoNav rows", preview.Reason, StringComparison.Ordinal);
+        Assert.Contains("manualReview", preview.Buckets);
+        Assert.DoesNotContain(preview.DiffRows, row => row.Changed);
+    }
+
+    [Fact]
     public async Task PreviewAsync_ForExistingUsers_PreservesCurrentEmailTargets()
     {
         var worker = new WorkerSnapshot(
