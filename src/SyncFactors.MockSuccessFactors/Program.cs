@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.Extensions.Options;
 using SyncFactors.MockSuccessFactors;
+using System.Net;
 
 var command = FixtureGenerationCommand.TryParse(args);
 if (command is not null)
@@ -28,21 +29,49 @@ builder.Services.AddSingleton<IConfigureOptions<MockSuccessFactorsOptions>, Mock
 builder.Services.AddSingleton<MockFixtureStore>();
 builder.Services.AddSingleton<ODataResponseBuilder>();
 builder.Services.AddSingleton<MockTokenService>();
+builder.Services.AddRazorPages();
 
 var app = builder.Build();
 var fixtureStore = app.Services.GetRequiredService<MockFixtureStore>();
+var options = app.Services.GetRequiredService<IOptions<MockSuccessFactorsOptions>>().Value;
 MockFixtureSummaryReporter.WriteSummary(Console.Out, fixtureStore.GetDocument(), "startup");
+
+app.UseStaticFiles();
+app.Use(async (httpContext, next) =>
+{
+    if (IsProtectedAdminPath(httpContext.Request.Path, options.Admin))
+    {
+        if (!options.Admin.Enabled)
+        {
+            httpContext.Response.StatusCode = StatusCodes.Status404NotFound;
+            return;
+        }
+
+        if (options.Admin.RequireLoopback && !IsLoopbackRequest(httpContext.Request))
+        {
+            httpContext.Response.StatusCode = StatusCodes.Status403Forbidden;
+            await httpContext.Response.WriteAsJsonAsync(new { error = "Mock admin endpoints are only available from loopback hosts." });
+            return;
+        }
+    }
+
+    await next();
+});
 
 app.MapGet("/healthz", () => TypedResults.Ok(new { status = "ok" }));
 
+app.MapGet("/", () => options.Admin.Enabled
+    ? Results.Redirect(options.Admin.Path)
+    : Results.Redirect("/healthz"));
+
 app.MapPost("/oauth/token", async Task<Results<Ok<TokenResponse>, UnauthorizedHttpResult>> (
     HttpContext httpContext,
-    IOptions<MockSuccessFactorsOptions> options,
+    IOptions<MockSuccessFactorsOptions> configuredOptions,
     MockTokenService tokenService,
     CancellationToken cancellationToken) =>
 {
     var form = await httpContext.Request.ReadFormAsync(cancellationToken);
-    var configured = options.Value.Authentication;
+    var configured = configuredOptions.Value.Authentication;
     var token = tokenService.IssueToken(
         grantType: form["grant_type"].ToString(),
         clientId: form["client_id"].ToString(),
@@ -58,9 +87,9 @@ app.MapPost("/oauth/token", async Task<Results<Ok<TokenResponse>, UnauthorizedHt
     return TypedResults.Ok(token);
 });
 
-app.MapGet("/odata/v2/$metadata", (IOptions<MockSuccessFactorsOptions> options) =>
+app.MapGet("/odata/v2/$metadata", (IOptions<MockSuccessFactorsOptions> configuredOptions) =>
 {
-    var xml = MetadataDocument.Build(options.Value.ServiceRoot);
+    var xml = MetadataDocument.Build(configuredOptions.Value.ServiceRoot);
     return Results.Content(xml, "application/xml");
 });
 
@@ -68,9 +97,9 @@ app.MapGet("/odata/v2/PerPerson", (
     HttpContext httpContext,
     MockFixtureStore store,
     ODataResponseBuilder responseBuilder,
-    IOptions<MockSuccessFactorsOptions> options) =>
+    IOptions<MockSuccessFactorsOptions> configuredOptions) =>
 {
-    if (!AuthenticationValidator.IsAuthorized(httpContext.Request, options.Value.Authentication))
+    if (!AuthenticationValidator.IsAuthorized(httpContext.Request, configuredOptions.Value.Authentication))
     {
         return Results.Unauthorized();
     }
@@ -98,7 +127,7 @@ app.MapGet("/odata/v2/PerPerson", (
         return Results.NotFound();
     }
 
-    var payload = responseBuilder.Build(workers, query, "PerPerson", options.Value.ServiceRoot);
+    var payload = responseBuilder.Build(workers, query, "PerPerson", configuredOptions.Value.ServiceRoot);
     return Results.Json(payload);
 });
 
@@ -106,9 +135,9 @@ app.MapGet("/odata/v2/EmpJob", (
     HttpContext httpContext,
     MockFixtureStore store,
     ODataResponseBuilder responseBuilder,
-    IOptions<MockSuccessFactorsOptions> options) =>
+    IOptions<MockSuccessFactorsOptions> configuredOptions) =>
 {
-    if (!AuthenticationValidator.IsAuthorized(httpContext.Request, options.Value.Authentication))
+    if (!AuthenticationValidator.IsAuthorized(httpContext.Request, configuredOptions.Value.Authentication))
     {
         return Results.Unauthorized();
     }
@@ -136,11 +165,136 @@ app.MapGet("/odata/v2/EmpJob", (
         return Results.NotFound();
     }
 
-    var payload = responseBuilder.Build(workers, query, "EmpJob", options.Value.ServiceRoot);
+    var payload = responseBuilder.Build(workers, query, "EmpJob", configuredOptions.Value.ServiceRoot);
     return Results.Json(payload);
 });
 
+var adminApi = app.MapGroup("/api/admin");
+
+adminApi.MapGet("/workers", (string? filter, MockFixtureStore store, IOptions<MockSuccessFactorsOptions> configuredOptions) =>
+    Results.Ok(store.GetAdminState(filter, configuredOptions.Value.Admin.Path)));
+
+adminApi.MapGet("/workers/{workerId}", (string workerId, MockFixtureStore store) =>
+{
+    var worker = store.GetEditableWorker(workerId);
+    return worker is null
+        ? Results.NotFound(new { error = $"Worker '{workerId}' was not found." })
+        : Results.Ok(new MockAdminWorkerDetailResponse(worker, Mode: "edit"));
+});
+
+adminApi.MapPost("/workers", (MockAdminWorkerUpsertRequest request, MockFixtureStore store) =>
+    RunAdminMutation(() =>
+    {
+        var worker = store.CreateWorker(request);
+        return Results.Ok(new MockAdminWorkerMutationResponse(
+            Message: $"Created worker {worker.PersonIdExternal}.",
+            Worker: store.GetEditableWorker(worker.PersonIdExternal)!));
+    }));
+
+adminApi.MapPut("/workers/{workerId}", (string workerId, MockAdminWorkerUpsertRequest request, MockFixtureStore store) =>
+    RunAdminMutation(() =>
+    {
+        var worker = store.UpdateWorker(workerId, request);
+        return Results.Ok(new MockAdminWorkerMutationResponse(
+            Message: $"Saved worker {worker.PersonIdExternal}.",
+            Worker: store.GetEditableWorker(worker.PersonIdExternal)!));
+    }));
+
+adminApi.MapPost("/workers/{workerId}/clone", (string workerId, MockAdminCloneRequest? request, MockFixtureStore store) =>
+    RunAdminMutation(() =>
+    {
+        var sourceWorkerId = request?.SourceWorkerId ?? workerId;
+        var worker = store.CloneWorker(sourceWorkerId);
+        return Results.Ok(new MockAdminWorkerMutationResponse(
+            Message: $"Cloned worker {sourceWorkerId} to {worker.PersonIdExternal}.",
+            Worker: store.GetEditableWorker(worker.PersonIdExternal)!));
+    }));
+
+adminApi.MapPost("/workers/{workerId}/terminate", (string workerId, MockFixtureStore store) =>
+    RunAdminMutation(() =>
+    {
+        var worker = store.TerminateWorker(workerId);
+        return Results.Ok(new MockAdminWorkerMutationResponse(
+            Message: $"Terminated worker {worker.PersonIdExternal}.",
+            Worker: store.GetEditableWorker(worker.PersonIdExternal)!));
+    }));
+
+adminApi.MapPost("/workers/{workerId}/rehire", (string workerId, MockFixtureStore store) =>
+    RunAdminMutation(() =>
+    {
+        var worker = store.RehireWorker(workerId);
+        return Results.Ok(new MockAdminWorkerMutationResponse(
+            Message: $"Rehired worker {worker.PersonIdExternal}.",
+            Worker: store.GetEditableWorker(worker.PersonIdExternal)!));
+    }));
+
+adminApi.MapDelete("/workers/{workerId}", (string workerId, MockFixtureStore store) =>
+    RunAdminMutation(() =>
+    {
+        store.DeleteWorker(workerId);
+        return Results.Ok(new { message = $"Deleted worker {workerId}." });
+    }));
+
+adminApi.MapPost("/reset", (MockFixtureStore store) =>
+    RunAdminMutation(() =>
+    {
+        var count = store.ResetToSeed();
+        return Results.Ok(new MockAdminResetResponse(
+            Message: "Reset runtime fixtures to the seeded population.",
+            WorkerCount: count));
+    }));
+
+app.MapRazorPages();
 app.Run();
+
+static IResult RunAdminMutation(Func<IResult> action)
+{
+    try
+    {
+        return action();
+    }
+    catch (KeyNotFoundException ex)
+    {
+        return Results.NotFound(new { error = ex.Message });
+    }
+    catch (InvalidOperationException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+}
+
+static bool IsProtectedAdminPath(PathString path, MockAdminOptions adminOptions)
+{
+    return path.StartsWithSegments("/api/admin", StringComparison.OrdinalIgnoreCase) ||
+           path.StartsWithSegments(adminOptions.Path, StringComparison.OrdinalIgnoreCase);
+}
+
+static bool IsLoopbackRequest(HttpRequest request)
+{
+    var remoteIp = request.HttpContext.Connection.RemoteIpAddress;
+    if (remoteIp is not null && IPAddress.IsLoopback(remoteIp))
+    {
+        return true;
+    }
+
+    var host = request.Host.Host;
+    if (string.IsNullOrWhiteSpace(host))
+    {
+        return false;
+    }
+
+    if (string.Equals(host, "localhost", StringComparison.OrdinalIgnoreCase))
+    {
+        return true;
+    }
+
+    if (IPAddress.TryParse(host.Trim('[', ']'), out var parsedAddress) && IPAddress.IsLoopback(parsedAddress))
+    {
+        return true;
+    }
+
+    return false;
+}
 
 public partial class Program
 {

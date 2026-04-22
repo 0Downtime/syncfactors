@@ -224,10 +224,10 @@ public static class FixtureGenerationCommand
         var key = worker.PersonIdExternal;
         var personNumber = StableNumber(key, 10_000, 99_999).ToString("D5");
         var sanitizedId = personNumber;
-        var firstName = $"Worker{StableNumber(key + ":fn", 10, 999):D3}";
-        var lastName = $"Sample{StableNumber(key + ":ln", 10, 999):D3}";
-        var userName = $"user.{personNumber}";
-        var email = $"{userName}@example.test";
+        var sequence = int.Parse(personNumber) - 10_000;
+        var nameProfile = MockNameCatalog.GetNameProfile(sequence, worker.PreferredName is not null);
+        var userName = personNumber;
+        var email = MockNameCatalog.BuildEmailAddress(nameProfile.FirstName, nameProfile.LastName);
         var managerId = string.IsNullOrWhiteSpace(worker.ManagerId)
             ? null
             : StableNumber(worker.ManagerId, 10_000, 99_999).ToString("D5");
@@ -239,10 +239,10 @@ public static class FixtureGenerationCommand
             PerPersonUuid = $"uuid-{personNumber}",
             UserName = userName,
             Email = email,
-            FirstName = firstName,
-            LastName = lastName,
-            PreferredName = worker.PreferredName is null ? null : $"Preferred{StableNumber(key + ":pn", 10, 999):D3}",
-            DisplayName = worker.DisplayName is null ? null : $"Preferred{StableNumber(key + ":pn", 10, 999):D3} {lastName}",
+            FirstName = nameProfile.FirstName,
+            LastName = nameProfile.LastName,
+            PreferredName = nameProfile.PreferredName,
+            DisplayName = worker.DisplayName is null ? null : nameProfile.DisplayName,
             UserId = string.IsNullOrWhiteSpace(worker.UserId) ? userName : userName,
             EmailType = worker.EmailType is null ? null : "B",
             ManagerId = managerId,

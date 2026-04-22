@@ -1,0 +1,185 @@
+@page "/admin"
+@{
+    Layout = null;
+}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Mock SuccessFactors Admin</title>
+    <link rel="stylesheet" href="~/css/admin.css" asp-append-version="true" />
+</head>
+<body>
+    <main class="admin-shell">
+        <section class="admin-hero">
+            <div>
+                <p class="eyebrow">Mock SuccessFactors</p>
+                <h1>Runtime Worker Editor</h1>
+                <p class="lede">Change the source data that SyncFactors reads from the mock SuccessFactors API. Edits are live immediately and persist to the runtime fixture file.</p>
+            </div>
+            <div class="hero-actions">
+                <button type="button" class="ghost-button" data-action="new">Create worker</button>
+                <button type="button" class="danger-button" data-action="reset">Reset to seed</button>
+            </div>
+        </section>
+
+        <section class="admin-meta-grid">
+            <article class="meta-card">
+                <span class="meta-label">Source fixtures</span>
+                <strong data-meta="sourceFixturePath">Loading…</strong>
+            </article>
+            <article class="meta-card">
+                <span class="meta-label">Runtime fixtures</span>
+                <strong data-meta="runtimeFixturePath">Loading…</strong>
+            </article>
+            <article class="meta-card">
+                <span class="meta-label">Workers</span>
+                <strong data-meta="workerCount">0</strong>
+            </article>
+        </section>
+
+        <section class="toast" data-toast hidden></section>
+
+        <section class="workspace-grid">
+            <article class="worker-list-panel">
+                <div class="panel-head">
+                    <div>
+                        <p class="eyebrow">Population</p>
+                        <h2>Workers</h2>
+                    </div>
+                    <span class="status-pill" data-meta="filteredCount">0 shown</span>
+                </div>
+                <label class="search-box">
+                    <span>Search</span>
+                    <input type="search" placeholder="worker id, name, user id, department, status..." data-filter-input />
+                </label>
+                <div class="worker-list" data-worker-list></div>
+            </article>
+
+            <article class="editor-panel">
+                <div class="panel-head">
+                    <div>
+                        <p class="eyebrow">Editor</p>
+                        <h2 data-editor-title>New worker</h2>
+                    </div>
+                    <span class="status-pill muted" data-editor-mode>Create</span>
+                </div>
+
+                <form class="editor-form" data-editor-form>
+                    <section class="form-section">
+                        <h3>Identity</h3>
+                        <div class="field-grid">
+                            <label><span>Worker Id</span><input name="personIdExternal" type="text" /></label>
+                            <label><span>Person Id</span><input name="personId" type="text" /></label>
+                            <label><span>PerPerson UUID</span><input name="perPersonUuid" type="text" /></label>
+                            <label><span>User Name</span><input name="userName" type="text" /></label>
+                            <label><span>User Id</span><input name="userId" type="text" /></label>
+                            <label><span>Email</span><input name="email" type="email" /></label>
+                            <label><span>Email Type</span><input name="emailType" type="text" /></label>
+                            <label><span>First Name</span><input name="firstName" type="text" required /></label>
+                            <label><span>Last Name</span><input name="lastName" type="text" required /></label>
+                            <label><span>Preferred Name</span><input name="preferredName" type="text" /></label>
+                            <label class="field-span-2"><span>Display Name</span><input name="displayName" type="text" /></label>
+                        </div>
+                    </section>
+
+                    <section class="form-section">
+                        <h3>Employment</h3>
+                        <div class="field-grid">
+                            <label><span>Employment Status</span><input name="employmentStatus" type="text" /></label>
+                            <label><span>Lifecycle State</span><input name="lifecycleState" type="text" /></label>
+                            <label><span>Start Date</span><input name="startDate" type="text" required /></label>
+                            <label><span>End Date</span><input name="endDate" type="text" /></label>
+                            <label><span>First Date Worked</span><input name="firstDateWorked" type="text" /></label>
+                            <label><span>Last Date Worked</span><input name="lastDateWorked" type="text" /></label>
+                            <label><span>Latest Termination Date</span><input name="latestTerminationDate" type="text" /></label>
+                            <label><span>Active Employments Count</span><input name="activeEmploymentsCount" type="text" /></label>
+                            <label><span>Is Contingent Worker</span><input name="isContingentWorker" type="text" /></label>
+                            <label><span>Last Modified</span><input name="lastModifiedDateTime" type="text" /></label>
+                        </div>
+                    </section>
+
+                    <section class="form-section">
+                        <h3>Org and Job</h3>
+                        <div class="field-grid">
+                            <label><span>Company</span><input name="company" type="text" /></label>
+                            <label><span>Company Id</span><input name="companyId" type="text" /></label>
+                            <label><span>Department</span><input name="department" type="text" /></label>
+                            <label><span>Department Name</span><input name="departmentName" type="text" /></label>
+                            <label><span>Department Id</span><input name="departmentId" type="text" /></label>
+                            <label><span>Department Cost Center</span><input name="departmentCostCenter" type="text" /></label>
+                            <label><span>Job Title</span><input name="jobTitle" type="text" /></label>
+                            <label><span>Position</span><input name="position" type="text" /></label>
+                            <label><span>Pay Grade</span><input name="payGrade" type="text" /></label>
+                            <label><span>Manager Id</span><input name="managerId" type="text" /></label>
+                            <label><span>Business Unit</span><input name="businessUnit" type="text" /></label>
+                            <label><span>Business Unit Id</span><input name="businessUnitId" type="text" /></label>
+                            <label><span>Division</span><input name="division" type="text" /></label>
+                            <label><span>Division Id</span><input name="divisionId" type="text" /></label>
+                            <label><span>Cost Center</span><input name="costCenter" type="text" /></label>
+                            <label><span>Cost Center Description</span><input name="costCenterDescription" type="text" /></label>
+                            <label><span>Cost Center Id</span><input name="costCenterId" type="text" /></label>
+                            <label><span>Employee Class</span><input name="employeeClass" type="text" /></label>
+                            <label><span>Employee Type</span><input name="employeeType" type="text" /></label>
+                        </div>
+                    </section>
+
+                    <section class="form-section">
+                        <h3>Custom Fields</h3>
+                        <div class="field-grid">
+                            <label><span>People Group</span><input name="peopleGroup" type="text" /></label>
+                            <label><span>Leadership Level</span><input name="leadershipLevel" type="text" /></label>
+                            <label><span>Region</span><input name="region" type="text" /></label>
+                            <label><span>Geozone</span><input name="geozone" type="text" /></label>
+                            <label><span>Bargaining Unit</span><input name="bargainingUnit" type="text" /></label>
+                            <label><span>Union Job Code</span><input name="unionJobCode" type="text" /></label>
+                            <label><span>Cintas Uniform Category</span><input name="cintasUniformCategory" type="text" /></label>
+                            <label><span>Cintas Uniform Allotment</span><input name="cintasUniformAllotment" type="text" /></label>
+                            <label><span>Two Char Country Code</span><input name="twoCharCountryCode" type="text" /></label>
+                        </div>
+                    </section>
+
+                    <section class="form-section">
+                        <h3>Location and Phones</h3>
+                        <div class="field-grid">
+                            <label><span>Location Name</span><input name="location.name" type="text" /></label>
+                            <label><span>Location Address</span><input name="location.address" type="text" /></label>
+                            <label><span>Location City</span><input name="location.city" type="text" /></label>
+                            <label><span>Location Zip</span><input name="location.zipCode" type="text" /></label>
+                            <label><span>Location Custom String 4</span><input name="location.customString4" type="text" /></label>
+                            <label><span>Business Phone Number</span><input name="businessPhoneNumber" type="text" /></label>
+                            <label><span>Business Phone Area Code</span><input name="businessPhoneAreaCode" type="text" /></label>
+                            <label><span>Business Phone Country Code</span><input name="businessPhoneCountryCode" type="text" /></label>
+                            <label><span>Business Phone Extension</span><input name="businessPhoneExtension" type="text" /></label>
+                            <label><span>Cell Phone Number</span><input name="cellPhoneNumber" type="text" /></label>
+                            <label><span>Cell Phone Area Code</span><input name="cellPhoneAreaCode" type="text" /></label>
+                            <label><span>Cell Phone Country Code</span><input name="cellPhoneCountryCode" type="text" /></label>
+                        </div>
+                    </section>
+
+                    <section class="form-section">
+                        <h3>Scenario and Response Controls</h3>
+                        <div class="field-grid">
+                            <label class="field-span-2"><span>Scenario Tags</span><textarea name="scenarioTags" rows="3" placeholder="Comma or newline separated"></textarea></label>
+                            <label class="checkbox-field"><input name="response.forceUnauthorized" type="checkbox" /><span>Force Unauthorized</span></label>
+                            <label class="checkbox-field"><input name="response.forceNotFound" type="checkbox" /><span>Force Not Found</span></label>
+                            <label class="checkbox-field"><input name="response.forceMalformedPayload" type="checkbox" /><span>Force Malformed Payload</span></label>
+                            <label class="checkbox-field"><input name="response.forceEmptyResults" type="checkbox" /><span>Force Empty Results</span></label>
+                        </div>
+                    </section>
+
+                    <div class="form-actions">
+                        <button type="submit" class="primary-button">Save worker</button>
+                        <button type="button" class="ghost-button" data-action="clone">Clone</button>
+                        <button type="button" class="ghost-button" data-action="terminate">Terminate</button>
+                        <button type="button" class="ghost-button" data-action="rehire">Rehire</button>
+                        <button type="button" class="danger-button" data-action="delete">Delete</button>
+                    </div>
+                </form>
+            </article>
+        </section>
+    </main>
+    <script src="~/js/admin.js" asp-append-version="true"></script>
+</body>
+</html>
