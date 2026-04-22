@@ -1230,6 +1230,11 @@ else {
 }
 
 $activeProfile = $env:SYNCFACTORS_RUN_PROFILE.ToLowerInvariant()
+$apiPublicHost = Format-UrlHost -HostName $env:SYNCFACTORS_API_PUBLIC_HOST
+$apiPortalUrl = "https://$apiPublicHost`:$($env:SYNCFACTORS_API_PORT)"
+$mockBaseUrl = "http://127.0.0.1:$($env:MOCK_SF_PORT)"
+$mockAdminUrl = "$mockBaseUrl/admin"
+$mockODataUrl = "$mockBaseUrl/odata/v2"
 $worktreeEnvFile = Join-Path $repoRoot '.env.worktree'
 $launcherCommand = Get-LauncherInvocationCommand `
     -ServiceName $Service `
@@ -1251,6 +1256,10 @@ Ensure-RequiredSecureStoreValues -RepositoryRoot $repoRoot -EnvFilePath $worktre
 Ensure-ConfiguredActiveDirectoryOusAccessible `
     -ServiceName $Service `
     -ResolvedConfigPath $env:SYNCFACTORS_RESOLVED_CONFIG_PATH_ABS
+
+$env:SYNCFACTORS_LAUNCHER_PORTAL_URL = $apiPortalUrl
+$env:SYNCFACTORS_LAUNCHER_MOCK_ADMIN_URL = if ($activeProfile -eq 'mock') { $mockAdminUrl } else { '' }
+$env:SYNCFACTORS_LAUNCHER_MOCK_ODATA_URL = if ($activeProfile -eq 'mock') { $mockODataUrl } else { '' }
 
 if ($Restart) {
     $preserveHostedTerminals = $false

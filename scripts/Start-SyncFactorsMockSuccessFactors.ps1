@@ -65,5 +65,11 @@ Write-Host "Synthetic population: $syntheticPopulationEnabled"
 Write-Host "Target worker count: $targetWorkerCount"
 Write-Host "Build: $(if ($SkipBuild) { 'skipped' } else { 'enabled' })"
 Write-Host "Restart previous mock terminals/processes: $(if ($Restart) { 'enabled' } else { 'disabled' })"
+if (-not [string]::IsNullOrWhiteSpace($env:SYNCFACTORS_LAUNCHER_MOCK_ADMIN_URL)) {
+    Write-Host "Mock SF Admin UI: $($env:SYNCFACTORS_LAUNCHER_MOCK_ADMIN_URL)" -ForegroundColor Cyan
+}
+if (-not [string]::IsNullOrWhiteSpace($env:SYNCFACTORS_LAUNCHER_MOCK_ODATA_URL)) {
+    Write-Host "Mock SF OData: $($env:SYNCFACTORS_LAUNCHER_MOCK_ODATA_URL)" -ForegroundColor Cyan
+}
 
 Invoke-DotnetProjectRun -ProjectPath $mockProjectPath -ProjectRoot $projectRoot -SkipBuild:$SkipBuild -Arguments @('--no-launch-profile')
