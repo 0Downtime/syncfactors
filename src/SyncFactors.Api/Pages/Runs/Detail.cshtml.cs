@@ -205,6 +205,9 @@ public sealed class DetailModel(RunEntriesQueryService queryService) : PageModel
         AddIfPresent(reviewItems, "Matched Existing User", FormatNullableBoolean(GetItemBoolean(entry.Item, "matchedExistingUser")));
         AddIfPresent(reviewItems, "Current Enabled", FormatNullableBoolean(GetItemBoolean(entry.Item, "currentEnabled")));
         AddIfPresent(reviewItems, "Proposed Enable", FormatNullableBoolean(GetItemBoolean(entry.Item, "proposedEnable")));
+        AddIfPresent(reviewItems, "Verified Distinguished Name", GetItemString(entry.Item, "verifiedDistinguishedName"));
+        AddIfPresent(reviewItems, "Verified OU", GetItemString(entry.Item, "verifiedParentOu"));
+        AddIfPresent(reviewItems, "Verified Enabled", FormatNullableBoolean(GetItemBoolean(entry.Item, "verifiedEnabled")));
 
         if (reviewItems.Count > 0)
         {
@@ -533,13 +536,18 @@ public sealed class DetailModel(RunEntriesQueryService queryService) : PageModel
 
         if (applied == true && succeeded != false)
         {
+            var wasVerified = GetItemBoolean(entry.Item, "verifiedEnabled").HasValue ||
+                !string.IsNullOrWhiteSpace(GetItemString(entry.Item, "verifiedDistinguishedName")) ||
+                !string.IsNullOrWhiteSpace(GetItemString(entry.Item, "verifiedParentOu"));
             facts.Add(new("Execution", "Executed"));
-            facts.Add(new("Result", "AD write succeeded"));
+            facts.Add(new("Result", wasVerified ? "AD write verified" : "AD write succeeded"));
             return new EntryExecutionDisplay(
                 "Applied",
                 "good",
                 operationCount > 0
-                    ? $"Real sync applied {FormatCount(operationCount, "directory operation")} successfully."
+                    ? wasVerified
+                        ? $"Real sync applied and verified {FormatCount(operationCount, "directory operation")}."
+                        : $"Real sync applied {FormatCount(operationCount, "directory operation")} successfully."
                     : "Real sync applied the AD change successfully.",
                 facts);
         }
