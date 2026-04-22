@@ -146,7 +146,6 @@ function Initialize-SyncFactorsActiveDirectoryOuProbeType {
 using System;
 using System.Collections.Generic;
 using System.DirectoryServices.Protocols;
-using System.Linq;
 using System.Net;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
@@ -492,8 +491,20 @@ public static class SyncFactorsLauncherAdOuProbe
 
     private static bool RequiresCustomCertificateValidation(SyncFactorsLauncherAdOuProbeConfig config)
     {
-        return !config.RequireCertificateValidation ||
-               config.TrustedCertificateThumbprints.Any(thumbprint => !string.IsNullOrWhiteSpace(thumbprint));
+        if (!config.RequireCertificateValidation)
+        {
+            return true;
+        }
+
+        foreach (var thumbprint in config.TrustedCertificateThumbprints)
+        {
+            if (!string.IsNullOrWhiteSpace(thumbprint))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static int GetPortForMode(int? configuredPort, string requestedMode, string configuredMode)
