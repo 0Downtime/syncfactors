@@ -246,31 +246,64 @@
     }
 
     function assignPayloadValue(target, path, value) {
-        const segments = path.split(".");
-        let current = target;
-        for (let index = 0; index < segments.length - 1; index += 1) {
-            const segment = segments[index];
-            if (!isSafePathSegment(segment)) {
-                throw new Error("Unsupported payload path segment.");
-            }
+        switch (path) {
+            case "location.name":
+                ensureLocation(target).name = value;
+                return;
+            case "location.address":
+                ensureLocation(target).address = value;
+                return;
+            case "location.city":
+                ensureLocation(target).city = value;
+                return;
+            case "location.zipCode":
+                ensureLocation(target).zipCode = value;
+                return;
+            case "location.customString4":
+                ensureLocation(target).customString4 = value;
+                return;
+            case "response.forceUnauthorized":
+                ensureResponse(target).forceUnauthorized = value;
+                return;
+            case "response.forceNotFound":
+                ensureResponse(target).forceNotFound = value;
+                return;
+            case "response.forceMalformedPayload":
+                ensureResponse(target).forceMalformedPayload = value;
+                return;
+            case "response.forceEmptyResults":
+                ensureResponse(target).forceEmptyResults = value;
+                return;
+            default:
+                if (!isSafeTopLevelField(path)) {
+                    throw new Error("Unsupported payload path.");
+                }
 
-            if (!Object.prototype.hasOwnProperty.call(current, segment) || typeof current[segment] !== "object" || current[segment] === null) {
-                current[segment] = Object.create(null);
-            }
-
-            current = current[segment];
+                target[path] = value;
         }
-
-        const leafSegment = segments[segments.length - 1];
-        if (!isSafePathSegment(leafSegment)) {
-            throw new Error("Unsupported payload path segment.");
-        }
-
-        current[leafSegment] = value;
     }
 
-    function isSafePathSegment(segment) {
-        return segment !== "__proto__" && segment !== "prototype" && segment !== "constructor";
+    function ensureLocation(target) {
+        if (!target.location || typeof target.location !== "object") {
+            target.location = Object.create(null);
+        }
+
+        return target.location;
+    }
+
+    function ensureResponse(target) {
+        if (!target.response || typeof target.response !== "object") {
+            target.response = Object.create(null);
+        }
+
+        return target.response;
+    }
+
+    function isSafeTopLevelField(path) {
+        return path.indexOf(".") === -1 &&
+            path !== "__proto__" &&
+            path !== "prototype" &&
+            path !== "constructor";
     }
 
     function normalizeValue(value) {
