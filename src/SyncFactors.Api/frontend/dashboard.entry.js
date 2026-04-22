@@ -56,10 +56,6 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
         checkedMessage: document.querySelector("[data-dashboard-checked]"),
         statusError: document.querySelector("[data-status-error]"),
         attention: document.querySelector("[data-dashboard-attention]"),
-        activeRunEmpty: document.querySelector("[data-active-run-empty]"),
-        activeRunCard: document.querySelector("[data-active-run-card]"),
-        lastRunEmpty: document.querySelector("[data-last-run-empty]"),
-        lastRunCard: document.querySelector("[data-last-run-card]"),
         signalRoot: document.querySelector("[data-dashboard-signal]"),
         statusLine: document.querySelector("[data-status-line]"),
         statusCaption: document.querySelector("[data-status-caption]"),
@@ -692,10 +688,6 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
         }
     }
 
-    function formatRunDates(run, incompleteLabel) {
-        return "Start " + formatTimestamp(run && run.startedAt) + " • End " + (run && run.completedAt ? formatTimestamp(run.completedAt) : incompleteLabel);
-    }
-
     function animateProgress(status) {
         if (!elements.progressRoot || !elements.progressFill || !elements.progressCaption || !elements.progressCopy) {
             return;
@@ -1164,29 +1156,6 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
         }
     }
 
-    function renderRunCard(card, empty, run, summarySelector, datesSelector, idSelector, linkSelector, emptyText, incompleteLabel) {
-        if (!card || !empty) {
-            return;
-        }
-
-        if (!run) {
-            toggleHidden(empty, false);
-            empty.textContent = emptyText;
-            toggleHidden(card, true);
-            return;
-        }
-
-        toggleHidden(empty, true);
-        toggleHidden(card, false);
-        updateText(card.querySelector(idSelector), run.runId);
-        updateText(
-            card.querySelector(summarySelector),
-            run.status + " · " + run.mode + " · " + (run.processedWorkers || 0) + " / " + (run.totalWorkers || 0) + " workers");
-        updateText(card.querySelector(datesSelector), formatRunDates(run, incompleteLabel));
-        card.querySelector(linkSelector).setAttribute("href", runDetailHref(run.runId));
-        flashUpdate(card);
-    }
-
     function timelineCompletionLabel(status, dryRun) {
         const prefix = dryRun ? "Dry run" : "Live sync";
 
@@ -1487,6 +1456,22 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
         });
     }
 
+    function buildRunMixMax(runs) {
+        const stackedDefinitions = bucketDefinitions.filter(function (definition) { return definition.runMix; });
+        const rawMax = runs.reduce(function (currentMax, run) {
+            const total = stackedDefinitions.reduce(function (sum, definition) {
+                return sum + (run[definition.key] || 0);
+            }, 0);
+            return Math.max(currentMax, total);
+        }, 0);
+
+        if (rawMax <= 0) {
+            return 1;
+        }
+
+        return Math.ceil((rawMax * 1.12) / 100) * 100;
+    }
+
     function bindRunsChartEvents(displayRuns) {
         if (!runsChartInstance) {
             return;
@@ -1534,15 +1519,17 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
         const palette = getThemePalette();
         const displayRuns = runs.slice(0, 10).reverse();
         const labels = displayRuns.map(function (run) { return formatChartTimestamp(run.startedAt); });
+        const runMixMax = buildRunMixMax(displayRuns);
 
         runsChartInstance.setOption({
             animationDuration: motionAllowed() ? 420 : 0,
             animationDurationUpdate: motionAllowed() ? 360 : 0,
             backgroundColor: "transparent",
-            grid: { left: 12, right: 12, top: 28, bottom: 8, containLabel: true },
+            grid: { left: 12, right: 12, top: 112, bottom: 8, containLabel: true },
             tooltip: { trigger: "axis", axisPointer: { type: "shadow" } },
             legend: {
                 top: 0,
+                itemGap: 14,
                 textStyle: { color: palette.muted }
             },
             xAxis: {
@@ -1553,6 +1540,7 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
             },
             yAxis: {
                 type: "value",
+                max: runMixMax,
                 axisLabel: { color: palette.muted },
                 splitLine: { lineStyle: { color: palette.line } }
             },
@@ -1722,8 +1710,6 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
         renderStatus(snapshot);
         renderFilterState(allRuns, filteredRuns);
         renderRuns(filteredRuns);
-        renderRunCard(elements.activeRunCard, elements.activeRunEmpty, snapshot.activeRun, "[data-active-run-summary]", "[data-active-run-dates]", "[data-active-run-id]", "[data-active-run-link]", "No run is active.", "In progress");
-        renderRunCard(elements.lastRunCard, elements.lastRunEmpty, snapshot.lastCompletedRun, "[data-last-run-summary]", "[data-last-run-dates]", "[data-last-run-id]", "[data-last-run-link]", "No completed runs yet.", "Unknown");
         renderTimeline(snapshot, filteredRuns);
         renderRunsChart(allRuns);
         renderBucketChart(snapshot);

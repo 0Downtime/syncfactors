@@ -4,53 +4,6 @@
     ViewData["Title"] = "Dashboard";
 }
 
-<section class="hero-run-health-panel" aria-label="Run health summary">
-    <div class="hero-run-health">
-        <div class="hero-run-health-header">
-            <p class="eyebrow">Run Health</p>
-            <div class="live-status-stack">
-                <span class="badge neutral" data-live-status-badge>Connecting</span>
-                <span class="muted live-status-caption" data-live-status-caption>Connecting to the live dashboard channel.</span>
-            </div>
-        </div>
-        <div class="run-health-stack run-health-stack-compact" data-run-health>
-            <section class="run-health-card">
-                <p class="eyebrow">Active Run</p>
-                @if (Model.ActiveRun is null)
-                {
-                    <p class="muted" data-active-run-empty>No run is active.</p>
-                }
-                else
-                {
-                    <div data-active-run-card>
-                        <p><strong data-active-run-id>@Model.ActiveRun.RunId</strong></p>
-                        <p class="muted" data-active-run-summary>@SyncFactors.Api.UiRunFormatting.RunCardSummary(Model.ActiveRun)</p>
-                        <p class="muted" data-active-run-dates>Start @SyncFactors.Api.UiDateTimeFormatter.FormatDateTime(Model.ActiveRun.StartedAt) · End @(Model.ActiveRun.CompletedAt is null ? "In progress" : SyncFactors.Api.UiDateTimeFormatter.FormatDateTime(Model.ActiveRun.CompletedAt.Value))</p>
-                        <p><a asp-page="/Runs/Detail" asp-route-runId="@Model.ActiveRun.RunId" data-active-run-link>Open active run</a></p>
-                    </div>
-                }
-            </section>
-
-            <section class="run-health-card">
-                <p class="eyebrow">Last Completed</p>
-                @if (Model.LastCompletedRun is null)
-                {
-                    <p class="muted" data-last-run-empty>No completed runs yet.</p>
-                }
-                else
-                {
-                    <div data-last-run-card>
-                        <p><strong data-last-run-id>@Model.LastCompletedRun.RunId</strong></p>
-                        <p class="muted" data-last-run-summary>@SyncFactors.Api.UiRunFormatting.RunCardSummary(Model.LastCompletedRun)</p>
-                        <p class="muted" data-last-run-dates>Start @SyncFactors.Api.UiDateTimeFormatter.FormatDateTime(Model.LastCompletedRun.StartedAt) · End @SyncFactors.Api.UiDateTimeFormatter.FormatDateTime(Model.LastCompletedRun.CompletedAt, "Unknown")</p>
-                        <p><a asp-page="/Runs/Detail" asp-route-runId="@Model.LastCompletedRun.RunId" data-last-run-link>Review last run</a></p>
-                    </div>
-                }
-            </section>
-        </div>
-    </div>
-</section>
-
 @if (!string.IsNullOrWhiteSpace(Model.ErrorMessage))
 {
     <section class="panel">
