@@ -150,6 +150,14 @@ function Test-LdapServerCertificate {
     }
 }
 
+function Test-RequiresCustomCertificateValidation {
+    $configuredThumbprints = @($TrustedCertificateThumbprints |
+        ForEach-Object { Normalize-Thumbprint -Thumbprint $_ } |
+        Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+
+    return $SkipCertificateValidation -or $configuredThumbprints.Count -gt 0
+}
+
 function New-LdapConnection {
     param(
         [Parameter(Mandatory)]
@@ -187,12 +195,17 @@ function New-LdapConnection {
     }
 
     if ($RequestedMode -ne 'ldap') {
-        $callbackScriptBlock = {
-            param($ldapConnection, $certificate)
-            return (Test-LdapServerCertificate -Certificate $certificate)
-        }.GetNewClosure()
-        $callback = [System.DirectoryServices.Protocols.VerifyServerCertificateCallback]$callbackScriptBlock
-        $connection.SessionOptions.VerifyServerCertificate = $callback
+        if ([OperatingSystem]::IsWindows()) {
+            $callbackScriptBlock = {
+                param($ldapConnection, $certificate)
+                return (Test-LdapServerCertificate -Certificate $certificate)
+            }.GetNewClosure()
+            $callback = [System.DirectoryServices.Protocols.VerifyServerCertificateCallback]$callbackScriptBlock
+            $connection.SessionOptions.VerifyServerCertificate = $callback
+        }
+        elseif (Test-RequiresCustomCertificateValidation) {
+            throw "Custom LDAP certificate override is unsupported on this platform. Trust the LDAPS certificate in the OS store, connect with a DNS name that matches the certificate SAN, and do not use -SkipCertificateValidation or -TrustedCertificateThumbprints."
+        }
     }
 
     if ($RequestedMode -eq 'ldaps') {

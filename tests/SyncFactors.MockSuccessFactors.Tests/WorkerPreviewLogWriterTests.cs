@@ -8,13 +8,13 @@ namespace SyncFactors.MockSuccessFactors.Tests;
 public sealed class WorkerPreviewLogWriterTests
 {
     [Fact]
-    public async Task PreviewPlanner_WritesParseableJsonlLog_ToReportingDirectory()
+    public async Task PreviewPlanner_WritesParseableJsonlLog_ToDefaultLogDirectory()
     {
         var tempRoot = Path.Combine(Path.GetTempPath(), "syncfactors-preview-log", Guid.NewGuid().ToString("N"));
         var configPath = Path.Combine(tempRoot, "sync-config.json");
         var mappingConfigPath = Path.Combine(tempRoot, "mapping-config.json");
         var scaffoldDataPath = Path.Combine(tempRoot, "scaffold-data.json");
-        var reportingDirectory = Path.Combine(tempRoot, "reports");
+        var logDirectory = Path.Combine(tempRoot, "logs");
 
         Directory.CreateDirectory(tempRoot);
         await File.WriteAllTextAsync(configPath, """
@@ -60,7 +60,7 @@ public sealed class WorkerPreviewLogWriterTests
             "maxDeletionsPerRun": 10
           },
           "reporting": {
-            "outputDirectory": ""
+            "outputDirectory": "reports"
           }
         }
         """);
@@ -81,47 +81,53 @@ public sealed class WorkerPreviewLogWriterTests
         }
         """);
 
-        var configJson = await File.ReadAllTextAsync(configPath);
-        configJson = configJson.Replace("\"outputDirectory\": \"\"", $"\"outputDirectory\": \"{reportingDirectory.Replace("\\", "\\\\")}\"", StringComparison.Ordinal);
-        await File.WriteAllTextAsync(configPath, configJson);
-
         var loader = new SyncFactorsConfigurationLoader(new SyncFactorsConfigPathResolver(configPath, mappingConfigPath));
         var scaffoldStore = new ScaffoldDataStore(new ScaffoldDataPathResolver(scaffoldDataPath));
-        var logWriter = new FileWorkerPreviewLogWriter(loader);
-        var mappingProvider = new AttributeMappingProvider(loader, NullLogger<AttributeMappingProvider>.Instance);
-        var diffService = new AttributeDiffService(mappingProvider, logWriter, NullLogger<AttributeDiffService>.Instance);
-        var workerSource = new ScaffoldWorkerSource(scaffoldStore);
-        var directoryGateway = new ScaffoldDirectoryGateway(scaffoldStore);
-        var planner = new WorkerPreviewPlanner(
-            workerSource,
-            new WorkerPlanningService(
-                directoryGateway,
-                new IdentityMatcher(),
-                new LifecyclePolicy(
-                    new LifecyclePolicySettings(
-                        loader.GetSyncConfig().Ad.DefaultActiveOu,
-                        loader.GetSyncConfig().Ad.PrehireOu,
-                        loader.GetSyncConfig().Ad.GraveyardOu,
-                        loader.GetSyncConfig().SuccessFactors.Query.InactiveStatusField,
-                        loader.GetSyncConfig().SuccessFactors.Query.InactiveStatusValues)),
-                diffService,
+        var previousLogDirectory = Environment.GetEnvironmentVariable(LocalFileLogging.DirectoryEnvironmentVariable);
+        Environment.SetEnvironmentVariable(LocalFileLogging.DirectoryEnvironmentVariable, logDirectory);
+        try
+        {
+            var logWriter = new FileWorkerPreviewLogWriter();
+            var mappingProvider = new AttributeMappingProvider(loader, NullLogger<AttributeMappingProvider>.Instance);
+            var diffService = new AttributeDiffService(mappingProvider, logWriter, NullLogger<AttributeDiffService>.Instance);
+            var workerSource = new ScaffoldWorkerSource(scaffoldStore);
+            var directoryGateway = new ScaffoldDirectoryGateway(scaffoldStore);
+            var planner = new WorkerPreviewPlanner(
+                workerSource,
+                new WorkerPlanningService(
+                    directoryGateway,
+                    new IdentityMatcher(),
+                    new LifecyclePolicy(
+                        new LifecyclePolicySettings(
+                            loader.GetSyncConfig().Ad.DefaultActiveOu,
+                            loader.GetSyncConfig().Ad.PrehireOu,
+                            loader.GetSyncConfig().Ad.GraveyardOu,
+                            loader.GetSyncConfig().SuccessFactors.Query.InactiveStatusField,
+                            loader.GetSyncConfig().SuccessFactors.Query.InactiveStatusValues)),
+                    diffService,
+                    mappingProvider,
+                    NullLogger<WorkerPlanningService>.Instance),
                 mappingProvider,
-                NullLogger<WorkerPlanningService>.Instance),
-            mappingProvider,
-            logWriter,
-            new StubRunRepository(),
-            NullLogger<WorkerPreviewPlanner>.Instance);
+                logWriter,
+                new StubRunRepository(),
+                NullLogger<WorkerPreviewPlanner>.Instance);
 
-        var preview = await planner.PreviewAsync("1000123", CancellationToken.None);
+            var preview = await planner.PreviewAsync("1000123", CancellationToken.None);
 
-        Assert.NotNull(preview.ReportPath);
-        Assert.EndsWith(".jsonl", preview.ReportPath);
-        Assert.True(File.Exists(preview.ReportPath));
+            Assert.NotNull(preview.ReportPath);
+            Assert.EndsWith(".jsonl", preview.ReportPath);
+            Assert.Contains(Path.Combine("logs", "preview-logs"), preview.ReportPath, StringComparison.Ordinal);
+            Assert.True(File.Exists(preview.ReportPath));
 
-        var lines = await File.ReadAllLinesAsync(preview.ReportPath);
-        Assert.Contains(lines, line => line.Contains("\"Event\":\"preview.diff.start\"", StringComparison.Ordinal));
-        Assert.Contains(lines, line => line.Contains("\"Event\":\"preview.diff.mapping\"", StringComparison.Ordinal));
-        Assert.Contains(lines, line => line.Contains("\"Event\":\"preview.diff.complete\"", StringComparison.Ordinal));
+            var lines = await File.ReadAllLinesAsync(preview.ReportPath);
+            Assert.Contains(lines, line => line.Contains("\"Event\":\"preview.diff.start\"", StringComparison.Ordinal));
+            Assert.Contains(lines, line => line.Contains("\"Event\":\"preview.diff.mapping\"", StringComparison.Ordinal));
+            Assert.Contains(lines, line => line.Contains("\"Event\":\"preview.diff.complete\"", StringComparison.Ordinal));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(LocalFileLogging.DirectoryEnvironmentVariable, previousLogDirectory);
+        }
     }
 
     private sealed class StubRunRepository : IRunRepository

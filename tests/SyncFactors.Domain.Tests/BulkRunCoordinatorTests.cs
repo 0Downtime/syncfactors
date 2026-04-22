@@ -353,6 +353,49 @@ public sealed class BulkRunCoordinatorTests
     }
 
     [Fact]
+    public async Task ExecuteAsync_PersistsVerifiedReadbackStateInEntryItem()
+    {
+        CapturingRunLifecycleService.Entries.Clear();
+        CapturingRunLifecycleService.Reset();
+        var coordinator = new BulkRunCoordinator(
+            new StubWorkerSource([CreateWorker("10004", "64308")]),
+            new CapturingDeltaSyncService(),
+            new StubRunQueueStore(),
+            new StubGraveyardRetentionStore(),
+            new GraveyardWorkerPlanningService(),
+            new StubDirectoryMutationCommandBuilder(),
+            new VerifiedSuccessfulDirectoryCommandGateway(),
+            new StubDirectoryGateway(),
+            new CapturingRunLifecycleService(),
+            new RealSyncSettings(),
+            new WorkerRunSettings(MaxCreatesPerRun: 10),
+            CreateLifecycleSettings(),
+            NullLogger<BulkRunCoordinator>.Instance,
+            TimeProvider.System);
+
+        await coordinator.ExecuteAsync(
+            new RunQueueRequest(
+                RequestId: "req-verified",
+                Mode: "BulkSync",
+                DryRun: false,
+                RunTrigger: "AdHoc",
+                RequestedBy: "test",
+                Status: "Pending",
+                RequestedAt: DateTimeOffset.UtcNow,
+                StartedAt: null,
+                CompletedAt: null,
+                RunId: null,
+                ErrorMessage: null),
+            maxDegreeOfParallelism: 1,
+            CancellationToken.None);
+
+        var entry = Assert.Single(CapturingRunLifecycleService.Entries);
+        Assert.False(entry.Item.GetProperty("verifiedEnabled").GetBoolean());
+        Assert.Equal("CN=10004,OU=Graveyard,DC=example,DC=com", entry.Item.GetProperty("verifiedDistinguishedName").GetString());
+        Assert.Equal("OU=Graveyard,DC=example,DC=com", entry.Item.GetProperty("verifiedParentOu").GetString());
+    }
+
+    [Fact]
     public async Task ExecuteAsync_PersistsPopulationTotalsInRunReport()
     {
         CapturingRunLifecycleService.Entries.Clear();
@@ -643,6 +686,25 @@ public sealed class BulkRunCoordinatorTests
         {
             _ = cancellationToken;
             return Task.FromResult(new DirectoryCommandResult(true, command.Action, command.SamAccountName, null, "Applied", null));
+        }
+    }
+
+    private sealed class VerifiedSuccessfulDirectoryCommandGateway : IDirectoryCommandGateway
+    {
+        public Task<DirectoryCommandResult> ExecuteAsync(DirectoryMutationCommand command, CancellationToken cancellationToken)
+        {
+            _ = cancellationToken;
+            return Task.FromResult(
+                new DirectoryCommandResult(
+                    Succeeded: true,
+                    Action: command.Action,
+                    SamAccountName: command.SamAccountName,
+                    DistinguishedName: "CN=10004,OU=Graveyard,DC=example,DC=com",
+                    Message: "Applied",
+                    RunId: null,
+                    VerifiedEnabled: false,
+                    VerifiedDistinguishedName: "CN=10004,OU=Graveyard,DC=example,DC=com",
+                    VerifiedParentOu: "OU=Graveyard,DC=example,DC=com"));
         }
     }
 
