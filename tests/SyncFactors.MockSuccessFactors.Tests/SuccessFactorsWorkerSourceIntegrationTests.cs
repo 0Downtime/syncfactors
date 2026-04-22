@@ -15,6 +15,9 @@ namespace SyncFactors.MockSuccessFactors.Tests;
 
 public sealed class SuccessFactorsWorkerSourceIntegrationTests
 {
+    private static MockNameProfile GetNameProfile(string workerId, bool includePreferredName = true)
+        => MockNameCatalog.GetNameProfile(int.Parse(workerId) - 10_000, includePreferredName);
+
     [Fact]
     public async Task WorkerSource_CanResolveWorker_FromMockApi()
     {
@@ -131,10 +134,11 @@ public sealed class SuccessFactorsWorkerSourceIntegrationTests
         var workerSource = new SuccessFactorsWorkerSource(client, configLoader, new DisabledDeltaSyncService(), fallbackSource, NullLogger<SuccessFactorsWorkerSource>.Instance);
 
         var worker = await workerSource.GetWorkerAsync("10001", CancellationToken.None);
+        var expectedName = GetNameProfile("10001");
 
         Assert.NotNull(worker);
         Assert.Equal("10001", worker!.WorkerId);
-        Assert.Equal("Worker10001", worker.PreferredName);
+        Assert.Equal(expectedName.PreferredName, worker.PreferredName);
         Assert.Equal("CORP", worker.Attributes["company"]);
         Assert.Equal("HQ North", worker.Attributes["location"]);
         Assert.Equal("Field Ops", worker.Attributes["peopleGroup"]);
@@ -721,12 +725,13 @@ public sealed class SuccessFactorsWorkerSourceIntegrationTests
 
         await using var enumerator = workerSource.ListWorkersAsync(WorkerListingMode.DeltaPreferred, CancellationToken.None).GetAsyncEnumerator();
         Assert.True(await enumerator.MoveNextAsync());
+        var expectedName = GetNameProfile("10001");
 
         Assert.Contains(handler.RequestUris, uri => uri.Contains("/EmpJob?", StringComparison.Ordinal));
         Assert.Contains(handler.RequestUris, uri => uri.Contains("/PerPerson?", StringComparison.Ordinal));
         Assert.Equal("user.10001", enumerator.Current.WorkerId);
-        Assert.Equal("Worker10001", enumerator.Current.PreferredName);
-        Assert.Equal("Sample10001", enumerator.Current.LastName);
+        Assert.Equal(expectedName.PreferredName, enumerator.Current.PreferredName);
+        Assert.Equal(expectedName.LastName, enumerator.Current.LastName);
     }
 
     [Fact]

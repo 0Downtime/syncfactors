@@ -781,8 +781,7 @@ public sealed class MockFixtureStore
             ? Math.Max(0, numericId - SyntheticWorkerIdStart)
             : index;
         var userName = $"user.{syntheticId}";
-        var lastName = $"Sample{syntheticId}";
-        var preferredName = worker.PreferredName is null ? null : $"Preferred{syntheticId}";
+        var nameProfile = MockNameCatalog.GetNameProfile(suffix, worker.PreferredName is not null);
 
         return worker with
         {
@@ -792,10 +791,10 @@ public sealed class MockFixtureStore
             UserName = userName,
             UserId = userName,
             Email = $"{userName}@example.test",
-            FirstName = $"Worker{syntheticId}",
-            LastName = lastName,
-            PreferredName = preferredName,
-            DisplayName = worker.DisplayName is null ? null : $"{preferredName ?? $"Worker{syntheticId}"} {lastName}",
+            FirstName = nameProfile.FirstName,
+            LastName = nameProfile.LastName,
+            PreferredName = nameProfile.PreferredName,
+            DisplayName = worker.DisplayName is null ? null : nameProfile.DisplayName,
             Position = worker.Position is null ? null : $"POS-{syntheticId}",
             BusinessPhoneNumber = worker.BusinessPhoneNumber is null ? null : $"{7000000 + suffix:D7}",
             BusinessPhoneExtension = worker.BusinessPhoneExtension is null ? null : $"{100 + (suffix % 900):D3}",
@@ -872,6 +871,8 @@ public sealed class MockFixtureStore
     {
         var userName = $"user.{syntheticId}";
         var departmentSuffix = seedIndex == 0 && replication == 0 ? string.Empty : $" {seedIndex + 1:D2}-{replication + 1:D3}";
+        var sequence = int.Parse(syntheticId) - SyntheticWorkerIdStart;
+        var nameProfile = MockNameCatalog.GetNameProfile(sequence, seedWorker.PreferredName is not null);
 
         return seedWorker with
         {
@@ -881,15 +882,15 @@ public sealed class MockFixtureStore
             UserName = userName,
             UserId = userName,
             Email = $"{userName}@example.test",
-            FirstName = $"Worker{syntheticId}",
-            LastName = $"Sample{syntheticId}",
-            PreferredName = seedWorker.PreferredName is null ? null : $"Preferred{syntheticId}",
-            DisplayName = seedWorker.DisplayName is null ? null : $"Preferred{syntheticId} Sample{syntheticId}",
+            FirstName = nameProfile.FirstName,
+            LastName = nameProfile.LastName,
+            PreferredName = nameProfile.PreferredName,
+            DisplayName = seedWorker.DisplayName is null ? null : nameProfile.DisplayName,
             ManagerId = seedWorker.ManagerId,
             Position = seedWorker.Position is null ? null : $"POS-{syntheticId}",
-            BusinessPhoneNumber = seedWorker.BusinessPhoneNumber is null ? null : $"{7000000 + (int.Parse(syntheticId) - SyntheticWorkerIdStart):D7}",
-            BusinessPhoneExtension = seedWorker.BusinessPhoneExtension is null ? null : $"{100 + ((int.Parse(syntheticId) - SyntheticWorkerIdStart) % 900):D3}",
-            CellPhoneNumber = seedWorker.CellPhoneNumber is null ? null : $"{8000000 + (int.Parse(syntheticId) - SyntheticWorkerIdStart):D7}",
+            BusinessPhoneNumber = seedWorker.BusinessPhoneNumber is null ? null : $"{7000000 + sequence:D7}",
+            BusinessPhoneExtension = seedWorker.BusinessPhoneExtension is null ? null : $"{100 + (sequence % 900):D3}",
+            CellPhoneNumber = seedWorker.CellPhoneNumber is null ? null : $"{8000000 + sequence:D7}",
             Location = seedWorker.Location is null
                 ? null
                 : seedWorker.Location with

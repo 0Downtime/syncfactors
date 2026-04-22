@@ -10,6 +10,9 @@ public sealed class MockApiTests
 {
     private static readonly string FixturePath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "config", "mock-successfactors", "baseline-fixtures.json"));
 
+    private static MockNameProfile GetNameProfile(string workerId, bool includePreferredName = true)
+        => MockNameCatalog.GetNameProfile(int.Parse(workerId) - 10_000, includePreferredName);
+
     private static MockFixtureStore CreateStore(
         bool syntheticPopulationEnabled = false,
         int targetWorkerCount = 5000,
@@ -71,9 +74,10 @@ public sealed class MockApiTests
         var payload = builder.Build(store.FindByIdentity(query.IdentityField, query.WorkerId), query);
         using var document = JsonDocument.Parse(JsonSerializer.Serialize(payload));
         var worker = document.RootElement.GetProperty("d").GetProperty("results")[0];
+        var expectedName = GetNameProfile("10001");
 
         Assert.Equal("10001", worker.GetProperty("personIdExternal").GetString());
-        Assert.Equal("Worker10001", worker.GetProperty("personalInfoNav").GetProperty("results")[0].GetProperty("firstName").GetString());
+        Assert.Equal(expectedName.FirstName, worker.GetProperty("personalInfoNav").GetProperty("results")[0].GetProperty("firstName").GetString());
         Assert.Equal("CORP", worker.GetProperty("employmentNav").GetProperty("results")[0].GetProperty("jobInfoNav").GetProperty("results")[0].GetProperty("companyNav").GetProperty("company").GetString());
         Assert.Equal("Central", worker.GetProperty("employmentNav").GetProperty("results")[0].GetProperty("jobInfoNav").GetProperty("results")[0].GetProperty("customString87").GetString());
     }
@@ -134,7 +138,7 @@ public sealed class MockApiTests
         Assert.Equal(10, baselineWorkers.Count);
         Assert.Equal(5000, syntheticWorkers.Count);
         Assert.Equal("10001", baselineWorkers[0].PersonIdExternal);
-        Assert.Equal("Worker10001", baselineWorkers[0].FirstName);
+        Assert.Equal(GetNameProfile("10001").FirstName, baselineWorkers[0].FirstName);
         Assert.Equal("10000", syntheticWorkers[0].PersonIdExternal);
         Assert.Equal("14999", syntheticWorkers[^1].PersonIdExternal);
     }
@@ -150,7 +154,7 @@ public sealed class MockApiTests
         Assert.Equal(firstLoad[0].FirstName, secondLoad[0].FirstName);
         Assert.Equal(firstLoad[0].Email, secondLoad[0].Email);
         Assert.Equal(firstLoad[0].Location?.Address, secondLoad[0].Location?.Address);
-        Assert.Equal("Worker10001", firstLoad[0].FirstName);
+        Assert.Equal(GetNameProfile("10001").FirstName, firstLoad[0].FirstName);
         Assert.Equal("user.10001@example.test", firstLoad[0].Email);
         Assert.Equal("Suite 10001", firstLoad[0].Location?.Address);
     }
@@ -203,9 +207,10 @@ public sealed class MockApiTests
         var payload = builder.Build(store.FindByIdentity(query.IdentityField, query.WorkerId), query);
         using var document = JsonDocument.Parse(JsonSerializer.Serialize(payload));
         var worker = document.RootElement.GetProperty("d").GetProperty("results")[0];
+        var expectedName = GetNameProfile("14999");
 
         Assert.Equal("14999", worker.GetProperty("personIdExternal").GetString());
-        Assert.Equal("Worker14999", worker.GetProperty("personalInfoNav").GetProperty("results")[0].GetProperty("firstName").GetString());
+        Assert.Equal(expectedName.FirstName, worker.GetProperty("personalInfoNav").GetProperty("results")[0].GetProperty("firstName").GetString());
         Assert.Equal("user.14999", worker.GetProperty("employmentNav").GetProperty("results")[0].GetProperty("userId").GetString());
         Assert.Equal("user.14999@example.test", worker.GetProperty("emailNav").GetProperty("results")[0].GetProperty("emailAddress").GetString());
     }
