@@ -50,7 +50,7 @@ repo_root_q="$(quote_for_shell "${repo_root}")"
 label_q="$(quote_for_shell "${label}")"
 command_q="$(join_command "$@")"
 
-child_command="cd ${repo_root_q} && printf '\033]0;%s\007' ${label_q} && printf 'Starting %s\\n\\n' ${label_q} && ${command_q}; exit_code=\$?; printf '\\n[%s] exited with status %s.\\n' ${label_q} \"\$exit_code\"; exec \${SHELL:-/bin/zsh} -l"
+child_command="cd ${repo_root_q} && printf '\033]0;%s\007' ${label_q} && printf 'Starting %s\\n\\n' ${label_q} && ${command_q}; exit_code=\$?; printf '\\n[%s] exited with status %s.\\n' ${label_q} \"\$exit_code\"; exit \"\$exit_code\""
 
 if [[ -d "/System/Applications/Utilities/Terminal.app" || -d "/Applications/Utilities/Terminal.app" ]]; then
   osascript - "${label}" "${child_command}" "${reuse_existing}" <<'EOF'
