@@ -16,6 +16,10 @@ public sealed class SuccessFactorsWorkerSource(
     ScaffoldWorkerSource fallbackSource,
     ILogger<SuccessFactorsWorkerSource> logger) : IWorkerSource
 {
+    public const string SourceReviewCategoryAttribute = "_syncfactors.reviewCategory";
+    public const string SourceReviewCaseTypeAttribute = "_syncfactors.reviewCaseType";
+    public const string SourceReviewReasonAttribute = "_syncfactors.reviewReason";
+
     private static readonly IReadOnlyDictionary<string, string> EntityNavigationAliases =
         new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
@@ -1244,7 +1248,8 @@ public sealed class SuccessFactorsWorkerSource(
         {
             return null;
         }
-        var personalInfo = GetFirstNavigationResult(worker, "personalInfoNav");
+        var personalInfoSelection = SelectPersonalInfo(worker);
+        var personalInfo = personalInfoSelection.Selected;
         var employment = GetPreferredEmploymentResult(worker);
         var userNav = employment is { ValueKind: not JsonValueKind.Undefined }
             ? GetNavigationObject(employment.Value, "userNav")
@@ -1280,6 +1285,16 @@ public sealed class SuccessFactorsWorkerSource(
             GetString(employment, "startDate") ??
             GetString(worker, "startDate");
 
+        var attributes = new Dictionary<string, string?>(
+            BuildAttributes(worker, personalInfo, employment, jobInfo),
+            StringComparer.OrdinalIgnoreCase);
+        if (personalInfoSelection.Review is not null)
+        {
+            attributes[SourceReviewCategoryAttribute] = personalInfoSelection.Review.Value.ReviewCategory;
+            attributes[SourceReviewCaseTypeAttribute] = personalInfoSelection.Review.Value.ReviewCaseType;
+            attributes[SourceReviewReasonAttribute] = personalInfoSelection.Review.Value.Reason;
+        }
+
         return new WorkerSnapshot(
             WorkerId: GetStringByPath(worker, query.IdentityField) ?? workerId,
             PreferredName: preferredName,
@@ -1287,7 +1302,7 @@ public sealed class SuccessFactorsWorkerSource(
             Department: department,
             TargetOu: config.Ad.DefaultActiveOu,
             IsPrehire: IsPrehire(startDate),
-            Attributes: BuildAttributes(worker, personalInfo, employment, jobInfo));
+            Attributes: attributes);
     }
 
     private static bool HasDirectJobInfoFields(JsonElement worker)
@@ -1479,6 +1494,27 @@ public sealed class SuccessFactorsWorkerSource(
         return null;
     }
 
+    private static PersonalInfoSelection SelectPersonalInfo(JsonElement worker)
+    {
+        var results = GetNavigationResults(worker, "personalInfoNav");
+        if (results.Count == 0)
+        {
+            return new PersonalInfoSelection(null, null);
+        }
+
+        if (results.Count == 1)
+        {
+            return new PersonalInfoSelection(results[0], null);
+        }
+
+        return new PersonalInfoSelection(
+            Selected: results[0],
+            Review: (
+                ReviewCategory: "SourceData",
+                ReviewCaseType: "AmbiguousPersonalInfo",
+                Reason: "SuccessFactors returned multiple personalInfoNav rows for this worker. Automatic sync is blocked until the source query can select a single effective personal-info record."));
+    }
+
     private static JsonElement? GetPreferredEmploymentResult(JsonElement worker)
     {
         return GetBestNavigationResult(
@@ -1508,19 +1544,16 @@ public sealed class SuccessFactorsWorkerSource(
         string propertyName,
         Func<JsonElement, (int IsCurrent, long EndDateTicks, long StartDateTicks)> scoreSelector)
     {
-        if (!element.TryGetProperty(propertyName, out var navigation) ||
-            navigation.ValueKind != JsonValueKind.Object ||
-            !navigation.TryGetProperty("results", out var results) ||
-            results.ValueKind != JsonValueKind.Array)
+        var results = GetNavigationResults(element, propertyName);
+        if (results.Count == 0)
         {
             return null;
         }
 
         JsonElement? best = null;
         (int IsCurrent, long EndDateTicks, long StartDateTicks) bestScore = default;
-        foreach (var item in results.EnumerateArray())
+        foreach (var candidate in results)
         {
-            var candidate = item.Clone();
             var candidateScore = scoreSelector(candidate);
             if (best is null || candidateScore.CompareTo(bestScore) > 0)
             {
@@ -1530,6 +1563,19 @@ public sealed class SuccessFactorsWorkerSource(
         }
 
         return best;
+    }
+
+    private static IReadOnlyList<JsonElement> GetNavigationResults(JsonElement element, string propertyName)
+    {
+        if (!element.TryGetProperty(propertyName, out var navigation) ||
+            navigation.ValueKind != JsonValueKind.Object ||
+            !navigation.TryGetProperty("results", out var results) ||
+            results.ValueKind != JsonValueKind.Array)
+        {
+            return [];
+        }
+
+        return results.EnumerateArray().Select(item => item.Clone()).ToArray();
     }
 
     private static (int IsCurrent, long EndDateTicks, long StartDateTicks) BuildTemporalSelectionKey(string? startDate, string? endDate)
@@ -1877,6 +1923,10 @@ public sealed class SuccessFactorsWorkerSource(
 
         return null;
     }
+
+    private sealed record PersonalInfoSelection(
+        JsonElement? Selected,
+        (string ReviewCategory, string ReviewCaseType, string Reason)? Review);
 
     private static bool IsPrehire(string? startDate)
     {

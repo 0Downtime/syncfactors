@@ -23,6 +23,7 @@ public sealed class WorkerPlanningService(
             DisplayName: null,
             Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase));
         var identityReview = default((string ReviewCategory, string ReviewCaseType, string Reason)?);
+        var sourceReview = ResolveSourceReview(worker);
         try
         {
             directoryUser = await directoryGateway.FindByWorkerAsync(worker, cancellationToken) ?? directoryUser;
@@ -67,8 +68,9 @@ public sealed class WorkerPlanningService(
         var attributeChanges = new List<AttributeChange>();
         IReadOnlyList<MissingSourceAttributeRow> missingSourceAttributes = [];
         var hasAmbiguousWorkerIdentity = string.Equals(identityReview?.ReviewCaseType, "AmbiguousWorkerIdentity", StringComparison.Ordinal);
+        var hasSourceReviewBlock = sourceReview is not null;
 
-        if (!suppressInactiveCreateValidation && !hasAmbiguousWorkerIdentity)
+        if (!suppressInactiveCreateValidation && !hasAmbiguousWorkerIdentity && !hasSourceReviewBlock)
         {
             proposedEmailAddress = identity.MatchedExistingUser
                 ? directoryUser.Attributes.TryGetValue("UserPrincipalName", out var existingUserPrincipalName) && !string.IsNullOrWhiteSpace(existingUserPrincipalName)
@@ -102,6 +104,13 @@ public sealed class WorkerPlanningService(
             reviewCaseType = identityReview.Value.ReviewCaseType;
             reason = identityReview.Value.Reason;
         }
+        else if (sourceReview is not null)
+        {
+            bucket = "manualReview";
+            reviewCategory = sourceReview.Value.ReviewCategory;
+            reviewCaseType = sourceReview.Value.ReviewCaseType;
+            reason = sourceReview.Value.Reason;
+        }
 
         if (missingSourceAttributes.Count > 0)
         {
@@ -121,10 +130,12 @@ public sealed class WorkerPlanningService(
             managerId,
             managerDistinguishedName,
             identityReview,
+            sourceReview,
             identity,
             lifecycle,
             suppressInactiveCreateValidation,
             hasAmbiguousWorkerIdentity,
+            hasSourceReviewBlock,
             proposedEmailAddress,
             attributeChanges,
             missingSourceAttributes,
@@ -159,6 +170,26 @@ public sealed class WorkerPlanningService(
             Reason: reason,
             CanAutoApply: canAutoApply,
             DecisionSteps: decisionSteps);
+    }
+
+    private static (string ReviewCategory, string ReviewCaseType, string Reason)? ResolveSourceReview(WorkerSnapshot worker)
+    {
+        if (!worker.Attributes.TryGetValue("_syncfactors.reviewCaseType", out var reviewCaseType) ||
+            string.IsNullOrWhiteSpace(reviewCaseType))
+        {
+            return null;
+        }
+
+        var reviewCategory = worker.Attributes.TryGetValue("_syncfactors.reviewCategory", out var resolvedCategory) &&
+                             !string.IsNullOrWhiteSpace(resolvedCategory)
+            ? resolvedCategory
+            : "SourceData";
+        var reason = worker.Attributes.TryGetValue("_syncfactors.reviewReason", out var resolvedReason) &&
+                     !string.IsNullOrWhiteSpace(resolvedReason)
+            ? resolvedReason
+            : "Worker source data was ambiguous.";
+
+        return (reviewCategory, reviewCaseType, reason);
     }
 
     private static bool ShouldSuppressInactiveCreateValidation(
@@ -334,10 +365,12 @@ public sealed class WorkerPlanningService(
         string? managerId,
         string? managerDistinguishedName,
         (string ReviewCategory, string ReviewCaseType, string Reason)? identityReview,
+        (string ReviewCategory, string ReviewCaseType, string Reason)? sourceReview,
         IdentityMatchResult identity,
         LifecycleDecision lifecycle,
         bool suppressInactiveCreateValidation,
         bool hasAmbiguousWorkerIdentity,
+        bool hasSourceReviewBlock,
         string? proposedEmailAddress,
         IReadOnlyList<AttributeChange> attributeChanges,
         IReadOnlyList<MissingSourceAttributeRow> missingSourceAttributes,
@@ -364,6 +397,10 @@ public sealed class WorkerPlanningService(
         {
             var review = identityReview!.Value;
             steps.Add(new ProvisioningDecisionStep("Directory Identity", "Blocked", review.Reason, "warn"));
+        }
+        else if (sourceReview is not null)
+        {
+            steps.Add(new ProvisioningDecisionStep("Source Data", "Blocked", sourceReview.Value.Reason, "warn"));
         }
         else if (identity.MatchedExistingUser)
         {
@@ -419,6 +456,14 @@ public sealed class WorkerPlanningService(
                 "Skipped",
                 "Inactive worker has no existing AD account, so diff generation and required-mapping validation were skipped."));
         }
+        else if (hasSourceReviewBlock)
+        {
+            steps.Add(new ProvisioningDecisionStep(
+                "Required Inputs",
+                "Skipped",
+                "Required-mapping validation was skipped because source data requires manual review.",
+                "warn"));
+        }
         else if (hasAmbiguousWorkerIdentity)
         {
             steps.Add(new ProvisioningDecisionStep(
@@ -453,6 +498,14 @@ public sealed class WorkerPlanningService(
                 "Email Resolution",
                 "Skipped",
                 "No proposed email was computed because the worker will not be created or updated automatically."));
+        }
+        else if (hasSourceReviewBlock)
+        {
+            steps.Add(new ProvisioningDecisionStep(
+                "Email Resolution",
+                "Skipped",
+                "No proposed email was computed because source data requires manual review.",
+                "warn"));
         }
         else if (hasAmbiguousWorkerIdentity)
         {
@@ -493,6 +546,14 @@ public sealed class WorkerPlanningService(
                 "Attribute Diff",
                 "Skipped",
                 "No mapped attribute diff was generated because automatic create/update planning was skipped."));
+        }
+        else if (hasSourceReviewBlock)
+        {
+            steps.Add(new ProvisioningDecisionStep(
+                "Attribute Diff",
+                "Skipped",
+                "No mapped attribute diff was generated because source data requires manual review.",
+                "warn"));
         }
         else if (hasAmbiguousWorkerIdentity)
         {
