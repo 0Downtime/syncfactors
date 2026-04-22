@@ -4,6 +4,7 @@ public static class LocalFileLogging
 {
     public const string EnabledEnvironmentVariable = "SYNCFACTORS_LOCAL_FILE_LOGGING_ENABLED";
     public const string DirectoryEnvironmentVariable = "SYNCFACTORS_LOCAL_LOG_DIRECTORY";
+    private const string RepositoryRootEnvironmentVariable = "REPO_ROOT";
 
     public static bool IsEnabled(string? configuredValue)
     {
@@ -33,7 +34,7 @@ public static class LocalFileLogging
             return Path.GetFullPath(configuredDirectory);
         }
 
-        return Path.GetFullPath("logs");
+        return Path.Combine(ResolveDefaultBaseDirectory(), "logs");
     }
 
     public static string ResolveRollingFilePath(string processName, string? configuredDirectory)
@@ -65,5 +66,35 @@ public static class LocalFileLogging
     {
         var invalidChars = Path.GetInvalidFileNameChars();
         return new string(value.Select(ch => invalidChars.Contains(ch) ? '_' : ch).ToArray());
+    }
+
+    private static string ResolveDefaultBaseDirectory()
+    {
+        var repositoryRoot = Environment.GetEnvironmentVariable(RepositoryRootEnvironmentVariable);
+        if (!string.IsNullOrWhiteSpace(repositoryRoot))
+        {
+            return Path.GetFullPath(repositoryRoot);
+        }
+
+        var currentDirectory = Path.GetFullPath(Environment.CurrentDirectory);
+        var discoveredRepositoryRoot = TryFindRepositoryRoot(currentDirectory);
+        return discoveredRepositoryRoot ?? currentDirectory;
+    }
+
+    private static string? TryFindRepositoryRoot(string startDirectory)
+    {
+        var current = new DirectoryInfo(startDirectory);
+        while (current is not null)
+        {
+            if (File.Exists(Path.Combine(current.FullName, "SyncFactors.Next.sln")) ||
+                Directory.Exists(Path.Combine(current.FullName, ".git")))
+            {
+                return current.FullName;
+            }
+
+            current = current.Parent;
+        }
+
+        return null;
     }
 }

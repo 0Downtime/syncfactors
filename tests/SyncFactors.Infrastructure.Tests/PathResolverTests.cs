@@ -172,9 +172,68 @@ public sealed class PathResolverTests
     }
 
     [Fact]
-    public void LocalFileLogging_DefaultsToProjectLogsDirectory()
+    public void LocalFileLogging_DefaultsToRepositoryRootLogsDirectory()
     {
-        Assert.Equal(Path.GetFullPath("logs"), LocalFileLogging.ResolveDirectory(null));
+        Assert.Equal(Path.Combine(GetRepositoryRoot(), "logs"), LocalFileLogging.ResolveDirectory(null));
+    }
+
+    [Fact]
+    public void LocalFileLogging_DefaultsToDiscoveredRepositoryRoot_WhenRunningFromNestedProjectDirectory()
+    {
+        var originalCurrentDirectory = Environment.CurrentDirectory;
+        var originalRepositoryRoot = Environment.GetEnvironmentVariable("REPO_ROOT");
+        var tempRoot = Path.Combine(Path.GetTempPath(), "syncfactors-log-root", Guid.NewGuid().ToString("N"));
+        var nestedProjectDirectory = Path.Combine(tempRoot, "src", "SyncFactors.Worker");
+        Directory.CreateDirectory(nestedProjectDirectory);
+        File.WriteAllText(Path.Combine(tempRoot, "SyncFactors.Next.sln"), string.Empty);
+
+        Environment.SetEnvironmentVariable("REPO_ROOT", null);
+        Environment.CurrentDirectory = nestedProjectDirectory;
+        try
+        {
+            Assert.Equal(Path.GetFullPath(Path.Combine("..", "..", "logs")), LocalFileLogging.ResolveDirectory(null));
+        }
+        finally
+        {
+            Environment.CurrentDirectory = originalCurrentDirectory;
+            Environment.SetEnvironmentVariable("REPO_ROOT", originalRepositoryRoot);
+            Directory.Delete(tempRoot, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void LocalFileLogging_UsesRepositoryRootEnvironmentVariable_WhenPresent()
+    {
+        var originalRepositoryRoot = Environment.GetEnvironmentVariable("REPO_ROOT");
+        var tempRoot = Path.Combine(Path.GetTempPath(), "syncfactors-log-root-env", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempRoot);
+
+        Environment.SetEnvironmentVariable("REPO_ROOT", tempRoot);
+        try
+        {
+            Assert.Equal(Path.Combine(Path.GetFullPath(tempRoot), "logs"), LocalFileLogging.ResolveDirectory(null));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("REPO_ROOT", originalRepositoryRoot);
+            Directory.Delete(tempRoot, recursive: true);
+        }
+    }
+
+    private static string GetRepositoryRoot()
+    {
+        var current = new DirectoryInfo(AppContext.BaseDirectory);
+        while (current is not null)
+        {
+            if (File.Exists(Path.Combine(current.FullName, "SyncFactors.Next.sln")))
+            {
+                return current.FullName;
+            }
+
+            current = current.Parent;
+        }
+
+        throw new InvalidOperationException("Could not resolve repository root for the test run.");
     }
 
     [Theory]
