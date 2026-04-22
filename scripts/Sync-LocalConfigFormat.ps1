@@ -4,6 +4,8 @@ param()
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+. (Join-Path $PSScriptRoot 'SyncFactorsJson.ps1')
+
 function Get-TrackedLocalConfigPairs {
     param(
         [Parameter(Mandatory)]
@@ -100,7 +102,7 @@ function Read-ConfigJsonObject {
     }
 
     try {
-        $parsed = ConvertFrom-Json -InputObject (Get-Content -Path $Path -Raw) -AsHashtable
+        $parsed = ConvertFrom-SyncFactorsJson -InputObject (Get-Content -Path $Path -Raw)
     }
     catch {
         throw "Failed to parse JSON file '$Path'. $_"
