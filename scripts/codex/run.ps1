@@ -6,6 +6,7 @@ param(
     [string]$Profile = 'mock',
     [switch]$Restart,
     [switch]$SkipBuild,
+    [switch]$NoHostedMock,
     [Alias('h')]
     [switch]$Help
 )
@@ -1065,6 +1066,98 @@ function Stop-LocalProcesses {
     }
 }
 
+function Get-ProcessTerminalNames {
+    param(
+        [AllowNull()]
+        [int[]]$ProcessIds = @()
+    )
+
+    $targets = @($ProcessIds | Where-Object { $null -ne $_ -and $_ -ne $PID } | Sort-Object -Unique)
+    if ($targets.Count -eq 0 -or [OperatingSystem]::IsWindows()) {
+        return @()
+    }
+
+    try {
+        $lines = @( & ps '-p' ($targets -join ',') '-o' 'tty=' 2>$null )
+    }
+    catch {
+        return @()
+    }
+
+    return @(
+        $lines |
+        ForEach-Object { $_.Trim() } |
+        Where-Object { -not [string]::IsNullOrWhiteSpace($_) -and $_ -ne '?' } |
+        Sort-Object -Unique
+    )
+}
+
+function Get-ProcessIdsByTerminalName {
+    param(
+        [Parameter(Mandatory)]
+        [string[]]$TerminalNames,
+        [AllowNull()]
+        [int[]]$ExcludeProcessIds = @()
+    )
+
+    $targets = @($TerminalNames | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Sort-Object -Unique)
+    if ($targets.Count -eq 0) {
+        return @()
+    }
+
+    $excluded = @($ExcludeProcessIds | Where-Object { $null -ne $_ } | Sort-Object -Unique)
+
+    try {
+        $lines = @( & ps '-ax' '-o' 'pid=' '-o' 'tty=' 2>$null )
+    }
+    catch {
+        return @()
+    }
+
+    $matches = foreach ($line in $lines) {
+        if ([string]::IsNullOrWhiteSpace($line)) {
+            continue
+        }
+
+        $trimmed = $line.Trim()
+        $parts = $trimmed -split '\s+', 2
+        if ($parts.Length -lt 2) {
+            continue
+        }
+
+        $processId = [int]$parts[0]
+        $terminalName = $parts[1].Trim()
+        if ($targets -contains $terminalName -and -not ($excluded -contains $processId)) {
+            $processId
+        }
+    }
+
+    return @($matches | Sort-Object -Unique)
+}
+
+function Stop-HostedTerminalSessions {
+    param(
+        [AllowNull()]
+        [int[]]$HostProcessIds = @()
+    )
+
+    if (-not [OperatingSystem]::IsMacOS()) {
+        return
+    }
+
+    $terminalNames = @(Get-ProcessTerminalNames -ProcessIds $HostProcessIds)
+    if ($terminalNames.Count -eq 0) {
+        return
+    }
+
+    $sessionProcessIds = @(Get-ProcessIdsByTerminalName -TerminalNames $terminalNames -ExcludeProcessIds @($PID))
+    if ($sessionProcessIds.Count -eq 0) {
+        return
+    }
+
+    Stop-LocalProcesses -Name 'hosted terminal session' -ProcessIds $sessionProcessIds
+}
+
 function Close-HostedTerminals {
     param(
         [Parameter(Mandatory)]
@@ -1150,9 +1243,14 @@ on run argv
 end run
 '@
 
-    foreach ($label in ($Labels | Sort-Object -Unique)) {
-        $script | & osascript - $label | Out-Null
+    if ($null -ne $terminalAppPath) {
+        foreach ($label in ($Labels | Sort-Object -Unique)) {
+            $script | & osascript - $label | Out-Null
+        }
     }
+
+    Start-Sleep -Milliseconds 350
+    Stop-HostedTerminalSessions -HostProcessIds $hostTargets
 }
 
 function Restart-SelectedServices {
@@ -1276,7 +1374,7 @@ switch ($Service) {
             $effectiveSkipBuild = $true
         }
 
-        if ($activeProfile -eq 'mock') {
+        if ($activeProfile -eq 'mock' -and -not $NoHostedMock) {
             Start-MockServiceHostedTerminal -ProfileName $Profile -RestartSelected:$Restart -SkipBuildStep:$effectiveSkipBuild
         }
 
@@ -1304,7 +1402,7 @@ switch ($Service) {
             $effectiveSkipBuild = $true
         }
 
-        if ($activeProfile -eq 'mock') {
+        if ($activeProfile -eq 'mock' -and -not $NoHostedMock) {
             Start-MockServiceHostedTerminal -ProfileName $Profile -RestartSelected:$Restart -SkipBuildStep:$effectiveSkipBuild
         }
 
@@ -1380,7 +1478,7 @@ switch ($Service) {
         }
 
         if ($startSyncFactorsApi) {
-            $apiArguments = @('-Service', 'api') + $sharedArguments
+            $apiArguments = @('-Service', 'api', '-NoHostedMock') + $sharedArguments
             & $terminalScriptPath 'SyncFactors .NET API' './scripts/codex/run.ps1' $apiArguments -ReuseIfExists:$reuseHostedTerminals
         }
 

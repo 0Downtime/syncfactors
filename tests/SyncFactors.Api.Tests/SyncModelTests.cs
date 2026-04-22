@@ -32,7 +32,8 @@ public sealed class SyncModelTests
 
         var result = await model.OnPostStartRunAsync(CancellationToken.None);
 
-        Assert.IsType<RedirectToPageResult>(result);
+        var redirect = Assert.IsType<RedirectToPageResult>(result);
+        Assert.Equal("/Index", redirect.PageName);
         Assert.NotNull(queueStore.LastRequest);
         Assert.True(queueStore.LastRequest!.DryRun);
         Assert.Equal("BulkSync", queueStore.LastRequest.Mode);
@@ -53,7 +54,8 @@ public sealed class SyncModelTests
 
         var result = await model.OnPostStartRunAsync(CancellationToken.None);
 
-        Assert.IsType<RedirectToPageResult>(result);
+        var redirect = Assert.IsType<RedirectToPageResult>(result);
+        Assert.Equal("/Index", redirect.PageName);
         Assert.NotNull(queueStore.LastRequest);
         Assert.False(queueStore.LastRequest!.DryRun);
         Assert.Equal("BulkSync", queueStore.LastRequest.Mode);
