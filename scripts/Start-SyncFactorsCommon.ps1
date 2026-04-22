@@ -254,3 +254,344 @@ function Invoke-DotnetProjectRun {
         Pop-Location
     }
 }
+
+function Get-ListeningProcessIds {
+    param(
+        [Parameter(Mandatory)]
+        [string]$Port
+    )
+
+    if ([OperatingSystem]::IsWindows()) {
+        try {
+            $netstatLines = @( & netstat '-ano' '-p' 'tcp' 2>$null )
+        }
+        catch {
+            return @()
+        }
+
+        $matches = foreach ($line in $netstatLines) {
+            if ([string]::IsNullOrWhiteSpace($line)) {
+                continue
+            }
+
+            $trimmed = $line.Trim()
+            if (-not $trimmed.Contains('LISTENING', [StringComparison]::OrdinalIgnoreCase)) {
+                continue
+            }
+
+            $columns = $trimmed -split '\s+'
+            if ($columns.Length -lt 5) {
+                continue
+            }
+
+            $localAddress = $columns[1]
+            $state = $columns[3]
+            $processId = $columns[4]
+            if (-not $state.Equals('LISTENING', [StringComparison]::OrdinalIgnoreCase)) {
+                continue
+            }
+
+            $separatorIndex = $localAddress.LastIndexOf(':')
+            if ($separatorIndex -lt 0) {
+                continue
+            }
+
+            $localPort = $localAddress.Substring($separatorIndex + 1)
+            if ($localPort -eq $Port) {
+                [int]$processId
+            }
+        }
+
+        return $matches | Sort-Object -Unique
+    }
+
+    try {
+        $lines = @( & lsof "-nP" "-iTCP:$Port" "-sTCP:LISTEN" "-t" 2>$null )
+    }
+    catch {
+        return @()
+    }
+
+    return $lines |
+        Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
+        ForEach-Object { [int]$_.Trim() } |
+        Sort-Object -Unique
+}
+
+function Get-ProcessIdsByCommandPattern {
+    param(
+        [Parameter(Mandatory)]
+        [string[]]$Patterns
+    )
+
+    if ([OperatingSystem]::IsWindows()) {
+        $getCimInstance = Get-Command 'Get-CimInstance' -ErrorAction SilentlyContinue
+        if ($null -eq $getCimInstance) {
+            Write-Warning 'Get-CimInstance is unavailable; command-line-based restart matching may be incomplete on Windows.'
+            return @()
+        }
+
+        try {
+            $processes = @( Get-CimInstance -ClassName Win32_Process -ErrorAction SilentlyContinue )
+        }
+        catch {
+            return @()
+        }
+
+        $matches = foreach ($process in $processes) {
+            $command = $process.CommandLine
+            if ([string]::IsNullOrWhiteSpace($command)) {
+                continue
+            }
+
+            if ($Patterns | Where-Object { $command.Contains($_, [StringComparison]::OrdinalIgnoreCase) }) {
+                [int]$process.ProcessId
+            }
+        }
+
+        return $matches | Sort-Object -Unique
+    }
+
+    try {
+        $lines = @( & ps "-ax" "-o" "pid=" "-o" "command=" 2>$null )
+    }
+    catch {
+        return @()
+    }
+
+    $matches = foreach ($line in $lines) {
+        if ([string]::IsNullOrWhiteSpace($line)) {
+            continue
+        }
+
+        $trimmed = $line.Trim()
+        $firstSpace = $trimmed.IndexOf(' ')
+        if ($firstSpace -lt 0) {
+            continue
+        }
+
+        $pidText = $trimmed.Substring(0, $firstSpace).Trim()
+        $command = $trimmed.Substring($firstSpace + 1).Trim()
+        if ($Patterns | Where-Object { $command.Contains($_, [StringComparison]::OrdinalIgnoreCase) }) {
+            [int]$pidText
+        }
+    }
+
+    return $matches | Sort-Object -Unique
+}
+
+function Get-ProcessIdsByCommandFragments {
+    param(
+        [Parameter(Mandatory)]
+        [string[]]$Fragments
+    )
+
+    $requiredFragments = @($Fragments | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+    if ($requiredFragments.Count -eq 0) {
+        return @()
+    }
+
+    if ([OperatingSystem]::IsWindows()) {
+        $getCimInstance = Get-Command 'Get-CimInstance' -ErrorAction SilentlyContinue
+        if ($null -eq $getCimInstance) {
+            Write-Warning 'Get-CimInstance is unavailable; command-line-based restart matching may be incomplete on Windows.'
+            return @()
+        }
+
+        try {
+            $processes = @( Get-CimInstance -ClassName Win32_Process -ErrorAction SilentlyContinue )
+        }
+        catch {
+            return @()
+        }
+
+        $matches = foreach ($process in $processes) {
+            $command = $process.CommandLine
+            if ([string]::IsNullOrWhiteSpace($command)) {
+                continue
+            }
+
+            $isMatch = $true
+            foreach ($fragment in $requiredFragments) {
+                if (-not $command.Contains($fragment, [StringComparison]::OrdinalIgnoreCase)) {
+                    $isMatch = $false
+                    break
+                }
+            }
+
+            if ($isMatch) {
+                [int]$process.ProcessId
+            }
+        }
+
+        return $matches | Sort-Object -Unique
+    }
+
+    try {
+        $lines = @( & ps "-ax" "-o" "pid=" "-o" "command=" 2>$null )
+    }
+    catch {
+        return @()
+    }
+
+    $matches = foreach ($line in $lines) {
+        if ([string]::IsNullOrWhiteSpace($line)) {
+            continue
+        }
+
+        $trimmed = $line.Trim()
+        $firstSpace = $trimmed.IndexOf(' ')
+        if ($firstSpace -lt 0) {
+            continue
+        }
+
+        $pidText = $trimmed.Substring(0, $firstSpace).Trim()
+        $command = $trimmed.Substring($firstSpace + 1).Trim()
+
+        $isMatch = $true
+        foreach ($fragment in $requiredFragments) {
+            if (-not $command.Contains($fragment, [StringComparison]::OrdinalIgnoreCase)) {
+                $isMatch = $false
+                break
+            }
+        }
+
+        if ($isMatch) {
+            [int]$pidText
+        }
+    }
+
+    return $matches | Sort-Object -Unique
+}
+
+function Stop-LocalProcesses {
+    param(
+        [Parameter(Mandatory)]
+        [string]$Name,
+        [AllowNull()]
+        [int[]]$ProcessIds = @()
+    )
+
+    $targets = @($ProcessIds | Where-Object { $null -ne $_ } | Sort-Object -Unique)
+    if ($targets.Count -eq 0) {
+        Write-Host "No running $Name processes found."
+        return
+    }
+
+    Write-Host ("Stopping {0} process(es) for {1}: {2}" -f $targets.Count, $Name, ($targets -join ', ')) -ForegroundColor Yellow
+    foreach ($processId in $targets) {
+        Stop-Process -Id $processId -ErrorAction SilentlyContinue
+    }
+
+    Start-Sleep -Milliseconds 750
+
+    foreach ($processId in $targets) {
+        if (Get-Process -Id $processId -ErrorAction SilentlyContinue) {
+            Stop-Process -Id $processId -Force -ErrorAction SilentlyContinue
+        }
+    }
+}
+
+function Close-HostedTerminals {
+    param(
+        [Parameter(Mandatory)]
+        [string[]]$Labels,
+        [AllowNull()]
+        [int[]]$HostProcessIds = @(),
+        [switch]$MatchContains
+    )
+
+    $hostTargets = @($HostProcessIds | Where-Object { $null -ne $_ -and $_ -ne $PID } | Sort-Object -Unique)
+    if ([OperatingSystem]::IsWindows()) {
+        if ($hostTargets.Count -gt 0) {
+            Stop-LocalProcesses -Name 'hosted terminal window' -ProcessIds $hostTargets
+        }
+
+        return
+    }
+
+    if (-not [OperatingSystem]::IsMacOS()) {
+        return
+    }
+
+    $terminalAppPath = if (Test-Path '/System/Applications/Utilities/Terminal.app') {
+        '/System/Applications/Utilities/Terminal.app'
+    }
+    elseif (Test-Path '/Applications/Utilities/Terminal.app') {
+        '/Applications/Utilities/Terminal.app'
+    }
+    else {
+        $null
+    }
+
+    if ($null -eq $terminalAppPath) {
+        return
+    }
+
+    $script = @'
+on run argv
+    set targetLabel to item 1 of argv
+    set useContainsMatch to item 2 of argv
+
+    tell application "Terminal"
+        set matchingWindows to {}
+
+        repeat with currentWindow in windows
+            set shouldCloseWindow to false
+
+            repeat with currentTab in tabs of currentWindow
+                set tabTitle to ""
+                set tabName to ""
+                set labelMatches to false
+
+                try
+                    set tabTitle to custom title of currentTab
+                end try
+
+                try
+                    set tabName to name of currentTab
+                end try
+
+                if useContainsMatch is "true" then
+                    if tabTitle contains targetLabel or tabName contains targetLabel then
+                        set labelMatches to true
+                    end if
+                else
+                    if tabTitle is targetLabel or tabName is targetLabel then
+                        set labelMatches to true
+                    end if
+                end if
+
+                if labelMatches then
+                    set shouldCloseWindow to true
+                    exit repeat
+                end if
+            end repeat
+
+            if shouldCloseWindow then
+                copy currentWindow to end of matchingWindows
+            end if
+        end repeat
+
+        repeat with targetWindow in matchingWindows
+            try
+                close targetWindow saving no
+            end try
+        end repeat
+
+        repeat with currentWindow in windows
+            if (count of tabs of currentWindow) is 0 then
+                try
+                    close currentWindow saving no
+                end try
+            end if
+        end repeat
+    end tell
+end run
+'@
+
+    $matchMode = if ($MatchContains) { 'true' } else { 'false' }
+    foreach ($label in ($Labels | Sort-Object -Unique)) {
+        $script | & osascript - $label $matchMode | Out-Null
+    }
+}
