@@ -85,10 +85,26 @@ public sealed class MockFixtureStoreAdminTests
             StartDate: "2026-04-22"));
 
         Assert.Equal("40102", created.PersonIdExternal);
-        Assert.Equal("user.40102", created.UserName);
-        Assert.Equal("user.40102", created.UserId);
-        Assert.Equal("user.40102@example.test", created.Email);
+        Assert.Equal("40102", created.UserName);
+        Assert.Equal("40102", created.UserId);
+        Assert.Equal("terry.pratchett@example.test", created.Email);
         Assert.Equal("uuid-40102", created.PerPersonUuid);
+    }
+
+    [Fact]
+    public void Store_Clone_AssignsUniqueEmail_WhenBaseAddressAlreadyExists()
+    {
+        var runtimePath = CreateRuntimePath();
+        var store = CreateStore(runtimePath);
+
+        var original = store.GetDocument().Workers[0];
+        var cloned = store.CloneWorker(original.PersonIdExternal);
+        var expectedBaseEmail = MockNameCatalog.BuildEmailAddress(original.FirstName, original.LastName);
+
+        Assert.NotEqual(original.PersonIdExternal, cloned.PersonIdExternal);
+        Assert.NotEqual(original.Email, cloned.Email);
+        Assert.StartsWith(expectedBaseEmail.Replace("@example.test", string.Empty, StringComparison.Ordinal), cloned.Email, StringComparison.Ordinal);
+        Assert.EndsWith("@example.test", cloned.Email, StringComparison.Ordinal);
     }
 
     [Fact]

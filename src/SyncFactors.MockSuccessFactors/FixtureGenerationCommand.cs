@@ -226,8 +226,8 @@ public static class FixtureGenerationCommand
         var sanitizedId = personNumber;
         var sequence = int.Parse(personNumber) - 10_000;
         var nameProfile = MockNameCatalog.GetNameProfile(sequence, worker.PreferredName is not null);
-        var userName = $"user.{personNumber}";
-        var email = $"{userName}@example.test";
+        var userName = personNumber;
+        var email = MockNameCatalog.BuildEmailAddress(nameProfile.FirstName, nameProfile.LastName);
         var managerId = string.IsNullOrWhiteSpace(worker.ManagerId)
             ? null
             : StableNumber(worker.ManagerId, 10_000, 99_999).ToString("D5");

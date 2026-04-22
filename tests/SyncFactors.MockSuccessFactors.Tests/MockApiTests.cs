@@ -13,6 +13,14 @@ public sealed class MockApiTests
     private static MockNameProfile GetNameProfile(string workerId, bool includePreferredName = true)
         => MockNameCatalog.GetNameProfile(int.Parse(workerId) - 10_000, includePreferredName);
 
+    private static string GetEmailAddress(string workerId)
+    {
+        var name = GetNameProfile(workerId);
+        return MockNameCatalog.BuildEmailAddress(name.FirstName, name.LastName);
+    }
+
+    private static string GetUserId(string workerId) => workerId;
+
     private static MockFixtureStore CreateStore(
         bool syntheticPopulationEnabled = false,
         int targetWorkerCount = 5000,
@@ -109,7 +117,7 @@ public sealed class MockApiTests
         {
             ["$format"] = "json",
             ["$top"] = "1",
-            ["$filter"] = "userId eq 'user.10001'",
+            ["$filter"] = "userId eq '10001'",
             ["$select"] = "userId,jobTitle,company,department,division,location,businessUnit,costCenter,employeeClass,employeeType,managerId,emplStatus,customString3,customString20,customString87,customString110,customString111,customString91,startDate",
             ["$expand"] = "companyNav,departmentNav,divisionNav,locationNav,businessUnitNav,costCenterNav"
         }));
@@ -118,7 +126,7 @@ public sealed class MockApiTests
         using var document = JsonDocument.Parse(JsonSerializer.Serialize(payload));
         var job = document.RootElement.GetProperty("d").GetProperty("results")[0];
 
-        Assert.Equal("user.10001", job.GetProperty("userId").GetString());
+        Assert.Equal(GetUserId("10001"), job.GetProperty("userId").GetString());
         Assert.Equal("A", job.GetProperty("emplStatus").GetString());
         Assert.Equal("CORP", job.GetProperty("company").GetString());
         Assert.Equal("CORP", job.GetProperty("companyNav").GetProperty("company").GetString());
@@ -155,7 +163,7 @@ public sealed class MockApiTests
         Assert.Equal(firstLoad[0].Email, secondLoad[0].Email);
         Assert.Equal(firstLoad[0].Location?.Address, secondLoad[0].Location?.Address);
         Assert.Equal(GetNameProfile("10001").FirstName, firstLoad[0].FirstName);
-        Assert.Equal("user.10001@example.test", firstLoad[0].Email);
+        Assert.Equal(GetEmailAddress("10001"), firstLoad[0].Email);
         Assert.Equal("Suite 10001", firstLoad[0].Location?.Address);
     }
 
@@ -211,8 +219,8 @@ public sealed class MockApiTests
 
         Assert.Equal("14999", worker.GetProperty("personIdExternal").GetString());
         Assert.Equal(expectedName.FirstName, worker.GetProperty("personalInfoNav").GetProperty("results")[0].GetProperty("firstName").GetString());
-        Assert.Equal("user.14999", worker.GetProperty("employmentNav").GetProperty("results")[0].GetProperty("userId").GetString());
-        Assert.Equal("user.14999@example.test", worker.GetProperty("emailNav").GetProperty("results")[0].GetProperty("emailAddress").GetString());
+        Assert.Equal(GetUserId("14999"), worker.GetProperty("employmentNav").GetProperty("results")[0].GetProperty("userId").GetString());
+        Assert.Equal(GetEmailAddress("14999"), worker.GetProperty("emailNav").GetProperty("results")[0].GetProperty("emailAddress").GetString());
     }
 
     [Fact]
@@ -224,7 +232,7 @@ public sealed class MockApiTests
         {
             ["$format"] = "json",
             ["$top"] = "1",
-            ["$filter"] = "userId eq 'user.14999'",
+            ["$filter"] = "userId eq '14999'",
             ["$select"] = "userId,jobTitle,company,department,managerId,startDate",
             ["$expand"] = "companyNav,departmentNav"
         }));
@@ -233,7 +241,7 @@ public sealed class MockApiTests
         using var document = JsonDocument.Parse(JsonSerializer.Serialize(payload));
         var job = document.RootElement.GetProperty("d").GetProperty("results")[0];
 
-        Assert.Equal("user.14999", job.GetProperty("userId").GetString());
+        Assert.Equal(GetUserId("14999"), job.GetProperty("userId").GetString());
         Assert.Equal("Security Analyst 10-500", job.GetProperty("jobTitle").GetString());
         Assert.Equal("Security 10-500", job.GetProperty("department").GetString());
         Assert.Equal("CORP", job.GetProperty("company").GetString());
@@ -259,9 +267,9 @@ public sealed class MockApiTests
         var results = document.RootElement.GetProperty("d").GetProperty("results");
 
         Assert.Equal(3, results.GetArrayLength());
-        Assert.Equal("user.10001", results[0].GetProperty("userId").GetString());
-        Assert.Equal("user.10002", results[1].GetProperty("userId").GetString());
-        Assert.Equal("user.10003", results[2].GetProperty("userId").GetString());
+        Assert.Equal(GetUserId("10001"), results[0].GetProperty("userId").GetString());
+        Assert.Equal(GetUserId("10002"), results[1].GetProperty("userId").GetString());
+        Assert.Equal(GetUserId("10003"), results[2].GetProperty("userId").GetString());
     }
 
     [Fact]
@@ -310,7 +318,7 @@ public sealed class MockApiTests
         using var document = JsonDocument.Parse(JsonSerializer.Serialize(payload));
         var results = document.RootElement.GetProperty("d").GetProperty("results");
 
-        Assert.Contains(results.EnumerateArray(), row => row.GetProperty("userId").GetString() == "user.10003");
+        Assert.Contains(results.EnumerateArray(), row => row.GetProperty("userId").GetString() == GetUserId("10003"));
     }
 
     [Fact]
@@ -330,8 +338,8 @@ public sealed class MockApiTests
         using var document = JsonDocument.Parse(JsonSerializer.Serialize(payload));
         var results = document.RootElement.GetProperty("d").GetProperty("results").EnumerateArray().ToArray();
 
-        Assert.Contains(results, row => row.GetProperty("userId").GetString() == "user.10007");
-        Assert.DoesNotContain(results, row => row.GetProperty("userId").GetString() == "user.10008");
+        Assert.Contains(results, row => row.GetProperty("userId").GetString() == GetUserId("10007"));
+        Assert.DoesNotContain(results, row => row.GetProperty("userId").GetString() == GetUserId("10008"));
     }
 
     [Fact]
@@ -351,8 +359,8 @@ public sealed class MockApiTests
         using var document = JsonDocument.Parse(JsonSerializer.Serialize(payload));
         var results = document.RootElement.GetProperty("d").GetProperty("results").EnumerateArray().ToArray();
 
-        Assert.Contains(results, row => row.GetProperty("userId").GetString() == "user.10007");
-        Assert.DoesNotContain(results, row => row.GetProperty("userId").GetString() == "user.10006");
+        Assert.Contains(results, row => row.GetProperty("userId").GetString() == GetUserId("10007"));
+        Assert.DoesNotContain(results, row => row.GetProperty("userId").GetString() == GetUserId("10006"));
     }
 
     [Fact]
@@ -373,7 +381,7 @@ public sealed class MockApiTests
         using var document = JsonDocument.Parse(JsonSerializer.Serialize(payload));
         var results = document.RootElement.GetProperty("d").GetProperty("results");
 
-        var prehire = Assert.Single(results.EnumerateArray(), row => row.GetProperty("userId").GetString() == "user.10003");
+        var prehire = Assert.Single(results.EnumerateArray(), row => row.GetProperty("userId").GetString() == GetUserId("10003"));
         Assert.Equal(futureStartDate, prehire.GetProperty("startDate").GetString());
     }
 
@@ -395,7 +403,7 @@ public sealed class MockApiTests
         using var document = JsonDocument.Parse(JsonSerializer.Serialize(payload));
         var results = document.RootElement.GetProperty("d").GetProperty("results");
 
-        Assert.DoesNotContain(results.EnumerateArray(), row => row.GetProperty("userId").GetString() == "user.10003");
+        Assert.DoesNotContain(results.EnumerateArray(), row => row.GetProperty("userId").GetString() == GetUserId("10003"));
     }
 
     [Fact]
@@ -405,13 +413,13 @@ public sealed class MockApiTests
         {
             ["$format"] = "json",
             ["$top"] = "1",
-            ["$filter"] = "userId eq 'user.10001'",
+            ["$filter"] = "userId eq '10001'",
             ["$select"] = "userId"
         }));
 
         Assert.True(query.IsSupported);
         Assert.Equal("userId", query.IdentityField);
-        Assert.Equal("user.10001", query.WorkerId);
+        Assert.Equal(GetUserId("10001"), query.WorkerId);
     }
 
     [Fact]

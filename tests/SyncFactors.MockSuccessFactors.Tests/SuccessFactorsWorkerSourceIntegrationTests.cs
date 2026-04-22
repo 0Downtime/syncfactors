@@ -18,6 +18,8 @@ public sealed class SuccessFactorsWorkerSourceIntegrationTests
     private static MockNameProfile GetNameProfile(string workerId, bool includePreferredName = true)
         => MockNameCatalog.GetNameProfile(int.Parse(workerId) - 10_000, includePreferredName);
 
+    private static string GetUserId(string workerId) => workerId;
+
     [Fact]
     public async Task WorkerSource_CanResolveWorker_FromMockApi()
     {
@@ -388,7 +390,7 @@ public sealed class SuccessFactorsWorkerSourceIntegrationTests
             workers.Add(worker);
         }
 
-        var prehire = Assert.Single(workers, worker => worker.WorkerId == "user.10003");
+        var prehire = Assert.Single(workers, worker => worker.WorkerId == GetUserId("10003"));
         Assert.True(prehire.IsPrehire);
         Assert.Equal(futureStartDate, prehire.Attributes["startDate"]);
     }
@@ -729,7 +731,7 @@ public sealed class SuccessFactorsWorkerSourceIntegrationTests
 
         Assert.Contains(handler.RequestUris, uri => uri.Contains("/EmpJob?", StringComparison.Ordinal));
         Assert.Contains(handler.RequestUris, uri => uri.Contains("/PerPerson?", StringComparison.Ordinal));
-        Assert.Equal("user.10001", enumerator.Current.WorkerId);
+        Assert.Equal(GetUserId("10001"), enumerator.Current.WorkerId);
         Assert.Equal(expectedName.PreferredName, enumerator.Current.PreferredName);
         Assert.Equal(expectedName.LastName, enumerator.Current.LastName);
     }
@@ -827,12 +829,12 @@ public sealed class SuccessFactorsWorkerSourceIntegrationTests
         var fallbackSource = new ScaffoldWorkerSource(scaffoldStore);
         var workerSource = new SuccessFactorsWorkerSource(client, configLoader, new DisabledDeltaSyncService(), fallbackSource, NullLogger<SuccessFactorsWorkerSource>.Instance);
 
-        var worker = await workerSource.GetWorkerAsync("user.10001", CancellationToken.None);
+        var worker = await workerSource.GetWorkerAsync("10001", CancellationToken.None);
 
         Assert.NotNull(worker);
-        Assert.Equal("user.10001", worker!.WorkerId);
+        Assert.Equal(GetUserId("10001"), worker!.WorkerId);
         Assert.Equal("10001", worker.Attributes["personIdExternal"]);
-        Assert.Equal("user.10001", worker.Attributes["userId"]);
+        Assert.Equal(GetUserId("10001"), worker.Attributes["userId"]);
         Assert.Equal("Byron", worker.PreferredName);
     }
 
@@ -933,14 +935,14 @@ public sealed class SuccessFactorsWorkerSourceIntegrationTests
         var fallbackSource = new ScaffoldWorkerSource(scaffoldStore);
         var workerSource = new SuccessFactorsWorkerSource(client, configLoader, new DisabledDeltaSyncService(), fallbackSource, NullLogger<SuccessFactorsWorkerSource>.Instance);
 
-        var worker = await workerSource.GetWorkerAsync("user.10001", CancellationToken.None);
+        var worker = await workerSource.GetWorkerAsync("10001", CancellationToken.None);
 
         Assert.NotNull(worker);
-        Assert.Equal("user.10001", worker!.WorkerId);
+        Assert.Equal(GetUserId("10001"), worker!.WorkerId);
         Assert.Equal("Jordan", worker.PreferredName);
         Assert.Equal("Rivera", worker.LastName);
         Assert.Equal("10001", worker.Attributes["personIdExternal"]);
-        Assert.Equal("user.10001", worker.Attributes["userId"]);
+        Assert.Equal(GetUserId("10001"), worker.Attributes["userId"]);
     }
 
     [Fact]
@@ -2007,7 +2009,7 @@ public sealed class SuccessFactorsWorkerSourceIntegrationTests
                     "employmentNav": {
                       "results": [
                         {
-                          "userId": "user.10001",
+                          "userId": "10001",
                           "startDate": "2026-03-10T00:00:00Z",
                           "endDate": "9999-12-31T00:00:00Z",
                           "firstDateWorked": "2026-03-10T00:00:00Z",
@@ -2015,7 +2017,7 @@ public sealed class SuccessFactorsWorkerSourceIntegrationTests
                           "isContingentWorker": false,
                           "customString1": "EmpNavOne",
                           "userNav": {
-                            "username": "user.10001",
+                            "username": "10001",
                             "addressLine1": "101 Example Way",
                             "city": "Exampletown",
                             "state": "NY",
@@ -2142,19 +2144,19 @@ public sealed class SuccessFactorsWorkerSourceIntegrationTests
             var filter = query.TryGetValue("$filter", out var filterValue) ? filterValue.ToString() : string.Empty;
 
             if (request.RequestUri.AbsolutePath.Equals("/odata/v2/PerPerson", StringComparison.OrdinalIgnoreCase) &&
-                filter.Contains("personIdExternal eq 'user.10001'", StringComparison.Ordinal))
+                filter.Contains("personIdExternal eq '10001'", StringComparison.Ordinal))
             {
                 return Task.FromResult(JsonResponse("""{"d":{"results":[]}}"""));
             }
 
             if (request.RequestUri.AbsolutePath.Equals("/odata/v2/PerPerson", StringComparison.OrdinalIgnoreCase) &&
-                filter.Contains("userId eq 'user.10001'", StringComparison.Ordinal))
+                filter.Contains("userId eq '10001'", StringComparison.Ordinal))
             {
                 return Task.FromResult(JsonResponse("""{"d":{"results":[]}}"""));
             }
 
             if (request.RequestUri.AbsolutePath.Equals("/odata/v2/EmpJob", StringComparison.OrdinalIgnoreCase) &&
-                filter.Contains("userId eq 'user.10001'", StringComparison.Ordinal))
+                filter.Contains("userId eq '10001'", StringComparison.Ordinal))
             {
                 return Task.FromResult(JsonResponse(
                     """
@@ -2162,7 +2164,7 @@ public sealed class SuccessFactorsWorkerSourceIntegrationTests
                       "d": {
                         "results": [
                           {
-                            "userId": "user.10001",
+                            "userId": "10001",
                             "personIdExternal": "10001",
                             "startDate": "2026-03-10T00:00:00Z"
                           }
@@ -2193,7 +2195,39 @@ public sealed class SuccessFactorsWorkerSourceIntegrationTests
                             "employmentNav": {
                               "results": [
                                 {
-                                  "userId": "user.10001"
+                                  "userId": "10001"
+                                }
+                              ]
+                            }
+                          }
+                        ]
+                      }
+                    }
+                    """));
+            }
+
+            if (request.RequestUri.AbsolutePath.Equals("/odata/v2/PerPerson", StringComparison.OrdinalIgnoreCase) &&
+                string.IsNullOrWhiteSpace(filter))
+            {
+                return Task.FromResult(JsonResponse(
+                    """
+                    {
+                      "d": {
+                        "results": [
+                          {
+                            "personIdExternal": "10001",
+                            "personalInfoNav": {
+                              "results": [
+                                {
+                                  "firstName": "Byron",
+                                  "lastName": "Harrington"
+                                }
+                              ]
+                            },
+                            "employmentNav": {
+                              "results": [
+                                {
+                                  "userId": "10001"
                                 }
                               ]
                             }
@@ -2235,7 +2269,7 @@ public sealed class SuccessFactorsWorkerSourceIntegrationTests
             var filter = query.TryGetValue("$filter", out var filterValue) ? filterValue.ToString() : string.Empty;
 
             if (request.RequestUri.AbsolutePath.Equals("/odata/v2/EmpJob", StringComparison.OrdinalIgnoreCase) &&
-                filter.Contains("userId eq 'user.10001'", StringComparison.Ordinal))
+                filter.Contains("userId eq '10001'", StringComparison.Ordinal))
             {
                 return Task.FromResult(JsonResponse(
                     """
@@ -2243,7 +2277,7 @@ public sealed class SuccessFactorsWorkerSourceIntegrationTests
                       "d": {
                         "results": [
                           {
-                            "userId": "user.10001",
+                            "userId": "10001",
                             "jobTitle": "Engineer",
                             "company": "CORP",
                             "department": "IT",
@@ -2257,7 +2291,7 @@ public sealed class SuccessFactorsWorkerSourceIntegrationTests
             }
 
             if (request.RequestUri.AbsolutePath.Equals("/odata/v2/PerPerson", StringComparison.OrdinalIgnoreCase) &&
-                filter.Contains("employmentNav/userId eq 'user.10001'", StringComparison.Ordinal))
+                filter.Contains("employmentNav/userId eq '10001'", StringComparison.Ordinal))
             {
                 return Task.FromResult(JsonResponse("""{"d":{"results":[]}}"""));
             }
@@ -2283,7 +2317,7 @@ public sealed class SuccessFactorsWorkerSourceIntegrationTests
                             "employmentNav": {
                               "results": [
                                 {
-                                  "userId": "user.10001"
+                                  "userId": "10001"
                                 }
                               ]
                             }

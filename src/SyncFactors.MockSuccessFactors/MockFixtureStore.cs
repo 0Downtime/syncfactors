@@ -317,11 +317,12 @@ public sealed class MockFixtureStore
                 : throw new InvalidOperationException("personIdExternal is required.")
             : requestedId;
 
-        var resolvedUserName = NormalizeOptionalValue(request.UserName) ?? $"user.{resolvedId}";
-        var resolvedUserId = NormalizeOptionalValue(request.UserId) ?? resolvedUserName;
-        var resolvedEmail = NormalizeOptionalValue(request.Email) ?? $"{resolvedUserName}@example.test";
         var resolvedFirstName = NormalizeRequiredValue(request.FirstName, "firstName");
         var resolvedLastName = NormalizeRequiredValue(request.LastName, "lastName");
+        var resolvedUserName = NormalizeOptionalValue(request.UserName) ?? resolvedId;
+        var resolvedUserId = NormalizeOptionalValue(request.UserId) ?? resolvedUserName;
+        var resolvedEmail = NormalizeOptionalValue(request.Email)
+            ?? BuildDefaultEmailAddressUnsafe(existingWorkerId, resolvedFirstName, resolvedLastName);
         var resolvedStartDate = NormalizeRequiredValue(request.StartDate, "startDate");
         var scenarioTags = NormalizeScenarioTags(request.ScenarioTags);
         var employmentStatus = NormalizeOptionalValue(request.EmploymentStatus)?.ToUpperInvariant() ?? "A";
@@ -513,6 +514,37 @@ public sealed class MockFixtureStore
                 throw new InvalidOperationException($"email '{email}' is already in use.");
             }
         }
+    }
+
+    private string BuildDefaultEmailAddressUnsafe(string? existingWorkerId, string firstName, string lastName)
+    {
+        var baseLocalPart = MockNameCatalog.BuildEmailLocalPart(firstName, lastName);
+        if (string.IsNullOrWhiteSpace(baseLocalPart))
+        {
+            baseLocalPart = "worker";
+        }
+
+        var candidate = $"{baseLocalPart}@example.test";
+        if (!EmailInUseUnsafe(existingWorkerId, candidate))
+        {
+            return candidate;
+        }
+
+        for (var suffix = 2; ; suffix++)
+        {
+            candidate = $"{baseLocalPart}{suffix}@example.test";
+            if (!EmailInUseUnsafe(existingWorkerId, candidate))
+            {
+                return candidate;
+            }
+        }
+    }
+
+    private bool EmailInUseUnsafe(string? existingWorkerId, string email)
+    {
+        return _document.Workers.Any(worker =>
+            !string.Equals(worker.PersonIdExternal, existingWorkerId, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(worker.Email, email, StringComparison.OrdinalIgnoreCase));
     }
 
     private void ValidateManagerUnsafe(string? existingWorkerId, string resolvedId, string? managerId)
@@ -780,7 +812,7 @@ public sealed class MockFixtureStore
         var suffix = int.TryParse(syntheticId, out var numericId)
             ? Math.Max(0, numericId - SyntheticWorkerIdStart)
             : index;
-        var userName = $"user.{syntheticId}";
+        var userName = syntheticId;
         var nameProfile = MockNameCatalog.GetNameProfile(suffix, worker.PreferredName is not null);
 
         return worker with
@@ -790,7 +822,7 @@ public sealed class MockFixtureStore
             PerPersonUuid = $"uuid-{syntheticId}",
             UserName = userName,
             UserId = userName,
-            Email = $"{userName}@example.test",
+            Email = MockNameCatalog.BuildEmailAddress(nameProfile.FirstName, nameProfile.LastName),
             FirstName = nameProfile.FirstName,
             LastName = nameProfile.LastName,
             PreferredName = nameProfile.PreferredName,
@@ -869,7 +901,7 @@ public sealed class MockFixtureStore
 
     private static MockWorkerFixture CreateSyntheticWorker(MockWorkerFixture seedWorker, int seedIndex, string syntheticId, int replication)
     {
-        var userName = $"user.{syntheticId}";
+        var userName = syntheticId;
         var departmentSuffix = seedIndex == 0 && replication == 0 ? string.Empty : $" {seedIndex + 1:D2}-{replication + 1:D3}";
         var sequence = int.Parse(syntheticId) - SyntheticWorkerIdStart;
         var nameProfile = MockNameCatalog.GetNameProfile(sequence, seedWorker.PreferredName is not null);
@@ -881,7 +913,7 @@ public sealed class MockFixtureStore
             PerPersonUuid = $"uuid-{syntheticId}",
             UserName = userName,
             UserId = userName,
-            Email = $"{userName}@example.test",
+            Email = MockNameCatalog.BuildEmailAddress(nameProfile.FirstName, nameProfile.LastName),
             FirstName = nameProfile.FirstName,
             LastName = nameProfile.LastName,
             PreferredName = nameProfile.PreferredName,

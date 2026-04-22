@@ -1,3 +1,5 @@
+using SyncFactors.Domain;
+
 namespace SyncFactors.MockSuccessFactors;
 
 internal readonly record struct MockNameProfile(
@@ -233,6 +235,12 @@ internal static class MockNameCatalog
             LastName: LastNames[lastNameIndex],
             PreferredName: includePreferredName ? givenName.PreferredName : null);
     }
+
+    public static string BuildEmailLocalPart(string firstName, string lastName)
+        => DirectoryIdentityFormatter.BuildBaseEmailLocalPart(firstName, lastName);
+
+    public static string BuildEmailAddress(string firstName, string lastName, string domain = "example.test")
+        => DirectoryIdentityFormatter.BuildEmailAddress(BuildEmailLocalPart(firstName, lastName), domain);
 
     private readonly record struct GivenName(string FirstName, string PreferredName);
 }
