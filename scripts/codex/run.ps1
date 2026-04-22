@@ -469,6 +469,29 @@ function Get-LauncherInvocationCommand {
     return ($parts -join ' ')
 }
 
+function Start-MockServiceHostedTerminal {
+    param(
+        [Parameter(Mandatory)]
+        [string]$ProfileName,
+        [switch]$RestartSelected,
+        [switch]$SkipBuildStep
+    )
+
+    $terminalScriptPath = Join-Path $scriptDir 'Open-TerminalCommand.ps1'
+    $reuseHostedTerminals = $false
+    $mockArguments = @('-Service', 'mock', '-Profile', $ProfileName)
+
+    if ($RestartSelected) {
+        $mockArguments += '-Restart'
+    }
+
+    if ($SkipBuildStep) {
+        $mockArguments += '-SkipBuild'
+    }
+
+    & $terminalScriptPath 'SyncFactors mock API' './scripts/codex/run.ps1' $mockArguments -ReuseIfExists:$reuseHostedTerminals
+}
+
 function Get-LocalConfigDriftRemediationMessage {
     param(
         [Parameter(Mandatory)]
@@ -1236,6 +1259,16 @@ if ($Restart) {
 
 switch ($Service) {
     'api' {
+        $effectiveSkipBuild = $SkipBuild
+        if ($activeProfile -eq 'mock' -and -not $SkipBuild) {
+            Invoke-SolutionBuild -ProjectRoot $repoRoot
+            $effectiveSkipBuild = $true
+        }
+
+        if ($activeProfile -eq 'mock') {
+            Start-MockServiceHostedTerminal -ProfileName $Profile -RestartSelected:$Restart -SkipBuildStep:$effectiveSkipBuild
+        }
+
         $apiBindHost = Format-UrlHost -HostName $env:SYNCFACTORS_API_BIND_HOST
         $arguments = @(
             './scripts/Start-SyncFactorsNextApi.ps1',
@@ -1245,7 +1278,7 @@ switch ($Service) {
             '-Urls', "https://$apiBindHost`:$($env:SYNCFACTORS_API_PORT)"
         )
 
-        if ($SkipBuild) {
+        if ($effectiveSkipBuild) {
             $arguments += '-SkipBuild'
         }
 
@@ -1253,6 +1286,17 @@ switch ($Service) {
         exit $LASTEXITCODE
     }
     'ui' {
+        $effectiveSkipBuild = $SkipBuild
+        if ($activeProfile -eq 'mock' -and -not $SkipBuild) {
+            Invoke-FrontendBuild -ProjectRoot $repoRoot
+            Invoke-SolutionBuild -ProjectRoot $repoRoot
+            $effectiveSkipBuild = $true
+        }
+
+        if ($activeProfile -eq 'mock') {
+            Start-MockServiceHostedTerminal -ProfileName $Profile -RestartSelected:$Restart -SkipBuildStep:$effectiveSkipBuild
+        }
+
         $apiBindHost = Format-UrlHost -HostName $env:SYNCFACTORS_API_BIND_HOST
         $arguments = @(
             './scripts/Start-SyncFactorsNextApi.ps1',
@@ -1262,7 +1306,7 @@ switch ($Service) {
             '-Urls', "https://$apiBindHost`:$($env:SYNCFACTORS_API_PORT)"
         )
 
-        if ($SkipBuild) {
+        if ($effectiveSkipBuild) {
             $arguments += '-SkipBuild'
         }
 
