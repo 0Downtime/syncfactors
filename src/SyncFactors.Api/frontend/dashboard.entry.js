@@ -94,10 +94,10 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
         return;
     }
 
+    const healthMenu = elements.root.querySelector(".connection-health-menu");
     const healthList = elements.root.querySelector("[data-health-list]");
-    const overallBadge = document.querySelector("[data-health-overall-badge]");
-    const lastChecked = document.querySelector("[data-health-last-checked]");
-    const segments = Array.prototype.slice.call(document.querySelectorAll("[data-probe-segment]"));
+    const overallBadge = elements.root.querySelector("[data-health-overall-badge]");
+    const lastChecked = elements.root.querySelector("[data-health-last-checked]");
     const probeOrder = ["SuccessFactors", "Active Directory", "Worker Service", "SQLite"];
     const initialHealthProbesEnabled = (elements.root.getAttribute("data-health-probes-enabled") || "true").toLowerCase() !== "false";
     const healthPollIntervalMs = Math.max(
@@ -173,6 +173,14 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
 
     window.addEventListener("syncfactors:themechange", function () {
         refreshCharts();
+    });
+
+    document.addEventListener("click", function (event) {
+        if (!healthMenu || !healthMenu.open || healthMenu.contains(event.target)) {
+            return;
+        }
+
+        healthMenu.open = false;
     });
 
     window.addEventListener("resize", function () {
@@ -1813,45 +1821,57 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
         }
     }
 
-    function renderProbe(probe) {
-        const card = document.createElement("article");
-        card.className = "connection-card";
-
-        const head = document.createElement("header");
-        head.className = "connection-head";
-
-        const title = document.createElement("h4");
-        title.textContent = probe.dependency;
-        head.appendChild(title);
-
-        const badge = document.createElement("span");
-        setBadge(badge, probe.status, probe.status);
-        head.appendChild(badge);
-        card.appendChild(head);
-
-        const summary = document.createElement("p");
-        summary.className = "connection-summary";
-        summary.textContent = probe.summary;
-        card.appendChild(summary);
-
-        const detail = document.createElement("p");
-        detail.className = "connection-detail muted";
+    function buildProbeDetailParts(probe) {
         const detailParts = [];
+
+        if (probe.summary) {
+            detailParts.push(probe.summary);
+        }
 
         if (probe.details) {
             detailParts.push(probe.details);
         }
 
-        detailParts.push("Checked " + formatTimestamp(probe.checkedAt));
-        detailParts.push("Latency " + probe.durationMilliseconds + " ms");
+        if (probe.checkedAt) {
+            detailParts.push("Checked " + formatTimestamp(probe.checkedAt));
+        }
+
+        if (typeof probe.durationMilliseconds === "number") {
+            detailParts.push("Latency " + probe.durationMilliseconds + " ms");
+        }
 
         if (probe.observedAt) {
             detailParts.push("Observed " + formatTimestamp(probe.observedAt));
         }
 
-        detail.textContent = detailParts.join(" • ");
-        card.appendChild(detail);
-        return card;
+        return detailParts;
+    }
+
+    function renderProbe(probe) {
+        const item = document.createElement("li");
+        item.className = "connection-health-item";
+        item.title = probe.dependency + ": " + buildProbeDetailParts(probe).join(" • ");
+
+        const head = document.createElement("div");
+        head.className = "connection-health-item-head";
+
+        const title = document.createElement("span");
+        title.className = "connection-health-item-name";
+        title.textContent = probe.dependency;
+        head.appendChild(title);
+
+        const badge = document.createElement("span");
+        setBadge(badge, probe.status, probe.status);
+        badge.title = item.title;
+        head.appendChild(badge);
+        item.appendChild(head);
+
+        const summary = document.createElement("p");
+        summary.className = "connection-health-item-summary";
+        summary.textContent = probe.summary || "No data";
+        item.appendChild(summary);
+
+        return item;
     }
 
     function renderHealthSnapshot(snapshot) {
@@ -1871,7 +1891,7 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
             probes.forEach(function (probe) {
                 healthList.appendChild(renderProbe(probe));
             });
-            animateCollection(Array.prototype.slice.call(healthList.querySelectorAll(".connection-card")));
+            animateCollection(Array.prototype.slice.call(healthList.querySelectorAll(".connection-health-item")));
         }
 
         setBadge(overallBadge, snapshot.status || "Unknown", snapshot.status);
@@ -1879,20 +1899,28 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
             lastChecked.textContent = "Last checked " + formatTimestamp(snapshot.checkedAt);
         }
 
-        segments.forEach(function (segment) {
-            const dependency = segment.getAttribute("data-probe-segment");
-            const probe = probes.find(function (item) { return item.dependency === dependency; });
-            segment.className = "connection-segment " + statusClass(probe ? probe.status : "unknown");
-            segment.title = dependency + ": " + (probe ? probe.summary : "No data");
-        });
-
         setPanelLoading(elements.root, false);
     }
 
     function renderHealthFailure(message) {
+        latestHealthSnapshot = null;
+
         setBadge(overallBadge, "Unhealthy", "unhealthy");
         if (lastChecked) {
             lastChecked.textContent = message;
+        }
+
+        if (healthList) {
+            healthList.innerHTML = "";
+
+            probeOrder.forEach(function (dependency) {
+                healthList.appendChild(renderProbe({
+                    dependency,
+                    status: "Unhealthy",
+                    summary: "Probe unavailable.",
+                    details: message
+                }));
+            });
         }
 
         setPanelLoading(elements.root, false);
@@ -1905,32 +1933,12 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
             healthList.innerHTML = "";
 
             probeOrder.forEach(function (dependency) {
-                const card = document.createElement("article");
-                card.className = "connection-card";
-
-                const head = document.createElement("header");
-                head.className = "connection-head";
-
-                const title = document.createElement("h4");
-                title.textContent = dependency;
-                head.appendChild(title);
-
-                const badge = document.createElement("span");
-                setBadge(badge, "Disabled", "dim");
-                head.appendChild(badge);
-                card.appendChild(head);
-
-                const summary = document.createElement("p");
-                summary.className = "connection-summary";
-                summary.textContent = "Dashboard probing is turned off.";
-                card.appendChild(summary);
-
-                const detail = document.createElement("p");
-                detail.className = "connection-detail muted";
-                detail.textContent = "Enable dashboard health probes to run this dependency check.";
-                card.appendChild(detail);
-
-                healthList.appendChild(card);
+                healthList.appendChild(renderProbe({
+                    dependency,
+                    status: "Disabled",
+                    summary: "Dashboard probing is turned off.",
+                    details: "Enable dashboard health probes to run this dependency check."
+                }));
             });
         }
 
@@ -1938,12 +1946,6 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
         if (lastChecked) {
             lastChecked.textContent = "Dashboard health probes are disabled.";
         }
-
-        segments.forEach(function (segment) {
-            const dependency = segment.getAttribute("data-probe-segment");
-            segment.className = "connection-segment dim";
-            segment.title = dependency + ": Dashboard probing is turned off.";
-        });
 
         setPanelLoading(elements.root, false);
     }
