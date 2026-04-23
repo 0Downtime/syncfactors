@@ -142,7 +142,7 @@
             </div>
             <div class="metric-strip">
                 <span class="metric-pill"><strong>@preview.MissingSourceAttributes.Count</strong> missing fields</span>
-                <span class="metric-pill"><strong>@preview.Buckets.Count</strong> active buckets</span>
+                <span class="metric-pill"><strong>@(preview.Buckets.FirstOrDefault() ?? "n/a")</strong> primary bucket</span>
                 <span class="metric-pill"><strong>@riskCallouts.Count</strong> guardrail notes</span>
             </div>
             <p class="muted">The saved fingerprint and risk callouts below should be treated as the gate for applying this preview.</p>
@@ -150,7 +150,7 @@
     </section>
 
     <section class="panel">
-        <p class="callout">This page is preview-only until you run a real sync. Buckets, actions, and diffs below describe the planned AD outcome; they do not mean AD has already changed.</p>
+        <p class="callout">This page is preview-only until you run a real sync. Primary bucket, actions, and diffs below describe the planned AD outcome; they do not mean AD has already changed.</p>
     </section>
 
     <section class="panel-grid preview-summary-grid">

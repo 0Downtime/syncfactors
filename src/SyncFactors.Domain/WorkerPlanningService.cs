@@ -121,7 +121,7 @@ public sealed class WorkerPlanningService(
         }
         var targetEnabled = lifecycle.TargetEnabled;
         var operations = BuildOperations(bucket, directoryUser, lifecycle.TargetOu, targetEnabled, attributeChanges);
-        bucket = ResolveBucket(bucket, directoryUser, lifecycle.TargetOu, targetEnabled, attributeChanges, operations);
+        bucket = ResolveBucket(bucket, operations);
         var primaryAction = ResolvePrimaryAction(bucket, operations);
         var canAutoApply = operations.Count > 0;
         var decisionSteps = BuildDecisionSteps(
@@ -301,10 +301,6 @@ public sealed class WorkerPlanningService(
 
     private static string ResolveBucket(
         string lifecycleBucket,
-        DirectoryUserSnapshot directoryUser,
-        string targetOu,
-        bool targetEnabled,
-        IReadOnlyList<AttributeChange> attributeChanges,
         IReadOnlyList<DirectoryOperation> operations)
     {
         if (operations.Count == 0)
@@ -314,32 +310,41 @@ public sealed class WorkerPlanningService(
                 : "unchanged";
         }
 
-        if (!string.Equals(lifecycleBucket, "enables", StringComparison.OrdinalIgnoreCase))
+        if (string.Equals(lifecycleBucket, "creates", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(lifecycleBucket, "graveyardMoves", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(lifecycleBucket, "deletions", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(lifecycleBucket, "quarantined", StringComparison.OrdinalIgnoreCase))
         {
-            if (string.Equals(lifecycleBucket, "disables", StringComparison.OrdinalIgnoreCase) &&
-                operations.All(operation => !string.Equals(operation.Kind, "DisableUser", StringComparison.OrdinalIgnoreCase)))
-            {
-                return "updates";
-            }
-
             return lifecycleBucket;
         }
 
-        if (attributeChanges.Any(change => change.Changed))
-        {
-            return "updates";
-        }
-
-        var currentOu = DirectoryDistinguishedName.GetParentOu(directoryUser.DistinguishedName);
-        if (directoryUser.Enabled != targetEnabled)
+        if (string.Equals(lifecycleBucket, "enables", StringComparison.OrdinalIgnoreCase))
         {
             return "enables";
         }
 
-        return !string.IsNullOrWhiteSpace(targetOu) &&
-               !string.Equals(currentOu, targetOu, StringComparison.OrdinalIgnoreCase)
-            ? "enables"
-            : "updates";
+        if (HasOperation(operations, "DisableUser"))
+        {
+            return "disables";
+        }
+
+        if (HasOperation(operations, "EnableUser"))
+        {
+            return "enables";
+        }
+
+        if (HasOperation(operations, "UpdateUser") ||
+            HasOperation(operations, "MoveUser"))
+        {
+            return "updates";
+        }
+
+        return lifecycleBucket;
+    }
+
+    private static bool HasOperation(IReadOnlyList<DirectoryOperation> operations, string kind)
+    {
+        return operations.Any(operation => string.Equals(operation.Kind, kind, StringComparison.OrdinalIgnoreCase));
     }
 
     private static IReadOnlyList<AttributeChange> NormalizeAttributeChanges(IReadOnlyList<AttributeChange> attributeChanges)
