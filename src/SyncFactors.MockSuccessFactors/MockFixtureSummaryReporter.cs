@@ -27,6 +27,8 @@ public static class MockFixtureSummaryReporter
         "unchanged"
     ];
 
+    internal static IReadOnlyList<string> OrderedProvisioningBuckets => ProvisioningBucketOrder;
+
     public static void WriteSummary(TextWriter output, MockFixtureDocument document, string label)
     {
         ArgumentNullException.ThrowIfNull(output);
@@ -69,6 +71,25 @@ public static class MockFixtureSummaryReporter
             MockLifecycleState.PaidLeave or MockLifecycleState.UnpaidLeave => "disables",
             MockLifecycleState.Retired or MockLifecycleState.Terminated => "graveyardMoves",
             _ => HasScenarioTag(worker, "create") ? "creates" : "updates"
+        };
+    }
+
+    internal static string DescribeProvisioningBucket(string bucket)
+    {
+        return bucket switch
+        {
+            "creates" => "Create",
+            "updates" => "Update",
+            "enables" => "Enable",
+            "disables" => "Disable",
+            "graveyardMoves" => "Move To Graveyard",
+            "deletions" => "Delete",
+            "manualReview" => "Manual Review",
+            "quarantined" => "Quarantined",
+            "conflicts" => "Conflict",
+            "guardrailFailures" => "Guardrail Failure",
+            "unchanged" => "No Change",
+            _ => bucket
         };
     }
 

@@ -79,6 +79,7 @@ textarea {
 
 .admin-hero,
 .meta-card,
+.bucket-panel,
 .worker-list-panel,
 .editor-panel {
     background: var(--panel);
@@ -260,9 +261,14 @@ h1 {
     align-items: start;
 }
 
+.bucket-panel,
 .worker-list-panel,
 .editor-panel {
     padding: 22px;
+}
+
+.bucket-panel {
+    margin-bottom: 18px;
 }
 
 .panel-head {
@@ -327,6 +333,79 @@ h1 {
 .worker-list-item.is-selected {
     border-color: rgba(13, 106, 99, 0.3);
     background: rgba(13, 106, 99, 0.12);
+}
+
+.bucket-summary {
+    display: grid;
+    gap: 12px;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+}
+
+.bucket-card {
+    display: grid;
+    gap: 8px;
+    padding: 16px;
+    border-radius: 18px;
+    border: 1px solid var(--line);
+    background: var(--card-soft);
+}
+
+.bucket-card strong {
+    font-family: "Avenir Next", "Gill Sans", "Trebuchet MS", sans-serif;
+    font-size: 1.6rem;
+    line-height: 1;
+}
+
+.worker-chip-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.bucket-chip {
+    display: inline-flex;
+    align-items: center;
+    border-radius: 999px;
+    padding: 6px 10px;
+    font-size: 0.78rem;
+    font-family: "Avenir Next", "Gill Sans", "Trebuchet MS", sans-serif;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    background: var(--status-pill-bg);
+    color: var(--ink);
+}
+
+.bucket-chip-creates,
+.bucket-chip-enables {
+    background: rgba(13, 106, 99, 0.16);
+    color: var(--accent);
+}
+
+.bucket-chip-updates,
+.bucket-chip-unchanged {
+    background: var(--status-pill-bg);
+    color: var(--muted);
+}
+
+.bucket-chip-disables,
+.bucket-chip-graveyardmoves {
+    background: rgba(217, 157, 72, 0.18);
+    color: #9a5e10;
+}
+
+:root[data-theme="dark"] .bucket-chip-disables,
+:root[data-theme="dark"] .bucket-chip-graveyardmoves {
+    color: #ffd38f;
+}
+
+.bucket-chip-manualreview,
+.bucket-chip-conflicts,
+.bucket-chip-guardrailfailures,
+.bucket-chip-quarantined,
+.bucket-chip-deletions {
+    background: var(--danger-soft);
+    color: var(--danger);
 }
 
 .worker-name {
