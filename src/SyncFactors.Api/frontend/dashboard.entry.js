@@ -10,6 +10,7 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
 (function () {
     const dashboardPollIntervalMs = 15000;
     const progressAnimationDurationMs = 700;
+    const runsPageSize = 25;
     const reduceMotionQuery = window.matchMedia ? window.matchMedia("(prefers-reduced-motion: reduce)") : null;
     const supportsViewTransitions = typeof document.startViewTransition === "function";
     const usDateTimeFormatter = new Intl.DateTimeFormat("en-US", {
@@ -53,6 +54,10 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
         runsTable: document.querySelector("[data-runs-table]"),
         runsEmpty: document.querySelector("[data-runs-empty]"),
         runsEmptyMessage: document.querySelector("[data-runs-empty] p"),
+        runsPagination: document.querySelector("[data-runs-pagination]"),
+        runsPaginationSummary: document.querySelector("[data-runs-pagination-summary]"),
+        runsPreviousButton: document.querySelector("[data-runs-page-previous]"),
+        runsNextButton: document.querySelector("[data-runs-page-next]"),
         checkedMessage: document.querySelector("[data-dashboard-checked]"),
         statusError: document.querySelector("[data-status-error]"),
         attention: document.querySelector("[data-dashboard-attention]"),
@@ -130,10 +135,39 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
     let hoveredRunId = null;
     let hoveredBucketKey = null;
     let scheduleTimerId = null;
+    let currentRunsPage = 1;
 
     if (elements.clearFilterButton) {
         elements.clearFilterButton.addEventListener("click", function () {
             clearRunsFilter();
+        });
+    }
+
+    if (elements.runsPreviousButton) {
+        elements.runsPreviousButton.addEventListener("click", function () {
+            if (!latestDashboardSnapshot || currentRunsPage <= 1) {
+                return;
+            }
+
+            currentRunsPage -= 1;
+            renderDashboard(latestDashboardSnapshot);
+        });
+    }
+
+    if (elements.runsNextButton) {
+        elements.runsNextButton.addEventListener("click", function () {
+            if (!latestDashboardSnapshot) {
+                return;
+            }
+
+            const runs = getFilteredRuns(Array.isArray(latestDashboardSnapshot.runs) ? latestDashboardSnapshot.runs : []);
+            const pageCount = getRunsPageCount(runs.length);
+            if (currentRunsPage >= pageCount) {
+                return;
+            }
+
+            currentRunsPage += 1;
+            renderDashboard(latestDashboardSnapshot);
         });
     }
 
@@ -853,6 +887,29 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
         return runs;
     }
 
+    function getRunsPageCount(totalRuns) {
+        return Math.max(1, Math.ceil(totalRuns / runsPageSize));
+    }
+
+    function clampRunsPage(totalRuns) {
+        const pageCount = getRunsPageCount(totalRuns);
+        currentRunsPage = Math.min(Math.max(currentRunsPage, 1), pageCount);
+        return pageCount;
+    }
+
+    function getPagedRuns(runs) {
+        const pageCount = clampRunsPage(runs.length);
+        const startIndex = (currentRunsPage - 1) * runsPageSize;
+        const endIndex = Math.min(startIndex + runsPageSize, runs.length);
+
+        return {
+            pageCount,
+            startIndex,
+            endIndex,
+            runs: runs.slice(startIndex, endIndex)
+        };
+    }
+
     function syncFilterState(snapshot) {
         const runs = Array.isArray(snapshot && snapshot.runs) ? snapshot.runs : [];
 
@@ -869,6 +926,7 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
         selectedBucketKey = null;
         hoveredBucketKey = null;
         selectedRunId = selectedRunId === runId ? null : runId;
+        currentRunsPage = 1;
 
         if (latestDashboardSnapshot) {
             renderDashboard(latestDashboardSnapshot);
@@ -879,6 +937,7 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
         selectedRunId = null;
         hoveredRunId = null;
         selectedBucketKey = selectedBucketKey === bucketKey ? null : bucketKey;
+        currentRunsPage = 1;
 
         if (latestDashboardSnapshot) {
             renderDashboard(latestDashboardSnapshot);
@@ -890,6 +949,7 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
         selectedBucketKey = null;
         hoveredRunId = null;
         hoveredBucketKey = null;
+        currentRunsPage = 1;
 
         if (latestDashboardSnapshot) {
             renderDashboard(latestDashboardSnapshot);
@@ -929,6 +989,34 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
         elements.runsEmptyMessage.textContent = filteredRuns.length || !runs.length
             ? defaultRunsEmptyMessage
             : "No recent runs match the current chart drill-down filter.";
+    }
+
+    function renderRunsPagination(pagedRuns, totalRuns) {
+        if (!elements.runsPagination || !elements.runsPaginationSummary || !elements.runsPreviousButton || !elements.runsNextButton) {
+            return;
+        }
+
+        const hasRuns = totalRuns > 0;
+        const hasMultiplePages = totalRuns > runsPageSize;
+
+        toggleHidden(elements.runsPagination, !hasRuns || !hasMultiplePages);
+
+        if (!hasRuns) {
+            elements.runsPaginationSummary.textContent = "";
+            elements.runsPreviousButton.disabled = true;
+            elements.runsNextButton.disabled = true;
+            return;
+        }
+
+        elements.runsPaginationSummary.textContent = "Showing " +
+            String(pagedRuns.startIndex + 1) +
+            "-" +
+            String(pagedRuns.endIndex) +
+            " of " +
+            String(totalRuns) +
+            " recent runs.";
+        elements.runsPreviousButton.disabled = currentRunsPage <= 1;
+        elements.runsNextButton.disabled = currentRunsPage >= pagedRuns.pageCount;
     }
 
     function createCell(className) {
@@ -1706,10 +1794,12 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
 
         const allRuns = Array.isArray(snapshot.runs) ? snapshot.runs : [];
         const filteredRuns = getFilteredRuns(allRuns);
+        const pagedRuns = getPagedRuns(filteredRuns);
 
         renderStatus(snapshot);
         renderFilterState(allRuns, filteredRuns);
-        renderRuns(filteredRuns);
+        renderRuns(pagedRuns.runs);
+        renderRunsPagination(pagedRuns, filteredRuns.length);
         renderTimeline(snapshot, filteredRuns);
         renderRunsChart(allRuns);
         renderBucketChart(snapshot);

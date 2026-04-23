@@ -1142,6 +1142,28 @@ a:focus-visible {
   min-width: 100%;
 }
 
+.runs-pagination {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.runs-pagination__summary {
+  margin: 0;
+}
+
+.runs-pagination__actions {
+  display: flex;
+  gap: 10px;
+}
+
+.runs-pagination__actions .subtle-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
 .recent-runs-table tbody tr {
   cursor: pointer;
 }
@@ -1254,6 +1276,11 @@ a:focus-visible {
   }
 
   .dashboard-filter-bar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .runs-pagination {
     align-items: flex-start;
     flex-direction: column;
   }

@@ -2,6 +2,10 @@
 @model SyncFactors.Api.Pages.IndexModel
 @{
     ViewData["Title"] = "Dashboard";
+    const int initialRunsPageSize = 25;
+    var initialRuns = Model.Runs.Take(initialRunsPageSize).ToList();
+    var initialRunsEnd = Math.Min(initialRunsPageSize, Model.Runs.Count);
+    var initialHasMoreRuns = Model.Runs.Count > initialRunsPageSize;
 }
 
 @if (!string.IsNullOrWhiteSpace(Model.ErrorMessage))
@@ -214,7 +218,7 @@
                     </tr>
                 </thead>
                 <tbody data-runs-body>
-                @foreach (var run in Model.Runs)
+                @foreach (var run in initialRuns)
                 {
                     <tr>
                         <td class="recent-runs-table__started">@SyncFactors.Api.UiDateTimeFormatter.FormatDateTime(run.StartedAt)</td>
@@ -229,6 +233,15 @@
                 }
                 </tbody>
             </table>
+        </div>
+        <div class="runs-pagination @(Model.Runs.Count <= initialRunsPageSize ? "is-hidden" : null)" data-runs-pagination>
+            <p class="muted runs-pagination__summary" data-runs-pagination-summary>
+                @(Model.Runs.Count == 0 ? string.Empty : $"Showing 1-{initialRunsEnd} of {Model.Runs.Count} recent runs.")
+            </p>
+            <div class="runs-pagination__actions">
+                <button class="link-button subtle-button" type="button" data-runs-page-previous disabled>Previous</button>
+                <button class="link-button subtle-button" type="button" data-runs-page-next disabled="@(!initialHasMoreRuns)">Next</button>
+            </div>
         </div>
     </article>
 </section>
