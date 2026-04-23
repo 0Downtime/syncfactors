@@ -95,9 +95,9 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
     }
 
     const healthList = elements.root.querySelector("[data-health-list]");
-    const overallBadge = elements.root.querySelector("[data-health-overall-badge]");
-    const lastChecked = elements.root.querySelector("[data-health-last-checked]");
-    const segments = Array.prototype.slice.call(elements.root.querySelectorAll("[data-probe-segment]"));
+    const overallBadge = document.querySelector("[data-health-overall-badge]");
+    const lastChecked = document.querySelector("[data-health-last-checked]");
+    const segments = Array.prototype.slice.call(document.querySelectorAll("[data-probe-segment]"));
     const probeOrder = ["SuccessFactors", "Active Directory", "Worker Service", "SQLite"];
     const initialHealthProbesEnabled = (elements.root.getAttribute("data-health-probes-enabled") || "true").toLowerCase() !== "false";
     const healthPollIntervalMs = Math.max(
