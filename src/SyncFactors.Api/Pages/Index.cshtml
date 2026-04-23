@@ -153,18 +153,25 @@
             </div>
             <section class="connection-summary-card" aria-label="Dependency health summary">
                 <div class="connection-summary-head">
-                    <div>
+                    <div class="connection-summary-copy">
                         <p class="eyebrow">Connection</p>
-                        <h3>Dependency Health</h3>
+                        <p class="muted connection-summary-checked" data-health-last-checked>@(Model.HealthProbesEnabled ? "Probe has not run yet." : "Dashboard health probes are disabled.")</p>
                     </div>
                     <span class="badge @(Model.HealthProbesEnabled ? "neutral" : "dim")" data-health-overall-badge>@(Model.HealthProbesEnabled ? "Loading" : "Disabled")</span>
                 </div>
-                <p class="muted connection-summary-checked" data-health-last-checked>@(Model.HealthProbesEnabled ? "Probe has not run yet." : "Dashboard health probes are disabled.")</p>
                 <div class="connection-bar connection-bar-compact" aria-hidden="true">
-                    <span class="connection-segment neutral" data-probe-segment="SuccessFactors"></span>
-                    <span class="connection-segment neutral" data-probe-segment="Active Directory"></span>
-                    <span class="connection-segment neutral" data-probe-segment="Worker Service"></span>
-                    <span class="connection-segment neutral" data-probe-segment="SQLite"></span>
+                    <span class="connection-segment neutral" data-probe-segment="SuccessFactors">
+                        <span class="connection-segment-name">Success Factors</span>
+                    </span>
+                    <span class="connection-segment neutral" data-probe-segment="Active Directory">
+                        <span class="connection-segment-name">Active Directory</span>
+                    </span>
+                    <span class="connection-segment neutral" data-probe-segment="Worker Service">
+                        <span class="connection-segment-name">Worker</span>
+                    </span>
+                    <span class="connection-segment neutral" data-probe-segment="SQLite">
+                        <span class="connection-segment-name">SQLite</span>
+                    </span>
                 </div>
             </section>
         </div>

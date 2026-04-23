@@ -990,26 +990,81 @@ a:focus-visible {
   gap: 12px;
 }
 
+.connection-summary-copy {
+  min-width: 0;
+}
+
 .connection-summary-head .eyebrow,
-.connection-summary-head h3,
 .connection-summary-checked {
   margin: 0;
 }
 
-.connection-summary-head h3 {
-  margin-top: 6px;
-}
-
 .connection-summary-checked {
-  margin-top: 10px;
+  margin-top: 4px;
   color: var(--muted);
-  line-height: 1.35;
-  text-align: right;
+  font-size: 0.88rem;
+  line-height: 1.2;
+  text-align: left;
   white-space: nowrap;
 }
 
 .connection-bar-compact {
-  margin-top: 14px;
+  margin-top: 10px;
+}
+
+.connection-bar-compact .connection-segment {
+  --connection-segment-ink: color-mix(in srgb, var(--ink) 70%, var(--muted) 30%);
+  display: grid;
+  place-items: center;
+  min-height: 18px;
+  height: auto;
+  padding: 0 6px;
+  border-radius: 999px;
+  color: var(--connection-segment-ink);
+  text-align: center;
+}
+
+.connection-segment-name,
+.connection-segment-detail {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.connection-segment-name {
+  font-size: 0.46rem;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  line-height: 0.95;
+}
+
+.connection-segment-detail {
+  font-size: 0.64rem;
+  font-weight: 600;
+  line-height: 1.05;
+}
+
+.connection-bar-compact .connection-segment.good,
+.connection-bar-compact .connection-segment.warn,
+.connection-bar-compact .connection-segment.bad {
+  --connection-segment-ink: rgba(255, 255, 255, 0.96);
+}
+
+.connection-bar-compact .connection-segment.good {
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--good) 82%, white 18%),
+    color-mix(in srgb, var(--good) 66%, white 34%)
+  );
+  border-color: color-mix(in srgb, var(--good) 34%, white 66%);
+}
+
+:root[data-theme="dark"] .connection-bar-compact .connection-segment.good,
+:root[data-theme="dark"] .connection-bar-compact .connection-segment.warn,
+:root[data-theme="dark"] .connection-bar-compact .connection-segment.bad {
+  --connection-segment-ink: color-mix(in srgb, var(--panel) 82%, black 18%);
 }
 
 .subtle-button {
