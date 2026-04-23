@@ -94,19 +94,8 @@
             <div class="section-heading">
                 <div>
                     <p class="eyebrow">Connection</p>
-                    <h3>Dependency Health</h3>
+                    <h3>Probe Breakdown</h3>
                 </div>
-                <div class="connection-overview">
-                    <span class="badge @(Model.HealthProbesEnabled ? "neutral" : "dim")" data-health-overall-badge>@(Model.HealthProbesEnabled ? "Loading" : "Disabled")</span>
-                    <span class="muted" data-health-last-checked>@(Model.HealthProbesEnabled ? "Probe has not run yet." : "Dashboard health probes are disabled.")</span>
-                </div>
-            </div>
-
-            <div class="connection-bar" aria-hidden="true">
-                <span class="connection-segment neutral" data-probe-segment="SuccessFactors"></span>
-                <span class="connection-segment neutral" data-probe-segment="Active Directory"></span>
-                <span class="connection-segment neutral" data-probe-segment="Worker Service"></span>
-                <span class="connection-segment neutral" data-probe-segment="SQLite"></span>
             </div>
 
             <div class="connection-list" data-health-list>
@@ -157,8 +146,28 @@
     </article>
 
     <article class="panel recent-runs-panel">
-        <h2>Recent Runs</h2>
-        <p class="muted dashboard-refresh-note" data-dashboard-checked>Live data is refreshed automatically while this page is open.</p>
+        <div class="recent-runs-header">
+            <div class="recent-runs-header-copy">
+                <h2>Recent Runs</h2>
+                <p class="muted dashboard-refresh-note" data-dashboard-checked>Live data is refreshed automatically while this page is open.</p>
+            </div>
+            <section class="connection-summary-card" aria-label="Dependency health summary">
+                <div class="connection-summary-head">
+                    <div>
+                        <p class="eyebrow">Connection</p>
+                        <h3>Dependency Health</h3>
+                    </div>
+                    <span class="badge @(Model.HealthProbesEnabled ? "neutral" : "dim")" data-health-overall-badge>@(Model.HealthProbesEnabled ? "Loading" : "Disabled")</span>
+                </div>
+                <p class="muted connection-summary-checked" data-health-last-checked>@(Model.HealthProbesEnabled ? "Probe has not run yet." : "Dashboard health probes are disabled.")</p>
+                <div class="connection-bar connection-bar-compact" aria-hidden="true">
+                    <span class="connection-segment neutral" data-probe-segment="SuccessFactors"></span>
+                    <span class="connection-segment neutral" data-probe-segment="Active Directory"></span>
+                    <span class="connection-segment neutral" data-probe-segment="Worker Service"></span>
+                    <span class="connection-segment neutral" data-probe-segment="SQLite"></span>
+                </div>
+            </section>
+        </div>
         <section class="dashboard-timeline-card analytics-card" aria-label="Focused run timeline">
             <div class="section-heading">
                 <div>
