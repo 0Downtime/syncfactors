@@ -1447,10 +1447,10 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
         elements.timelineTitle.textContent = focusRun ? "Run " + focusRun.runId : "Runtime focus";
 
         if (selectedRunId) {
-            elements.timelineSummary.textContent = "Focused from the recent runs table or chart. Clear the filter to return to the full run list.";
+            elements.timelineSummary.textContent = "Focused from the recent runs table or chart. Select the same run again to clear focus.";
         } else if (selectedBucketKey) {
             const definition = getBucketDefinition(selectedBucketKey);
-            elements.timelineSummary.textContent = "Focused on the first run matching the " + (definition ? definition.label.toLowerCase() : "selected") + " drill-down filter.";
+            elements.timelineSummary.textContent = "Focused on the first run matching the " + (definition ? definition.label.toLowerCase() : "selected") + " drill-down filter. Select the same chart slice again to clear focus.";
         } else if (hasRuntimeFocus) {
             elements.timelineSummary.textContent = "Following the live runtime state when a full run record is not yet available.";
         } else if (snapshot.activeRun && snapshot.activeRun.runId === focusRun.runId) {
