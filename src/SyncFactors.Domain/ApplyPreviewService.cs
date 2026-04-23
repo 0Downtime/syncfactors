@@ -191,6 +191,8 @@ public sealed class ApplyPreviewService(
             + $"\"sourcePreviewFingerprint\":\"{Escape(preview.Fingerprint)}\""
             + "}");
 
+        var outcomeBucket = ResolveOutcomeBucket(preview, result);
+
         await runRepository.SaveRunAsync(
             new RunRecord(
                 RunId: runId,
@@ -204,14 +206,14 @@ public sealed class ApplyPreviewService(
                 StartedAt: startedAt,
                 CompletedAt: completedAt,
                 DurationSeconds: Math.Max(0, (int)(completedAt - startedAt).TotalSeconds),
-                Creates: action == "CreateUser" && result.Succeeded ? 1 : 0,
-                Updates: action == "UpdateUser" && result.Succeeded ? 1 : 0,
-                Enables: 0,
-                Disables: 0,
-                GraveyardMoves: 0,
+                Creates: CountBucket(outcomeBucket, "creates"),
+                Updates: CountBucket(outcomeBucket, "updates"),
+                Enables: CountBucket(outcomeBucket, "enables"),
+                Disables: CountBucket(outcomeBucket, "disables"),
+                GraveyardMoves: CountBucket(outcomeBucket, "graveyardMoves"),
                 Deletions: 0,
                 Quarantined: 0,
-                Conflicts: 0,
+                Conflicts: CountBucket(outcomeBucket, "conflicts"),
                 GuardrailFailures: 0,
                 ManualReview: 0,
                 Unchanged: 0,
@@ -224,7 +226,7 @@ public sealed class ApplyPreviewService(
                 new RunEntryRecord(
                     EntryId: $"{runId}:{workerId}:0",
                     RunId: runId,
-                    Bucket: action == "CreateUser" ? "creates" : "updates",
+                    Bucket: outcomeBucket,
                     BucketIndex: 0,
                     WorkerId: workerId,
                     SamAccountName: result.SamAccountName,
@@ -279,5 +281,33 @@ public sealed class ApplyPreviewService(
             throw new InvalidOperationException("Preview cannot be applied because the planned email or user principal name is missing.");
         }
 
+    }
+
+    private static string ResolveOutcomeBucket(WorkerPreviewResult preview, DirectoryCommandResult result)
+    {
+        if (!result.Succeeded)
+        {
+            return "conflicts";
+        }
+
+        var previewBucket = preview.Buckets.FirstOrDefault();
+        if (!string.IsNullOrWhiteSpace(previewBucket))
+        {
+            return previewBucket;
+        }
+
+        return result.Action switch
+        {
+            "CreateUser" => "creates",
+            "EnableUser" => "enables",
+            "DisableUser" => "disables",
+            "MoveUser" => "graveyardMoves",
+            _ => "updates"
+        };
+    }
+
+    private static int CountBucket(string bucket, string expectedBucket)
+    {
+        return string.Equals(bucket, expectedBucket, StringComparison.OrdinalIgnoreCase) ? 1 : 0;
     }
 }
