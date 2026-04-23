@@ -8,6 +8,24 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Mock SuccessFactors Admin</title>
+    <script>
+        (function () {
+            var key = "syncfactors-next-theme";
+            var storedTheme = null;
+            try {
+                storedTheme = window.localStorage.getItem(key);
+            } catch (error) {
+                storedTheme = null;
+            }
+
+            var theme = storedTheme === "dark" || storedTheme === "light"
+                ? storedTheme
+                : (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+
+            document.documentElement.dataset.theme = theme;
+            document.documentElement.style.colorScheme = theme;
+        })();
+    </script>
     <link rel="stylesheet" href="~/css/admin.css" asp-append-version="true" />
 </head>
 <body>
@@ -18,9 +36,18 @@
                 <h1>Runtime Worker Editor</h1>
                 <p class="lede">Change the source data that SyncFactors reads from the mock SuccessFactors API. Edits are live immediately and persist to the runtime fixture file.</p>
             </div>
-            <div class="hero-actions">
-                <button type="button" class="ghost-button" data-action="new">Create worker</button>
-                <button type="button" class="danger-button" data-action="reset">Reset to seed</button>
+            <div class="hero-toolbar">
+                <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Toggle dark mode" aria-pressed="false">
+                    <span class="theme-toggle-option theme-toggle-option-light" aria-hidden="true">☀</span>
+                    <span class="theme-toggle-track" aria-hidden="true">
+                        <span class="theme-toggle-thumb"></span>
+                    </span>
+                    <span class="theme-toggle-option theme-toggle-option-dark" aria-hidden="true">☾</span>
+                </button>
+                <div class="hero-actions">
+                    <button type="button" class="ghost-button" data-action="new">Create worker</button>
+                    <button type="button" class="danger-button" data-action="reset">Reset to seed</button>
+                </div>
             </div>
         </section>
 
