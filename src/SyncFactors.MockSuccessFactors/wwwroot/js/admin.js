@@ -1,6 +1,9 @@
 (function () {
     "use strict";
 
+    const themeStorageKey = "syncfactors-next-theme";
+    const root = document.documentElement;
+
     const state = {
         workers: [],
         selectedWorkerId: null,
@@ -23,10 +26,46 @@
         sourceFixturePath: document.querySelector("[data-meta='sourceFixturePath']"),
         runtimeFixturePath: document.querySelector("[data-meta='runtimeFixturePath']"),
         workerCount: document.querySelector("[data-meta='workerCount']"),
-        filteredCount: document.querySelector("[data-meta='filteredCount']")
+        filteredCount: document.querySelector("[data-meta='filteredCount']"),
+        themeToggle: document.getElementById("theme-toggle")
     };
 
     let filterTimer = null;
+
+    function applyTheme(theme) {
+        const resolvedTheme = theme === "dark" ? "dark" : "light";
+        root.dataset.theme = resolvedTheme;
+        root.style.colorScheme = resolvedTheme;
+
+        if (!elements.themeToggle) {
+            return;
+        }
+
+        elements.themeToggle.setAttribute("aria-pressed", String(resolvedTheme === "dark"));
+        elements.themeToggle.setAttribute("title", resolvedTheme === "dark" ? "Dark mode enabled" : "Light mode enabled");
+    }
+
+    function persistTheme(theme) {
+        try {
+            window.localStorage.setItem(themeStorageKey, theme);
+        } catch (error) {
+            return;
+        }
+    }
+
+    function bindThemeToggle() {
+        applyTheme(root.dataset.theme === "dark" ? "dark" : "light");
+
+        if (!elements.themeToggle) {
+            return;
+        }
+
+        elements.themeToggle.addEventListener("click", function () {
+            const nextTheme = root.dataset.theme === "dark" ? "light" : "dark";
+            applyTheme(nextTheme);
+            persistTheme(nextTheme);
+        });
+    }
 
     function escapeHtml(value) {
         return String(value || "")
@@ -427,6 +466,7 @@
     }
 
     async function init() {
+        bindThemeToggle();
         bindEvents();
         setEditor(blankWorker(), "create");
         await loadWorkers(false);
