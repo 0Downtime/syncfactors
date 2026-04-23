@@ -1,5 +1,8 @@
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.Extensions.Options;
+using SyncFactors.Contracts;
+using SyncFactors.Domain;
+using SyncFactors.Infrastructure;
 using SyncFactors.MockSuccessFactors;
 using System.Net;
 
@@ -29,6 +32,41 @@ builder.Services.AddSingleton<IConfigureOptions<MockSuccessFactorsOptions>, Mock
 builder.Services.AddSingleton<MockFixtureStore>();
 builder.Services.AddSingleton<ODataResponseBuilder>();
 builder.Services.AddSingleton<MockTokenService>();
+builder.Services.AddSingleton(new SyncFactorsConfigPathResolver(
+    builder.Configuration["SyncFactors:ConfigPath"],
+    builder.Configuration["SyncFactors:MappingConfigPath"]));
+builder.Services.AddSingleton<SyncFactorsConfigurationLoader>();
+builder.Services.AddSingleton(new ScaffoldDataPathResolver(configuredPath: null));
+builder.Services.AddSingleton<ScaffoldDataStore>();
+builder.Services.AddSingleton<ScaffoldWorkerSource>();
+builder.Services.AddSingleton<IDeltaSyncService, MockDeltaSyncService>();
+builder.Services.AddSingleton<IWorkerPreviewLogWriter, FileWorkerPreviewLogWriter>();
+builder.Services.AddSingleton<IAttributeMappingProvider, AttributeMappingProvider>();
+builder.Services.AddSingleton<IIdentityMatcher, IdentityMatcher>();
+builder.Services.AddSingleton(serviceProvider =>
+{
+    var config = serviceProvider.GetRequiredService<SyncFactorsConfigurationLoader>().GetSyncConfig();
+    return new SyncFactors.Contracts.LifecyclePolicySettings(
+        config.Ad.DefaultActiveOu,
+        config.Ad.PrehireOu,
+        config.Ad.GraveyardOu,
+        config.SuccessFactors.Query.InactiveStatusField,
+        config.SuccessFactors.Query.InactiveStatusValues,
+        config.Ad.LeaveOu,
+        config.Sync.LeaveStatusValues,
+        config.Ad.IdentityAttribute);
+});
+builder.Services.AddSingleton<ILifecyclePolicy, LifecyclePolicy>();
+builder.Services.AddSingleton<IAttributeDiffService, AttributeDiffService>();
+builder.Services.AddSingleton<IActiveDirectoryConnectionPool, ActiveDirectoryConnectionPool>();
+builder.Services.AddTransient<IDirectoryGateway, ActiveDirectoryGateway>();
+builder.Services.AddHttpClient<SuccessFactorsWorkerSource>()
+    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+    {
+        AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate
+    });
+builder.Services.AddTransient<IWorkerPlanningService, WorkerPlanningService>();
+builder.Services.AddTransient<MockPlannerComparisonService>();
 builder.Services.AddRazorPages();
 
 var app = builder.Build();
@@ -174,12 +212,17 @@ var adminApi = app.MapGroup("/api/admin");
 adminApi.MapGet("/workers", (string? filter, MockFixtureStore store, IOptions<MockSuccessFactorsOptions> configuredOptions) =>
     Results.Ok(store.GetAdminState(filter, configuredOptions.Value.Admin.Path)));
 
-adminApi.MapGet("/workers/{workerId}", (string workerId, MockFixtureStore store) =>
+adminApi.MapGet("/workers/{workerId}", async (string workerId, MockFixtureStore store, MockPlannerComparisonService plannerComparisonService, CancellationToken cancellationToken) =>
 {
     var worker = store.GetEditableWorker(workerId);
     return worker is null
         ? Results.NotFound(new { error = $"Worker '{workerId}' was not found." })
-        : Results.Ok(new MockAdminWorkerDetailResponse(worker, Mode: "edit"));
+        : Results.Ok(new MockAdminWorkerDetailResponse(
+            worker,
+            Mode: "edit",
+            BucketComparison: new MockAdminBucketComparison(
+                MockBucket: BuildMockBucketSnapshot(store, workerId),
+                PlannerBucket: await plannerComparisonService.CompareAsync(workerId, cancellationToken))));
 });
 
 adminApi.MapPost("/workers", (MockAdminWorkerUpsertRequest request, MockFixtureStore store) =>
@@ -267,6 +310,18 @@ static bool IsProtectedAdminPath(PathString path, MockAdminOptions adminOptions)
 {
     return path.StartsWithSegments("/api/admin", StringComparison.OrdinalIgnoreCase) ||
            path.StartsWithSegments(adminOptions.Path, StringComparison.OrdinalIgnoreCase);
+}
+
+static MockAdminBucketSnapshot BuildMockBucketSnapshot(MockFixtureStore store, string workerId)
+{
+    var worker = store.GetDocument().Workers.FirstOrDefault(candidate =>
+        string.Equals(candidate.PersonIdExternal, workerId, StringComparison.OrdinalIgnoreCase));
+    var bucket = worker is null
+        ? "unknown"
+        : MockFixtureSummaryReporter.InferProvisioningBucket(worker);
+    return new MockAdminBucketSnapshot(
+        Bucket: bucket,
+        Label: MockFixtureSummaryReporter.DescribeProvisioningBucket(bucket));
 }
 
 static bool IsLoopbackRequest(HttpRequest request)

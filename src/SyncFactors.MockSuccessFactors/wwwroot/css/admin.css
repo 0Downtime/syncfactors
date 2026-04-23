@@ -271,6 +271,29 @@ h1 {
     margin-bottom: 18px;
 }
 
+.compare-panel {
+    display: grid;
+    gap: 12px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    margin-bottom: 18px;
+}
+
+.compare-card {
+    padding: 16px 18px;
+    border-radius: 18px;
+    border: 1px solid var(--line);
+    background: var(--card-soft);
+}
+
+.compare-card .eyebrow {
+    margin-bottom: 8px;
+}
+
+.compare-detail {
+    margin-top: 10px;
+    line-height: 1.45;
+}
+
 .panel-head {
     display: flex;
     justify-content: space-between;
@@ -513,6 +536,7 @@ h1 {
     }
 
     .admin-meta-grid,
+    .compare-panel,
     .field-grid {
         grid-template-columns: 1fr;
     }
