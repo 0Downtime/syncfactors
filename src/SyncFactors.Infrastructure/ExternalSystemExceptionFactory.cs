@@ -5,6 +5,7 @@ namespace SyncFactors.Infrastructure;
 internal static class ExternalSystemExceptionFactory
 {
     internal const string RetryableActiveDirectoryTimeoutMarkerKey = "SyncFactors.Infrastructure.RetryableActiveDirectoryTimeout";
+    private const string PasswordRestrictionErrorCode = "0000052D";
 
     public static InvalidOperationException CreateActiveDirectoryValidationException(string operation, ActiveDirectoryConfig config, string summary, string? details, string guidance)
     {
@@ -63,6 +64,13 @@ internal static class ExternalSystemExceptionFactory
                 exception.Message);
         }
 
+        if (IsPasswordRestrictionFailure(exception))
+        {
+            return AppendRawActiveDirectoryMessage(
+                "The directory rejected the request because the account needs a compliant password before it can be enabled.",
+                exception.ServerErrorMessage ?? exception.Message);
+        }
+
         if (string.Equals(exception.Message, "The supplied credential is invalid.", StringComparison.OrdinalIgnoreCase))
         {
             return AppendLdapServerDiagnostics("The configured bind credentials were rejected by the directory server.", exception);
@@ -93,6 +101,13 @@ internal static class ExternalSystemExceptionFactory
             return AppendRawActiveDirectoryMessage(missingOuDescription, exception.Message);
         }
 
+        if (IsPasswordRestrictionFailure(exception))
+        {
+            return AppendRawActiveDirectoryMessage(
+                "The directory rejected the request because the account needs a compliant password before it can be enabled.",
+                exception.Message);
+        }
+
         return exception.Message;
     }
 
@@ -101,6 +116,11 @@ internal static class ExternalSystemExceptionFactory
         if (TryDescribeMissingOu(operation, exception.Message, details, out _))
         {
             return GetMissingOuGuidance(operation, config, details);
+        }
+
+        if (IsPasswordRestrictionFailure(exception))
+        {
+            return GetPasswordRestrictionGuidance(config);
         }
 
         if (string.Equals(exception.Message, "The supplied credential is invalid.", StringComparison.OrdinalIgnoreCase))
@@ -132,6 +152,11 @@ internal static class ExternalSystemExceptionFactory
         if (TryDescribeMissingOu(operation, exception.Message, details, out _))
         {
             return GetMissingOuGuidance(operation, config, details);
+        }
+
+        if (IsPasswordRestrictionFailure(exception))
+        {
+            return GetPasswordRestrictionGuidance(config);
         }
 
         return "Check the target OU, manager resolution, and whether the account already exists with unexpected state.";
@@ -201,6 +226,30 @@ internal static class ExternalSystemExceptionFactory
         return string.Join(" ", parts);
     }
 
+    private static bool IsPasswordRestrictionFailure(LdapException exception)
+    {
+        return ContainsPasswordRestrictionMarker(exception.Message) ||
+               ContainsPasswordRestrictionMarker(exception.ServerErrorMessage);
+    }
+
+    private static bool IsPasswordRestrictionFailure(DirectoryOperationException exception)
+    {
+        return ContainsPasswordRestrictionMarker(exception.Message);
+    }
+
+    private static bool ContainsPasswordRestrictionMarker(string? value)
+    {
+        return !string.IsNullOrWhiteSpace(value) &&
+               value.Contains(PasswordRestrictionErrorCode, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string GetPasswordRestrictionGuidance(ActiveDirectoryConfig config)
+    {
+        return SupportsPasswordProvisioningTransport(config.Transport.Mode)
+            ? "Reset the account password to a compliant value, or retry over LDAPS/StartTLS so SyncFactors can set one automatically before enabling."
+            : "Switch AD transport to LDAPS or StartTLS so SyncFactors can set a compliant password automatically, or reset the account password manually before enabling.";
+    }
+
     internal static bool IsRetryableActiveDirectoryTimeout(Exception exception)
     {
         return exception.Data[RetryableActiveDirectoryTimeoutMarkerKey] as bool? == true;
@@ -208,6 +257,12 @@ internal static class ExternalSystemExceptionFactory
 
     private static int GetDefaultPort(string mode) =>
         string.Equals(mode, "ldaps", StringComparison.OrdinalIgnoreCase) ? 636 : 389;
+
+    private static bool SupportsPasswordProvisioningTransport(string mode)
+    {
+        return string.Equals(mode, "ldaps", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(mode, "starttls", StringComparison.OrdinalIgnoreCase);
+    }
 
     private static bool TryDescribeMissingOu(string operation, string? message, string? details, out string description)
     {
