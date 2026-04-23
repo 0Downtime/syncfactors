@@ -95,6 +95,77 @@ public sealed class ApplyPreviewServiceTests
     }
 
     [Fact]
+    public async Task ApplyAsync_PersistsPrimaryEnableBucketFromPreview()
+    {
+        var worker = new WorkerSnapshot(
+            WorkerId: "10001",
+            PreferredName: "Winnie",
+            LastName: "Sample101",
+            Department: "IT",
+            TargetOu: "OU=LabUsers,DC=example,DC=com",
+            IsPrehire: false,
+            Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase));
+
+        var preview = new WorkerPreviewResult(
+            ReportPath: null,
+            RunId: "preview-10001-enable",
+            PreviousRunId: null,
+            Fingerprint: "fingerprint-enable",
+            Mode: "Preview",
+            Status: "Planned",
+            ErrorMessage: null,
+            ArtifactType: "WorkerPreview",
+            SuccessFactorsAuth: "NativeScaffold",
+            WorkerId: worker.WorkerId,
+            Buckets: ["enables"],
+            MatchedExistingUser: true,
+            ReviewCategory: null,
+            ReviewCaseType: null,
+            Reason: null,
+            OperatorActionSummary: null,
+            SamAccountName: "10001",
+            ManagerDistinguishedName: null,
+            TargetOu: worker.TargetOu,
+            CurrentDistinguishedName: "CN=Sample101\\, Winnie,OU=LabUsers,DC=example,DC=com",
+            CurrentEnabled: false,
+            ProposedEnable: true,
+            OperationSummary: null,
+            DiffRows:
+            [
+                new DiffRow("UserPrincipalName", "resolved email local-part", "preview.email@Exampleenergy.com", "preview.email@Exampleenergy.com", false)
+            ],
+            SourceAttributes: [],
+            UsedSourceAttributes: [],
+            UnusedSourceAttributes: [],
+            MissingSourceAttributes: [],
+            Entries: []);
+
+        var runRepository = new CapturingRunRepository(preview);
+        var service = new ApplyPreviewService(
+            new StubWorkerSource(worker),
+            new DirectoryMutationCommandBuilder(),
+            new CapturingDirectoryCommandGateway(),
+            runRepository,
+            new StubRuntimeStatusStore(),
+            new RealSyncSettings(),
+            NullLogger<ApplyPreviewService>.Instance);
+
+        await service.ApplyAsync(
+            new ApplyPreviewRequest(
+                WorkerId: worker.WorkerId,
+                PreviewRunId: preview.RunId!,
+                PreviewFingerprint: preview.Fingerprint,
+                AcknowledgeRealSync: true),
+            CancellationToken.None);
+
+        Assert.Single(runRepository.SavedRuns);
+        Assert.Equal(1, runRepository.SavedRuns[0].Enables);
+        Assert.Equal(0, runRepository.SavedRuns[0].Updates);
+        Assert.Single(runRepository.ReplacedEntries);
+        Assert.Equal("enables", runRepository.ReplacedEntries[0].entries.Single().Bucket);
+    }
+
+    [Fact]
     public async Task ApplyAsync_PropagatesDirectoryMutationFailures()
     {
         var worker = new WorkerSnapshot(
@@ -164,7 +235,9 @@ public sealed class ApplyPreviewServiceTests
         Assert.Equal("Failed", runtimeStatusStore.SavedStatuses[1].Status);
         Assert.Single(runRepository.SavedRuns);
         Assert.Equal("Failed", runRepository.SavedRuns[0].Status);
+        Assert.Equal(1, runRepository.SavedRuns[0].Conflicts);
         Assert.Single(runRepository.ReplacedEntries);
+        Assert.Equal("conflicts", runRepository.ReplacedEntries[0].entries.Single().Bucket);
         Assert.Equal("LDAP bind failed.", runRepository.ReplacedEntries[0].entries.Single().Reason);
     }
 

@@ -748,7 +748,7 @@ public sealed class WorkerPreviewPlannerTests
     }
 
     [Fact]
-    public async Task PreviewAsync_ForDisabledExistingUsersWithAttributeChanges_UsesUpdateBucket()
+    public async Task PreviewAsync_ForDisabledExistingUsersWithAttributeChanges_UsesEnableBucket()
     {
         var worker = new WorkerSnapshot(
             WorkerId: "44522",
@@ -779,7 +779,7 @@ public sealed class WorkerPreviewPlannerTests
 
         var preview = await planner.PreviewAsync("44522", CancellationToken.None);
 
-        Assert.Equal("updates", preview.Buckets.Single());
+        Assert.Equal("enables", preview.Buckets.Single());
         Assert.True(preview.DiffRows.Single(row => row.Attribute == "department").Changed);
         var operationKinds = preview.Entries
             .SelectMany(entry => entry.Item.GetProperty("operations").EnumerateArray())
@@ -787,6 +787,48 @@ public sealed class WorkerPreviewPlannerTests
             .ToArray();
         Assert.Contains("UpdateUser", operationKinds);
         Assert.Contains("EnableUser", operationKinds);
+    }
+
+    [Fact]
+    public async Task PreviewAsync_ForLeaveUsersWithMoveAndDisable_UsesDisableBucket()
+    {
+        var worker = new WorkerSnapshot(
+            WorkerId: "44522",
+            PreferredName: "Christopher",
+            LastName: "Brien",
+            Department: "Infrastructure & Security",
+            TargetOu: "OU=Employees,DC=example,DC=com",
+            IsPrehire: false,
+            Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["company"] = "Example Services, Inc.",
+                ["department"] = "Infrastructure & Security",
+                ["emplStatus"] = "L"
+            });
+
+        var planner = new WorkerPreviewPlanner(
+            new StubWorkerSource(worker),
+            new WorkerPlanningService(
+                new ExistingUserDirectoryGateway(),
+                new ExistingUserIdentityMatcher(),
+                CreateLifecyclePolicy(),
+                new UnchangedAttributeDiffService(),
+                new StubAttributeMappingProvider(),
+                NullLogger<WorkerPlanningService>.Instance),
+            new StubAttributeMappingProvider(),
+            new StubWorkerPreviewLogWriter(),
+            new StubRunRepository(),
+            NullLogger<WorkerPreviewPlanner>.Instance);
+
+        var preview = await planner.PreviewAsync("44522", CancellationToken.None);
+
+        Assert.Equal("disables", preview.Buckets.Single());
+        var operationKinds = preview.Entries
+            .SelectMany(entry => entry.Item.GetProperty("operations").EnumerateArray())
+            .Select(operation => operation.GetProperty("kind").GetString())
+            .ToArray();
+        Assert.Contains("MoveUser", operationKinds);
+        Assert.Contains("DisableUser", operationKinds);
     }
 
     [Fact]
@@ -1610,6 +1652,8 @@ public sealed class WorkerPreviewPlannerTests
                 PrehireOu: "OU=Prehire,DC=example,DC=com",
                 GraveyardOu: "OU=Graveyard,DC=example,DC=com",
                 InactiveStatusField: "emplStatus",
-                InactiveStatusValues: ["T"]));
+                InactiveStatusValues: ["T"],
+                LeaveOu: "OU=Leave Users,DC=example,DC=com",
+                LeaveStatusValues: ["L"]));
     }
 }
