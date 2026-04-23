@@ -1035,6 +1035,10 @@ a:focus-visible {
     transform var(--motion-fast) var(--ease-emphasis);
 }
 
+.connection-health-button .badge {
+  margin-left: auto;
+}
+
 .connection-health-button:hover {
   transform: translateY(-1px);
 }
