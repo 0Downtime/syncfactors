@@ -131,7 +131,7 @@ a:focus-visible {
   z-index: 20;
   display: flex;
   justify-content: space-between;
-  align-items: flex-start;
+  align-items: center;
   gap: 24px;
   padding: 14px 18px;
   border: 1px solid var(--line);
@@ -187,7 +187,7 @@ a:focus-visible {
   display: block;
   width: 100%;
   height: auto;
-  max-height: 64px;
+  max-height: 56px;
 }
 
 .brand-logo-light {
@@ -3357,7 +3357,7 @@ a:focus-visible {
   }
 
   .brand-logo {
-    max-height: 48px;
+    max-height: 42px;
   }
 
   .theme-toggle,
