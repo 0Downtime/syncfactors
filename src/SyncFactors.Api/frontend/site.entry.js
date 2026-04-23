@@ -2,44 +2,79 @@
     const storageKey = "syncfactors-next-theme";
     const root = document.documentElement;
     const toggle = document.getElementById("theme-toggle");
+    const themeOptions = Array.prototype.slice.call(document.querySelectorAll("[data-theme-option]"));
     const topbar = document.querySelector("[data-topbar]");
     const toastRegion = document.querySelector("[data-toast-region]");
     const reduceMotionQuery = window.matchMedia ? window.matchMedia("(prefers-reduced-motion: reduce)") : null;
+    const colorSchemeQuery = window.matchMedia ? window.matchMedia("(prefers-color-scheme: dark)") : null;
 
     function motionAllowed() {
         return !reduceMotionQuery || !reduceMotionQuery.matches;
     }
 
-    function announceTheme(theme) {
+    function isThemePreference(value) {
+        return value === "system" || value === "light" || value === "dark";
+    }
+
+    function resolveTheme(preference) {
+        if (preference === "dark") {
+            return "dark";
+        }
+
+        if (preference === "light") {
+            return "light";
+        }
+
+        return colorSchemeQuery && colorSchemeQuery.matches ? "dark" : "light";
+    }
+
+    function announceTheme(theme, preference) {
         window.dispatchEvent(new CustomEvent("syncfactors:themechange", {
-            detail: { theme }
+            detail: { theme, preference }
         }));
     }
 
-    function applyTheme(theme, options = {}) {
-        const resolvedTheme = theme === "dark" ? "dark" : "light";
+    function updateThemeToggle(preference) {
+        themeOptions.forEach(function (option) {
+            option.setAttribute("aria-pressed", String(option.dataset.themeOption === preference));
+        });
+    }
+
+    function applyTheme(themePreference, options = {}) {
+        const preference = isThemePreference(themePreference) ? themePreference : "system";
+        const resolvedTheme = resolveTheme(preference);
         const shouldPersist = options.persist === true;
         const shouldAnnounce = options.announce !== false;
 
+        root.dataset.themePreference = preference;
         root.dataset.theme = resolvedTheme;
         root.style.colorScheme = resolvedTheme;
 
         if (toggle) {
-            toggle.setAttribute("aria-pressed", String(resolvedTheme === "dark"));
-            toggle.setAttribute("title", resolvedTheme === "dark" ? "Dark mode enabled" : "Light mode enabled");
+            toggle.setAttribute("data-theme-selection", preference);
         }
+
+        updateThemeToggle(preference);
 
         if (shouldPersist) {
             try {
-                window.localStorage.setItem(storageKey, resolvedTheme);
+                window.localStorage.setItem(storageKey, preference);
             } catch (error) {
                 // Ignore storage failures in restricted contexts.
             }
         }
 
         if (shouldAnnounce) {
-            announceTheme(resolvedTheme);
+            announceTheme(resolvedTheme, preference);
         }
+    }
+
+    function handleSystemThemeChange() {
+        if ((root.dataset.themePreference || "system") !== "system") {
+            return;
+        }
+
+        applyTheme("system");
     }
 
     function syncTopbar() {
@@ -227,13 +262,22 @@
         });
     }
 
-    applyTheme(root.dataset.theme === "dark" ? "dark" : "light", { announce: false });
+    applyTheme(root.dataset.themePreference, { announce: false });
 
-    if (toggle) {
-        toggle.addEventListener("click", function () {
-            const nextTheme = root.dataset.theme === "dark" ? "light" : "dark";
-            applyTheme(nextTheme, { persist: true });
+    if (themeOptions.length) {
+        themeOptions.forEach(function (option) {
+            option.addEventListener("click", function () {
+                applyTheme(option.dataset.themeOption, { persist: true });
+            });
         });
+    }
+
+    if (colorSchemeQuery) {
+        if (typeof colorSchemeQuery.addEventListener === "function") {
+            colorSchemeQuery.addEventListener("change", handleSystemThemeChange);
+        } else if (typeof colorSchemeQuery.addListener === "function") {
+            colorSchemeQuery.addListener(handleSystemThemeChange);
+        }
     }
 
     syncTopbar();

@@ -1,4 +1,4 @@
-<h1 align="center">[Alpha] SyncFactors</h1>
+<h1 align="center">[Alpha] SyncFactors - SF to AD Sync</h1>
 
 <p align="center">
   <img src="src/SyncFactors.Api/wwwroot/images/syncfactors-logo-black.png#gh-light-mode-only" alt="SyncFactors" width="420" />
@@ -6,8 +6,8 @@
 </p>
 
 <p align="center">
-  <strong>Local-first identity sync orchestration for operators.</strong><br />
-  ASP.NET Core UI, background worker execution, SQLite runtime state, and review-first sync workflows.
+  <strong>Local-first synchronization from SuccessFactors HR data to Microsoft Active Directory.</strong><br />
+  ASP.NET Core UI, background worker execution, SQLite runtime state, and review-first directory sync workflows.
 </p>
 
 <p align="center">
@@ -39,7 +39,7 @@
   </a>
 </p>
 
-`SyncFactors` is the current .NET-based SyncFactors implementation and repository root.
+`SyncFactors` is a local-first .NET tool for syncing SuccessFactors HR data into Microsoft Active Directory.
 
 > [!WARNING]
 > [Alpha] This software is in active development, has a high risk of failure, and is not ready for production use.

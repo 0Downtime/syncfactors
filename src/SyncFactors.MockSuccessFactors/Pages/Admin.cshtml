@@ -19,10 +19,16 @@
                 storedTheme = null;
             }
 
-            var theme = storedTheme === "dark" || storedTheme === "light"
+            var themePreference = storedTheme === "system" || storedTheme === "dark" || storedTheme === "light"
                 ? storedTheme
-                : (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+                : "system";
+            var theme = themePreference === "dark"
+                ? "dark"
+                : themePreference === "light"
+                    ? "light"
+                    : (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
 
+            document.documentElement.dataset.themePreference = themePreference;
             document.documentElement.dataset.theme = theme;
             document.documentElement.style.colorScheme = theme;
         })();
@@ -38,13 +44,11 @@
                 <p class="lede">Change the source data that SyncFactors reads from the mock SuccessFactors API. Edits are live immediately and persist to the runtime fixture file.</p>
             </div>
             <div class="hero-toolbar">
-                <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Toggle dark mode" aria-pressed="false">
-                    <span class="theme-toggle-option theme-toggle-option-light" aria-hidden="true">☀</span>
-                    <span class="theme-toggle-track" aria-hidden="true">
-                        <span class="theme-toggle-thumb"></span>
-                    </span>
-                    <span class="theme-toggle-option theme-toggle-option-dark" aria-hidden="true">☾</span>
-                </button>
+                <div class="theme-toggle" id="theme-toggle" role="group" aria-label="Color mode">
+                    <button class="theme-toggle-option" type="button" data-theme-option="system" aria-pressed="false">System</button>
+                    <button class="theme-toggle-option" type="button" data-theme-option="light" aria-pressed="false">Light</button>
+                    <button class="theme-toggle-option" type="button" data-theme-option="dark" aria-pressed="false">Dark</button>
+                </div>
                 <div class="hero-actions">
                     <button type="button" class="ghost-button" data-action="new">Create worker</button>
                     <button type="button" class="danger-button" data-action="reset">Reset to seed</button>
