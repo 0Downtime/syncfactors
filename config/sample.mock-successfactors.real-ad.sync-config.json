@@ -29,6 +29,7 @@
       "identityField": "userId",
       "deltaField": "lastModifiedDateTime",
       "baseFilter": "emplStatus in 'A','U'",
+      "inactiveRetentionDays": 180,
       "inactiveStatusValues": [
         "T"
       ],
