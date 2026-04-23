@@ -14,14 +14,14 @@
 
 @if (!string.IsNullOrWhiteSpace(Model.ErrorMessage))
 {
-    <section class="panel">
+    <section class="panel" data-auto-dismiss-ms="5000">
         <p class="callout danger">@Model.ErrorMessage</p>
     </section>
 }
 
 @if (!string.IsNullOrWhiteSpace(Model.SuccessMessage))
 {
-    <section class="panel">
+    <section class="panel" data-auto-dismiss-ms="5000">
         <p class="callout good">@Model.SuccessMessage</p>
     </section>
 }
