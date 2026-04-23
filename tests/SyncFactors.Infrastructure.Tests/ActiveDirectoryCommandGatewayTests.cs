@@ -638,6 +638,7 @@ public sealed class ActiveDirectoryCommandGatewayTests
             "userPrincipalName",
             "brian.oliver@spireenergy.com",
             "boliver",
+            "Oliver, Brian",
             "CN=Brian Oliver,OU=Existing,DC=example,DC=com",
             "brian.oliver@spireenergy.com",
             "brian.oliver@spireenergy.com");
@@ -648,6 +649,7 @@ public sealed class ActiveDirectoryCommandGatewayTests
         Assert.Contains("ConflictingAttribute=userPrincipalName", details, StringComparison.Ordinal);
         Assert.Contains("ConflictingValue=brian.oliver@spireenergy.com", details, StringComparison.Ordinal);
         Assert.Contains("ExistingSamAccountName=boliver", details, StringComparison.Ordinal);
+        Assert.Contains("ExistingDisplayName=Oliver, Brian", details, StringComparison.Ordinal);
         Assert.Contains("ExistingDistinguishedName=CN=Brian Oliver,OU=Existing,DC=example,DC=com", details, StringComparison.Ordinal);
         Assert.Contains("ExistingUserPrincipalName=brian.oliver@spireenergy.com", details, StringComparison.Ordinal);
         Assert.Contains("ExistingMail=brian.oliver@spireenergy.com", details, StringComparison.Ordinal);

@@ -34,12 +34,46 @@ public sealed class ExternalSystemExceptionFactoryTests
                 TrustedCertificateThumbprints: []),
             IdentityPolicy: new ActiveDirectoryIdentityPolicyConfig(false));
 
-        var exception = Assert.IsType<InvalidOperationException>(method!.Invoke(null, ["command 'CreateUser'", config, "A different AD account already uses userPrincipalName 'brian.oliver@spireenergy.com' for create worker 45086.", "Step=PreflightIdentityConflict WorkerId=45086", "Resolve the existing AD account that already owns this UPN or mail value, or change the planned suffix/value before retrying."]));
+        var exception = Assert.IsType<InvalidOperationException>(method!.Invoke(null, ["command 'CreateUser'", config, "A different AD account already uses userPrincipalName 'brian.oliver@spireenergy.com' for create worker 45086.", "Step=PreflightIdentityConflict WorkerId=45086", "Resolve the existing AD account that already owns this SAM, UPN, or mail value before retrying."]));
 
         Assert.Contains("Active Directory command 'CreateUser' failed against LDAP server '10.1.182.35'.", exception.Message, StringComparison.Ordinal);
         Assert.Contains("A different AD account already uses userPrincipalName 'brian.oliver@spireenergy.com' for create worker 45086.", exception.Message, StringComparison.Ordinal);
         Assert.Contains("Details: Step=PreflightIdentityConflict WorkerId=45086", exception.Message, StringComparison.Ordinal);
         Assert.Contains("Next check: Resolve the existing AD account", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void CreateActiveDirectoryException_ForEnableUserPasswordRestriction_ExplainsPasswordRequirement()
+    {
+        var method = typeof(SyncFactorsConfigurationLoader).Assembly
+            .GetType("SyncFactors.Infrastructure.ExternalSystemExceptionFactory")
+            ?.GetMethod(
+                "CreateActiveDirectoryException",
+                BindingFlags.Public | BindingFlags.Static,
+                [typeof(string), typeof(ActiveDirectoryConfig), typeof(Exception)]);
+        Assert.NotNull(method);
+
+        var config = new ActiveDirectoryConfig(
+            Server: "localhost",
+            Port: 389,
+            Username: "svc_syncfactors@example.local",
+            BindPassword: "secret",
+            IdentityAttribute: "employeeID",
+            DefaultActiveOu: "OU=Users,DC=example,DC=com",
+            PrehireOu: "OU=Prehire,DC=example,DC=com",
+            GraveyardOu: "OU=Graveyard,DC=example,DC=com",
+            Transport: new ActiveDirectoryTransportConfig(
+                Mode: "ldap",
+                AllowLdapFallback: false,
+                RequireCertificateValidation: false,
+                RequireSigning: false,
+                TrustedCertificateThumbprints: []),
+            IdentityPolicy: new ActiveDirectoryIdentityPolicyConfig(false));
+
+        var exception = Assert.IsType<InvalidOperationException>(method!.Invoke(null, ["command 'EnableUser'", config, new DirectoryOperationException("The server cannot handle directory requests. 0000052D: SvcErr: DSID-031A126C, problem 5003 (WILL_NOT_PERFORM), data 0")]));
+
+        Assert.Contains("needs a compliant password before it can be enabled", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("Switch AD transport to LDAPS or StartTLS", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
