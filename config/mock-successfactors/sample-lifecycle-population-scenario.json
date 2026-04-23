@@ -302,7 +302,8 @@
         "runStatus": "Succeeded",
         "bucketCounts": {
           "creates": 3,
-          "updates": 3,
+          "updates": 2,
+          "enables": 1,
           "disables": 1,
           "graveyardMoves": 1
         },
