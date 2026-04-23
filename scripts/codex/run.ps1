@@ -786,6 +786,116 @@ function Ensure-ConfiguredActiveDirectoryOusAccessible {
     Assert-SyncFactorsConfiguredAdOusAccessible -ConfigPath $ResolvedConfigPath
 }
 
+function Get-SyncFactorsCurrentTlsCertificateIdentity {
+    param(
+        [Parameter(Mandatory)]
+        [string]$RepositoryRoot
+    )
+
+    $tlsAssets = Get-SyncFactorsTlsAssetPaths -ProjectRoot $RepositoryRoot
+    $certificatePath = if ([string]::IsNullOrWhiteSpace($env:SYNCFACTORS_TLS_CERT_PATH)) {
+        $tlsAssets.CertificatePath
+    }
+    else {
+        $env:SYNCFACTORS_TLS_CERT_PATH
+    }
+
+    if (-not (Test-Path $certificatePath)) {
+        return $null
+    }
+
+    $certificatePassword = if ([string]::IsNullOrWhiteSpace($env:SYNCFACTORS_TLS_CERT_PASSWORD)) {
+        if (-not (Test-Path $tlsAssets.PasswordPath)) {
+            return $null
+        }
+
+        Get-SyncFactorsTlsPassword -PasswordPath $tlsAssets.PasswordPath
+    }
+    else {
+        $env:SYNCFACTORS_TLS_CERT_PASSWORD
+    }
+
+    $opensslCommand = Get-Command 'openssl' -ErrorAction SilentlyContinue
+    if ($null -ne $opensslCommand) {
+        $tempPemPath = [System.IO.Path]::GetTempFileName()
+        try {
+            $null = @(& $opensslCommand.Source 'pkcs12' '-in' $certificatePath '-passin' "pass:$certificatePassword" '-nokeys' '-clcerts' '-out' $tempPemPath 2>$null)
+            if ($LASTEXITCODE -eq 0) {
+                $metadata = @(& $opensslCommand.Source 'x509' '-in' $tempPemPath '-noout' '-subject' '-issuer' 2>$null)
+                if ($LASTEXITCODE -eq 0 -and $metadata.Length -ge 2) {
+                    return [pscustomobject]@{
+                        Subject = ($metadata[0] -replace '^subject=', '').Trim()
+                        Issuer = ($metadata[1] -replace '^issuer=', '').Trim()
+                    }
+                }
+            }
+        }
+        finally {
+            Remove-Item -Path $tempPemPath -Force -ErrorAction SilentlyContinue
+        }
+    }
+
+    try {
+        $certificate = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new(
+            $certificatePath,
+            $certificatePassword,
+            [System.Security.Cryptography.X509Certificates.X509KeyStorageFlags]::DefaultKeySet)
+        return [pscustomobject]@{
+            Subject = $certificate.Subject
+            Issuer = $certificate.Issuer
+        }
+    }
+    catch {
+        return $null
+    }
+}
+
+function Test-SyncFactorsUsingDefaultDevCertificate {
+    param(
+        [Parameter(Mandatory)]
+        [string]$RepositoryRoot
+    )
+
+    $certificate = Get-SyncFactorsCurrentTlsCertificateIdentity -RepositoryRoot $RepositoryRoot
+    if ($null -eq $certificate) {
+        return $false
+    }
+
+    return (
+        [string]::Equals($certificate.Subject, 'CN=localhost', [StringComparison]::OrdinalIgnoreCase) -and
+        [string]::Equals($certificate.Issuer, 'CN=localhost', [StringComparison]::OrdinalIgnoreCase))
+}
+
+function Test-SyncFactorsDefaultDevCertificateTrusted {
+    $null = @(& dotnet 'dev-certs' 'https' '--check' '--trust' 2>&1)
+    return $LASTEXITCODE -eq 0
+}
+
+function Ensure-BrowserTrustedHttpsCertificate {
+    param(
+        [Parameter(Mandatory)]
+        [string]$RepositoryRoot,
+        [Parameter(Mandatory)]
+        [string]$ServiceName,
+        [Parameter(Mandatory)]
+        [string]$PortalUrl
+    )
+
+    if ($ServiceName -notin @('api', 'ui', 'stack')) {
+        return
+    }
+
+    if (-not (Test-SyncFactorsUsingDefaultDevCertificate -RepositoryRoot $RepositoryRoot)) {
+        return
+    }
+
+    if (Test-SyncFactorsDefaultDevCertificateTrusted) {
+        return
+    }
+
+    throw "The default SyncFactors HTTPS dev certificate is not trusted on this machine. Browsers will reject '$PortalUrl' and can fall back to 'chrome-error://chromewebdata', which breaks the local login/OIDC flow. Run 'pwsh ./scripts/Install-SyncFactorsHttpsCertificate.ps1 -Force' to recreate and trust the localhost certificate, or install a CA-issued PFX with 'pwsh ./scripts/Install-SyncFactorsHttpsCertificateFromPfx.ps1'."
+}
+
 function Resolve-ProfileConfigPath {
     param(
         [Parameter(Mandatory)]
@@ -1356,6 +1466,10 @@ Ensure-RequiredSecureStoreValues -RepositoryRoot $repoRoot -EnvFilePath $worktre
 Ensure-ConfiguredActiveDirectoryOusAccessible `
     -ServiceName $Service `
     -ResolvedConfigPath $env:SYNCFACTORS_RESOLVED_CONFIG_PATH_ABS
+Ensure-BrowserTrustedHttpsCertificate `
+    -RepositoryRoot $repoRoot `
+    -ServiceName $Service `
+    -PortalUrl $apiPortalUrl
 
 $env:SYNCFACTORS_LAUNCHER_PORTAL_URL = $apiPortalUrl
 $env:SYNCFACTORS_LAUNCHER_MOCK_ADMIN_URL = if ($activeProfile -eq 'mock') { $mockAdminUrl } else { '' }
