@@ -97,7 +97,6 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
     const healthMenu = elements.root.querySelector(".connection-health-menu");
     const healthList = elements.root.querySelector("[data-health-list]");
     const overallBadge = elements.root.querySelector("[data-health-overall-badge]");
-    const lastChecked = elements.root.querySelector("[data-health-last-checked]");
     const probeOrder = ["SuccessFactors", "Active Directory", "Worker Service", "SQLite"];
     const initialHealthProbesEnabled = (elements.root.getAttribute("data-health-probes-enabled") || "true").toLowerCase() !== "false";
     const healthPollIntervalMs = Math.max(
@@ -556,6 +555,16 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
 
         element.className = "badge " + statusClass(status);
         element.textContent = text;
+    }
+
+    function setHealthBadge(status) {
+        if (!overallBadge) {
+            return;
+        }
+
+        const normalizedStatus = String(status || "").toLowerCase();
+        overallBadge.className = "badge " + (normalizedStatus === "dim" ? "dim" : statusClass(status));
+        overallBadge.textContent = "Connection Health";
     }
 
     function setLiveState(state, caption) {
@@ -1894,22 +1903,14 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
             animateCollection(Array.prototype.slice.call(healthList.querySelectorAll(".connection-health-item")));
         }
 
-        setBadge(overallBadge, snapshot.status || "Unknown", snapshot.status);
-        if (lastChecked) {
-            lastChecked.textContent = "Last checked " + formatTimestamp(snapshot.checkedAt);
-        }
-
+        setHealthBadge(snapshot.status);
         setPanelLoading(elements.root, false);
     }
 
     function renderHealthFailure(message) {
         latestHealthSnapshot = null;
 
-        setBadge(overallBadge, "Unhealthy", "unhealthy");
-        if (lastChecked) {
-            lastChecked.textContent = message;
-        }
-
+        setHealthBadge("unhealthy");
         if (healthList) {
             healthList.innerHTML = "";
 
@@ -1942,11 +1943,7 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
             });
         }
 
-        setBadge(overallBadge, "Disabled", "dim");
-        if (lastChecked) {
-            lastChecked.textContent = "Dashboard health probes are disabled.";
-        }
-
+        setHealthBadge("dim");
         setPanelLoading(elements.root, false);
     }
 
