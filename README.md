@@ -1,4 +1,4 @@
-<h1 align="center">[Alpha] SyncFactors for SuccessFactors to Active Directory Sync</h1>
+<h1 align="center">[Alpha] SyncFactors - SF to AD Sync</h1>
 
 <p align="center">
   <img src="src/SyncFactors.Api/wwwroot/images/syncfactors-logo-black.png#gh-light-mode-only" alt="SyncFactors" width="420" />
