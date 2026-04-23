@@ -30,6 +30,14 @@
         filteredCount: document.querySelector("[data-meta='filteredCount']"),
         bucketKinds: document.querySelector("[data-meta='bucketKinds']"),
         bucketSummary: document.querySelector("[data-bucket-summary]"),
+        bucketCompare: document.querySelector("[data-bucket-compare]"),
+        compareMockLabel: document.querySelector("[data-compare-mock-label]"),
+        compareMockKey: document.querySelector("[data-compare-mock-key]"),
+        comparePlannerLabel: document.querySelector("[data-compare-planner-label]"),
+        comparePlannerKey: document.querySelector("[data-compare-planner-key]"),
+        comparePlannerStatus: document.querySelector("[data-compare-planner-status]"),
+        comparePlannerReason: document.querySelector("[data-compare-planner-reason]"),
+        comparePlannerError: document.querySelector("[data-compare-planner-error]"),
         themeToggle: document.getElementById("theme-toggle")
     };
 
@@ -262,6 +270,63 @@
         elements.workerList.innerHTML = html || '<p class="empty-state">No workers matched the current filter.</p>';
     }
 
+    function setBucketChip(element, bucket, label) {
+        if (!element) {
+            return;
+        }
+
+        element.className = "bucket-chip bucket-chip-" + bucketClassName(bucket);
+        element.textContent = label || bucket || "Unknown";
+    }
+
+    function setComparisonState(comparison) {
+        if (!elements.bucketCompare) {
+            return;
+        }
+
+        const mockBucket = comparison && comparison.mockBucket ? comparison.mockBucket : null;
+        const plannerBucket = comparison && comparison.plannerBucket ? comparison.plannerBucket : null;
+        const plannerStatus = plannerBucket && plannerBucket.status ? plannerBucket.status : "idle";
+        const plannerBucketKey = plannerBucket && plannerBucket.bucket ? plannerBucket.bucket : "unknown";
+        const plannerBucketLabel = plannerBucket && plannerBucket.label ? plannerBucket.label : (
+            plannerStatus === "available" ? plannerBucketKey : "Unavailable");
+
+        setBucketChip(
+            elements.compareMockLabel,
+            mockBucket && mockBucket.bucket ? mockBucket.bucket : "unknown",
+            mockBucket && mockBucket.label ? mockBucket.label : "Not loaded");
+        if (elements.compareMockKey) {
+            elements.compareMockKey.textContent = mockBucket && mockBucket.bucket ? mockBucket.bucket : "n/a";
+        }
+
+        setBucketChip(elements.comparePlannerLabel, plannerBucketKey, plannerBucketLabel);
+        if (elements.comparePlannerKey) {
+            elements.comparePlannerKey.textContent = plannerBucket && plannerBucket.bucket ? plannerBucket.bucket : "n/a";
+        }
+
+        if (elements.comparePlannerStatus) {
+            elements.comparePlannerStatus.textContent = plannerStatus === "available"
+                ? "Loaded from current sync config and AD planner."
+                : plannerStatus === "error"
+                    ? "Planner compare failed."
+                    : "Planner compare unavailable.";
+        }
+
+        if (elements.comparePlannerReason) {
+            const reason = plannerBucket && plannerBucket.reason
+                ? plannerBucket.reason + (plannerBucket.reviewCaseType ? (" Review case: " + plannerBucket.reviewCaseType + ".") : "")
+                : "";
+            elements.comparePlannerReason.hidden = !reason;
+            elements.comparePlannerReason.textContent = reason;
+        }
+
+        if (elements.comparePlannerError) {
+            const error = plannerBucket && plannerBucket.error ? plannerBucket.error : "";
+            elements.comparePlannerError.hidden = !error;
+            elements.comparePlannerError.textContent = error;
+        }
+    }
+
     function setEditor(worker, mode) {
         const resolvedWorker = worker || blankWorker();
         state.mode = mode;
@@ -289,6 +354,10 @@
 
             field.value = value == null ? "" : String(value);
         });
+
+        if (mode !== "edit") {
+            setComparisonState(null);
+        }
 
         renderWorkerList();
     }
@@ -404,6 +473,7 @@
     async function loadWorker(workerId) {
         const payload = await requestJson(endpoints.workers + "/" + encodeURIComponent(workerId), { method: "GET" });
         setEditor(payload.worker, payload.mode || "edit");
+        setComparisonState(payload.bucketComparison || null);
     }
 
     async function saveWorker(event) {

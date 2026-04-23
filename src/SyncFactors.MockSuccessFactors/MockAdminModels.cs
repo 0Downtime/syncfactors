@@ -32,11 +32,28 @@ public sealed record MockAdminWorkerSummary(
 
 public sealed record MockAdminWorkerDetailResponse(
     [property: JsonPropertyName("worker")] MockAdminWorkerUpsertRequest Worker,
-    [property: JsonPropertyName("mode")] string Mode);
+    [property: JsonPropertyName("mode")] string Mode,
+    [property: JsonPropertyName("bucketComparison")] MockAdminBucketComparison? BucketComparison);
 
 public sealed record MockAdminWorkerMutationResponse(
     [property: JsonPropertyName("message")] string Message,
     [property: JsonPropertyName("worker")] MockAdminWorkerUpsertRequest Worker);
+
+public sealed record MockAdminBucketComparison(
+    [property: JsonPropertyName("mockBucket")] MockAdminBucketSnapshot MockBucket,
+    [property: JsonPropertyName("plannerBucket")] MockAdminPlannerBucketSnapshot PlannerBucket);
+
+public sealed record MockAdminBucketSnapshot(
+    [property: JsonPropertyName("bucket")] string Bucket,
+    [property: JsonPropertyName("label")] string Label);
+
+public sealed record MockAdminPlannerBucketSnapshot(
+    [property: JsonPropertyName("status")] string Status,
+    [property: JsonPropertyName("bucket")] string? Bucket,
+    [property: JsonPropertyName("label")] string? Label,
+    [property: JsonPropertyName("reason")] string? Reason,
+    [property: JsonPropertyName("reviewCaseType")] string? ReviewCaseType,
+    [property: JsonPropertyName("error")] string? Error);
 
 public sealed record MockAdminResetResponse(
     [property: JsonPropertyName("message")] string Message,

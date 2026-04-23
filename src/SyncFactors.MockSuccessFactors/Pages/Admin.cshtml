@@ -106,6 +106,26 @@
                     <span class="status-pill muted" data-editor-mode>Create</span>
                 </div>
 
+                <section class="compare-panel" data-bucket-compare>
+                    <article class="compare-card">
+                        <p class="eyebrow">Current Editor Bucket</p>
+                        <div class="worker-chip-row">
+                            <span class="bucket-chip" data-compare-mock-label>Not loaded</span>
+                            <span class="worker-meta" data-compare-mock-key>n/a</span>
+                        </div>
+                    </article>
+                    <article class="compare-card">
+                        <p class="eyebrow">Sync Planner Bucket</p>
+                        <div class="worker-chip-row">
+                            <span class="bucket-chip" data-compare-planner-label>Unavailable</span>
+                            <span class="worker-meta" data-compare-planner-key>n/a</span>
+                        </div>
+                        <p class="compare-detail worker-meta" data-compare-planner-status>Select worker to compare with current sync planner.</p>
+                        <p class="compare-detail worker-meta" data-compare-planner-reason hidden></p>
+                        <p class="compare-detail worker-meta" data-compare-planner-error hidden></p>
+                    </article>
+                </section>
+
                 <form class="editor-form" data-editor-form>
                     <section class="form-section">
                         <h3>Identity</h3>
