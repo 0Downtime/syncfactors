@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Options;
 using SyncFactors.MockSuccessFactors;
+using System.Text.Json;
 
 namespace SyncFactors.MockSuccessFactors.Tests;
 
@@ -117,6 +118,30 @@ public sealed class MockFixtureStoreAdminTests
 
         var secondStore = CreateStore(runtimePath, syntheticPopulationEnabled: true, targetWorkerCount: 25);
         Assert.Equal(12, secondStore.GetDocument().Workers.Count);
+    }
+
+    [Fact]
+    public void Store_AdminState_IncludesProvisioningBucketsForWorkers()
+    {
+        var runtimePath = CreateRuntimePath();
+        var store = CreateStore(runtimePath);
+
+        var state = store.GetAdminState(filter: null, adminPath: "/admin");
+
+        Assert.NotEmpty(state.ProvisioningBuckets);
+        Assert.NotEmpty(state.Workers);
+        Assert.All(
+            state.Workers,
+            worker =>
+            {
+                Assert.False(string.IsNullOrWhiteSpace(worker.ProvisioningBucket));
+                Assert.False(string.IsNullOrWhiteSpace(worker.ProvisioningBucketLabel));
+            });
+        Assert.Equal(state.TotalWorkers, state.ProvisioningBuckets.Sum(bucket => bucket.Count));
+
+        var payload = JsonSerializer.Serialize(state);
+        Assert.Contains("\"provisioningBuckets\":", payload, StringComparison.Ordinal);
+        Assert.Contains("\"provisioningBucket\":", payload, StringComparison.Ordinal);
     }
 
     private static MockFixtureStore CreateStore(

@@ -76,6 +76,7 @@ public sealed class MockFixtureStore
     {
         lock (_gate)
         {
+            var provisioningBuckets = BuildProvisioningBucketCounts(_document.Workers);
             var filteredWorkers = ApplyAdminFilter(_document.Workers, filter)
                 .Select(BuildSummary)
                 .ToArray();
@@ -86,6 +87,7 @@ public sealed class MockFixtureStore
                 AdminPath: adminPath,
                 TotalWorkers: _document.Workers.Count,
                 FilteredWorkers: filteredWorkers.Length,
+                ProvisioningBuckets: provisioningBuckets,
                 Workers: filteredWorkers);
         }
     }
@@ -245,6 +247,8 @@ public sealed class MockFixtureStore
             displayName = $"{worker.FirstName} {worker.LastName}".Trim();
         }
 
+        var provisioningBucket = MockFixtureSummaryReporter.InferProvisioningBucket(worker);
+
         return new MockAdminWorkerSummary(
             PersonIdExternal: worker.PersonIdExternal,
             UserId: worker.UserId ?? worker.UserName,
@@ -255,7 +259,37 @@ public sealed class MockFixtureStore
             Company: worker.Company,
             Department: worker.Department,
             ManagerId: worker.ManagerId,
-            ScenarioTags: worker.ScenarioTags);
+            ScenarioTags: worker.ScenarioTags,
+            ProvisioningBucket: provisioningBucket,
+            ProvisioningBucketLabel: MockFixtureSummaryReporter.DescribeProvisioningBucket(provisioningBucket));
+    }
+
+    private static IReadOnlyList<MockAdminBucketCount> BuildProvisioningBucketCounts(IEnumerable<MockWorkerFixture> workers)
+    {
+        var preferredOrder = MockFixtureSummaryReporter.OrderedProvisioningBuckets;
+
+        return workers
+            .GroupBy(MockFixtureSummaryReporter.InferProvisioningBucket, StringComparer.OrdinalIgnoreCase)
+            .Select(group => new MockAdminBucketCount(
+                Bucket: group.Key,
+                Label: MockFixtureSummaryReporter.DescribeProvisioningBucket(group.Key),
+                Count: group.Count()))
+            .OrderBy(bucket => GetBucketOrder(bucket.Bucket, preferredOrder))
+            .ThenBy(bucket => bucket.Bucket, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
+    private static int GetBucketOrder(string bucket, IReadOnlyList<string> preferredOrder)
+    {
+        for (var index = 0; index < preferredOrder.Count; index++)
+        {
+            if (string.Equals(preferredOrder[index], bucket, StringComparison.OrdinalIgnoreCase))
+            {
+                return index;
+            }
+        }
+
+        return int.MaxValue;
     }
 
     private static IEnumerable<MockWorkerFixture> ApplyAdminFilter(IEnumerable<MockWorkerFixture> workers, string? filter)
@@ -275,6 +309,7 @@ public sealed class MockFixtureStore
         return workers
             .Where(worker =>
             {
+                var provisioningBucket = MockFixtureSummaryReporter.InferProvisioningBucket(worker);
                 var haystack = string.Join(
                     '\n',
                     [
@@ -297,6 +332,8 @@ public sealed class MockFixtureStore
                         worker.ManagerId,
                         worker.EmploymentStatus,
                         ResolveLifecycleState(worker),
+                        provisioningBucket,
+                        MockFixtureSummaryReporter.DescribeProvisioningBucket(provisioningBucket),
                         string.Join(' ', worker.ScenarioTags)
                     ]);
 

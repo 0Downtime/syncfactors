@@ -8,7 +8,13 @@ public sealed record MockAdminStateResponse(
     [property: JsonPropertyName("adminPath")] string AdminPath,
     [property: JsonPropertyName("totalWorkers")] int TotalWorkers,
     [property: JsonPropertyName("filteredWorkers")] int FilteredWorkers,
+    [property: JsonPropertyName("provisioningBuckets")] IReadOnlyList<MockAdminBucketCount> ProvisioningBuckets,
     [property: JsonPropertyName("workers")] IReadOnlyList<MockAdminWorkerSummary> Workers);
+
+public sealed record MockAdminBucketCount(
+    [property: JsonPropertyName("bucket")] string Bucket,
+    [property: JsonPropertyName("label")] string Label,
+    [property: JsonPropertyName("count")] int Count);
 
 public sealed record MockAdminWorkerSummary(
     [property: JsonPropertyName("personIdExternal")] string PersonIdExternal,
@@ -20,7 +26,9 @@ public sealed record MockAdminWorkerSummary(
     [property: JsonPropertyName("company")] string? Company,
     [property: JsonPropertyName("department")] string? Department,
     [property: JsonPropertyName("managerId")] string? ManagerId,
-    [property: JsonPropertyName("scenarioTags")] IReadOnlyList<string> ScenarioTags);
+    [property: JsonPropertyName("scenarioTags")] IReadOnlyList<string> ScenarioTags,
+    [property: JsonPropertyName("provisioningBucket")] string ProvisioningBucket,
+    [property: JsonPropertyName("provisioningBucketLabel")] string ProvisioningBucketLabel);
 
 public sealed record MockAdminWorkerDetailResponse(
     [property: JsonPropertyName("worker")] MockAdminWorkerUpsertRequest Worker,
