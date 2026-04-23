@@ -994,13 +994,8 @@ a:focus-visible {
   min-width: 0;
 }
 
-.connection-summary-head .eyebrow,
 .connection-summary-checked {
-  margin: 0;
-}
-
-.connection-summary-checked {
-  margin-top: 4px;
+  margin: 4px 0 0;
   color: var(--muted);
   font-size: 0.88rem;
   line-height: 1.2;
@@ -1008,63 +1003,129 @@ a:focus-visible {
   white-space: nowrap;
 }
 
-.connection-bar-compact {
-  margin-top: 10px;
+.connection-summary-card {
+  position: relative;
 }
 
-.connection-bar-compact .connection-segment {
-  --connection-segment-ink: color-mix(in srgb, var(--ink) 70%, var(--muted) 30%);
+.connection-health-menu {
+  position: relative;
+}
+
+.connection-health-menu summary::-webkit-details-marker {
+  display: none;
+}
+
+.connection-health-menu summary::marker {
+  display: none;
+}
+
+.connection-health-button {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  cursor: pointer;
+  list-style: none;
+  transition:
+    transform var(--motion-fast) var(--ease-emphasis);
+}
+
+.connection-health-button:hover {
+  transform: translateY(-1px);
+}
+
+.connection-health-button:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 76%, white 24%);
+  outline-offset: 3px;
+}
+
+.connection-health-button-copy {
   display: grid;
-  place-items: center;
-  min-height: 18px;
-  height: auto;
-  padding: 0 6px;
-  border-radius: 999px;
-  color: var(--connection-segment-ink);
-  text-align: center;
+  gap: 4px;
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
-.connection-segment-name,
-.connection-segment-detail {
+.connection-health-button-label {
   display: block;
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.connection-segment-name {
-  font-size: 0.46rem;
   font-weight: 800;
-  letter-spacing: 0.03em;
-  line-height: 0.95;
+  letter-spacing: 0.01em;
 }
 
-.connection-segment-detail {
-  font-size: 0.64rem;
-  font-weight: 600;
-  line-height: 1.05;
+.connection-health-button-caret {
+  flex: 0 0 auto;
+  width: 10px;
+  height: 10px;
+  border-right: 2px solid color-mix(in srgb, var(--ink) 68%, var(--muted) 32%);
+  border-bottom: 2px solid color-mix(in srgb, var(--ink) 68%, var(--muted) 32%);
+  transform: rotate(45deg) translateY(-1px);
+  transition: transform var(--motion-fast) var(--ease-emphasis);
 }
 
-.connection-bar-compact .connection-segment.good,
-.connection-bar-compact .connection-segment.warn,
-.connection-bar-compact .connection-segment.bad {
-  --connection-segment-ink: rgba(255, 255, 255, 0.96);
+.connection-health-menu[open] .connection-health-button-caret {
+  transform: rotate(225deg) translateY(-1px);
 }
 
-.connection-bar-compact .connection-segment.good {
-  background: linear-gradient(
-    90deg,
-    color-mix(in srgb, var(--good) 82%, white 18%),
-    color-mix(in srgb, var(--good) 66%, white 34%)
-  );
-  border-color: color-mix(in srgb, var(--good) 34%, white 66%);
+.connection-health-dropdown {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  z-index: 20;
+  display: grid;
+  gap: 8px;
+  width: min(360px, calc(100vw - 48px));
+  margin: 0;
+  padding: 10px;
+  list-style: none;
+  border: 1px solid color-mix(in srgb, var(--accent) 14%, var(--line) 86%);
+  border-radius: 16px;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--panel-strong) 84%, var(--panel) 16%), var(--panel));
+  box-shadow: var(--shadow-raised);
 }
 
-:root[data-theme="dark"] .connection-bar-compact .connection-segment.good,
-:root[data-theme="dark"] .connection-bar-compact .connection-segment.warn,
-:root[data-theme="dark"] .connection-bar-compact .connection-segment.bad {
-  --connection-segment-ink: color-mix(in srgb, var(--panel) 82%, black 18%);
+.connection-health-item {
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--panel-alt) 92%, transparent);
+  transition:
+    border-color var(--motion-fast) var(--ease-standard),
+    background-color var(--motion-fast) var(--ease-standard),
+    transform var(--motion-fast) var(--ease-emphasis);
+}
+
+.connection-health-item:hover {
+  border-color: color-mix(in srgb, var(--accent) 22%, var(--line) 78%);
+  background: color-mix(in srgb, var(--panel-strong) 78%, var(--panel-alt) 22%);
+  transform: translateY(-1px);
+}
+
+.connection-health-item-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.connection-health-item-name {
+  font-weight: 700;
+}
+
+.connection-health-item-summary {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 0.88rem;
+  line-height: 1.35;
+}
+
+.connection-section-copy {
+  margin: 10px 0 0;
 }
 
 .subtle-button {
@@ -1377,6 +1438,12 @@ a:focus-visible {
   .connection-summary-checked {
     text-align: left;
     white-space: normal;
+  }
+
+  .connection-health-dropdown {
+    left: 0;
+    right: auto;
+    width: 100%;
   }
 }
 
