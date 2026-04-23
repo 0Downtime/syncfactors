@@ -956,33 +956,6 @@ a:focus-visible {
   min-width: 0;
 }
 
-.dashboard-filter-bar {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 14px;
-  margin: 0 0 18px;
-  padding: 14px 16px;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--accent-soft) 44%, transparent), transparent),
-    var(--panel-alt);
-}
-
-.dashboard-filter-copy {
-  min-width: 0;
-}
-
-.dashboard-filter-copy .eyebrow,
-.dashboard-filter-caption {
-  margin: 0;
-}
-
-.dashboard-filter-caption {
-  margin-top: 6px;
-}
-
 .subtle-button {
   background: color-mix(in srgb, var(--panel-alt) 86%, transparent);
   box-shadow: none;
@@ -1273,11 +1246,6 @@ a:focus-visible {
 
   .dashboard-analytics-grid {
     grid-template-columns: 1fr;
-  }
-
-  .dashboard-filter-bar {
-    align-items: flex-start;
-    flex-direction: column;
   }
 
   .runs-pagination {
