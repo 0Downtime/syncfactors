@@ -143,11 +143,7 @@
             <section class="connection-summary-card" aria-label="Dependency health summary" data-connection-health data-health-probes-enabled="@(Model.HealthProbesEnabled ? "true" : "false")" data-health-probe-interval-ms="@(Model.HealthProbeIntervalSeconds * 1000)">
                 <details class="connection-health-menu">
                     <summary class="connection-health-button">
-                        <span class="connection-health-button-copy">
-                            <span class="connection-health-button-label">Connection health</span>
-                            <span class="muted connection-summary-checked" data-health-last-checked>@(Model.HealthProbesEnabled ? "Probe has not run yet." : "Dashboard health probes are disabled.")</span>
-                        </span>
-                        <span class="badge @(Model.HealthProbesEnabled ? "neutral" : "dim")" data-health-overall-badge>@(Model.HealthProbesEnabled ? "Loading" : "Disabled")</span>
+                        <span class="badge @(Model.HealthProbesEnabled ? "neutral" : "dim")" data-health-overall-badge>Connection Health</span>
                         <span class="connection-health-button-caret" aria-hidden="true"></span>
                     </summary>
                     <ul class="connection-health-dropdown" data-health-list>
