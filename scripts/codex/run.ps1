@@ -156,6 +156,40 @@ function Get-PowerShellExecutablePath {
     return Join-Path $PSHOME $executableName
 }
 
+function Initialize-WorktreeBootstrapIfNeeded {
+    param(
+        [Parameter(Mandatory)]
+        [string]$RepositoryRoot,
+        [Parameter(Mandatory)]
+        [string]$ScriptDirectory
+    )
+
+    $envFile = Join-Path $RepositoryRoot '.env.worktree'
+    if (Test-Path $envFile) {
+        return
+    }
+
+    $setupScript = Join-Path $ScriptDirectory 'setup-worktree.ps1'
+    if (-not (Test-Path $setupScript)) {
+        throw "Missing $envFile and bootstrap script '$setupScript' could not be found."
+    }
+
+    $relativeEnvFile = [System.IO.Path]::GetRelativePath($RepositoryRoot, $envFile)
+    Write-Host "Missing $relativeEnvFile. Running scripts/codex/setup-worktree.ps1 to bootstrap this worktree..." -ForegroundColor Yellow
+
+    $pwshExecutable = Get-PowerShellExecutablePath
+    try {
+        & $pwshExecutable -NoProfile -File $setupScript
+    }
+    catch {
+        throw "Automatic worktree bootstrap failed while creating $relativeEnvFile. $_"
+    }
+
+    if (-not (Test-Path $envFile)) {
+        throw "Automatic worktree bootstrap completed, but '$envFile' was still not created."
+    }
+}
+
 function Invoke-PrestartGitPull {
     param(
         [Parameter(Mandatory)]
@@ -248,6 +282,7 @@ if ($Service -eq 'stack') {
     Invoke-PrestartGitPull -RepositoryRoot $repoRoot -RunSettings $runSettings
 }
 
+Initialize-WorktreeBootstrapIfNeeded -RepositoryRoot $repoRoot -ScriptDirectory $scriptDir
 . (Join-Path $scriptDir 'Load-WorktreeEnv.ps1')
 . (Join-Path $scriptDir '..' 'Start-SyncFactorsCommon.ps1')
 . (Join-Path $scriptDir '..' 'Sync-LocalConfigFormat.ps1')
