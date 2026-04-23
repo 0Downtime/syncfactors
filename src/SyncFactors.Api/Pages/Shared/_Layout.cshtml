@@ -73,13 +73,11 @@
                         </div>
                     </div>
                 }
-                <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Toggle dark mode" aria-pressed="false">
-                    <span class="theme-toggle-option theme-toggle-option-light" aria-hidden="true">☀</span>
-                    <span class="theme-toggle-track" aria-hidden="true">
-                        <span class="theme-toggle-thumb"></span>
-                    </span>
-                    <span class="theme-toggle-option theme-toggle-option-dark" aria-hidden="true">☾</span>
-                </button>
+                <div class="theme-toggle" id="theme-toggle" role="group" aria-label="Color mode">
+                    <button class="theme-toggle-option" type="button" data-theme-option="system" aria-pressed="false">System</button>
+                    <button class="theme-toggle-option" type="button" data-theme-option="light" aria-pressed="false">Light</button>
+                    <button class="theme-toggle-option" type="button" data-theme-option="dark" aria-pressed="false">Dark</button>
+                </div>
             </div>
         </header>
         <main class="content">

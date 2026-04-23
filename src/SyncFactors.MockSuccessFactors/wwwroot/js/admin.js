@@ -3,6 +3,7 @@
 
     const themeStorageKey = "syncfactors-next-theme";
     const root = document.documentElement;
+    const colorSchemeQuery = window.matchMedia ? window.matchMedia("(prefers-color-scheme: dark)") : null;
 
     const state = {
         workers: [],
@@ -38,13 +39,38 @@
         comparePlannerStatus: document.querySelector("[data-compare-planner-status]"),
         comparePlannerReason: document.querySelector("[data-compare-planner-reason]"),
         comparePlannerError: document.querySelector("[data-compare-planner-error]"),
-        themeToggle: document.getElementById("theme-toggle")
+        themeToggle: document.getElementById("theme-toggle"),
+        themeOptions: Array.prototype.slice.call(document.querySelectorAll("[data-theme-option]"))
     };
 
     let filterTimer = null;
 
-    function applyTheme(theme) {
-        const resolvedTheme = theme === "dark" ? "dark" : "light";
+    function isThemePreference(value) {
+        return value === "system" || value === "light" || value === "dark";
+    }
+
+    function resolveTheme(preference) {
+        if (preference === "dark") {
+            return "dark";
+        }
+
+        if (preference === "light") {
+            return "light";
+        }
+
+        return colorSchemeQuery && colorSchemeQuery.matches ? "dark" : "light";
+    }
+
+    function updateThemeToggle(preference) {
+        elements.themeOptions.forEach(function (option) {
+            option.setAttribute("aria-pressed", String(option.dataset.themeOption === preference));
+        });
+    }
+
+    function applyTheme(themePreference) {
+        const preference = isThemePreference(themePreference) ? themePreference : "system";
+        const resolvedTheme = resolveTheme(preference);
+        root.dataset.themePreference = preference;
         root.dataset.theme = resolvedTheme;
         root.style.colorScheme = resolvedTheme;
 
@@ -52,30 +78,50 @@
             return;
         }
 
-        elements.themeToggle.setAttribute("aria-pressed", String(resolvedTheme === "dark"));
-        elements.themeToggle.setAttribute("title", resolvedTheme === "dark" ? "Dark mode enabled" : "Light mode enabled");
+        elements.themeToggle.setAttribute("data-theme-selection", preference);
+        updateThemeToggle(preference);
     }
 
-    function persistTheme(theme) {
+    function persistTheme(themePreference) {
         try {
-            window.localStorage.setItem(themeStorageKey, theme);
+            window.localStorage.setItem(themeStorageKey, themePreference);
         } catch (error) {
             return;
         }
     }
 
-    function bindThemeToggle() {
-        applyTheme(root.dataset.theme === "dark" ? "dark" : "light");
-
-        if (!elements.themeToggle) {
+    function handleSystemThemeChange() {
+        if ((root.dataset.themePreference || "system") !== "system") {
             return;
         }
 
-        elements.themeToggle.addEventListener("click", function () {
-            const nextTheme = root.dataset.theme === "dark" ? "light" : "dark";
-            applyTheme(nextTheme);
-            persistTheme(nextTheme);
+        applyTheme("system");
+    }
+
+    function bindThemeToggle() {
+        applyTheme(root.dataset.themePreference);
+
+        if (!elements.themeOptions.length) {
+            return;
+        }
+
+        elements.themeOptions.forEach(function (option) {
+            option.addEventListener("click", function () {
+                const nextTheme = option.dataset.themeOption;
+                applyTheme(nextTheme);
+                persistTheme(nextTheme);
+            });
         });
+
+        if (!colorSchemeQuery) {
+            return;
+        }
+
+        if (typeof colorSchemeQuery.addEventListener === "function") {
+            colorSchemeQuery.addEventListener("change", handleSystemThemeChange);
+        } else if (typeof colorSchemeQuery.addListener === "function") {
+            colorSchemeQuery.addListener(handleSystemThemeChange);
+        }
     }
 
     function escapeHtml(value) {
