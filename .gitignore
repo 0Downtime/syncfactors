@@ -30,8 +30,10 @@ web/.vite/
 
 # Local workspace tooling state
 .codex/
+.agents/
 .playwright-cli/
 .npm-cache/
+skills-lock.json
 
 *.log
 *.tmp
