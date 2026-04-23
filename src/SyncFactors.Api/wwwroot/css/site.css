@@ -982,6 +982,12 @@ a:focus-visible {
   box-shadow: none;
 }
 
+.connection-summary-card-inline {
+  flex: 0 0 auto;
+  min-width: 0;
+  margin-left: auto;
+}
+
 .connection-summary-head {
   display: flex;
   align-items: flex-start;
@@ -1032,6 +1038,11 @@ a:focus-visible {
   list-style: none;
   transition:
     transform var(--motion-fast) var(--ease-emphasis);
+}
+
+.connection-summary-card-inline .connection-health-button {
+  width: auto;
+  justify-content: flex-end;
 }
 
 .connection-health-button .badge {
@@ -1436,6 +1447,10 @@ a:focus-visible {
 
   .connection-summary-card {
     width: 100%;
+  }
+
+  .connection-summary-card-inline {
+    width: auto;
   }
 
   .connection-summary-checked {

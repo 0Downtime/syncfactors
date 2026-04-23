@@ -33,6 +33,30 @@
     <article class="panel dashboard-rail">
         <div class="panel-heading panel-heading-tight">
             <h2>Status</h2>
+            <section class="connection-summary-card connection-summary-card-inline" aria-label="Dependency health summary" data-connection-health data-health-probes-enabled="@(Model.HealthProbesEnabled ? "true" : "false")" data-health-probe-interval-ms="@(Model.HealthProbeIntervalSeconds * 1000)">
+                <details class="connection-health-menu">
+                    <summary class="connection-health-button">
+                        <span class="badge @(Model.HealthProbesEnabled ? "neutral" : "dim")" data-health-overall-badge>Connection Health</span>
+                        <span class="connection-health-button-caret" aria-hidden="true"></span>
+                    </summary>
+                    <ul class="connection-health-dropdown" data-health-list>
+                        @foreach (var dependency in new[] { "SuccessFactors", "Active Directory", "Worker Service", "SQLite" })
+                        {
+                            var summary = Model.HealthProbesEnabled ? "Probe pending." : "Dashboard probing is turned off.";
+                            var detail = Model.HealthProbesEnabled
+                                ? "The dashboard will run this check after the page settles."
+                                : "Enable dashboard health probes to run this dependency check.";
+                            <li class="connection-health-item" title="@($"{dependency}: {summary} {detail}")">
+                                <div class="connection-health-item-head">
+                                    <span class="connection-health-item-name">@dependency</span>
+                                    <span class="badge @(Model.HealthProbesEnabled ? "neutral" : "dim")">@(Model.HealthProbesEnabled ? "Waiting" : "Disabled")</span>
+                                </div>
+                                <p class="connection-health-item-summary">@summary</p>
+                            </li>
+                        }
+                    </ul>
+                </details>
+            </section>
         </div>
         <section class="dashboard-schedule-widget" aria-label="Next scheduled sync">
             <div class="dashboard-schedule-head">
@@ -98,7 +122,7 @@
                 </div>
             </div>
             <p class="muted connection-section-copy">
-                Use connection health menu in recent runs header to inspect each dependency, status, and probe detail.
+                Use connection health menu in Status header to inspect each dependency, status, and probe detail.
             </p>
 
             @if (Model.IsDevelopment && (User.IsInRole("Admin") || User.IsInRole("BreakGlassAdmin")))
@@ -140,30 +164,6 @@
                 <h2>Recent Runs</h2>
                 <p class="muted dashboard-refresh-note" data-dashboard-checked>Live data is refreshed automatically while this page is open.</p>
             </div>
-            <section class="connection-summary-card" aria-label="Dependency health summary" data-connection-health data-health-probes-enabled="@(Model.HealthProbesEnabled ? "true" : "false")" data-health-probe-interval-ms="@(Model.HealthProbeIntervalSeconds * 1000)">
-                <details class="connection-health-menu">
-                    <summary class="connection-health-button">
-                        <span class="badge @(Model.HealthProbesEnabled ? "neutral" : "dim")" data-health-overall-badge>Connection Health</span>
-                        <span class="connection-health-button-caret" aria-hidden="true"></span>
-                    </summary>
-                    <ul class="connection-health-dropdown" data-health-list>
-                        @foreach (var dependency in new[] { "SuccessFactors", "Active Directory", "Worker Service", "SQLite" })
-                        {
-                            var summary = Model.HealthProbesEnabled ? "Probe pending." : "Dashboard probing is turned off.";
-                            var detail = Model.HealthProbesEnabled
-                                ? "The dashboard will run this check after the page settles."
-                                : "Enable dashboard health probes to run this dependency check.";
-                            <li class="connection-health-item" title="@($"{dependency}: {summary} {detail}")">
-                                <div class="connection-health-item-head">
-                                    <span class="connection-health-item-name">@dependency</span>
-                                    <span class="badge @(Model.HealthProbesEnabled ? "neutral" : "dim")">@(Model.HealthProbesEnabled ? "Waiting" : "Disabled")</span>
-                                </div>
-                                <p class="connection-health-item-summary">@summary</p>
-                            </li>
-                        }
-                    </ul>
-                </details>
-            </section>
         </div>
         <section class="dashboard-timeline-card analytics-card" aria-label="Focused run timeline">
             <div class="section-heading">
