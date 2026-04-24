@@ -24,6 +24,20 @@ function ConvertTo-PowerShellLiteral {
     return "'" + $Value.Replace("'", "''") + "'"
 }
 
+function ConvertTo-PowerShellCommandArgument {
+    param(
+        [Parameter(Mandatory)]
+        [AllowEmptyString()]
+        [string]$Value
+    )
+
+    if ($Value -match '^-[A-Za-z][A-Za-z0-9]*(?::\$(?:true|false))?$') {
+        return $Value
+    }
+
+    return ConvertTo-PowerShellLiteral -Value $Value
+}
+
 if ([OperatingSystem]::IsMacOS()) {
     $terminalArguments = @()
     if ($ReuseIfExists) {
@@ -43,15 +57,22 @@ if ([OperatingSystem]::IsMacOS()) {
 if ([OperatingSystem]::IsWindows()) {
     $commandInvocationParts = @('&', (ConvertTo-PowerShellLiteral -Value $Command))
     foreach ($argument in $Arguments) {
-        $commandInvocationParts += ConvertTo-PowerShellLiteral -Value $argument
+        $commandInvocationParts += ConvertTo-PowerShellCommandArgument -Value $argument
     }
 
     $wrappedCommandLines = [System.Collections.Generic.List[string]]::new()
+    $wrappedCommandLines.Add('$ErrorActionPreference = ' + (ConvertTo-PowerShellLiteral -Value 'Stop'))
     $wrappedCommandLines.Add('Set-Location -LiteralPath ' + (ConvertTo-PowerShellLiteral -Value $repoRoot))
     $wrappedCommandLines.Add('$Host.UI.RawUI.WindowTitle = ' + (ConvertTo-PowerShellLiteral -Value $Label))
     $wrappedCommandLines.Add('Write-Host (' + (ConvertTo-PowerShellLiteral -Value ("Starting {0}" -f $Label)) + ')')
-    $wrappedCommandLines.Add($commandInvocationParts -join ' ')
-    $wrappedCommandLines.Add('$exitCode = if ($null -ne $LASTEXITCODE) { $LASTEXITCODE } else { 0 }')
+    $wrappedCommandLines.Add('try {')
+    $wrappedCommandLines.Add('    ' + ($commandInvocationParts -join ' '))
+    $wrappedCommandLines.Add('    $exitCode = if ($null -ne $LASTEXITCODE) { $LASTEXITCODE } else { 0 }')
+    $wrappedCommandLines.Add('}')
+    $wrappedCommandLines.Add('catch {')
+    $wrappedCommandLines.Add('    Write-Error $_')
+    $wrappedCommandLines.Add('    $exitCode = 1')
+    $wrappedCommandLines.Add('}')
     $wrappedCommandLines.Add('Write-Host (' + (ConvertTo-PowerShellLiteral -Value ("`n[{0}] exited with status " -f $Label)) + ' + $exitCode + ''.'')')
     $wrappedCommandLines.Add('exit $exitCode')
     $wrappedCommand = $wrappedCommandLines -join [Environment]::NewLine
