@@ -61,6 +61,7 @@ builder.Services.AddSingleton(serviceProvider =>
 builder.Services.AddSingleton<ILifecyclePolicy, LifecyclePolicy>();
 builder.Services.AddSingleton<IAttributeDiffService, AttributeDiffService>();
 builder.Services.AddSingleton<IActiveDirectoryConnectionPool, ActiveDirectoryConnectionPool>();
+builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<RuntimeFixtureDirectoryGateway>();
 builder.Services.AddTransient<IDirectoryGateway>(serviceProvider => serviceProvider.GetRequiredService<RuntimeFixtureDirectoryGateway>());
 builder.Services.AddHttpClient<SuccessFactorsWorkerSource>()
