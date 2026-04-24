@@ -95,6 +95,8 @@ public sealed class DetailModel(RunEntriesQueryService queryService) : PageModel
 
     public bool IsEntryDetail => !string.IsNullOrWhiteSpace(EntryId);
 
+    public string GetRunEntryDetailLinkLabel() => IsDryRun ? "Open saved dry-run plan" : "Open saved run decision";
+
     public RunContextDisplay DescribeRunContext()
     {
         if (Run is null)

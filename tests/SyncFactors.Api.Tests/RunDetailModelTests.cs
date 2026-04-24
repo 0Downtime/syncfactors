@@ -100,6 +100,25 @@ public sealed class RunDetailModelTests
     }
 
     [Fact]
+    public async Task GetRunEntryDetailLinkLabel_UsesDryRunSpecificCopy()
+    {
+        var dryRunModel = new DetailModel(new RunEntriesQueryService(new StubRunRepository(CreateRunDetail(dryRun: true))))
+        {
+            RunId = "bulk-1"
+        };
+        var liveRunModel = new DetailModel(new RunEntriesQueryService(new StubRunRepository(CreateRunDetail(dryRun: false))))
+        {
+            RunId = "bulk-1"
+        };
+
+        _ = await dryRunModel.OnGetAsync(CancellationToken.None);
+        _ = await liveRunModel.OnGetAsync(CancellationToken.None);
+
+        Assert.Equal("Open saved dry-run plan", dryRunModel.GetRunEntryDetailLinkLabel());
+        Assert.Equal("Open saved run decision", liveRunModel.GetRunEntryDetailLinkLabel());
+    }
+
+    [Fact]
     public async Task OnGetExportAsync_ReturnsFilteredJsonDownload()
     {
         var repository = new StubRunRepository();

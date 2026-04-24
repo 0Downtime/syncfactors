@@ -332,7 +332,7 @@
                 {
                     @if (!Model.IsEntryDetail)
                     {
-                        <p><a asp-page="/Runs/Detail" asp-route-runId="@Model.Run.Run.RunId" asp-route-entryId="@entry.EntryId" asp-fragment="entries">Open run entry details</a></p>
+                        <p><a asp-page="/Runs/Detail" asp-route-runId="@Model.Run.Run.RunId" asp-route-entryId="@entry.EntryId" asp-fragment="entries">@Model.GetRunEntryDetailLinkLabel()</a></p>
                     }
                     var savedPreviewRunId = GetSavedPreviewRunId(entry);
                     if (!string.IsNullOrWhiteSpace(savedPreviewRunId))
