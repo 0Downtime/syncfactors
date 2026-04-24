@@ -60,6 +60,9 @@ public sealed class DetailModel(RunEntriesQueryService queryService) : PageModel
     public string? EmploymentStatus { get; set; }
 
     [BindProperty(SupportsGet = true)]
+    public string? EntryId { get; set; }
+
+    [BindProperty(SupportsGet = true)]
     public int PageNumber { get; set; } = 1;
 
     public RunDetail? Run { get; private set; }
@@ -89,6 +92,8 @@ public sealed class DetailModel(RunEntriesQueryService queryService) : PageModel
         Run is not null &&
         Run.Run.DryRun &&
         !IsPreviewRun;
+
+    public bool IsEntryDetail => !string.IsNullOrWhiteSpace(EntryId);
 
     public RunContextDisplay DescribeRunContext()
     {
@@ -579,7 +584,7 @@ public sealed class DetailModel(RunEntriesQueryService queryService) : PageModel
             return NotFound();
         }
 
-        var result = await queryService.LoadAsync(RunId, Bucket, WorkerId, null, Filter, EmploymentStatus, null, PageNumber, EntriesPerPage, cancellationToken);
+        var result = await queryService.LoadAsync(RunId, Bucket, WorkerId, null, Filter, EmploymentStatus, EntryId, PageNumber, EntriesPerPage, cancellationToken);
         if (result is null)
         {
             return NotFound();
@@ -608,7 +613,7 @@ public sealed class DetailModel(RunEntriesQueryService queryService) : PageModel
             return NotFound();
         }
 
-        var export = await queryService.ExportAsync(RunId, Bucket, WorkerId, null, Filter, EmploymentStatus, null, cancellationToken);
+        var export = await queryService.ExportAsync(RunId, Bucket, WorkerId, null, Filter, EmploymentStatus, EntryId, cancellationToken);
         if (export is null)
         {
             return NotFound();
@@ -625,7 +630,7 @@ public sealed class DetailModel(RunEntriesQueryService queryService) : PageModel
             return NotFound();
         }
 
-        var export = await queryService.ExportAsync(RunId, Bucket, WorkerId, null, Filter, EmploymentStatus, null, cancellationToken);
+        var export = await queryService.ExportAsync(RunId, Bucket, WorkerId, null, Filter, EmploymentStatus, EntryId, cancellationToken);
         if (export is null)
         {
             return NotFound();
@@ -641,7 +646,7 @@ public sealed class DetailModel(RunEntriesQueryService queryService) : PageModel
             return NotFound();
         }
 
-        var export = await queryService.ExportAsync(RunId, Bucket, WorkerId, null, Filter, EmploymentStatus, null, cancellationToken);
+        var export = await queryService.ExportAsync(RunId, Bucket, WorkerId, null, Filter, EmploymentStatus, EntryId, cancellationToken);
         if (export is null)
         {
             return NotFound();
