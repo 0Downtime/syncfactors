@@ -59,8 +59,8 @@ public sealed class LifecyclePolicy(
             return new LifecycleDecision(
                 Bucket: hasExistingUser ? "updates" : "creates",
                 TargetOu: settings.PrehireOu,
-                TargetEnabled: false,
-                Reason: "Prehire accounts remain disabled in the prehire OU until the start date.");
+                TargetEnabled: true,
+                Reason: "Prehire accounts remain enabled in the prehire OU until the start date.");
         }
 
         var needsActivationMove = hasExistingUser &&

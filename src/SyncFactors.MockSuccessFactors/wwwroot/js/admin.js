@@ -39,6 +39,7 @@
         comparePlannerStatus: document.querySelector("[data-compare-planner-status]"),
         comparePlannerReason: document.querySelector("[data-compare-planner-reason]"),
         comparePlannerError: document.querySelector("[data-compare-planner-error]"),
+        lifecycleStateSelect: document.querySelector("[data-lifecycle-state-select]"),
         themeToggle: document.getElementById("theme-toggle"),
         themeOptions: Array.prototype.slice.call(document.querySelectorAll("[data-theme-option]"))
     };
@@ -405,7 +406,33 @@
             setComparisonState(null);
         }
 
+        if (elements.lifecycleStateSelect) {
+            elements.lifecycleStateSelect.value = resolveSimulatedLifecycleOption(resolvedWorker);
+        }
+
         renderWorkerList();
+    }
+
+    function resolveSimulatedLifecycleOption(worker) {
+        const lifecycleState = String(worker.lifecycleState || "").toLowerCase();
+        const employmentStatus = String(worker.employmentStatus || "").toUpperCase();
+        if (lifecycleState === "preboarding" || lifecycleState === "prehire") {
+            return "prehire";
+        }
+
+        if (lifecycleState === "paid-leave" || employmentStatus === "U" || employmentStatus === "64304") {
+            return "paid-leave";
+        }
+
+        if (lifecycleState === "unpaid-leave" || employmentStatus === "64303") {
+            return "unpaid-leave";
+        }
+
+        if (lifecycleState === "terminated" || employmentStatus === "T" || employmentStatus === "I" || employmentStatus === "64308") {
+            return "terminated";
+        }
+
+        return "active-started";
     }
 
     function readWorkerValue(worker, path) {
@@ -537,6 +564,22 @@
         showToast(result.message, "good");
     }
 
+    async function applyLifecycleState() {
+        if (!state.selectedWorkerId) {
+            showToast("Select a worker first.", "warn");
+            return;
+        }
+
+        const lifecycleState = elements.lifecycleStateSelect ? elements.lifecycleStateSelect.value : "";
+        const result = await requestJson(
+            endpoints.workers + "/" + encodeURIComponent(state.selectedWorkerId) + "/lifecycle-state",
+            { method: "POST", body: JSON.stringify({ lifecycleState: lifecycleState }) });
+        setEditor(result.worker, "edit");
+        await loadWorkers(true);
+        await loadWorker(result.worker.personIdExternal || state.selectedWorkerId);
+        showToast(result.message, "good");
+    }
+
     async function runAction(action) {
         if (action === "new") {
             setEditor(blankWorker(), "create");
@@ -552,6 +595,11 @@
             setEditor(blankWorker(), "create");
             await loadWorkers(false);
             showToast(result.message, "good");
+            return;
+        }
+
+        if (action === "apply-lifecycle-state") {
+            await applyLifecycleState();
             return;
         }
 

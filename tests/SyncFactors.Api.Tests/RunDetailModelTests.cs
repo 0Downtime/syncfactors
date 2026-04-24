@@ -82,6 +82,43 @@ public sealed class RunDetailModelTests
     }
 
     [Fact]
+    public async Task OnGetAsync_FiltersByEntryIdForEntryDetail()
+    {
+        var repository = new StubRunRepository();
+        var model = new DetailModel(new RunEntriesQueryService(repository))
+        {
+            RunId = "bulk-1",
+            EntryId = "bulk-1:updates:worker-1:0"
+        };
+
+        var result = await model.OnGetAsync(CancellationToken.None);
+
+        Assert.IsType<PageResult>(result);
+        Assert.True(model.IsEntryDetail);
+        Assert.Equal("bulk-1:updates:worker-1:0", repository.LastEntriesEntryId);
+        Assert.Equal("bulk-1:updates:worker-1:0", repository.LastTotalsEntryId);
+    }
+
+    [Fact]
+    public async Task GetRunEntryDetailLinkLabel_UsesDryRunSpecificCopy()
+    {
+        var dryRunModel = new DetailModel(new RunEntriesQueryService(new StubRunRepository(CreateRunDetail(dryRun: true))))
+        {
+            RunId = "bulk-1"
+        };
+        var liveRunModel = new DetailModel(new RunEntriesQueryService(new StubRunRepository(CreateRunDetail(dryRun: false))))
+        {
+            RunId = "bulk-1"
+        };
+
+        _ = await dryRunModel.OnGetAsync(CancellationToken.None);
+        _ = await liveRunModel.OnGetAsync(CancellationToken.None);
+
+        Assert.Equal("Open saved dry-run plan", dryRunModel.GetRunEntryDetailLinkLabel());
+        Assert.Equal("Open saved run decision", liveRunModel.GetRunEntryDetailLinkLabel());
+    }
+
+    [Fact]
     public async Task OnGetExportAsync_ReturnsFilteredJsonDownload()
     {
         var repository = new StubRunRepository();
@@ -879,11 +916,15 @@ public sealed class RunDetailModelTests
 
         public string? LastTotalsEmploymentStatus { get; private set; }
 
+        public string? LastTotalsEntryId { get; private set; }
+
         public string? LastEmploymentTotalsRunId { get; private set; }
 
         public string? LastEmploymentTotalsEmploymentStatus { get; private set; }
 
         public string? LastEntriesEmploymentStatus { get; private set; }
+
+        public string? LastEntriesEntryId { get; private set; }
 
         public Task<IReadOnlyList<RunSummary>> ListRunsAsync(CancellationToken cancellationToken)
         {
@@ -943,7 +984,7 @@ public sealed class RunDetailModelTests
             _ = reason;
             _ = filter;
             LastEntriesEmploymentStatus = employmentStatus;
-            _ = entryId;
+            LastEntriesEntryId = entryId;
             _ = cancellationToken;
             LastSkip = skip;
             LastTake = take;
@@ -990,8 +1031,8 @@ public sealed class RunDetailModelTests
             LastTotalsWorkerId = workerId;
             LastTotalsFilter = filter;
             LastTotalsEmploymentStatus = employmentStatus;
+            LastTotalsEntryId = entryId;
             _ = reason;
-            _ = entryId;
             _ = cancellationToken;
             return Task.FromResult<IReadOnlyList<ChangedAttributeTotal>>(
             [

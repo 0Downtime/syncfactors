@@ -397,6 +397,7 @@ h1 {
 
 .search-box input,
 .field-grid input,
+.field-grid select,
 .field-grid textarea {
     width: 100%;
     border: 1px solid var(--line);
@@ -415,12 +416,14 @@ h1 {
 
 .search-box input:hover,
 .field-grid input:hover,
+.field-grid select:hover,
 .field-grid textarea:hover {
     border-color: var(--line-strong);
 }
 
 .search-box input:focus-visible,
 .field-grid input:focus-visible,
+.field-grid select:focus-visible,
 .field-grid textarea:focus-visible {
     border-color: color-mix(in srgb, var(--accent) 34%, var(--line));
 }

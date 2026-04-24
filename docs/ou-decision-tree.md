@@ -24,9 +24,9 @@ flowchart TD
     M -->|No| O["Bucket = graveyardMoves<br/>Move to graveyard OU and disable"]
 
     I -->|No| P{"worker.IsPrehire?"}
-    P -->|Yes| Q["Target OU = ad.prehireOu<br/>Target enabled = false"]
+    P -->|Yes| Q["Target OU = ad.prehireOu<br/>Target enabled = true"]
     Q --> R{"Existing AD account?"}
-    R -->|No| S["Bucket = creates<br/>Create disabled prehire account"]
+    R -->|No| S["Bucket = creates<br/>Create enabled prehire account"]
     R -->|Yes| T["Bucket = updates<br/>Ensure prehire OU target state"]
 
     P -->|No| U["Target OU = ad.defaultActiveOu<br/>Target enabled = true"]

@@ -525,6 +525,16 @@ public sealed class BulkRunCoordinator(
                   "proposedValue": {{ToJsonString(change.After == "(unset)" ? null : change.After)}}
                 }
                 """);
+        var decisionRows = (plan.DecisionSteps ?? [])
+            .Select(step =>
+                $$"""
+                {
+                  "step": "{{Escape(step.Step)}}",
+                  "outcome": "{{Escape(step.Outcome)}}",
+                  "detail": "{{Escape(step.Detail)}}",
+                  "tone": "{{Escape(step.Tone)}}"
+                }
+                """);
 
         return ParseJson(
             $$"""
@@ -558,7 +568,8 @@ public sealed class BulkRunCoordinator(
                     """))}}
               ],
               "managerRequired": {{(!string.IsNullOrWhiteSpace(plan.Worker.Attributes.TryGetValue("managerId", out var managerId) ? managerId : null) ? "true" : "false")}},
-              "changedAttributeDetails": [{{string.Join(",", changedRows)}}]
+              "changedAttributeDetails": [{{string.Join(",", changedRows)}}],
+              "decisionTree": [{{string.Join(",", decisionRows)}}]
             }
             """);
     }
@@ -646,7 +657,21 @@ public sealed class BulkRunCoordinator(
               "applied": false,
               "succeeded": false,
               "managerRequired": {{(!string.IsNullOrWhiteSpace(worker.Attributes.TryGetValue("managerId", out var managerId) ? managerId : null) ? "true" : "false")}},
-              "changedAttributeDetails": []
+              "changedAttributeDetails": [],
+              "decisionTree": [
+                {
+                  "step": "Source Worker",
+                  "outcome": "Loaded",
+                  "detail": "Loaded source worker {{Escape(worker.WorkerId)}} before planning failed.",
+                  "tone": "neutral"
+                },
+                {
+                  "step": "Worker Planning",
+                  "outcome": "Failed",
+                  "detail": {{ToJsonString(reason)}},
+                  "tone": "warn"
+                }
+              ]
             }
             """);
     }
