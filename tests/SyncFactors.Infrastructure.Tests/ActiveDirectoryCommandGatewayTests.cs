@@ -37,6 +37,37 @@ public sealed class ActiveDirectoryCommandGatewayTests
     }
 
     [Fact]
+    public void ShouldRetryTransientCommandFailure_ReturnsTrue_ForUnavailableServerBeforeWrite()
+    {
+        var (method, context) = CreateTransientCommandRetryReflectionContext(typeof(LdapException));
+
+        var shouldRetry = Assert.IsType<bool>(method.Invoke(null, [new LdapException("The LDAP server is unavailable."), context, 0]));
+
+        Assert.True(shouldRetry);
+    }
+
+    [Fact]
+    public void ShouldRetryTransientCommandFailure_ReturnsFalse_AfterWriteAttempt()
+    {
+        var (method, context) = CreateTransientCommandRetryReflectionContext(typeof(LdapException));
+        context.GetType().GetMethod("MarkWriteAttempted")!.Invoke(context, []);
+
+        var shouldRetry = Assert.IsType<bool>(method.Invoke(null, [new LdapException("The LDAP server is unavailable."), context, 0]));
+
+        Assert.False(shouldRetry);
+    }
+
+    [Fact]
+    public void ShouldRetryTransientCommandFailure_ReturnsFalse_AfterRetryBudgetIsExhausted()
+    {
+        var (method, context) = CreateTransientCommandRetryReflectionContext(typeof(LdapException));
+
+        var shouldRetry = Assert.IsType<bool>(method.Invoke(null, [new LdapException("The LDAP server is unavailable."), context, 3]));
+
+        Assert.False(shouldRetry);
+    }
+
+    [Fact]
     public void BuildUpdateRenameFailureDetails_IncludesRenameContext()
     {
         var method = typeof(ActiveDirectoryCommandGateway).GetMethod("BuildUpdateRenameFailureDetails", BindingFlags.NonPublic | BindingFlags.Static);
@@ -1282,5 +1313,20 @@ public sealed class ActiveDirectoryCommandGatewayTests
             Name = name,
             Operation = DirectoryAttributeOperation.Replace
         };
+    }
+
+    private static (MethodInfo Method, object Context) CreateTransientCommandRetryReflectionContext(Type exceptionType)
+    {
+        var contextType = typeof(ActiveDirectoryCommandGateway).GetNestedType("CommandExecutionContext", BindingFlags.NonPublic);
+        Assert.NotNull(contextType);
+        var method = typeof(ActiveDirectoryCommandGateway).GetMethod(
+            "ShouldRetryTransientCommandFailure",
+            BindingFlags.NonPublic | BindingFlags.Static,
+            [exceptionType, contextType!, typeof(int)]);
+        Assert.NotNull(method);
+        var context = Activator.CreateInstance(contextType!);
+        Assert.NotNull(context);
+
+        return (method!, context!);
     }
 }

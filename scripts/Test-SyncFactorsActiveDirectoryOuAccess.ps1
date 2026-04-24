@@ -158,7 +158,7 @@ public sealed class SyncFactorsLauncherAdOuProbeConfig
     public int? Port { get; set; }
     public string? Username { get; set; }
     public string? BindPassword { get; set; }
-    public string TransportMode { get; set; } = "ldap";
+    public string TransportMode { get; set; } = "ldaps";
     public bool AllowLdapFallback { get; set; }
     public bool RequireCertificateValidation { get; set; } = true;
     public bool RequireSigning { get; set; } = true;
@@ -530,7 +530,7 @@ public static class SyncFactorsLauncherAdOuProbe
 
     private static string NormalizeMode(string? mode)
     {
-        return string.IsNullOrWhiteSpace(mode) ? "ldap" : mode.Trim().ToLowerInvariant();
+        return string.IsNullOrWhiteSpace(mode) ? "ldaps" : mode.Trim().ToLowerInvariant();
     }
 
     private static string NormalizeThumbprint(string? thumbprint)
@@ -561,7 +561,7 @@ function Invoke-SyncFactorsConfiguredActiveDirectoryOuProbe {
 
     $probeConfig.Username = [string]$Configuration.Username
     $probeConfig.BindPassword = [string]$Configuration.BindPassword
-    $probeConfig.TransportMode = if ([string]::IsNullOrWhiteSpace([string]$Configuration.TransportMode)) { 'ldap' } else { [string]$Configuration.TransportMode }
+    $probeConfig.TransportMode = if ([string]::IsNullOrWhiteSpace([string]$Configuration.TransportMode)) { 'ldaps' } else { [string]$Configuration.TransportMode }
     $probeConfig.AllowLdapFallback = [bool]$Configuration.AllowLdapFallback
     $probeConfig.RequireCertificateValidation = [bool]$Configuration.RequireCertificateValidation
     $probeConfig.RequireSigning = [bool]$Configuration.RequireSigning
@@ -628,7 +628,7 @@ function Write-SyncFactorsConfiguredAdBindSummary {
         -Username ([string]$Configuration.Username) `
         -Server ([string]$Configuration.Server)
     $transportMode = if ([string]::IsNullOrWhiteSpace([string]$Configuration.TransportMode)) {
-        'ldap'
+        'ldaps'
     }
     else {
         [string]$Configuration.TransportMode
