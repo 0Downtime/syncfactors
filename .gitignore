@@ -34,6 +34,16 @@ web/.vite/
 .playwright-cli/
 .npm-cache/
 skills-lock.json
+!.codex/
+!.codex/config.toml
+!.codex/hooks.json
+!.codex/hooks/
+!.codex/hooks/caveman_context.py
+!.agents/
+!.agents/skills/
+.agents/skills/*
+!.agents/skills/caveman/
+!.agents/skills/caveman/SKILL.md
 
 *.log
 *.tmp
