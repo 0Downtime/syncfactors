@@ -7,6 +7,78 @@ namespace SyncFactors.Infrastructure.Tests;
 public sealed class RuntimeFixtureQueueSimulationTests
 {
     [Fact]
+    public async Task RuntimeFixtureDirectoryGateway_ProjectsLifecycleStatesIntoExpectedOuAndEnabledState()
+    {
+        var fixturePath = Path.Combine(Path.GetTempPath(), $"syncfactors-runtime-fixture-{Guid.NewGuid():N}.json");
+        await File.WriteAllTextAsync(
+            fixturePath,
+            """
+            {
+              "workers": [
+                {
+                  "personIdExternal": "10003",
+                  "userId": "prehire.user",
+                  "firstName": "Prehire",
+                  "lastName": "User",
+                  "displayName": "Prehire User",
+                  "employmentStatus": "A",
+                  "lifecycleState": "preboarding",
+                  "startDate": "2026-04-12"
+                },
+                {
+                  "personIdExternal": "10004",
+                  "userId": "leave.user",
+                  "firstName": "Leave",
+                  "lastName": "User",
+                  "displayName": "Leave User",
+                  "employmentStatus": "U",
+                  "lifecycleState": "paid-leave",
+                  "startDate": "2026-01-01"
+                },
+                {
+                  "personIdExternal": "10005",
+                  "userId": "returned.user",
+                  "firstName": "Returned",
+                  "lastName": "User",
+                  "displayName": "Returned User",
+                  "employmentStatus": "A",
+                  "lifecycleState": "active",
+                  "startDate": "2026-04-11"
+                }
+              ]
+            }
+            """);
+
+        try
+        {
+            var gateway = new RuntimeFixtureDirectoryGateway(
+                new MockRuntimeFixtureReader(new MockRuntimeFixturePathResolver(fixturePath)),
+                CreateLifecycleSettings(),
+                new FakeTimeProvider(DateTimeOffset.Parse("2026-04-11T12:00:00Z")));
+
+            var prehire = await gateway.FindByWorkerAsync(CreateWorker("10003"), CancellationToken.None);
+            var leave = await gateway.FindByWorkerAsync(CreateWorker("10004"), CancellationToken.None);
+            var returned = await gateway.FindByWorkerAsync(CreateWorker("10005"), CancellationToken.None);
+
+            Assert.NotNull(prehire);
+            Assert.Equal("CN=Prehire User,OU=Prehire,DC=example,DC=com", prehire!.DistinguishedName);
+            Assert.True(prehire.Enabled);
+
+            Assert.NotNull(leave);
+            Assert.Equal("CN=Leave User,OU=Leave Users,DC=example,DC=com", leave!.DistinguishedName);
+            Assert.False(leave.Enabled);
+
+            Assert.NotNull(returned);
+            Assert.Equal("CN=Returned User,OU=Employees,DC=example,DC=com", returned!.DistinguishedName);
+            Assert.True(returned.Enabled);
+        }
+        finally
+        {
+            File.Delete(fixturePath);
+        }
+    }
+
+    [Fact]
     public async Task RuntimeFixtureDirectoryGateway_ProjectsTerminatedWorkersIntoGraveyardOu()
     {
         var fixturePath = Path.Combine(Path.GetTempPath(), $"syncfactors-runtime-fixture-{Guid.NewGuid():N}.json");
@@ -69,6 +141,8 @@ public sealed class RuntimeFixtureQueueSimulationTests
             GraveyardOu: "OU=Graveyard,DC=example,DC=com",
             InactiveStatusField: "emplStatus",
             InactiveStatusValues: ["T"],
+            LeaveOu: "OU=Leave Users,DC=example,DC=com",
+            LeaveStatusValues: ["U", "64303"],
             DirectoryIdentityAttribute: "sAMAccountName");
 
     private static WorkerSnapshot CreateWorker(string workerId) =>

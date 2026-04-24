@@ -4,6 +4,7 @@ namespace SyncFactors.MockSuccessFactors;
 
 [JsonSerializable(typeof(FixtureManifest))]
 [JsonSerializable(typeof(MockAdminCloneRequest))]
+[JsonSerializable(typeof(MockAdminLifecycleStateRequest))]
 [JsonSerializable(typeof(MockAdminResetResponse))]
 [JsonSerializable(typeof(MockAdminStateResponse))]
 [JsonSerializable(typeof(MockAdminWorkerDetailResponse))]

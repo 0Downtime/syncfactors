@@ -109,6 +109,50 @@ public sealed class MockAdminApiTests
         Assert.Equal(0, deletedJson.RootElement.GetProperty("d").GetProperty("results").GetArrayLength());
     }
 
+    [Theory]
+    [InlineData("prehire", "A", false)]
+    [InlineData("active-started", "A", false)]
+    [InlineData("paid-leave", "U", false)]
+    [InlineData("unpaid-leave", "64303", false)]
+    [InlineData("returned-from-leave", "A", false)]
+    [InlineData("terminated", "T", true)]
+    public async Task AdminApi_LifecycleStateMutation_IsVisibleThroughODataImmediately(
+        string lifecycleState,
+        string expectedStatus,
+        bool expectEndDate)
+    {
+        await using var factory = new MockSuccessFactorsFactory(CreateRuntimePath());
+        using var adminClient = CreateLoopbackClient(factory);
+        using var odataClient = CreateLoopbackClient(factory);
+        odataClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "mock-access-token");
+
+        var createResponse = await adminClient.PostAsJsonAsync("/api/admin/workers", new
+        {
+            firstName = "Lifecycle",
+            lastName = "Tester",
+            startDate = DateTimeOffset.UtcNow.Date.ToString("yyyy-MM-dd"),
+            company = "CORP",
+            department = "QA"
+        });
+        createResponse.EnsureSuccessStatusCode();
+        var createdPayload = await createResponse.Content.ReadFromJsonAsync<JsonElement>();
+        var workerId = createdPayload.GetProperty("worker").GetProperty("personIdExternal").GetString();
+        var userId = createdPayload.GetProperty("worker").GetProperty("userId").GetString();
+
+        var lifecycleResponse = await adminClient.PostAsJsonAsync(
+            $"/api/admin/workers/{workerId}/lifecycle-state",
+            new { lifecycleState });
+        lifecycleResponse.EnsureSuccessStatusCode();
+
+        var empJobResponse = await odataClient.GetAsync($"/odata/v2/EmpJob?$format=json&$filter=userId%20eq%20'{userId}'&$select=userId,emplStatus,startDate,endDate");
+        empJobResponse.EnsureSuccessStatusCode();
+        var empJobJson = JsonDocument.Parse(await empJobResponse.Content.ReadAsStringAsync());
+        var job = empJobJson.RootElement.GetProperty("d").GetProperty("results")[0];
+
+        Assert.Equal(expectedStatus, job.GetProperty("emplStatus").GetString());
+        Assert.Equal(expectEndDate, job.TryGetProperty("endDate", out var endDate) && !string.IsNullOrWhiteSpace(endDate.GetString()));
+    }
+
     private static HttpClient CreateLoopbackClient(WebApplicationFactory<Program> factory)
     {
         return factory.CreateClient(new WebApplicationFactoryClientOptions

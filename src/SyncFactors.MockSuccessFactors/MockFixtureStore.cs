@@ -204,6 +204,81 @@ public sealed class MockFixtureStore
         }
     }
 
+    public MockWorkerFixture ApplyLifecycleState(string workerId, string? lifecycleState)
+    {
+        lock (_gate)
+        {
+            var existing = FindWorkerByIdUnsafe(workerId)
+                ?? throw new KeyNotFoundException($"Worker '{workerId}' was not found.");
+            var today = DateTimeOffset.UtcNow.Date;
+            var todayValue = today.ToString("yyyy-MM-dd");
+            var tomorrowValue = today.AddDays(1).ToString("yyyy-MM-dd");
+            var normalizedState = NormalizeLifecycleSimulationState(lifecycleState);
+
+            var updated = normalizedState switch
+            {
+                "prehire" => existing with
+                {
+                    EmploymentStatus = "A",
+                    LifecycleState = MockLifecycleState.Preboarding,
+                    StartDate = tomorrowValue,
+                    EndDate = null,
+                    LastDateWorked = null,
+                    LatestTerminationDate = null,
+                    ScenarioTags = AddScenarioTags(
+                        RemoveScenarioTags(existing.ScenarioTags, "paid-leave", "unpaid-leave", "terminated"),
+                        "prehire"),
+                    LastModifiedDateTime = DateTimeOffset.UtcNow.ToString("O")
+                },
+                "active-started" or "returned-from-leave" => existing with
+                {
+                    EmploymentStatus = "A",
+                    LifecycleState = MockLifecycleState.Active,
+                    StartDate = todayValue,
+                    EndDate = null,
+                    LastDateWorked = null,
+                    LatestTerminationDate = null,
+                    FirstDateWorked = string.IsNullOrWhiteSpace(existing.FirstDateWorked) ? todayValue : existing.FirstDateWorked,
+                    ScenarioTags = RemoveScenarioTags(existing.ScenarioTags, "prehire", "preboarding", "paid-leave", "unpaid-leave", "terminated"),
+                    LastModifiedDateTime = DateTimeOffset.UtcNow.ToString("O")
+                },
+                "paid-leave" => existing with
+                {
+                    EmploymentStatus = "U",
+                    LifecycleState = MockLifecycleState.PaidLeave,
+                    EndDate = null,
+                    LastDateWorked = null,
+                    LatestTerminationDate = null,
+                    ScenarioTags = RemoveScenarioTags(existing.ScenarioTags, "prehire", "preboarding", "unpaid-leave", "terminated"),
+                    LastModifiedDateTime = DateTimeOffset.UtcNow.ToString("O")
+                },
+                "unpaid-leave" => existing with
+                {
+                    EmploymentStatus = "64303",
+                    LifecycleState = MockLifecycleState.UnpaidLeave,
+                    EndDate = null,
+                    LastDateWorked = null,
+                    LatestTerminationDate = null,
+                    ScenarioTags = RemoveScenarioTags(existing.ScenarioTags, "prehire", "preboarding", "paid-leave", "terminated"),
+                    LastModifiedDateTime = DateTimeOffset.UtcNow.ToString("O")
+                },
+                "terminated" => existing with
+                {
+                    EmploymentStatus = "T",
+                    LifecycleState = MockLifecycleState.Terminated,
+                    EndDate = todayValue,
+                    LastDateWorked = todayValue,
+                    LatestTerminationDate = todayValue,
+                    ScenarioTags = RemoveScenarioTags(existing.ScenarioTags, "prehire", "preboarding", "paid-leave", "unpaid-leave"),
+                    LastModifiedDateTime = DateTimeOffset.UtcNow.ToString("O")
+                },
+                _ => throw new InvalidOperationException($"Unsupported lifecycle state '{lifecycleState}'.")
+            };
+
+            return ReplaceWorkerUnsafe(workerId, updated);
+        }
+    }
+
     public void DeleteWorker(string workerId)
     {
         lock (_gate)
@@ -780,6 +855,29 @@ public sealed class MockFixtureStore
             .Select(tag => tag!)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
+    }
+
+    private static IReadOnlyList<string> AddScenarioTags(IEnumerable<string>? tags, params string[] tagsToAdd)
+        => NormalizeScenarioTags((tags ?? []).Concat(tagsToAdd));
+
+    private static IReadOnlyList<string> RemoveScenarioTags(IEnumerable<string>? tags, params string[] tagsToRemove)
+    {
+        var blocked = new HashSet<string>(tagsToRemove, StringComparer.OrdinalIgnoreCase);
+        return NormalizeScenarioTags((tags ?? []).Where(tag => !blocked.Contains(tag)));
+    }
+
+    private static string NormalizeLifecycleSimulationState(string? lifecycleState)
+    {
+        return lifecycleState?.Trim().ToLowerInvariant() switch
+        {
+            "prehire" or "preboarding" => "prehire",
+            "active" or "active-started" or "started" => "active-started",
+            "paid-leave" or "paidleave" => "paid-leave",
+            "unpaid-leave" or "unpaidleave" => "unpaid-leave",
+            "returned-from-leave" or "return-from-leave" or "returned" or "return" => "returned-from-leave",
+            "terminated" or "termination" => "terminated",
+            _ => string.Empty
+        };
     }
 
     private static MockFixtureDocument ExpandSyntheticPopulation(MockFixtureDocument seedDocument, int targetWorkerCount)
