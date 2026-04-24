@@ -62,6 +62,9 @@ public sealed record MockAdminResetResponse(
 public sealed record MockAdminCloneRequest(
     [property: JsonPropertyName("sourceWorkerId")] string? SourceWorkerId);
 
+public sealed record MockAdminLifecycleStateRequest(
+    [property: JsonPropertyName("lifecycleState")] string? LifecycleState);
+
 public sealed record MockAdminWorkerUpsertRequest(
     [property: JsonPropertyName("personIdExternal")] string? PersonIdExternal = null,
     [property: JsonPropertyName("userName")] string? UserName = null,
