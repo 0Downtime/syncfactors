@@ -262,6 +262,29 @@
                         </ol>
                     </section>
                 }
+                @if (Model.IsEntryDetail)
+                {
+                    var snapshotPanels = Model.GetEntrySnapshotPanels(entry);
+                    <div class="preview-inspector-grid failure-inspector-grid">
+                        @foreach (var snapshotPanel in snapshotPanels)
+                        {
+                            <article class="preview-inspector-card failure-inspector-card" data-tone="@snapshotPanel.ToneCssClass">
+                                <div class="preview-inspector-head">
+                                    <div>
+                                        <h2>@snapshotPanel.Title</h2>
+                                        <p class="muted">@snapshotPanel.Summary</p>
+                                    </div>
+                                </div>
+                                <dl class="kv preview-meta failure-inspector-meta">
+                                    @foreach (var fact in snapshotPanel.Facts)
+                                    {
+                                        <div><dt>@fact.Label</dt><dd>@fact.Value</dd></div>
+                                    }
+                                </dl>
+                            </article>
+                        }
+                    </div>
+                }
                 @if (!string.IsNullOrWhiteSpace(primarySummary))
                 {
                     <p class="entry-summary">@primarySummary</p>

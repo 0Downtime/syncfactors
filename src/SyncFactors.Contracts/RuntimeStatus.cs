@@ -303,6 +303,18 @@ public sealed record DirectoryCommandResult(
     string? VerifiedDistinguishedName = null,
     string? VerifiedParentOu = null);
 
+public sealed record RunCaptureMetadata(
+    int SchemaVersion,
+    string RunId,
+    bool DryRun,
+    string SyncScope,
+    RunConfigFingerprint? SyncConfig,
+    RunConfigFingerprint? MappingConfig);
+
+public sealed record RunConfigFingerprint(
+    string Path,
+    string? Sha256);
+
 public sealed record DiffRow(
     string Attribute,
     string? Source,

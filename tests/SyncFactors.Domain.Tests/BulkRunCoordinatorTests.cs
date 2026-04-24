@@ -95,6 +95,14 @@ public sealed class BulkRunCoordinatorTests
         Assert.Equal(2, CapturingRunLifecycleService.Entries.Count);
         Assert.Contains(CapturingRunLifecycleService.Entries, entry => entry.WorkerId == "10001" && entry.Bucket == "unchanged");
         Assert.Contains(CapturingRunLifecycleService.Entries, entry => entry.WorkerId == "10002" && entry.Bucket == "conflicts");
+        var failedEntry = Assert.Single(CapturingRunLifecycleService.Entries, entry => entry.WorkerId == "10002");
+        Assert.Equal(JsonValueKind.Null, failedEntry.Item.GetProperty("plannedCommand").ValueKind);
+        Assert.Equal(JsonValueKind.Null, failedEntry.Item.GetProperty("directoryBefore").ValueKind);
+        Assert.Equal("10002", failedEntry.Item.GetProperty("sourceSnapshot").GetProperty("workerId").GetString());
+        Assert.Contains(
+            failedEntry.Item.GetProperty("decisionTree").EnumerateArray(),
+            step => step.GetProperty("step").GetString() == "Worker Planning" &&
+                    step.GetProperty("outcome").GetString() == "Failed");
         Assert.Equal(0, deltaSyncService.RecordCalls);
     }
 
@@ -398,6 +406,70 @@ public sealed class BulkRunCoordinatorTests
     }
 
     [Fact]
+    public async Task ExecuteAsync_DryRun_PersistsHistoricalPlanningSnapshot()
+    {
+        CapturingRunLifecycleService.Entries.Clear();
+        CapturingRunLifecycleService.Reset();
+        var coordinator = new BulkRunCoordinator(
+            new StubWorkerSource([CreateWorker("10001", "A")]),
+            new CapturingDeltaSyncService(),
+            new StubRunQueueStore(),
+            new StubGraveyardRetentionStore(),
+            new StubWorkerPlanningService(includeChangedAttribute: true, includeDecisionTree: true),
+            new StubDirectoryMutationCommandBuilder(),
+            new SuccessfulDirectoryCommandGateway(),
+            new StubDirectoryGateway(),
+            new CapturingRunLifecycleService(),
+            new RealSyncSettings(),
+            new WorkerRunSettings(MaxCreatesPerRun: 10),
+            CreateLifecycleSettings(),
+            NullLogger<BulkRunCoordinator>.Instance,
+            TimeProvider.System,
+            new StubRunCaptureMetadataProvider());
+
+        await coordinator.ExecuteAsync(
+            new RunQueueRequest(
+                RequestId: "req-snapshot",
+                Mode: "BulkSync",
+                DryRun: true,
+                RunTrigger: "AdHoc",
+                RequestedBy: "test",
+                Status: "Pending",
+                RequestedAt: DateTimeOffset.UtcNow,
+                StartedAt: null,
+                CompletedAt: null,
+                RunId: null,
+                ErrorMessage: null),
+            maxDegreeOfParallelism: 1,
+            CancellationToken.None);
+
+        var entry = Assert.Single(CapturingRunLifecycleService.Entries);
+        var item = entry.Item;
+
+        Assert.Equal("10001", item.GetProperty("sourceSnapshot").GetProperty("workerId").GetString());
+        Assert.Equal("A", item.GetProperty("sourceSnapshot").GetProperty("employmentStatus").GetString());
+        Assert.True(item.GetProperty("directoryBefore").GetProperty("matchedExistingUser").GetBoolean());
+        Assert.Equal("employeeID", item.GetProperty("directoryBefore").GetProperty("identityAttribute").GetString());
+        Assert.Equal("OU=LabUsers,DC=example,DC=com", item.GetProperty("plannedDirectoryState").GetProperty("targetOu").GetString());
+        Assert.True(item.GetProperty("plannedDirectoryState").GetProperty("targetEnabled").GetBoolean());
+        Assert.Equal("UpdateUser", item.GetProperty("plannedCommand").GetProperty("action").GetString());
+        Assert.Equal("10001@example.com", item.GetProperty("plannedCommand").GetProperty("mail").GetString());
+        Assert.Equal(JsonValueKind.Null, item.GetProperty("liveResult").ValueKind);
+
+        var changedAttributes = item.GetProperty("plannedDirectoryState").GetProperty("changedAttributes").EnumerateArray().ToArray();
+        Assert.Contains(changedAttributes, row => row.GetProperty("targetAttribute").GetString() == "department");
+
+        var captureMetadata = item.GetProperty("captureMetadata");
+        Assert.Equal(1, captureMetadata.GetProperty("schemaVersion").GetInt32());
+        Assert.True(captureMetadata.GetProperty("dryRun").GetBoolean());
+        Assert.Equal("Bulk full scan", captureMetadata.GetProperty("syncScope").GetString());
+        Assert.Equal("sync.json", captureMetadata.GetProperty("syncConfig").GetProperty("path").GetString());
+        Assert.Equal("sync-sha", captureMetadata.GetProperty("syncConfig").GetProperty("sha256").GetString());
+        Assert.Equal("mapping.json", captureMetadata.GetProperty("mappingConfig").GetProperty("path").GetString());
+        Assert.Equal("mapping-sha", captureMetadata.GetProperty("mappingConfig").GetProperty("sha256").GetString());
+    }
+
+    [Fact]
     public async Task ExecuteAsync_PersistsVerifiedReadbackStateInEntryItem()
     {
         CapturingRunLifecycleService.Entries.Clear();
@@ -438,6 +510,11 @@ public sealed class BulkRunCoordinatorTests
         Assert.False(entry.Item.GetProperty("verifiedEnabled").GetBoolean());
         Assert.Equal("CN=10004,OU=Graveyard,DC=example,DC=com", entry.Item.GetProperty("verifiedDistinguishedName").GetString());
         Assert.Equal("OU=Graveyard,DC=example,DC=com", entry.Item.GetProperty("verifiedParentOu").GetString());
+        var liveResult = entry.Item.GetProperty("liveResult");
+        Assert.True(liveResult.GetProperty("applied").GetBoolean());
+        Assert.True(liveResult.GetProperty("succeeded").GetBoolean());
+        Assert.False(liveResult.GetProperty("verifiedEnabled").GetBoolean());
+        Assert.Equal("CN=10004,OU=Graveyard,DC=example,DC=com", liveResult.GetProperty("verifiedDistinguishedName").GetString());
     }
 
     [Fact]
@@ -1021,5 +1098,17 @@ public sealed class BulkRunCoordinatorTests
     private sealed class FakeTimeProvider(DateTimeOffset utcNow) : TimeProvider
     {
         public override DateTimeOffset GetUtcNow() => utcNow;
+    }
+
+    private sealed class StubRunCaptureMetadataProvider : IRunCaptureMetadataProvider
+    {
+        public RunCaptureMetadata Create(string runId, bool dryRun, string syncScope) =>
+            new(
+                SchemaVersion: 1,
+                RunId: runId,
+                DryRun: dryRun,
+                SyncScope: syncScope,
+                SyncConfig: new RunConfigFingerprint("sync.json", "sync-sha"),
+                MappingConfig: new RunConfigFingerprint("mapping.json", "mapping-sha"));
     }
 }
