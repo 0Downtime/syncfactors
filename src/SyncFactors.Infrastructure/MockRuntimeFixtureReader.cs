@@ -105,9 +105,9 @@ internal static class MockRuntimeFixtureProjection
         LifecyclePolicySettings lifecycleSettings,
         DateTimeOffset now)
     {
+        _ = now;
         return !IsGraveyard(worker, lifecycleSettings) &&
-               !IsLeave(worker, lifecycleSettings) &&
-               !IsPrehire(worker, now);
+               !IsLeave(worker, lifecycleSettings);
     }
 
     public static bool IsGraveyard(

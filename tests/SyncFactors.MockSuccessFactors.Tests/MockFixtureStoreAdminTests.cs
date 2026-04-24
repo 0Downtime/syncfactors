@@ -144,6 +144,45 @@ public sealed class MockFixtureStoreAdminTests
         Assert.Contains("\"provisioningBucket\":", payload, StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData("prehire", "A", "preboarding", 1, null)]
+    [InlineData("active-started", "A", "active", 0, null)]
+    [InlineData("paid-leave", "U", "paid-leave", 0, null)]
+    [InlineData("unpaid-leave", "64303", "unpaid-leave", 0, null)]
+    [InlineData("returned-from-leave", "A", "active", 0, null)]
+    [InlineData("terminated", "T", "terminated", 0, "today")]
+    public void Store_ApplyLifecycleState_MutatesRuntimeWorker(
+        string lifecycleState,
+        string expectedStatus,
+        string expectedLifecycleState,
+        int expectedStartOffsetDays,
+        string? expectedEndDate)
+    {
+        var runtimePath = CreateRuntimePath();
+        var store = CreateStore(runtimePath);
+        var today = DateTimeOffset.UtcNow.Date.ToString("yyyy-MM-dd");
+        var created = store.CreateWorker(new MockAdminWorkerUpsertRequest(
+            FirstName: "Lifecycle",
+            LastName: "Worker",
+            StartDate: today,
+            EmploymentStatus: "A",
+            ScenarioTags: ["custom-tag"]));
+
+        var updated = store.ApplyLifecycleState(created.PersonIdExternal, lifecycleState);
+        var editable = store.GetEditableWorker(created.PersonIdExternal);
+        var expectedDate = DateTimeOffset.UtcNow.Date.AddDays(expectedStartOffsetDays).ToString("yyyy-MM-dd");
+
+        Assert.Equal(expectedStatus, updated.EmploymentStatus);
+        Assert.Equal(expectedLifecycleState, updated.LifecycleState);
+        Assert.Equal(expectedDate, updated.StartDate);
+        Assert.Equal(expectedEndDate == "today" ? today : null, updated.EndDate);
+        Assert.NotNull(editable);
+        Assert.Equal(expectedStatus, editable!.EmploymentStatus);
+        Assert.Equal(expectedLifecycleState, editable.LifecycleState);
+        Assert.Contains("custom-tag", updated.ScenarioTags);
+        Assert.Equal(lifecycleState == "prehire", updated.ScenarioTags.Contains("prehire", StringComparer.OrdinalIgnoreCase));
+    }
+
     private static MockFixtureStore CreateStore(
         string runtimePath,
         bool syntheticPopulationEnabled = false,

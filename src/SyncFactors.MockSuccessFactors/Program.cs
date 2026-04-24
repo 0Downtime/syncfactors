@@ -275,6 +275,15 @@ adminApi.MapPost("/workers/{workerId}/rehire", (string workerId, MockFixtureStor
             Worker: store.GetEditableWorker(worker.PersonIdExternal)!));
     }));
 
+adminApi.MapPost("/workers/{workerId}/lifecycle-state", (string workerId, MockAdminLifecycleStateRequest request, MockFixtureStore store) =>
+    RunAdminMutation(() =>
+    {
+        var worker = store.ApplyLifecycleState(workerId, request.LifecycleState);
+        return Results.Ok(new MockAdminWorkerMutationResponse(
+            Message: $"Applied lifecycle state to worker {worker.PersonIdExternal}.",
+            Worker: store.GetEditableWorker(worker.PersonIdExternal)!));
+    }));
+
 adminApi.MapDelete("/workers/{workerId}", (string workerId, MockFixtureStore store) =>
     RunAdminMutation(() =>
     {

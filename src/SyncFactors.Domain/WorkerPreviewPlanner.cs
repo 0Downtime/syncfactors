@@ -354,7 +354,7 @@ public sealed class WorkerPreviewPlanner(
         {
             return plan.TargetEnabled
                 ? "Create active account."
-                : "Create disabled account in the prehire OU.";
+                : "Create disabled account.";
         }
 
         if (operationCount == 0 && changedCount == 0)

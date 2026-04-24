@@ -63,6 +63,44 @@ public sealed class LifecyclePolicyTests
     }
 
     [Fact]
+    public void Evaluate_PrehireWorkerWithoutExistingUser_CreatesEnabledAccountInPrehireOu()
+    {
+        var policy = CreatePolicy();
+        var worker = CreateWorker("20006", "A", isPrehire: true);
+        var directoryUser = new DirectoryUserSnapshot(
+            SamAccountName: null,
+            DistinguishedName: null,
+            Enabled: null,
+            DisplayName: null,
+            Attributes: new Dictionary<string, string?>());
+
+        var decision = policy.Evaluate(worker, directoryUser);
+
+        Assert.Equal("creates", decision.Bucket);
+        Assert.Equal("OU=Prehire,DC=example,DC=com", decision.TargetOu);
+        Assert.True(decision.TargetEnabled);
+    }
+
+    [Fact]
+    public void Evaluate_PrehireWorkerWithExistingUser_MaintainsEnabledAccountInPrehireOu()
+    {
+        var policy = CreatePolicy();
+        var worker = CreateWorker("20007", "A", isPrehire: true);
+        var directoryUser = new DirectoryUserSnapshot(
+            SamAccountName: "20007",
+            DistinguishedName: "CN=Worker 20007,OU=Prehire,DC=example,DC=com",
+            Enabled: false,
+            DisplayName: "Worker 20007",
+            Attributes: new Dictionary<string, string?>());
+
+        var decision = policy.Evaluate(worker, directoryUser);
+
+        Assert.Equal("updates", decision.Bucket);
+        Assert.Equal("OU=Prehire,DC=example,DC=com", decision.TargetOu);
+        Assert.True(decision.TargetEnabled);
+    }
+
+    [Fact]
     public void Evaluate_TerminatedWorkerWithoutExistingUser_UsingConfiguredSuccessFactorsPath_DoesNotCreateAccount()
     {
         var policy = new LifecyclePolicy(
@@ -139,7 +177,7 @@ public sealed class LifecyclePolicyTests
                 LeaveStatusValues: ["64303", "64304"]));
     }
 
-    private static WorkerSnapshot CreateWorker(string workerId, string status)
+    private static WorkerSnapshot CreateWorker(string workerId, string status, bool isPrehire = false)
     {
         return new WorkerSnapshot(
             WorkerId: workerId,
@@ -147,7 +185,7 @@ public sealed class LifecyclePolicyTests
             LastName: "Sample",
             Department: "Operations",
             TargetOu: "OU=Employees,DC=example,DC=com",
-            IsPrehire: false,
+            IsPrehire: isPrehire,
             Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
             {
                 ["emplStatus"] = status
