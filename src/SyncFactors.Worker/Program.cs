@@ -7,7 +7,6 @@ using SyncFactors.Infrastructure;
 using System.Net;
 
 var builder = Host.CreateApplicationBuilder(args);
-var useMockDirectoryServices = string.Equals(builder.Configuration["SYNCFACTORS_RUN_PROFILE"], "mock", StringComparison.OrdinalIgnoreCase);
 ConfigureLocalFileLogging(
     builder.Logging,
     processName: "worker",
@@ -19,14 +18,12 @@ builder.Services.AddSingleton(new SqlitePathResolver(builder.Configuration["Sync
 builder.Services.AddSingleton(new SyncFactorsConfigPathResolver(
     builder.Configuration["SyncFactors:ConfigPath"],
     builder.Configuration["SyncFactors:MappingConfigPath"]));
-builder.Services.AddSingleton(new MockRuntimeFixturePathResolver(builder.Configuration["MockSuccessFactors:Runtime:FixturePath"]));
 builder.Services.AddSingleton<SqliteDatabaseInitializer>();
 builder.Services.AddSingleton<SyncFactorsConfigurationLoader>();
 builder.Services.AddSingleton<SyncFactorsConfigurationValidator>();
 builder.Services.AddSingleton<IEmailAddressPolicy, ConfiguredEmailAddressPolicy>();
 builder.Services.AddSingleton<ScaffoldDataStore>();
 builder.Services.AddSingleton<ScaffoldWorkerSource>();
-builder.Services.AddSingleton<MockRuntimeFixtureReader>();
 builder.Services.AddSingleton(serviceProvider =>
 {
     var config = serviceProvider.GetRequiredService<SyncFactorsConfigurationLoader>().GetSyncConfig();
@@ -77,13 +74,7 @@ builder.Services.AddSingleton<IRunQueueStore, SqliteRunQueueStore>();
 builder.Services.AddSingleton<RunQueueRecoveryService>();
 builder.Services.AddSingleton<ISyncScheduleStore, SqliteSyncScheduleStore>();
 builder.Services.AddSingleton<SqliteGraveyardRetentionStore>();
-builder.Services.AddSingleton<RuntimeFixtureGraveyardRetentionStore>();
-builder.Services.AddSingleton<IGraveyardRetentionStore>(serviceProvider =>
-{
-    return useMockDirectoryServices
-        ? serviceProvider.GetRequiredService<RuntimeFixtureGraveyardRetentionStore>()
-        : serviceProvider.GetRequiredService<SqliteGraveyardRetentionStore>();
-});
+builder.Services.AddSingleton<IGraveyardRetentionStore>(serviceProvider => serviceProvider.GetRequiredService<SqliteGraveyardRetentionStore>());
 builder.Services.AddHttpClient<SuccessFactorsWorkerSource>()
     .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
     {
@@ -91,21 +82,10 @@ builder.Services.AddHttpClient<SuccessFactorsWorkerSource>()
     });
 builder.Services.AddTransient<IWorkerSource>(serviceProvider => serviceProvider.GetRequiredService<SuccessFactorsWorkerSource>());
 builder.Services.AddSingleton<ScaffoldDirectoryCommandGateway>();
-builder.Services.AddSingleton<RuntimeFixtureDirectoryGateway>();
 builder.Services.AddTransient<ActiveDirectoryGateway>();
-builder.Services.AddTransient<IDirectoryGateway>(serviceProvider =>
-{
-    return useMockDirectoryServices
-        ? serviceProvider.GetRequiredService<RuntimeFixtureDirectoryGateway>()
-        : serviceProvider.GetRequiredService<ActiveDirectoryGateway>();
-});
+builder.Services.AddTransient<IDirectoryGateway>(serviceProvider => serviceProvider.GetRequiredService<ActiveDirectoryGateway>());
 builder.Services.AddTransient<ActiveDirectoryCommandGateway>();
-builder.Services.AddTransient<IDirectoryCommandGateway>(serviceProvider =>
-{
-    return useMockDirectoryServices
-        ? serviceProvider.GetRequiredService<ScaffoldDirectoryCommandGateway>()
-        : serviceProvider.GetRequiredService<ActiveDirectoryCommandGateway>();
-});
+builder.Services.AddTransient<IDirectoryCommandGateway>(serviceProvider => serviceProvider.GetRequiredService<ActiveDirectoryCommandGateway>());
 builder.Services.AddTransient<IEmailSender, SmtpEmailSender>();
 builder.Services.AddSingleton<IAttributeMappingProvider, AttributeMappingProvider>();
 builder.Services.AddSingleton<IIdentityMatcher, IdentityMatcher>();
