@@ -339,10 +339,6 @@
                     {
                         <p><a asp-page="/Preview" asp-route-runId="@savedPreviewRunId">Open saved preview</a></p>
                     }
-                    else
-                    {
-                        <p><a asp-page="/Preview" asp-route-workerId="@entry.WorkerId">Open worker preview</a></p>
-                    }
                 }
                 @if (entry.DiffRows.Count > 0)
                 {
