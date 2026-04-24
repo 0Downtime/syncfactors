@@ -172,9 +172,9 @@
     ]
   },
   "safety": {
-    "maxCreatesPerRun": 25,
-    "maxDisablesPerRun": 25,
-    "maxDeletionsPerRun": 10
+    "maxCreatesPerRun": 2000,
+    "maxDisablesPerRun": 2000,
+    "maxDeletionsPerRun": 2000
   },
   "approval": {
     "enabled": false,
