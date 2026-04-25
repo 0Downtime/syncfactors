@@ -132,6 +132,11 @@
     "username": "",
     "bindPassword": "",
     "identityAttribute": "sAMAccountName",
+    "identityCorrelation": {
+      "enabled": false,
+      "successorPersonIdExternalAttribute": "extensionAttribute14",
+      "previousPersonIdExternalAttribute": "extensionAttribute15"
+    },
     "upnSuffix": "example.test",
     "defaultActiveOu": "OU=Active,OU=SyncFactors-Users,DC=example,DC=test",
     "prehireOu": "OU=Prehire,OU=SyncFactors-Users,DC=example,DC=test",

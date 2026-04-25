@@ -215,6 +215,12 @@ public sealed record LifecyclePolicySettings(
     IReadOnlyList<string>? LeaveStatusValues = null,
     string DirectoryIdentityAttribute = "sAMAccountName");
 
+public sealed record IdentityCorrelationSettings(
+    bool Enabled,
+    string IdentityAttribute,
+    string? SuccessorPersonIdExternalAttribute,
+    string? PreviousPersonIdExternalAttribute);
+
 public sealed record WorkerSnapshot(
     string WorkerId,
     string PreferredName,

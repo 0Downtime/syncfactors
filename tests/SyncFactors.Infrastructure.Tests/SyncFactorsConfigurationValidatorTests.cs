@@ -205,6 +205,99 @@ public sealed class SyncFactorsConfigurationValidatorTests
     }
 
     [Fact]
+    public async Task Validate_RejectsEnabledIdentityCorrelationWithoutPreviousAttribute()
+    {
+        var tempRoot = CreateTempRoot();
+        var configPath = await WriteConfigAsync(
+            tempRoot,
+            successFactorsUsernameLiteral: "",
+            successFactorsPasswordLiteral: "",
+            adBindPasswordLiteral: "",
+            adExtraJson: """
+            "identityCorrelation": {
+              "enabled": true,
+              "successorPersonIdExternalAttribute": "extensionAttribute14"
+            },
+            """);
+        var mappingConfigPath = await WriteMappingConfigAsync(tempRoot);
+
+        var originalDotnetEnvironment = Environment.GetEnvironmentVariable("DOTNET_ENVIRONMENT");
+        var originalSfUsername = Environment.GetEnvironmentVariable("SF_AD_SYNC_SF_USERNAME");
+        var originalSfPassword = Environment.GetEnvironmentVariable("SF_AD_SYNC_SF_PASSWORD");
+        var originalAdBindPassword = Environment.GetEnvironmentVariable("SF_AD_SYNC_AD_BIND_PASSWORD");
+
+        try
+        {
+            Environment.SetEnvironmentVariable("DOTNET_ENVIRONMENT", "Production");
+            Environment.SetEnvironmentVariable("SF_AD_SYNC_SF_USERNAME", "env-backed-user");
+            Environment.SetEnvironmentVariable("SF_AD_SYNC_SF_PASSWORD", "env-backed-password");
+            Environment.SetEnvironmentVariable("SF_AD_SYNC_AD_BIND_PASSWORD", "env-backed-bind-password");
+
+            var loader = new SyncFactorsConfigurationLoader(new SyncFactorsConfigPathResolver(configPath, mappingConfigPath));
+            var validator = new SyncFactorsConfigurationValidator(loader);
+
+            var exception = Assert.Throws<InvalidOperationException>(() => validator.Validate());
+
+            Assert.Equal("SyncFactors ad.identityCorrelation.previousPersonIdExternalAttribute must be configured when AD identity correlation is enabled.", exception.Message);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("DOTNET_ENVIRONMENT", originalDotnetEnvironment);
+            Environment.SetEnvironmentVariable("SF_AD_SYNC_SF_USERNAME", originalSfUsername);
+            Environment.SetEnvironmentVariable("SF_AD_SYNC_SF_PASSWORD", originalSfPassword);
+            Environment.SetEnvironmentVariable("SF_AD_SYNC_AD_BIND_PASSWORD", originalAdBindPassword);
+            Directory.Delete(tempRoot, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task Validate_RejectsDuplicateIdentityCorrelationAttributes()
+    {
+        var tempRoot = CreateTempRoot();
+        var configPath = await WriteConfigAsync(
+            tempRoot,
+            successFactorsUsernameLiteral: "",
+            successFactorsPasswordLiteral: "",
+            adBindPasswordLiteral: "",
+            adExtraJson: """
+            "identityCorrelation": {
+              "enabled": true,
+              "successorPersonIdExternalAttribute": "extensionAttribute14",
+              "previousPersonIdExternalAttribute": "extensionAttribute14"
+            },
+            """);
+        var mappingConfigPath = await WriteMappingConfigAsync(tempRoot);
+
+        var originalDotnetEnvironment = Environment.GetEnvironmentVariable("DOTNET_ENVIRONMENT");
+        var originalSfUsername = Environment.GetEnvironmentVariable("SF_AD_SYNC_SF_USERNAME");
+        var originalSfPassword = Environment.GetEnvironmentVariable("SF_AD_SYNC_SF_PASSWORD");
+        var originalAdBindPassword = Environment.GetEnvironmentVariable("SF_AD_SYNC_AD_BIND_PASSWORD");
+
+        try
+        {
+            Environment.SetEnvironmentVariable("DOTNET_ENVIRONMENT", "Production");
+            Environment.SetEnvironmentVariable("SF_AD_SYNC_SF_USERNAME", "env-backed-user");
+            Environment.SetEnvironmentVariable("SF_AD_SYNC_SF_PASSWORD", "env-backed-password");
+            Environment.SetEnvironmentVariable("SF_AD_SYNC_AD_BIND_PASSWORD", "env-backed-bind-password");
+
+            var loader = new SyncFactorsConfigurationLoader(new SyncFactorsConfigPathResolver(configPath, mappingConfigPath));
+            var validator = new SyncFactorsConfigurationValidator(loader);
+
+            var exception = Assert.Throws<InvalidOperationException>(() => validator.Validate());
+
+            Assert.Equal("SyncFactors AD identity correlation successor and previous attributes must be different.", exception.Message);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("DOTNET_ENVIRONMENT", originalDotnetEnvironment);
+            Environment.SetEnvironmentVariable("SF_AD_SYNC_SF_USERNAME", originalSfUsername);
+            Environment.SetEnvironmentVariable("SF_AD_SYNC_SF_PASSWORD", originalSfPassword);
+            Environment.SetEnvironmentVariable("SF_AD_SYNC_AD_BIND_PASSWORD", originalAdBindPassword);
+            Directory.Delete(tempRoot, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task Validate_RejectsNonPositiveMaxDegreeOfParallelism()
     {
         var tempRoot = CreateTempRoot();
@@ -312,9 +405,13 @@ public sealed class SyncFactorsConfigurationValidatorTests
         string adBindPasswordLiteral,
         string adServer = "ldap.example.test",
         string transportMode = "ldaps",
-        bool allowLdapFallback = false)
+        bool allowLdapFallback = false,
+        string? adExtraJson = null)
     {
         var configPath = Path.Combine(tempRoot, "sync-config.json");
+        var renderedAdExtraJson = string.IsNullOrWhiteSpace(adExtraJson)
+            ? string.Empty
+            : $"{Environment.NewLine}{adExtraJson.Trim()}";
 
         await File.WriteAllTextAsync(configPath, $$"""
         {
@@ -357,6 +454,7 @@ public sealed class SyncFactorsConfigurationValidatorTests
               "requireSigning": true,
               "trustedCertificateThumbprints": []
             },
+            {{renderedAdExtraJson}}
             "defaultPassword": "ignored-by-loader"
           },
           "sync": {

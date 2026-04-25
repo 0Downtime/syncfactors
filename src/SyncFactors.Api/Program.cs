@@ -110,6 +110,16 @@ builder.Services.AddSingleton(serviceProvider =>
         config.Sync.LeaveStatusValues,
         config.Ad.IdentityAttribute);
 });
+builder.Services.AddSingleton(serviceProvider =>
+{
+    var config = serviceProvider.GetRequiredService<SyncFactorsConfigurationLoader>().GetSyncConfig();
+    var identityCorrelation = config.Ad.IdentityCorrelation;
+    return new IdentityCorrelationSettings(
+        identityCorrelation?.Enabled ?? false,
+        config.Ad.IdentityAttribute,
+        identityCorrelation?.SuccessorPersonIdExternalAttribute,
+        identityCorrelation?.PreviousPersonIdExternalAttribute);
+});
 builder.Services.AddSingleton<ScaffoldDirectoryGateway>();
 builder.Services.AddSingleton<ScaffoldDirectoryCommandGateway>();
 builder.Services.AddSingleton(TimeProvider.System);

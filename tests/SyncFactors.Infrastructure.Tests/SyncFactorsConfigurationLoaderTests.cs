@@ -37,6 +37,33 @@ public sealed class SyncFactorsConfigurationLoaderTests
     }
 
     [Fact]
+    public async Task GetSyncConfig_DefaultsIdentityCorrelationToDisabled_WhenOmitted()
+    {
+        var config = await LoadConfigAsync(adJson: null);
+
+        Assert.NotNull(config.Ad.IdentityCorrelation);
+        Assert.False(config.Ad.IdentityCorrelation!.Enabled);
+        Assert.Null(config.Ad.IdentityCorrelation.SuccessorPersonIdExternalAttribute);
+        Assert.Null(config.Ad.IdentityCorrelation.PreviousPersonIdExternalAttribute);
+    }
+
+    [Fact]
+    public async Task GetSyncConfig_LoadsIdentityCorrelation_WhenConfigured()
+    {
+        var config = await LoadConfigAsync("""
+          "identityCorrelation": {
+            "enabled": true,
+            "successorPersonIdExternalAttribute": "extensionAttribute14",
+            "previousPersonIdExternalAttribute": "extensionAttribute15"
+          },
+        """);
+
+        Assert.True(config.Ad.IdentityCorrelation!.Enabled);
+        Assert.Equal("extensionAttribute14", config.Ad.IdentityCorrelation.SuccessorPersonIdExternalAttribute);
+        Assert.Equal("extensionAttribute15", config.Ad.IdentityCorrelation.PreviousPersonIdExternalAttribute);
+    }
+
+    [Fact]
     public async Task GetSyncConfig_DefaultsCreateTimeEnableWithoutPasswordProvisioningToFalse_WhenOmitted()
     {
         var config = await LoadConfigAsync(adJson: null);

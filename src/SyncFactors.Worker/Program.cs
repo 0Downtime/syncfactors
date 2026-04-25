@@ -57,6 +57,16 @@ builder.Services.AddSingleton(serviceProvider =>
 builder.Services.AddSingleton(serviceProvider =>
 {
     var config = serviceProvider.GetRequiredService<SyncFactorsConfigurationLoader>().GetSyncConfig();
+    var identityCorrelation = config.Ad.IdentityCorrelation;
+    return new SyncFactors.Contracts.IdentityCorrelationSettings(
+        identityCorrelation?.Enabled ?? false,
+        config.Ad.IdentityAttribute,
+        identityCorrelation?.SuccessorPersonIdExternalAttribute,
+        identityCorrelation?.PreviousPersonIdExternalAttribute);
+});
+builder.Services.AddSingleton(serviceProvider =>
+{
+    var config = serviceProvider.GetRequiredService<SyncFactorsConfigurationLoader>().GetSyncConfig();
     return new SyncFactors.Contracts.GraveyardRetentionNotificationSettings(
         Enabled: config.Alerts.Enabled && config.Alerts.GraveyardRetentionReport.Enabled,
         IntervalDays: config.Alerts.GraveyardRetentionReport.IntervalDays,
