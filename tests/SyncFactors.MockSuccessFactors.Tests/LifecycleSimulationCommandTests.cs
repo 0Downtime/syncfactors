@@ -185,13 +185,13 @@ public sealed class LifecycleSimulationCommandTests
             ManagerDistinguishedName: null,
             SamAccountName: "10003",
             CommonName: "10003",
-            UserPrincipalName: "casey.sample103@Exampleenergy.com",
-            Mail: "casey.sample103@Exampleenergy.com",
-            TargetOu: "OU=Prehire,OU=ExampleQA-Users,DC=ExampleQA,DC=biz",
+            UserPrincipalName: "casey.sample103@example.test",
+            Mail: "casey.sample103@example.test",
+            TargetOu: "OU=Prehire,OU=SyncFactors-Users,DC=example,DC=test",
             DisplayName: "Sample103, Casey",
             CurrentDistinguishedName: null,
             EnableAccount: true,
-            Operations: [new DirectoryOperation("CreateUser", "OU=Prehire,OU=ExampleQA-Users,DC=ExampleQA,DC=biz")],
+            Operations: [new DirectoryOperation("CreateUser", "OU=Prehire,OU=SyncFactors-Users,DC=example,DC=test")],
             Attributes: new Dictionary<string, string?>
             {
                 ["employeeID"] = "10003",
@@ -204,10 +204,10 @@ public sealed class LifecycleSimulationCommandTests
         var moveAndDisableCommand = createCommand with
         {
             Action = "MoveUser",
-            TargetOu = "OU=GRAVEYARD,OU=ExampleQA-Users,DC=ExampleQA,DC=biz",
+            TargetOu = "OU=Graveyard,OU=SyncFactors-Users,DC=example,DC=test",
             Operations =
             [
-                new DirectoryOperation("MoveUser", "OU=GRAVEYARD,OU=ExampleQA-Users,DC=ExampleQA,DC=biz"),
+                new DirectoryOperation("MoveUser", "OU=Graveyard,OU=SyncFactors-Users,DC=example,DC=test"),
                 new DirectoryOperation("DisableUser")
             ]
         };
@@ -217,11 +217,11 @@ public sealed class LifecycleSimulationCommandTests
         var enableAndUpdateCommand = createCommand with
         {
             Action = "EnableUser",
-            TargetOu = "OU=POWERSHELL,OU=ExampleQA-Users,DC=ExampleQA,DC=biz",
+            TargetOu = "OU=Active,OU=SyncFactors-Users,DC=example,DC=test",
             EnableAccount = true,
             Operations =
             [
-                new DirectoryOperation("MoveUser", "OU=POWERSHELL,OU=ExampleQA-Users,DC=ExampleQA,DC=biz"),
+                new DirectoryOperation("MoveUser", "OU=Active,OU=SyncFactors-Users,DC=example,DC=test"),
                 new DirectoryOperation("UpdateUser"),
                 new DirectoryOperation("EnableUser")
             ],
@@ -236,7 +236,7 @@ public sealed class LifecycleSimulationCommandTests
 
         var user = Assert.Single(state.ListUsers());
         Assert.Equal("10003", user.WorkerId);
-        Assert.Equal("OU=POWERSHELL,OU=ExampleQA-Users,DC=ExampleQA,DC=biz", DirectoryDistinguishedName.GetParentOu(user.DistinguishedName));
+        Assert.Equal("OU=Active,OU=SyncFactors-Users,DC=example,DC=test", DirectoryDistinguishedName.GetParentOu(user.DistinguishedName));
         Assert.True(user.Enabled);
         Assert.Equal("CORP West", user.Attributes["company"]);
         Assert.Equal("300 Example Way", user.Attributes["streetAddress"]);
@@ -250,7 +250,7 @@ public sealed class LifecycleSimulationCommandTests
             new LifecycleSimulationDirectoryUserInput(
                 WorkerId: "90020",
                 SamAccountName: "10020",
-                ParentOu: "OU=POWERSHELL,OU=ExampleQA-Users,DC=ExampleQA,DC=biz",
+                ParentOu: "OU=Active,OU=SyncFactors-Users,DC=example,DC=test",
                 Enabled: true,
                 DisplayName: "Conflict Owner, Existing",
                 Attributes: new Dictionary<string, string?> { ["employeeID"] = "90020" })
@@ -264,13 +264,13 @@ public sealed class LifecycleSimulationCommandTests
             ManagerDistinguishedName: null,
             SamAccountName: "10020",
             CommonName: "10020",
-            UserPrincipalName: "taylor.conflict@Exampleenergy.com",
-            Mail: "taylor.conflict@Exampleenergy.com",
-            TargetOu: "OU=POWERSHELL,OU=ExampleQA-Users,DC=ExampleQA,DC=biz",
+            UserPrincipalName: "taylor.conflict@example.test",
+            Mail: "taylor.conflict@example.test",
+            TargetOu: "OU=Active,OU=SyncFactors-Users,DC=example,DC=test",
             DisplayName: "Conflict, Taylor",
             CurrentDistinguishedName: null,
             EnableAccount: true,
-            Operations: [new DirectoryOperation("CreateUser", "OU=POWERSHELL,OU=ExampleQA-Users,DC=ExampleQA,DC=biz")],
+            Operations: [new DirectoryOperation("CreateUser", "OU=Active,OU=SyncFactors-Users,DC=example,DC=test")],
             Attributes: new Dictionary<string, string?> { ["employeeID"] = "10020" });
 
         await Assert.ThrowsAsync<InvalidOperationException>(() => gateway.ExecuteAsync(createCommand, CancellationToken.None));
@@ -352,7 +352,7 @@ public sealed class LifecycleSimulationCommandTests
                     new ExpectedDirectoryUser(
                         WorkerId: "10003",
                         SamAccountName: "10003",
-                        ParentOu: "OU=GRAVEYARD,OU=ExampleQA-Users,DC=ExampleQA,DC=biz",
+                        ParentOu: "OU=Graveyard,OU=SyncFactors-Users,DC=example,DC=test",
                         Enabled: false,
                         DisplayName: "Sample103, Casey",
                         Attributes: new Dictionary<string, string?>

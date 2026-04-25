@@ -134,11 +134,11 @@
     "username": "",
     "bindPassword": "",
     "identityAttribute": "sAMAccountName",
-    "upnSuffix": "Exampleqa.biz",
-    "defaultActiveOu": "OU=POWERSHELL,OU=ExampleQA-Users,DC=ExampleQA,DC=biz",
-    "prehireOu": "OU=Prehire,OU=ExampleQA-Users,DC=ExampleQA,DC=biz",
-    "graveyardOu": "OU=GRAVEYARD,OU=ExampleQA-Users,DC=ExampleQA,DC=biz",
-    "leaveOu": "OU=LEAVE USERS,OU=ExampleQA-Users,DC=ExampleQA,DC=biz",
+    "upnSuffix": "example.test",
+    "defaultActiveOu": "OU=Active,OU=SyncFactors-Users,DC=example,DC=test",
+    "prehireOu": "OU=Prehire,OU=SyncFactors-Users,DC=example,DC=test",
+    "graveyardOu": "OU=Graveyard,OU=SyncFactors-Users,DC=example,DC=test",
+    "leaveOu": "OU=Leave,OU=SyncFactors-Users,DC=example,DC=test",
     "transport": {
       "mode": "ldaps",
       "allowLdapFallback": false,
@@ -154,7 +154,7 @@
           "company": "CORP",
           "department": "IT"
         },
-        "targetOu": "OU=IT,OU=POWERSHELL,OU=ExampleQA-Users,DC=ExampleQA,DC=biz"
+        "targetOu": "OU=IT,OU=Active,OU=SyncFactors-Users,DC=example,DC=test"
       }
     ],
     "licensingGroups": []

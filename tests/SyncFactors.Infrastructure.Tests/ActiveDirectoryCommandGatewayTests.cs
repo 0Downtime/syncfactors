@@ -173,7 +173,7 @@ public sealed class ActiveDirectoryCommandGatewayTests
             CommonName: "30008382",
             UserPrincipalName: "david.ramsey@example.com",
             Mail: "david.ramsey@example.com",
-            TargetOu: "OU=POWERSHELL,OU=ExampleQA-Users,DC=ExampleQA,DC=biz",
+            TargetOu: "OU=Active,OU=SyncFactors-Users,DC=example,DC=test",
             DisplayName: "Ramsey, David",
             CurrentDistinguishedName: null,
             EnableAccount: true,
@@ -188,9 +188,9 @@ public sealed class ActiveDirectoryCommandGatewayTests
             Username: "bind",
             BindPassword: "secret",
             IdentityAttribute: "sAMAccountName",
-            DefaultActiveOu: "OU=POWERSHELL,OU=ExampleQA-Users,DC=ExampleQA,DC=biz",
-            PrehireOu: "OU=Prehire,OU=ExampleQA-Users,DC=ExampleQA,DC=biz",
-            GraveyardOu: "OU=GRAVEYARD,OU=ExampleQA-Users,DC=ExampleQA,DC=biz",
+            DefaultActiveOu: "OU=Active,OU=SyncFactors-Users,DC=example,DC=test",
+            PrehireOu: "OU=Prehire,OU=SyncFactors-Users,DC=example,DC=test",
+            GraveyardOu: "OU=Graveyard,OU=SyncFactors-Users,DC=example,DC=test",
             Transport: new ActiveDirectoryTransportConfig("ldaps", false, true, true, []),
             IdentityPolicy: new ActiveDirectoryIdentityPolicyConfig(false));
         var attributes = new List<DirectoryAttribute>
@@ -205,7 +205,7 @@ public sealed class ActiveDirectoryCommandGatewayTests
             existingAccountType!,
             "30008382",
             "Ramsey, David",
-            "CN=30008382,OU=POWERSHELL,OU=ExampleQA-Users,DC=ExampleQA,DC=biz",
+            "CN=30008382,OU=Active,OU=SyncFactors-Users,DC=example,DC=test",
             "david.ramsey@example.com",
             "david.ramsey@example.com",
             new[] { "top", "person", "organizationalPerson", "user" },
@@ -215,28 +215,28 @@ public sealed class ActiveDirectoryCommandGatewayTests
             null,
             "Completed",
             null,
-            new[] { "CN=30008382,OU=POWERSHELL,OU=ExampleQA-Users,DC=ExampleQA,DC=biz" },
-            new[] { "CN=30008382,OU=POWERSHELL,OU=ExampleQA-Users,DC=ExampleQA,DC=biz" },
-            new[] { "CN=30008382,OU=POWERSHELL,OU=ExampleQA-Users,DC=ExampleQA,DC=biz" },
-            new[] { "CN=30008382,OU=POWERSHELL,OU=ExampleQA-Users,DC=ExampleQA,DC=biz" },
-            new[] { "CN=30008382,OU=POWERSHELL,OU=ExampleQA-Users,DC=ExampleQA,DC=biz" });
+            new[] { "CN=30008382,OU=Active,OU=SyncFactors-Users,DC=example,DC=test" },
+            new[] { "CN=30008382,OU=Active,OU=SyncFactors-Users,DC=example,DC=test" },
+            new[] { "CN=30008382,OU=Active,OU=SyncFactors-Users,DC=example,DC=test" },
+            new[] { "CN=30008382,OU=Active,OU=SyncFactors-Users,DC=example,DC=test" },
+            new[] { "CN=30008382,OU=Active,OU=SyncFactors-Users,DC=example,DC=test" });
 
-        var details = Assert.IsType<string>(method!.Invoke(null, [command, "CN=30008382,OU=POWERSHELL,OU=ExampleQA-Users,DC=ExampleQA,DC=biz", config, attributes, "CreateUser", null, existingAccount!]));
+        var details = Assert.IsType<string>(method!.Invoke(null, [command, "CN=30008382,OU=Active,OU=SyncFactors-Users,DC=example,DC=test", config, attributes, "CreateUser", null, existingAccount!]));
 
         Assert.Contains("ExactDnLookupOutcome=Found", details, StringComparison.Ordinal);
         Assert.Contains("ExistingObjectClasses=top;person;organizationalPerson;user", details, StringComparison.Ordinal);
         Assert.Contains("ExistingSamAccountName=30008382", details, StringComparison.Ordinal);
         Assert.Contains("ExistingDisplayName=Ramsey, David", details, StringComparison.Ordinal);
-        Assert.Contains("ExistingDistinguishedName=CN=30008382,OU=POWERSHELL,OU=ExampleQA-Users,DC=ExampleQA,DC=biz", details, StringComparison.Ordinal);
+        Assert.Contains("ExistingDistinguishedName=CN=30008382,OU=Active,OU=SyncFactors-Users,DC=example,DC=test", details, StringComparison.Ordinal);
         Assert.Contains("ExistingUserPrincipalName=david.ramsey@example.com", details, StringComparison.Ordinal);
         Assert.Contains("ExistingMail=david.ramsey@example.com", details, StringComparison.Ordinal);
         Assert.Contains("IdentityConflictLookupOutcome=NotAttempted", details, StringComparison.Ordinal);
         Assert.Contains("DomainCollisionLookupOutcome=Completed", details, StringComparison.Ordinal);
-        Assert.Contains("DomainCnMatches=CN=30008382,OU=POWERSHELL,OU=ExampleQA-Users,DC=ExampleQA,DC=biz", details, StringComparison.Ordinal);
-        Assert.Contains("DomainNameMatches=CN=30008382,OU=POWERSHELL,OU=ExampleQA-Users,DC=ExampleQA,DC=biz", details, StringComparison.Ordinal);
-        Assert.Contains("DomainSamAccountNameMatches=CN=30008382,OU=POWERSHELL,OU=ExampleQA-Users,DC=ExampleQA,DC=biz", details, StringComparison.Ordinal);
-        Assert.Contains("DomainUserPrincipalNameMatches=CN=30008382,OU=POWERSHELL,OU=ExampleQA-Users,DC=ExampleQA,DC=biz", details, StringComparison.Ordinal);
-        Assert.Contains("DomainMailMatches=CN=30008382,OU=POWERSHELL,OU=ExampleQA-Users,DC=ExampleQA,DC=biz", details, StringComparison.Ordinal);
+        Assert.Contains("DomainCnMatches=CN=30008382,OU=Active,OU=SyncFactors-Users,DC=example,DC=test", details, StringComparison.Ordinal);
+        Assert.Contains("DomainNameMatches=CN=30008382,OU=Active,OU=SyncFactors-Users,DC=example,DC=test", details, StringComparison.Ordinal);
+        Assert.Contains("DomainSamAccountNameMatches=CN=30008382,OU=Active,OU=SyncFactors-Users,DC=example,DC=test", details, StringComparison.Ordinal);
+        Assert.Contains("DomainUserPrincipalNameMatches=CN=30008382,OU=Active,OU=SyncFactors-Users,DC=example,DC=test", details, StringComparison.Ordinal);
+        Assert.Contains("DomainMailMatches=CN=30008382,OU=Active,OU=SyncFactors-Users,DC=example,DC=test", details, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -254,7 +254,7 @@ public sealed class ActiveDirectoryCommandGatewayTests
             CommonName: "45511",
             UserPrincipalName: "kimberly.turner@example.com",
             Mail: "kimberly.turner@example.com",
-            TargetOu: "OU=POWERSHELL,OU=ExampleQA-Users,DC=ExampleQA,DC=biz",
+            TargetOu: "OU=Active,OU=SyncFactors-Users,DC=example,DC=test",
             DisplayName: "Turner, Kimberly",
             CurrentDistinguishedName: null,
             EnableAccount: true,
@@ -269,17 +269,17 @@ public sealed class ActiveDirectoryCommandGatewayTests
             Username: "bind",
             BindPassword: "secret",
             IdentityAttribute: "sAMAccountName",
-            DefaultActiveOu: "OU=POWERSHELL,OU=ExampleQA-Users,DC=ExampleQA,DC=biz",
-            PrehireOu: "OU=Prehire,OU=ExampleQA-Users,DC=ExampleQA,DC=biz",
-            GraveyardOu: "OU=GRAVEYARD,OU=ExampleQA-Users,DC=ExampleQA,DC=biz",
+            DefaultActiveOu: "OU=Active,OU=SyncFactors-Users,DC=example,DC=test",
+            PrehireOu: "OU=Prehire,OU=SyncFactors-Users,DC=example,DC=test",
+            GraveyardOu: "OU=Graveyard,OU=SyncFactors-Users,DC=example,DC=test",
             Transport: new ActiveDirectoryTransportConfig("ldaps", false, true, true, []),
             IdentityPolicy: new ActiveDirectoryIdentityPolicyConfig(false));
 
         var details = Assert.IsType<string>(method!.Invoke(null, [command, config]));
 
         Assert.Contains("Step=ExecuteAsyncOuterCatch", details, StringComparison.Ordinal);
-        Assert.Contains("DistinguishedName=CN=45511,OU=POWERSHELL,OU=ExampleQA-Users,DC=ExampleQA,DC=biz", details, StringComparison.Ordinal);
-        Assert.Contains("TargetOu=OU=POWERSHELL,OU=ExampleQA-Users,DC=ExampleQA,DC=biz", details, StringComparison.Ordinal);
+        Assert.Contains("DistinguishedName=CN=45511,OU=Active,OU=SyncFactors-Users,DC=example,DC=test", details, StringComparison.Ordinal);
+        Assert.Contains("TargetOu=OU=Active,OU=SyncFactors-Users,DC=example,DC=test", details, StringComparison.Ordinal);
         Assert.Contains("UserPrincipalName=kimberly.turner@example.com", details, StringComparison.Ordinal);
         Assert.Contains("Mail=kimberly.turner@example.com", details, StringComparison.Ordinal);
         Assert.Contains("CreateAttributes=objectClass,cn,displayName,sAMAccountName,userPrincipalName,mail,userAccountControl", details, StringComparison.Ordinal);
@@ -295,12 +295,12 @@ public sealed class ActiveDirectoryCommandGatewayTests
             Action: "CreateUser",
             WorkerId: "45086",
             ManagerId: "43114",
-            ManagerDistinguishedName: "CN=43114,OU=POWERSHELL,OU=ExampleQA-Users,DC=ExampleQA,DC=biz",
+            ManagerDistinguishedName: "CN=43114,OU=Active,OU=SyncFactors-Users,DC=example,DC=test",
             SamAccountName: "45086",
             CommonName: "45086",
             UserPrincipalName: "brian.oliver@example.com",
             Mail: "brian.oliver@example.com",
-            TargetOu: "OU=POWERSHELL,OU=ExampleQA-Users,DC=ExampleQA,DC=biz",
+            TargetOu: "OU=Active,OU=SyncFactors-Users,DC=example,DC=test",
             DisplayName: "Oliver, Brian",
             CurrentDistinguishedName: null,
             EnableAccount: true,
@@ -310,14 +310,14 @@ public sealed class ActiveDirectoryCommandGatewayTests
                 ["sAMAccountName"] = "45086"
             });
         var config = new ActiveDirectoryConfig(
-            Server: "example-env-01.Exampleqa.biz",
+            Server: "ldap.example.test",
             Port: 636,
             Username: "bind",
             BindPassword: "secret",
             IdentityAttribute: "sAMAccountName",
-            DefaultActiveOu: "OU=POWERSHELL,OU=ExampleQA-Users,DC=ExampleQA,DC=biz",
-            PrehireOu: "OU=Prehire,OU=ExampleQA-Users,DC=ExampleQA,DC=biz",
-            GraveyardOu: "OU=GRAVEYARD,OU=ExampleQA-Users,DC=ExampleQA,DC=biz",
+            DefaultActiveOu: "OU=Active,OU=SyncFactors-Users,DC=example,DC=test",
+            PrehireOu: "OU=Prehire,OU=SyncFactors-Users,DC=example,DC=test",
+            GraveyardOu: "OU=Graveyard,OU=SyncFactors-Users,DC=example,DC=test",
             Transport: new ActiveDirectoryTransportConfig("ldaps", false, true, true, []),
             IdentityPolicy: new ActiveDirectoryIdentityPolicyConfig(false));
         var attributes = new List<DirectoryAttribute>
@@ -331,8 +331,8 @@ public sealed class ActiveDirectoryCommandGatewayTests
             new("userAccountControl", "514")
         };
         var fallbackDetails =
-            "Step=CreateUserAddRequest WorkerId=45086 SamAccountName=45086 DistinguishedName=CN=45086,OU=POWERSHELL,OU=ExampleQA-Users,DC=ExampleQA,DC=biz " +
-            "TargetOu=OU=POWERSHELL,OU=ExampleQA-Users,DC=ExampleQA,DC=biz UserPrincipalName=brian.oliver@example.com Mail=brian.oliver@example.com";
+            "Step=CreateUserAddRequest WorkerId=45086 SamAccountName=45086 DistinguishedName=CN=45086,OU=Active,OU=SyncFactors-Users,DC=example,DC=test " +
+            "TargetOu=OU=Active,OU=SyncFactors-Users,DC=example,DC=test UserPrincipalName=brian.oliver@example.com Mail=brian.oliver@example.com";
         var existingAccountType = typeof(ActiveDirectoryCommandGateway).GetNestedType("ExistingAccountDetails", BindingFlags.NonPublic);
         Assert.NotNull(existingAccountType);
         var delegateType = typeof(Func<>).MakeGenericType(existingAccountType!);
@@ -340,10 +340,10 @@ public sealed class ActiveDirectoryCommandGatewayTests
         Assert.NotNull(throwMethod);
         var resolveConflict = Delegate.CreateDelegate(delegateType, throwMethod!.MakeGenericMethod(existingAccountType!));
 
-        var details = Assert.IsType<string>(method!.Invoke(null, [resolveConflict, command, "CN=45086,OU=POWERSHELL,OU=ExampleQA-Users,DC=ExampleQA,DC=biz", config, attributes, "CreateUserAddRequest", command.ManagerDistinguishedName, NullLogger<ActiveDirectoryCommandGateway>.Instance, fallbackDetails]));
+        var details = Assert.IsType<string>(method!.Invoke(null, [resolveConflict, command, "CN=45086,OU=Active,OU=SyncFactors-Users,DC=example,DC=test", config, attributes, "CreateUserAddRequest", command.ManagerDistinguishedName, NullLogger<ActiveDirectoryCommandGateway>.Instance, fallbackDetails]));
 
         Assert.Contains("Step=CreateUserAddRequest", details, StringComparison.Ordinal);
-        Assert.Contains("DistinguishedName=CN=45086,OU=POWERSHELL,OU=ExampleQA-Users,DC=ExampleQA,DC=biz", details, StringComparison.Ordinal);
+        Assert.Contains("DistinguishedName=CN=45086,OU=Active,OU=SyncFactors-Users,DC=example,DC=test", details, StringComparison.Ordinal);
         Assert.Contains("ConflictResolutionLookupFailed=true", details, StringComparison.Ordinal);
         Assert.Contains("ConflictResolutionLookupError=The object does not exist. 0000208D: NameErr: DSID-0310028D, problem 2001 (NO_OBJECT), data 0", details, StringComparison.Ordinal);
     }
@@ -643,8 +643,8 @@ public sealed class ActiveDirectoryCommandGatewayTests
             ManagerDistinguishedName: "CN=43114,OU=Users,DC=example,DC=com",
             SamAccountName: "45086",
             CommonName: "45086",
-            UserPrincipalName: "brian.oliver@Exampleenergy.com",
-            Mail: "brian.oliver@Exampleenergy.com",
+            UserPrincipalName: "brian.oliver@example.test",
+            Mail: "brian.oliver@example.test",
             TargetOu: "OU=Users,DC=example,DC=com",
             DisplayName: "Oliver, Brian",
             CurrentDistinguishedName: null,
@@ -652,7 +652,7 @@ public sealed class ActiveDirectoryCommandGatewayTests
             Operations: [new SyncFactors.Contracts.DirectoryOperation("CreateUser")],
             Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase));
         var config = new ActiveDirectoryConfig(
-            Server: "192.0.2.10",
+            Server: "192.0.2.35",
             Port: 389,
             Username: "bind",
             BindPassword: "secret",
@@ -667,23 +667,23 @@ public sealed class ActiveDirectoryCommandGatewayTests
         var conflict = Activator.CreateInstance(
             conflictType!,
             "userPrincipalName",
-            "brian.oliver@Exampleenergy.com",
+            "brian.oliver@example.test",
             "boliver",
             "Oliver, Brian",
             "CN=Brian Oliver,OU=Existing,DC=example,DC=com",
-            "brian.oliver@Exampleenergy.com",
-            "brian.oliver@Exampleenergy.com");
+            "brian.oliver@example.test",
+            "brian.oliver@example.test");
 
         var details = Assert.IsType<string>(method!.Invoke(null, [command, "CN=45086,OU=Users,DC=example,DC=com", config, conflict!]));
 
         Assert.Contains("Step=PreflightIdentityConflict", details, StringComparison.Ordinal);
         Assert.Contains("ConflictingAttribute=userPrincipalName", details, StringComparison.Ordinal);
-        Assert.Contains("ConflictingValue=brian.oliver@Exampleenergy.com", details, StringComparison.Ordinal);
+        Assert.Contains("ConflictingValue=brian.oliver@example.test", details, StringComparison.Ordinal);
         Assert.Contains("ExistingSamAccountName=boliver", details, StringComparison.Ordinal);
         Assert.Contains("ExistingDisplayName=Oliver, Brian", details, StringComparison.Ordinal);
         Assert.Contains("ExistingDistinguishedName=CN=Brian Oliver,OU=Existing,DC=example,DC=com", details, StringComparison.Ordinal);
-        Assert.Contains("ExistingUserPrincipalName=brian.oliver@Exampleenergy.com", details, StringComparison.Ordinal);
-        Assert.Contains("ExistingMail=brian.oliver@Exampleenergy.com", details, StringComparison.Ordinal);
+        Assert.Contains("ExistingUserPrincipalName=brian.oliver@example.test", details, StringComparison.Ordinal);
+        Assert.Contains("ExistingMail=brian.oliver@example.test", details, StringComparison.Ordinal);
         Assert.Contains("IdentityAttribute=sAMAccountName", details, StringComparison.Ordinal);
         Assert.Contains("IdentityValue=45086", details, StringComparison.Ordinal);
     }

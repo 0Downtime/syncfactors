@@ -488,22 +488,22 @@ public sealed class AttributeDiffServiceTests
             DisplayName: "Smith, John",
             Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
             {
-                ["UserPrincipalName"] = "existing.upn@Exampleenergy.com",
-                ["mail"] = "existing.mail@Exampleenergy.com"
+                ["UserPrincipalName"] = "existing.upn@example.test",
+                ["mail"] = "existing.mail@example.test"
             });
 
         var changes = await diffService.BuildDiffAsync(
             worker,
             directoryUser,
-            proposedEmailAddress: "john.smith2@Exampleenergy.com",
+            proposedEmailAddress: "john.smith2@example.test",
             logPath: null,
             CancellationToken.None);
 
         var upnChange = Assert.Single(changes, change => change.Attribute == "UserPrincipalName");
         var mailChange = Assert.Single(changes, change => change.Attribute == "mail");
-        Assert.Equal("existing.upn@Exampleenergy.com", upnChange.After);
+        Assert.Equal("existing.upn@example.test", upnChange.After);
         Assert.False(upnChange.Changed);
-        Assert.Equal("existing.mail@Exampleenergy.com", mailChange.After);
+        Assert.Equal("existing.mail@example.test", mailChange.After);
         Assert.False(mailChange.Changed);
     }
 
@@ -606,14 +606,14 @@ public sealed class AttributeDiffServiceTests
             Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
             {
                 ["displayName"] = "Sample101, Winnie",
-                ["UserPrincipalName"] = "winnie.sample1012@Exampleenergy.com",
-                ["mail"] = "winnie.sample1012@Exampleenergy.com"
+                ["UserPrincipalName"] = "winnie.sample1012@example.test",
+                ["mail"] = "winnie.sample1012@example.test"
             });
 
         var changes = await diffService.BuildDiffAsync(
             worker,
             directoryUser,
-            proposedEmailAddress: "winnie.sample1012@Exampleenergy.com",
+            proposedEmailAddress: "winnie.sample1012@example.test",
             logPath: null,
             CancellationToken.None);
 
@@ -623,8 +623,8 @@ public sealed class AttributeDiffServiceTests
             change =>
             {
                 Assert.Equal("UserPrincipalName", change.Attribute);
-                Assert.Equal("winnie.sample1012@Exampleenergy.com", change.Before);
-                Assert.Equal("winnie.sample1012@Exampleenergy.com", change.After);
+                Assert.Equal("winnie.sample1012@example.test", change.Before);
+                Assert.Equal("winnie.sample1012@example.test", change.After);
                 Assert.False(change.Changed);
             },
             change =>
@@ -637,8 +637,8 @@ public sealed class AttributeDiffServiceTests
             change =>
             {
                 Assert.Equal("mail", change.Attribute);
-                Assert.Equal("winnie.sample1012@Exampleenergy.com", change.Before);
-                Assert.Equal("winnie.sample1012@Exampleenergy.com", change.After);
+                Assert.Equal("winnie.sample1012@example.test", change.Before);
+                Assert.Equal("winnie.sample1012@example.test", change.After);
                 Assert.False(change.Changed);
             });
     }
@@ -889,15 +889,15 @@ public sealed class AttributeDiffServiceTests
             Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
             {
                 ["displayName"] = "Old Display",
-                ["UserPrincipalName"] = "old.email@Exampleenergy.com",
-                ["mail"] = "old.email@Exampleenergy.com",
+                ["UserPrincipalName"] = "old.email@example.test",
+                ["mail"] = "old.email@example.test",
                 ["department"] = "Old Department"
             });
 
         var changes = await diffService.BuildDiffAsync(
             worker,
             directoryUser,
-            proposedEmailAddress: "preview.email@Exampleenergy.com",
+            proposedEmailAddress: "preview.email@example.test",
             logPath: null,
             CancellationToken.None);
 
@@ -907,8 +907,8 @@ public sealed class AttributeDiffServiceTests
             change =>
             {
                 Assert.Equal("UserPrincipalName", change.Attribute);
-                Assert.Equal("old.email@Exampleenergy.com", change.Before);
-                Assert.Equal("old.email@Exampleenergy.com", change.After);
+                Assert.Equal("old.email@example.test", change.Before);
+                Assert.Equal("old.email@example.test", change.After);
                 Assert.False(change.Changed);
             },
             change =>
@@ -928,8 +928,8 @@ public sealed class AttributeDiffServiceTests
             change =>
             {
                 Assert.Equal("mail", change.Attribute);
-                Assert.Equal("old.email@Exampleenergy.com", change.Before);
-                Assert.Equal("old.email@Exampleenergy.com", change.After);
+                Assert.Equal("old.email@example.test", change.Before);
+                Assert.Equal("old.email@example.test", change.After);
                 Assert.False(change.Changed);
             });
     }

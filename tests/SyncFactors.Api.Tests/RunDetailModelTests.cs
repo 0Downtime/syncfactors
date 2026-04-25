@@ -260,7 +260,7 @@ public sealed class RunDetailModelTests
             BucketLabel: "Conflicts",
             WorkerId: "30008382",
             SamAccountName: "30008382",
-            Reason: "Active Directory command 'CreateUser' failed against LDAP server 'localhost'. The object exists. 00000524: UpdErr: DSID-031A11FA, problem 6005 (ENTRY_EXISTS), data 0 Details: Step=CreateUser WorkerId=30008382 SamAccountName=30008382 DistinguishedName=CN=30008382,OU=POWERSHELL,OU=ExampleQA-Users,DC=ExampleQA,DC=biz TargetOu=OU=POWERSHELL,OU=ExampleQA-Users,DC=ExampleQA,DC=biz UserPrincipalName=david.ramsey@example.com Mail=david.ramsey@example.com IdentityAttribute=sAMAccountName IdentityValue=30008382 LicensingGroups=(none) ExistingSamAccountName=30008382 ExistingDisplayName=Ramsey, David ExistingDistinguishedName=CN=30008382,OU=POWERSHELL,OU=ExampleQA-Users,DC=ExampleQA,DC=biz ExistingUserPrincipalName=david.ramsey@example.com ExistingMail=david.ramsey@example.com ManagerId=38256 ManagerDistinguishedName=(unset) Next check: Check the target OU, manager resolution, and whether the account already exists with unexpected state.",
+            Reason: "Active Directory command 'CreateUser' failed against LDAP server 'localhost'. The object exists. 00000524: UpdErr: DSID-031A11FA, problem 6005 (ENTRY_EXISTS), data 0 Details: Step=CreateUser WorkerId=30008382 SamAccountName=30008382 DistinguishedName=CN=30008382,OU=Active,OU=SyncFactors-Users,DC=example,DC=test TargetOu=OU=Active,OU=SyncFactors-Users,DC=example,DC=test UserPrincipalName=david.ramsey@example.com Mail=david.ramsey@example.com IdentityAttribute=sAMAccountName IdentityValue=30008382 LicensingGroups=(none) ExistingSamAccountName=30008382 ExistingDisplayName=Ramsey, David ExistingDistinguishedName=CN=30008382,OU=Active,OU=SyncFactors-Users,DC=example,DC=test ExistingUserPrincipalName=david.ramsey@example.com ExistingMail=david.ramsey@example.com ManagerId=38256 ManagerDistinguishedName=(unset) Next check: Check the target OU, manager resolution, and whether the account already exists with unexpected state.",
             ReviewCategory: null,
             ReviewCaseType: null,
             StartedAt: DateTimeOffset.UtcNow,
@@ -275,7 +275,7 @@ public sealed class RunDetailModelTests
         Assert.NotNull(diagnostics);
         Assert.Contains(diagnostics!.Details, item => item.Label == "Existing SAM" && item.Value == "30008382");
         Assert.Contains(diagnostics.Details, item => item.Label == "Existing Display Name" && item.Value == "Ramsey, David");
-        Assert.Contains(diagnostics.Details, item => item.Label == "Existing Distinguished Name" && item.Value == "CN=30008382,OU=POWERSHELL,OU=ExampleQA-Users,DC=ExampleQA,DC=biz");
+        Assert.Contains(diagnostics.Details, item => item.Label == "Existing Distinguished Name" && item.Value == "CN=30008382,OU=Active,OU=SyncFactors-Users,DC=example,DC=test");
         Assert.Contains(diagnostics.Details, item => item.Label == "Existing UPN" && item.Value == "david.ramsey@example.com");
         Assert.Contains(diagnostics.Details, item => item.Label == "Existing Mail" && item.Value == "david.ramsey@example.com");
     }
@@ -293,7 +293,7 @@ public sealed class RunDetailModelTests
             BucketLabel: "Conflicts",
             WorkerId: "30008382",
             SamAccountName: "30008382",
-            Reason: "Active Directory command 'CreateUser' failed against LDAP server 'localhost'. The object exists. 00000524: UpdErr: DSID-031A11FA, problem 6005 (ENTRY_EXISTS), data 0 Details: Step=CreateUser WorkerId=30008382 SamAccountName=30008382 DistinguishedName=CN=30008382,OU=POWERSHELL,OU=ExampleQA-Users,DC=ExampleQA,DC=biz TargetOu=OU=POWERSHELL,OU=ExampleQA-Users,DC=ExampleQA,DC=biz UserPrincipalName=david.ramsey@example.com Mail=david.ramsey@example.com IdentityAttribute=sAMAccountName IdentityValue=30008382 LicensingGroups=(none) ExistingSamAccountName=30008382 ExistingDisplayName=Ramsey, David ExistingDistinguishedName=CN=30008382,OU=POWERSHELL,OU=ExampleQA-Users,DC=ExampleQA,DC=biz ExistingUserPrincipalName=david.ramsey@example.com ExistingMail=david.ramsey@example.com ManagerId=38256 ManagerDistinguishedName=(unset) Next check: Check the target OU, manager resolution, and whether the account already exists with unexpected state.",
+            Reason: "Active Directory command 'CreateUser' failed against LDAP server 'localhost'. The object exists. 00000524: UpdErr: DSID-031A11FA, problem 6005 (ENTRY_EXISTS), data 0 Details: Step=CreateUser WorkerId=30008382 SamAccountName=30008382 DistinguishedName=CN=30008382,OU=Active,OU=SyncFactors-Users,DC=example,DC=test TargetOu=OU=Active,OU=SyncFactors-Users,DC=example,DC=test UserPrincipalName=david.ramsey@example.com Mail=david.ramsey@example.com IdentityAttribute=sAMAccountName IdentityValue=30008382 LicensingGroups=(none) ExistingSamAccountName=30008382 ExistingDisplayName=Ramsey, David ExistingDistinguishedName=CN=30008382,OU=Active,OU=SyncFactors-Users,DC=example,DC=test ExistingUserPrincipalName=david.ramsey@example.com ExistingMail=david.ramsey@example.com ManagerId=38256 ManagerDistinguishedName=(unset) Next check: Check the target OU, manager resolution, and whether the account already exists with unexpected state.",
             ReviewCategory: null,
             ReviewCaseType: null,
             StartedAt: DateTimeOffset.UtcNow,
@@ -494,13 +494,13 @@ public sealed class RunDetailModelTests
     {
         var model = new DetailModel(new RunEntriesQueryService(new StubRunRepository()));
         var entry = CreateConflictEntry(
-            reason: "Active Directory command 'CreateUser' failed against LDAP server '192.0.2.10'. A value in the request is invalid. 000021C8: AtrErr: DSID-03200E96, #1: 0: 000021C8: DSID-03200E96, problem 1005 (CONSTRAINT_ATT_TYPE), data 0, Att 90290 (userPrincipalName) Next check: Check the target OU, manager resolution, and whether the account already exists with unexpected state.",
-            failureSummary: "Active Directory command 'CreateUser' failed against LDAP server '192.0.2.10'. A value in the request is invalid. 000021C8: AtrErr: DSID-03200E96, #1: 0: 000021C8: DSID-03200E96, problem 1005 (CONSTRAINT_ATT_TYPE), data 0, Att 90290 (userPrincipalName) Next check: Check the target OU, manager resolution, and whether the account already exists with unexpected state.",
-            primarySummary: "Active Directory command 'CreateUser' failed against LDAP server '192.0.2.10'. A value in the request is invalid. 000021C8: AtrErr: DSID-03200E96, #1: 0: 000021C8: DSID-03200E96, problem 1005 (CONSTRAINT_ATT_TYPE), data 0, Att 90290 (userPrincipalName) Next check: Check the target OU, manager resolution, and whether the account already exists with unexpected state.");
+            reason: "Active Directory command 'CreateUser' failed against LDAP server '192.0.2.35'. A value in the request is invalid. 000021C8: AtrErr: DSID-03200E96, #1: 0: 000021C8: DSID-03200E96, problem 1005 (CONSTRAINT_ATT_TYPE), data 0, Att 90290 (userPrincipalName) Next check: Check the target OU, manager resolution, and whether the account already exists with unexpected state.",
+            failureSummary: "Active Directory command 'CreateUser' failed against LDAP server '192.0.2.35'. A value in the request is invalid. 000021C8: AtrErr: DSID-03200E96, #1: 0: 000021C8: DSID-03200E96, problem 1005 (CONSTRAINT_ATT_TYPE), data 0, Att 90290 (userPrincipalName) Next check: Check the target OU, manager resolution, and whether the account already exists with unexpected state.",
+            primarySummary: "Active Directory command 'CreateUser' failed against LDAP server '192.0.2.35'. A value in the request is invalid. 000021C8: AtrErr: DSID-03200E96, #1: 0: 000021C8: DSID-03200E96, problem 1005 (CONSTRAINT_ATT_TYPE), data 0, Att 90290 (userPrincipalName) Next check: Check the target OU, manager resolution, and whether the account already exists with unexpected state.");
 
         Assert.Null(model.GetPrimarySummaryDisplay(entry));
         Assert.Equal(
-            "Active Directory command 'CreateUser' failed against LDAP server '192.0.2.10'. A value in the request is invalid. 000021C8: AtrErr: DSID-03200E96, #1: 0: 000021C8: DSID-03200E96, problem 1005 (CONSTRAINT_ATT_TYPE), data 0, Att 90290 (userPrincipalName)",
+            "Active Directory command 'CreateUser' failed against LDAP server '192.0.2.35'. A value in the request is invalid. 000021C8: AtrErr: DSID-03200E96, #1: 0: 000021C8: DSID-03200E96, problem 1005 (CONSTRAINT_ATT_TYPE), data 0, Att 90290 (userPrincipalName)",
             model.GetFailureSummaryDisplay(entry));
     }
 
@@ -509,9 +509,9 @@ public sealed class RunDetailModelTests
     {
         var model = new DetailModel(new RunEntriesQueryService(new StubRunRepository()));
         var entry = CreateConflictEntry(
-            reason: "Active Directory command 'CreateUser' failed against LDAP server '192.0.2.10'. A value in the request is invalid. 000021C8: AtrErr: DSID-03200E96, #1: 0: 000021C8: DSID-03200E96, problem 1005 (CONSTRAINT_ATT_TYPE), data 0, Att 90290 (userPrincipalName) Next check: Check the target OU, manager resolution, and whether the account already exists with unexpected state.",
-            failureSummary: "Active Directory command 'CreateUser' failed against LDAP server '192.0.2.10'. A value in the request is invalid. 000021C8: AtrErr: DSID-03200E96, #1: 0: 000021C8: DSID-03200E96, problem 1005 (CONSTRAINT_ATT_TYPE), data 0, Att 90290 (userPrincipalName) Next check: Check the target OU, manager resolution, and whether the account already exists with unexpected state.",
-            primarySummary: "Active Directory command 'CreateUser' failed against LDAP server '192.0.2.10'. A value in the request is invalid. 000021C8: AtrErr: DSID-03200E96, #1: 0: 000021C8: DSID-03200E96, problem 1005 (CONSTRAINT_ATT_TYPE), data 0, Att 90290 (userPrincipalName) Next check: Check the target OU, manager resolution, and whether the account already exists with unexpected state.");
+            reason: "Active Directory command 'CreateUser' failed against LDAP server '192.0.2.35'. A value in the request is invalid. 000021C8: AtrErr: DSID-03200E96, #1: 0: 000021C8: DSID-03200E96, problem 1005 (CONSTRAINT_ATT_TYPE), data 0, Att 90290 (userPrincipalName) Next check: Check the target OU, manager resolution, and whether the account already exists with unexpected state.",
+            failureSummary: "Active Directory command 'CreateUser' failed against LDAP server '192.0.2.35'. A value in the request is invalid. 000021C8: AtrErr: DSID-03200E96, #1: 0: 000021C8: DSID-03200E96, problem 1005 (CONSTRAINT_ATT_TYPE), data 0, Att 90290 (userPrincipalName) Next check: Check the target OU, manager resolution, and whether the account already exists with unexpected state.",
+            primarySummary: "Active Directory command 'CreateUser' failed against LDAP server '192.0.2.35'. A value in the request is invalid. 000021C8: AtrErr: DSID-03200E96, #1: 0: 000021C8: DSID-03200E96, problem 1005 (CONSTRAINT_ATT_TYPE), data 0, Att 90290 (userPrincipalName) Next check: Check the target OU, manager resolution, and whether the account already exists with unexpected state.");
 
         Assert.False(model.ShouldShowReason(entry));
     }

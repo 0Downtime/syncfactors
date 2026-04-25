@@ -121,7 +121,7 @@ public sealed class PreviewModelTests
     public void ActiveDirectoryFailureDiagnostics_Parse_HandlesCreateFailureContext()
     {
         var diagnostics = ActiveDirectoryFailureDiagnostics.Parse(
-            "Active Directory command 'CreateUser' failed against LDAP server '192.0.2.10'. A value in the request is invalid. LDAP error code 19. Server detail: 000021C8: AtrErr: DSID-03200E96, problem 1005 (CONSTRAINT_ATT_TYPE), Att 90290 (userPrincipalName) Details: Step=CreateUserAddRequest WorkerId=45086 SamAccountName=45086 DistinguishedName=CN=45086,OU=Users,DC=example,DC=com TargetOu=OU=Users,DC=example,DC=com UserPrincipalName=45086@example.com Mail=45086@example.com IdentityAttribute=employeeID IdentityValue=45086 CreateAttributes=objectClass,cn,displayName,sAMAccountName,userPrincipalName,mail,userAccountControl,employeeID ManagerId=90001 ManagerDistinguishedName=CN=Manager,OU=Users,DC=example,DC=com Next check: Check the target OU, manager resolution, and whether the account already exists with unexpected state.");
+            "Active Directory command 'CreateUser' failed against LDAP server '192.0.2.35'. A value in the request is invalid. LDAP error code 19. Server detail: 000021C8: AtrErr: DSID-03200E96, problem 1005 (CONSTRAINT_ATT_TYPE), Att 90290 (userPrincipalName) Details: Step=CreateUserAddRequest WorkerId=45086 SamAccountName=45086 DistinguishedName=CN=45086,OU=Users,DC=example,DC=com TargetOu=OU=Users,DC=example,DC=com UserPrincipalName=45086@example.com Mail=45086@example.com IdentityAttribute=employeeID IdentityValue=45086 CreateAttributes=objectClass,cn,displayName,sAMAccountName,userPrincipalName,mail,userAccountControl,employeeID ManagerId=90001 ManagerDistinguishedName=CN=Manager,OU=Users,DC=example,DC=com Next check: Check the target OU, manager resolution, and whether the account already exists with unexpected state.");
 
         Assert.NotNull(diagnostics);
         Assert.Contains(diagnostics!.Details, item => item.Label == "Step" && item.Value == "CreateUserAddRequest");
@@ -138,16 +138,16 @@ public sealed class PreviewModelTests
     public void ActiveDirectoryFailureDiagnostics_Parse_HandlesPreflightIdentityConflict()
     {
         var diagnostics = ActiveDirectoryFailureDiagnostics.Parse(
-            "Active Directory command 'CreateUser' failed against LDAP server '192.0.2.10'. A different AD account already uses userPrincipalName 'brian.oliver@Exampleenergy.com' for create worker 45086. Details: Step=PreflightIdentityConflict WorkerId=45086 SamAccountName=45086 DistinguishedName=CN=45086,OU=POWERSHELL,OU=ExampleQA-Users,DC=ExampleQA,DC=biz TargetOu=OU=POWERSHELL,OU=ExampleQA-Users,DC=ExampleQA,DC=biz UserPrincipalName=brian.oliver@Exampleenergy.com Mail=brian.oliver@Exampleenergy.com IdentityAttribute=sAMAccountName IdentityValue=45086 ConflictingAttribute=userPrincipalName ConflictingValue=brian.oliver@Exampleenergy.com ExistingSamAccountName=boliver ExistingDisplayName=Oliver, Brian ExistingDistinguishedName=CN=Brian Oliver,OU=POWERSHELL,OU=ExampleQA-Users,DC=ExampleQA,DC=biz ExistingUserPrincipalName=brian.oliver@Exampleenergy.com ExistingMail=brian.oliver@Exampleenergy.com ManagerId=43114 ManagerDistinguishedName=CN=43114,OU=POWERSHELL,OU=ExampleQA-Users,DC=ExampleQA,DC=biz Next check: Resolve the existing AD account that already owns this SAM, UPN, or mail value before retrying.");
+            "Active Directory command 'CreateUser' failed against LDAP server '192.0.2.35'. A different AD account already uses userPrincipalName 'brian.oliver@example.test' for create worker 45086. Details: Step=PreflightIdentityConflict WorkerId=45086 SamAccountName=45086 DistinguishedName=CN=45086,OU=Active,OU=SyncFactors-Users,DC=example,DC=test TargetOu=OU=Active,OU=SyncFactors-Users,DC=example,DC=test UserPrincipalName=brian.oliver@example.test Mail=brian.oliver@example.test IdentityAttribute=sAMAccountName IdentityValue=45086 ConflictingAttribute=userPrincipalName ConflictingValue=brian.oliver@example.test ExistingSamAccountName=boliver ExistingDisplayName=Oliver, Brian ExistingDistinguishedName=CN=Brian Oliver,OU=Active,OU=SyncFactors-Users,DC=example,DC=test ExistingUserPrincipalName=brian.oliver@example.test ExistingMail=brian.oliver@example.test ManagerId=43114 ManagerDistinguishedName=CN=43114,OU=Active,OU=SyncFactors-Users,DC=example,DC=test Next check: Resolve the existing AD account that already owns this SAM, UPN, or mail value before retrying.");
 
         Assert.NotNull(diagnostics);
         Assert.Contains(diagnostics!.Details, item => item.Label == "Conflicting Attribute" && item.Value == "userPrincipalName");
-        Assert.Contains(diagnostics.Details, item => item.Label == "Conflicting Value" && item.Value == "brian.oliver@Exampleenergy.com");
+        Assert.Contains(diagnostics.Details, item => item.Label == "Conflicting Value" && item.Value == "brian.oliver@example.test");
         Assert.Contains(diagnostics.Details, item => item.Label == "Existing SAM" && item.Value == "boliver");
         Assert.Contains(diagnostics.Details, item => item.Label == "Existing Display Name" && item.Value == "Oliver, Brian");
-        Assert.Contains(diagnostics.Details, item => item.Label == "Existing Distinguished Name" && item.Value == "CN=Brian Oliver,OU=POWERSHELL,OU=ExampleQA-Users,DC=ExampleQA,DC=biz");
-        Assert.Contains(diagnostics.Details, item => item.Label == "Existing UPN" && item.Value == "brian.oliver@Exampleenergy.com");
-        Assert.Contains(diagnostics.Details, item => item.Label == "Existing Mail" && item.Value == "brian.oliver@Exampleenergy.com");
+        Assert.Contains(diagnostics.Details, item => item.Label == "Existing Distinguished Name" && item.Value == "CN=Brian Oliver,OU=Active,OU=SyncFactors-Users,DC=example,DC=test");
+        Assert.Contains(diagnostics.Details, item => item.Label == "Existing UPN" && item.Value == "brian.oliver@example.test");
+        Assert.Contains(diagnostics.Details, item => item.Label == "Existing Mail" && item.Value == "brian.oliver@example.test");
     }
 
     [Fact]
@@ -209,8 +209,8 @@ public sealed class PreviewModelTests
             DiffRows:
             [
                 new DiffRow("displayName", "sAMAccountName", "Old Name", workerId, true),
-                new DiffRow("UserPrincipalName", "resolved email local-part", "old.email@Exampleenergy.com", "preview.email@Exampleenergy.com", true),
-                new DiffRow("mail", "resolved email local-part", "old.email@Exampleenergy.com", "preview.email@Exampleenergy.com", true)
+                new DiffRow("UserPrincipalName", "resolved email local-part", "old.email@example.test", "preview.email@example.test", true),
+                new DiffRow("mail", "resolved email local-part", "old.email@example.test", "preview.email@example.test", true)
             ],
             SourceAttributes: sourceAttributes ?? [],
             UsedSourceAttributes: [],

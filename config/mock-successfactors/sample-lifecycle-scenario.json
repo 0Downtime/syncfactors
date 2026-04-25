@@ -168,7 +168,7 @@
       {
         "workerId": "10003",
         "samAccountName": "10003",
-        "parentOu": "OU=GRAVEYARD,OU=ExampleQA-Users,DC=ExampleQA,DC=biz",
+        "parentOu": "OU=Graveyard,OU=SyncFactors-Users,DC=example,DC=test",
         "enabled": false,
         "displayName": "Sample103, Casey",
         "attributes": {

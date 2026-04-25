@@ -248,8 +248,8 @@ public sealed class DirectoryMutationCommandBuilderTests
 
         var command = new DirectoryMutationCommandBuilder().Build(worker, preview);
 
-        Assert.Equal("45086@Exampleenergy.com", command.UserPrincipalName);
-        Assert.Equal("45086@Exampleenergy.com", command.Mail);
+        Assert.Equal("45086@example.test", command.UserPrincipalName);
+        Assert.Equal("45086@example.test", command.Mail);
     }
 
     [Fact]
@@ -274,11 +274,11 @@ public sealed class DirectoryMutationCommandBuilderTests
                 Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)),
             Identity: new IdentityMatchResult("creates", MatchedExistingUser: false, SamAccountName: "44522", Reason: null, OperatorActionSummary: null),
             ManagerDistinguishedName: null,
-            ProposedEmailAddress: "Christopher.Brien@ExampleEnergy.com",
+            ProposedEmailAddress: "Christopher.Brien@example.test",
             AttributeChanges:
             [
-                new AttributeChange("UserPrincipalName", "resolved email local-part", "(unset)", "Christopher.Brien@ExampleEnergy.com", true),
-                new AttributeChange("mail", "resolved email local-part", "(unset)", "Christopher.Brien@ExampleEnergy.com", true)
+                new AttributeChange("UserPrincipalName", "resolved email local-part", "(unset)", "Christopher.Brien@example.test", true),
+                new AttributeChange("mail", "resolved email local-part", "(unset)", "Christopher.Brien@example.test", true)
             ],
             MissingSourceAttributes: [],
             Bucket: "creates",
@@ -295,10 +295,10 @@ public sealed class DirectoryMutationCommandBuilderTests
 
         var command = new DirectoryMutationCommandBuilder().Build(plan);
 
-        Assert.Equal("christopher.brien@Exampleenergy.com", command.UserPrincipalName);
-        Assert.Equal("christopher.brien@Exampleenergy.com", command.Mail);
-        Assert.Equal("christopher.brien@Exampleenergy.com", command.Attributes["UserPrincipalName"]);
-        Assert.Equal("christopher.brien@Exampleenergy.com", command.Attributes["mail"]);
+        Assert.Equal("christopher.brien@example.test", command.UserPrincipalName);
+        Assert.Equal("christopher.brien@example.test", command.Mail);
+        Assert.Equal("christopher.brien@example.test", command.Attributes["UserPrincipalName"]);
+        Assert.Equal("christopher.brien@example.test", command.Attributes["mail"]);
     }
 
     private sealed class StubAttributeMappingProvider : IAttributeMappingProvider

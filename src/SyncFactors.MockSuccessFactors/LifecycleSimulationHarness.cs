@@ -13,10 +13,10 @@ internal sealed class LifecycleSimulationHarness(
 {
     private static readonly StringComparer Comparer = StringComparer.OrdinalIgnoreCase;
     private static readonly WorkerRunSettings DefaultRunSettings = new(MaxCreatesPerRun: 50, MaxDisablesPerRun: 50, MaxDeletionsPerRun: 10);
-    private const string ProdActiveOu = "OU=POWERSHELL,OU=ExampleQA-Users,DC=ExampleQA,DC=biz";
-    private const string ProdPrehireOu = "OU=Prehire,OU=ExampleQA-Users,DC=ExampleQA,DC=biz";
-    private const string ProdGraveyardOu = "OU=GRAVEYARD,OU=ExampleQA-Users,DC=ExampleQA,DC=biz";
-    private const string ProdLeaveOu = "OU=LEAVE USERS,OU=ExampleQA-Users,DC=ExampleQA,DC=biz";
+    private const string ProdActiveOu = "OU=Active,OU=SyncFactors-Users,DC=example,DC=test";
+    private const string ProdPrehireOu = "OU=Prehire,OU=SyncFactors-Users,DC=example,DC=test";
+    private const string ProdGraveyardOu = "OU=Graveyard,OU=SyncFactors-Users,DC=example,DC=test";
+    private const string ProdLeaveOu = "OU=Leave,OU=SyncFactors-Users,DC=example,DC=test";
     private static readonly IReadOnlySet<string> SupportedMutationFields = new HashSet<string>(Comparer)
     {
         "personIdExternal",
@@ -340,7 +340,7 @@ internal sealed class LifecycleSimulationHarness(
             "username": "",
             "bindPassword": "",
             "identityAttribute": "sAMAccountName",
-            "upnSuffix": "Exampleqa.biz",
+            "upnSuffix": "example.test",
             "defaultActiveOu": "{{ProdActiveOu}}",
             "prehireOu": "{{ProdPrehireOu}}",
             "graveyardOu": "{{ProdGraveyardOu}}",
@@ -359,7 +359,7 @@ internal sealed class LifecycleSimulationHarness(
                   "company": "CORP",
                   "department": "IT"
                 },
-                "targetOu": "OU=IT,OU=POWERSHELL,OU=ExampleQA-Users,DC=ExampleQA,DC=biz"
+                "targetOu": "OU=IT,OU=Active,OU=SyncFactors-Users,DC=example,DC=test"
               }
             ],
             "licensingGroups": []

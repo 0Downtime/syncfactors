@@ -49,8 +49,8 @@ public sealed class ApplyPreviewServiceTests
                 new DiffRow("employeeID", "personIdExternal", "(unset)", "10001", true),
                 new DiffRow("GivenName", "firstName", "(unset)", "Winnie", true),
                 new DiffRow("displayName", "preferredName,lastName", "(unset)", "Sample101, Winnie", true),
-                new DiffRow("UserPrincipalName", "resolved email local-part", "(unset)", "preview.email@Exampleenergy.com", true),
-                new DiffRow("mail", "resolved email local-part", "(unset)", "preview.email@Exampleenergy.com", true),
+                new DiffRow("UserPrincipalName", "resolved email local-part", "(unset)", "preview.email@example.test", true),
+                new DiffRow("mail", "resolved email local-part", "(unset)", "preview.email@example.test", true),
                 new DiffRow("department", "department", "(unset)", "Information Technology", true),
                 new DiffRow("extensionAttribute2", "businessUnit", "(unset)", "(unset)", true)
             ],
@@ -85,12 +85,12 @@ public sealed class ApplyPreviewServiceTests
         Assert.Equal("Information Technology", command.Attributes["department"]);
         Assert.Null(command.Attributes["extensionAttribute2"]);
         Assert.Equal("Sample101, Winnie", command.Attributes["displayName"]);
-        Assert.Equal("preview.email@Exampleenergy.com", command.Attributes["UserPrincipalName"]);
-        Assert.Equal("preview.email@Exampleenergy.com", command.Attributes["mail"]);
+        Assert.Equal("preview.email@example.test", command.Attributes["UserPrincipalName"]);
+        Assert.Equal("preview.email@example.test", command.Attributes["mail"]);
         Assert.Equal("10001", command.CommonName);
         Assert.Equal("Sample101, Winnie", command.DisplayName);
-        Assert.Equal("preview.email@Exampleenergy.com", command.UserPrincipalName);
-        Assert.Equal("preview.email@Exampleenergy.com", command.Mail);
+        Assert.Equal("preview.email@example.test", command.UserPrincipalName);
+        Assert.Equal("preview.email@example.test", command.Mail);
         Assert.Equal("CN=Manager,OU=LabUsers,DC=example,DC=com", command.ManagerDistinguishedName);
     }
 
@@ -132,7 +132,7 @@ public sealed class ApplyPreviewServiceTests
             OperationSummary: null,
             DiffRows:
             [
-                new DiffRow("UserPrincipalName", "resolved email local-part", "preview.email@Exampleenergy.com", "preview.email@Exampleenergy.com", false)
+                new DiffRow("UserPrincipalName", "resolved email local-part", "preview.email@example.test", "preview.email@example.test", false)
             ],
             SourceAttributes: [],
             UsedSourceAttributes: [],
@@ -203,7 +203,7 @@ public sealed class ApplyPreviewServiceTests
             OperationSummary: null,
             DiffRows:
             [
-                new DiffRow("UserPrincipalName", "resolved email local-part", "(unset)", "preview.email@Exampleenergy.com", true)
+                new DiffRow("UserPrincipalName", "resolved email local-part", "(unset)", "preview.email@example.test", true)
             ],
             SourceAttributes: [],
             UsedSourceAttributes: [],
@@ -279,7 +279,7 @@ public sealed class ApplyPreviewServiceTests
             OperationSummary: null,
             DiffRows:
             [
-                new DiffRow("UserPrincipalName", "resolved email local-part", "(unset)", "preview.email@Exampleenergy.com", true)
+                new DiffRow("UserPrincipalName", "resolved email local-part", "(unset)", "preview.email@example.test", true)
             ],
             SourceAttributes: [],
             UsedSourceAttributes: [],
@@ -352,7 +352,7 @@ public sealed class ApplyPreviewServiceTests
             OperationSummary: null,
             DiffRows:
             [
-                new DiffRow("UserPrincipalName", "resolved email local-part", "(unset)", "preview.email@Exampleenergy.com", true)
+                new DiffRow("UserPrincipalName", "resolved email local-part", "(unset)", "preview.email@example.test", true)
             ],
             SourceAttributes: [],
             UsedSourceAttributes: [],
@@ -418,7 +418,7 @@ public sealed class ApplyPreviewServiceTests
             OperationSummary: null,
             DiffRows:
             [
-                new DiffRow("UserPrincipalName", "resolved email local-part", "(unset)", "preview.email@Exampleenergy.com", true)
+                new DiffRow("UserPrincipalName", "resolved email local-part", "(unset)", "preview.email@example.test", true)
             ],
             SourceAttributes: [],
             UsedSourceAttributes: [],
@@ -489,7 +489,7 @@ public sealed class ApplyPreviewServiceTests
             OperationSummary: null,
             DiffRows:
             [
-                new DiffRow("UserPrincipalName", "resolved email local-part", "(unset)", "preview.email@Exampleenergy.com", true)
+                new DiffRow("UserPrincipalName", "resolved email local-part", "(unset)", "preview.email@example.test", true)
             ],
             SourceAttributes: [],
             UsedSourceAttributes: [],
@@ -558,8 +558,8 @@ public sealed class ApplyPreviewServiceTests
             OperationSummary: null,
             DiffRows:
             [
-                new DiffRow("UserPrincipalName", "resolved email local-part", "(unset)", "preview.email@Exampleenergy.com", true),
-                new DiffRow("mail", "resolved email local-part", "(unset)", "preview.email@Exampleenergy.com", true)
+                new DiffRow("UserPrincipalName", "resolved email local-part", "(unset)", "preview.email@example.test", true),
+                new DiffRow("mail", "resolved email local-part", "(unset)", "preview.email@example.test", true)
             ],
             SourceAttributes: [],
             UsedSourceAttributes: [],
