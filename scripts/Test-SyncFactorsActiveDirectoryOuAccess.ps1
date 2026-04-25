@@ -117,6 +117,8 @@ function Get-SyncFactorsConfiguredActiveDirectoryTargets {
         Port = Get-SyncFactorsHashtableValue -Table $ad -Key 'port'
         Username = Resolve-SyncFactorsConfigSecretValue -Secrets $secrets -Section $ad -SecretKey 'adUsernameEnv' -LiteralKey 'username'
         BindPassword = Resolve-SyncFactorsConfigSecretValue -Secrets $secrets -Section $ad -SecretKey 'adBindPasswordEnv' -LiteralKey 'bindPassword'
+        UsernameSecretName = [string](Get-SyncFactorsHashtableValue -Table $secrets -Key 'adUsernameEnv')
+        BindPasswordSecretName = [string](Get-SyncFactorsHashtableValue -Table $secrets -Key 'adBindPasswordEnv')
         TransportMode = [string](Get-SyncFactorsHashtableValue -Table $transport -Key 'mode')
         AllowLdapFallback = [bool](Get-SyncFactorsHashtableValue -Table $transport -Key 'allowLdapFallback')
         RequireCertificateValidation = if ($transport -is [System.Collections.IDictionary] -and $transport.Contains('requireCertificateValidation')) { [bool]$transport['requireCertificateValidation'] } else { $true }
@@ -637,6 +639,30 @@ function Write-SyncFactorsConfiguredAdBindSummary {
     Write-Host "AD OU precheck bind identity: user='$bindUser', domain='$bindDomain', server='$($Configuration.Server)', transport='$transportMode'." -ForegroundColor DarkGray
 }
 
+function Assert-SyncFactorsConfiguredAdBindCredentials {
+    param(
+        [Parameter(Mandatory)]
+        [pscustomobject]$Configuration,
+        [Parameter(Mandatory)]
+        [string]$ConfigPath
+    )
+
+    $missing = [System.Collections.Generic.List[string]]::new()
+    if ([string]::IsNullOrWhiteSpace([string]$Configuration.Username)) {
+        $name = if ([string]::IsNullOrWhiteSpace([string]$Configuration.UsernameSecretName)) { 'ad.username' } else { [string]$Configuration.UsernameSecretName }
+        $missing.Add($name)
+    }
+
+    if ([string]::IsNullOrWhiteSpace([string]$Configuration.BindPassword)) {
+        $name = if ([string]::IsNullOrWhiteSpace([string]$Configuration.BindPasswordSecretName)) { 'ad.bindPassword' } else { [string]$Configuration.BindPasswordSecretName }
+        $missing.Add($name)
+    }
+
+    if ($missing.Count -gt 0) {
+        throw "Configured AD OU precheck requires a non-empty AD bind username and password, but missing: $($missing -join ', '). Set these in .env.worktree, macOS Keychain, or literal config values referenced by '$ConfigPath'."
+    }
+}
+
 function Write-SyncFactorsConfiguredAdProbeEvaluation {
     param(
         [Parameter(Mandatory)]
@@ -696,6 +722,7 @@ function Assert-SyncFactorsConfiguredAdOusAccessible {
     }
 
     Write-SyncFactorsConfiguredAdBindSummary -Configuration $configuration
+    Assert-SyncFactorsConfiguredAdBindCredentials -Configuration $configuration -ConfigPath $ConfigPath
     $probeResult = Invoke-SyncFactorsConfiguredActiveDirectoryOuProbe -Configuration $configuration
     Write-SyncFactorsConfiguredAdProbeEvaluation -ProbeResult $probeResult
     $failures = @($probeResult.Checks | Where-Object { -not $_.Exists -or -not $_.Writable })
