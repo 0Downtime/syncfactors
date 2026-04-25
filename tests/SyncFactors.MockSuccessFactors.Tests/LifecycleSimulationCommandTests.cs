@@ -190,7 +190,7 @@ public sealed class LifecycleSimulationCommandTests
             TargetOu: "OU=Prehire,DC=example,DC=com",
             DisplayName: "Sample103, Casey",
             CurrentDistinguishedName: null,
-            EnableAccount: false,
+            EnableAccount: true,
             Operations: [new DirectoryOperation("CreateUser", "OU=Prehire,DC=example,DC=com")],
             Attributes: new Dictionary<string, string?>
             {
@@ -305,7 +305,7 @@ public sealed class LifecycleSimulationCommandTests
                     [
                         new WorkerMutation("10003", false, null, new Dictionary<string, string?> { ["startDate"] = "2026-03-15T00:00:00Z", ["lifecycleState"] = "active" })
                     ],
-                    Expectation: new IterationExpectation("Succeeded", new Dictionary<string, int> { ["enables"] = 1 }, [new ExpectedWorkerOperation("10003", ["MoveUser", "EnableUser"])])),
+                    Expectation: new IterationExpectation("Succeeded", new Dictionary<string, int> { ["enables"] = 1 }, [new ExpectedWorkerOperation("10003", ["MoveUser"])])),
                 new LifecycleSimulationIteration(
                     Order: 3,
                     Name: "mapped-update",

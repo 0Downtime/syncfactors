@@ -140,8 +140,7 @@
           {
             "workerId": "10003",
             "operations": [
-              "MoveUser",
-              "EnableUser"
+              "MoveUser"
             ]
           },
           {

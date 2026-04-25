@@ -353,6 +353,51 @@ public sealed class BulkRunCoordinatorTests
     }
 
     [Fact]
+    public async Task ExecuteAsync_PersistsDecisionTreeInEntryItem()
+    {
+        CapturingRunLifecycleService.Entries.Clear();
+        CapturingRunLifecycleService.Reset();
+        var coordinator = new BulkRunCoordinator(
+            new StubWorkerSource([CreateWorker("10001")]),
+            new CapturingDeltaSyncService(),
+            new StubRunQueueStore(),
+            new StubGraveyardRetentionStore(),
+            new StubWorkerPlanningService(includeDecisionTree: true),
+            new StubDirectoryMutationCommandBuilder(),
+            new SuccessfulDirectoryCommandGateway(),
+            new StubDirectoryGateway(),
+            new CapturingRunLifecycleService(),
+            new RealSyncSettings(),
+            new WorkerRunSettings(MaxCreatesPerRun: 10),
+            CreateLifecycleSettings(),
+            NullLogger<BulkRunCoordinator>.Instance,
+            TimeProvider.System);
+
+        await coordinator.ExecuteAsync(
+            new RunQueueRequest(
+                RequestId: "req-decision-tree",
+                Mode: "BulkSync",
+                DryRun: true,
+                RunTrigger: "AdHoc",
+                RequestedBy: "test",
+                Status: "Pending",
+                RequestedAt: DateTimeOffset.UtcNow,
+                StartedAt: null,
+                CompletedAt: null,
+                RunId: null,
+                ErrorMessage: null),
+            maxDegreeOfParallelism: 1,
+            CancellationToken.None);
+
+        var entry = Assert.Single(CapturingRunLifecycleService.Entries);
+        var decisionTree = entry.Item.GetProperty("decisionTree").EnumerateArray().ToArray();
+        Assert.Equal(2, decisionTree.Length);
+        Assert.Equal("Source Worker", decisionTree[0].GetProperty("step").GetString());
+        Assert.Equal("Provisioning Decision", decisionTree[1].GetProperty("step").GetString());
+        Assert.Equal("Yes", decisionTree[1].GetProperty("outcome").GetString());
+    }
+
+    [Fact]
     public async Task ExecuteAsync_PersistsVerifiedReadbackStateInEntryItem()
     {
         CapturingRunLifecycleService.Entries.Clear();
@@ -554,7 +599,7 @@ public sealed class BulkRunCoordinatorTests
             Task.FromResult(DirectoryIdentityFormatter.BuildBaseEmailLocalPart(worker.PreferredName, worker.LastName));
     }
 
-    private sealed class StubWorkerPlanningService(bool includeChangedAttribute = false) : IWorkerPlanningService
+    private sealed class StubWorkerPlanningService(bool includeChangedAttribute = false, bool includeDecisionTree = false) : IWorkerPlanningService
     {
         public Task<PlannedWorkerAction> PlanAsync(WorkerSnapshot worker, string? logPath, CancellationToken cancellationToken)
         {
@@ -587,7 +632,13 @@ public sealed class BulkRunCoordinatorTests
                     ReviewCategory: null,
                     ReviewCaseType: null,
                     Reason: null,
-                    CanAutoApply: true));
+                    CanAutoApply: true,
+                    DecisionSteps: includeDecisionTree
+                        ? [
+                            new ProvisioningDecisionStep("Source Worker", "Loaded", $"Loaded source worker {worker.WorkerId}."),
+                            new ProvisioningDecisionStep("Provisioning Decision", "Yes", "Real sync can update the matched AD account.", "good")
+                        ]
+                        : null));
         }
     }
 

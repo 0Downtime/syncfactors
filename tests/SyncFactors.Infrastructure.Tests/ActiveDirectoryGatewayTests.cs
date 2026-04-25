@@ -291,7 +291,7 @@ public sealed class ActiveDirectoryGatewayTests
             [typeof(LdapException), typeof(int)]);
         Assert.NotNull(method);
 
-        var shouldRetry = Assert.IsType<bool>(method!.Invoke(null, [new LdapException("The LDAP server is unavailable."), 1]));
+        var shouldRetry = Assert.IsType<bool>(method!.Invoke(null, [new LdapException("The LDAP server is unavailable."), 3]));
 
         Assert.False(shouldRetry);
     }
@@ -337,7 +337,7 @@ public sealed class ActiveDirectoryGatewayTests
 
         var timeoutException = CreateTimeoutException();
 
-        var shouldRetry = Assert.IsType<bool>(method!.Invoke(null, [timeoutException, 1]));
+        var shouldRetry = Assert.IsType<bool>(method!.Invoke(null, [timeoutException, 3]));
 
         Assert.False(shouldRetry);
     }

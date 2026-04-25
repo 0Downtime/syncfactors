@@ -135,12 +135,13 @@
     "defaultActiveOu": "OU=LabUsers,DC=example,DC=com",
     "prehireOu": "OU=Prehire,DC=example,DC=com",
     "graveyardOu": "OU=LabGraveyard,DC=example,DC=com",
+    "leaveOu": "OU=Leave,DC=example,DC=com",
     "transport": {
       "mode": "ldaps",
       "allowLdapFallback": false,
       "allowCreateEnableWithoutPasswordProvisioning": false,
       "requireCertificateValidation": true,
-      "requireSigning": true,
+      "requireSigning": false,
       "trustedCertificateThumbprints": []
     },
     "defaultPassword": "",
@@ -160,12 +161,17 @@
     "deletionRetentionDays": 90,
     "maxDegreeOfParallelism": 2,
     "realSyncEnabled": true,
-    "autoDeleteFromGraveyard": false
+    "autoDeleteFromGraveyard": false,
+    "leaveStatusValues": [
+      "U",
+      "64303",
+      "64304"
+    ]
   },
   "safety": {
-    "maxCreatesPerRun": 5000,
-    "maxDisablesPerRun": 50,
-    "maxDeletionsPerRun": 10
+    "maxCreatesPerRun": 2000,
+    "maxDisablesPerRun": 2000,
+    "maxDeletionsPerRun": 2000
   },
   "approval": {
     "enabled": false,

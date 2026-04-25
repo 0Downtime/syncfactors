@@ -73,13 +73,15 @@ builder.Services.AddSingleton<IRunRepository, SqliteRunRepository>();
 builder.Services.AddSingleton<IRunQueueStore, SqliteRunQueueStore>();
 builder.Services.AddSingleton<RunQueueRecoveryService>();
 builder.Services.AddSingleton<ISyncScheduleStore, SqliteSyncScheduleStore>();
-builder.Services.AddSingleton<IGraveyardRetentionStore, SqliteGraveyardRetentionStore>();
+builder.Services.AddSingleton<SqliteGraveyardRetentionStore>();
+builder.Services.AddSingleton<IGraveyardRetentionStore>(serviceProvider => serviceProvider.GetRequiredService<SqliteGraveyardRetentionStore>());
 builder.Services.AddHttpClient<SuccessFactorsWorkerSource>()
     .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
     {
         AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate
     });
 builder.Services.AddTransient<IWorkerSource>(serviceProvider => serviceProvider.GetRequiredService<SuccessFactorsWorkerSource>());
+builder.Services.AddSingleton<ScaffoldDirectoryCommandGateway>();
 builder.Services.AddTransient<ActiveDirectoryGateway>();
 builder.Services.AddTransient<IDirectoryGateway>(serviceProvider => serviceProvider.GetRequiredService<ActiveDirectoryGateway>());
 builder.Services.AddTransient<ActiveDirectoryCommandGateway>();
