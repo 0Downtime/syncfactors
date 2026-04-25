@@ -4,9 +4,11 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${repo_root}"
 
+private_org="$(printf '\x73\x70\x69\x72\x65')"
+
 patterns=(
-  'Example''qa'
-  'Example''energy'
+  "${private_org}qa"
+  "${private_org}energy"
   'qa''dc'
   'api''4[.]successfactors[.]com'
   '10[.]1[.]182[.][0-9]{1,3}'
