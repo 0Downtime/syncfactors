@@ -109,6 +109,27 @@ public sealed class MockFixtureStoreAdminTests
     }
 
     [Fact]
+    public void Store_CreateNameConflictWorker_CopiesNamesAndAllocatesUniqueSourceEmail()
+    {
+        var runtimePath = CreateRuntimePath();
+        var store = CreateStore(runtimePath);
+
+        var original = store.GetDocument().Workers[0];
+        var created = store.CreateNameConflictWorker(original.PersonIdExternal);
+
+        Assert.NotEqual(original.PersonIdExternal, created.PersonIdExternal);
+        Assert.Equal(original.FirstName, created.FirstName);
+        Assert.Equal(original.LastName, created.LastName);
+        Assert.Equal(original.PreferredName, created.PreferredName);
+        Assert.Equal(original.DisplayName, created.DisplayName);
+        Assert.NotEqual(original.Email, created.Email);
+        Assert.Equal("64300", created.EmploymentStatus);
+        Assert.Equal(MockLifecycleState.Active, created.LifecycleState);
+        Assert.Contains("name-conflict", created.ScenarioTags);
+        Assert.Equal("1", created.ActiveEmploymentsCount);
+    }
+
+    [Fact]
     public void Store_SyntheticPopulationSeed_IsFrozenAfterRuntimeFileExists()
     {
         var runtimePath = CreateRuntimePath();

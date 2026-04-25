@@ -109,6 +109,36 @@ public sealed class MockAdminApiTests
         Assert.Equal(0, deletedJson.RootElement.GetProperty("d").GetProperty("results").GetArrayLength());
     }
 
+    [Fact]
+    public async Task AdminApi_CreateNameConflict_CreatesWorkerWithSameNames()
+    {
+        await using var factory = new MockSuccessFactorsFactory(CreateRuntimePath());
+        using var adminClient = CreateLoopbackClient(factory);
+
+        var createResponse = await adminClient.PostAsJsonAsync("/api/admin/workers", new
+        {
+            firstName = "Chris",
+            lastName = "Brien",
+            preferredName = "Chris",
+            startDate = "2026-04-22"
+        });
+        createResponse.EnsureSuccessStatusCode();
+        var createPayload = await createResponse.Content.ReadFromJsonAsync<JsonElement>();
+        var sourceWorkerId = createPayload.GetProperty("worker").GetProperty("personIdExternal").GetString();
+
+        var conflictResponse = await adminClient.PostAsync($"/api/admin/workers/{sourceWorkerId}/create-name-conflict", JsonContent.Create(new { }));
+        conflictResponse.EnsureSuccessStatusCode();
+        var conflictPayload = await conflictResponse.Content.ReadFromJsonAsync<JsonElement>();
+        var conflictWorker = conflictPayload.GetProperty("worker");
+
+        Assert.NotEqual(sourceWorkerId, conflictWorker.GetProperty("personIdExternal").GetString());
+        Assert.Equal("Chris", conflictWorker.GetProperty("firstName").GetString());
+        Assert.Equal("Brien", conflictWorker.GetProperty("lastName").GetString());
+        Assert.Equal("Chris", conflictWorker.GetProperty("preferredName").GetString());
+        Assert.Equal("64300", conflictWorker.GetProperty("employmentStatus").GetString());
+        Assert.Equal("active", conflictWorker.GetProperty("lifecycleState").GetString());
+    }
+
     [Theory]
     [InlineData("prehire", "64300", false)]
     [InlineData("active-started", "64300", false)]

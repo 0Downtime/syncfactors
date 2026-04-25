@@ -257,6 +257,15 @@ adminApi.MapPost("/workers/{workerId}/clone", (string workerId, MockAdminCloneRe
             Worker: store.GetEditableWorker(worker.PersonIdExternal)!));
     }));
 
+adminApi.MapPost("/workers/{workerId}/create-name-conflict", (string workerId, MockFixtureStore store) =>
+    RunAdminMutation(() =>
+    {
+        var worker = store.CreateNameConflictWorker(workerId);
+        return Results.Ok(new MockAdminWorkerMutationResponse(
+            Message: $"Created name conflict worker {worker.PersonIdExternal}.",
+            Worker: store.GetEditableWorker(worker.PersonIdExternal)!));
+    }));
+
 adminApi.MapPost("/workers/{workerId}/terminate", (string workerId, MockFixtureStore store) =>
     RunAdminMutation(() =>
     {

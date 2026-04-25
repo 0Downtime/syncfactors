@@ -165,6 +165,45 @@ public sealed class MockFixtureStore
         }
     }
 
+    public MockWorkerFixture CreateNameConflictWorker(string workerId)
+    {
+        lock (_gate)
+        {
+            var existing = FindWorkerByIdUnsafe(workerId)
+                ?? throw new KeyNotFoundException($"Worker '{workerId}' was not found.");
+            var today = DateTimeOffset.UtcNow.ToString("yyyy-MM-dd");
+
+            var request = ToEditableWorker(existing) with
+            {
+                PersonIdExternal = null,
+                PersonId = null,
+                PerPersonUuid = null,
+                UserName = null,
+                UserId = null,
+                Email = null,
+                StartDate = today,
+                EmploymentStatus = ActiveStatus,
+                LifecycleState = MockLifecycleState.Active,
+                EndDate = null,
+                FirstDateWorked = today,
+                LastDateWorked = null,
+                LatestTerminationDate = null,
+                ActiveEmploymentsCount = "1",
+                ScenarioTags = ["name-conflict"],
+                Response = new MockAdminResponseControlsInput(
+                    ForceUnauthorized: false,
+                    ForceNotFound: false,
+                    ForceMalformedPayload: false,
+                    ForceEmptyResults: false),
+                LastModifiedDateTime = null
+            };
+
+            var created = MaterializeWorkerUnsafe(request, existingWorkerId: null, allocateIdentityIfMissing: true);
+            SetDocumentUnsafe([.. _document.Workers, created]);
+            return created;
+        }
+    }
+
     public MockWorkerFixture TerminateWorker(string workerId)
     {
         lock (_gate)
