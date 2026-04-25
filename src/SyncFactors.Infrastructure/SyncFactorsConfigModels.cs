@@ -71,7 +71,8 @@ public sealed record ActiveDirectoryConfig(
     ActiveDirectoryIdentityPolicyConfig IdentityPolicy,
     string? LeaveOu = null,
     string UpnSuffix = DirectoryIdentityFormatter.CorporateEmailDomain,
-    IReadOnlyList<string>? LicensingGroups = null);
+    IReadOnlyList<string>? LicensingGroups = null,
+    ActiveDirectoryIdentityCorrelationConfig? IdentityCorrelation = null);
 
 public sealed record ActiveDirectoryTransportConfig(
     string Mode,
@@ -83,6 +84,11 @@ public sealed record ActiveDirectoryTransportConfig(
 
 public sealed record ActiveDirectoryIdentityPolicyConfig(
     bool ResolveCreateConflictingUpnAndMail);
+
+public sealed record ActiveDirectoryIdentityCorrelationConfig(
+    bool Enabled,
+    string? SuccessorPersonIdExternalAttribute,
+    string? PreviousPersonIdExternalAttribute);
 
 public sealed record SyncPolicyConfig(
     int EnableBeforeStartDays,

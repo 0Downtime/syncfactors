@@ -58,6 +58,16 @@ builder.Services.AddSingleton(serviceProvider =>
         config.Sync.LeaveStatusValues,
         config.Ad.IdentityAttribute);
 });
+builder.Services.AddSingleton(serviceProvider =>
+{
+    var config = serviceProvider.GetRequiredService<SyncFactorsConfigurationLoader>().GetSyncConfig();
+    var identityCorrelation = config.Ad.IdentityCorrelation;
+    return new SyncFactors.Contracts.IdentityCorrelationSettings(
+        identityCorrelation?.Enabled ?? false,
+        config.Ad.IdentityAttribute,
+        identityCorrelation?.SuccessorPersonIdExternalAttribute,
+        identityCorrelation?.PreviousPersonIdExternalAttribute);
+});
 builder.Services.AddSingleton<ILifecyclePolicy, LifecyclePolicy>();
 builder.Services.AddSingleton<IAttributeDiffService, AttributeDiffService>();
 builder.Services.AddSingleton<IActiveDirectoryConnectionPool, ActiveDirectoryConnectionPool>();

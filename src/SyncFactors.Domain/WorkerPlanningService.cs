@@ -10,9 +10,12 @@ public sealed class WorkerPlanningService(
     IAttributeDiffService attributeDiffService,
     IAttributeMappingProvider attributeMappingProvider,
     ILogger<WorkerPlanningService> logger,
-    IEmailAddressPolicy? emailAddressPolicy = null) : IWorkerPlanningService
+    IEmailAddressPolicy? emailAddressPolicy = null,
+    IdentityCorrelationSettings? identityCorrelationSettings = null) : IWorkerPlanningService
 {
     private readonly IEmailAddressPolicy _emailAddressPolicy = emailAddressPolicy ?? new DefaultEmailAddressPolicy();
+    private readonly IdentityCorrelationSettings _identityCorrelationSettings =
+        identityCorrelationSettings ?? new IdentityCorrelationSettings(false, "employeeID", null, null);
 
     public async Task<PlannedWorkerAction> PlanAsync(WorkerSnapshot worker, string? logPath, CancellationToken cancellationToken)
     {
@@ -64,13 +67,16 @@ public sealed class WorkerPlanningService(
         var identity = identityMatcher.Match(worker, directoryUser);
         var lifecycle = lifecyclePolicy.Evaluate(worker, directoryUser);
         var suppressInactiveCreateValidation = ShouldSuppressInactiveCreateValidation(lifecycle, directoryUser);
+        var identityCorrelation = ResolveIdentityCorrelation(worker, directoryUser, lifecycle);
         var proposedEmailAddress = string.Empty;
         var attributeChanges = new List<AttributeChange>();
         IReadOnlyList<MissingSourceAttributeRow> missingSourceAttributes = [];
         var hasAmbiguousWorkerIdentity = string.Equals(identityReview?.ReviewCaseType, "AmbiguousWorkerIdentity", StringComparison.Ordinal);
         var hasSourceReviewBlock = sourceReview is not null;
+        var hasIdentityCorrelationReviewBlock = identityCorrelation.Review is not null;
+        var suppressDiffGeneration = suppressInactiveCreateValidation || identityCorrelation.IsSupersededInactive;
 
-        if (!suppressInactiveCreateValidation && !hasAmbiguousWorkerIdentity && !hasSourceReviewBlock)
+        if (!suppressDiffGeneration && !hasAmbiguousWorkerIdentity && !hasSourceReviewBlock && !hasIdentityCorrelationReviewBlock)
         {
             proposedEmailAddress = identity.MatchedExistingUser
                 ? directoryUser.Attributes.TryGetValue("UserPrincipalName", out var existingUserPrincipalName) && !string.IsNullOrWhiteSpace(existingUserPrincipalName)
@@ -85,6 +91,7 @@ public sealed class WorkerPlanningService(
                 await attributeDiffService.BuildDiffAsync(worker, directoryUser, proposedEmailAddress, logPath, cancellationToken))
                 .ToList();
             UpsertManagerAttributeChange(attributeChanges, directoryUser, managerDistinguishedName);
+            UpsertIdentityCorrelationAttributeChanges(attributeChanges, directoryUser, identityCorrelation);
             missingSourceAttributes = BuildMissingSourceAttributes(
                 worker,
                 attributeMappingProvider.GetEnabledMappings(),
@@ -110,6 +117,18 @@ public sealed class WorkerPlanningService(
             reviewCategory = sourceReview.Value.ReviewCategory;
             reviewCaseType = sourceReview.Value.ReviewCaseType;
             reason = sourceReview.Value.Reason;
+        }
+        else if (identityCorrelation.Review is not null)
+        {
+            bucket = "manualReview";
+            reviewCategory = identityCorrelation.Review.Value.ReviewCategory;
+            reviewCaseType = identityCorrelation.Review.Value.ReviewCaseType;
+            reason = identityCorrelation.Review.Value.Reason;
+        }
+        else if (identityCorrelation.IsSupersededInactive)
+        {
+            bucket = "unchanged";
+            reason = identityCorrelation.Reason;
         }
 
         if (missingSourceAttributes.Count > 0)
@@ -190,6 +209,139 @@ public sealed class WorkerPlanningService(
             : "Worker source data was ambiguous.";
 
         return (reviewCategory, reviewCaseType, reason);
+    }
+
+    private IdentityCorrelationDecision ResolveIdentityCorrelation(
+        WorkerSnapshot worker,
+        DirectoryUserSnapshot directoryUser,
+        LifecycleDecision lifecycle)
+    {
+        if (!_identityCorrelationSettings.Enabled ||
+            string.IsNullOrWhiteSpace(directoryUser.SamAccountName) ||
+            string.IsNullOrWhiteSpace(_identityCorrelationSettings.SuccessorPersonIdExternalAttribute) ||
+            string.IsNullOrWhiteSpace(_identityCorrelationSettings.PreviousPersonIdExternalAttribute))
+        {
+            return IdentityCorrelationDecision.Empty;
+        }
+
+        var successorAttribute = _identityCorrelationSettings.SuccessorPersonIdExternalAttribute;
+        var previousAttribute = _identityCorrelationSettings.PreviousPersonIdExternalAttribute;
+        var currentIdentityValue = ResolveDirectoryAttribute(directoryUser, _identityCorrelationSettings.IdentityAttribute);
+        var successorValue = ResolveDirectoryAttribute(directoryUser, successorAttribute);
+        var previousValue = ResolveDirectoryAttribute(directoryUser, previousAttribute);
+        var isSuccessorMatch = string.Equals(successorValue, worker.WorkerId, StringComparison.OrdinalIgnoreCase);
+        var isPreviousMatch = string.Equals(previousValue, worker.WorkerId, StringComparison.OrdinalIgnoreCase);
+        var isCurrentIdentityMatch = string.Equals(currentIdentityValue, worker.WorkerId, StringComparison.OrdinalIgnoreCase);
+        var isSupersededInactive = lifecycle.TargetEnabled == false &&
+            (isPreviousMatch || (isCurrentIdentityMatch && !string.IsNullOrWhiteSpace(successorValue)));
+
+        if (isSuccessorMatch &&
+            !string.IsNullOrWhiteSpace(previousValue) &&
+            !string.Equals(previousValue, currentIdentityValue, StringComparison.OrdinalIgnoreCase))
+        {
+            return new IdentityCorrelationDecision(
+                IsSuccessorMatch: true,
+                IsSupersededInactive: false,
+                CurrentIdentityValue: currentIdentityValue,
+                SuccessorAttribute: successorAttribute,
+                PreviousAttribute: previousAttribute,
+                Review: (
+                    "DirectoryIdentity",
+                    "ConflictingIdentityCorrelation",
+                    $"AD identity correlation previous value '{previousValue}' does not match current directory identity '{currentIdentityValue}'."),
+                Reason: null);
+        }
+
+        if (isSupersededInactive)
+        {
+            return new IdentityCorrelationDecision(
+                IsSuccessorMatch: isSuccessorMatch,
+                IsSupersededInactive: true,
+                CurrentIdentityValue: currentIdentityValue,
+                SuccessorAttribute: successorAttribute,
+                PreviousAttribute: previousAttribute,
+                Review: null,
+                Reason: "Worker superseded by linked successor.");
+        }
+
+        return new IdentityCorrelationDecision(
+            IsSuccessorMatch: isSuccessorMatch,
+            IsSupersededInactive: false,
+            CurrentIdentityValue: currentIdentityValue,
+            SuccessorAttribute: successorAttribute,
+            PreviousAttribute: previousAttribute,
+            Review: null,
+            Reason: null);
+    }
+
+    private static string? ResolveDirectoryAttribute(DirectoryUserSnapshot directoryUser, string? attribute)
+    {
+        return !string.IsNullOrWhiteSpace(attribute) &&
+               directoryUser.Attributes.TryGetValue(attribute, out var value) &&
+               !string.IsNullOrWhiteSpace(value)
+            ? value
+            : null;
+    }
+
+    private static void UpsertIdentityCorrelationAttributeChanges(
+        IList<AttributeChange> attributeChanges,
+        DirectoryUserSnapshot directoryUser,
+        IdentityCorrelationDecision identityCorrelation)
+    {
+        if (!identityCorrelation.IsSuccessorMatch ||
+            identityCorrelation.Review is not null ||
+            string.IsNullOrWhiteSpace(identityCorrelation.SuccessorAttribute) ||
+            string.IsNullOrWhiteSpace(identityCorrelation.PreviousAttribute))
+        {
+            return;
+        }
+
+        var previousCurrentValue = ResolveDirectoryAttribute(directoryUser, identityCorrelation.PreviousAttribute);
+        if (!string.IsNullOrWhiteSpace(identityCorrelation.CurrentIdentityValue))
+        {
+            UpsertAttributeChange(
+                attributeChanges,
+                identityCorrelation.PreviousAttribute,
+                "identityCorrelation.currentIdentity",
+                previousCurrentValue,
+                identityCorrelation.CurrentIdentityValue);
+        }
+
+        var successorCurrentValue = ResolveDirectoryAttribute(directoryUser, identityCorrelation.SuccessorAttribute);
+        UpsertAttributeChange(
+            attributeChanges,
+            identityCorrelation.SuccessorAttribute,
+            "identityCorrelation.successorPersonIdExternal",
+            successorCurrentValue,
+            null);
+    }
+
+    private static void UpsertAttributeChange(
+        IList<AttributeChange> attributeChanges,
+        string attribute,
+        string source,
+        string? beforeValue,
+        string? afterValue)
+    {
+        var before = string.IsNullOrWhiteSpace(beforeValue) ? "(unset)" : beforeValue!;
+        var after = string.IsNullOrWhiteSpace(afterValue) ? "(unset)" : afterValue!;
+        var replacement = new AttributeChange(
+            attribute,
+            source,
+            before,
+            after,
+            !string.Equals(before, after, StringComparison.Ordinal));
+
+        for (var index = 0; index < attributeChanges.Count; index++)
+        {
+            if (string.Equals(attributeChanges[index].Attribute, attribute, StringComparison.OrdinalIgnoreCase))
+            {
+                attributeChanges[index] = replacement;
+                return;
+            }
+        }
+
+        attributeChanges.Add(replacement);
     }
 
     private static bool ShouldSuppressInactiveCreateValidation(
@@ -693,5 +845,24 @@ public sealed class WorkerPlanningService(
             .DistinctBy(row => row.Attribute, StringComparer.OrdinalIgnoreCase)
             .OrderBy(row => row.Attribute, StringComparer.OrdinalIgnoreCase)
             .ToArray();
+    }
+
+    private sealed record IdentityCorrelationDecision(
+        bool IsSuccessorMatch,
+        bool IsSupersededInactive,
+        string? CurrentIdentityValue,
+        string? SuccessorAttribute,
+        string? PreviousAttribute,
+        (string ReviewCategory, string ReviewCaseType, string Reason)? Review,
+        string? Reason)
+    {
+        public static IdentityCorrelationDecision Empty { get; } = new(
+            IsSuccessorMatch: false,
+            IsSupersededInactive: false,
+            CurrentIdentityValue: null,
+            SuccessorAttribute: null,
+            PreviousAttribute: null,
+            Review: null,
+            Reason: null);
     }
 }

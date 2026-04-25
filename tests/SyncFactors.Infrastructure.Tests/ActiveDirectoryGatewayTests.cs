@@ -109,6 +109,7 @@ public sealed class ActiveDirectoryGatewayTests
         var attributes = request.Attributes.Cast<string>().ToArray();
 
         Assert.Contains("manager", attributes);
+        Assert.Contains("objectGUID", attributes);
         Assert.Contains("extensionAttribute5", attributes);
         Assert.Contains("extensionAttribute6", attributes);
         Assert.Contains("extensionAttribute7", attributes);
@@ -209,7 +210,7 @@ public sealed class ActiveDirectoryGatewayTests
         };
 
         var clauses = Assert.IsAssignableFrom<IReadOnlyList<(string Attribute, string Value)>>(
-            method!.Invoke(null, [worker, "employeeID", mappings]));
+            method!.Invoke(null, [worker, CreateConfig(), mappings]));
 
         Assert.Contains(("employeeID", "10000"), clauses);
         Assert.Contains(("sAMAccountName", "user.10000"), clauses);
@@ -236,11 +237,54 @@ public sealed class ActiveDirectoryGatewayTests
             });
 
         var clauses = Assert.IsAssignableFrom<IReadOnlyList<(string Attribute, string Value)>>(
-            method!.Invoke(null, [worker, "employeeID", Array.Empty<SyncFactors.Domain.AttributeMapping>()]));
+            method!.Invoke(null, [worker, CreateConfig(), Array.Empty<SyncFactors.Domain.AttributeMapping>()]));
 
         Assert.Equal(2, clauses.Count);
         Assert.Contains(("employeeID", "10000"), clauses);
         Assert.Contains(("sAMAccountName", "10000"), clauses);
+    }
+
+    [Fact]
+    public void BuildLookupClauses_IncludesIdentityCorrelationAttributesWhenEnabled()
+    {
+        var method = typeof(ActiveDirectoryGateway).GetMethod(
+            "BuildLookupClauses",
+            BindingFlags.NonPublic | BindingFlags.Static);
+        Assert.NotNull(method);
+
+        var worker = new SyncFactors.Contracts.WorkerSnapshot(
+            WorkerId: "20000",
+            PreferredName: "Preferred20000",
+            LastName: "Sample20000",
+            Department: "IT",
+            TargetOu: "OU=Users,DC=example,DC=com",
+            IsPrehire: false,
+            Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["personIdExternal"] = "20000"
+            });
+
+        var clauses = Assert.IsAssignableFrom<IReadOnlyList<(string Attribute, string Value)>>(
+            method!.Invoke(null, [worker, CreateConfigWithIdentityCorrelation(), Array.Empty<SyncFactors.Domain.AttributeMapping>()]));
+
+        Assert.Contains(("employeeID", "20000"), clauses);
+        Assert.Contains(("sAMAccountName", "20000"), clauses);
+        Assert.Contains(("extensionAttribute14", "20000"), clauses);
+        Assert.Contains(("extensionAttribute15", "20000"), clauses);
+    }
+
+    [Fact]
+    public void FormatObjectGuidValue_FormatsLdapBytesAsGuid()
+    {
+        var method = typeof(ActiveDirectoryGateway).GetMethod(
+            "FormatObjectGuidValue",
+            BindingFlags.NonPublic | BindingFlags.Static);
+        Assert.NotNull(method);
+
+        var guid = Guid.Parse("4a1cb4ea-e7cc-44f4-bc38-a2e6cfa5f9df");
+        var result = Assert.IsType<string>(method!.Invoke(null, [guid.ToByteArray()]));
+
+        Assert.Equal("4a1cb4ea-e7cc-44f4-bc38-a2e6cfa5f9df", result);
     }
 
     [Fact]
@@ -395,5 +439,16 @@ public sealed class ActiveDirectoryGatewayTests
             Transport: new ActiveDirectoryTransportConfig("ldap", false, false, false, []),
             IdentityPolicy: new ActiveDirectoryIdentityPolicyConfig(false),
             LeaveOu: "OU=Leave,DC=example,DC=com");
+    }
+
+    private static ActiveDirectoryConfig CreateConfigWithIdentityCorrelation()
+    {
+        return CreateConfig() with
+        {
+            IdentityCorrelation = new ActiveDirectoryIdentityCorrelationConfig(
+                Enabled: true,
+                SuccessorPersonIdExternalAttribute: "extensionAttribute14",
+                PreviousPersonIdExternalAttribute: "extensionAttribute15")
+        };
     }
 }

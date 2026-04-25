@@ -349,6 +349,18 @@ public sealed class AdminConfigurationSnapshotBuilder(
                         CreateEntry(
                             "Resolve conflicting UPN/mail",
                             FormatEnabledDisabled(sync.Ad.IdentityPolicy.ResolveCreateConflictingUpnAndMail),
+                            SyncConfigSource),
+                        CreateEntry(
+                            "Identity correlation",
+                            FormatEnabledDisabled(sync.Ad.IdentityCorrelation?.Enabled ?? false),
+                            SyncConfigSource),
+                        CreateEntry(
+                            "Successor personIdExternal attribute",
+                            FormatOptional(sync.Ad.IdentityCorrelation?.SuccessorPersonIdExternalAttribute),
+                            SyncConfigSource),
+                        CreateEntry(
+                            "Previous personIdExternal attribute",
+                            FormatOptional(sync.Ad.IdentityCorrelation?.PreviousPersonIdExternalAttribute),
                             SyncConfigSource)
                     ]),
                 new AdminConfigurationGroupViewModel(

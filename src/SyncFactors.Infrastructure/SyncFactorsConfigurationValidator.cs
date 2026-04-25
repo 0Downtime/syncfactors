@@ -1,10 +1,13 @@
 using System.Text.Json;
 using System.Net;
+using System.Text.RegularExpressions;
 
 namespace SyncFactors.Infrastructure;
 
 public sealed class SyncFactorsConfigurationValidator(SyncFactorsConfigurationLoader loader)
 {
+    private static readonly Regex LdapAttributeNamePattern = new("^[A-Za-z][A-Za-z0-9-]*$", RegexOptions.Compiled);
+
     public void Validate()
     {
         var sync = loader.GetSyncConfig();
@@ -37,6 +40,7 @@ public sealed class SyncFactorsConfigurationValidator(SyncFactorsConfigurationLo
         }
 
         ValidateManagedOuNamingContexts(sync.Ad);
+        ValidateIdentityCorrelation(sync.Ad);
 
         if ((sync.Sync.LeaveStatusValues?.Count ?? 0) > 0 && string.IsNullOrWhiteSpace(sync.Ad.LeaveOu))
         {
@@ -229,6 +233,38 @@ public sealed class SyncFactorsConfigurationValidator(SyncFactorsConfigurationLo
             managedOus.Select(item => $"{item.Name}='{item.DistinguishedName}'"));
         throw new InvalidOperationException(
             $"SyncFactors managed AD OUs must remain within the same naming context because LDAP MoveUser cannot cross domains. Current values: {details}.");
+    }
+
+    private static void ValidateIdentityCorrelation(ActiveDirectoryConfig config)
+    {
+        var identityCorrelation = config.IdentityCorrelation;
+        if (identityCorrelation is null || !identityCorrelation.Enabled)
+        {
+            return;
+        }
+
+        var successorAttribute = NormalizeAttribute(identityCorrelation.SuccessorPersonIdExternalAttribute, "ad.identityCorrelation.successorPersonIdExternalAttribute");
+        var previousAttribute = NormalizeAttribute(identityCorrelation.PreviousPersonIdExternalAttribute, "ad.identityCorrelation.previousPersonIdExternalAttribute");
+        if (string.Equals(successorAttribute, previousAttribute, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("SyncFactors AD identity correlation successor and previous attributes must be different.");
+        }
+    }
+
+    private static string NormalizeAttribute(string? attribute, string configPath)
+    {
+        if (string.IsNullOrWhiteSpace(attribute))
+        {
+            throw new InvalidOperationException($"SyncFactors {configPath} must be configured when AD identity correlation is enabled.");
+        }
+
+        var normalized = attribute.Trim();
+        if (!LdapAttributeNamePattern.IsMatch(normalized))
+        {
+            throw new InvalidOperationException($"SyncFactors {configPath} must be a valid LDAP attribute name.");
+        }
+
+        return normalized;
     }
 
     private static string ExtractNamingContext(string distinguishedName)

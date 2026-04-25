@@ -231,7 +231,7 @@ public sealed class ActiveDirectoryGateway(
         IReadOnlyList<AttributeMapping> mappings,
         ILogger logger)
     {
-        var lookupClauses = BuildLookupClauses(worker, config.IdentityAttribute, mappings);
+        var lookupClauses = BuildLookupClauses(worker, config, mappings);
         var searchBases = GetSearchBases(config);
         logger.LogInformation(
             "Starting AD worker lookup. WorkerId={WorkerId} IdentityAttribute={IdentityAttribute} Clauses={Clauses} SearchBases={SearchBases}",
@@ -248,7 +248,8 @@ public sealed class ActiveDirectoryGateway(
             lookupKind: "worker identity",
             lookupValue: worker.WorkerId,
             logger,
-            "worker lookup search");
+            "worker lookup search",
+            GetIdentityCorrelationAttributes(config.IdentityCorrelation));
         if (entry is null)
         {
             logger.LogInformation(
@@ -264,7 +265,7 @@ public sealed class ActiveDirectoryGateway(
         var distinguishedName = GetAttribute(entry, "distinguishedName");
         var displayName = GetAttribute(entry, "displayName");
         var userAccountControl = GetAttribute(entry, "userAccountControl");
-        var attributes = BuildAttributes(entry, displayName, config.IdentityAttribute);
+        var attributes = BuildAttributes(entry, displayName, config.IdentityAttribute, config.IdentityCorrelation);
         var identityValue = attributes.TryGetValue(config.IdentityAttribute, out var resolvedIdentityValue)
             ? resolvedIdentityValue
             : null;
@@ -300,14 +301,19 @@ public sealed class ActiveDirectoryGateway(
 
     private static IReadOnlyList<(string Attribute, string Value)> BuildLookupClauses(
         WorkerSnapshot worker,
-        string identityAttribute,
+        ActiveDirectoryConfig config,
         IReadOnlyList<AttributeMapping> mappings)
     {
         var clauses = new List<(string Attribute, string Value)>();
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-        AddLookupClause(clauses, seen, identityAttribute, ResolveDirectoryIdentityValue(worker, identityAttribute, mappings));
+        AddLookupClause(clauses, seen, config.IdentityAttribute, ResolveDirectoryIdentityValue(worker, config.IdentityAttribute, mappings));
         AddLookupClause(clauses, seen, "sAMAccountName", worker.WorkerId);
+        if (config.IdentityCorrelation?.Enabled == true)
+        {
+            AddLookupClause(clauses, seen, config.IdentityCorrelation.SuccessorPersonIdExternalAttribute, worker.WorkerId);
+            AddLookupClause(clauses, seen, config.IdentityCorrelation.PreviousPersonIdExternalAttribute, worker.WorkerId);
+        }
 
         if (clauses.Count == 0)
         {
@@ -320,7 +326,7 @@ public sealed class ActiveDirectoryGateway(
     private static void AddLookupClause(
         ICollection<(string Attribute, string Value)> clauses,
         ISet<string> seen,
-        string attribute,
+        string? attribute,
         string? value)
     {
         if (string.IsNullOrWhiteSpace(attribute) || string.IsNullOrWhiteSpace(value))
@@ -487,7 +493,7 @@ public sealed class ActiveDirectoryGateway(
                             DistinguishedName: distinguishedName,
                             Enabled: ParseEnabled(userAccountControl),
                             DisplayName: displayName,
-                            Attributes: BuildAttributes(entry, displayName, config.IdentityAttribute));
+                            Attributes: BuildAttributes(entry, displayName, config.IdentityAttribute, config.IdentityCorrelation));
                     }));
 
             pageCookie = GetPageCookie(response);
@@ -503,41 +509,7 @@ public sealed class ActiveDirectoryGateway(
             ouDistinguishedName,
             "(&(objectCategory=person)(objectClass=user))",
             SearchScope.Subtree,
-            "sAMAccountName",
-            "cn",
-            "distinguishedName",
-            "displayName",
-            "userAccountControl",
-            config.IdentityAttribute,
-            "givenName",
-            "sn",
-            "userPrincipalName",
-            "mail",
-            "department",
-            "company",
-            "physicalDeliveryOfficeName",
-            "streetAddress",
-            "l",
-            "postalCode",
-            "title",
-            "division",
-            "employeeType",
-            "manager",
-            "extensionAttribute1",
-            "extensionAttribute2",
-            "extensionAttribute3",
-            "extensionAttribute4",
-            "extensionAttribute5",
-            "extensionAttribute6",
-            "extensionAttribute7",
-            "extensionAttribute8",
-            "extensionAttribute9",
-            "extensionAttribute10",
-            "extensionAttribute11",
-            "extensionAttribute12",
-            "extensionAttribute13",
-            "extensionAttribute14",
-            "extensionAttribute15");
+            BuildSearchAttributes(config.IdentityAttribute, GetIdentityCorrelationAttributes(config.IdentityCorrelation)));
         request.Controls.Add(new PageResultRequestControl(OuListingPageSize));
 
         return request;
@@ -729,7 +701,8 @@ public sealed class ActiveDirectoryGateway(
         string lookupKind,
         string lookupValue,
         ILogger logger,
-        string operation)
+        string operation,
+        IReadOnlyList<string>? extraAttributes = null)
     {
         var matches = new List<SearchResultEntry>();
         var seenDistinguishedNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -738,7 +711,8 @@ public sealed class ActiveDirectoryGateway(
             var request = CreateSearchRequest(
                 searchBase,
                 searchClauses,
-                additionalAttribute);
+                additionalAttribute,
+                extraAttributes);
 
             SearchResponse response;
             try
@@ -875,45 +849,21 @@ public sealed class ActiveDirectoryGateway(
         string searchValue,
         string additionalAttribute)
     {
+        return CreateSearchRequest(searchBase, searchAttribute, searchValue, additionalAttribute, extraAttributes: null);
+    }
+
+    private static SearchRequest CreateSearchRequest(
+        string searchBase,
+        string searchAttribute,
+        string searchValue,
+        string additionalAttribute,
+        IReadOnlyList<string>? extraAttributes = null)
+    {
         return new SearchRequest(
             searchBase,
             BuildEqualityFilter(searchAttribute, searchValue),
             SearchScope.Subtree,
-            "sAMAccountName",
-            "cn",
-            "distinguishedName",
-            "displayName",
-            "userAccountControl",
-            additionalAttribute,
-            "givenName",
-            "sn",
-            "userPrincipalName",
-            "mail",
-            "department",
-            "company",
-            "physicalDeliveryOfficeName",
-            "streetAddress",
-            "l",
-            "postalCode",
-            "title",
-            "division",
-            "employeeType",
-            "manager",
-            "extensionAttribute1",
-            "extensionAttribute2",
-            "extensionAttribute3",
-            "extensionAttribute4",
-            "extensionAttribute5",
-            "extensionAttribute6",
-            "extensionAttribute7",
-            "extensionAttribute8",
-            "extensionAttribute9",
-            "extensionAttribute10",
-            "extensionAttribute11",
-            "extensionAttribute12",
-            "extensionAttribute13",
-            "extensionAttribute14",
-            "extensionAttribute15");
+            BuildSearchAttributes(additionalAttribute, extraAttributes));
     }
 
     private static SearchRequest CreateSearchRequest(
@@ -921,16 +871,32 @@ public sealed class ActiveDirectoryGateway(
         IReadOnlyList<(string Attribute, string Value)> searchClauses,
         string additionalAttribute)
     {
+        return CreateSearchRequest(searchBase, searchClauses, additionalAttribute, extraAttributes: null);
+    }
+
+    private static SearchRequest CreateSearchRequest(
+        string searchBase,
+        IReadOnlyList<(string Attribute, string Value)> searchClauses,
+        string additionalAttribute,
+        IReadOnlyList<string>? extraAttributes = null)
+    {
         return new SearchRequest(
             searchBase,
             BuildAnyOfEqualityFilter(searchClauses),
             SearchScope.Subtree,
+            BuildSearchAttributes(additionalAttribute, extraAttributes));
+    }
+
+    private static string[] BuildSearchAttributes(string? additionalAttribute, IReadOnlyList<string>? extraAttributes = null)
+    {
+        var attributes = new List<string>
+        {
             "sAMAccountName",
             "cn",
             "distinguishedName",
             "displayName",
             "userAccountControl",
-            additionalAttribute,
+            "objectGUID",
             "givenName",
             "sn",
             "userPrincipalName",
@@ -959,7 +925,25 @@ public sealed class ActiveDirectoryGateway(
             "extensionAttribute12",
             "extensionAttribute13",
             "extensionAttribute14",
-            "extensionAttribute15");
+            "extensionAttribute15"
+        };
+
+        AddSearchAttribute(attributes, additionalAttribute);
+        foreach (var attribute in extraAttributes ?? [])
+        {
+            AddSearchAttribute(attributes, attribute);
+        }
+
+        return attributes.ToArray();
+    }
+
+    private static void AddSearchAttribute(ICollection<string> attributes, string? attribute)
+    {
+        if (!string.IsNullOrWhiteSpace(attribute) &&
+            !attributes.Contains(attribute, StringComparer.OrdinalIgnoreCase))
+        {
+            attributes.Add(attribute.Trim());
+        }
     }
 
     private static IReadOnlyList<string> GetSearchBases(ActiveDirectoryConfig config)
@@ -967,6 +951,24 @@ public sealed class ActiveDirectoryGateway(
         return new[] { config.DefaultActiveOu, config.PrehireOu, config.GraveyardOu, config.LeaveOu }
             .Where(value => !string.IsNullOrWhiteSpace(value))
             .Select(value => value!)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
+    private static IReadOnlyList<string> GetIdentityCorrelationAttributes(ActiveDirectoryIdentityCorrelationConfig? identityCorrelation)
+    {
+        if (identityCorrelation?.Enabled != true)
+        {
+            return [];
+        }
+
+        return new[]
+            {
+                identityCorrelation.SuccessorPersonIdExternalAttribute,
+                identityCorrelation.PreviousPersonIdExternalAttribute
+            }
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Select(value => value!.Trim())
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
     }
@@ -981,6 +983,30 @@ public sealed class ActiveDirectoryGateway(
 
         var attribute = entry.Attributes[resolvedAttributeName];
         return attribute.Count == 0 ? null : attribute[0]?.ToString();
+    }
+
+    private static string? GetObjectGuidAttribute(SearchResultEntry entry)
+    {
+        var resolvedAttributeName = ResolveAttributeName(entry, "objectGUID");
+        if (resolvedAttributeName is null)
+        {
+            return null;
+        }
+
+        var attribute = entry.Attributes[resolvedAttributeName];
+        if (attribute.Count == 0)
+        {
+            return null;
+        }
+
+        return FormatObjectGuidValue(attribute[0]);
+    }
+
+    private static string? FormatObjectGuidValue(object? value)
+    {
+        return value is byte[] bytes && bytes.Length == 16
+            ? new Guid(bytes).ToString("D")
+            : value?.ToString();
     }
 
     private static string? ResolveAttributeName(SearchResultEntry entry, string attributeName)
@@ -1009,13 +1035,15 @@ public sealed class ActiveDirectoryGateway(
     private static IReadOnlyDictionary<string, string?> BuildAttributes(
         SearchResultEntry entry,
         string? displayName,
-        string identityAttribute)
+        string identityAttribute,
+        ActiveDirectoryIdentityCorrelationConfig? identityCorrelation = null)
     {
         var attributes = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
         {
             ["sAMAccountName"] = GetAttribute(entry, "sAMAccountName"),
             ["cn"] = GetAttribute(entry, "cn"),
             ["displayName"] = displayName,
+            ["objectGUID"] = GetObjectGuidAttribute(entry),
             ["GivenName"] = GetAttribute(entry, "givenName"),
             ["Surname"] = GetAttribute(entry, "sn"),
             ["UserPrincipalName"] = GetAttribute(entry, "userPrincipalName"),
@@ -1050,6 +1078,11 @@ public sealed class ActiveDirectoryGateway(
         if (!string.IsNullOrWhiteSpace(identityAttribute))
         {
             attributes[identityAttribute] = GetAttribute(entry, identityAttribute);
+        }
+
+        foreach (var attribute in GetIdentityCorrelationAttributes(identityCorrelation))
+        {
+            attributes[attribute] = GetAttribute(entry, attribute);
         }
 
         return attributes;

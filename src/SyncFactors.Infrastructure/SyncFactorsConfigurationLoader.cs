@@ -103,7 +103,8 @@ public sealed class SyncFactorsConfigurationLoader
                 LicensingGroups: document.GetRequiredObject("ad").TryGetStringArray("licensingGroups")?
                     .Select(item => NormalizeRequiredValue(item, "ad.licensingGroups[]"))
                     .Distinct(StringComparer.OrdinalIgnoreCase)
-                    .ToArray() ?? []),
+                    .ToArray() ?? [],
+                IdentityCorrelation: LoadActiveDirectoryIdentityCorrelation(document.GetRequiredObject("ad"))),
             Sync: new SyncPolicyConfig(
                 EnableBeforeStartDays: document.GetRequiredObject("sync").GetRequiredInt32("enableBeforeStartDays"),
                 DeletionRetentionDays: document.GetRequiredObject("sync").GetRequiredInt32("deletionRetentionDays"),
@@ -310,6 +311,22 @@ public sealed class SyncFactorsConfigurationLoader
 
         return new ActiveDirectoryIdentityPolicyConfig(
             ResolveCreateConflictingUpnAndMail: identityPolicy.TryGetBoolean("resolveCreateConflictingUpnAndMail") ?? true);
+    }
+
+    private static ActiveDirectoryIdentityCorrelationConfig LoadActiveDirectoryIdentityCorrelation(JsonElement ad)
+    {
+        if (!ad.TryGetObject("identityCorrelation", out var identityCorrelation))
+        {
+            return new ActiveDirectoryIdentityCorrelationConfig(
+                Enabled: false,
+                SuccessorPersonIdExternalAttribute: null,
+                PreviousPersonIdExternalAttribute: null);
+        }
+
+        return new ActiveDirectoryIdentityCorrelationConfig(
+            Enabled: identityCorrelation.TryGetBoolean("enabled") ?? false,
+            SuccessorPersonIdExternalAttribute: identityCorrelation.TryGetString("successorPersonIdExternalAttribute"),
+            PreviousPersonIdExternalAttribute: identityCorrelation.TryGetString("previousPersonIdExternalAttribute"));
     }
 
     private static ActiveDirectoryTransportConfig LoadActiveDirectoryTransport(JsonElement ad)

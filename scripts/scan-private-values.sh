@@ -22,7 +22,14 @@ patterns=(
   'fat''cats44'
 )
 
-pattern="$(IFS='|'; echo "${patterns[*]}")"
+pattern=""
+for private_pattern in "${patterns[@]}"; do
+  if [[ -n "${pattern}" ]]; then
+    pattern="${pattern}|"
+  fi
+
+  pattern="${pattern}${private_pattern}"
+done
 tmp_file="$(mktemp)"
 trap 'rm -f "${tmp_file}"' EXIT
 
