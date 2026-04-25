@@ -71,3 +71,4 @@ src/SyncFactors.Api/.\\reports\\mock-output/
 /sf-*.json
 /sf-*.xml
 /perperson-*.json
+/config/live*

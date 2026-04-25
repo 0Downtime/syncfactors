@@ -15,11 +15,13 @@ public sealed class ActiveDirectoryCommandGateway(
     ILogger<ActiveDirectoryCommandGateway> logger) : IDirectoryCommandGateway
 {
     private static readonly TimeSpan LdapOperationTimeout = TimeSpan.FromSeconds(10);
+    private static readonly AsyncLocal<CommandExecutionContext?> CurrentCommandContext = new();
     private const int NormalAccountControl = 0x0200;
     private const int AccountDisabledFlag = 0x0002;
     private const int DisabledNormalAccountControl = NormalAccountControl | AccountDisabledFlag;
     private const int RandomPasswordLength = 20;
     private const int PasswordRestrictionFallbackLength = 14;
+    private const int MaxTransientLdapRetries = 3;
     private const string PasswordUppercaseCharacters = "ABCDEFGHJKLMNPQRSTUVWXYZ";
     private const string PasswordLowercaseCharacters = "abcdefghijkmnopqrstuvwxyz";
     private const string PasswordDigitCharacters = "23456789";
@@ -43,39 +45,76 @@ public sealed class ActiveDirectoryCommandGateway(
             throw new InvalidOperationException("AD server was not configured.");
         }
 
-        ActiveDirectoryConnectionPool.ActiveDirectoryConnectionLease? lease = null;
-        try
+        for (var attempt = 0; ; attempt++)
         {
-            logger.LogInformation("Executing AD command. Action={Action} WorkerId={WorkerId} SamAccountName={SamAccountName}", command.Action, command.WorkerId, command.SamAccountName);
-            lease = connectionPool.Lease(config, logger, LdapOperationTimeout);
-            var result = await ExecuteWithTimeoutAsync(
-                operation: () => ExecuteCommand(lease.Connection, command, config, logger, lease.EffectiveTransport),
-                operationName: $"command '{command.Action}'",
-                server: config.Server,
-                cancellationToken: cancellationToken);
-            logger.LogInformation("AD command completed. Action={Action} WorkerId={WorkerId} Succeeded={Succeeded} Message={Message}", command.Action, command.WorkerId, result.Succeeded, result.Message);
-            return result;
-        }
-        catch (LdapException ex)
-        {
-            lease?.Invalidate();
-            logger.LogError(ex, "AD command failed with LDAP exception. Action={Action} WorkerId={WorkerId} Server={Server}", command.Action, command.WorkerId, config.Server);
-            throw ExternalSystemExceptionFactory.CreateActiveDirectoryException($"command '{command.Action}'", config, ex, TryBuildOuterCatchFailureDetails(command, config));
-        }
-        catch (DirectoryOperationException ex)
-        {
-            lease?.Invalidate();
-            logger.LogError(ex, "AD command failed with directory operation exception. Action={Action} WorkerId={WorkerId} Server={Server}", command.Action, command.WorkerId, config.Server);
-            throw ExternalSystemExceptionFactory.CreateActiveDirectoryException($"command '{command.Action}'", config, ex, TryBuildOuterCatchFailureDetails(command, config));
-        }
-        catch
-        {
-            lease?.Invalidate();
-            throw;
-        }
-        finally
-        {
-            lease?.Dispose();
+            ActiveDirectoryConnectionPool.ActiveDirectoryConnectionLease? lease = null;
+            var commandContext = new CommandExecutionContext();
+            var previousContext = CurrentCommandContext.Value;
+            try
+            {
+                logger.LogInformation("Executing AD command. Action={Action} WorkerId={WorkerId} SamAccountName={SamAccountName} Attempt={Attempt}", command.Action, command.WorkerId, command.SamAccountName, attempt + 1);
+                lease = connectionPool.Lease(config, logger, LdapOperationTimeout);
+                CurrentCommandContext.Value = commandContext;
+                var result = await ExecuteWithTimeoutAsync(
+                    operation: () => ExecuteCommand(lease.Connection, command, config, logger, lease.EffectiveTransport),
+                    operationName: $"command '{command.Action}'",
+                    server: config.Server,
+                    cancellationToken: cancellationToken);
+                logger.LogInformation("AD command completed. Action={Action} WorkerId={WorkerId} Succeeded={Succeeded} Message={Message}", command.Action, command.WorkerId, result.Succeeded, result.Message);
+                return result;
+            }
+            catch (LdapException ex) when (ShouldRetryTransientCommandFailure(ex, commandContext, attempt))
+            {
+                lease?.Invalidate();
+                connectionPool.InvalidateIdleConnections(config);
+                var retryDelay = GetTransientRetryDelay(attempt);
+                logger.LogWarning(
+                    ex,
+                    "AD command hit a transient LDAP availability failure before any write was attempted. Action={Action} WorkerId={WorkerId} Server={Server} Attempt={Attempt} RetryDelayMs={RetryDelayMs}. Flushed pooled idle connections and retrying with a fresh connection.",
+                    command.Action,
+                    command.WorkerId,
+                    config.Server,
+                    attempt + 1,
+                    retryDelay.TotalMilliseconds);
+                await Task.Delay(retryDelay, cancellationToken);
+            }
+            catch (InvalidOperationException ex) when (ShouldRetryTransientCommandFailure(ex, commandContext, attempt))
+            {
+                lease?.Invalidate();
+                connectionPool.InvalidateIdleConnections(config);
+                var retryDelay = GetTransientRetryDelay(attempt);
+                logger.LogWarning(
+                    ex,
+                    "AD command timed out before any write was attempted. Action={Action} WorkerId={WorkerId} Server={Server} Attempt={Attempt} RetryDelayMs={RetryDelayMs}. Flushed pooled idle connections and retrying with a fresh connection.",
+                    command.Action,
+                    command.WorkerId,
+                    config.Server,
+                    attempt + 1,
+                    retryDelay.TotalMilliseconds);
+                await Task.Delay(retryDelay, cancellationToken);
+            }
+            catch (LdapException ex)
+            {
+                lease?.Invalidate();
+                logger.LogError(ex, "AD command failed with LDAP exception. Action={Action} WorkerId={WorkerId} Server={Server}", command.Action, command.WorkerId, config.Server);
+                throw ExternalSystemExceptionFactory.CreateActiveDirectoryException($"command '{command.Action}'", config, ex, TryBuildOuterCatchFailureDetails(command, config));
+            }
+            catch (DirectoryOperationException ex)
+            {
+                lease?.Invalidate();
+                logger.LogError(ex, "AD command failed with directory operation exception. Action={Action} WorkerId={WorkerId} Server={Server}", command.Action, command.WorkerId, config.Server);
+                throw ExternalSystemExceptionFactory.CreateActiveDirectoryException($"command '{command.Action}'", config, ex, TryBuildOuterCatchFailureDetails(command, config));
+            }
+            catch
+            {
+                lease?.Invalidate();
+                throw;
+            }
+            finally
+            {
+                CurrentCommandContext.Value = previousContext;
+                lease?.Dispose();
+            }
         }
     }
 
@@ -796,12 +835,47 @@ public sealed class ActiveDirectoryCommandGateway(
     {
         var stopwatch = Stopwatch.StartNew();
         logger.LogInformation("Starting AD modify. Operation={Operation} Context={Context}", operation, FormatContext(context));
+        CurrentCommandContext.Value?.MarkWriteAttempted();
         connection.SendRequest(request);
         logger.LogInformation(
             "Completed AD modify. Operation={Operation} DurationMs={DurationMs} Context={Context}",
             operation,
             stopwatch.ElapsedMilliseconds,
             FormatContext(context));
+    }
+
+    private static bool ShouldRetryTransientCommandFailure(LdapException exception, CommandExecutionContext context, int attempt)
+    {
+        return !context.WriteAttempted &&
+               attempt < MaxTransientLdapRetries &&
+               string.Equals(exception.Message, "The LDAP server is unavailable.", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool ShouldRetryTransientCommandFailure(InvalidOperationException exception, CommandExecutionContext context, int attempt)
+    {
+        return !context.WriteAttempted &&
+               attempt < MaxTransientLdapRetries &&
+               ExternalSystemExceptionFactory.IsRetryableActiveDirectoryTimeout(exception);
+    }
+
+    private static TimeSpan GetTransientRetryDelay(int attempt)
+    {
+        return attempt switch
+        {
+            0 => TimeSpan.FromMilliseconds(250),
+            1 => TimeSpan.FromSeconds(1),
+            _ => TimeSpan.FromSeconds(3)
+        };
+    }
+
+    private sealed class CommandExecutionContext
+    {
+        public bool WriteAttempted { get; private set; }
+
+        public void MarkWriteAttempted()
+        {
+            WriteAttempted = true;
+        }
     }
 
     private static string FormatContext((string Key, object? Value)[] context)

@@ -17,7 +17,7 @@ public sealed class ActiveDirectoryGateway(
     private static readonly TimeSpan LdapOperationTimeout = TimeSpan.FromSeconds(10);
     private static readonly Regex LdapAttributeNamePattern = new("^[A-Za-z][A-Za-z0-9-]*$", RegexOptions.Compiled);
     private const int OuListingPageSize = 500;
-    private const int MaxTransientLdapRetries = 1;
+    private const int MaxTransientLdapRetries = 3;
 
     public async Task<DirectoryUserSnapshot?> FindByWorkerAsync(WorkerSnapshot worker, CancellationToken cancellationToken)
     {
@@ -150,31 +150,37 @@ public sealed class ActiveDirectoryGateway(
             {
                 lease?.Invalidate();
                 connectionPool.InvalidateIdleConnections(config);
+                var retryDelay = GetTransientRetryDelay(attempt);
                 logger.LogWarning(
                     ex,
-                    "AD {Operation} hit a transient LDAP availability failure. Server={Server} ConnectionSource={ConnectionSource} RequestedTransport={RequestedTransport} EffectiveTransport={EffectiveTransport} UsedFallback={UsedFallback} Attempt={Attempt}. Flushed pooled idle connections and retrying with a fresh connection.",
+                    "AD {Operation} hit a transient LDAP availability failure. Server={Server} ConnectionSource={ConnectionSource} RequestedTransport={RequestedTransport} EffectiveTransport={EffectiveTransport} UsedFallback={UsedFallback} Attempt={Attempt} RetryDelayMs={RetryDelayMs}. Flushed pooled idle connections and retrying with a fresh connection.",
                     operationName,
                     config.Server,
                     lease?.WasReused == true ? "pooled" : "fresh",
                     lease?.RequestedTransport,
                     lease?.EffectiveTransport,
                     lease?.UsedFallback,
-                    attempt + 1);
+                    attempt + 1,
+                    retryDelay.TotalMilliseconds);
+                await Task.Delay(retryDelay, cancellationToken);
             }
             catch (InvalidOperationException ex) when (ShouldRetryTransientLdapFailure(ex, attempt))
             {
                 lease?.Invalidate();
                 connectionPool.InvalidateIdleConnections(config);
+                var retryDelay = GetTransientRetryDelay(attempt);
                 logger.LogWarning(
                     ex,
-                    "AD {Operation} hit a transient LDAP timeout. Server={Server} ConnectionSource={ConnectionSource} RequestedTransport={RequestedTransport} EffectiveTransport={EffectiveTransport} UsedFallback={UsedFallback} Attempt={Attempt}. Flushed pooled idle connections and retrying with a fresh connection.",
+                    "AD {Operation} hit a transient LDAP timeout. Server={Server} ConnectionSource={ConnectionSource} RequestedTransport={RequestedTransport} EffectiveTransport={EffectiveTransport} UsedFallback={UsedFallback} Attempt={Attempt} RetryDelayMs={RetryDelayMs}. Flushed pooled idle connections and retrying with a fresh connection.",
                     operationName,
                     config.Server,
                     lease?.WasReused == true ? "pooled" : "fresh",
                     lease?.RequestedTransport,
                     lease?.EffectiveTransport,
                     lease?.UsedFallback,
-                    attempt + 1);
+                    attempt + 1,
+                    retryDelay.TotalMilliseconds);
+                await Task.Delay(retryDelay, cancellationToken);
             }
             catch (LdapException ex)
             {
@@ -1075,6 +1081,16 @@ public sealed class ActiveDirectoryGateway(
     {
         return attempt < MaxTransientLdapRetries &&
                ExternalSystemExceptionFactory.IsRetryableActiveDirectoryTimeout(exception);
+    }
+
+    private static TimeSpan GetTransientRetryDelay(int attempt)
+    {
+        return attempt switch
+        {
+            0 => TimeSpan.FromMilliseconds(250),
+            1 => TimeSpan.FromSeconds(1),
+            _ => TimeSpan.FromSeconds(3)
+        };
     }
 
     private static SearchResponse ExecuteSearch(
