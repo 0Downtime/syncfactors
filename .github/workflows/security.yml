@@ -62,6 +62,10 @@ jobs:
           persist-credentials: false
           fetch-depth: 0
 
+      - name: Run private value denylist scan
+        shell: bash
+        run: ./scripts/scan-private-values.sh
+
       - name: Install Gitleaks
         shell: bash
         env:
