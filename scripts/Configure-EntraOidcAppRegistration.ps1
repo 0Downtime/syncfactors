@@ -316,6 +316,59 @@ function Resolve-EnvFileValue {
     return $null
 }
 
+function Resolve-TenantIdFromAuthority {
+    param(
+        [string]$Authority
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Authority)) {
+        return $null
+    }
+
+    $match = [regex]::Match(
+        $Authority.Trim(),
+        '^https://login\.microsoftonline\.com/([^/]+)/?(?:v2\.0)?/?$',
+        [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+    if (-not $match.Success) {
+        return $null
+    }
+
+    $tenantId = $match.Groups[1].Value
+    if ($tenantId -in @('common', 'organizations', 'consumers')) {
+        return $null
+    }
+
+    return $tenantId
+}
+
+function Initialize-ConfiguredOidcContext {
+    param(
+        [Parameter(Mandatory)]
+        [string]$EnvFilePath
+    )
+
+    if (-not (Test-Path $EnvFilePath)) {
+        return
+    }
+
+    if ([string]::IsNullOrWhiteSpace($script:ClientId)) {
+        $configuredClientId = Resolve-EnvFileValue -Path $EnvFilePath -Name 'SYNCFACTORS__AUTH__OIDC__CLIENTID'
+        if (-not [string]::IsNullOrWhiteSpace($configuredClientId)) {
+            $script:ClientId = $configuredClientId
+            Write-Host "Using OIDC client id from $EnvFilePath." -ForegroundColor Cyan
+        }
+    }
+
+    if ([string]::IsNullOrWhiteSpace($script:TenantId)) {
+        $authority = Resolve-EnvFileValue -Path $EnvFilePath -Name 'SYNCFACTORS__AUTH__OIDC__AUTHORITY'
+        $configuredTenantId = Resolve-TenantIdFromAuthority -Authority $authority
+        if (-not [string]::IsNullOrWhiteSpace($configuredTenantId)) {
+            $script:TenantId = $configuredTenantId
+            Write-Host "Using OIDC tenant id from $EnvFilePath." -ForegroundColor Cyan
+        }
+    }
+}
+
 function Resolve-KeychainServiceName {
     param(
         [Parameter(Mandatory)]
@@ -349,6 +402,42 @@ function Store-SecretInLocalCredentialStore {
     if ($IsMacOS) {
         . (Join-Path $RepoRoot 'scripts/codex/WorktreeEnv.ps1')
         return (Set-SyncFactorsSecureStoreValue -RepoRoot $RepoRoot -EnvFilePath $EnvFilePath -VariableName $VariableName -Value $Value)
+    }
+
+    return $null
+}
+
+function Get-LocalSecretValue {
+    param(
+        [Parameter(Mandatory)]
+        [string]$RepoRoot,
+        [Parameter(Mandatory)]
+        [string]$EnvFilePath,
+        [Parameter(Mandatory)]
+        [string]$VariableName
+    )
+
+    . (Join-Path $RepoRoot 'scripts/codex/WorktreeEnv.ps1')
+
+    $storedValue = Get-SyncFactorsSecureStoreValue `
+        -RepoRoot $RepoRoot `
+        -EnvFilePath $EnvFilePath `
+        -VariableName $VariableName
+    if ($storedValue.Found -and -not [string]::IsNullOrWhiteSpace([string]$storedValue.Value)) {
+        return [pscustomobject]@{
+            Value = [string]$storedValue.Value
+            Source = [string]$storedValue.Store
+            ShouldStoreInCredentialStore = $false
+        }
+    }
+
+    $envValue = Resolve-EnvFileValue -Path $EnvFilePath -Name $VariableName
+    if (-not [string]::IsNullOrWhiteSpace($envValue)) {
+        return [pscustomobject]@{
+            Value = [string]$envValue
+            Source = $EnvFilePath
+            ShouldStoreInCredentialStore = $true
+        }
     }
 
     return $null
@@ -460,14 +549,17 @@ function Resolve-ExistingApplication {
         [string]$ApplicationObjectId,
         [string]$ClientId,
         [Parameter(Mandatory)]
-        [string]$DisplayName
+        [string]$DisplayName,
+        [string[]]$RedirectUris = @()
     )
 
     if (-not [string]::IsNullOrWhiteSpace($ApplicationObjectId)) {
+        Write-Host "Searching Entra application by object id $ApplicationObjectId..." -ForegroundColor Cyan
         return Invoke-GraphGet -Uri ("https://graph.microsoft.com/v1.0/applications/{0}" -f $ApplicationObjectId)
     }
 
     if (-not [string]::IsNullOrWhiteSpace($ClientId)) {
+        Write-Host "Searching Entra application by client id $ClientId..." -ForegroundColor Cyan
         $existingByClientId = Get-SingleItemByPropertyValue `
             -CollectionPath 'applications' `
             -PropertyName 'appId' `
@@ -478,6 +570,7 @@ function Resolve-ExistingApplication {
         }
     }
 
+    Write-Host "Searching Entra application by display name '$DisplayName'..." -ForegroundColor Cyan
     $existingByDisplayName = Get-SingleItemByPropertyValue `
         -CollectionPath 'applications' `
         -PropertyName 'displayName' `
@@ -485,7 +578,40 @@ function Resolve-ExistingApplication {
         -SelectFields @('id', 'appId', 'displayName')
 
     if ($null -eq $existingByDisplayName) {
-        return $null
+        if ($RedirectUris.Count -eq 0) {
+            return $null
+        }
+
+        Write-Host "Searching Entra applications by redirect URI..." -ForegroundColor Cyan
+        $applications = @(Get-GraphCollectionItems `
+            -CollectionPath 'applications' `
+            -SelectFields @('id', 'appId', 'displayName', 'web'))
+        $redirectSet = [System.Collections.Generic.HashSet[string]]::new($RedirectUris, [System.StringComparer]::OrdinalIgnoreCase)
+        $matchedByRedirectUri = @($applications | Where-Object {
+            $web = $_.PSObject.Properties['web']
+            if ($null -eq $web -or $null -eq $web.Value -or $null -eq $web.Value.redirectUris) {
+                return $false
+            }
+
+            foreach ($redirectUri in @($web.Value.redirectUris)) {
+                if ($redirectSet.Contains([string]$redirectUri)) {
+                    return $true
+                }
+            }
+
+            return $false
+        })
+
+        if ($matchedByRedirectUri.Count -gt 1) {
+            $matches = ($matchedByRedirectUri | ForEach-Object { "{0} ({1})" -f $_.displayName, $_.appId }) -join ', '
+            throw "Redirect URI search matched multiple Entra applications: $matches. Re-run with -ClientId or -ApplicationObjectId."
+        }
+
+        if ($matchedByRedirectUri.Count -eq 0) {
+            return $null
+        }
+
+        return Invoke-GraphGet -Uri ("https://graph.microsoft.com/v1.0/applications/{0}" -f $matchedByRedirectUri[0].id)
     }
 
     return Invoke-GraphGet -Uri ("https://graph.microsoft.com/v1.0/applications/{0}" -f $existingByDisplayName.id)
@@ -507,7 +633,8 @@ function Ensure-Application {
         $existing = Resolve-ExistingApplication `
             -ApplicationObjectId $ApplicationObjectId `
             -ClientId $ClientId `
-            -DisplayName $DisplayName
+            -DisplayName $DisplayName `
+            -RedirectUris $RedirectUris
     }
 
     $groupMembershipClaims = if ($RequireAssignment -or
@@ -715,6 +842,16 @@ function Get-GroupDisplayName {
 
 Ensure-Module -Name Microsoft.Graph.Authentication
 
+if ([string]::IsNullOrWhiteSpace($EnvFilePath)) {
+    $EnvFilePath = Join-Path $RepoRoot '.env.worktree'
+}
+
+$ApiPublicHost = Assert-UsablePublicHost -HostName $ApiPublicHost
+$redirectHosts = Get-RedirectHosts -PrimaryHost $ApiPublicHost
+$redirectUris = New-RedirectUris -HostNames $redirectHosts -Port $ApiPort
+
+Initialize-ConfiguredOidcContext -EnvFilePath $EnvFilePath
+
 $scopes = @(
     'Application.ReadWrite.All',
     'Directory.Read.All',
@@ -748,16 +885,15 @@ if ([string]::IsNullOrWhiteSpace($AdminGroupName)) {
     $AdminGroupName = "$AppDisplayName Admins"
 }
 
-if ([string]::IsNullOrWhiteSpace($EnvFilePath)) {
-    $EnvFilePath = Join-Path $RepoRoot '.env.worktree'
-}
-
 $existingApplication = Resolve-ExistingApplication `
     -ApplicationObjectId $ApplicationObjectId `
     -ClientId $ClientId `
-    -DisplayName $AppDisplayName
+    -DisplayName $AppDisplayName `
+    -RedirectUris $redirectUris
 
 if ($null -ne $existingApplication) {
+    Write-Host "Found existing Entra application '$($existingApplication.displayName)' ($($existingApplication.appId))." -ForegroundColor Cyan
+
     if ([string]::IsNullOrWhiteSpace($ApplicationObjectId)) {
         $ApplicationObjectId = [string]$existingApplication.id
     }
@@ -766,10 +902,6 @@ if ($null -ne $existingApplication) {
         $ClientId = [string]$existingApplication.appId
     }
 }
-
-$ApiPublicHost = Assert-UsablePublicHost -HostName $ApiPublicHost
-$redirectHosts = Get-RedirectHosts -PrimaryHost $ApiPublicHost
-$redirectUris = New-RedirectUris -HostNames $redirectHosts -Port $ApiPort
 
 $application = Ensure-Application `
     -ExistingApplication $existingApplication `
@@ -797,7 +929,15 @@ foreach ($group in @($viewerGroup, $operatorGroup, $adminGroup) | Where-Object {
 }
 
 $secret = $null
-if (-not $SkipClientSecret) {
+$localOidcSecret = Get-LocalSecretValue `
+    -RepoRoot $RepoRoot `
+    -EnvFilePath $EnvFilePath `
+    -VariableName 'SYNCFACTORS__AUTH__OIDC__CLIENTSECRET'
+if ($null -ne $localOidcSecret) {
+    Write-Host "Using local OIDC client secret from $($localOidcSecret.Source)." -ForegroundColor Cyan
+}
+elseif (-not $SkipClientSecret) {
+    Write-Host 'No local OIDC client secret was found. Entra cannot reveal existing secret values, so creating a new app registration secret...' -ForegroundColor Cyan
     $secret = New-ClientSecret -ApplicationObjectId $application.id -LifetimeMonths $ClientSecretMonths
 }
 
@@ -824,20 +964,37 @@ $envValues = @{
 
 $secretStoreLabel = $null
 $bootstrapSecretStoreLabel = $null
+$oidcSecretSourceLabel = if ($null -ne $localOidcSecret) { [string]$localOidcSecret.Source } else { $null }
 
-if ($null -ne $secret -and -not [string]::IsNullOrWhiteSpace([string]$secret.secretText)) {
+$oidcSecretValue = if ($null -ne $secret -and -not [string]::IsNullOrWhiteSpace([string]$secret.secretText)) {
+    [string]$secret.secretText
+}
+elseif ($null -ne $localOidcSecret) {
+    [string]$localOidcSecret.Value
+}
+else {
+    $null
+}
+
+if (-not [string]::IsNullOrWhiteSpace($oidcSecretValue) -and
+    ($null -ne $secret -or [bool]$localOidcSecret.ShouldStoreInCredentialStore)) {
     $secretStoreLabel = Store-SecretInLocalCredentialStore `
         -RepoRoot $RepoRoot `
         -EnvFilePath $EnvFilePath `
         -VariableName 'SYNCFACTORS__AUTH__OIDC__CLIENTSECRET' `
-        -Value ([string]$secret.secretText)
+        -Value $oidcSecretValue
 
     if ([string]::IsNullOrWhiteSpace($secretStoreLabel)) {
-        $envValues['SYNCFACTORS__AUTH__OIDC__CLIENTSECRET'] = [string]$secret.secretText
+        $envValues['SYNCFACTORS__AUTH__OIDC__CLIENTSECRET'] = $oidcSecretValue
+        $oidcSecretSourceLabel = $EnvFilePath
     }
     else {
         $envValues['SYNCFACTORS__AUTH__OIDC__CLIENTSECRET'] = ''
+        $oidcSecretSourceLabel = $secretStoreLabel
     }
+}
+elseif ($null -ne $localOidcSecret) {
+    $envValues['SYNCFACTORS__AUTH__OIDC__CLIENTSECRET'] = ''
 }
 
 if ([string]::Equals($AuthMode, 'hybrid', [System.StringComparison]::OrdinalIgnoreCase)) {
@@ -893,6 +1050,9 @@ Write-Host "EnvFileUpdated:           $EnvFilePath"
 if (-not [string]::IsNullOrWhiteSpace($secretStoreLabel)) {
     Write-Host "OidcSecretStoredIn:       $secretStoreLabel"
 }
+elseif (-not [string]::IsNullOrWhiteSpace($oidcSecretSourceLabel)) {
+    Write-Host "OidcSecretSource:         $oidcSecretSourceLabel"
+}
 if (-not [string]::IsNullOrWhiteSpace($bootstrapSecretStoreLabel)) {
     Write-Host "BootstrapSecretStoredIn:  $bootstrapSecretStoreLabel"
 }
@@ -901,7 +1061,7 @@ if ($null -ne $secret) {
 }
 
 Write-Host ''
-Write-Host 'Paste these into .env.worktree' -ForegroundColor Cyan
+Write-Host 'Resolved environment values' -ForegroundColor Cyan
 Write-Host "SYNCFACTORS_API_BIND_HOST=$ApiBindHost"
 Write-Host "SYNCFACTORS_API_PUBLIC_HOST=$ApiPublicHost"
 Write-Host "SYNCFACTORS_API_PORT=$ApiPort"
@@ -910,7 +1070,15 @@ Write-Host "SYNCFACTORS__AUTH__LOCALBREAKGLASS__ENABLED=$(if ([string]::Equals($
 Write-Host "SYNCFACTORS__AUTH__OIDC__AUTHORITY=https://login.microsoftonline.com/$effectiveTenantId/v2.0"
 Write-Host "SYNCFACTORS__AUTH__OIDC__CLIENTID=$($application.appId)"
 if ($null -ne $secret) {
-    Write-Host "SYNCFACTORS__AUTH__OIDC__CLIENTSECRET=$($secret.secretText)"
+    if (-not [string]::IsNullOrWhiteSpace($secretStoreLabel)) {
+        Write-Host "SYNCFACTORS__AUTH__OIDC__CLIENTSECRET=<stored in $secretStoreLabel>"
+    }
+    else {
+        Write-Host "SYNCFACTORS__AUTH__OIDC__CLIENTSECRET=$($secret.secretText)"
+    }
+}
+elseif (-not [string]::IsNullOrWhiteSpace($oidcSecretSourceLabel)) {
+    Write-Host "SYNCFACTORS__AUTH__OIDC__CLIENTSECRET=<available from $oidcSecretSourceLabel>"
 }
 else {
     Write-Host 'SYNCFACTORS__AUTH__OIDC__CLIENTSECRET=<existing-secret-not-printed>'
@@ -939,27 +1107,31 @@ else {
 
 if ([string]::Equals($AuthMode, 'hybrid', [System.StringComparison]::OrdinalIgnoreCase)) {
     Write-Host "SYNCFACTORS__AUTH__BOOTSTRAPADMIN__USERNAME=$BootstrapAdminUsername"
-    Write-Host "SYNCFACTORS__AUTH__BOOTSTRAPADMIN__PASSWORD=$BootstrapAdminPassword"
+    if (-not [string]::IsNullOrWhiteSpace($bootstrapSecretStoreLabel)) {
+        Write-Host "SYNCFACTORS__AUTH__BOOTSTRAPADMIN__PASSWORD=<stored in $bootstrapSecretStoreLabel>"
+    }
+    else {
+        Write-Host "SYNCFACTORS__AUTH__BOOTSTRAPADMIN__PASSWORD=$BootstrapAdminPassword"
+    }
 }
 
 Write-Host ''
 Write-Host 'Recommended next steps' -ForegroundColor Cyan
 $nextSteps = New-Object 'System.Collections.Generic.List[string]'
-$nextSteps.Add('Store the client secret in your secret store instead of committing it to a file.') | Out-Null
-
-if ([OperatingSystem]::IsWindows()) {
-    $nextSteps.Add('If you use Windows Credential Manager, run:') | Out-Null
-    $nextSteps.Add('   pwsh ./scripts/codex/Save-WorktreeEnvToWindowsCredentialManager.ps1') | Out-Null
+if (-not [string]::IsNullOrWhiteSpace($secretStoreLabel)) {
+    $nextSteps.Add("Client secret stored in $secretStoreLabel; .env.worktree keeps the secret entry blank.") | Out-Null
 }
-elseif ($IsMacOS) {
-    $nextSteps.Add('If you use macOS Keychain, run:') | Out-Null
-    $nextSteps.Add('   ./scripts/codex/set-macos-keychain-secret.sh SYNCFACTORS__AUTH__OIDC__CLIENTSECRET') | Out-Null
+elseif (-not [string]::IsNullOrWhiteSpace($oidcSecretSourceLabel)) {
+    $nextSteps.Add("Client secret available from $oidcSecretSourceLabel; .env.worktree keeps the secret entry blank when the OS store is used.") | Out-Null
+}
+elseif ($null -ne $secret) {
+    $nextSteps.Add('Move the printed client secret into your preferred secret store before sharing logs or env files.') | Out-Null
 }
 else {
-    $nextSteps.Add('If your platform does not support the built-in secure-store helpers, keep the client secret in a local-only env file or another secure secret store.') | Out-Null
+    $nextSteps.Add('No new client secret was generated; make sure the existing client secret is available in the local secret store or env file.') | Out-Null
 }
 
-$nextSteps.Add('Uncomment the OIDC block in .env.worktree and set the values printed above.') | Out-Null
+$nextSteps.Add("Review $EnvFilePath if you want to change auth mode, public host, or role groups.") | Out-Null
 $nextSteps.Add('Start the API over HTTPS on the same port used for the redirect URIs.') | Out-Null
 
 $stepNumber = 1
