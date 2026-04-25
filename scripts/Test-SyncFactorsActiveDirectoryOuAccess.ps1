@@ -663,6 +663,49 @@ function Assert-SyncFactorsConfiguredAdBindCredentials {
     }
 }
 
+function Format-SyncFactorsAdBindCredentialLabel {
+    param(
+        [Parameter(Mandatory)]
+        [pscustomobject]$Configuration
+    )
+
+    $usernameSource = if ([string]::IsNullOrWhiteSpace([string]$Configuration.UsernameSecretName)) {
+        'ad.username'
+    }
+    else {
+        [string]$Configuration.UsernameSecretName
+    }
+
+    $passwordSource = if ([string]::IsNullOrWhiteSpace([string]$Configuration.BindPasswordSecretName)) {
+        'ad.bindPassword'
+    }
+    else {
+        [string]$Configuration.BindPasswordSecretName
+    }
+
+    return "username '$($Configuration.Username)' from $usernameSource with password from $passwordSource"
+}
+
+function Invoke-SyncFactorsConfiguredActiveDirectoryOuProbeWithContext {
+    param(
+        [Parameter(Mandatory)]
+        [pscustomobject]$Configuration
+    )
+
+    try {
+        return Invoke-SyncFactorsConfiguredActiveDirectoryOuProbe -Configuration $Configuration
+    }
+    catch {
+        $message = if ($null -ne $_.Exception.InnerException) { [string]$_.Exception.InnerException.Message } else { [string]$_.Exception.Message }
+        if ($message.Contains('credential', [System.StringComparison]::OrdinalIgnoreCase)) {
+            $credentialLabel = Format-SyncFactorsAdBindCredentialLabel -Configuration $Configuration
+            throw "Configured AD OU precheck bind failed because Active Directory rejected $credentialLabel on server '$($Configuration.Server)'. Use a UPN such as 'user@domain.tld' for SF_AD_SYNC_AD_USERNAME and verify the SF_AD_SYNC_AD_BIND_PASSWORD value. LDAP error: $message"
+        }
+
+        throw
+    }
+}
+
 function Write-SyncFactorsConfiguredAdProbeEvaluation {
     param(
         [Parameter(Mandatory)]
@@ -723,7 +766,7 @@ function Assert-SyncFactorsConfiguredAdOusAccessible {
 
     Write-SyncFactorsConfiguredAdBindSummary -Configuration $configuration
     Assert-SyncFactorsConfiguredAdBindCredentials -Configuration $configuration -ConfigPath $ConfigPath
-    $probeResult = Invoke-SyncFactorsConfiguredActiveDirectoryOuProbe -Configuration $configuration
+    $probeResult = Invoke-SyncFactorsConfiguredActiveDirectoryOuProbeWithContext -Configuration $configuration
     Write-SyncFactorsConfiguredAdProbeEvaluation -ProbeResult $probeResult
     $failures = @($probeResult.Checks | Where-Object { -not $_.Exists -or -not $_.Writable })
     if ($failures.Count -gt 0) {

@@ -149,7 +149,12 @@ verify_secret_removed() {
 }
 
 service="$(run_worktree_env_helper -Action resolve-keychain-service-name -EnvFilePath "${env_file}")"
-mapfile -t secret_names < <(run_worktree_env_helper -Action list-secure-store-variable-names)
+secret_names=()
+while IFS= read -r name; do
+  if [[ -n "${name}" ]]; then
+    secret_names+=("${name}")
+  fi
+done < <(run_worktree_env_helper -Action list-secure-store-variable-names)
 
 stored_count=0
 removed_count=0
