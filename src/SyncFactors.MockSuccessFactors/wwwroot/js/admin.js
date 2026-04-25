@@ -40,6 +40,7 @@
         comparePlannerReason: document.querySelector("[data-compare-planner-reason]"),
         comparePlannerError: document.querySelector("[data-compare-planner-error]"),
         lifecycleStateSelect: document.querySelector("[data-lifecycle-state-select]"),
+        employmentStatusSelect: document.querySelector("[data-employment-status-select]"),
         themeToggle: document.getElementById("theme-toggle"),
         themeOptions: Array.prototype.slice.call(document.querySelectorAll("[data-theme-option]"))
     };
@@ -374,6 +375,30 @@
         }
     }
 
+    function ensureEmploymentStatusOption(value) {
+        if (!elements.employmentStatusSelect) {
+            return "";
+        }
+
+        const normalized = String(value || "").trim();
+        if (!normalized) {
+            return "";
+        }
+
+        const existingOption = Array.from(elements.employmentStatusSelect.options).find(function (option) {
+            return option.value.toUpperCase() === normalized.toUpperCase();
+        });
+        if (existingOption) {
+            return existingOption.value;
+        }
+
+        const option = document.createElement("option");
+        option.value = normalized;
+        option.textContent = normalized + " - Current value";
+        elements.employmentStatusSelect.appendChild(option);
+        return option.value;
+    }
+
     function setEditor(worker, mode) {
         const resolvedWorker = worker || blankWorker();
         state.mode = mode;
@@ -389,6 +414,11 @@
             }
 
             const value = readWorkerValue(resolvedWorker, field.name);
+            if (field.name === "employmentStatus") {
+                field.value = ensureEmploymentStatusOption(value);
+                return;
+            }
+
             if (field.type === "checkbox") {
                 field.checked = Boolean(value);
                 return;

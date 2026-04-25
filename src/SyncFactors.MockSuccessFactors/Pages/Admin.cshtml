@@ -172,7 +172,16 @@
                     <section class="form-section">
                         <h3>Employment</h3>
                         <div class="field-grid">
-                            <label><span>Employment Status</span><input name="employmentStatus" type="text" /></label>
+                            <label>
+                                <span>Employment Status</span>
+                                <select name="employmentStatus" data-employment-status-select>
+                                    <option value="64300">64300 - Active</option>
+                                    <option value="U">U - Paid Leave</option>
+                                    <option value="64303">64303 - Unpaid Leave</option>
+                                    <option value="64304">64304 - Paid Leave</option>
+                                    <option value="64308">64308 - Terminated</option>
+                                </select>
+                            </label>
                             <label><span>Lifecycle State</span><input name="lifecycleState" type="text" /></label>
                             <label><span>Start Date</span><input name="startDate" type="text" required /></label>
                             <label><span>End Date</span><input name="endDate" type="text" /></label>

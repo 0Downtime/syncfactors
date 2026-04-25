@@ -91,12 +91,14 @@ body {
 
 button,
 input,
+select,
 textarea {
     font: inherit;
 }
 
 button,
 input,
+select,
 textarea {
     transition:
         background-color var(--motion-fast) var(--ease-standard),
@@ -109,6 +111,7 @@ textarea {
 
 button:focus-visible,
 input:focus-visible,
+select:focus-visible,
 textarea:focus-visible {
     outline: none;
     box-shadow: var(--focus);
