@@ -20,6 +20,10 @@
     </div>
     <div class="hero-actions">
         <a class="link-button" asp-page="/Index">Back to dashboard</a>
+        @if (Model.IsEntryDetail)
+        {
+            <a class="link-button" asp-page="/Runs/Detail" asp-route-runId="@Model.Run.Run.RunId" asp-route-bucket="@Model.Bucket" asp-route-workerId="@Model.WorkerId" asp-route-filter="@Model.Filter" asp-route-employmentStatus="@Model.EmploymentStatus" asp-fragment="entries">Back to run entries</a>
+        }
     </div>
 </section>
 
@@ -96,6 +100,7 @@
             <input type="text" name="filter" value="@Model.Filter" placeholder="reason, reviewCaseType, raw entry text..." />
         </label>
         <input type="hidden" name="employmentStatus" value="@Model.EmploymentStatus" />
+        <input type="hidden" name="entryId" value="@Model.EntryId" />
         <input type="hidden" name="pageNumber" value="1" />
         <div class="filter-actions">
             <button type="submit">Apply</button>
@@ -103,9 +108,9 @@
             <details class="export-menu">
                 <summary class="link-button">Export</summary>
                 <div class="export-menu-panel">
-                    <a class="link-button" asp-page="/Runs/Detail" asp-page-handler="Export" asp-route-runId="@Model.Run.Run.RunId" asp-route-bucket="@Model.Bucket" asp-route-workerId="@Model.WorkerId" asp-route-filter="@Model.Filter">JSON</a>
-                    <a class="link-button" asp-page="/Runs/Detail" asp-page-handler="ExportJsonl" asp-route-runId="@Model.Run.Run.RunId" asp-route-bucket="@Model.Bucket" asp-route-workerId="@Model.WorkerId" asp-route-filter="@Model.Filter">JSONL</a>
-                    <a class="link-button" asp-page="/Runs/Detail" asp-page-handler="ExportCsv" asp-route-runId="@Model.Run.Run.RunId" asp-route-bucket="@Model.Bucket" asp-route-workerId="@Model.WorkerId" asp-route-filter="@Model.Filter">CSV</a>
+                    <a class="link-button" asp-page="/Runs/Detail" asp-page-handler="Export" asp-route-runId="@Model.Run.Run.RunId" asp-route-bucket="@Model.Bucket" asp-route-workerId="@Model.WorkerId" asp-route-filter="@Model.Filter" asp-route-entryId="@Model.EntryId">JSON</a>
+                    <a class="link-button" asp-page="/Runs/Detail" asp-page-handler="ExportJsonl" asp-route-runId="@Model.Run.Run.RunId" asp-route-bucket="@Model.Bucket" asp-route-workerId="@Model.WorkerId" asp-route-filter="@Model.Filter" asp-route-entryId="@Model.EntryId">JSONL</a>
+                    <a class="link-button" asp-page="/Runs/Detail" asp-page-handler="ExportCsv" asp-route-runId="@Model.Run.Run.RunId" asp-route-bucket="@Model.Bucket" asp-route-workerId="@Model.WorkerId" asp-route-filter="@Model.Filter" asp-route-entryId="@Model.EntryId">CSV</a>
                 </div>
             </details>
         </div>
@@ -125,11 +130,18 @@
 
 <section class="panel" id="entries">
     <h2>
-        Entries
+        @(Model.IsEntryDetail ? "Entry Detail" : "Entries")
         @if (!string.IsNullOrWhiteSpace(Model.Bucket)) { <text>· @Model.Bucket</text> }
         @if (!string.IsNullOrWhiteSpace(Model.GetEmploymentStatusFilterLabel())) { <text>· @Model.GetEmploymentStatusFilterLabel()</text> }
     </h2>
-    <p class="muted">Showing page @Model.PageNumber of @Model.TotalPages · @Model.TotalEntries total entries · 15 per page.</p>
+    @if (Model.IsEntryDetail)
+    {
+        <p class="muted">Showing saved run entry @Model.EntryId. This is historical data captured during this run, not a fresh preview.</p>
+    }
+    else
+    {
+        <p class="muted">Showing page @Model.PageNumber of @Model.TotalPages · @Model.TotalEntries total entries · 15 per page.</p>
+    }
     @if (Model.EmploymentStatusTotals.Count > 0)
     {
         <div class="employment-status-summary" aria-label="Employment status totals">
@@ -226,7 +238,7 @@
                         <div><dt>@fact.Label</dt><dd>@fact.Value</dd></div>
                     }
                 </dl>
-                @if (decisionSteps.Count > 0)
+                @if (Model.IsEntryDetail && decisionSteps.Count > 0)
                 {
                     <section class="decision-tree">
                         <div class="section-heading">
@@ -318,14 +330,14 @@
                 }
                 @if (!string.IsNullOrWhiteSpace(entry.WorkerId))
                 {
+                    @if (!Model.IsEntryDetail)
+                    {
+                        <p><a asp-page="/Runs/Detail" asp-route-runId="@Model.Run.Run.RunId" asp-route-entryId="@entry.EntryId" asp-fragment="entries">@Model.GetRunEntryDetailLinkLabel()</a></p>
+                    }
                     var savedPreviewRunId = GetSavedPreviewRunId(entry);
                     if (!string.IsNullOrWhiteSpace(savedPreviewRunId))
                     {
                         <p><a asp-page="/Preview" asp-route-runId="@savedPreviewRunId">Open saved preview</a></p>
-                    }
-                    else
-                    {
-                        <p><a asp-page="/Preview" asp-route-workerId="@entry.WorkerId">Open worker preview</a></p>
                     }
                 }
                 @if (entry.DiffRows.Count > 0)

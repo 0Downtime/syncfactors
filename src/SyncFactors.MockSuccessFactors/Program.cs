@@ -35,10 +35,12 @@ builder.Services.AddSingleton<MockTokenService>();
 builder.Services.AddSingleton(new SyncFactorsConfigPathResolver(
     builder.Configuration["SyncFactors:ConfigPath"],
     builder.Configuration["SyncFactors:MappingConfigPath"]));
+builder.Services.AddSingleton(new MockRuntimeFixturePathResolver(builder.Configuration["MockSuccessFactors:Runtime:FixturePath"]));
 builder.Services.AddSingleton<SyncFactorsConfigurationLoader>();
 builder.Services.AddSingleton(new ScaffoldDataPathResolver(configuredPath: null));
 builder.Services.AddSingleton<ScaffoldDataStore>();
 builder.Services.AddSingleton<ScaffoldWorkerSource>();
+builder.Services.AddSingleton<MockRuntimeFixtureReader>();
 builder.Services.AddSingleton<IDeltaSyncService, MockDeltaSyncService>();
 builder.Services.AddSingleton<IWorkerPreviewLogWriter, FileWorkerPreviewLogWriter>();
 builder.Services.AddSingleton<IAttributeMappingProvider, AttributeMappingProvider>();
@@ -59,7 +61,9 @@ builder.Services.AddSingleton(serviceProvider =>
 builder.Services.AddSingleton<ILifecyclePolicy, LifecyclePolicy>();
 builder.Services.AddSingleton<IAttributeDiffService, AttributeDiffService>();
 builder.Services.AddSingleton<IActiveDirectoryConnectionPool, ActiveDirectoryConnectionPool>();
-builder.Services.AddTransient<IDirectoryGateway, ActiveDirectoryGateway>();
+builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddSingleton<RuntimeFixtureDirectoryGateway>();
+builder.Services.AddTransient<IDirectoryGateway>(serviceProvider => serviceProvider.GetRequiredService<RuntimeFixtureDirectoryGateway>());
 builder.Services.AddHttpClient<SuccessFactorsWorkerSource>()
     .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
     {
@@ -268,6 +272,15 @@ adminApi.MapPost("/workers/{workerId}/rehire", (string workerId, MockFixtureStor
         var worker = store.RehireWorker(workerId);
         return Results.Ok(new MockAdminWorkerMutationResponse(
             Message: $"Rehired worker {worker.PersonIdExternal}.",
+            Worker: store.GetEditableWorker(worker.PersonIdExternal)!));
+    }));
+
+adminApi.MapPost("/workers/{workerId}/lifecycle-state", (string workerId, MockAdminLifecycleStateRequest request, MockFixtureStore store) =>
+    RunAdminMutation(() =>
+    {
+        var worker = store.ApplyLifecycleState(workerId, request.LifecycleState);
+        return Results.Ok(new MockAdminWorkerMutationResponse(
+            Message: $"Applied lifecycle state to worker {worker.PersonIdExternal}.",
             Worker: store.GetEditableWorker(worker.PersonIdExternal)!));
     }));
 

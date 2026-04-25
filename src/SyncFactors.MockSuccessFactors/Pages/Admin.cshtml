@@ -131,6 +131,26 @@
                     </article>
                 </section>
 
+                <section class="form-section lifecycle-state-panel">
+                    <h3>Simulated Lifecycle State</h3>
+                    <div class="field-grid">
+                        <label class="field-span-2">
+                            <span>Lifecycle state</span>
+                            <select name="simulatedLifecycleState" data-lifecycle-state-select>
+                                <option value="prehire">Prehire</option>
+                                <option value="active-started">Active / started</option>
+                                <option value="paid-leave">Paid leave</option>
+                                <option value="unpaid-leave">Unpaid leave</option>
+                                <option value="returned-from-leave">Returned from leave</option>
+                                <option value="terminated">Terminated</option>
+                            </select>
+                        </label>
+                    </div>
+                    <div class="form-actions">
+                        <button type="button" class="primary-button" data-action="apply-lifecycle-state">Apply state</button>
+                    </div>
+                </section>
+
                 <form class="editor-form" data-editor-form>
                     <section class="form-section">
                         <h3>Identity</h3>

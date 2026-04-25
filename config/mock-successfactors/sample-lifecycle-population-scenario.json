@@ -491,8 +491,7 @@
           {
             "workerId": "10003",
             "operations": [
-              "MoveUser",
-              "EnableUser"
+              "MoveUser"
             ]
           },
           {
@@ -504,8 +503,7 @@
           {
             "workerId": "10011",
             "operations": [
-              "MoveUser",
-              "EnableUser"
+              "MoveUser"
             ]
           },
           {
@@ -727,8 +725,7 @@
           {
             "workerId": "10013",
             "operations": [
-              "MoveUser",
-              "EnableUser"
+              "MoveUser"
             ]
           }
         ]
