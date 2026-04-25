@@ -243,5 +243,6 @@ if ($null -ne $ldapsListening) {
 Write-Host ''
 Write-Host 'Client follow-up options:' -ForegroundColor Cyan
 Write-Host "1. Import the exported CER into each client's trusted root store."
-Write-Host "2. Pin this thumbprint in SyncFactors ad.transport.trustedCertificateThumbprints."
-Write-Host '3. For lab-only use, disable certificate validation temporarily in the app config.'
+Write-Host '2. Trust the exported CER in the client OS trust store when testing from macOS/Linux.'
+Write-Host '3. Keep SyncFactors ad.transport.requireCertificateValidation=true and trustedCertificateThumbprints empty on macOS/Linux.'
+Write-Host '4. On Windows-only lab clients, you may pin this thumbprint in SyncFactors ad.transport.trustedCertificateThumbprints or disable validation temporarily.'

@@ -349,7 +349,7 @@ internal sealed class LifecycleSimulationHarness(
               "mode": "ldaps",
               "allowLdapFallback": false,
               "allowCreateEnableWithoutPasswordProvisioning": false,
-              "requireCertificateValidation": false,
+              "requireCertificateValidation": true,
               "requireSigning": false,
               "trustedCertificateThumbprints": []
             },
