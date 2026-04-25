@@ -7,8 +7,9 @@ cd "${repo_root}"
 private_org="$(printf '\x73\x70\x69\x72\x65')"
 
 patterns=(
+  "(^|[^[:alnum:]])${private_org}([^[:alnum:]]|$)"
   "${private_org}qa"
-  "${private_org}energy"
+  "${private_org}[[:space:]_-]*energy"
   'qa''dc'
   'api''4[.]successfactors[.]com'
   '10[.]1[.]182[.][0-9]{1,3}'
