@@ -4,7 +4,7 @@
     {
       "workerId": "10002",
       "samAccountName": "10002",
-      "parentOu": "OU=LabUsers,DC=example,DC=com",
+      "parentOu": "OU=POWERSHELL,OU=ExampleQA-Users,DC=ExampleQA,DC=biz",
       "enabled": true,
       "displayName": "Sample102, Alex",
       "attributes": {
@@ -19,7 +19,7 @@
     {
       "workerId": "10004",
       "samAccountName": "10004",
-      "parentOu": "OU=LabUsers,DC=example,DC=com",
+      "parentOu": "OU=POWERSHELL,OU=ExampleQA-Users,DC=ExampleQA,DC=biz",
       "enabled": true,
       "displayName": "Sample104, Morgan",
       "attributes": {
@@ -34,7 +34,7 @@
     {
       "workerId": "10007",
       "samAccountName": "10007",
-      "parentOu": "OU=LabUsers,DC=example,DC=com",
+      "parentOu": "OU=POWERSHELL,OU=ExampleQA-Users,DC=ExampleQA,DC=biz",
       "enabled": true,
       "displayName": "Sample107, Jamie",
       "attributes": {
@@ -82,6 +82,7 @@
           {
             "workerId": "10004",
             "operations": [
+              "MoveUser",
               "UpdateUser",
               "DisableUser"
             ]
@@ -118,7 +119,7 @@
         {
           "workerId": "10004",
           "set": {
-            "employmentStatus": "A",
+            "employmentStatus": "64300",
             "lifecycleState": "active"
           }
         }
@@ -146,6 +147,7 @@
           {
             "workerId": "10004",
             "operations": [
+              "MoveUser",
               "EnableUser"
             ]
           }
@@ -159,7 +161,7 @@
         {
           "workerId": "10001",
           "set": {
-            "employmentStatus": "T",
+            "employmentStatus": "64308",
             "endDate": "2026-04-01T00:00:00Z",
             "lifecycleState": "terminated"
           }
@@ -203,7 +205,7 @@
       {
         "workerId": "10001",
         "samAccountName": "10001",
-        "parentOu": "OU=LabGraveyard,DC=example,DC=com",
+        "parentOu": "OU=GRAVEYARD,OU=ExampleQA-Users,DC=ExampleQA,DC=biz",
         "enabled": false,
         "displayName": "Sample101, Winnie",
         "attributes": {
@@ -213,7 +215,7 @@
       {
         "workerId": "10002",
         "samAccountName": "10002",
-        "parentOu": "OU=LabUsers,DC=example,DC=com",
+        "parentOu": "OU=POWERSHELL,OU=ExampleQA-Users,DC=ExampleQA,DC=biz",
         "enabled": true,
         "displayName": "Sample102, Alex",
         "attributes": {
@@ -225,7 +227,7 @@
       {
         "workerId": "10003",
         "samAccountName": "10003",
-        "parentOu": "OU=LabUsers,DC=example,DC=com",
+        "parentOu": "OU=POWERSHELL,OU=ExampleQA-Users,DC=ExampleQA,DC=biz",
         "enabled": true,
         "displayName": "Sample103, Casey",
         "attributes": {
@@ -237,7 +239,7 @@
       {
         "workerId": "10004",
         "samAccountName": "10004",
-        "parentOu": "OU=LabUsers,DC=example,DC=com",
+        "parentOu": "OU=POWERSHELL,OU=ExampleQA-Users,DC=ExampleQA,DC=biz",
         "enabled": true,
         "displayName": "Sample104, Morgan",
         "attributes": {
@@ -247,7 +249,7 @@
       {
         "workerId": "10007",
         "samAccountName": "10007",
-        "parentOu": "OU=LabGraveyard,DC=example,DC=com",
+        "parentOu": "OU=GRAVEYARD,OU=ExampleQA-Users,DC=ExampleQA,DC=biz",
         "enabled": false,
         "displayName": "Sample107, Jamie",
         "attributes": {

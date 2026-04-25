@@ -82,8 +82,8 @@
         {
           "workerId": "10003",
           "set": {
-            "employmentStatus": "U",
-            "emplStatus": "U"
+            "employmentStatus": "64303",
+            "emplStatus": "64303"
           }
         }
       ],
@@ -96,6 +96,7 @@
           {
             "workerId": "10003",
             "operations": [
+              "MoveUser",
               "DisableUser"
             ]
           }
@@ -109,8 +110,8 @@
         {
           "workerId": "10003",
           "set": {
-            "employmentStatus": "A",
-            "emplStatus": "A"
+            "employmentStatus": "64300",
+            "emplStatus": "64300"
           }
         }
       ],
@@ -123,6 +124,7 @@
           {
             "workerId": "10003",
             "operations": [
+              "MoveUser",
               "EnableUser"
             ]
           }
@@ -136,8 +138,8 @@
         {
           "workerId": "10003",
           "set": {
-            "employmentStatus": "T",
-            "emplStatus": "T",
+            "employmentStatus": "64308",
+            "emplStatus": "64308",
             "endDate": "2026-04-01T00:00:00Z",
             "lifecycleState": "terminated"
           }
@@ -166,7 +168,7 @@
       {
         "workerId": "10003",
         "samAccountName": "10003",
-        "parentOu": "OU=LabGraveyard,DC=example,DC=com",
+        "parentOu": "OU=GRAVEYARD,OU=ExampleQA-Users,DC=ExampleQA,DC=biz",
         "enabled": false,
         "displayName": "Sample103, Casey",
         "attributes": {

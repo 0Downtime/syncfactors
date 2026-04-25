@@ -145,12 +145,12 @@ public sealed class MockFixtureStoreAdminTests
     }
 
     [Theory]
-    [InlineData("prehire", "A", "preboarding", 1, null)]
-    [InlineData("active-started", "A", "active", 0, null)]
-    [InlineData("paid-leave", "U", "paid-leave", 0, null)]
+    [InlineData("prehire", "64300", "preboarding", 1, null)]
+    [InlineData("active-started", "64300", "active", 0, null)]
+    [InlineData("paid-leave", "64304", "paid-leave", 0, null)]
     [InlineData("unpaid-leave", "64303", "unpaid-leave", 0, null)]
-    [InlineData("returned-from-leave", "A", "active", 0, null)]
-    [InlineData("terminated", "T", "terminated", 0, "today")]
+    [InlineData("returned-from-leave", "64300", "active", 0, null)]
+    [InlineData("terminated", "64308", "terminated", 0, "today")]
     public void Store_ApplyLifecycleState_MutatesRuntimeWorker(
         string lifecycleState,
         string expectedStatus,

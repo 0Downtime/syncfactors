@@ -97,7 +97,7 @@ public sealed class MockAdminApiTests
         empJobResponse.EnsureSuccessStatusCode();
         var empJobJson = JsonDocument.Parse(await empJobResponse.Content.ReadAsStringAsync());
         var job = empJobJson.RootElement.GetProperty("d").GetProperty("results")[0];
-        Assert.Equal("T", job.GetProperty("emplStatus").GetString());
+        Assert.Equal("64308", job.GetProperty("emplStatus").GetString());
         Assert.False(string.IsNullOrWhiteSpace(job.GetProperty("endDate").GetString()));
 
         var deleteResponse = await adminClient.DeleteAsync($"/api/admin/workers/{workerId}");
@@ -110,12 +110,12 @@ public sealed class MockAdminApiTests
     }
 
     [Theory]
-    [InlineData("prehire", "A", false)]
-    [InlineData("active-started", "A", false)]
-    [InlineData("paid-leave", "U", false)]
+    [InlineData("prehire", "64300", false)]
+    [InlineData("active-started", "64300", false)]
+    [InlineData("paid-leave", "64304", false)]
     [InlineData("unpaid-leave", "64303", false)]
-    [InlineData("returned-from-leave", "A", false)]
-    [InlineData("terminated", "T", true)]
+    [InlineData("returned-from-leave", "64300", false)]
+    [InlineData("terminated", "64308", true)]
     public async Task AdminApi_LifecycleStateMutation_IsVisibleThroughODataImmediately(
         string lifecycleState,
         string expectedStatus,

@@ -328,7 +328,7 @@ public sealed class SuccessFactorsWorkerSourceIntegrationTests
               "entitySet": "EmpJob",
               "identityField": "userId",
               "deltaField": "lastModifiedDateTime",
-              "baseFilter": "emplStatus in 'A','U'",
+              "baseFilter": "emplStatus in '64300','64303','64304'",
               "pageSize": 50,
               "select": [
                 "userId",
@@ -1196,7 +1196,7 @@ public sealed class SuccessFactorsWorkerSourceIntegrationTests
 
         Assert.NotNull(worker);
         Assert.Equal("44004", worker!.WorkerId);
-        Assert.Equal("A", worker.Attributes["emplStatus"]);
+        Assert.Equal("64300", worker.Attributes["emplStatus"]);
         Assert.Equal("43553", worker.Attributes["managerId"]);
         Assert.Equal("44004", worker.Attributes["userId"]);
         Assert.Equal("2025-01-01T00:00:00Z", worker.Attributes["startDate"]);
@@ -1497,8 +1497,11 @@ public sealed class SuccessFactorsWorkerSourceIntegrationTests
               "entitySet": "EmpJob",
               "identityField": "userId",
               "deltaField": "lastModifiedDateTime",
-              "baseFilter": "emplStatus in 'A','U'",
+              "baseFilter": "emplStatus in '64300','64303','64304'",
               "inactiveRetentionDays": 180,
+              "inactiveStatusValues": [
+                "64308"
+              ],
               "select": [
                 "userId"
               ],
@@ -1551,9 +1554,9 @@ public sealed class SuccessFactorsWorkerSourceIntegrationTests
         var filter = queryCollection["$filter"].ToString();
         var expectedFilters = new[]
         {
-            "(emplStatus in 'A','U') or (emplStatus eq 'T' and endDate ge datetime'" +
+            "(emplStatus in '64300','64303','64304') or (emplStatus eq '64308' and endDate ge datetime'" +
             $"{beforeDate.AddDays(-180):yyyy-MM-ddTHH:mm:ss}')",
-            "(emplStatus in 'A','U') or (emplStatus eq 'T' and endDate ge datetime'" +
+            "(emplStatus in '64300','64303','64304') or (emplStatus eq '64308' and endDate ge datetime'" +
             $"{afterDate.AddDays(-180):yyyy-MM-ddTHH:mm:ss}')"
         }.Distinct(StringComparer.Ordinal).ToArray();
 
@@ -1643,7 +1646,7 @@ public sealed class SuccessFactorsWorkerSourceIntegrationTests
 
         var listedWorker = Assert.Single(workers);
         Assert.Equal("active-worker", listedWorker.WorkerId);
-        Assert.Equal("A", listedWorker.Attributes["emplStatus"]);
+        Assert.Equal("64300", listedWorker.Attributes["emplStatus"]);
     }
 
     [Fact]
@@ -1741,7 +1744,7 @@ public sealed class SuccessFactorsWorkerSourceIntegrationTests
         }
 
         var listedWorker = Assert.Single(workers);
-        Assert.Equal("A", listedWorker.Attributes["emplStatus"]);
+        Assert.Equal("64300", listedWorker.Attributes["emplStatus"]);
         Assert.Equal("preview-name", listedWorker.PreferredName);
     }
 
@@ -1826,7 +1829,7 @@ public sealed class SuccessFactorsWorkerSourceIntegrationTests
         }
 
         var listedWorker = Assert.Single(workers);
-        Assert.Equal("A", listedWorker.Attributes["emplStatus"]);
+        Assert.Equal("64300", listedWorker.Attributes["emplStatus"]);
     }
 
     private sealed class MockSuccessFactorsHttpHandler(MockFixtureStore fixtureStore, ODataResponseBuilder responseBuilder) : HttpMessageHandler
@@ -2030,7 +2033,7 @@ public sealed class SuccessFactorsWorkerSourceIntegrationTests
                     "userId": "active-worker",
                     "startDate": "2026-03-11T00:00:00Z",
                     "jobTitle": "Engineer",
-                    "emplStatus": "A"
+                    "emplStatus": "64300"
                   }
                 ]
               }
@@ -2060,7 +2063,7 @@ public sealed class SuccessFactorsWorkerSourceIntegrationTests
                         "userId": "active-worker",
                         "personIdExternal": "person-1",
                         "startDate": "2026-03-11T00:00:00Z",
-                        "emplStatus": "A"
+                        "emplStatus": "64300"
                       }
                     ]
                   }
@@ -2119,7 +2122,7 @@ public sealed class SuccessFactorsWorkerSourceIntegrationTests
                   {
                     "userId": "active-worker",
                     "startDate": "2026-03-11T00:00:00Z",
-                    "emplStatus": "A"
+                    "emplStatus": "64300"
                   }
                 ]
               }
@@ -2171,7 +2174,7 @@ public sealed class SuccessFactorsWorkerSourceIntegrationTests
                               {
                                 "startDate": "2024-01-01T00:00:00Z",
                                 "endDate": "2024-12-31T00:00:00Z",
-                                "emplStatus": "T"
+                                "emplStatus": "64308"
                               }
                             ]
                           }
@@ -2192,7 +2195,7 @@ public sealed class SuccessFactorsWorkerSourceIntegrationTests
                               {
                                 "startDate": "2025-01-01T00:00:00Z",
                                 "endDate": "9999-12-31T00:00:00Z",
-                                "emplStatus": "A"
+                                "emplStatus": "64300"
                               }
                             ]
                           }
@@ -2246,7 +2249,7 @@ public sealed class SuccessFactorsWorkerSourceIntegrationTests
                           "jobInfoNav": {
                             "results": [
                               {
-                                "emplStatus": "A"
+                                "emplStatus": "64300"
                               }
                             ]
                           }
@@ -2358,7 +2361,7 @@ public sealed class SuccessFactorsWorkerSourceIntegrationTests
                               {
                                 "jobTitle": "Platform Engineer",
                                 "employeeType": "Regular",
-                                "emplStatus": "A",
+                                "emplStatus": "64300",
                                 "position": "POS-100",
                                 "customString3": "Field Ops",
                                 "customString20": "IC-3",

@@ -13,6 +13,10 @@ internal sealed class LifecycleSimulationHarness(
 {
     private static readonly StringComparer Comparer = StringComparer.OrdinalIgnoreCase;
     private static readonly WorkerRunSettings DefaultRunSettings = new(MaxCreatesPerRun: 50, MaxDisablesPerRun: 50, MaxDeletionsPerRun: 10);
+    private const string ProdActiveOu = "OU=POWERSHELL,OU=ExampleQA-Users,DC=ExampleQA,DC=biz";
+    private const string ProdPrehireOu = "OU=Prehire,OU=ExampleQA-Users,DC=ExampleQA,DC=biz";
+    private const string ProdGraveyardOu = "OU=GRAVEYARD,OU=ExampleQA-Users,DC=ExampleQA,DC=biz";
+    private const string ProdLeaveOu = "OU=LEAVE USERS,OU=ExampleQA-Users,DC=ExampleQA,DC=biz";
     private static readonly IReadOnlySet<string> SupportedMutationFields = new HashSet<string>(Comparer)
     {
         "personIdExternal",
@@ -289,27 +293,83 @@ internal sealed class LifecycleSimulationHarness(
               }
             },
             "query": {
-              "entitySet": "PerPerson",
-              "identityField": "personIdExternal",
+              "entitySet": "EmpJob",
+              "identityField": "userId",
               "deltaField": "lastModifiedDateTime",
+              "deltaSyncEnabled": true,
+              "deltaOverlapMinutes": 5,
+              "baseFilter": "emplStatus in '64300','64303','64304'",
               "inactiveStatusField": "emplStatus",
-              "inactiveStatusValues": [ "T", "I", "64308", "64307" ],
-              "select": [ "personIdExternal" ],
-              "expand": []
+              "inactiveRetentionDays": 180,
+              "inactiveStatusValues": [ "64308" ],
+              "pageSize": 1000,
+              "select": [
+                "userId",
+                "emplStatus",
+                "jobTitle",
+                "company",
+                "department",
+                "division",
+                "location",
+                "businessUnit",
+                "costCenter",
+                "employeeClass",
+                "employeeType",
+                "managerId",
+                "customString3",
+                "customString20",
+                "customString87",
+                "customString110",
+                "customString111",
+                "customString91",
+                "startDate"
+              ],
+              "expand": [
+                "companyNav",
+                "departmentNav",
+                "divisionNav",
+                "locationNav",
+                "businessUnitNav",
+                "costCenterNav"
+              ]
             }
           },
           "ad": {
             "server": "ldap.example.test",
+            "port": 636,
             "username": "",
             "bindPassword": "",
             "identityAttribute": "sAMAccountName",
-            "defaultActiveOu": "OU=LabUsers,DC=example,DC=com",
-            "prehireOu": "OU=Prehire,DC=example,DC=com",
-            "graveyardOu": "OU=LabGraveyard,DC=example,DC=com"
+            "upnSuffix": "Exampleqa.biz",
+            "defaultActiveOu": "{{ProdActiveOu}}",
+            "prehireOu": "{{ProdPrehireOu}}",
+            "graveyardOu": "{{ProdGraveyardOu}}",
+            "leaveOu": "{{ProdLeaveOu}}",
+            "transport": {
+              "mode": "ldaps",
+              "allowLdapFallback": false,
+              "allowCreateEnableWithoutPasswordProvisioning": false,
+              "requireCertificateValidation": false,
+              "requireSigning": false,
+              "trustedCertificateThumbprints": []
+            },
+            "ouRoutingRules": [
+              {
+                "match": {
+                  "company": "CORP",
+                  "department": "IT"
+                },
+                "targetOu": "OU=IT,OU=POWERSHELL,OU=ExampleQA-Users,DC=ExampleQA,DC=biz"
+              }
+            ],
+            "licensingGroups": []
           },
           "sync": {
             "enableBeforeStartDays": 7,
-            "deletionRetentionDays": 90,
+            "deletionRetentionDays": 45,
+            "maxDegreeOfParallelism": 4,
+            "realSyncEnabled": true,
+            "autoDeleteFromGraveyard": false,
             "leaveStatusValues": [ "U", "64303", "64304" ]
           },
           "safety": {
@@ -817,7 +877,7 @@ internal sealed class LifecycleSimulationHarness(
                 PreferredName: worker.PreferredName ?? worker.FirstName,
                 LastName: worker.LastName,
                 Department: worker.Department ?? worker.DepartmentName ?? "Unknown",
-                TargetOu: "OU=LabUsers,DC=example,DC=com",
+                TargetOu: ProdActiveOu,
                 IsPrehire: string.Equals(
                     MockFixtureSummaryReporter.ResolveLifecycleState(worker),
                     MockLifecycleState.Preboarding,

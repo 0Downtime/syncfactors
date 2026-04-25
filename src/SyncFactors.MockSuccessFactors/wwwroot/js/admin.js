@@ -151,7 +151,7 @@
             preferredName: "",
             displayName: "",
             startDate: todayValue(),
-            employmentStatus: "A",
+            employmentStatus: "64300",
             lifecycleState: "active",
             endDate: "",
             firstDateWorked: "",

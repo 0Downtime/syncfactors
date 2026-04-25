@@ -8,7 +8,7 @@
     {
       "workerId": "90020",
       "samAccountName": "10020",
-      "parentOu": "OU=LabUsers,DC=example,DC=com",
+      "parentOu": "OU=POWERSHELL,OU=ExampleQA-Users,DC=ExampleQA,DC=biz",
       "enabled": true,
       "displayName": "Conflict Owner, Existing",
       "attributes": {
@@ -23,7 +23,7 @@
     {
       "workerId": "10023",
       "samAccountName": "10023",
-      "parentOu": "OU=LabUsers,DC=example,DC=com",
+      "parentOu": "OU=POWERSHELL,OU=ExampleQA-Users,DC=ExampleQA,DC=biz",
       "enabled": true,
       "displayName": "Sample123, Riley",
       "attributes": {
@@ -38,7 +38,7 @@
     {
       "workerId": "10024",
       "samAccountName": "10024",
-      "parentOu": "OU=LabUsers,DC=example,DC=com",
+      "parentOu": "OU=POWERSHELL,OU=ExampleQA-Users,DC=ExampleQA,DC=biz",
       "enabled": true,
       "displayName": "Sample124, Parker",
       "attributes": {
@@ -86,6 +86,7 @@
           {
             "workerId": "10023",
             "operations": [
+              "MoveUser",
               "UpdateUser",
               "DisableUser"
             ]
@@ -108,7 +109,7 @@
       {
         "workerId": "10021",
         "samAccountName": "10021",
-        "parentOu": "OU=LabUsers,DC=example,DC=com",
+        "parentOu": "OU=POWERSHELL,OU=ExampleQA-Users,DC=ExampleQA,DC=biz",
         "enabled": true,
         "displayName": "Create, Avery",
         "attributes": {
@@ -119,7 +120,7 @@
       {
         "workerId": "10023",
         "samAccountName": "10023",
-        "parentOu": "OU=LabUsers,DC=example,DC=com",
+        "parentOu": "OU=LEAVE USERS,OU=ExampleQA-Users,DC=ExampleQA,DC=biz",
         "enabled": false,
         "displayName": "Leave, Riley",
         "attributes": {
@@ -130,7 +131,7 @@
       {
         "workerId": "10024",
         "samAccountName": "10024",
-        "parentOu": "OU=LabUsers,DC=example,DC=com",
+        "parentOu": "OU=POWERSHELL,OU=ExampleQA-Users,DC=ExampleQA,DC=biz",
         "enabled": true,
         "displayName": "Sample124, Parker",
         "attributes": {
@@ -141,7 +142,7 @@
       {
         "workerId": "90020",
         "samAccountName": "10020",
-        "parentOu": "OU=LabUsers,DC=example,DC=com",
+        "parentOu": "OU=POWERSHELL,OU=ExampleQA-Users,DC=ExampleQA,DC=biz",
         "enabled": true,
         "displayName": "Conflict Owner, Existing",
         "attributes": {

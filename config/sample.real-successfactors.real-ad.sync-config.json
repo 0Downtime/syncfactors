@@ -8,7 +8,7 @@
     "defaultAdPasswordEnv": "SF_AD_SYNC_AD_DEFAULT_PASSWORD"
   },
   "successFactors": {
-    "baseUrl": "https://api12.successfactors.com/odata/v2",
+    "baseUrl": "https://api.example.successfactors.com/odata/v2",
     "auth": {
       "mode": "basic",
       "basic": {
@@ -16,25 +16,25 @@
         "password": ""
       },
       "oauth": {
-        "tokenUrl": "https://example.authentication.successfactors.com/oauth/token",
+        "tokenUrl": "http://example-env-01.Exampleqa.biz:18080/oauth/token",
         "clientAuthentication": "body",
         "clientId": "",
         "clientSecret": "",
-        "companyId": ""
+        "companyId": "MOCK"
       }
     },
     "query": {
       "entitySet": "EmpJob",
       "identityField": "userId",
       "deltaField": "lastModifiedDateTime",
-      "deltaSyncEnabled": false,
+      "deltaSyncEnabled": true,
       "deltaOverlapMinutes": 5,
-      "baseFilter": "emplStatus in 'A','U'",
+      "baseFilter": "emplStatus in '64300','64303','64304'",
       "inactiveRetentionDays": 180,
       "inactiveStatusValues": [
         "64308"
       ],
-      "pageSize": 200,
+      "pageSize": 1000,
       "select": [
         "userId",
         "emplStatus",
@@ -72,7 +72,7 @@
       "inactiveStatusValues": [
         "64308"
       ],
-      "pageSize": 200,
+      "pageSize": 1000,
       "select": [
         "personIdExternal",
         "personalInfoNav/firstName",
@@ -132,16 +132,16 @@
     "username": "",
     "bindPassword": "",
     "identityAttribute": "sAMAccountName",
-    "upnSuffix": "example.com",
-    "defaultActiveOu": "OU=Employees,DC=example,DC=com",
-    "prehireOu": "OU=Prehire,DC=example,DC=com",
-    "graveyardOu": "OU=Graveyard,DC=example,DC=com",
-    "leaveOu": "OU=Leave,DC=example,DC=com",
+    "upnSuffix": "Exampleqa.biz",
+    "defaultActiveOu": "OU=POWERSHELL,OU=ExampleQA-Users,DC=ExampleQA,DC=biz",
+    "prehireOu": "OU=Prehire,OU=ExampleQA-Users,DC=ExampleQA,DC=biz",
+    "graveyardOu": "OU=GRAVEYARD,OU=ExampleQA-Users,DC=ExampleQA,DC=biz",
+    "leaveOu": "OU=LEAVE USERS,OU=ExampleQA-Users,DC=ExampleQA,DC=biz",
     "transport": {
       "mode": "ldaps",
       "allowLdapFallback": false,
       "allowCreateEnableWithoutPasswordProvisioning": false,
-      "requireCertificateValidation": true,
+      "requireCertificateValidation": false,
       "requireSigning": false,
       "trustedCertificateThumbprints": []
     },
@@ -152,17 +152,15 @@
           "company": "CORP",
           "department": "IT"
         },
-        "targetOu": "OU=IT,OU=Employees,DC=example,DC=com"
+        "targetOu": "OU=IT,OU=POWERSHELL,OU=ExampleQA-Users,DC=ExampleQA,DC=biz"
       }
     ],
-    "licensingGroups": [
-      "CN=M365-E3-Prestage,OU=Groups,DC=example,DC=com"
-    ]
+    "licensingGroups": []
   },
   "sync": {
     "enableBeforeStartDays": 7,
-    "deletionRetentionDays": 90,
-    "maxDegreeOfParallelism": 2,
+    "deletionRetentionDays": 45,
+    "maxDegreeOfParallelism": 4,
     "realSyncEnabled": true,
     "autoDeleteFromGraveyard": false,
     "leaveStatusValues": [
@@ -172,9 +170,9 @@
     ]
   },
   "safety": {
-    "maxCreatesPerRun": 2000,
-    "maxDisablesPerRun": 2000,
-    "maxDeletionsPerRun": 2000
+    "maxCreatesPerRun": 12000,
+    "maxDisablesPerRun": 12000,
+    "maxDeletionsPerRun": 12000
   },
   "approval": {
     "enabled": false,

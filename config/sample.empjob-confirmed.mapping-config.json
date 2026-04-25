@@ -8,84 +8,84 @@
       "transform": "Trim"
     },
     {
-      "source": "personalInfoNav[0].firstName",
+      "source": "firstName",
       "target": "GivenName",
       "enabled": true,
       "required": true,
       "transform": "Trim"
     },
     {
-      "source": "personalInfoNav[0].lastName",
+      "source": "lastName",
       "target": "Surname",
       "enabled": true,
       "required": true,
       "transform": "Trim"
     },
     {
-      "source": "emailNav[?(@.isPrimary == true)].emailAddress",
+      "source": "email",
       "target": "UserPrincipalName",
       "enabled": true,
       "required": true,
       "transform": "Lower"
     },
     {
-      "source": "emailNav[?(@.isPrimary == true)].emailAddress",
+      "source": "email",
       "target": "mail",
       "enabled": true,
       "required": false,
       "transform": "Lower"
     },
     {
-      "source": "Concat(employmentNav[0].jobInfoNav[0].costCenterNav.externalCode, employmentNav[0].jobInfoNav[0].costCenterNav.description_localized)",
+      "source": "Concat(costCenterId, costCenterDescription)",
       "target": "department",
       "enabled": true,
       "required": false,
       "transform": "Trim"
     },
     {
-      "source": "employmentNav[0].jobInfoNav[0].divisionNav.name_localized",
+      "source": "division",
       "target": "division",
       "enabled": true,
       "required": false,
       "transform": "Trim"
     },
     {
-      "source": "employmentNav[0].jobInfoNav[0].companyNav.name_localized",
+      "source": "company",
       "target": "company",
       "enabled": true,
       "required": false,
       "transform": "TrimStripCommasPeriods"
     },
     {
-      "source": "employmentNav[0].jobInfoNav[0].locationNav.name",
+      "source": "location",
       "target": "physicalDeliveryOfficeName",
       "enabled": true,
       "required": false,
       "transform": "Trim"
     },
     {
-      "source": "employmentNav[0].jobInfoNav[0].jobTitle",
+      "source": "jobTitle",
       "target": "title",
       "enabled": true,
       "required": false,
       "transform": "Trim"
     },
     {
-      "source": "employmentNav[0].jobInfoNav[0].employeeType",
+      "source": "employeeType",
       "target": "employeeType",
-      "enabled": true,
+      "enabled": false,
       "required": false,
       "transform": "Trim"
     },
     {
-      "source": "employmentNav[0].jobInfoNav[0].businessUnitNav.name_localized",
+      "source": "businessUnit",
       "target": "extensionAttribute2",
       "enabled": false,
       "required": false,
       "transform": "Trim"
     },
     {
-      "source": "employmentNav[0].jobInfoNav[0].costCenterNav.externalCode",
+      "source": "costCenterId",
       "target": "extensionAttribute3",
       "enabled": false,
       "required": false,
@@ -148,21 +148,21 @@
       "transform": "DateOnly"
     },
     {
-      "source": "employmentNav[0].jobInfoNav[0].locationNav.addressNavDEFLT.address1",
+      "source": "officeLocationAddress",
       "target": "streetAddress",
       "enabled": true,
       "required": false,
       "transform": "Trim"
     },
     {
-      "source": "employmentNav[0].jobInfoNav[0].locationNav.addressNavDEFLT.city",
+      "source": "officeLocationCity",
       "target": "l",
       "enabled": true,
       "required": false,
       "transform": "Trim"
     },
     {
-      "source": "employmentNav[0].jobInfoNav[0].locationNav.addressNavDEFLT.zipCode",
+      "source": "officeLocationZipCode",
       "target": "postalCode",
       "enabled": true,
       "required": false,

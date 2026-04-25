@@ -187,11 +187,11 @@ public sealed class LifecycleSimulationCommandTests
             CommonName: "10003",
             UserPrincipalName: "casey.sample103@Exampleenergy.com",
             Mail: "casey.sample103@Exampleenergy.com",
-            TargetOu: "OU=Prehire,DC=example,DC=com",
+            TargetOu: "OU=Prehire,OU=ExampleQA-Users,DC=ExampleQA,DC=biz",
             DisplayName: "Sample103, Casey",
             CurrentDistinguishedName: null,
             EnableAccount: true,
-            Operations: [new DirectoryOperation("CreateUser", "OU=Prehire,DC=example,DC=com")],
+            Operations: [new DirectoryOperation("CreateUser", "OU=Prehire,OU=ExampleQA-Users,DC=ExampleQA,DC=biz")],
             Attributes: new Dictionary<string, string?>
             {
                 ["employeeID"] = "10003",
@@ -204,10 +204,10 @@ public sealed class LifecycleSimulationCommandTests
         var moveAndDisableCommand = createCommand with
         {
             Action = "MoveUser",
-            TargetOu = "OU=LabGraveyard,DC=example,DC=com",
+            TargetOu = "OU=GRAVEYARD,OU=ExampleQA-Users,DC=ExampleQA,DC=biz",
             Operations =
             [
-                new DirectoryOperation("MoveUser", "OU=LabGraveyard,DC=example,DC=com"),
+                new DirectoryOperation("MoveUser", "OU=GRAVEYARD,OU=ExampleQA-Users,DC=ExampleQA,DC=biz"),
                 new DirectoryOperation("DisableUser")
             ]
         };
@@ -217,11 +217,11 @@ public sealed class LifecycleSimulationCommandTests
         var enableAndUpdateCommand = createCommand with
         {
             Action = "EnableUser",
-            TargetOu = "OU=LabUsers,DC=example,DC=com",
+            TargetOu = "OU=POWERSHELL,OU=ExampleQA-Users,DC=ExampleQA,DC=biz",
             EnableAccount = true,
             Operations =
             [
-                new DirectoryOperation("MoveUser", "OU=LabUsers,DC=example,DC=com"),
+                new DirectoryOperation("MoveUser", "OU=POWERSHELL,OU=ExampleQA-Users,DC=ExampleQA,DC=biz"),
                 new DirectoryOperation("UpdateUser"),
                 new DirectoryOperation("EnableUser")
             ],
@@ -236,7 +236,7 @@ public sealed class LifecycleSimulationCommandTests
 
         var user = Assert.Single(state.ListUsers());
         Assert.Equal("10003", user.WorkerId);
-        Assert.Equal("OU=LabUsers,DC=example,DC=com", DirectoryDistinguishedName.GetParentOu(user.DistinguishedName));
+        Assert.Equal("OU=POWERSHELL,OU=ExampleQA-Users,DC=ExampleQA,DC=biz", DirectoryDistinguishedName.GetParentOu(user.DistinguishedName));
         Assert.True(user.Enabled);
         Assert.Equal("CORP West", user.Attributes["company"]);
         Assert.Equal("300 Example Way", user.Attributes["streetAddress"]);
@@ -250,7 +250,7 @@ public sealed class LifecycleSimulationCommandTests
             new LifecycleSimulationDirectoryUserInput(
                 WorkerId: "90020",
                 SamAccountName: "10020",
-                ParentOu: "OU=LabUsers,DC=example,DC=com",
+                ParentOu: "OU=POWERSHELL,OU=ExampleQA-Users,DC=ExampleQA,DC=biz",
                 Enabled: true,
                 DisplayName: "Conflict Owner, Existing",
                 Attributes: new Dictionary<string, string?> { ["employeeID"] = "90020" })
@@ -266,11 +266,11 @@ public sealed class LifecycleSimulationCommandTests
             CommonName: "10020",
             UserPrincipalName: "taylor.conflict@Exampleenergy.com",
             Mail: "taylor.conflict@Exampleenergy.com",
-            TargetOu: "OU=LabUsers,DC=example,DC=com",
+            TargetOu: "OU=POWERSHELL,OU=ExampleQA-Users,DC=ExampleQA,DC=biz",
             DisplayName: "Conflict, Taylor",
             CurrentDistinguishedName: null,
             EnableAccount: true,
-            Operations: [new DirectoryOperation("CreateUser", "OU=LabUsers,DC=example,DC=com")],
+            Operations: [new DirectoryOperation("CreateUser", "OU=POWERSHELL,OU=ExampleQA-Users,DC=ExampleQA,DC=biz")],
             Attributes: new Dictionary<string, string?> { ["employeeID"] = "10020" });
 
         await Assert.ThrowsAsync<InvalidOperationException>(() => gateway.ExecuteAsync(createCommand, CancellationToken.None));
@@ -284,7 +284,7 @@ public sealed class LifecycleSimulationCommandTests
         {
             StartDate = "2099-04-02T00:00:00Z",
             LifecycleState = "preboarding",
-            EmploymentStatus = "A"
+            EmploymentStatus = "64300"
         };
 
         var scenarioPath = temp.WriteScenario(new LifecycleSimulationScenario(
@@ -319,17 +319,17 @@ public sealed class LifecycleSimulationCommandTests
                     Name: "leave-disable",
                     Mutations:
                     [
-                        new WorkerMutation("10003", false, null, new Dictionary<string, string?> { ["employmentStatus"] = "U", ["emplStatus"] = "U" })
+                        new WorkerMutation("10003", false, null, new Dictionary<string, string?> { ["employmentStatus"] = "64303", ["emplStatus"] = "64303" })
                     ],
-                    Expectation: new IterationExpectation("Succeeded", new Dictionary<string, int> { ["disables"] = 1 }, [new ExpectedWorkerOperation("10003", ["DisableUser"])])),
+                    Expectation: new IterationExpectation("Succeeded", new Dictionary<string, int> { ["disables"] = 1 }, [new ExpectedWorkerOperation("10003", ["MoveUser", "DisableUser"])])),
                 new LifecycleSimulationIteration(
                     Order: 5,
                     Name: "active-reenable",
                     Mutations:
                     [
-                        new WorkerMutation("10003", false, null, new Dictionary<string, string?> { ["employmentStatus"] = "A", ["emplStatus"] = "A" })
+                        new WorkerMutation("10003", false, null, new Dictionary<string, string?> { ["employmentStatus"] = "64300", ["emplStatus"] = "64300" })
                     ],
-                    Expectation: new IterationExpectation("Succeeded", new Dictionary<string, int> { ["enables"] = 1 }, [new ExpectedWorkerOperation("10003", ["EnableUser"])])),
+                    Expectation: new IterationExpectation("Succeeded", new Dictionary<string, int> { ["enables"] = 1 }, [new ExpectedWorkerOperation("10003", ["MoveUser", "EnableUser"])])),
                 new LifecycleSimulationIteration(
                     Order: 6,
                     Name: "terminated-graveyard",
@@ -337,8 +337,8 @@ public sealed class LifecycleSimulationCommandTests
                     [
                         new WorkerMutation("10003", false, null, new Dictionary<string, string?>
                         {
-                            ["employmentStatus"] = "T",
-                            ["emplStatus"] = "T",
+                            ["employmentStatus"] = "64308",
+                            ["emplStatus"] = "64308",
                             ["endDate"] = "2026-04-01T00:00:00Z",
                             ["lifecycleState"] = "terminated"
                         })
@@ -352,7 +352,7 @@ public sealed class LifecycleSimulationCommandTests
                     new ExpectedDirectoryUser(
                         WorkerId: "10003",
                         SamAccountName: "10003",
-                        ParentOu: "OU=LabGraveyard,DC=example,DC=com",
+                        ParentOu: "OU=GRAVEYARD,OU=ExampleQA-Users,DC=ExampleQA,DC=biz",
                         Enabled: false,
                         DisplayName: "Sample103, Casey",
                         Attributes: new Dictionary<string, string?>

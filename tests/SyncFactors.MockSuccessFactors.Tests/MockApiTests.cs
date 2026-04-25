@@ -127,7 +127,7 @@ public sealed class MockApiTests
         var job = document.RootElement.GetProperty("d").GetProperty("results")[0];
 
         Assert.Equal(GetUserId("10001"), job.GetProperty("userId").GetString());
-        Assert.Equal("A", job.GetProperty("emplStatus").GetString());
+        Assert.Equal("64300", job.GetProperty("emplStatus").GetString());
         Assert.Equal("CORP", job.GetProperty("company").GetString());
         Assert.Equal("CORP", job.GetProperty("companyNav").GetProperty("company").GetString());
         Assert.Equal("Central", job.GetProperty("customString87").GetString());
@@ -258,7 +258,7 @@ public sealed class MockApiTests
             ["$format"] = "json",
             ["$top"] = "3",
             ["$skip"] = "1",
-            ["$filter"] = "emplStatus in 'A','U'",
+            ["$filter"] = "emplStatus in '64300','64303','64304'",
             ["$select"] = "userId,startDate,company,department"
         }));
 
@@ -282,7 +282,7 @@ public sealed class MockApiTests
             ["$format"] = "json",
             ["customPageSize"] = "2",
             ["paging"] = "snapshot",
-            ["$filter"] = "emplStatus in 'A','U'",
+            ["$filter"] = "emplStatus in '64300','64303','64304'",
             ["$orderby"] = "personIdExternal asc",
             ["$select"] = "personIdExternal"
         }));
@@ -296,7 +296,7 @@ public sealed class MockApiTests
         Assert.Equal("10000", results[0].GetProperty("personIdExternal").GetString());
         Assert.Equal("10001", results[1].GetProperty("personIdExternal").GetString());
         Assert.Equal(
-            "http://mock-successfactors.local/odata/v2/PerPerson?$format=json&customPageSize=2&paging=snapshot&$skiptoken=2&$select=personIdExternal&$filter=emplStatus%20in%20%27A%27%2C%27U%27&$orderby=personIdExternal%20asc",
+            "http://mock-successfactors.local/odata/v2/PerPerson?$format=json&customPageSize=2&paging=snapshot&$skiptoken=2&$select=personIdExternal&$filter=emplStatus%20in%20%2764300%27%2C%2764303%27%2C%2764304%27&$orderby=personIdExternal%20asc",
             d.GetProperty("__next").GetString());
     }
 
@@ -308,7 +308,7 @@ public sealed class MockApiTests
         var query = ODataQueryParser.Parse(new Microsoft.AspNetCore.Http.QueryCollection(new Dictionary<string, Microsoft.Extensions.Primitives.StringValues>
         {
             ["$format"] = "json",
-            ["$filter"] = "emplStatus in 'A','U'",
+            ["$filter"] = "emplStatus in '64300','64303','64304'",
             ["$top"] = "10",
             ["asOfDate"] = "2099-04-03",
             ["$select"] = "userId,startDate"
@@ -329,7 +329,7 @@ public sealed class MockApiTests
         var query = ODataQueryParser.Parse(new Microsoft.AspNetCore.Http.QueryCollection(new Dictionary<string, Microsoft.Extensions.Primitives.StringValues>
         {
             ["$format"] = "json",
-            ["$filter"] = "(emplStatus in 'A','U') or (emplStatus eq 'T' and endDate ge datetime'2026-02-01T00:00:00')",
+            ["$filter"] = "(emplStatus in '64300','64303','64304') or (emplStatus eq '64308' and endDate ge datetime'2026-02-01T00:00:00')",
             ["$top"] = "20",
             ["$select"] = "userId,emplStatus,endDate"
         }));
@@ -372,7 +372,7 @@ public sealed class MockApiTests
         var query = ODataQueryParser.Parse(new Microsoft.AspNetCore.Http.QueryCollection(new Dictionary<string, Microsoft.Extensions.Primitives.StringValues>
         {
             ["$format"] = "json",
-            ["$filter"] = "emplStatus in 'A','U'",
+            ["$filter"] = "emplStatus in '64300','64303','64304'",
             ["$top"] = "20",
             ["$select"] = "userId,startDate"
         }));
@@ -394,7 +394,7 @@ public sealed class MockApiTests
         var query = ODataQueryParser.Parse(new Microsoft.AspNetCore.Http.QueryCollection(new Dictionary<string, Microsoft.Extensions.Primitives.StringValues>
         {
             ["$format"] = "json",
-            ["$filter"] = "emplStatus in 'A','U'",
+            ["$filter"] = "emplStatus in '64300','64303','64304'",
             ["$top"] = "20",
             ["$select"] = "userId,startDate"
         }));

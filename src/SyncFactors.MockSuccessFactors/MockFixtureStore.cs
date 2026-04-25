@@ -8,6 +8,10 @@ namespace SyncFactors.MockSuccessFactors;
 public sealed class MockFixtureStore
 {
     private const int SyntheticWorkerIdStart = 10000;
+    private const string ActiveStatus = "64300";
+    private const string PaidLeaveStatus = "64304";
+    private const string UnpaidLeaveStatus = "64303";
+    private const string TerminatedStatus = "64308";
     private readonly object _gate = new();
     private readonly MockSuccessFactorsOptions _options;
     private readonly string _sourceFixturePath;
@@ -170,7 +174,7 @@ public sealed class MockFixtureStore
             var today = DateTimeOffset.UtcNow.ToString("yyyy-MM-dd");
             var terminated = existing with
             {
-                EmploymentStatus = "T",
+                EmploymentStatus = TerminatedStatus,
                 LifecycleState = MockLifecycleState.Terminated,
                 EndDate = string.IsNullOrWhiteSpace(existing.EndDate) ? today : existing.EndDate,
                 LastDateWorked = string.IsNullOrWhiteSpace(existing.LastDateWorked) ? today : existing.LastDateWorked,
@@ -189,10 +193,10 @@ public sealed class MockFixtureStore
             var existing = FindWorkerByIdUnsafe(workerId)
                 ?? throw new KeyNotFoundException($"Worker '{workerId}' was not found.");
             var scenarioTags = NormalizeScenarioTags(existing.ScenarioTags);
-            var lifecycleState = MockLifecycleState.Infer(existing.StartDate, "A", null, scenarioTags);
+            var lifecycleState = MockLifecycleState.Infer(existing.StartDate, ActiveStatus, null, scenarioTags);
             var rehired = existing with
             {
-                EmploymentStatus = "A",
+                EmploymentStatus = ActiveStatus,
                 LifecycleState = lifecycleState,
                 EndDate = null,
                 LastDateWorked = null,
@@ -219,7 +223,7 @@ public sealed class MockFixtureStore
             {
                 "prehire" => existing with
                 {
-                    EmploymentStatus = "A",
+                    EmploymentStatus = ActiveStatus,
                     LifecycleState = MockLifecycleState.Preboarding,
                     StartDate = tomorrowValue,
                     EndDate = null,
@@ -232,7 +236,7 @@ public sealed class MockFixtureStore
                 },
                 "active-started" or "returned-from-leave" => existing with
                 {
-                    EmploymentStatus = "A",
+                    EmploymentStatus = ActiveStatus,
                     LifecycleState = MockLifecycleState.Active,
                     StartDate = todayValue,
                     EndDate = null,
@@ -244,7 +248,7 @@ public sealed class MockFixtureStore
                 },
                 "paid-leave" => existing with
                 {
-                    EmploymentStatus = "U",
+                    EmploymentStatus = PaidLeaveStatus,
                     LifecycleState = MockLifecycleState.PaidLeave,
                     EndDate = null,
                     LastDateWorked = null,
@@ -254,7 +258,7 @@ public sealed class MockFixtureStore
                 },
                 "unpaid-leave" => existing with
                 {
-                    EmploymentStatus = "64303",
+                    EmploymentStatus = UnpaidLeaveStatus,
                     LifecycleState = MockLifecycleState.UnpaidLeave,
                     EndDate = null,
                     LastDateWorked = null,
@@ -264,7 +268,7 @@ public sealed class MockFixtureStore
                 },
                 "terminated" => existing with
                 {
-                    EmploymentStatus = "T",
+                    EmploymentStatus = TerminatedStatus,
                     LifecycleState = MockLifecycleState.Terminated,
                     EndDate = todayValue,
                     LastDateWorked = todayValue,
@@ -329,7 +333,7 @@ public sealed class MockFixtureStore
             UserId: worker.UserId ?? worker.UserName,
             DisplayName: displayName,
             Email: worker.Email,
-            EmploymentStatus: worker.EmploymentStatus ?? "A",
+            EmploymentStatus: worker.EmploymentStatus ?? ActiveStatus,
             LifecycleState: ResolveLifecycleState(worker),
             Company: worker.Company,
             Department: worker.Department,
@@ -437,7 +441,7 @@ public sealed class MockFixtureStore
             ?? BuildDefaultEmailAddressUnsafe(existingWorkerId, resolvedFirstName, resolvedLastName);
         var resolvedStartDate = NormalizeRequiredValue(request.StartDate, "startDate");
         var scenarioTags = NormalizeScenarioTags(request.ScenarioTags);
-        var employmentStatus = NormalizeOptionalValue(request.EmploymentStatus)?.ToUpperInvariant() ?? "A";
+        var employmentStatus = NormalizeOptionalValue(request.EmploymentStatus)?.ToUpperInvariant() ?? ActiveStatus;
         var endDate = NormalizeOptionalValue(request.EndDate);
         var lifecycleState = string.IsNullOrWhiteSpace(request.LifecycleState)
             ? MockLifecycleState.Infer(resolvedStartDate, employmentStatus, endDate, scenarioTags)
