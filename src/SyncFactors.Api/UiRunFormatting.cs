@@ -1,8 +1,9 @@
 using SyncFactors.Contracts;
+using System.Text.RegularExpressions;
 
 namespace SyncFactors.Api;
 
-public static class UiRunFormatting
+public static partial class UiRunFormatting
 {
     public static string StatusBadgeTone(string? status) =>
         (status ?? string.Empty).Trim().ToLowerInvariant() switch
@@ -15,8 +16,56 @@ public static class UiRunFormatting
             _ => "neutral",
         };
 
+    public static string DisplayLabel(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return "Unknown";
+        }
+
+        var normalized = value.Trim().Replace('-', ' ').Replace('_', ' ');
+        return WordBoundaryRegex().Replace(normalized, " ");
+    }
+
+    public static string RunDisplayName(RunSummary run)
+    {
+        var parts = new List<string> { RunKindLabel(run) };
+        if (!string.IsNullOrWhiteSpace(run.SyncScope) &&
+            !string.Equals(run.SyncScope, "Unknown", StringComparison.OrdinalIgnoreCase))
+        {
+            parts.Add(DisplayLabel(run.SyncScope));
+        }
+
+        parts.Add(UiDateTimeFormatter.FormatDateTime(run.StartedAt));
+        return string.Join(" · ", parts);
+    }
+
+    public static string RuntimeDisplayName(RuntimeStatus status)
+    {
+        if (string.IsNullOrWhiteSpace(status.RunId))
+        {
+            return "None";
+        }
+
+        var parts = new List<string>
+        {
+            RunKindLabel(status.Mode, status.DryRun, artifactType: null)
+        };
+
+        if (status.StartedAt.HasValue)
+        {
+            parts.Add(UiDateTimeFormatter.FormatDateTime(status.StartedAt));
+        }
+        else
+        {
+            parts.Add(status.RunId);
+        }
+
+        return string.Join(" · ", parts);
+    }
+
     public static string RunCardSummary(RunSummary run) =>
-        $"{run.Status} · {run.Mode} · {run.ProcessedWorkers} / {run.TotalWorkers} workers";
+        $"{DisplayLabel(run.Status)} · {RunKindLabel(run)} · {run.ProcessedWorkers} / {run.TotalWorkers} workers";
 
     public static string RunBucketSummary(RunSummary run)
     {
@@ -33,4 +82,27 @@ public static class UiRunFormatting
         if (run.GuardrailFailures > 0) parts.Add($"{run.GuardrailFailures} guardrails");
         return parts.Count == 0 ? "No materialized bucket counts yet" : string.Join(" · ", parts);
     }
+
+    private static string RunKindLabel(RunSummary run) =>
+        RunKindLabel(run.Mode, run.DryRun, run.ArtifactType);
+
+    private static string RunKindLabel(string? mode, bool dryRun, string? artifactType)
+    {
+        if (string.Equals(artifactType, "WorkerPreview", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(mode, "Preview", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Preview Snapshot";
+        }
+
+        if (string.Equals(mode, "BulkSync", StringComparison.OrdinalIgnoreCase))
+        {
+            return dryRun ? "Dry Run" : "Live Sync";
+        }
+
+        var modeLabel = DisplayLabel(mode);
+        return dryRun ? $"{modeLabel} Dry Run" : modeLabel;
+    }
+
+    [GeneratedRegex(@"(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])", RegexOptions.CultureInvariant)]
+    private static partial Regex WordBoundaryRegex();
 }

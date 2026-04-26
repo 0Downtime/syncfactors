@@ -15,8 +15,8 @@
 <section class="hero hero-compact">
     <div>
         <p class="eyebrow">Run Detail</p>
-        <h1>@Model.Run.Run.RunId</h1>
-        <p class="lede">@Model.Run.Run.Mode · @Model.Run.Run.SyncScope · @Model.Run.Run.Status · @(Model.Run.Run.DryRun ? "Dry Run" : "Live Run")</p>
+        <h1>@SyncFactors.Api.UiRunFormatting.RunDisplayName(Model.Run.Run)</h1>
+        <p class="lede">ID @Model.Run.Run.RunId · @SyncFactors.Api.UiRunFormatting.DisplayLabel(Model.Run.Run.Mode) · @SyncFactors.Api.UiRunFormatting.DisplayLabel(Model.Run.Run.Status) · @(Model.Run.Run.DryRun ? "Dry Run" : "Live Run")</p>
     </div>
     <div class="hero-actions">
         <a class="link-button" asp-page="/Index">Back to dashboard</a>
@@ -33,12 +33,12 @@
         <dl class="kv">
             <div><dt>Started</dt><dd>@SyncFactors.Api.UiDateTimeFormatter.FormatDateTime(Model.Run.Run.StartedAt)</dd></div>
             <div><dt>Completed</dt><dd>@SyncFactors.Api.UiDateTimeFormatter.FormatDateTime(Model.Run.Run.CompletedAt, "Unknown")</dd></div>
-            <div><dt>Artifact</dt><dd>@Model.Run.Run.ArtifactType</dd></div>
-            <div><dt>Scope</dt><dd>@Model.Run.Run.SyncScope</dd></div>
-            <div><dt>Trigger</dt><dd>@Model.Run.Run.RunTrigger</dd></div>
+            <div><dt>Artifact</dt><dd>@SyncFactors.Api.UiRunFormatting.DisplayLabel(Model.Run.Run.ArtifactType)</dd></div>
+            <div><dt>Scope</dt><dd>@SyncFactors.Api.UiRunFormatting.DisplayLabel(Model.Run.Run.SyncScope)</dd></div>
+            <div><dt>Trigger</dt><dd>@SyncFactors.Api.UiRunFormatting.DisplayLabel(Model.Run.Run.RunTrigger)</dd></div>
             <div><dt>Requested By</dt><dd>@(Model.Run.Run.RequestedBy ?? "n/a")</dd></div>
             <div><dt>Run Type</dt><dd><span class="badge @runContext.ToneCssClass">@runContext.Label</span></dd></div>
-            <div><dt>Status</dt><dd><span class="badge @SyncFactors.Api.UiRunFormatting.StatusBadgeTone(Model.Run.Run.Status)">@Model.Run.Run.Status</span></dd></div>
+            <div><dt>Status</dt><dd><span class="badge @SyncFactors.Api.UiRunFormatting.StatusBadgeTone(Model.Run.Run.Status)">@SyncFactors.Api.UiRunFormatting.DisplayLabel(Model.Run.Run.Status)</span></dd></div>
             <div><dt>Processed</dt><dd>@Model.Run.Run.ProcessedWorkers</dd></div>
             <div><dt>Total</dt><dd>@Model.Run.Run.TotalWorkers</dd></div>
         </dl>

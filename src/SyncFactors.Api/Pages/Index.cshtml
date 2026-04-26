@@ -102,9 +102,9 @@
             <p class="muted dashboard-progress-copy" data-progress-copy>@ProgressCopy(Model.Status)</p>
         </section>
         <dl class="kv" data-dashboard-status>
-            <div><dt>Status</dt><dd data-status-value>@Model.Status.Status</dd></div>
-            <div><dt>Stage</dt><dd data-stage-value>@Model.Status.Stage</dd></div>
-            <div><dt>Run Id</dt><dd data-run-id-value>@(Model.Status.RunId ?? "None")</dd></div>
+            <div><dt>Status</dt><dd data-status-value>@SyncFactors.Api.UiRunFormatting.DisplayLabel(Model.Status.Status)</dd></div>
+            <div><dt>Stage</dt><dd data-stage-value>@SyncFactors.Api.UiRunFormatting.DisplayLabel(Model.Status.Stage)</dd></div>
+            <div><dt>Run</dt><dd data-run-id-value>@SyncFactors.Api.UiRunFormatting.RuntimeDisplayName(Model.Status)</dd></div>
             <div><dt>Worker</dt><dd data-worker-value>@(Model.Status.CurrentWorkerId ?? "None")</dd></div>
             <div><dt>Progress</dt><dd data-progress-value>@Model.Status.ProcessedWorkers / @Model.Status.TotalWorkers</dd></div>
             <div><dt>Last Action</dt><dd data-last-action-value>@(Model.Status.LastAction ?? "None")</dd></div>
@@ -208,7 +208,7 @@
                     <tr>
                         <th class="recent-runs-table__started">Started</th>
                         <th class="recent-runs-table__trigger">Trigger</th>
-                        <th class="recent-runs-table__mode">Mode</th>
+                        <th class="recent-runs-table__mode">Run</th>
                         <th class="recent-runs-table__status">Status</th>
                         <th class="recent-runs-table__dry-run">Dry Run</th>
                         <th class="recent-runs-table__workers">Workers</th>
@@ -221,9 +221,9 @@
                 {
                     <tr>
                         <td class="recent-runs-table__started">@SyncFactors.Api.UiDateTimeFormatter.FormatDateTime(run.StartedAt)</td>
-                        <td class="recent-runs-table__trigger">@run.RunTrigger</td>
-                        <td class="recent-runs-table__mode">@run.Mode</td>
-                        <td class="recent-runs-table__status"><span class="badge @SyncFactors.Api.UiRunFormatting.StatusBadgeTone(run.Status)">@run.Status</span></td>
+                        <td class="recent-runs-table__trigger">@SyncFactors.Api.UiRunFormatting.DisplayLabel(run.RunTrigger)</td>
+                        <td class="recent-runs-table__mode" title="@run.RunId">@SyncFactors.Api.UiRunFormatting.RunDisplayName(run)</td>
+                        <td class="recent-runs-table__status"><span class="badge @SyncFactors.Api.UiRunFormatting.StatusBadgeTone(run.Status)">@SyncFactors.Api.UiRunFormatting.DisplayLabel(run.Status)</span></td>
                         <td class="recent-runs-table__dry-run">@(run.DryRun ? "Yes" : "No")</td>
                         <td class="recent-runs-table__workers">@run.TotalWorkers</td>
                         <td class="recent-runs-table__summary" title="@SyncFactors.Api.UiRunFormatting.RunBucketSummary(run)"><span class="summary-value">@SyncFactors.Api.UiRunFormatting.RunBucketSummary(run)</span></td>

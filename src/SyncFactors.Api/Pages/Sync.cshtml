@@ -36,7 +36,7 @@
                 <p class="eyebrow">Operations Surface</p>
                 <h2>Runtime Readiness</h2>
             </div>
-            <span class="sync-status-badge badge @SyncFactors.Api.UiRunFormatting.StatusBadgeTone(Model.Status.Status)" data-sync-runtime-badge>@Model.Status.Status</span>
+            <span class="sync-status-badge badge @SyncFactors.Api.UiRunFormatting.StatusBadgeTone(Model.Status.Status)" data-sync-runtime-badge>@SyncFactors.Api.UiRunFormatting.DisplayLabel(Model.Status.Status)</span>
         </div>
         <div class="sync-status-grid">
             <section class="sync-status-card" data-tone="info">
@@ -66,7 +66,7 @@
                     <span class="badge @(Model.HasPendingOrActiveRun ? "warn" : "good")">@(Model.HasPendingOrActiveRun ? "Run In Flight" : "Ready")</span>
                 </div>
                 <div class="metric-strip">
-                    <span class="metric-pill"><strong>@(Model.ActiveRun?.RunTrigger ?? "n/a")</strong> trigger</span>
+                    <span class="metric-pill"><strong>@SyncFactors.Api.UiRunFormatting.DisplayLabel(Model.ActiveRun?.RunTrigger ?? "n/a")</strong> trigger</span>
                     <span class="metric-pill"><strong>@(Model.ActiveRun?.RequestedBy ?? "system")</strong> requested by</span>
                     <span class="metric-pill"><strong>@Model.Status.ProcessedWorkers / @Model.Status.TotalWorkers</strong> progress</span>
                 </div>
@@ -82,10 +82,10 @@
     <article class="panel sync-current-run-panel">
         <h2>Current Run</h2>
         <dl class="kv">
-            <div><dt>Status</dt><dd>@Model.Status.Status</dd></div>
-            <div><dt>Stage</dt><dd>@Model.Status.Stage</dd></div>
-            <div><dt>Run Id</dt><dd>@(Model.Status.RunId ?? "None")</dd></div>
-            <div><dt>Trigger</dt><dd>@(Model.ActiveRun?.RunTrigger ?? "n/a")</dd></div>
+            <div><dt>Status</dt><dd>@SyncFactors.Api.UiRunFormatting.DisplayLabel(Model.Status.Status)</dd></div>
+            <div><dt>Stage</dt><dd>@SyncFactors.Api.UiRunFormatting.DisplayLabel(Model.Status.Stage)</dd></div>
+            <div><dt>Run</dt><dd>@SyncFactors.Api.UiRunFormatting.RuntimeDisplayName(Model.Status)</dd></div>
+            <div><dt>Trigger</dt><dd>@SyncFactors.Api.UiRunFormatting.DisplayLabel(Model.ActiveRun?.RunTrigger ?? "n/a")</dd></div>
             <div><dt>Requested By</dt><dd>@(Model.ActiveRun?.RequestedBy ?? "n/a")</dd></div>
             <div><dt>Progress</dt><dd>@Model.Status.ProcessedWorkers / @Model.Status.TotalWorkers</dd></div>
             <div><dt>Last Action</dt><dd>@(Model.Status.LastAction ?? "None")</dd></div>
@@ -210,6 +210,7 @@
                 <thead>
                     <tr>
                         <th>Started</th>
+                        <th>Run</th>
                         <th>Trigger</th>
                         <th>Status</th>
                         <th>Scope</th>
@@ -224,9 +225,10 @@
                 {
                     <tr>
                         <td>@SyncFactors.Api.UiDateTimeFormatter.FormatDateTime(run.StartedAt)</td>
-                        <td>@run.RunTrigger</td>
-                        <td><span class="badge @SyncFactors.Api.UiRunFormatting.StatusBadgeTone(run.Status)">@run.Status</span></td>
-                        <td>@run.SyncScope</td>
+                        <td title="@run.RunId">@SyncFactors.Api.UiRunFormatting.RunDisplayName(run)</td>
+                        <td>@SyncFactors.Api.UiRunFormatting.DisplayLabel(run.RunTrigger)</td>
+                        <td><span class="badge @SyncFactors.Api.UiRunFormatting.StatusBadgeTone(run.Status)">@SyncFactors.Api.UiRunFormatting.DisplayLabel(run.Status)</span></td>
+                        <td>@SyncFactors.Api.UiRunFormatting.DisplayLabel(run.SyncScope)</td>
                         <td>@(run.DryRun ? "Yes" : "No")</td>
                         <td>@run.TotalWorkers</td>
                         <td>@(run.RequestedBy ?? "n/a")</td>

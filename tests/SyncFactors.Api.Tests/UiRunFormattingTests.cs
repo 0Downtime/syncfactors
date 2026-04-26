@@ -28,7 +28,52 @@ public sealed class UiRunFormattingTests
 
         var summary = UiRunFormatting.RunCardSummary(run);
 
-        Assert.Equal("Succeeded · BulkSync · 7 / 9 workers", summary);
+        Assert.Equal("Succeeded · Dry Run · 7 / 9 workers", summary);
+    }
+
+    [Theory]
+    [InlineData("BulkRun", "Bulk Run")]
+    [InlineData("BulkSync", "Bulk Sync")]
+    [InlineData("CancelRequested", "Cancel Requested")]
+    [InlineData("delete-all-users", "delete all users")]
+    public void DisplayLabel_HumanizesMachineTokens(string value, string expected)
+    {
+        var label = UiRunFormatting.DisplayLabel(value);
+
+        Assert.Equal(expected, label);
+    }
+
+    [Fact]
+    public void RunDisplayName_UsesReadableRunKindScopeAndStartedAt()
+    {
+        var run = CreateRunSummary();
+
+        var displayName = UiRunFormatting.RunDisplayName(run);
+
+        Assert.Equal("Dry Run · Full sync · 04/18/2026 8:00 AM", displayName);
+    }
+
+    [Fact]
+    public void RuntimeDisplayName_FallsBackToRawRunIdWhenRunHasNotStarted()
+    {
+        var status = new RuntimeStatus(
+            Status: "Pending",
+            Stage: "Queued",
+            RunId: "bulk-20260418120000000",
+            Mode: "BulkSync",
+            DryRun: false,
+            ProcessedWorkers: 0,
+            TotalWorkers: 0,
+            CurrentWorkerId: null,
+            LastAction: null,
+            StartedAt: null,
+            LastUpdatedAt: null,
+            CompletedAt: null,
+            ErrorMessage: null);
+
+        var displayName = UiRunFormatting.RuntimeDisplayName(status);
+
+        Assert.Equal("Live Sync · bulk-20260418120000000", displayName);
     }
 
     [Fact]

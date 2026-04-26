@@ -265,6 +265,56 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
         return parts.month + "/" + parts.day + "/" + parts.year + " " + parts.hour + ":" + parts.minute + " " + parts.dayPeriod;
     }
 
+    function displayLabel(value) {
+        if (!value) {
+            return "Unknown";
+        }
+
+        return String(value)
+            .trim()
+            .replace(/[-_]+/g, " ")
+            .replace(/(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])/g, " ");
+    }
+
+    function runKindLabel(run) {
+        const mode = run && run.mode;
+        const artifactType = run && run.artifactType;
+        if (String(artifactType || "").toLowerCase() === "workerpreview" ||
+            String(mode || "").toLowerCase() === "preview") {
+            return "Preview Snapshot";
+        }
+
+        if (String(mode || "").toLowerCase() === "bulksync") {
+            return run && run.dryRun ? "Dry Run" : "Live Sync";
+        }
+
+        const modeLabel = displayLabel(mode);
+        return run && run.dryRun ? modeLabel + " Dry Run" : modeLabel;
+    }
+
+    function runDisplayName(run) {
+        if (!run) {
+            return "Unknown";
+        }
+
+        const parts = [runKindLabel(run)];
+        if (run.syncScope && String(run.syncScope).toLowerCase() !== "unknown") {
+            parts.push(displayLabel(run.syncScope));
+        }
+        parts.push(formatTimestamp(run.startedAt));
+        return parts.join(" · ");
+    }
+
+    function runtimeDisplayName(status) {
+        if (!status || !status.runId) {
+            return "None";
+        }
+
+        const parts = [runKindLabel(status)];
+        parts.push(status.startedAt ? formatTimestamp(status.startedAt) : status.runId);
+        return parts.join(" · ");
+    }
+
     function formatChartTimestamp(value) {
         if (!value) {
             return "Unknown";
@@ -428,11 +478,11 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
         switch (state) {
             case "starting":
                 return status && status.runId
-                    ? "Run " + status.runId + " has started and is loading source workers."
+                    ? runtimeDisplayName(status) + " has started and is loading source workers."
                     : "The worker has claimed the run and is loading source workers.";
             case "queued":
                 return status && status.runId
-                    ? "Run " + status.runId + " is queued and waiting for the worker service."
+                    ? runtimeDisplayName(status) + " is queued and waiting for the worker service."
                     : "The next sync is queued and waiting for the worker service.";
             case "canceling":
                 return "Cancellation has been requested. The worker will stop after the current operation.";
@@ -525,7 +575,7 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
         switch (state) {
             case "starting":
                 return status.runId
-                    ? "Run " + status.runId + " has been claimed and is preparing worker data."
+                    ? runtimeDisplayName(status) + " has been claimed and is preparing worker data."
                     : "The worker has claimed the next run and is preparing to process workers.";
             case "syncing":
                 if (status.currentWorkerId) {
@@ -535,7 +585,7 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
                 return stage + ". " + processedWorkers + " of " + totalWorkers + " workers processed.";
             case "queued":
                 return status.runId
-                    ? "Run " + status.runId + " is staged and waiting for execution."
+                    ? runtimeDisplayName(status) + " is staged and waiting for execution."
                     : "The runtime is waiting for the worker service to begin the next run.";
             case "failed":
                 return textOrFallback(status.errorMessage, "Review the last error and recent runs for the failure cause.");
@@ -977,7 +1027,7 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
         if (selectedRunId) {
             const selectedRun = findRunById(runs, selectedRunId);
             return selectedRun
-                ? "Focused on run " + selectedRun.runId + ". Table filtered to a single run."
+                ? "Focused on " + runDisplayName(selectedRun) + ". Table filtered to a single run."
                 : "The selected run is no longer present in the recent runs set.";
         }
 
@@ -1126,10 +1176,11 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
         const cells = row.__cells;
         row.dataset.runId = run.runId;
         cells.startedCell.textContent = formatTimestamp(run.startedAt);
-        cells.triggerCell.textContent = textOrFallback(run.runTrigger, "AdHoc");
-        cells.modeCell.textContent = textOrFallback(run.mode, "Unknown");
+        cells.triggerCell.textContent = displayLabel(textOrFallback(run.runTrigger, "AdHoc"));
+        cells.modeCell.textContent = runDisplayName(run);
+        cells.modeCell.title = run.runId;
         cells.statusBadge.className = "badge " + runStatusClass(textOrFallback(run.status, "Unknown"));
-        cells.statusBadge.textContent = textOrFallback(run.status, "Unknown");
+        cells.statusBadge.textContent = displayLabel(textOrFallback(run.status, "Unknown"));
         cells.dryRunCell.textContent = run.dryRun ? "Yes" : "No";
         cells.workersCell.textContent = String(run.totalWorkers || 0);
 
@@ -1238,9 +1289,9 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
         const status = snapshot.status;
         const progress = progressSnapshot(status);
         renderSignal(status);
-        updateText(valueNodes.status, textOrFallback(status.status, "Unknown"));
-        updateText(valueNodes.stage, textOrFallback(status.stage, "Unknown"));
-        updateText(valueNodes.runId, textOrFallback(status.runId, "None"));
+        updateText(valueNodes.status, displayLabel(textOrFallback(status.status, "Unknown")));
+        updateText(valueNodes.stage, displayLabel(textOrFallback(status.stage, "Unknown")));
+        updateText(valueNodes.runId, runtimeDisplayName(status));
         updateText(valueNodes.worker, textOrFallback(status.currentWorkerId, "None"));
         updateText(valueNodes.progress, progress.processed + " / " + progress.total);
         updateText(valueNodes.lastAction, textOrFallback(status.lastAction, "None"));
@@ -1351,7 +1402,7 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
             steps.push({
                 label: "Started",
                 time: focusRun.startedAt,
-                detail: focusRun.mode + (focusRun.dryRun ? " dry run started." : " run started."),
+                detail: runKindLabel(focusRun) + " started.",
                 tone: "good"
             });
         }
@@ -1367,7 +1418,7 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
                 steps.push({
                     label: "Queued",
                     time: status.lastUpdatedAt || snapshot.checkedAt,
-                    detail: "Run " + status.runId + " is waiting for the worker service to begin execution.",
+                    detail: runtimeDisplayName(status) + " is waiting for the worker service to begin execution.",
                     tone: "warn"
                 });
             }
@@ -1461,7 +1512,7 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
             return;
         }
 
-        elements.timelineTitle.textContent = focusRun ? "Run " + focusRun.runId : "Runtime focus";
+        elements.timelineTitle.textContent = focusRun ? runDisplayName(focusRun) : "Runtime focus";
 
         if (selectedRunId) {
             elements.timelineSummary.textContent = "Focused from the recent runs table or chart. Select the same run again to clear focus.";
@@ -1737,7 +1788,7 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
             toggleHidden(elements.bucketChart, true);
             toggleHidden(elements.bucketChartEmpty, false);
             if (elements.bucketChartMeta) {
-                elements.bucketChartMeta.textContent = "Run " + focusRun.runId + " has no materialized bucket counts yet.";
+                elements.bucketChartMeta.textContent = runDisplayName(focusRun) + " has no materialized bucket counts yet.";
             }
             if (bucketChartInstance) {
                 bucketChartInstance.clear();
@@ -1750,8 +1801,8 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
 
         if (elements.bucketChartMeta) {
             elements.bucketChartMeta.textContent = snapshot.activeRun
-                ? "Click a slice to filter the table. Showing live bucket composition for active run " + focusRun.runId + "."
-                : "Click a slice to filter the table. Showing bucket composition for recent run " + focusRun.runId + ".";
+                ? "Click a slice to filter the table. Showing live bucket composition for " + runDisplayName(focusRun) + "."
+                : "Click a slice to filter the table. Showing bucket composition for " + runDisplayName(focusRun) + ".";
         }
 
         bucketChartInstance.setOption({
