@@ -339,6 +339,8 @@ internal sealed class LifecycleSimulationHarness(
             "port": 636,
             "username": "",
             "bindPassword": "",
+            "operationTimeoutSeconds": 30,
+            "connectionPoolMaxIdleSeconds": 60,
             "identityAttribute": "sAMAccountName",
             "upnSuffix": "example.test",
             "defaultActiveOu": "{{ProdActiveOu}}",
@@ -367,7 +369,7 @@ internal sealed class LifecycleSimulationHarness(
           "sync": {
             "enableBeforeStartDays": 7,
             "deletionRetentionDays": 45,
-            "maxDegreeOfParallelism": 4,
+            "maxDegreeOfParallelism": 2,
             "realSyncEnabled": true,
             "autoDeleteFromGraveyard": false,
             "leaveStatusValues": [ "U", "64303", "64304" ]

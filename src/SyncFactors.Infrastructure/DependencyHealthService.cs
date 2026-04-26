@@ -21,7 +21,7 @@ public sealed class DependencyHealthService(
     ILogger<DependencyHealthService> logger,
     Func<ActiveDirectoryConfig, CancellationToken, Task<(string RequestedTransport, string EffectiveTransport, bool UsedFallback, int SuccessfulBaseCount, int SkippedBaseCount, string? SkippedBaseDetails)>>? activeDirectoryProbe = null) : IDependencyHealthService
 {
-    private static readonly TimeSpan ActiveDirectoryTimeout = TimeSpan.FromSeconds(10);
+    private static readonly TimeSpan DefaultActiveDirectoryTimeout = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan SuccessFactorsTimeout = TimeSpan.FromSeconds(10);
     private static readonly TimeSpan HealthyHeartbeatAge = TimeSpan.FromSeconds(45);
     private static readonly TimeSpan DegradedHeartbeatAge = TimeSpan.FromMinutes(2);
@@ -184,14 +184,15 @@ public sealed class DependencyHealthService(
                 return BuildProbe("Active Directory", DependencyHealthStates.Unhealthy, "Server is not configured.", checkedAt, stopwatch.ElapsedMilliseconds);
             }
 
+            var activeDirectoryTimeout = GetActiveDirectoryTimeout(config);
             using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            timeoutCts.CancelAfter(ActiveDirectoryTimeout);
+            timeoutCts.CancelAfter(activeDirectoryTimeout);
 
             var transportTask = activeDirectoryProbe is null
-                ? ProbeActiveDirectoryTransportAsync(config, timeoutCts.Token)
+                ? ProbeActiveDirectoryTransportAsync(config, activeDirectoryTimeout, timeoutCts.Token)
                 : activeDirectoryProbe(config, timeoutCts.Token);
 
-            var transportResult = await transportTask.WaitAsync(ActiveDirectoryTimeout, cancellationToken);
+            var transportResult = await transportTask.WaitAsync(activeDirectoryTimeout, cancellationToken);
 
             var details = new List<string>();
             if (transportResult.UsedFallback && !isProduction)
@@ -239,8 +240,10 @@ public sealed class DependencyHealthService(
         catch (TimeoutException ex)
         {
             logger.LogWarning(ex, "Active Directory health probe timed out.");
+            var config = configLoader.GetSyncConfig().Ad;
             return BuildActiveDirectoryTimeoutProbe(
-                configLoader.GetSyncConfig().Ad.Server,
+                config.Server,
+                GetActiveDirectoryTimeout(config),
                 checkedAt,
                 stopwatch.ElapsedMilliseconds,
                 ex);
@@ -248,8 +251,10 @@ public sealed class DependencyHealthService(
         catch (OperationCanceledException ex) when (!cancellationToken.IsCancellationRequested)
         {
             logger.LogWarning(ex, "Active Directory health probe timed out.");
+            var config = configLoader.GetSyncConfig().Ad;
             return BuildActiveDirectoryTimeoutProbe(
-                configLoader.GetSyncConfig().Ad.Server,
+                config.Server,
+                GetActiveDirectoryTimeout(config),
                 checkedAt,
                 stopwatch.ElapsedMilliseconds,
                 ex);
@@ -583,16 +588,17 @@ public sealed class DependencyHealthService(
         return currentSelectValues.FirstOrDefault(value => value.EndsWith($"/{propertyName}", StringComparison.Ordinal));
     }
 
-    private static ActiveDirectoryConnectionResult CreateLdapConnection(ActiveDirectoryConfig config)
-        => ActiveDirectoryConnectionFactory.CreateConnectionWithTransport(config, NullLogger<DependencyHealthService>.Instance, ActiveDirectoryTimeout);
+    private static ActiveDirectoryConnectionResult CreateLdapConnection(ActiveDirectoryConfig config, TimeSpan timeout)
+        => ActiveDirectoryConnectionFactory.CreateConnectionWithTransport(config, NullLogger<DependencyHealthService>.Instance, timeout);
 
     private static Task<(string RequestedTransport, string EffectiveTransport, bool UsedFallback, int SuccessfulBaseCount, int SkippedBaseCount, string? SkippedBaseDetails)> ProbeActiveDirectoryTransportAsync(
         ActiveDirectoryConfig config,
+        TimeSpan timeout,
         CancellationToken cancellationToken)
     {
         return Task.Run(() =>
         {
-            var connectionResult = CreateLdapConnection(config);
+            var connectionResult = CreateLdapConnection(config, timeout);
             using var connection = connectionResult.Connection;
 
             var searchBases = GetActiveDirectorySearchBases(config);
@@ -600,7 +606,7 @@ public sealed class DependencyHealthService(
             var skippedBases = new List<string>();
             foreach (var searchBase in searchBases)
             {
-                var (isSuccessful, failureReason) = ProbeActiveDirectorySearchBase(connection, config, searchBase);
+                var (isSuccessful, failureReason) = ProbeActiveDirectorySearchBase(connection, config, searchBase, timeout);
                 if (isSuccessful)
                 {
                     successfulBaseCount++;
@@ -653,6 +659,7 @@ public sealed class DependencyHealthService(
 
     private static DependencyProbeResult BuildActiveDirectoryTimeoutProbe(
         string server,
+        TimeSpan timeout,
         DateTimeOffset checkedAt,
         long durationMilliseconds,
         Exception? innerException = null)
@@ -660,13 +667,13 @@ public sealed class DependencyHealthService(
         var exception = ExternalSystemExceptionFactory.CreateActiveDirectoryTimeoutException(
             "health probe",
             server,
-            ActiveDirectoryTimeout,
+            timeout,
             innerException);
 
         return BuildProbe(
             "Active Directory",
             DependencyHealthStates.Unhealthy,
-            $"LDAP bind or lookup probe timed out after {Math.Max(1, (int)ActiveDirectoryTimeout.TotalSeconds)}s.",
+            $"LDAP bind or lookup probe timed out after {Math.Max(1, (int)timeout.TotalSeconds)}s.",
             checkedAt,
             durationMilliseconds,
             details: exception.Message);
@@ -684,7 +691,8 @@ public sealed class DependencyHealthService(
     private static (bool IsSuccessful, string? FailureReason) ProbeActiveDirectorySearchBase(
         LdapConnection connection,
         ActiveDirectoryConfig config,
-        string searchBase)
+        string searchBase,
+        TimeSpan timeout)
     {
         var request = new SearchRequest(
             searchBase,
@@ -692,11 +700,11 @@ public sealed class DependencyHealthService(
             SearchScope.Subtree,
             BuildActiveDirectoryLookupProbeAttributes(config.IdentityAttribute));
         request.SizeLimit = 1;
-        request.TimeLimit = ActiveDirectoryTimeout;
+        request.TimeLimit = timeout;
 
         try
         {
-            var response = (SearchResponse)connection.SendRequest(request, ActiveDirectoryTimeout);
+            var response = (SearchResponse)connection.SendRequest(request, timeout);
             return response.ResultCode switch
             {
                 ResultCode.Success => (true, null),
@@ -722,6 +730,13 @@ public sealed class DependencyHealthService(
         {
             return (false, "referral");
         }
+    }
+
+    private static TimeSpan GetActiveDirectoryTimeout(ActiveDirectoryConfig config)
+    {
+        return TimeSpan.FromSeconds(config.OperationTimeoutSeconds > 0
+            ? config.OperationTimeoutSeconds
+            : DefaultActiveDirectoryTimeout.TotalSeconds);
     }
 
     private static string[] BuildActiveDirectoryLookupProbeAttributes(string identityAttribute)

@@ -131,6 +131,8 @@
     "port": 636,
     "username": "",
     "bindPassword": "",
+    "operationTimeoutSeconds": 30,
+    "connectionPoolMaxIdleSeconds": 60,
     "identityAttribute": "sAMAccountName",
     "identityCorrelation": {
       "enabled": false,
@@ -165,7 +167,7 @@
   "sync": {
     "enableBeforeStartDays": 7,
     "deletionRetentionDays": 45,
-    "maxDegreeOfParallelism": 4,
+    "maxDegreeOfParallelism": 2,
     "realSyncEnabled": true,
     "autoDeleteFromGraveyard": false,
     "leaveStatusValues": [

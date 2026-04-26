@@ -72,6 +72,27 @@ public sealed class SyncFactorsConfigurationLoaderTests
     }
 
     [Fact]
+    public async Task GetSyncConfig_DefaultsActiveDirectoryTimeouts_WhenOmitted()
+    {
+        var config = await LoadConfigAsync(adJson: null);
+
+        Assert.Equal(30, config.Ad.OperationTimeoutSeconds);
+        Assert.Equal(60, config.Ad.ConnectionPoolMaxIdleSeconds);
+    }
+
+    [Fact]
+    public async Task GetSyncConfig_LoadsActiveDirectoryTimeouts_WhenConfigured()
+    {
+        var config = await LoadConfigAsync("""
+          "operationTimeoutSeconds": 45,
+          "connectionPoolMaxIdleSeconds": 15,
+        """);
+
+        Assert.Equal(45, config.Ad.OperationTimeoutSeconds);
+        Assert.Equal(15, config.Ad.ConnectionPoolMaxIdleSeconds);
+    }
+
+    [Fact]
     public async Task GetSyncConfig_LoadsCreateTimeEnableWithoutPasswordProvisioning_WhenExplicitlyTrue()
     {
         var config = await LoadConfigAsync("""

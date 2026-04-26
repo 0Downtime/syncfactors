@@ -14,8 +14,9 @@ public sealed class ActiveDirectoryCommandGateway(
     IActiveDirectoryConnectionPool connectionPool,
     ILogger<ActiveDirectoryCommandGateway> logger) : IDirectoryCommandGateway
 {
-    private static readonly TimeSpan LdapOperationTimeout = TimeSpan.FromSeconds(10);
+    private static readonly TimeSpan DefaultLdapOperationTimeout = TimeSpan.FromSeconds(30);
     private static readonly AsyncLocal<CommandExecutionContext?> CurrentCommandContext = new();
+    private static readonly AsyncLocal<TimeSpan?> CurrentLdapOperationTimeout = new();
     private const int NormalAccountControl = 0x0200;
     private const int AccountDisabledFlag = 0x0002;
     private const int DisabledNormalAccountControl = NormalAccountControl | AccountDisabledFlag;
@@ -50,15 +51,19 @@ public sealed class ActiveDirectoryCommandGateway(
             ActiveDirectoryConnectionPool.ActiveDirectoryConnectionLease? lease = null;
             var commandContext = new CommandExecutionContext();
             var previousContext = CurrentCommandContext.Value;
+            var previousTimeout = CurrentLdapOperationTimeout.Value;
+            var ldapOperationTimeout = GetLdapOperationTimeout(config);
             try
             {
                 logger.LogInformation("Executing AD command. Action={Action} WorkerId={WorkerId} SamAccountName={SamAccountName} Attempt={Attempt}", command.Action, command.WorkerId, command.SamAccountName, attempt + 1);
-                lease = connectionPool.Lease(config, logger, LdapOperationTimeout);
+                CurrentLdapOperationTimeout.Value = ldapOperationTimeout;
+                lease = connectionPool.Lease(config, logger, ldapOperationTimeout);
                 CurrentCommandContext.Value = commandContext;
                 var result = await ExecuteWithTimeoutAsync(
                     operation: () => ExecuteCommand(lease.Connection, command, config, logger, lease.EffectiveTransport),
                     operationName: $"command '{command.Action}'",
                     server: config.Server,
+                    timeout: ldapOperationTimeout,
                     cancellationToken: cancellationToken);
                 logger.LogInformation("AD command completed. Action={Action} WorkerId={WorkerId} Succeeded={Succeeded} Message={Message}", command.Action, command.WorkerId, result.Succeeded, result.Message);
                 return result;
@@ -113,6 +118,7 @@ public sealed class ActiveDirectoryCommandGateway(
             finally
             {
                 CurrentCommandContext.Value = previousContext;
+                CurrentLdapOperationTimeout.Value = previousTimeout;
                 lease?.Dispose();
             }
         }
@@ -848,15 +854,16 @@ public sealed class ActiveDirectoryCommandGateway(
         Func<T> operation,
         string operationName,
         string server,
+        TimeSpan timeout,
         CancellationToken cancellationToken)
     {
         try
         {
-            return await Task.Run(operation, cancellationToken).WaitAsync(LdapOperationTimeout, cancellationToken);
+            return await Task.Run(operation, cancellationToken).WaitAsync(timeout, cancellationToken);
         }
         catch (TimeoutException ex)
         {
-            throw ExternalSystemExceptionFactory.CreateActiveDirectoryTimeoutException(operationName, server, LdapOperationTimeout, ex);
+            throw ExternalSystemExceptionFactory.CreateActiveDirectoryTimeoutException(operationName, server, timeout, ex);
         }
     }
 
@@ -868,8 +875,10 @@ public sealed class ActiveDirectoryCommandGateway(
         params (string Key, object? Value)[] context)
     {
         var stopwatch = Stopwatch.StartNew();
+        var timeout = CurrentLdapOperationTimeout.Value ?? DefaultLdapOperationTimeout;
+        request.TimeLimit = timeout;
         logger.LogInformation("Starting AD search. Operation={Operation} Context={Context}", operation, FormatContext(context));
-        var response = (SearchResponse)connection.SendRequest(request);
+        var response = (SearchResponse)connection.SendRequest(request, timeout);
         logger.LogInformation(
             "Completed AD search. Operation={Operation} DurationMs={DurationMs} Entries={Entries} Context={Context}",
             operation,
@@ -887,14 +896,22 @@ public sealed class ActiveDirectoryCommandGateway(
         params (string Key, object? Value)[] context)
     {
         var stopwatch = Stopwatch.StartNew();
+        var timeout = CurrentLdapOperationTimeout.Value ?? DefaultLdapOperationTimeout;
         logger.LogInformation("Starting AD modify. Operation={Operation} Context={Context}", operation, FormatContext(context));
         CurrentCommandContext.Value?.MarkWriteAttempted();
-        connection.SendRequest(request);
+        connection.SendRequest(request, timeout);
         logger.LogInformation(
             "Completed AD modify. Operation={Operation} DurationMs={DurationMs} Context={Context}",
             operation,
             stopwatch.ElapsedMilliseconds,
             FormatContext(context));
+    }
+
+    private static TimeSpan GetLdapOperationTimeout(ActiveDirectoryConfig config)
+    {
+        return TimeSpan.FromSeconds(config.OperationTimeoutSeconds > 0
+            ? config.OperationTimeoutSeconds
+            : DefaultLdapOperationTimeout.TotalSeconds);
     }
 
     private static bool ShouldRetryTransientCommandFailure(LdapException exception, CommandExecutionContext context, int attempt)

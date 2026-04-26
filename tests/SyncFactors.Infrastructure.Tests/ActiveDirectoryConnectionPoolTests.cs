@@ -110,6 +110,36 @@ public sealed class ActiveDirectoryConnectionPoolTests
         Assert.False(lease.WasReused);
     }
 
+    [Fact]
+    public void Lease_DropsIdleConnectionsPastConfiguredMaxIdleAge()
+    {
+        var factoryCalls = 0;
+        using var pool = new ActiveDirectoryConnectionPool(
+            connectionFactory: (_, _, _) =>
+            {
+                factoryCalls++;
+                return new ActiveDirectoryConnectionResult(
+                    new LdapConnection(new LdapDirectoryIdentifier("localhost")),
+                    RequestedTransport: "ldaps",
+                    EffectiveTransport: "ldaps",
+                    UsedFallback: false);
+            });
+        var config = CreateConfig() with { ConnectionPoolMaxIdleSeconds = 1 };
+
+        LdapConnection firstConnection;
+        using (var lease = pool.Lease(config, NullLogger.Instance, TimeSpan.FromSeconds(1)))
+        {
+            firstConnection = lease.Connection;
+        }
+
+        Thread.Sleep(TimeSpan.FromMilliseconds(1100));
+        using var secondLease = pool.Lease(config, NullLogger.Instance, TimeSpan.FromSeconds(1));
+
+        Assert.NotSame(firstConnection, secondLease.Connection);
+        Assert.Equal(2, factoryCalls);
+        Assert.False(secondLease.WasReused);
+    }
+
     private static ActiveDirectoryConfig CreateConfig()
     {
         return new ActiveDirectoryConfig(

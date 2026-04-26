@@ -72,7 +72,9 @@ public sealed record ActiveDirectoryConfig(
     string? LeaveOu = null,
     string UpnSuffix = DirectoryIdentityFormatter.CorporateEmailDomain,
     IReadOnlyList<string>? LicensingGroups = null,
-    ActiveDirectoryIdentityCorrelationConfig? IdentityCorrelation = null);
+    ActiveDirectoryIdentityCorrelationConfig? IdentityCorrelation = null,
+    int OperationTimeoutSeconds = 30,
+    int ConnectionPoolMaxIdleSeconds = 60);
 
 public sealed record ActiveDirectoryTransportConfig(
     string Mode,

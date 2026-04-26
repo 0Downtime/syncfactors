@@ -36,9 +36,16 @@ public sealed class ActiveDirectoryConnectionPool : IActiveDirectoryConnectionPo
 
         var key = PoolKey.FromConfig(config);
         var bucket = _buckets.GetOrAdd(key, static _ => new PoolBucket());
-        if (bucket.IdleConnections.TryTake(out var pooledConnection))
+        while (bucket.IdleConnections.TryTake(out var pooledConnection))
         {
             Interlocked.Decrement(ref bucket.IdleCount);
+            if (IsExpired(pooledConnection, config))
+            {
+                logger.LogDebug("Discarding stale pooled AD connection. Server={Server}", config.Server);
+                pooledConnection.Connection.Dispose();
+                continue;
+            }
+
             logger.LogDebug("Reusing pooled AD connection. Server={Server}", config.Server);
             return new ActiveDirectoryConnectionLease(this, key, bucket, pooledConnection, wasReused: true);
         }
@@ -98,7 +105,13 @@ public sealed class ActiveDirectoryConnectionPool : IActiveDirectoryConnectionPo
             return;
         }
 
-        bucket.IdleConnections.Add(pooledConnection);
+        bucket.IdleConnections.Add(pooledConnection with { LastReturnedAt = DateTimeOffset.UtcNow });
+    }
+
+    private static bool IsExpired(PooledConnection pooledConnection, ActiveDirectoryConfig config)
+    {
+        var maxIdle = TimeSpan.FromSeconds(Math.Max(1, config.ConnectionPoolMaxIdleSeconds));
+        return DateTimeOffset.UtcNow - pooledConnection.LastReturnedAt >= maxIdle;
     }
 
     public sealed class ActiveDirectoryConnectionLease : IDisposable
@@ -164,7 +177,8 @@ public sealed class ActiveDirectoryConnectionPool : IActiveDirectoryConnectionPo
         LdapConnection Connection,
         string RequestedTransport,
         string EffectiveTransport,
-        bool UsedFallback)
+        bool UsedFallback,
+        DateTimeOffset LastReturnedAt)
     {
         public static PooledConnection From(ActiveDirectoryConnectionResult result)
         {
@@ -172,7 +186,8 @@ public sealed class ActiveDirectoryConnectionPool : IActiveDirectoryConnectionPo
                 result.Connection,
                 result.RequestedTransport,
                 result.EffectiveTransport,
-                result.UsedFallback);
+                result.UsedFallback,
+                DateTimeOffset.UtcNow);
         }
     }
 
@@ -182,6 +197,7 @@ public sealed class ActiveDirectoryConnectionPool : IActiveDirectoryConnectionPo
         string Username,
         string BindPassword,
         string TransportMode,
+        int OperationTimeoutSeconds,
         bool AllowLdapFallback,
         bool RequireCertificateValidation,
         bool RequireSigning,
@@ -195,6 +211,7 @@ public sealed class ActiveDirectoryConnectionPool : IActiveDirectoryConnectionPo
                 config.Username ?? string.Empty,
                 config.BindPassword ?? string.Empty,
                 config.Transport.Mode,
+                config.OperationTimeoutSeconds,
                 config.Transport.AllowLdapFallback,
                 config.Transport.RequireCertificateValidation,
                 config.Transport.RequireSigning,

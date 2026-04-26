@@ -530,6 +530,8 @@ For full-sync `EmpJob` queries, `successFactors.query.inactiveRetentionDays` can
 
 Queued bulk runs read worker concurrency from `sync.maxDegreeOfParallelism`. The sample configs default this to `2`. Increase it cautiously based on SuccessFactors and AD capacity.
 
+Active Directory LDAP operations default to a 30-second client timeout via `ad.operationTimeoutSeconds`. Pooled LDAP connections are discarded after `ad.connectionPoolMaxIdleSeconds` idle seconds, defaulting to 60, to avoid reusing sockets that a domain controller or network device has already dropped.
+
 ## Authentication Modes
 
 The API serves the same operator UI in all auth modes and protects it with cookie auth after sign-in.

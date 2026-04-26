@@ -14,7 +14,8 @@ public sealed class ActiveDirectoryGateway(
     IActiveDirectoryConnectionPool connectionPool,
     ILogger<ActiveDirectoryGateway> logger) : IDirectoryGateway
 {
-    private static readonly TimeSpan LdapOperationTimeout = TimeSpan.FromSeconds(10);
+    private static readonly TimeSpan DefaultLdapOperationTimeout = TimeSpan.FromSeconds(30);
+    private static readonly AsyncLocal<TimeSpan?> CurrentLdapOperationTimeout = new();
     private static readonly Regex LdapAttributeNamePattern = new("^[A-Za-z][A-Za-z0-9-]*$", RegexOptions.Compiled);
     private const int OuListingPageSize = 500;
     private const int MaxTransientLdapRetries = 3;
@@ -128,9 +129,12 @@ public sealed class ActiveDirectoryGateway(
         for (var attempt = 0; ; attempt++)
         {
             ActiveDirectoryConnectionPool.ActiveDirectoryConnectionLease? lease = null;
+            var ldapOperationTimeout = GetLdapOperationTimeout(config);
+            var previousTimeout = CurrentLdapOperationTimeout.Value;
             try
             {
-                lease = connectionPool.Lease(config, logger, LdapOperationTimeout);
+                CurrentLdapOperationTimeout.Value = ldapOperationTimeout;
+                lease = connectionPool.Lease(config, logger, ldapOperationTimeout);
                 logger.LogInformation(
                     "AD {Operation} acquired {ConnectionSource} connection. Server={Server} RequestedTransport={RequestedTransport} EffectiveTransport={EffectiveTransport} UsedFallback={UsedFallback} Attempt={Attempt}",
                     operationName,
@@ -144,6 +148,7 @@ public sealed class ActiveDirectoryGateway(
                     operation: () => operation(lease),
                     operationName,
                     server: config.Server,
+                    timeout: ldapOperationTimeout,
                     cancellationToken);
             }
             catch (LdapException ex) when (ShouldRetryTransientLdapFailure(ex, attempt))
@@ -219,6 +224,7 @@ public sealed class ActiveDirectoryGateway(
             }
             finally
             {
+                CurrentLdapOperationTimeout.Value = previousTimeout;
                 lease?.Dispose();
             }
         }
@@ -1092,15 +1098,16 @@ public sealed class ActiveDirectoryGateway(
         Func<T> operation,
         string operationName,
         string server,
+        TimeSpan timeout,
         CancellationToken cancellationToken)
     {
         try
         {
-            return await Task.Run(operation, cancellationToken).WaitAsync(LdapOperationTimeout, cancellationToken);
+            return await Task.Run(operation, cancellationToken).WaitAsync(timeout, cancellationToken);
         }
         catch (TimeoutException ex)
         {
-            throw ExternalSystemExceptionFactory.CreateActiveDirectoryTimeoutException(operationName, server, LdapOperationTimeout, ex);
+            throw ExternalSystemExceptionFactory.CreateActiveDirectoryTimeoutException(operationName, server, timeout, ex);
         }
     }
 
@@ -1133,14 +1140,23 @@ public sealed class ActiveDirectoryGateway(
         string operation)
     {
         var stopwatch = Stopwatch.StartNew();
+        var timeout = CurrentLdapOperationTimeout.Value ?? DefaultLdapOperationTimeout;
+        request.TimeLimit = timeout;
         logger.LogInformation("Starting AD search. Operation={Operation}", operation);
-        var response = (SearchResponse)connection.SendRequest(request);
+        var response = (SearchResponse)connection.SendRequest(request, timeout);
         logger.LogInformation(
             "Completed AD search. Operation={Operation} DurationMs={DurationMs} Entries={Entries}",
             operation,
             stopwatch.ElapsedMilliseconds,
             response.Entries.Count);
         return response;
+    }
+
+    private static TimeSpan GetLdapOperationTimeout(ActiveDirectoryConfig config)
+    {
+        return TimeSpan.FromSeconds(config.OperationTimeoutSeconds > 0
+            ? config.OperationTimeoutSeconds
+            : DefaultLdapOperationTimeout.TotalSeconds);
     }
 
     private static bool IsReferralException(DirectoryOperationException exception)

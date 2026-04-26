@@ -104,7 +104,9 @@ public sealed class SyncFactorsConfigurationLoader
                     .Select(item => NormalizeRequiredValue(item, "ad.licensingGroups[]"))
                     .Distinct(StringComparer.OrdinalIgnoreCase)
                     .ToArray() ?? [],
-                IdentityCorrelation: LoadActiveDirectoryIdentityCorrelation(document.GetRequiredObject("ad"))),
+                IdentityCorrelation: LoadActiveDirectoryIdentityCorrelation(document.GetRequiredObject("ad")),
+                OperationTimeoutSeconds: TryGetInt32(document.GetRequiredObject("ad"), "operationTimeoutSeconds") ?? 30,
+                ConnectionPoolMaxIdleSeconds: TryGetInt32(document.GetRequiredObject("ad"), "connectionPoolMaxIdleSeconds") ?? 60),
             Sync: new SyncPolicyConfig(
                 EnableBeforeStartDays: document.GetRequiredObject("sync").GetRequiredInt32("enableBeforeStartDays"),
                 DeletionRetentionDays: document.GetRequiredObject("sync").GetRequiredInt32("deletionRetentionDays"),

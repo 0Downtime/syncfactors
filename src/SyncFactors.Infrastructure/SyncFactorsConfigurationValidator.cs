@@ -75,6 +75,16 @@ public sealed class SyncFactorsConfigurationValidator(SyncFactorsConfigurationLo
             throw new InvalidOperationException("SyncFactors sync policy values must be non-negative.");
         }
 
+        if (sync.Ad.OperationTimeoutSeconds <= 0)
+        {
+            throw new InvalidOperationException("SyncFactors AD operationTimeoutSeconds must be positive.");
+        }
+
+        if (sync.Ad.ConnectionPoolMaxIdleSeconds <= 0)
+        {
+            throw new InvalidOperationException("SyncFactors AD connectionPoolMaxIdleSeconds must be positive.");
+        }
+
         if (sync.Sync.MaxDegreeOfParallelism <= 0)
         {
             throw new InvalidOperationException("SyncFactors sync.maxDegreeOfParallelism must be positive.");
