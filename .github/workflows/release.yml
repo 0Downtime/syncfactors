@@ -1,0 +1,180 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Stable SemVer version to publish. Must match the VERSION file at the target ref.
+        required: true
+        type: string
+      target_ref:
+        description: Branch, tag, or commit SHA to release.
+        required: false
+        default: main
+        type: string
+
+permissions: {}
+
+concurrency:
+  group: release-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  prerelease:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up .NET SDK
+        uses: actions/setup-dotnet@c2fa09f4bde5ebb9d1777cf28262a3eb3db3ced7 # v5
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Resolve prerelease metadata
+        id: release_info
+        shell: pwsh
+        run: |
+          $info = & ./scripts/Get-SyncFactorsReleaseInfo.ps1 -Channel Prerelease -RunNumber $env:GITHUB_RUN_NUMBER -CommitSha $env:GITHUB_SHA
+          "version=$($info.version)" >> $env:GITHUB_OUTPUT
+          "tag=$($info.tag)" >> $env:GITHUB_OUTPUT
+          "commit_sha=$($info.commitSha)" >> $env:GITHUB_OUTPUT
+
+      - name: Publish applications
+        shell: pwsh
+        run: |
+          dotnet publish ./src/SyncFactors.Api/SyncFactors.Api.csproj --configuration Release --output ./artifacts/publish/api /p:Version="${{ steps.release_info.outputs.version }}"
+          dotnet publish ./src/SyncFactors.Worker/SyncFactors.Worker.csproj --configuration Release --output ./artifacts/publish/worker /p:Version="${{ steps.release_info.outputs.version }}"
+
+      - name: Build deployment bundle
+        id: bundle
+        shell: pwsh
+        run: |
+          New-Item -Path ./artifacts/releases -ItemType Directory -Force | Out-Null
+          $bundlePath = Join-Path (Resolve-Path ./artifacts/releases) "syncfactors-${{ steps.release_info.outputs.version }}.zip"
+          $bundle = & ./scripts/New-SyncFactorsReleaseBundle.ps1 -OutputPath $bundlePath -Version "${{ steps.release_info.outputs.version }}" -CommitSha "${{ steps.release_info.outputs.commit_sha }}"
+          "bundle_path=$($bundle.bundlePath)" >> $env:GITHUB_OUTPUT
+
+      - name: Publish prerelease
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          gh release create "${{ steps.release_info.outputs.tag }}" "${{ steps.bundle.outputs.bundle_path }}" \
+            --repo "${{ github.repository }}" \
+            --target "${{ steps.release_info.outputs.commit_sha }}" \
+            --title "${{ steps.release_info.outputs.version }}" \
+            --prerelease \
+            --latest=false \
+            --generate-notes
+
+  stable-release:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      checks: read
+      contents: write
+    steps:
+      - name: Check out target ref
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ inputs.target_ref }}
+
+      - name: Set up .NET SDK
+        uses: actions/setup-dotnet@c2fa09f4bde5ebb9d1777cf28262a3eb3db3ced7 # v5
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Resolve stable release metadata
+        id: release_info
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+        shell: pwsh
+        run: |
+          $commitSha = (git rev-parse HEAD).Trim()
+          $info = & ./scripts/Get-SyncFactorsReleaseInfo.ps1 -Channel Stable -Version $env:RELEASE_VERSION -CommitSha $commitSha
+          "version=$($info.version)" >> $env:GITHUB_OUTPUT
+          "tag=$($info.tag)" >> $env:GITHUB_OUTPUT
+          "commit_sha=$($info.commitSha)" >> $env:GITHUB_OUTPUT
+
+      - name: Verify required CI checks succeeded
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY_NAME: ${{ github.repository }}
+          RELEASE_COMMIT_SHA: ${{ steps.release_info.outputs.commit_sha }}
+        shell: pwsh
+        run: |
+          $requiredChecks = @(
+              'dotnet',
+              'Semgrep Security SAST',
+              'Gitleaks Secret Scan',
+              'Trivy Repository Scan',
+              'Analyze (csharp, manual)',
+              'Analyze (javascript-typescript, none)'
+          )
+
+          $response = gh api "repos/$env:GITHUB_REPOSITORY_NAME/commits/$env:RELEASE_COMMIT_SHA/check-runs?per_page=100" | ConvertFrom-Json -Depth 20
+          $latestByName = @{}
+          foreach ($check in ($response.check_runs | Sort-Object started_at -Descending)) {
+              if (-not $latestByName.ContainsKey($check.name)) {
+                  $latestByName[$check.name] = $check.conclusion
+              }
+          }
+
+          $missingChecks = @()
+          $failedChecks = @()
+          foreach ($checkName in $requiredChecks) {
+              if (-not $latestByName.ContainsKey($checkName)) {
+                  $missingChecks += $checkName
+                  continue
+              }
+
+              if ($latestByName[$checkName] -ne 'success') {
+                  $failedChecks += "$checkName=$($latestByName[$checkName])"
+              }
+          }
+
+          if ($missingChecks.Count -gt 0) {
+              throw "Stable release is blocked because required CI checks are missing: $($missingChecks -join ', ')"
+          }
+
+          if ($failedChecks.Count -gt 0) {
+              throw "Stable release is blocked because required CI checks are not green: $($failedChecks -join ', ')"
+          }
+
+      - name: Publish applications
+        shell: pwsh
+        run: |
+          dotnet publish ./src/SyncFactors.Api/SyncFactors.Api.csproj --configuration Release --output ./artifacts/publish/api /p:Version="${{ steps.release_info.outputs.version }}"
+          dotnet publish ./src/SyncFactors.Worker/SyncFactors.Worker.csproj --configuration Release --output ./artifacts/publish/worker /p:Version="${{ steps.release_info.outputs.version }}"
+
+      - name: Build deployment bundle
+        id: bundle
+        shell: pwsh
+        run: |
+          New-Item -Path ./artifacts/releases -ItemType Directory -Force | Out-Null
+          $bundlePath = Join-Path (Resolve-Path ./artifacts/releases) "syncfactors-${{ steps.release_info.outputs.version }}.zip"
+          $bundle = & ./scripts/New-SyncFactorsReleaseBundle.ps1 -OutputPath $bundlePath -Version "${{ steps.release_info.outputs.version }}" -CommitSha "${{ steps.release_info.outputs.commit_sha }}"
+          "bundle_path=$($bundle.bundlePath)" >> $env:GITHUB_OUTPUT
+
+      - name: Publish stable release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          gh release create "${{ steps.release_info.outputs.tag }}" "${{ steps.bundle.outputs.bundle_path }}" \
+            --repo "${{ github.repository }}" \
+            --target "${{ steps.release_info.outputs.commit_sha }}" \
+            --title "${{ steps.release_info.outputs.version }}" \
+            --generate-notes
