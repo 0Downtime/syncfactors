@@ -1612,7 +1612,7 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
         });
     }
 
-    function buildRunMixMax(runs) {
+    function buildRunMixAxis(runs) {
         const stackedDefinitions = bucketDefinitions.filter(function (definition) { return definition.runMix; });
         const rawMax = runs.reduce(function (currentMax, run) {
             const total = stackedDefinitions.reduce(function (sum, definition) {
@@ -1621,11 +1621,28 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
             return Math.max(currentMax, total);
         }, 0);
 
-        if (rawMax <= 0) {
-            return 1;
+        if (rawMax <= 5) {
+            return { max: 5, splitNumber: 5 };
         }
 
-        return Math.ceil((rawMax * 1.12) / 100) * 100;
+        if (rawMax <= 10) {
+            return { max: 10, splitNumber: 5 };
+        }
+
+        if (rawMax <= 20) {
+            return { max: 20, splitNumber: 4 };
+        }
+
+        if (rawMax <= 50) {
+            return { max: 50, splitNumber: 5 };
+        }
+
+        const paddedMax = rawMax * 1.12;
+        const max = paddedMax <= 100
+            ? 100
+            : Math.ceil(paddedMax / 100) * 100;
+
+        return { max, splitNumber: 5 };
     }
 
     function bindRunsChartEvents(displayRuns) {
@@ -1675,7 +1692,7 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
         const palette = getThemePalette();
         const displayRuns = runs.slice(0, 10).reverse();
         const labels = displayRuns.map(function (run) { return formatChartTimestamp(run.startedAt); });
-        const runMixMax = buildRunMixMax(displayRuns);
+        const runMixAxis = buildRunMixAxis(displayRuns);
 
         runsChartInstance.setOption({
             animationDuration: motionAllowed() ? 420 : 0,
@@ -1696,7 +1713,9 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
             },
             yAxis: {
                 type: "value",
-                max: runMixMax,
+                max: runMixAxis.max,
+                minInterval: 1,
+                splitNumber: runMixAxis.splitNumber,
                 axisLabel: { color: palette.muted },
                 splitLine: { lineStyle: { color: palette.line } }
             },
