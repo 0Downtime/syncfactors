@@ -114,8 +114,8 @@ public sealed class UiRunFormattingTests
             Mode: "BulkSync",
             DryRun: true,
             Status: "Succeeded",
-            StartedAt: DateTimeOffset.Parse("2026-04-18T12:00:00Z"),
-            CompletedAt: DateTimeOffset.Parse("2026-04-18T12:10:00Z"),
+            StartedAt: CreateLocalTimestamp(2026, 4, 18, 8, 0),
+            CompletedAt: CreateLocalTimestamp(2026, 4, 18, 8, 10),
             DurationSeconds: 600,
             ProcessedWorkers: processedWorkers,
             TotalWorkers: totalWorkers,
@@ -131,4 +131,10 @@ public sealed class UiRunFormattingTests
             ManualReview: manualReview,
             Unchanged: unchanged,
             SyncScope: "Full sync");
+
+    private static DateTimeOffset CreateLocalTimestamp(int year, int month, int day, int hour, int minute)
+    {
+        var localTime = new DateTime(year, month, day, hour, minute, 0, DateTimeKind.Unspecified);
+        return new DateTimeOffset(localTime, TimeZoneInfo.Local.GetUtcOffset(localTime));
+    }
 }
