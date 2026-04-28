@@ -206,11 +206,14 @@ function Invoke-SolutionBuild {
     param(
         [Parameter(Mandatory)]
         [string]$ProjectRoot,
-        [Parameter(Mandatory)]
         [string]$BuildVersion
     )
 
     Initialize-DotnetEnvironment -ProjectRoot $ProjectRoot
+
+    if ([string]::IsNullOrWhiteSpace($BuildVersion)) {
+        $BuildVersion = Resolve-SyncFactorsBuildVersion -ProjectRoot $ProjectRoot
+    }
 
     dotnet build (Join-Path $ProjectRoot 'SyncFactors.Next.sln') `
         -m:1 `
