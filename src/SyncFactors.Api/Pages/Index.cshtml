@@ -97,7 +97,19 @@
                 <p class="dashboard-progress-value" data-progress-caption>@ProgressLabel(Model.Status)</p>
             </div>
             <div class="dashboard-progress-track" aria-hidden="true">
-                <span class="dashboard-progress-fill" data-progress-fill style="width: @(ProgressFillWidth(Model.Status))%;"></span>
+                <span class="dashboard-progress-fill" data-progress-fill style="width: @(ProgressFillWidth(Model.Status))%;">
+                    <span class="lemming-push">
+                        <span class="lemming lemming-pusher"></span>
+                        <span class="lemming-brick-stack">
+                            <span class="lemming-brick"></span>
+                            <span class="lemming-brick"></span>
+                            <span class="lemming-brick"></span>
+                        </span>
+                    </span>
+                    <span class="lemming-office" aria-hidden="true">
+                        <span class="lemming-office-door"></span>
+                    </span>
+                </span>
             </div>
             <p class="muted dashboard-progress-copy" data-progress-copy>@ProgressCopy(Model.Status)</p>
         </section>
