@@ -422,6 +422,7 @@ public sealed class AutomationRunner(AutomationOptions options, TextWriter outpu
             await AutomationConsole.WriteStageAsync(output, $"[{scenario.Name}] Resetting mock SuccessFactors runtime workers.");
             await EnsureSuccessAsync(await _mockClient.PostAsync("/api/admin/reset", null, cancellationToken), "mock reset", cancellationToken);
             await AutomationConsole.WritePassAsync(output, $"[{scenario.Name}] Mock reset completed.");
+            await IsolateMockWorkersAsync(scenario, cancellationToken);
         }
 
         if (scenario.ResetAdBeforeScenario)
@@ -507,7 +508,8 @@ public sealed class AutomationRunner(AutomationOptions options, TextWriter outpu
         await AutomationConsole.WriteStageAsync(output, $"[{scenario.Name}] Verifying final AD expectations.");
         failures.AddRange(await VerifyAdAsync(scenario, cancellationToken));
         var finalSnapshot = await CaptureManagedOuSnapshotAsync(scenario, "final", cancellationToken);
-        var adDiff = AutomationAdDiff.Build(scenario.FinalExpectation?.ExpectedAdUsers ?? scenario.FinalExpectation?.DirectoryUsers ?? [], finalSnapshot);
+        var config = new SyncFactorsConfigurationLoader(new SyncFactorsConfigPathResolver(options.ConfigPath, options.MappingConfigPath)).GetSyncConfig();
+        var adDiff = AutomationAdDiff.Build(ResolveExpectedUsers(scenario.FinalExpectation?.ExpectedAdUsers ?? scenario.FinalExpectation?.DirectoryUsers ?? [], config), finalSnapshot);
         failures.AddRange(adDiff.Where(diff => diff.Severity.Equals("Failure", StringComparison.OrdinalIgnoreCase)).Select(diff => diff.Message));
         if (options.Idempotency)
         {
@@ -748,6 +750,71 @@ public sealed class AutomationRunner(AutomationOptions options, TextWriter outpu
         }
     }
 
+    private async Task IsolateMockWorkersAsync(AutomationScenario scenario, CancellationToken cancellationToken)
+    {
+        var keep = GetScenarioWorkerIds(scenario);
+        if (keep.Count == 0)
+        {
+            return;
+        }
+
+        var payload = await GetJsonObjectAsync(_mockClient, "/api/admin/workers", cancellationToken);
+        var workers = payload["workers"]?.AsArray().OfType<JsonObject>() ?? [];
+        var deleted = 0;
+        foreach (var worker in workers)
+        {
+            var workerId = ReadString(worker, "personIdExternal");
+            if (string.IsNullOrWhiteSpace(workerId) || keep.Contains(workerId))
+            {
+                continue;
+            }
+
+            var response = await _mockClient.DeleteAsync($"/api/admin/workers/{Uri.EscapeDataString(workerId)}", cancellationToken);
+            if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+            {
+                continue;
+            }
+
+            await EnsureSuccessAsync(response, $"delete mock worker {workerId}", cancellationToken);
+            deleted++;
+        }
+
+        await AutomationConsole.WriteInfoAsync(output, $"[{scenario.Name}] Isolated mock source to {keep.Count} scenario worker(s); deleted {deleted} non-scenario worker(s).");
+    }
+
+    private static IReadOnlySet<string> GetScenarioWorkerIds(AutomationScenario scenario)
+    {
+        var ids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var mutation in scenario.Iterations.SelectMany(iteration => iteration.Mutations ?? []))
+        {
+            if (!string.IsNullOrWhiteSpace(mutation.WorkerId))
+            {
+                ids.Add(mutation.WorkerId);
+            }
+        }
+
+        foreach (var expected in scenario.Iterations
+            .Select(iteration => iteration.Expectation)
+            .Where(expectation => expectation is not null)
+            .SelectMany(expectation => expectation!.WorkerOperations))
+        {
+            if (!string.IsNullOrWhiteSpace(expected.WorkerId))
+            {
+                ids.Add(expected.WorkerId);
+            }
+        }
+
+        foreach (var expected in scenario.FinalExpectation?.ExpectedAdUsers ?? scenario.FinalExpectation?.DirectoryUsers ?? [])
+        {
+            if (!string.IsNullOrWhiteSpace(expected.WorkerId))
+            {
+                ids.Add(expected.WorkerId);
+            }
+        }
+
+        return ids;
+    }
+
     private async Task<bool> MockWorkerExistsAsync(string workerId, CancellationToken cancellationToken)
     {
         var response = await _mockClient.GetAsync($"/api/admin/workers/{Uri.EscapeDataString(workerId)}", cancellationToken);
@@ -897,6 +964,7 @@ public sealed class AutomationRunner(AutomationOptions options, TextWriter outpu
         var failures = new List<string>();
         var loader = new SyncFactorsConfigurationLoader(new SyncFactorsConfigPathResolver(options.ConfigPath, options.MappingConfigPath));
         var config = loader.GetSyncConfig();
+        expectedUsers = ResolveExpectedUsers(expectedUsers, config);
         if (!config.Sync.RealSyncEnabled)
         {
             throw new InvalidOperationException("Automation real AD verification requires sync.realSyncEnabled=true.");
@@ -1016,6 +1084,38 @@ public sealed class AutomationRunner(AutomationOptions options, TextWriter outpu
             }
         }
     }
+
+    private static IReadOnlyList<AutomationExpectedAdUser> ResolveExpectedUsers(IReadOnlyList<AutomationExpectedAdUser> expectedUsers, SyncFactorsConfigDocument config)
+    {
+        return expectedUsers
+            .Select(expected => expected with
+            {
+                ParentOu = ResolveOuToken(expected.ParentOu, config),
+                Attributes = expected.Attributes
+                    .ToDictionary(pair => pair.Key, pair => ResolveAttributeToken(pair.Value, config), StringComparer.OrdinalIgnoreCase)
+            })
+            .ToArray();
+    }
+
+    private static string? ResolveOuToken(string? value, SyncFactorsConfigDocument config) =>
+        value switch
+        {
+            "{{activeOu}}" => config.Ad.DefaultActiveOu,
+            "{{prehireOu}}" => config.Ad.PrehireOu,
+            "{{graveyardOu}}" => config.Ad.GraveyardOu,
+            "{{leaveOu}}" => string.IsNullOrWhiteSpace(config.Ad.LeaveOu) ? config.Ad.DefaultActiveOu : config.Ad.LeaveOu,
+            _ => value
+        };
+
+    private static string? ResolveAttributeToken(string? value, SyncFactorsConfigDocument config) =>
+        value switch
+        {
+            "{{activeOu}}" => config.Ad.DefaultActiveOu,
+            "{{prehireOu}}" => config.Ad.PrehireOu,
+            "{{graveyardOu}}" => config.Ad.GraveyardOu,
+            "{{leaveOu}}" => string.IsNullOrWhiteSpace(config.Ad.LeaveOu) ? config.Ad.DefaultActiveOu : config.Ad.LeaveOu,
+            _ => value
+        };
 
     private static IReadOnlyDictionary<string, int> ExtractBucketCounts(JsonObject? runDetail, IReadOnlyList<JsonObject> entries)
     {

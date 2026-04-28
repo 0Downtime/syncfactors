@@ -19,6 +19,11 @@ $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'Test-SyncFactorsActiveDirectoryOuAccess.ps1')
 
 $projectRoot = Resolve-ProjectRoot
+$worktreeEnvScript = Join-Path $projectRoot 'scripts/codex/Load-WorktreeEnv.ps1'
+if (Test-Path $worktreeEnvScript) {
+    . $worktreeEnvScript
+}
+
 $readinessStarted = Get-Date
 $summary = [System.Collections.Generic.List[object]]::new()
 
@@ -173,21 +178,16 @@ try {
     }
 
     Invoke-ReadinessStage -Name 'real API worker AD scenario suites' -ScriptBlock {
-        $e2eArgs = @(
-            '-Scenario', $scenarioGlob,
-            '-ReportPath', $e2eReportPath,
-            '-SkipBuild',
-            '-TimeoutMinutes', $TimeoutMinutes
-        )
-        foreach ($tag in $effectiveTags) {
-            $e2eArgs += @('-Tags', $tag)
-        }
-        if ($AllowAdReset) { $e2eArgs += '-AllowAdReset' }
-        if ($IncludeDestructive) { $e2eArgs += '-IncludeDestructive' }
-        if ($IncludeScale) { $e2eArgs += '-IncludeScale' }
-        if ($IncludeRecovery) { $e2eArgs += '-IncludeRecovery' }
-
-        & pwsh (Join-Path $projectRoot 'scripts/Run-SyncFactorsE2EAutomation.ps1') @e2eArgs
+        & (Join-Path $projectRoot 'scripts/Run-SyncFactorsE2EAutomation.ps1') `
+            -Scenario $scenarioGlob `
+            -ReportPath $e2eReportPath `
+            -SkipBuild `
+            -TimeoutMinutes $TimeoutMinutes `
+            -Tags ($effectiveTags -join ',') `
+            -AllowAdReset:$AllowAdReset `
+            -IncludeDestructive:$IncludeDestructive `
+            -IncludeScale:$IncludeScale `
+            -IncludeRecovery:$IncludeRecovery
         if ($LASTEXITCODE -ne 0) {
             throw "Real AD E2E automation failed."
         }

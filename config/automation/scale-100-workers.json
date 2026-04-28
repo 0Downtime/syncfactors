@@ -50,10 +50,9 @@
       {
         "workerId": "10003",
         "samAccountName": "10003",
-        "parentOu": "OU=Active,OU=SyncFactors-Users,DC=example,DC=test",
+        "parentOu": "{{activeOu}}",
         "enabled": true,
         "attributes": {
-          "employeeID": "10003",
           "company": "CORP Scale"
         }
       }

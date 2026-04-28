@@ -71,6 +71,25 @@ if ($Scenario.Count -eq 0) {
     $Scenario = @(Join-Path $projectRoot 'config/automation/*.json')
 }
 
+$resolvedScenarios = [System.Collections.Generic.List[string]]::new()
+foreach ($item in $Scenario) {
+    if ($item.Contains('*') -or $item.Contains('?')) {
+        $matches = @(Get-ChildItem -Path $item -File | Sort-Object -Property FullName)
+        foreach ($match in $matches) {
+            $resolvedScenarios.Add($match.FullName)
+        }
+    }
+    else {
+        $resolvedScenarios.Add((Resolve-Path $item).Path)
+    }
+}
+
+if ($resolvedScenarios.Count -eq 0) {
+    throw "No automation scenarios matched '$($Scenario -join ', ')'."
+}
+
+$Scenario = $resolvedScenarios.ToArray()
+
 if ([string]::IsNullOrWhiteSpace($ReportPath)) {
     $ReportPath = Join-Path $projectRoot ("state/runtime/automation-reports/e2e-{0}.md" -f (Get-Date -Format 'yyyyMMddHHmmss'))
 }

@@ -88,7 +88,7 @@
       "expectation": {
         "runStatus": "Succeeded",
         "bucketCounts": {
-          "updates": 1
+          "disables": 1
         },
         "workerOperations": [
           {
@@ -157,11 +157,9 @@
       {
         "workerId": "10003",
         "samAccountName": "10003",
-        "parentOu": "OU=Graveyard,OU=SyncFactors-Users,DC=example,DC=test",
+        "parentOu": "{{graveyardOu}}",
         "enabled": false,
-        "displayName": "Sample103, Casey",
         "attributes": {
-          "employeeID": "10003",
           "company": "CORP West",
           "streetAddress": "300 Example Way"
         }
