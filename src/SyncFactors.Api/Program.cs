@@ -16,6 +16,7 @@ using System.Text.Json;
 const string ViewerPolicy = "Viewer";
 const string OperatorPolicy = "Operator";
 const string AdminPolicy = "Admin";
+const string WindowsServiceName = "SyncFactors.Api";
 
 var launcherProbeAction = LauncherProbe.GetRequestedAction(args);
 if (!string.IsNullOrWhiteSpace(launcherProbeAction))
@@ -38,6 +39,7 @@ if (!string.IsNullOrWhiteSpace(launcherProbeAction))
 }
 
 var builder = WebApplication.CreateBuilder(args);
+ConfigureWindowsService(builder.Services, WindowsServiceName);
 ConfigureLocalFileLogging(
     builder.Logging,
     processName: "api",
@@ -1096,6 +1098,31 @@ static void ConfigureLocalFileLogging(
 
     logging.AddSerilog(logger, dispose: true);
     logging.AddProvider(new RunScopedFileLoggerProvider(directoryValue));
+}
+
+static void ConfigureWindowsService(IServiceCollection services, string serviceName)
+{
+    services.AddWindowsService(options =>
+    {
+        options.ServiceName = serviceName;
+    });
+
+    if (OperatingSystem.IsWindows())
+    {
+        ConfigureWindowsEventLog(services, serviceName);
+    }
+}
+
+[System.Runtime.Versioning.SupportedOSPlatform("windows")]
+static void ConfigureWindowsEventLog(IServiceCollection services, string serviceName)
+{
+    services.Configure<Microsoft.Extensions.Logging.EventLog.EventLogSettings>(options =>
+    {
+#pragma warning disable CA1416
+        options.LogName = "Application";
+        options.SourceName = serviceName;
+#pragma warning restore CA1416
+    });
 }
 
 static void ConfigureApplicationInsights(WebApplicationBuilder builder)
