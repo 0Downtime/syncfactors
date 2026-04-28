@@ -155,6 +155,7 @@ pwsh ./scripts/Bootstrap-SyncFactorsE2EAutomation.ps1
 pwsh ./scripts/Run-SyncFactorsE2EAutomation.ps1 `
   -Scenario ./config/automation/sample-real-ad-lifecycle.json `
   -AllowAdReset `
+  -IncludeDestructive `
   -StartStack
 ```
 
@@ -168,6 +169,17 @@ You can also manage those secrets directly in `.env.worktree`, Windows Credentia
 ./scripts/codex/set-macos-keychain-secret.sh SYNCFACTORS_AUTOMATION_USERNAME
 ./scripts/codex/set-macos-keychain-secret.sh SYNCFACTORS_AUTOMATION_PASSWORD
 ```
+
+Run the production-readiness gate against the real local stack:
+
+```powershell
+pwsh ./scripts/Run-SyncFactorsProductionReadiness.ps1 `
+  -AllowAdReset `
+  -IncludeDestructive `
+  -StartStack
+```
+
+The readiness gate runs build, tests, lifecycle simulator coverage, config/AD OU preflight, and the real API/worker/AD scenario suites tagged `smoke`, `identity`, and `routing`. Add `-IncludeScale` or `-IncludeRecovery` for the heavier release-gated suites. Reports land under `state/runtime/automation-reports/`.
 
 Run the focused multi-user sample:
 

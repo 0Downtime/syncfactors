@@ -638,7 +638,7 @@ public sealed class AutomationRunner(AutomationOptions options, TextWriter outpu
         return new AutomationAdSnapshot(phase, DateTimeOffset.UtcNow, users.Count, users, duplicates);
     }
 
-    private static IReadOnlyList<(string Name, string DistinguishedName)> GetManagedOus(SyncFactorsConfig config)
+    private static IReadOnlyList<(string Name, string DistinguishedName)> GetManagedOus(SyncFactorsConfigDocument config)
     {
         return new[]
         {

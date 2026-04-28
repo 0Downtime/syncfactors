@@ -176,19 +176,20 @@ $readinessReport = [pscustomobject]@{
 $readinessReport | ConvertTo-Json -Depth 8 | Set-Content -Path $jsonReportPath
 
 $markdown = [System.Text.StringBuilder]::new()
+$readinessStatus = if ($passed) { 'PASSED' } else { 'FAILED' }
 [void]$markdown.AppendLine('# SyncFactors Production Readiness Report')
 [void]$markdown.AppendLine()
-[void]$markdown.AppendLine("Result: $(if ($passed) { 'PASSED' } else { 'FAILED' })")
+[void]$markdown.AppendLine("Result: $readinessStatus")
 [void]$markdown.AppendLine("Started: $($readinessReport.StartedAtUtc)")
 [void]$markdown.AppendLine("Completed: $($readinessReport.CompletedAtUtc)")
 [void]$markdown.AppendLine("Tags: $($effectiveTags -join ', ')")
-[void]$markdown.AppendLine("E2E report: `$e2eReportPath`")
+[void]$markdown.AppendLine('E2E report: `' + $e2eReportPath + '`')
 [void]$markdown.AppendLine()
 [void]$markdown.AppendLine('## Stages')
 foreach ($stage in $summary) {
     $stageStatus = if ($stage.Passed) { 'PASS' } else { 'FAIL' }
-    $stageError = if ([string]::IsNullOrWhiteSpace([string]$stage.Error)) { '' } else { ": $($stage.Error)" }
-    [void]$markdown.AppendLine("- $stageStatus $($stage.Name)$stageError")
+    $stageError = if ([string]::IsNullOrWhiteSpace([string]$stage.Error)) { '' } else { ': ' + [string]$stage.Error }
+    [void]$markdown.AppendLine(('- {0} {1}{2}' -f $stageStatus, $stage.Name, $stageError))
 }
 [void]$markdown.AppendLine()
 [void]$markdown.AppendLine('## Rerun')
@@ -197,6 +198,7 @@ foreach ($stage in $summary) {
 [void]$markdown.AppendLine('```')
 $markdown.ToString() | Set-Content -Path $ReportPath
 
-Write-Host "Production readiness result: $(if ($passed) { 'PASSED' } else { 'FAILED' })" -ForegroundColor $(if ($passed) { 'Green' } else { 'Red' })
+$readinessColor = if ($passed) { 'Green' } else { 'Red' }
+Write-Host "Production readiness result: $readinessStatus" -ForegroundColor $readinessColor
 Write-Host "Markdown Report: $ReportPath"
 Write-Host "Json Report: $jsonReportPath"

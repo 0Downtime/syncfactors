@@ -65,6 +65,7 @@ public sealed class AutomationScenarioLoaderTests
         var scenario = Assert.Single(scenarios);
         Assert.Equal("valid", scenario.Name);
         Assert.True(scenario.ResetAdBeforeScenario);
+        Assert.Equal(AutomationRiskLevels.Safe, scenario.RiskLevel);
         Assert.Equal("BulkSync", scenario.SyncMode);
         Assert.Equal("10003", Assert.Single(scenario.FinalExpectation!.ExpectedAdUsers!).WorkerId);
     }
@@ -95,6 +96,36 @@ public sealed class AutomationScenarioLoaderTests
     }
 
     [Fact]
+    public async Task LoadAsync_RejectsUnknownRiskLevel()
+    {
+        using var temp = new TempScenarioDirectory();
+        var path = temp.Write(
+            "unknown-risk.json",
+            """
+            {
+              "name": "invalid-risk",
+              "riskLevel": "prod",
+              "iterations": [
+                {
+                  "order": 1,
+                  "mutations": [],
+                  "expectation": {
+                    "runStatus": "Succeeded",
+                    "bucketCounts": {},
+                    "workerOperations": []
+                  }
+                }
+              ]
+            }
+            """);
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            ScenarioLoader.LoadAsync([path], new HashSet<string>(StringComparer.OrdinalIgnoreCase), CancellationToken.None));
+
+        Assert.Contains("unsupported riskLevel", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void Parse_UsesAutomationDefaultsAndEnvironmentCredentials()
     {
         var originalUsername = Environment.GetEnvironmentVariable("SYNCFACTORS_AUTOMATION_USERNAME");
@@ -116,6 +147,7 @@ public sealed class AutomationScenarioLoaderTests
             Assert.Equal("operator", options.Username);
             Assert.Equal("secret", options.Password);
             Assert.True(options.AllowAdReset);
+            Assert.False(options.IncludeDestructive);
             Assert.Contains("real-ad", options.Tags);
             Assert.Contains("smoke", options.Tags);
         }
@@ -125,6 +157,116 @@ public sealed class AutomationScenarioLoaderTests
             Environment.SetEnvironmentVariable("SYNCFACTORS_AUTOMATION_PASSWORD", originalPassword);
         }
     }
+
+    [Fact]
+    public void RiskPolicy_RejectsDestructiveScenarioWithoutExplicitFlag()
+    {
+        var scenario = CreateScenario("destructive");
+        var options = AutomationOptions.Parse(
+        [
+            "--scenario", "config/automation/*.json",
+            "--username", "operator",
+            "--password", "secret"
+        ]);
+
+        var exception = Assert.Throws<InvalidOperationException>(() => AutomationRiskPolicy.EnsureAllowed(scenario, options));
+        Assert.Contains("--include-destructive", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void RiskPolicy_AllowsDestructiveScenarioWithExplicitFlag()
+    {
+        var scenario = CreateScenario("destructive");
+        var options = AutomationOptions.Parse(
+        [
+            "--scenario", "config/automation/*.json",
+            "--username", "operator",
+            "--password", "secret",
+            "--include-destructive"
+        ]);
+
+        AutomationRiskPolicy.EnsureAllowed(scenario, options);
+    }
+
+    [Fact]
+    public void AdDiff_CatchesMissingUnexpectedOuEnabledAttributeAndDuplicates()
+    {
+        var expected = new[]
+        {
+            new AutomationExpectedAdUser(
+                WorkerId: "10003",
+                SamAccountName: "10003",
+                ParentOu: "OU=Active,DC=example,DC=test",
+                Enabled: true,
+                DisplayName: "Expected User",
+                Attributes: new Dictionary<string, string?> { ["company"] = "Expected" })
+        };
+        var actual = new AutomationAdSnapshot(
+            Phase: "final",
+            CapturedAtUtc: DateTimeOffset.UtcNow,
+            TotalUsers: 3,
+            Users:
+            [
+                new AutomationAdSnapshotUser(
+                    OuName: "graveyard",
+                    ParentOu: "OU=Graveyard,DC=example,DC=test",
+                    WorkerId: "10003",
+                    SamAccountName: "10003",
+                    DistinguishedName: "CN=10003,OU=Graveyard,DC=example,DC=test",
+                    Enabled: false,
+                    DisplayName: "Actual User",
+                    Attributes: new Dictionary<string, string?> { ["company"] = "Actual", ["mail"] = "duplicate@example.test" }),
+                new AutomationAdSnapshotUser(
+                    OuName: "active",
+                    ParentOu: "OU=Active,DC=example,DC=test",
+                    WorkerId: "10004",
+                    SamAccountName: "10004",
+                    DistinguishedName: "CN=10004,OU=Active,DC=example,DC=test",
+                    Enabled: true,
+                    DisplayName: "Unexpected User",
+                    Attributes: new Dictionary<string, string?> { ["mail"] = "duplicate@example.test" })
+            ],
+            Warnings: []);
+
+        var diffs = AutomationAdDiff.Build(expected, actual);
+
+        Assert.Contains(diffs, diff => diff.Message.Contains("parent OU", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(diffs, diff => diff.Message.Contains("enabled", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(diffs, diff => diff.Message.Contains("company", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(diffs, diff => diff.Message.Contains("Unexpected AD user 10004", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(diffs, diff => diff.Message.Contains("Duplicate AD mail", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static AutomationScenario CreateScenario(string riskLevel) =>
+        new(
+            Name: "risk-test",
+            Tags: ["real-ad"],
+            RiskLevel: riskLevel,
+            Preflight: null,
+            ResetAdBeforeScenario: true,
+            ResetMockBeforeScenario: true,
+            SyncMode: "BulkSync",
+            ExpectedDurationSeconds: null,
+            ExpectedRunStatus: null,
+            ExpectedQueueStatus: null,
+            ExpectedHealth: null,
+            ExpectedAuditEvents: [],
+            Iterations:
+            [
+                new AutomationIteration(
+                    Order: 1,
+                    Name: "run",
+                    Mutations: [],
+                    Expectation: new AutomationIterationExpectation(
+                        RunStatus: "Succeeded",
+                        BucketCounts: new Dictionary<string, int>(),
+                        WorkerOperations: []),
+                    SourceAssertions: null,
+                    RunAssertions: null,
+                    AdAssertions: null,
+                    ReportAssertions: null)
+            ],
+            FinalExpectation: null);
 
     private sealed class TempScenarioDirectory : IDisposable
     {
