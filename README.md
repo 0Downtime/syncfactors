@@ -151,8 +151,7 @@ pwsh ./scripts/Test-SyncFactorsLifecycleSimulation.ps1
 Run ad hoc real AD end-to-end automation against the mock SuccessFactors stack:
 
 ```powershell
-$env:SYNCFACTORS_AUTOMATION_USERNAME='admin'
-$env:SYNCFACTORS_AUTOMATION_PASSWORD='<local-admin-password>'
+pwsh ./scripts/Bootstrap-SyncFactorsE2EAutomation.ps1
 pwsh ./scripts/Run-SyncFactorsE2EAutomation.ps1 `
   -Scenario ./config/automation/sample-real-ad-lifecycle.json `
   -AllowAdReset `
@@ -161,7 +160,9 @@ pwsh ./scripts/Run-SyncFactorsE2EAutomation.ps1 `
 
 This drives Mock SuccessFactors, the API run queue, the worker, and configured AD test OUs. `-AllowAdReset` is required because the runner queues the destructive delete-all reset before scenarios that declare `resetAdBeforeScenario`.
 
-`SYNCFACTORS_AUTOMATION_USERNAME` and `SYNCFACTORS_AUTOMATION_PASSWORD` are loaded through the same worktree secret path as the normal launcher. You can keep them in `.env.worktree`, Windows Credential Manager, or the macOS Keychain:
+The bootstrap script creates or updates a local automation Operator account in SQLite, stores `SYNCFACTORS_AUTOMATION_USERNAME` and `SYNCFACTORS_AUTOMATION_PASSWORD` in the same secure store as the normal launcher, and switches the worktree auth mode to hybrid so OIDC remains primary while local automation login is available. Restart the API/stack after bootstrapping.
+
+You can also manage those secrets directly in `.env.worktree`, Windows Credential Manager, or the macOS Keychain:
 
 ```bash
 ./scripts/codex/set-macos-keychain-secret.sh SYNCFACTORS_AUTOMATION_USERNAME
