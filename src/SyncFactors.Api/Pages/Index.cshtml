@@ -94,7 +94,23 @@
         <section class="dashboard-progress" data-progress-state="@ProgressVisualState(Model.Status)" aria-label="Run progress">
             <div class="dashboard-progress-head">
                 <p class="eyebrow">Worker Progress</p>
-                <p class="dashboard-progress-value" data-progress-caption>@ProgressLabel(Model.Status)</p>
+                <div class="dashboard-progress-actions">
+                    <p class="dashboard-progress-value" data-progress-caption>@ProgressLabel(Model.Status)</p>
+                    <form
+                        method="post"
+                        asp-page-handler="CancelRun"
+                        class="dashboard-progress-cancel @(Model.HasPendingOrActiveRun ? null : "is-hidden")"
+                        data-progress-cancel
+                        aria-label="Cancel current run">
+                        <button
+                            type="submit"
+                            class="link-button danger-button dashboard-progress-cancel-button"
+                            data-progress-cancel-button
+                            disabled="@(!Model.HasPendingOrActiveRun || Model.CancellationRequested)">
+                            <span data-progress-cancel-label>@(Model.CancellationRequested ? "Canceling" : "Cancel run")</span>
+                        </button>
+                    </form>
+                </div>
             </div>
             <div class="dashboard-progress-track" aria-hidden="true">
                 <span class="dashboard-progress-fill" data-progress-fill style="width: @(ProgressFillWidth(Model.Status))%;"></span>
