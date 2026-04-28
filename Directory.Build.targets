@@ -2,6 +2,7 @@
   <Target Name="ResolveSyncFactorsGitVersion" BeforeTargets="GetAssemblyVersion;GenerateAssemblyInfo">
     <PropertyGroup>
       <SyncFactorsGitDirectory>$(MSBuildThisFileDirectory)</SyncFactorsGitDirectory>
+      <SyncFactorsCommitSha Condition="'$(SyncFactorsCommitSha)' == '' and '$(GITHUB_SHA)' != ''">$(GITHUB_SHA)</SyncFactorsCommitSha>
     </PropertyGroup>
 
     <Exec
@@ -15,8 +16,36 @@
       <Output TaskParameter="ExitCode" PropertyName="SyncFactorsCommitCountExitCode" />
     </Exec>
 
+    <Exec
+      Command="git -C &quot;$(SyncFactorsGitDirectory)&quot; rev-parse HEAD"
+      ConsoleToMSBuild="true"
+      IgnoreExitCode="true"
+      StandardOutputImportance="Low"
+      StandardErrorImportance="Low"
+      Condition="'$(SyncFactorsCommitSha)' == ''">
+      <Output TaskParameter="ConsoleOutput" ItemName="SyncFactorsCommitShaOutput" />
+      <Output TaskParameter="ExitCode" PropertyName="SyncFactorsCommitShaExitCode" />
+    </Exec>
+
+    <Exec
+      Command="git -C &quot;$(SyncFactorsGitDirectory)&quot; status --porcelain"
+      ConsoleToMSBuild="true"
+      IgnoreExitCode="true"
+      StandardOutputImportance="Low"
+      StandardErrorImportance="Low"
+      Condition="'$(GITHUB_ACTIONS)' != 'true' and '$(SyncFactorsDirtyState)' == ''">
+      <Output TaskParameter="ConsoleOutput" ItemName="SyncFactorsDirtyStateOutput" />
+      <Output TaskParameter="ExitCode" PropertyName="SyncFactorsDirtyStateExitCode" />
+    </Exec>
+
     <PropertyGroup Condition="'$(SyncFactorsCommitCount)' == '' and '$(SyncFactorsCommitCountExitCode)' == '0' and '@(SyncFactorsCommitCountOutput)' != ''">
       <SyncFactorsCommitCount>@(SyncFactorsCommitCountOutput)</SyncFactorsCommitCount>
+    </PropertyGroup>
+    <PropertyGroup Condition="'$(SyncFactorsCommitSha)' == '' and '$(SyncFactorsCommitShaExitCode)' == '0' and '@(SyncFactorsCommitShaOutput)' != ''">
+      <SyncFactorsCommitSha>@(SyncFactorsCommitShaOutput)</SyncFactorsCommitSha>
+    </PropertyGroup>
+    <PropertyGroup Condition="'$(SyncFactorsDirtyState)' == '' and '$(SyncFactorsDirtyStateExitCode)' == '0' and '@(SyncFactorsDirtyStateOutput)' != ''">
+      <SyncFactorsDirtyState>dirty</SyncFactorsDirtyState>
     </PropertyGroup>
 
     <PropertyGroup Condition="'$(SyncFactorsCommitCount)' != '' and '$(SyncFactorsBaseVersion)' != ''">
@@ -27,6 +56,24 @@
       <Version>$(SyncFactorsVersionPrefix).$(SyncFactorsCommitCount)</Version>
       <InformationalVersion>$(Version)</InformationalVersion>
       <PackageVersion>$(Version)</PackageVersion>
+    </PropertyGroup>
+
+    <PropertyGroup Condition="'$(SyncFactorsCommitSha)' != '' and $([System.Text.RegularExpressions.Regex]::IsMatch('$(SyncFactorsCommitSha)', '^[0-9a-fA-F]{7,40}$'))">
+      <SyncFactorsShortCommitSha>$([System.String]::Copy('$(SyncFactorsCommitSha)').Substring(0, 7).ToLowerInvariant())</SyncFactorsShortCommitSha>
+      <SourceRevisionId Condition="'$(SourceRevisionId)' == ''">$(SyncFactorsCommitSha)</SourceRevisionId>
+    </PropertyGroup>
+
+    <PropertyGroup Condition="'$(InformationalVersion)' != ''">
+      <SyncFactorsInformationalVersionHasMetadata>$([System.String]::Copy('$(InformationalVersion)').Contains('+'))</SyncFactorsInformationalVersionHasMetadata>
+      <SyncFactorsInformationalVersionHasDirtySuffix>$([System.String]::Copy('$(InformationalVersion)').Contains('.dirty'))</SyncFactorsInformationalVersionHasDirtySuffix>
+    </PropertyGroup>
+
+    <PropertyGroup Condition="'$(SyncFactorsShortCommitSha)' != '' and '$(InformationalVersion)' != '' and '$(SyncFactorsInformationalVersionHasMetadata)' != 'True'">
+      <InformationalVersion>$(InformationalVersion)+sha.$(SyncFactorsShortCommitSha)</InformationalVersion>
+      <SyncFactorsAppendedShaMetadata>true</SyncFactorsAppendedShaMetadata>
+    </PropertyGroup>
+    <PropertyGroup Condition="'$(SyncFactorsDirtyState)' == 'dirty' and '$(SyncFactorsAppendedShaMetadata)' == 'true' and '$(InformationalVersion)' != '' and '$(SyncFactorsInformationalVersionHasDirtySuffix)' != 'True'">
+      <InformationalVersion>$(InformationalVersion).dirty</InformationalVersion>
     </PropertyGroup>
   </Target>
 </Project>
