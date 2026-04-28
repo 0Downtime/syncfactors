@@ -1213,6 +1213,116 @@ a:focus-visible {
   min-height: 230px;
 }
 
+.bucket-summary-strip {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin: 14px 0 8px;
+}
+
+.bucket-summary-strip:empty {
+  display: none;
+}
+
+.bucket-summary-item {
+  --bucket-accent: var(--accent);
+  --bucket-surface: color-mix(in srgb, var(--accent-soft) 42%, var(--panel-strong));
+  position: relative;
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  min-height: 88px;
+  padding: 12px 13px 14px;
+  border: 1px solid color-mix(in srgb, var(--bucket-accent) 18%, var(--line) 82%);
+  border-radius: var(--radius-sm);
+  color: var(--ink);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--bucket-surface) 92%, transparent), color-mix(in srgb, var(--panel-alt) 86%, transparent)),
+    var(--panel);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, white 28%, transparent);
+  isolation: isolate;
+  overflow: hidden;
+  text-align: left;
+}
+
+.bucket-summary-item::before,
+.bucket-summary-item::after {
+  content: "";
+  position: absolute;
+  pointer-events: none;
+}
+
+.bucket-summary-item::before {
+  inset: 0 auto 0 0;
+  width: 3px;
+  background: linear-gradient(180deg, var(--bucket-accent), color-mix(in srgb, var(--bucket-accent) 48%, transparent));
+}
+
+.bucket-summary-item::after {
+  right: 12px;
+  bottom: 8px;
+  left: 12px;
+  height: 4px;
+  border-radius: 999px;
+  background:
+    linear-gradient(90deg, var(--bucket-accent), color-mix(in srgb, var(--bucket-accent) 62%, white 38%)) 0 0 / var(--bucket-share, 0%) 100% no-repeat,
+    color-mix(in srgb, var(--line) 72%, transparent);
+}
+
+.bucket-summary-item.accent {
+  --bucket-accent: var(--accent);
+  --bucket-surface: color-mix(in srgb, var(--accent-soft) 68%, var(--panel-strong));
+}
+
+.bucket-summary-item.dim {
+  --bucket-accent: var(--dim);
+  --bucket-surface: color-mix(in srgb, var(--dim-bg) 72%, var(--panel-strong));
+}
+
+.bucket-summary-item.info {
+  --bucket-accent: var(--info);
+  --bucket-surface: color-mix(in srgb, var(--info-bg) 50%, var(--panel-strong));
+}
+
+.bucket-summary-button {
+  appearance: none;
+  cursor: pointer;
+  font: inherit;
+}
+
+.bucket-summary-button:hover,
+.bucket-summary-button.active {
+  border-color: color-mix(in srgb, var(--bucket-accent) 48%, var(--line));
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, white 28%, transparent),
+    0 12px 24px color-mix(in srgb, var(--bucket-accent) 12%, transparent);
+  transform: translateY(-1px);
+}
+
+.bucket-summary-label,
+.bucket-summary-meta {
+  position: relative;
+  z-index: 1;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 0.72rem;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bucket-summary-value {
+  position: relative;
+  z-index: 1;
+  overflow: hidden;
+  font-size: clamp(1.1rem, 2vw, 1.38rem);
+  font-weight: 750;
+  letter-spacing: 0;
+  line-height: 1.1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .analytics-empty,
 .analytics-meta {
   margin: 8px 0 0;
@@ -1478,6 +1588,10 @@ a:focus-visible {
 }
 
 @media (max-width: 960px) {
+  .bucket-summary-strip {
+    grid-template-columns: 1fr;
+  }
+
   .recent-runs-header {
     flex-direction: column;
   }

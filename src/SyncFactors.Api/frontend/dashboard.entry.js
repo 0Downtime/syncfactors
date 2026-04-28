@@ -1,11 +1,11 @@
 import * as signalR from "@microsoft/signalr";
 import * as echarts from "echarts/core";
 import { BarChart, PieChart } from "echarts/charts";
-import { GridComponent, LegendComponent, TooltipComponent } from "echarts/components";
+import { GraphicComponent, GridComponent, LegendComponent, TooltipComponent } from "echarts/components";
 import { CanvasRenderer } from "echarts/renderers";
 import { animate, stagger } from "motion";
 
-echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponent, CanvasRenderer]);
+echarts.use([BarChart, PieChart, GraphicComponent, GridComponent, LegendComponent, TooltipComponent, CanvasRenderer]);
 
 (function () {
     const dashboardPollIntervalMs = 15000;
@@ -27,6 +27,10 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
         hour: "numeric",
         minute: "2-digit",
         hour12: true
+    });
+    const countFormatter = new Intl.NumberFormat("en-US");
+    const percentFormatter = new Intl.NumberFormat("en-US", {
+        maximumFractionDigits: 1
     });
     const bucketDefinitions = [
         { key: "creates", label: "Creates", tone: "good", runMix: true },
@@ -82,6 +86,7 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
         bucketChart: document.querySelector("[data-buckets-chart]"),
         bucketChartEmpty: document.querySelector("[data-buckets-chart-empty]"),
         bucketChartMeta: document.querySelector("[data-buckets-chart-meta]"),
+        bucketChartSummary: document.querySelector("[data-buckets-summary]"),
         filterCaption: document.querySelector("[data-runs-filter-caption]"),
         clearFilterButton: document.querySelector("[data-clear-runs-filter]"),
         timelineTitle: document.querySelector("[data-run-timeline-title]"),
@@ -787,6 +792,92 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
             default:
                 return palette.muted;
         }
+    }
+
+    function formatBucketCount(value) {
+        return countFormatter.format(Math.max(0, value || 0));
+    }
+
+    function formatRunPercent(value, total) {
+        return total > 0 ? percentFormatter.format((value / total) * 100) + "%" : "0%";
+    }
+
+    function getRunChangedTotal(run) {
+        return bucketDefinitions
+            .filter(function (definition) { return definition.runMix; })
+            .reduce(function (total, definition) {
+                return total + (run[definition.key] || 0);
+            }, 0);
+    }
+
+    function renderBucketSummary(focusRun, changedTotal, runTotal) {
+        if (!elements.bucketChartSummary) {
+            return;
+        }
+
+        elements.bucketChartSummary.innerHTML = "";
+
+        if (!focusRun) {
+            return;
+        }
+
+        const unchanged = focusRun.unchanged || 0;
+        const items = [
+            {
+                label: "Changed",
+                value: formatBucketCount(changedTotal),
+                meta: formatRunPercent(changedTotal, runTotal) + " of run",
+                tone: "accent",
+                share: runTotal > 0 ? changedTotal / runTotal : 0
+            },
+            {
+                label: "Unchanged",
+                value: formatBucketCount(unchanged),
+                meta: formatRunPercent(unchanged, runTotal) + " of run",
+                bucketKey: "unchanged",
+                tone: "dim",
+                share: runTotal > 0 ? unchanged / runTotal : 0
+            },
+            {
+                label: "Total",
+                value: formatBucketCount(runTotal),
+                meta: runDisplayName(focusRun),
+                tone: "info",
+                share: 1
+            }
+        ];
+
+        items.forEach(function (item) {
+            const node = item.bucketKey ? document.createElement("button") : document.createElement("div");
+            node.className = "bucket-summary-item" +
+                (item.bucketKey ? " bucket-summary-button" : "") +
+                (item.tone ? " " + item.tone : "") +
+                (selectedBucketKey === item.bucketKey ? " active" : "");
+            node.style.setProperty("--bucket-share", (Math.max(0.02, Math.min(1, item.share || 0)) * 100) + "%");
+            node.title = item.label + ": " + item.value + " (" + item.meta + ")";
+
+            if (item.bucketKey) {
+                node.type = "button";
+                node.addEventListener("click", function () {
+                    setSelectedBucket(item.bucketKey);
+                });
+            }
+
+            const label = document.createElement("span");
+            label.className = "bucket-summary-label";
+            label.textContent = item.label;
+
+            const value = document.createElement("strong");
+            value.className = "bucket-summary-value";
+            value.textContent = item.value;
+
+            const meta = document.createElement("span");
+            meta.className = "bucket-summary-meta";
+            meta.textContent = item.meta;
+
+            node.append(label, value, meta);
+            elements.bucketChartSummary.appendChild(node);
+        });
     }
 
     function animateProgress(status) {
@@ -1776,8 +1867,12 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
         if (!focusRun) {
             toggleHidden(elements.bucketChart, true);
             toggleHidden(elements.bucketChartEmpty, false);
+            renderBucketSummary(null, 0, 0);
             if (elements.bucketChartMeta) {
-                elements.bucketChartMeta.textContent = "Run composition appears once a run summary is available.";
+                elements.bucketChartMeta.textContent = "Change composition appears once a run summary is available.";
+            }
+            if (elements.bucketChartEmpty) {
+                elements.bucketChartEmpty.textContent = "Change composition appears once a run summary is available.";
             }
             if (bucketChartInstance) {
                 bucketChartInstance.clear();
@@ -1786,13 +1881,18 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
         }
 
         const palette = getThemePalette();
+        const changedTotal = getRunChangedTotal(focusRun);
+        const runTotal = changedTotal + (focusRun.unchanged || 0);
         const entries = bucketDefinitions
+            .filter(function (definition) { return definition.runMix; })
             .map(function (definition) {
                 const isFocused = selectedBucketKey === definition.key || hoveredBucketKey === definition.key;
-                const isDimmed = !!(selectedBucketKey || hoveredBucketKey) && !isFocused;
+                const isDimmed = !!((selectedBucketKey && selectedBucketKey !== "unchanged") || hoveredBucketKey) && !isFocused;
                 return {
                     name: definition.label,
                     value: focusRun[definition.key] || 0,
+                    runTotal,
+                    changedTotal,
                     selected: selectedBucketKey === definition.key,
                     itemStyle: {
                         opacity: isDimmed ? 0.34 : 1,
@@ -1803,11 +1903,18 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
             })
             .filter(function (entry) { return entry.value > 0; });
 
+        renderBucketSummary(focusRun, changedTotal, runTotal);
+
         if (!entries.length) {
             toggleHidden(elements.bucketChart, true);
             toggleHidden(elements.bucketChartEmpty, false);
             if (elements.bucketChartMeta) {
-                elements.bucketChartMeta.textContent = runDisplayName(focusRun) + " has no materialized bucket counts yet.";
+                elements.bucketChartMeta.textContent = runDisplayName(focusRun) + " has no changed buckets to chart.";
+            }
+            if (elements.bucketChartEmpty) {
+                elements.bucketChartEmpty.textContent = changedTotal > 0
+                    ? "Changed buckets will appear here once bucket counts are available."
+                    : "No changed buckets in this run.";
             }
             if (bucketChartInstance) {
                 bucketChartInstance.clear();
@@ -1820,21 +1927,71 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
 
         if (elements.bucketChartMeta) {
             elements.bucketChartMeta.textContent = snapshot.activeRun
-                ? "Click a slice to filter the table. Showing live bucket composition for " + runDisplayName(focusRun) + "."
-                : "Click a slice to filter the table. Showing bucket composition for " + runDisplayName(focusRun) + ".";
+                ? "Click a slice to filter changed buckets. Showing live change composition for " + runDisplayName(focusRun) + "."
+                : "Click a slice to filter changed buckets. Showing change composition for " + runDisplayName(focusRun) + ".";
         }
 
         bucketChartInstance.setOption({
             animationDuration: motionAllowed() ? 420 : 0,
             animationDurationUpdate: motionAllowed() ? 360 : 0,
             backgroundColor: "transparent",
-            tooltip: { trigger: "item" },
+            tooltip: {
+                trigger: "item",
+                formatter: function (params) {
+                    const data = params.data || {};
+                    return params.name + "<br>" +
+                        formatBucketCount(params.value) + " users<br>" +
+                        formatRunPercent(params.value, data.changedTotal || 0) + " of changed<br>" +
+                        formatRunPercent(params.value, data.runTotal || 0) + " of run";
+                }
+            },
             legend: {
                 orient: "vertical",
                 right: 0,
                 top: "middle",
+                itemGap: 12,
+                itemWidth: 14,
+                itemHeight: 10,
                 textStyle: { color: palette.muted }
             },
+            graphic: [
+                {
+                    type: "group",
+                    left: "36%",
+                    top: "54%",
+                    bounding: "raw",
+                    children: [
+                        {
+                            type: "text",
+                            left: "center",
+                            top: -18,
+                            style: {
+                                text: formatBucketCount(changedTotal),
+                                fill: palette.text,
+                                fontSize: 24,
+                                fontWeight: 700,
+                                lineHeight: 26,
+                                textAlign: "center"
+                            },
+                            silent: true
+                        },
+                        {
+                            type: "text",
+                            left: "center",
+                            top: 12,
+                            style: {
+                                text: "changed",
+                                fill: palette.muted,
+                                fontSize: 12,
+                                fontWeight: 600,
+                                textAlign: "center"
+                            },
+                            silent: true
+                        }
+                    ],
+                    silent: true
+                }
+            ],
             series: [
                 {
                     type: "pie",
@@ -1842,6 +1999,7 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
                     center: ["36%", "54%"],
                     avoidLabelOverlap: true,
                     selectedMode: "single",
+                    percentPrecision: 1,
                     label: { color: palette.text },
                     data: entries.map(function (entry) {
                         const definition = bucketLabelToDefinition[entry.name];
