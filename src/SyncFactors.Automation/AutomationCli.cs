@@ -23,6 +23,11 @@ public static class AutomationCli
                 throw new InvalidOperationException("No automation scenarios matched the requested path/tag filters.");
             }
 
+            foreach (var scenario in scenarios)
+            {
+                AutomationRiskPolicy.EnsureAllowed(scenario, options);
+            }
+
             await using var runner = new AutomationRunner(options, output);
             await output.WriteLineAsync($"Loaded {scenarios.Count} scenario(s).");
             var report = await runner.RunAsync(scenarios, cancellationToken);
@@ -50,7 +55,11 @@ public sealed record AutomationOptions(
     IReadOnlySet<string> Tags,
     string? ConfigPath,
     string? MappingConfigPath,
-    TimeSpan Timeout)
+    TimeSpan Timeout,
+    bool IncludeDestructive,
+    bool IncludeScale,
+    bool IncludeRecovery,
+    bool Idempotency)
 {
     public static AutomationOptions Parse(string[] args)
     {
@@ -115,10 +124,19 @@ public sealed record AutomationOptions(
             Tags: ParseTags(ReadMany(values, "tags")),
             ConfigPath: ReadOne(values, "config"),
             MappingConfigPath: ReadOne(values, "mapping"),
-            Timeout: TimeSpan.FromMinutes(timeoutMinutes));
+            Timeout: TimeSpan.FromMinutes(timeoutMinutes),
+            IncludeDestructive: flags.Contains("include-destructive"),
+            IncludeScale: flags.Contains("include-scale"),
+            IncludeRecovery: flags.Contains("include-recovery"),
+            Idempotency: flags.Contains("idempotency"));
     }
 
-    private static bool IsFlag(string key) => string.Equals(key, "allow-ad-reset", StringComparison.OrdinalIgnoreCase);
+    private static bool IsFlag(string key) =>
+        string.Equals(key, "allow-ad-reset", StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(key, "include-destructive", StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(key, "include-scale", StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(key, "include-recovery", StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(key, "idempotency", StringComparison.OrdinalIgnoreCase);
 
     private static string? ReadOne(Dictionary<string, List<string>> values, string key) =>
         values.TryGetValue(key, out var list) && list.Count > 0 ? list[^1] : null;
@@ -150,7 +168,9 @@ public static class ScenarioLoader
             {
                 SourcePath = path,
                 Tags = loaded.Tags ?? [],
-                Iterations = loaded.Iterations ?? []
+                Iterations = loaded.Iterations ?? [],
+                ExpectedAuditEvents = loaded.ExpectedAuditEvents ?? [],
+                RiskLevel = string.IsNullOrWhiteSpace(loaded.RiskLevel) ? AutomationRiskLevels.Safe : loaded.RiskLevel
             };
             Validate(scenario);
             if (tags.Count == 0 || scenario.Tags.Any(tags.Contains))
@@ -207,6 +227,11 @@ public static class ScenarioLoader
             throw new InvalidOperationException($"Scenario '{scenario.Name}' must contain at least one iteration.");
         }
 
+        if (!AutomationRiskLevels.All.Contains(scenario.RiskLevel))
+        {
+            throw new InvalidOperationException($"Scenario '{scenario.Name}' has unsupported riskLevel '{scenario.RiskLevel}'. Supported values: {string.Join(", ", AutomationRiskLevels.All)}.");
+        }
+
         var expectedOrder = 1;
         foreach (var iteration in scenario.Iterations.OrderBy(iteration => iteration.Order))
         {
@@ -220,6 +245,54 @@ public static class ScenarioLoader
                 throw new InvalidOperationException($"Scenario '{scenario.Name}' iteration {iteration.Order} is missing expectation.");
             }
         }
+    }
+}
+
+public static class AutomationRiskLevels
+{
+    public const string Safe = "safe";
+    public const string Destructive = "destructive";
+    public const string Scale = "scale";
+    public const string Recovery = "recovery";
+
+    public static IReadOnlySet<string> All { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+    {
+        Safe,
+        Destructive,
+        Scale,
+        Recovery
+    };
+}
+
+public static class AutomationRiskPolicy
+{
+    public static void EnsureAllowed(AutomationScenario scenario, AutomationOptions options)
+    {
+        if (string.Equals(scenario.RiskLevel, AutomationRiskLevels.Safe, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        if (string.Equals(scenario.RiskLevel, AutomationRiskLevels.Destructive, StringComparison.OrdinalIgnoreCase) &&
+            options.IncludeDestructive)
+        {
+            return;
+        }
+
+        if (string.Equals(scenario.RiskLevel, AutomationRiskLevels.Scale, StringComparison.OrdinalIgnoreCase) &&
+            options.IncludeScale)
+        {
+            return;
+        }
+
+        if (string.Equals(scenario.RiskLevel, AutomationRiskLevels.Recovery, StringComparison.OrdinalIgnoreCase) &&
+            options.IncludeRecovery)
+        {
+            return;
+        }
+
+        throw new InvalidOperationException(
+            $"Scenario '{scenario.Name}' has riskLevel '{scenario.RiskLevel}'. Pass --include-{scenario.RiskLevel} to run it.");
     }
 }
 
@@ -317,6 +390,26 @@ public sealed class AutomationRunner(AutomationOptions options, TextWriter outpu
         var startedAt = DateTimeOffset.UtcNow;
         var failures = new List<string>();
         var iterationReports = new List<AutomationIterationReport>();
+        var preflightResults = await RunPreflightAsync(scenario, cancellationToken);
+        failures.AddRange(preflightResults.Where(result => !result.Passed).Select(result => $"Preflight {result.Name} failed: {result.Message}"));
+        if (failures.Count > 0)
+        {
+            return new AutomationScenarioReport(
+                Name: scenario.Name,
+                SourcePath: scenario.SourcePath,
+                RiskLevel: scenario.RiskLevel,
+                StartedAtUtc: startedAt,
+                CompletedAtUtc: DateTimeOffset.UtcNow,
+                Passed: false,
+                Failures: failures,
+                Preflight: preflightResults,
+                BaselineAdSnapshot: null,
+                FinalAdSnapshot: null,
+                Iterations: iterationReports,
+                Diagnostics: new AutomationScenarioDiagnostics(LastQueueStatus: null, LastRunId: null, LastWorkerHeartbeat: null, AdDiff: []));
+        }
+
+        var baselineSnapshot = await CaptureManagedOuSnapshotAsync(scenario, "baseline", cancellationToken);
 
         if (scenario.ResetMockBeforeScenario)
         {
@@ -360,6 +453,12 @@ public sealed class AutomationRunner(AutomationOptions options, TextWriter outpu
                 iterationFailures.Add($"Run queue request {queued.RequestId} ended with status {queued.Status}: {queued.ErrorMessage}");
             }
 
+            if (!string.IsNullOrWhiteSpace(scenario.ExpectedQueueStatus) &&
+                !string.Equals(queued.Status, scenario.ExpectedQueueStatus, StringComparison.OrdinalIgnoreCase))
+            {
+                iterationFailures.Add($"expected queue status {scenario.ExpectedQueueStatus} but found {queued.Status}.");
+            }
+
             JsonObject? runDetail = null;
             IReadOnlyList<JsonObject> entries = [];
             if (!string.IsNullOrWhiteSpace(queued.RunId))
@@ -368,6 +467,14 @@ public sealed class AutomationRunner(AutomationOptions options, TextWriter outpu
                 runDetail = await GetJsonObjectAsync($"/api/runs/{queued.RunId}", cancellationToken);
                 entries = await GetRunEntriesAsync(queued.RunId, cancellationToken);
                 iterationFailures.AddRange(ValidateIteration(iteration, runDetail, entries));
+                if (!string.IsNullOrWhiteSpace(scenario.ExpectedRunStatus))
+                {
+                    var runStatus = ReadString(runDetail["run"]?.AsObject(), "status");
+                    if (!string.Equals(runStatus, scenario.ExpectedRunStatus, StringComparison.OrdinalIgnoreCase))
+                    {
+                        iterationFailures.Add($"expected scenario run status {scenario.ExpectedRunStatus} but found {runStatus ?? "(missing)"}.");
+                    }
+                }
             }
 
             await output.WriteLineAsync(
@@ -385,15 +492,194 @@ public sealed class AutomationRunner(AutomationOptions options, TextWriter outpu
 
         await output.WriteLineAsync($"[{scenario.Name}] Verifying final AD expectations.");
         failures.AddRange(await VerifyAdAsync(scenario, cancellationToken));
+        var finalSnapshot = await CaptureManagedOuSnapshotAsync(scenario, "final", cancellationToken);
+        var adDiff = AutomationAdDiff.Build(scenario.FinalExpectation?.ExpectedAdUsers ?? scenario.FinalExpectation?.DirectoryUsers ?? [], finalSnapshot);
+        failures.AddRange(adDiff.Where(diff => diff.Severity.Equals("Failure", StringComparison.OrdinalIgnoreCase)).Select(diff => diff.Message));
+        if (options.Idempotency)
+        {
+            failures.AddRange(await RunIdempotencyCheckAsync(scenario, cancellationToken));
+        }
+
+        if (scenario.ExpectedDurationSeconds is { } expectedDurationSeconds &&
+            DateTimeOffset.UtcNow - startedAt > TimeSpan.FromSeconds(expectedDurationSeconds))
+        {
+            failures.Add($"Scenario exceeded expectedDurationSeconds={expectedDurationSeconds}.");
+        }
+
+        var lastIteration = iterationReports.LastOrDefault();
         await output.WriteLineAsync($"[{scenario.Name}] Scenario completed. result={(failures.Count == 0 ? "PASSED" : "FAILED")} failures={failures.Count}");
         return new AutomationScenarioReport(
             Name: scenario.Name,
             SourcePath: scenario.SourcePath,
+            RiskLevel: scenario.RiskLevel,
             StartedAtUtc: startedAt,
             CompletedAtUtc: DateTimeOffset.UtcNow,
             Passed: failures.Count == 0,
             Failures: failures,
-            Iterations: iterationReports);
+            Preflight: preflightResults,
+            BaselineAdSnapshot: baselineSnapshot,
+            FinalAdSnapshot: finalSnapshot,
+            Iterations: iterationReports,
+            Diagnostics: new AutomationScenarioDiagnostics(
+                LastQueueStatus: lastIteration?.QueueStatus,
+                LastRunId: lastIteration?.RunId,
+                LastWorkerHeartbeat: preflightResults.FirstOrDefault(result => result.Name.Equals("worker-heartbeat", StringComparison.OrdinalIgnoreCase))?.Message,
+                AdDiff: adDiff));
+    }
+
+    private async Task<IReadOnlyList<AutomationPreflightResult>> RunPreflightAsync(AutomationScenario scenario, CancellationToken cancellationToken)
+    {
+        var preflight = scenario.Preflight ?? new AutomationPreflightOptions();
+        var results = new List<AutomationPreflightResult>();
+        await output.WriteLineAsync($"[{scenario.Name}] Running production preflight checks.");
+
+        if (preflight.ApiHealth)
+        {
+            results.Add(await ProbeJsonAsync(_apiClient, "/healthz", "api-healthz", "API health endpoint", cancellationToken));
+            results.Add(await ProbeJsonAsync(_apiClient, "/api/health", "api-dependency-health", "API dependency health", cancellationToken, expectedStatus: scenario.ExpectedHealth));
+        }
+
+        if (preflight.MockHealth)
+        {
+            results.Add(await ProbeJsonAsync(_mockClient, "/healthz", "mock-healthz", "mock SuccessFactors health endpoint", cancellationToken));
+        }
+
+        if (preflight.WorkerHeartbeat)
+        {
+            results.Add(await ProbeWorkerHeartbeatAsync(scenario.ExpectedHealth, cancellationToken));
+        }
+
+        if (preflight.ActiveDirectory)
+        {
+            try
+            {
+                var snapshot = await CaptureManagedOuSnapshotAsync(scenario, "preflight", cancellationToken);
+                results.Add(new AutomationPreflightResult("active-directory", true, $"listed {snapshot.TotalUsers} managed OU user(s)", DateTimeOffset.UtcNow));
+            }
+            catch (Exception ex)
+            {
+                results.Add(new AutomationPreflightResult("active-directory", false, ex.Message, DateTimeOffset.UtcNow));
+            }
+        }
+
+        foreach (var result in results)
+        {
+            await output.WriteLineAsync($"[{scenario.Name}] Preflight {result.Name}: {(result.Passed ? "PASS" : "FAIL")} - {result.Message}");
+        }
+
+        return results;
+    }
+
+    private static async Task<AutomationPreflightResult> ProbeJsonAsync(
+        HttpClient client,
+        string path,
+        string name,
+        string label,
+        CancellationToken cancellationToken,
+        string? expectedStatus = null)
+    {
+        try
+        {
+            var payload = await GetJsonObjectAsync(client, path, cancellationToken);
+            var status = ReadString(payload, "status");
+            var passed = string.IsNullOrWhiteSpace(expectedStatus) ||
+                string.Equals(status, expectedStatus, StringComparison.OrdinalIgnoreCase);
+            return new AutomationPreflightResult(name, passed, $"{label} returned status={status ?? "ok"}", DateTimeOffset.UtcNow);
+        }
+        catch (Exception ex)
+        {
+            return new AutomationPreflightResult(name, false, ex.Message, DateTimeOffset.UtcNow);
+        }
+    }
+
+    private async Task<AutomationPreflightResult> ProbeWorkerHeartbeatAsync(string? expectedStatus, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var payload = await GetJsonObjectAsync("/api/dashboard/health", cancellationToken);
+            var status = ReadString(payload, "status");
+            var probes = payload["probes"]?.AsArray().OfType<JsonObject>() ?? [];
+            var workerProbe = probes.FirstOrDefault(probe =>
+                (ReadString(probe, "dependency") ?? string.Empty).Contains("worker", StringComparison.OrdinalIgnoreCase));
+            var message = workerProbe is null
+                ? $"dashboard health status={status ?? "(missing)"}, no explicit worker probe found"
+                : $"dashboard health status={status ?? "(missing)"}, worker={ReadString(workerProbe, "status") ?? "(missing)"} observedAt={ReadString(workerProbe, "observedAt") ?? "(missing)"} stale={workerProbe["isStale"]?.GetValue<bool>()}";
+            var passed = !string.Equals(status, DependencyHealthStates.Unhealthy, StringComparison.OrdinalIgnoreCase) &&
+                (string.IsNullOrWhiteSpace(expectedStatus) || string.Equals(status, expectedStatus, StringComparison.OrdinalIgnoreCase));
+            return new AutomationPreflightResult("worker-heartbeat", passed, message, DateTimeOffset.UtcNow);
+        }
+        catch (Exception ex)
+        {
+            return new AutomationPreflightResult("worker-heartbeat", false, ex.Message, DateTimeOffset.UtcNow);
+        }
+    }
+
+    private async Task<AutomationAdSnapshot> CaptureManagedOuSnapshotAsync(AutomationScenario scenario, string phase, CancellationToken cancellationToken)
+    {
+        var loader = new SyncFactorsConfigurationLoader(new SyncFactorsConfigPathResolver(options.ConfigPath, options.MappingConfigPath));
+        var config = loader.GetSyncConfig();
+        var mappingProvider = new AttributeMappingProvider(loader, NullLogger<AttributeMappingProvider>.Instance);
+        using var pool = new ActiveDirectoryConnectionPool();
+        var gateway = new ActiveDirectoryGateway(loader, mappingProvider, pool, NullLogger<ActiveDirectoryGateway>.Instance);
+        var users = new List<AutomationAdSnapshotUser>();
+        foreach (var ou in GetManagedOus(config))
+        {
+            await output.WriteLineAsync($"[{scenario.Name}] Capturing {phase} AD snapshot for {ou.Name}: {ou.DistinguishedName}");
+            var ouUsers = await gateway.ListUsersInOuAsync(ou.DistinguishedName, cancellationToken);
+            users.AddRange(ouUsers.Select(user => AutomationAdSnapshotUser.FromDirectoryUser(ou.Name, ou.DistinguishedName, user, config.Ad.IdentityAttribute)));
+        }
+
+        var duplicates = AutomationAdDiff.FindDuplicateDirectoryValues(users);
+        foreach (var duplicate in duplicates)
+        {
+            await output.WriteLineAsync($"[{scenario.Name}] AD snapshot warning: {duplicate.Message}");
+        }
+
+        return new AutomationAdSnapshot(phase, DateTimeOffset.UtcNow, users.Count, users, duplicates);
+    }
+
+    private static IReadOnlyList<(string Name, string DistinguishedName)> GetManagedOus(SyncFactorsConfig config)
+    {
+        return new[]
+        {
+            ("active", config.Ad.DefaultActiveOu),
+            ("prehire", config.Ad.PrehireOu),
+            ("graveyard", config.Ad.GraveyardOu),
+            ("leave", config.Ad.LeaveOu)
+        }
+            .Where(item => !string.IsNullOrWhiteSpace(item.Item2))
+            .Select(item => (item.Item1, item.Item2!))
+            .DistinctBy(item => item.Item2, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
+    private async Task<IReadOnlyList<string>> RunIdempotencyCheckAsync(AutomationScenario scenario, CancellationToken cancellationToken)
+    {
+        await output.WriteLineAsync($"[{scenario.Name}] Running idempotency check with one extra live sync.");
+        var failures = new List<string>();
+        var queued = await QueueAndWaitAsync(
+            "/api/runs",
+            new { dryRun = false, mode = scenario.SyncMode, runTrigger = "AutomationIdempotency", requestedBy = "Automation" },
+            cancellationToken);
+        if (!string.Equals(queued.Status, "Completed", StringComparison.OrdinalIgnoreCase) || string.IsNullOrWhiteSpace(queued.RunId))
+        {
+            failures.Add($"Idempotency queue request {queued.RequestId} ended with status {queued.Status}: {queued.ErrorMessage}");
+            return failures;
+        }
+
+        var runDetail = await GetJsonObjectAsync($"/api/runs/{queued.RunId}", cancellationToken);
+        var entries = await GetRunEntriesAsync(queued.RunId, cancellationToken);
+        var counts = ExtractBucketCounts(runDetail, entries);
+        foreach (var bucket in new[] { "creates", "updates", "enables", "disables", "graveyardMoves", "deletions" })
+        {
+            counts.TryGetValue(bucket, out var actual);
+            if (actual > 0)
+            {
+                failures.Add($"Idempotency run expected no {bucket} but found {actual}.");
+            }
+        }
+
+        return failures;
     }
 
     private async Task ApplyMutationsAsync(IReadOnlyList<AutomationWorkerMutation> mutations, CancellationToken cancellationToken)
@@ -793,7 +1079,27 @@ public static class AutomationReportWriter
         {
             builder.AppendLine($"## {scenario.Name}");
             builder.AppendLine($"Source: `{scenario.SourcePath}`");
+            builder.AppendLine($"Risk: `{scenario.RiskLevel}`");
             builder.AppendLine($"Result: {(scenario.Passed ? "PASSED" : "FAILED")}");
+            if (scenario.Preflight.Count > 0)
+            {
+                builder.AppendLine("Preflight:");
+                foreach (var result in scenario.Preflight)
+                {
+                    builder.AppendLine($"- {(result.Passed ? "PASS" : "FAIL")} `{result.Name}`: {result.Message}");
+                }
+            }
+
+            if (scenario.BaselineAdSnapshot is not null || scenario.FinalAdSnapshot is not null)
+            {
+                builder.AppendLine($"AD snapshot: baseline={scenario.BaselineAdSnapshot?.TotalUsers.ToString() ?? "n/a"} final={scenario.FinalAdSnapshot?.TotalUsers.ToString() ?? "n/a"}");
+            }
+
+            foreach (var diff in scenario.Diagnostics.AdDiff)
+            {
+                builder.AppendLine($"- ad-{diff.Severity.ToLowerInvariant()}: {diff.Message}");
+            }
+
             foreach (var failure in scenario.Failures)
             {
                 builder.AppendLine($"- failure: {failure}");
@@ -821,9 +1127,16 @@ public static class AutomationReportWriter
 public sealed record AutomationScenario(
     [property: JsonPropertyName("name")] string Name,
     [property: JsonPropertyName("tags")] IReadOnlyList<string> Tags,
+    [property: JsonPropertyName("riskLevel")] string RiskLevel,
+    [property: JsonPropertyName("preflight")] AutomationPreflightOptions? Preflight,
     [property: JsonPropertyName("resetAdBeforeScenario")] bool ResetAdBeforeScenario,
     [property: JsonPropertyName("resetMockBeforeScenario")] bool ResetMockBeforeScenario,
     [property: JsonPropertyName("syncMode")] string SyncMode,
+    [property: JsonPropertyName("expectedDurationSeconds")] int? ExpectedDurationSeconds,
+    [property: JsonPropertyName("expectedRunStatus")] string? ExpectedRunStatus,
+    [property: JsonPropertyName("expectedQueueStatus")] string? ExpectedQueueStatus,
+    [property: JsonPropertyName("expectedHealth")] string? ExpectedHealth,
+    [property: JsonPropertyName("expectedAuditEvents")] IReadOnlyList<string> ExpectedAuditEvents,
     [property: JsonPropertyName("iterations")] IReadOnlyList<AutomationIteration> Iterations,
     [property: JsonPropertyName("finalExpectation")] AutomationFinalExpectation? FinalExpectation)
 {
@@ -834,7 +1147,18 @@ public sealed record AutomationIteration(
     [property: JsonPropertyName("order")] int Order,
     [property: JsonPropertyName("name")] string? Name,
     [property: JsonPropertyName("mutations")] IReadOnlyList<AutomationWorkerMutation> Mutations,
-    [property: JsonPropertyName("expectation")] AutomationIterationExpectation? Expectation);
+    [property: JsonPropertyName("expectation")] AutomationIterationExpectation? Expectation,
+    [property: JsonPropertyName("sourceAssertions")] JsonObject? SourceAssertions,
+    [property: JsonPropertyName("runAssertions")] JsonObject? RunAssertions,
+    [property: JsonPropertyName("adAssertions")] JsonObject? AdAssertions,
+    [property: JsonPropertyName("reportAssertions")] JsonObject? ReportAssertions);
+
+public sealed record AutomationPreflightOptions(
+    [property: JsonPropertyName("apiHealth")] bool ApiHealth = true,
+    [property: JsonPropertyName("mockHealth")] bool MockHealth = true,
+    [property: JsonPropertyName("workerHeartbeat")] bool WorkerHeartbeat = true,
+    [property: JsonPropertyName("activeDirectory")] bool ActiveDirectory = true,
+    [property: JsonPropertyName("managedOuSnapshot")] bool ManagedOuSnapshot = true);
 
 public sealed record AutomationWorkerMutation(
     [property: JsonPropertyName("workerId")] string WorkerId,
@@ -872,11 +1196,16 @@ public sealed record AutomationRunReport(
 public sealed record AutomationScenarioReport(
     string Name,
     string SourcePath,
+    string RiskLevel,
     DateTimeOffset StartedAtUtc,
     DateTimeOffset CompletedAtUtc,
     bool Passed,
     IReadOnlyList<string> Failures,
-    IReadOnlyList<AutomationIterationReport> Iterations);
+    IReadOnlyList<AutomationPreflightResult> Preflight,
+    AutomationAdSnapshot? BaselineAdSnapshot,
+    AutomationAdSnapshot? FinalAdSnapshot,
+    IReadOnlyList<AutomationIterationReport> Iterations,
+    AutomationScenarioDiagnostics Diagnostics);
 
 public sealed record AutomationIterationReport(
     int Order,
@@ -886,6 +1215,168 @@ public sealed record AutomationIterationReport(
     string QueueStatus,
     IReadOnlyDictionary<string, int> BucketCounts,
     IReadOnlyList<string> Failures);
+
+public sealed record AutomationPreflightResult(
+    string Name,
+    bool Passed,
+    string Message,
+    DateTimeOffset CheckedAtUtc);
+
+public sealed record AutomationScenarioDiagnostics(
+    string? LastQueueStatus,
+    string? LastRunId,
+    string? LastWorkerHeartbeat,
+    IReadOnlyList<AutomationAdDiffItem> AdDiff);
+
+public sealed record AutomationAdSnapshot(
+    string Phase,
+    DateTimeOffset CapturedAtUtc,
+    int TotalUsers,
+    IReadOnlyList<AutomationAdSnapshotUser> Users,
+    IReadOnlyList<AutomationAdDiffItem> Warnings);
+
+public sealed record AutomationAdSnapshotUser(
+    string OuName,
+    string ParentOu,
+    string? WorkerId,
+    string? SamAccountName,
+    string? DistinguishedName,
+    bool? Enabled,
+    string? DisplayName,
+    IReadOnlyDictionary<string, string?> Attributes)
+{
+    public static AutomationAdSnapshotUser FromDirectoryUser(string ouName, string parentOu, DirectoryUserSnapshot user, string identityAttribute)
+    {
+        user.Attributes.TryGetValue(identityAttribute, out var workerId);
+        if (string.IsNullOrWhiteSpace(workerId))
+        {
+            user.Attributes.TryGetValue("employeeID", out workerId);
+        }
+
+        return new AutomationAdSnapshotUser(
+            ouName,
+            parentOu,
+            workerId,
+            user.SamAccountName,
+            user.DistinguishedName,
+            user.Enabled,
+            user.DisplayName,
+            user.Attributes);
+    }
+}
+
+public sealed record AutomationAdDiffItem(string Severity, string Message, string? WorkerId = null);
+
+public static class AutomationAdDiff
+{
+    public static IReadOnlyList<AutomationAdDiffItem> Build(
+        IReadOnlyList<AutomationExpectedAdUser> expectedUsers,
+        AutomationAdSnapshot? actualSnapshot)
+    {
+        if (actualSnapshot is null)
+        {
+            return expectedUsers.Count == 0
+                ? []
+                : [new AutomationAdDiffItem("Failure", "AD snapshot was not captured, so expected AD users could not be verified.")];
+        }
+
+        var diffs = new List<AutomationAdDiffItem>();
+        var expectedByWorker = expectedUsers.ToDictionary(user => user.WorkerId, StringComparer.OrdinalIgnoreCase);
+        var actualByWorker = actualSnapshot.Users
+            .Where(user => !string.IsNullOrWhiteSpace(user.WorkerId))
+            .GroupBy(user => user.WorkerId!, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => group.ToArray(), StringComparer.OrdinalIgnoreCase);
+
+        foreach (var expected in expectedUsers)
+        {
+            if (!actualByWorker.TryGetValue(expected.WorkerId, out var matches) || matches.Length == 0)
+            {
+                diffs.Add(new AutomationAdDiffItem("Failure", $"Expected AD user {expected.WorkerId} was missing from managed OU snapshot.", expected.WorkerId));
+                continue;
+            }
+
+            if (matches.Length > 1)
+            {
+                diffs.Add(new AutomationAdDiffItem("Failure", $"Expected AD user {expected.WorkerId} matched {matches.Length} managed OU objects.", expected.WorkerId));
+            }
+
+            var actual = matches[0];
+            AddMismatch(diffs, expected.WorkerId, "sam", expected.SamAccountName, actual.SamAccountName);
+            AddMismatch(diffs, expected.WorkerId, "parent OU", expected.ParentOu, actual.ParentOu, ignoreCase: true);
+            if (expected.Enabled is not null && actual.Enabled != expected.Enabled)
+            {
+                diffs.Add(new AutomationAdDiffItem("Failure", $"AD user {expected.WorkerId} expected enabled={expected.Enabled} but found {actual.Enabled}.", expected.WorkerId));
+            }
+
+            AddMismatch(diffs, expected.WorkerId, "displayName", expected.DisplayName, actual.DisplayName);
+            foreach (var attribute in expected.Attributes)
+            {
+                actual.Attributes.TryGetValue(attribute.Key, out var actualValue);
+                AddMismatch(diffs, expected.WorkerId, attribute.Key, attribute.Value, actualValue);
+            }
+        }
+
+        foreach (var unexpected in actualSnapshot.Users.Where(user => !string.IsNullOrWhiteSpace(user.WorkerId) && !expectedByWorker.ContainsKey(user.WorkerId!)))
+        {
+            diffs.Add(new AutomationAdDiffItem(
+                "Failure",
+                $"Unexpected AD user {unexpected.WorkerId} remained in managed OU snapshot: sam={unexpected.SamAccountName}, ou={unexpected.ParentOu}.",
+                unexpected.WorkerId));
+        }
+
+        diffs.AddRange(FindDuplicateDirectoryValues(actualSnapshot.Users));
+        return diffs;
+    }
+
+    public static IReadOnlyList<AutomationAdDiffItem> FindDuplicateDirectoryValues(IReadOnlyList<AutomationAdSnapshotUser> users)
+    {
+        var diffs = new List<AutomationAdDiffItem>();
+        AddDuplicateValueDiffs(users, "sAMAccountName", user => user.SamAccountName, diffs);
+        AddDuplicateValueDiffs(users, "userPrincipalName", user => ReadAttribute(user, "UserPrincipalName"), diffs);
+        AddDuplicateValueDiffs(users, "mail", user => ReadAttribute(user, "mail"), diffs);
+        return diffs;
+    }
+
+    private static void AddMismatch(
+        ICollection<AutomationAdDiffItem> diffs,
+        string workerId,
+        string field,
+        string? expected,
+        string? actual,
+        bool ignoreCase = false)
+    {
+        if (string.IsNullOrWhiteSpace(expected))
+        {
+            return;
+        }
+
+        var comparison = ignoreCase ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+        if (!string.Equals(expected, actual, comparison))
+        {
+            diffs.Add(new AutomationAdDiffItem("Failure", $"AD user {workerId} expected {field} '{expected}' but found '{actual}'.", workerId));
+        }
+    }
+
+    private static void AddDuplicateValueDiffs(
+        IReadOnlyList<AutomationAdSnapshotUser> users,
+        string field,
+        Func<AutomationAdSnapshotUser, string?> selector,
+        ICollection<AutomationAdDiffItem> diffs)
+    {
+        foreach (var duplicate in users
+            .Select(user => new { User = user, Value = selector(user) })
+            .Where(item => !string.IsNullOrWhiteSpace(item.Value))
+            .GroupBy(item => item.Value!, StringComparer.OrdinalIgnoreCase)
+            .Where(group => group.Count() > 1))
+        {
+            var workers = string.Join(", ", duplicate.Select(item => item.User.WorkerId ?? item.User.SamAccountName ?? item.User.DistinguishedName));
+            diffs.Add(new AutomationAdDiffItem("Failure", $"Duplicate AD {field} '{duplicate.Key}' found for {workers}."));
+        }
+    }
+
+    private static string? ReadAttribute(AutomationAdSnapshotUser user, string name) =>
+        user.Attributes.TryGetValue(name, out var value) ? value : null;
+}
 
 internal static class AutomationCliJson
 {

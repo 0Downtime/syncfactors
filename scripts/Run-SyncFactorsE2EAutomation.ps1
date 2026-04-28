@@ -9,6 +9,10 @@ param(
     [string[]]$Tags = @(),
     [switch]$StartStack,
     [switch]$AllowAdReset,
+    [switch]$IncludeDestructive,
+    [switch]$IncludeScale,
+    [switch]$IncludeRecovery,
+    [switch]$Idempotency,
     [switch]$SkipBuild,
     [string]$ConfigPath,
     [string]$MappingConfigPath,
@@ -90,6 +94,22 @@ try {
 
     if ($AllowAdReset) {
         $runnerArgs += '--allow-ad-reset'
+    }
+
+    if ($IncludeDestructive) {
+        $runnerArgs += '--include-destructive'
+    }
+
+    if ($IncludeScale) {
+        $runnerArgs += '--include-scale'
+    }
+
+    if ($IncludeRecovery) {
+        $runnerArgs += '--include-recovery'
+    }
+
+    if ($Idempotency) {
+        $runnerArgs += '--idempotency'
     }
 
     foreach ($tag in $Tags) {

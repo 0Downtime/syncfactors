@@ -1,0 +1,90 @@
+{
+  "name": "identity-correlation",
+  "tags": ["identity", "real-ad", "production-readiness"],
+  "riskLevel": "destructive",
+  "preflight": {
+    "apiHealth": true,
+    "mockHealth": true,
+    "workerHeartbeat": true,
+    "activeDirectory": true,
+    "managedOuSnapshot": true
+  },
+  "expectedQueueStatus": "Completed",
+  "expectedRunStatus": "Succeeded",
+  "expectedDurationSeconds": 120,
+  "resetAdBeforeScenario": true,
+  "resetMockBeforeScenario": true,
+  "syncMode": "BulkSync",
+  "iterations": [
+    {
+      "order": 1,
+      "name": "create-with-identity-values",
+      "mutations": [
+        {
+          "workerId": "10003",
+          "set": {
+            "startDate": "2026-03-15",
+            "lifecycleState": "active",
+            "employmentStatus": "64300",
+            "emplStatus": "64300",
+            "company": "CORP",
+            "department": "Identity"
+          }
+        }
+      ],
+      "expectation": {
+        "runStatus": "Succeeded",
+        "bucketCounts": {
+          "creates": 1
+        },
+        "workerOperations": [
+          {
+            "workerId": "10003",
+            "operations": ["CreateUser"]
+          }
+        ]
+      }
+    },
+    {
+      "order": 2,
+      "name": "rename-and-correlate",
+      "mutations": [
+        {
+          "workerId": "10003",
+          "set": {
+            "preferredName": "Casey",
+            "lastName": "Sample103-Renamed",
+            "email": "casey.sample103.automation@example.test",
+            "company": "CORP Identity"
+          }
+        }
+      ],
+      "expectation": {
+        "runStatus": "Succeeded",
+        "bucketCounts": {
+          "updates": 1
+        },
+        "workerOperations": [
+          {
+            "workerId": "10003",
+            "operations": ["UpdateUser"]
+          }
+        ]
+      }
+    }
+  ],
+  "finalExpectation": {
+    "expectedAdUsers": [
+      {
+        "workerId": "10003",
+        "samAccountName": "10003",
+        "parentOu": "OU=Active,OU=SyncFactors-Users,DC=example,DC=test",
+        "enabled": true,
+        "attributes": {
+          "employeeID": "10003",
+          "company": "CORP Identity"
+        }
+      }
+    ]
+  }
+}

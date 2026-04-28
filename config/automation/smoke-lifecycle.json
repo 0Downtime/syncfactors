@@ -1,9 +1,6 @@
 {
-  "name": "sample-real-ad-lifecycle",
-  "tags": [
-    "sample",
-    "real-ad"
-  ],
+  "name": "smoke-lifecycle",
+  "tags": ["smoke", "real-ad", "production-readiness"],
   "riskLevel": "destructive",
   "preflight": {
     "apiHealth": true,
@@ -14,6 +11,7 @@
   },
   "expectedQueueStatus": "Completed",
   "expectedRunStatus": "Succeeded",
+  "expectedDurationSeconds": 180,
   "resetAdBeforeScenario": true,
   "resetMockBeforeScenario": true,
   "syncMode": "BulkSync",
@@ -42,16 +40,14 @@
         "workerOperations": [
           {
             "workerId": "10003",
-            "operations": [
-              "CreateUser"
-            ]
+            "operations": ["CreateUser"]
           }
         ]
       }
     },
     {
       "order": 2,
-      "name": "activate-and-update",
+      "name": "activate-update",
       "mutations": [
         {
           "workerId": "10003",
@@ -71,16 +67,66 @@
         "workerOperations": [
           {
             "workerId": "10003",
-            "operations": [
-              "MoveUser"
-            ]
+            "operations": ["MoveUser"]
           }
         ]
       }
     },
     {
       "order": 3,
-      "name": "terminate-graveyard",
+      "name": "leave",
+      "mutations": [
+        {
+          "workerId": "10003",
+          "set": {
+            "employmentStatus": "64304",
+            "emplStatus": "64304",
+            "lifecycleState": "paid-leave"
+          }
+        }
+      ],
+      "expectation": {
+        "runStatus": "Succeeded",
+        "bucketCounts": {
+          "updates": 1
+        },
+        "workerOperations": [
+          {
+            "workerId": "10003",
+            "operations": ["MoveUser", "DisableUser"]
+          }
+        ]
+      }
+    },
+    {
+      "order": 4,
+      "name": "rehire-active",
+      "mutations": [
+        {
+          "workerId": "10003",
+          "set": {
+            "employmentStatus": "64300",
+            "emplStatus": "64300",
+            "lifecycleState": "active"
+          }
+        }
+      ],
+      "expectation": {
+        "runStatus": "Succeeded",
+        "bucketCounts": {
+          "enables": 1
+        },
+        "workerOperations": [
+          {
+            "workerId": "10003",
+            "operations": ["MoveUser", "EnableUser"]
+          }
+        ]
+      }
+    },
+    {
+      "order": 5,
+      "name": "terminate",
       "mutations": [
         {
           "workerId": "10003",
@@ -100,10 +146,7 @@
         "workerOperations": [
           {
             "workerId": "10003",
-            "operations": [
-              "MoveUser",
-              "DisableUser"
-            ]
+            "operations": ["MoveUser", "DisableUser"]
           }
         ]
       }

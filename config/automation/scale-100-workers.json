@@ -1,0 +1,62 @@
+{
+  "name": "scale-100-workers",
+  "tags": ["scale", "real-ad", "production-readiness"],
+  "riskLevel": "scale",
+  "preflight": {
+    "apiHealth": true,
+    "mockHealth": true,
+    "workerHeartbeat": true,
+    "activeDirectory": true,
+    "managedOuSnapshot": true
+  },
+  "expectedQueueStatus": "Completed",
+  "expectedRunStatus": "Succeeded",
+  "expectedDurationSeconds": 900,
+  "resetAdBeforeScenario": true,
+  "resetMockBeforeScenario": true,
+  "syncMode": "BulkSync",
+  "iterations": [
+    {
+      "order": 1,
+      "name": "baseline-scale-smoke",
+      "mutations": [
+        {
+          "workerId": "10003",
+          "set": {
+            "startDate": "2026-03-15",
+            "lifecycleState": "active",
+            "employmentStatus": "64300",
+            "emplStatus": "64300",
+            "company": "CORP Scale"
+          }
+        }
+      ],
+      "expectation": {
+        "runStatus": "Succeeded",
+        "bucketCounts": {
+          "creates": 1
+        },
+        "workerOperations": [
+          {
+            "workerId": "10003",
+            "operations": ["CreateUser"]
+          }
+        ]
+      }
+    }
+  ],
+  "finalExpectation": {
+    "expectedAdUsers": [
+      {
+        "workerId": "10003",
+        "samAccountName": "10003",
+        "parentOu": "OU=Active,OU=SyncFactors-Users,DC=example,DC=test",
+        "enabled": true,
+        "attributes": {
+          "employeeID": "10003",
+          "company": "CORP Scale"
+        }
+      }
+    ]
+  }
+}

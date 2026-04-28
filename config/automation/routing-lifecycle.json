@@ -1,9 +1,6 @@
 {
-  "name": "sample-real-ad-lifecycle",
-  "tags": [
-    "sample",
-    "real-ad"
-  ],
+  "name": "routing-lifecycle",
+  "tags": ["routing", "real-ad", "production-readiness"],
   "riskLevel": "destructive",
   "preflight": {
     "apiHealth": true,
@@ -14,13 +11,14 @@
   },
   "expectedQueueStatus": "Completed",
   "expectedRunStatus": "Succeeded",
+  "expectedDurationSeconds": 120,
   "resetAdBeforeScenario": true,
   "resetMockBeforeScenario": true,
   "syncMode": "BulkSync",
   "iterations": [
     {
       "order": 1,
-      "name": "create-prehire",
+      "name": "route-prehire",
       "mutations": [
         {
           "workerId": "10003",
@@ -30,7 +28,7 @@
             "employmentStatus": "64300",
             "emplStatus": "64300",
             "company": "CORP",
-            "department": "IT"
+            "department": "Routing"
           }
         }
       ],
@@ -42,24 +40,21 @@
         "workerOperations": [
           {
             "workerId": "10003",
-            "operations": [
-              "CreateUser"
-            ]
+            "operations": ["CreateUser"]
           }
         ]
       }
     },
     {
       "order": 2,
-      "name": "activate-and-update",
+      "name": "route-active",
       "mutations": [
         {
           "workerId": "10003",
           "set": {
             "startDate": "2026-03-15",
             "lifecycleState": "active",
-            "company": "CORP West",
-            "location.address": "300 Example Way"
+            "company": "CORP Routing"
           }
         }
       ],
@@ -71,39 +66,7 @@
         "workerOperations": [
           {
             "workerId": "10003",
-            "operations": [
-              "MoveUser"
-            ]
-          }
-        ]
-      }
-    },
-    {
-      "order": 3,
-      "name": "terminate-graveyard",
-      "mutations": [
-        {
-          "workerId": "10003",
-          "set": {
-            "employmentStatus": "64308",
-            "emplStatus": "64308",
-            "endDate": "2026-04-01",
-            "lifecycleState": "terminated"
-          }
-        }
-      ],
-      "expectation": {
-        "runStatus": "Succeeded",
-        "bucketCounts": {
-          "graveyardMoves": 1
-        },
-        "workerOperations": [
-          {
-            "workerId": "10003",
-            "operations": [
-              "MoveUser",
-              "DisableUser"
-            ]
+            "operations": ["MoveUser"]
           }
         ]
       }
@@ -114,13 +77,12 @@
       {
         "workerId": "10003",
         "samAccountName": "10003",
-        "parentOu": "OU=Graveyard,OU=SyncFactors-Users,DC=example,DC=test",
-        "enabled": false,
+        "parentOu": "OU=Active,OU=SyncFactors-Users,DC=example,DC=test",
+        "enabled": true,
         "displayName": "Sample103, Casey",
         "attributes": {
           "employeeID": "10003",
-          "company": "CORP West",
-          "streetAddress": "300 Example Way"
+          "company": "CORP Routing"
         }
       }
     ]
