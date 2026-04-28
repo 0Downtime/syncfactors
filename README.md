@@ -161,6 +161,13 @@ pwsh ./scripts/Run-SyncFactorsE2EAutomation.ps1 `
 
 This drives Mock SuccessFactors, the API run queue, the worker, and configured AD test OUs. `-AllowAdReset` is required because the runner queues the destructive delete-all reset before scenarios that declare `resetAdBeforeScenario`.
 
+`SYNCFACTORS_AUTOMATION_USERNAME` and `SYNCFACTORS_AUTOMATION_PASSWORD` are loaded through the same worktree secret path as the normal launcher. You can keep them in `.env.worktree`, Windows Credential Manager, or the macOS Keychain:
+
+```bash
+./scripts/codex/set-macos-keychain-secret.sh SYNCFACTORS_AUTOMATION_USERNAME
+./scripts/codex/set-macos-keychain-secret.sh SYNCFACTORS_AUTOMATION_PASSWORD
+```
+
 Run the focused multi-user sample:
 
 ```powershell
