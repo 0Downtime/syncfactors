@@ -504,9 +504,10 @@ a:focus-visible {
 .environment-corner-banner {
   position: fixed;
   right: -76px;
-  bottom: 38px;
+  bottom: 56px;
   z-index: 55;
   display: flex;
+  align-items: center;
   justify-content: center;
   gap: 8px;
   width: 280px;
@@ -519,8 +520,9 @@ a:focus-visible {
   font-size: 0.78rem;
   font-weight: 800;
   letter-spacing: 0.06em;
-  line-height: 1;
+  line-height: 1.2;
   text-transform: uppercase;
+  white-space: nowrap;
   pointer-events: none;
 }
 
