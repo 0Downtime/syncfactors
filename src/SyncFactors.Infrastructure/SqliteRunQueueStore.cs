@@ -147,6 +147,36 @@ public sealed class SqliteRunQueueStore(SqlitePathResolver pathResolver) : IRunQ
         return await GetPendingOrActiveAsync(cancellationToken) is not null;
     }
 
+    public async Task<RunQueueRequest?> GetAsync(string requestId, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(requestId))
+        {
+            return null;
+        }
+
+        var databasePath = pathResolver.ResolveConfiguredPath() ?? pathResolver.Resolve();
+        if (string.IsNullOrWhiteSpace(databasePath))
+        {
+            return null;
+        }
+
+        await using var connection = new SqliteConnection($"Data Source={databasePath}");
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT request_id, mode, dry_run, run_trigger, requested_by, status, requested_at, started_at, completed_at, run_id, error_message
+            FROM run_queue
+            WHERE request_id = $requestId
+            LIMIT 1;
+            """;
+        command.Parameters.AddWithValue("$requestId", requestId);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        return await reader.ReadAsync(cancellationToken)
+            ? Map(reader)
+            : null;
+    }
+
     public async Task<RunQueueRequest?> GetPendingOrActiveAsync(CancellationToken cancellationToken)
     {
         var databasePath = pathResolver.ResolveConfiguredPath() ?? pathResolver.Resolve();

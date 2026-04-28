@@ -148,6 +148,19 @@ Run the checked-in lifecycle simulator sample:
 pwsh ./scripts/Test-SyncFactorsLifecycleSimulation.ps1
 ```
 
+Run ad hoc real AD end-to-end automation against the mock SuccessFactors stack:
+
+```powershell
+$env:SYNCFACTORS_AUTOMATION_USERNAME='admin'
+$env:SYNCFACTORS_AUTOMATION_PASSWORD='<local-admin-password>'
+pwsh ./scripts/Run-SyncFactorsE2EAutomation.ps1 `
+  -Scenario ./config/automation/sample-real-ad-lifecycle.json `
+  -AllowAdReset `
+  -StartStack
+```
+
+This drives Mock SuccessFactors, the API run queue, the worker, and configured AD test OUs. `-AllowAdReset` is required because the runner queues the destructive delete-all reset before scenarios that declare `resetAdBeforeScenario`.
+
 Run the focused multi-user sample:
 
 ```powershell

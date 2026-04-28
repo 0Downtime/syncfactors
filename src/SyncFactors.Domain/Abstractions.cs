@@ -172,6 +172,7 @@ public interface IRunQueueStore
 {
     Task<RunQueueRequest> EnqueueAsync(StartRunRequest request, CancellationToken cancellationToken);
     Task<RunQueueRequest?> ClaimNextPendingAsync(string workerName, CancellationToken cancellationToken);
+    Task<RunQueueRequest?> GetAsync(string requestId, CancellationToken cancellationToken);
     Task<RunQueueRequest?> GetPendingOrActiveAsync(CancellationToken cancellationToken);
     Task<bool> HasPendingOrActiveRunAsync(CancellationToken cancellationToken);
     Task<bool> CancelPendingOrActiveAsync(string? requestedBy, CancellationToken cancellationToken);

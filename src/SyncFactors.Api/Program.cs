@@ -413,6 +413,14 @@ readApi.MapGet("/runs/queue", async (IRunQueueStore queueStore, CancellationToke
     return Results.Ok(new { request });
 });
 
+readApi.MapGet("/runs/queue/{requestId}", async (string requestId, IRunQueueStore queueStore, CancellationToken cancellationToken) =>
+{
+    var request = await queueStore.GetAsync(requestId, cancellationToken);
+    return request is null
+        ? Results.NotFound(new { error = $"Run queue request '{requestId}' was not found." })
+        : Results.Ok(new { request });
+});
+
 operatorApi.MapPost("/runs", async (StartRunRequest request, ClaimsPrincipal user, IRunQueueStore queueStore, ISecurityAuditService audit, CancellationToken cancellationToken) =>
 {
     if (await queueStore.HasPendingOrActiveRunAsync(cancellationToken))

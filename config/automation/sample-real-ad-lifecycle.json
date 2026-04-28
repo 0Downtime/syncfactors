@@ -1,0 +1,118 @@
+{
+  "name": "sample-real-ad-lifecycle",
+  "tags": [
+    "sample",
+    "real-ad"
+  ],
+  "resetAdBeforeScenario": true,
+  "resetMockBeforeScenario": true,
+  "syncMode": "BulkSync",
+  "iterations": [
+    {
+      "order": 1,
+      "name": "create-prehire",
+      "mutations": [
+        {
+          "workerId": "10003",
+          "set": {
+            "startDate": "2099-01-15",
+            "lifecycleState": "preboarding",
+            "employmentStatus": "64300",
+            "emplStatus": "64300",
+            "company": "CORP",
+            "department": "IT"
+          }
+        }
+      ],
+      "expectation": {
+        "runStatus": "Succeeded",
+        "bucketCounts": {
+          "creates": 1
+        },
+        "workerOperations": [
+          {
+            "workerId": "10003",
+            "operations": [
+              "CreateUser"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "order": 2,
+      "name": "activate-and-update",
+      "mutations": [
+        {
+          "workerId": "10003",
+          "set": {
+            "startDate": "2026-03-15",
+            "lifecycleState": "active",
+            "company": "CORP West",
+            "location.address": "300 Example Way"
+          }
+        }
+      ],
+      "expectation": {
+        "runStatus": "Succeeded",
+        "bucketCounts": {
+          "enables": 1
+        },
+        "workerOperations": [
+          {
+            "workerId": "10003",
+            "operations": [
+              "MoveUser"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "order": 3,
+      "name": "terminate-graveyard",
+      "mutations": [
+        {
+          "workerId": "10003",
+          "set": {
+            "employmentStatus": "64308",
+            "emplStatus": "64308",
+            "endDate": "2026-04-01",
+            "lifecycleState": "terminated"
+          }
+        }
+      ],
+      "expectation": {
+        "runStatus": "Succeeded",
+        "bucketCounts": {
+          "graveyardMoves": 1
+        },
+        "workerOperations": [
+          {
+            "workerId": "10003",
+            "operations": [
+              "MoveUser",
+              "DisableUser"
+            ]
+          }
+        ]
+      }
+    }
+  ],
+  "finalExpectation": {
+    "expectedAdUsers": [
+      {
+        "workerId": "10003",
+        "samAccountName": "10003",
+        "parentOu": "OU=Graveyard,OU=SyncFactors-Users,DC=example,DC=test",
+        "enabled": false,
+        "displayName": "Sample103, Casey",
+        "attributes": {
+          "employeeID": "10003",
+          "company": "CORP West",
+          "streetAddress": "300 Example Way"
+        }
+      }
+    ]
+  }
+}

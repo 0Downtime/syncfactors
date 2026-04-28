@@ -226,6 +226,13 @@ public sealed class DeleteAllUsersCoordinatorTests
             return Task.FromResult<RunQueueRequest?>(null);
         }
 
+        public Task<RunQueueRequest?> GetAsync(string requestId, CancellationToken cancellationToken)
+        {
+            _ = requestId;
+            _ = cancellationToken;
+            return Task.FromResult<RunQueueRequest?>(null);
+        }
+
         public Task<RunQueueRequest?> GetPendingOrActiveAsync(CancellationToken cancellationToken)
         {
             _ = cancellationToken;
