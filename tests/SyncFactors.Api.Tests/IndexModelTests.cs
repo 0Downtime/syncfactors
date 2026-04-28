@@ -70,7 +70,26 @@ public sealed class IndexModelTests
         Assert.Null(settingsStore.LastSavedValue);
     }
 
-    private static IndexModel CreateModel(StubDashboardSettingsStore settingsStore, string environmentName)
+    [Fact]
+    public async Task OnPostCancelRunAsync_RequestsQueueCancellation()
+    {
+        var runQueueStore = new CapturingRunQueueStore { HasPendingOrActiveRun = true };
+        var model = CreateModel(new StubDashboardSettingsStore(enabledOverride: null), "Production", runQueueStore);
+        AttachUser(model, "operator@example.com", "Operator");
+
+        var result = await model.OnPostCancelRunAsync(CancellationToken.None);
+
+        Assert.IsType<RedirectToPageResult>(result);
+        Assert.True(runQueueStore.CancelRequested);
+        Assert.Equal("operator@example.com", runQueueStore.CancelRequestedBy);
+        Assert.Equal("Run cancellation requested.", model.SuccessMessage);
+        Assert.Null(model.ErrorMessage);
+    }
+
+    private static IndexModel CreateModel(
+        StubDashboardSettingsStore settingsStore,
+        string environmentName,
+        CapturingRunQueueStore? runQueueStore = null)
     {
         return new IndexModel(
             new StubDashboardSnapshotService(),
@@ -78,6 +97,7 @@ public sealed class IndexModelTests
                 new DashboardOptions(DefaultHealthProbesEnabled: false, DefaultHealthProbeIntervalSeconds: 45),
                 settingsStore),
             new StubSyncScheduleStore(),
+            runQueueStore ?? new CapturingRunQueueStore(),
             new StubWebHostEnvironment(environmentName));
     }
 
@@ -110,6 +130,91 @@ public sealed class IndexModelTests
                     RequiresAttention: false,
                     AttentionMessage: null,
                     CheckedAt: DateTimeOffset.Parse("2026-04-17T12:00:00Z")));
+        }
+    }
+
+    private sealed class CapturingRunQueueStore : IRunQueueStore
+    {
+        public bool HasPendingOrActiveRun { get; set; }
+
+        public bool CancelRequested { get; private set; }
+
+        public string? CancelRequestedBy { get; private set; }
+
+        public RunQueueRequest? PendingOrActiveRun { get; set; }
+
+        public Task<RunQueueRequest> EnqueueAsync(StartRunRequest request, CancellationToken cancellationToken)
+        {
+            _ = cancellationToken;
+            return Task.FromResult(new RunQueueRequest("req-1", request.Mode, request.DryRun, request.RunTrigger, request.RequestedBy, "Pending", DateTimeOffset.UtcNow, null, null, null, null));
+        }
+
+        public Task<RunQueueRequest?> ClaimNextPendingAsync(string workerName, CancellationToken cancellationToken)
+        {
+            _ = workerName;
+            _ = cancellationToken;
+            return Task.FromResult<RunQueueRequest?>(null);
+        }
+
+        public Task<RunQueueRequest?> GetAsync(string requestId, CancellationToken cancellationToken)
+        {
+            _ = requestId;
+            _ = cancellationToken;
+            return Task.FromResult(PendingOrActiveRun);
+        }
+
+        public Task<RunQueueRequest?> GetPendingOrActiveAsync(CancellationToken cancellationToken)
+        {
+            _ = cancellationToken;
+            return Task.FromResult(PendingOrActiveRun);
+        }
+
+        public Task<bool> HasPendingOrActiveRunAsync(CancellationToken cancellationToken)
+        {
+            _ = cancellationToken;
+            return Task.FromResult(HasPendingOrActiveRun || PendingOrActiveRun is not null);
+        }
+
+        public Task<bool> CancelPendingOrActiveAsync(string? requestedBy, CancellationToken cancellationToken)
+        {
+            _ = cancellationToken;
+            CancelRequestedBy = requestedBy;
+            CancelRequested = HasPendingOrActiveRun || PendingOrActiveRun is not null;
+            return Task.FromResult(CancelRequested);
+        }
+
+        public Task<bool> IsCancellationRequestedAsync(string requestId, CancellationToken cancellationToken)
+        {
+            _ = requestId;
+            _ = cancellationToken;
+            return Task.FromResult(CancelRequested);
+        }
+
+        public Task CompleteAsync(string requestId, string runId, CancellationToken cancellationToken)
+        {
+            _ = requestId;
+            _ = runId;
+            _ = cancellationToken;
+            return Task.CompletedTask;
+        }
+
+        public Task CancelAsync(string requestId, string? runId, string? errorMessage, CancellationToken cancellationToken)
+        {
+            _ = requestId;
+            _ = runId;
+            _ = errorMessage;
+            _ = cancellationToken;
+            CancelRequested = true;
+            return Task.CompletedTask;
+        }
+
+        public Task FailAsync(string requestId, string? runId, string errorMessage, CancellationToken cancellationToken)
+        {
+            _ = requestId;
+            _ = runId;
+            _ = errorMessage;
+            _ = cancellationToken;
+            return Task.CompletedTask;
         }
     }
 

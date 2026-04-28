@@ -74,6 +74,9 @@ echarts.use([BarChart, PieChart, GraphicComponent, GridComponent, LegendComponen
         progressFill: document.querySelector("[data-progress-fill]"),
         progressCaption: document.querySelector("[data-progress-caption]"),
         progressCopy: document.querySelector("[data-progress-copy]"),
+        progressCancel: document.querySelector("[data-progress-cancel]"),
+        progressCancelButton: document.querySelector("[data-progress-cancel-button]"),
+        progressCancelLabel: document.querySelector("[data-progress-cancel-label]"),
         scheduleTitle: document.querySelector("[data-dashboard-schedule-title]"),
         scheduleBadge: document.querySelector("[data-dashboard-schedule-badge]"),
         scheduleCountdown: document.querySelector("[data-dashboard-schedule-countdown]"),
@@ -472,6 +475,32 @@ echarts.use([BarChart, PieChart, GraphicComponent, GridComponent, LegendComponen
             default:
                 return "Idle";
         }
+    }
+
+    function canCancelProgress(status) {
+        const currentStatus = (status && status.status ? status.status : "").toLowerCase();
+        return currentStatus === "planned" ||
+            currentStatus === "pending" ||
+            currentStatus === "inprogress" ||
+            currentStatus === "cancelrequested";
+    }
+
+    function syncProgressCancel(status) {
+        if (!elements.progressCancel) {
+            return;
+        }
+
+        const currentStatus = (status && status.status ? status.status : "").toLowerCase();
+        const cancelRequested = currentStatus === "cancelrequested";
+        const canCancel = canCancelProgress(status);
+
+        toggleHidden(elements.progressCancel, !canCancel);
+
+        if (elements.progressCancelButton) {
+            elements.progressCancelButton.disabled = !canCancel || cancelRequested;
+        }
+
+        updateText(elements.progressCancelLabel, cancelRequested ? "Canceling" : "Cancel run");
     }
 
     function buildProgressCopy(status) {
@@ -894,6 +923,7 @@ echarts.use([BarChart, PieChart, GraphicComponent, GridComponent, LegendComponen
         elements.progressRoot.setAttribute("data-progress-state", nextState);
         updateText(elements.progressCopy, summary);
         updateText(elements.progressCaption, label);
+        syncProgressCancel(status);
 
         if (previousState !== nextState) {
             flashUpdate(elements.progressRoot);
