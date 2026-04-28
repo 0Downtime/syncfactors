@@ -493,12 +493,30 @@ a:focus-visible {
 
 .app-footer {
   display: flex;
+  align-items: center;
   justify-content: center;
   gap: 10px;
   padding: 4px 0 12px;
   color: var(--muted);
   font-size: 0.82rem;
   font-weight: 600;
+}
+
+.version-copy-button {
+  appearance: none;
+  padding: 2px 6px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font: inherit;
+}
+
+.version-copy-button:hover {
+  border-color: var(--line);
+  background: var(--panel-alt);
+  color: var(--ink);
 }
 
 .environment-corner-banner {
@@ -2601,6 +2619,38 @@ a:focus-visible {
 
 .sso-access-list li + li {
   margin-top: 10px;
+}
+
+.oidc-group-table td,
+.oidc-group-table th {
+  vertical-align: top;
+}
+
+.oidc-member-list {
+  display: grid;
+  gap: 8px;
+  min-width: 260px;
+}
+
+.oidc-member {
+  display: grid;
+  grid-template-columns: minmax(160px, 1fr) auto auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.oidc-member strong,
+.oidc-member .muted {
+  display: block;
+}
+
+.role-permission-summary {
+  margin-top: 22px;
+}
+
+.role-permission-summary h3 {
+  margin: 0 0 10px;
+  font-size: 1rem;
 }
 
 .bucket-grid {

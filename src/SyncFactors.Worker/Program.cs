@@ -118,8 +118,20 @@ var host = builder.Build();
 await host.Services.GetRequiredService<SqliteDatabaseInitializer>().InitializeAsync(CancellationToken.None);
 host.Services.GetRequiredService<SyncFactorsConfigurationValidator>().Validate();
 await host.Services.GetRequiredService<RunQueueRecoveryService>().RecoverIfNeededAsync("worker startup", CancellationToken.None);
+LogRuntimeVersion(host);
 LogConfiguredEndpoints(host);
 host.Run();
+
+static void LogRuntimeVersion(IHost host)
+{
+    var buildInfo = RuntimeBuildInfo.FromAssembly(typeof(Program).Assembly);
+    var logger = host.Services.GetRequiredService<ILoggerFactory>().CreateLogger("SyncFactors.Worker.Startup");
+    logger.LogInformation(
+        "SyncFactors worker starting. Version={Version} CommitSha={CommitSha} Dirty={Dirty}",
+        buildInfo.Version,
+        buildInfo.CommitSha ?? "unknown",
+        buildInfo.Dirty);
+}
 
 static void LogConfiguredEndpoints(IHost host)
 {
