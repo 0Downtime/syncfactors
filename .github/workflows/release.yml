@@ -56,6 +56,12 @@ jobs:
           dotnet publish ./src/SyncFactors.Api/SyncFactors.Api.csproj --configuration Release --output ./artifacts/publish/api /p:Version="${{ steps.release_info.outputs.version }}" /p:InformationalVersion="${{ steps.release_info.outputs.assembly_informational_version }}" /p:SourceRevisionId="${{ steps.release_info.outputs.commit_sha }}"
           dotnet publish ./src/SyncFactors.Worker/SyncFactors.Worker.csproj --configuration Release --output ./artifacts/publish/worker /p:Version="${{ steps.release_info.outputs.version }}" /p:InformationalVersion="${{ steps.release_info.outputs.assembly_informational_version }}" /p:SourceRevisionId="${{ steps.release_info.outputs.commit_sha }}"
 
+      - name: Validate application versions
+        shell: pwsh
+        run: |
+          ./scripts/Assert-SyncFactorsAssemblyVersion.ps1 -AssemblyPath ./artifacts/publish/api/SyncFactors.Api.dll -ExpectedInformationalVersion "${{ steps.release_info.outputs.assembly_informational_version }}" -ExpectedCommitSha "${{ steps.release_info.outputs.commit_sha }}"
+          ./scripts/Assert-SyncFactorsAssemblyVersion.ps1 -AssemblyPath ./artifacts/publish/worker/SyncFactors.Worker.dll -ExpectedInformationalVersion "${{ steps.release_info.outputs.assembly_informational_version }}" -ExpectedCommitSha "${{ steps.release_info.outputs.commit_sha }}"
+
       - name: Build deployment bundle
         id: bundle
         shell: pwsh
@@ -160,6 +166,12 @@ jobs:
         run: |
           dotnet publish ./src/SyncFactors.Api/SyncFactors.Api.csproj --configuration Release --output ./artifacts/publish/api /p:Version="${{ steps.release_info.outputs.version }}" /p:InformationalVersion="${{ steps.release_info.outputs.assembly_informational_version }}" /p:SourceRevisionId="${{ steps.release_info.outputs.commit_sha }}"
           dotnet publish ./src/SyncFactors.Worker/SyncFactors.Worker.csproj --configuration Release --output ./artifacts/publish/worker /p:Version="${{ steps.release_info.outputs.version }}" /p:InformationalVersion="${{ steps.release_info.outputs.assembly_informational_version }}" /p:SourceRevisionId="${{ steps.release_info.outputs.commit_sha }}"
+
+      - name: Validate application versions
+        shell: pwsh
+        run: |
+          ./scripts/Assert-SyncFactorsAssemblyVersion.ps1 -AssemblyPath ./artifacts/publish/api/SyncFactors.Api.dll -ExpectedInformationalVersion "${{ steps.release_info.outputs.assembly_informational_version }}" -ExpectedCommitSha "${{ steps.release_info.outputs.commit_sha }}"
+          ./scripts/Assert-SyncFactorsAssemblyVersion.ps1 -AssemblyPath ./artifacts/publish/worker/SyncFactors.Worker.dll -ExpectedInformationalVersion "${{ steps.release_info.outputs.assembly_informational_version }}" -ExpectedCommitSha "${{ steps.release_info.outputs.commit_sha }}"
 
       - name: Build deployment bundle
         id: bundle

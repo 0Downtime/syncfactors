@@ -97,7 +97,9 @@
         </main>
         <footer class="app-footer" aria-label="Application version">
             <span>SyncFactors</span>
-            <span>v@(appVersion)</span>
+            <button class="version-copy-button" type="button" data-copy-version="@appVersion" title="Copy version">
+                v@(appVersion)
+            </button>
         </footer>
     </div>
     @if (showDevelopmentBanner)

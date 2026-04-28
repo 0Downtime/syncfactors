@@ -75,5 +75,18 @@
     <PropertyGroup Condition="'$(SyncFactorsDirtyState)' == 'dirty' and '$(SyncFactorsAppendedShaMetadata)' == 'true' and '$(InformationalVersion)' != '' and '$(SyncFactorsInformationalVersionHasDirtySuffix)' != 'True'">
       <InformationalVersion>$(InformationalVersion).dirty</InformationalVersion>
     </PropertyGroup>
+
+    <ItemGroup Condition="'$(SyncFactorsCommitSha)' != ''">
+      <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+        <_Parameter1>SourceRevisionId</_Parameter1>
+        <_Parameter2>$(SyncFactorsCommitSha)</_Parameter2>
+      </AssemblyAttribute>
+    </ItemGroup>
+    <ItemGroup Condition="'$(SyncFactorsDirtyState)' == 'dirty'">
+      <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+        <_Parameter1>SyncFactorsBuildDirty</_Parameter1>
+        <_Parameter2>true</_Parameter2>
+      </AssemblyAttribute>
+    </ItemGroup>
   </Target>
 </Project>

@@ -286,6 +286,7 @@ await app.Services.GetRequiredService<SqliteDatabaseInitializer>().InitializeAsy
 await app.Services.GetRequiredService<ILocalAuthService>().EnsureBootstrapAdminAsync(CancellationToken.None);
 app.Services.GetRequiredService<SyncFactorsConfigurationValidator>().Validate();
 ValidateAuthConfiguration(app);
+LogRuntimeVersion(app.Logger, "api", typeof(Program).Assembly);
 LogConfiguredEndpoints(app);
 
 app.UseForwardedHeaders();
@@ -316,6 +317,9 @@ app.UseAuthorization();
 
 var api = app.MapGroup("/api");
 var sessionApi = app.MapGroup("/api/session");
+
+api.MapGet("/version", () => Results.Ok(RuntimeBuildInfo.FromAssembly(typeof(Program).Assembly)))
+    .AllowAnonymous();
 
 sessionApi.MapGet(string.Empty, async (HttpContext httpContext, ILocalAuthService authService, CancellationToken cancellationToken) =>
 {
@@ -828,6 +832,17 @@ static void LogConfiguredEndpoints(WebApplication app)
             "[AD-ENDPOINT] Active Directory is configured to use Global Catalog port {ActiveDirectoryPort}. Attributes outside the partial attribute set, especially custom identity attributes such as employeeID, may read back as empty.",
             activeDirectoryPort);
     }
+}
+
+static void LogRuntimeVersion(Microsoft.Extensions.Logging.ILogger logger, string processName, System.Reflection.Assembly assembly)
+{
+    var buildInfo = RuntimeBuildInfo.FromAssembly(assembly);
+    logger.LogInformation(
+        "SyncFactors {ProcessName} starting. Version={Version} CommitSha={CommitSha} Dirty={Dirty}",
+        processName,
+        buildInfo.Version,
+        buildInfo.CommitSha ?? "unknown",
+        buildInfo.Dirty);
 }
 
 static int ResolveActiveDirectoryPort(ActiveDirectoryConfig config)
