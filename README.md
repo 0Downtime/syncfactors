@@ -143,6 +143,27 @@ After extracting the zip on a Windows host, start the applications from the bund
 
 The bundle is self-contained, so the target Windows host does not need a separate .NET runtime install.
 
+To install the API and worker as Windows Services, run an elevated PowerShell session from the extracted bundle root:
+
+```powershell
+pwsh .\scripts\Install-SyncFactorsWindowsServices.ps1 `
+  -RunProfile real `
+  -ApiUrls https://127.0.0.1:5087
+
+Start-Service SyncFactors.Api
+Start-Service SyncFactors.Worker
+```
+
+The installer creates `SyncFactors.Api` and `SyncFactors.Worker`, registers matching Windows Event Log sources under the Application log, configures restart-on-failure recovery, and writes service environment values for the selected profile, config paths, SQLite path, and local file logging. It also creates local config files from the bundled samples when they are missing. To replace existing service definitions, rerun with `-Force`.
+
+Uninstall the services from an elevated session:
+
+```powershell
+pwsh .\scripts\Uninstall-SyncFactorsWindowsServices.ps1
+```
+
+Use `Event Viewer > Windows Logs > Application` with sources `SyncFactors.Api` and `SyncFactors.Worker` for service startup, shutdown, warning, and error events. Local rolling logs are also enabled by default under `state\logs` inside the bundle root.
+
 To validate a sanitized SuccessFactors export or fixture-style worker document against the expected source contract:
 
 ```powershell
