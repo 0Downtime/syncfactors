@@ -1,3 +1,5 @@
+@using System.Reflection
+@inject Microsoft.AspNetCore.Hosting.IWebHostEnvironment HostEnvironment
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -25,6 +27,16 @@
     var isAdminUsersPage = currentPage.StartsWith("/Admin/Users", StringComparison.OrdinalIgnoreCase);
     var isAdminDeletionQueuePage = currentPage.StartsWith("/Admin/DeletionQueue", StringComparison.OrdinalIgnoreCase);
     var isAdminConfigurationPage = currentPage.StartsWith("/Admin/Configuration", StringComparison.OrdinalIgnoreCase);
+    var appVersion = typeof(SyncFactors.Api.DashboardOptions).Assembly
+        .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?
+        .InformationalVersion;
+    if (string.IsNullOrWhiteSpace(appVersion))
+    {
+        appVersion = typeof(SyncFactors.Api.DashboardOptions).Assembly.GetName().Version?.ToString() ?? "unknown";
+    }
+
+    var appEnvironment = HostEnvironment.EnvironmentName;
+    var showDevelopmentBanner = string.Equals(appEnvironment, "Development", StringComparison.OrdinalIgnoreCase);
 }
 <body data-page="@currentPageToken">
     <div class="shell">
@@ -83,7 +95,18 @@
         <main class="content">
             @RenderBody()
         </main>
+        <footer class="app-footer" aria-label="Application version">
+            <span>SyncFactors</span>
+            <span>v@appVersion</span>
+        </footer>
     </div>
+    @if (showDevelopmentBanner)
+    {
+        <div class="environment-corner-banner" role="status" aria-label="Environment and version">
+            <strong>@appEnvironment</strong>
+            <span>v@appVersion</span>
+        </div>
+    }
     <div class="toast-region" aria-live="polite" aria-atomic="true" data-toast-region></div>
     <script src="~/dist/site.js" asp-append-version="true"></script>
 </body>
