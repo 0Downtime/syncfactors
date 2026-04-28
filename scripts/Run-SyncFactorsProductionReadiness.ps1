@@ -96,6 +96,30 @@ function Invoke-ReadinessStage {
     }
 }
 
+function Invoke-WithTemporaryEnvironment {
+    param(
+        [Parameter(Mandatory)]
+        [hashtable]$Values,
+        [Parameter(Mandatory)]
+        [scriptblock]$ScriptBlock
+    )
+
+    $original = @{}
+    foreach ($key in $Values.Keys) {
+        $original[$key] = [Environment]::GetEnvironmentVariable($key)
+        [Environment]::SetEnvironmentVariable($key, $Values[$key])
+    }
+
+    try {
+        & $ScriptBlock
+    }
+    finally {
+        foreach ($key in $original.Keys) {
+            [Environment]::SetEnvironmentVariable($key, $original[$key])
+        }
+    }
+}
+
 if ([string]::IsNullOrWhiteSpace($ReportPath)) {
     $ReportPath = Join-Path $projectRoot ("state/runtime/automation-reports/production-readiness-{0}.md" -f (Get-Date -Format 'yyyyMMddHHmmss'))
 }
@@ -159,9 +183,17 @@ try {
 
     if (-not $SkipUnitTests) {
         Invoke-ReadinessStage -Name 'unit and integration tests' -ScriptBlock {
-            dotnet test (Join-Path $projectRoot 'SyncFactors.Next.sln') --no-build
-            if ($LASTEXITCODE -ne 0) {
-                throw "dotnet test failed."
+            Invoke-WithTemporaryEnvironment -Values @{
+                DOTNET_ENVIRONMENT = $null
+                ASPNETCORE_ENVIRONMENT = $null
+                SYNCFACTORS_CONFIG_PATH = $null
+                SYNCFACTORS_MAPPING_CONFIG_PATH = $null
+                SYNCFACTORS_RUN_PROFILE = $null
+            } -ScriptBlock {
+                dotnet test (Join-Path $projectRoot 'SyncFactors.Next.sln') --no-build
+                if ($LASTEXITCODE -ne 0) {
+                    throw "dotnet test failed."
+                }
             }
         }
     }

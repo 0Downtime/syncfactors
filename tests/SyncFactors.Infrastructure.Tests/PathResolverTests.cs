@@ -11,10 +11,16 @@ public sealed class PathResolverTests
         var mappingPath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "config", "local.syncfactors.mapping-config.json"));
         var originalConfigContents = File.Exists(configPath) ? File.ReadAllText(configPath) : null;
         var originalMappingContents = File.Exists(mappingPath) ? File.ReadAllText(mappingPath) : null;
+        var originalConfigPath = Environment.GetEnvironmentVariable("SYNCFACTORS_CONFIG_PATH");
+        var originalMappingPath = Environment.GetEnvironmentVariable("SYNCFACTORS_MAPPING_CONFIG_PATH");
+        var originalProfile = Environment.GetEnvironmentVariable("SYNCFACTORS_RUN_PROFILE");
 
         Directory.CreateDirectory(Path.GetDirectoryName(configPath)!);
         File.WriteAllText(configPath, "{}");
         File.WriteAllText(mappingPath, "{}");
+        Environment.SetEnvironmentVariable("SYNCFACTORS_CONFIG_PATH", null);
+        Environment.SetEnvironmentVariable("SYNCFACTORS_MAPPING_CONFIG_PATH", null);
+        Environment.SetEnvironmentVariable("SYNCFACTORS_RUN_PROFILE", null);
 
         try
         {
@@ -25,6 +31,10 @@ public sealed class PathResolverTests
         }
         finally
         {
+            Environment.SetEnvironmentVariable("SYNCFACTORS_CONFIG_PATH", originalConfigPath);
+            Environment.SetEnvironmentVariable("SYNCFACTORS_MAPPING_CONFIG_PATH", originalMappingPath);
+            Environment.SetEnvironmentVariable("SYNCFACTORS_RUN_PROFILE", originalProfile);
+
             if (originalConfigContents is null)
             {
                 File.Delete(configPath);
@@ -50,10 +60,14 @@ public sealed class PathResolverTests
     {
         var mockConfigPath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "config", "local.mock-successfactors.real-ad.sync-config.json"));
         var originalContents = File.Exists(mockConfigPath) ? File.ReadAllText(mockConfigPath) : null;
+        var originalConfigPath = Environment.GetEnvironmentVariable("SYNCFACTORS_CONFIG_PATH");
+        var originalMappingPath = Environment.GetEnvironmentVariable("SYNCFACTORS_MAPPING_CONFIG_PATH");
         var originalProfile = Environment.GetEnvironmentVariable("SYNCFACTORS_RUN_PROFILE");
 
         Directory.CreateDirectory(Path.GetDirectoryName(mockConfigPath)!);
         File.WriteAllText(mockConfigPath, "{}");
+        Environment.SetEnvironmentVariable("SYNCFACTORS_CONFIG_PATH", null);
+        Environment.SetEnvironmentVariable("SYNCFACTORS_MAPPING_CONFIG_PATH", null);
         Environment.SetEnvironmentVariable("SYNCFACTORS_RUN_PROFILE", "mock");
 
         try
@@ -63,6 +77,8 @@ public sealed class PathResolverTests
         }
         finally
         {
+            Environment.SetEnvironmentVariable("SYNCFACTORS_CONFIG_PATH", originalConfigPath);
+            Environment.SetEnvironmentVariable("SYNCFACTORS_MAPPING_CONFIG_PATH", originalMappingPath);
             Environment.SetEnvironmentVariable("SYNCFACTORS_RUN_PROFILE", originalProfile);
             RestoreFile(mockConfigPath, originalContents);
         }
@@ -73,10 +89,14 @@ public sealed class PathResolverTests
     {
         var realConfigPath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "config", "local.real-successfactors.real-ad.sync-config.json"));
         var originalContents = File.Exists(realConfigPath) ? File.ReadAllText(realConfigPath) : null;
+        var originalConfigPath = Environment.GetEnvironmentVariable("SYNCFACTORS_CONFIG_PATH");
+        var originalMappingPath = Environment.GetEnvironmentVariable("SYNCFACTORS_MAPPING_CONFIG_PATH");
         var originalProfile = Environment.GetEnvironmentVariable("SYNCFACTORS_RUN_PROFILE");
 
         Directory.CreateDirectory(Path.GetDirectoryName(realConfigPath)!);
         File.WriteAllText(realConfigPath, "{}");
+        Environment.SetEnvironmentVariable("SYNCFACTORS_CONFIG_PATH", null);
+        Environment.SetEnvironmentVariable("SYNCFACTORS_MAPPING_CONFIG_PATH", null);
         Environment.SetEnvironmentVariable("SYNCFACTORS_RUN_PROFILE", "real");
 
         try
@@ -86,6 +106,8 @@ public sealed class PathResolverTests
         }
         finally
         {
+            Environment.SetEnvironmentVariable("SYNCFACTORS_CONFIG_PATH", originalConfigPath);
+            Environment.SetEnvironmentVariable("SYNCFACTORS_MAPPING_CONFIG_PATH", originalMappingPath);
             Environment.SetEnvironmentVariable("SYNCFACTORS_RUN_PROFILE", originalProfile);
             RestoreFile(realConfigPath, originalContents);
         }

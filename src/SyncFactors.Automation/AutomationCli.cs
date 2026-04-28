@@ -707,11 +707,15 @@ public sealed class AutomationRunner(AutomationOptions options, TextWriter outpu
             var probes = payload["probes"]?.AsArray().OfType<JsonObject>() ?? [];
             var workerProbe = probes.FirstOrDefault(probe =>
                 (ReadString(probe, "dependency") ?? string.Empty).Contains("worker", StringComparison.OrdinalIgnoreCase));
+            var workerStatus = ReadString(workerProbe, "status");
+            var isStale = workerProbe?["isStale"]?.GetValue<bool>() == true;
             var message = workerProbe is null
                 ? $"dashboard health status={status ?? "(missing)"}, no explicit worker probe found"
-                : $"dashboard health status={status ?? "(missing)"}, worker={ReadString(workerProbe, "status") ?? "(missing)"} observedAt={ReadString(workerProbe, "observedAt") ?? "(missing)"} stale={workerProbe["isStale"]?.GetValue<bool>()}";
-            var passed = !string.Equals(status, DependencyHealthStates.Unhealthy, StringComparison.OrdinalIgnoreCase) &&
-                (string.IsNullOrWhiteSpace(expectedStatus) || string.Equals(status, expectedStatus, StringComparison.OrdinalIgnoreCase));
+                : $"dashboard health status={status ?? "(missing)"}, worker={workerStatus ?? "(missing)"} observedAt={ReadString(workerProbe, "observedAt") ?? "(missing)"} stale={isStale}";
+            var passed = workerProbe is not null &&
+                !isStale &&
+                !string.Equals(workerStatus, DependencyHealthStates.Unhealthy, StringComparison.OrdinalIgnoreCase) &&
+                (string.IsNullOrWhiteSpace(expectedStatus) || string.Equals(workerStatus, expectedStatus, StringComparison.OrdinalIgnoreCase));
             return new AutomationPreflightResult("worker-heartbeat", passed, message, DateTimeOffset.UtcNow);
         }
         catch (Exception ex)
