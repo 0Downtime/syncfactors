@@ -130,6 +130,19 @@ pwsh ./scripts/Validate-SyncFactors.ps1
 
 That command builds the solution, runs the solution test suite, and then runs the lifecycle simulation master suite as an explicit final gate.
 
+## Windows Release Bundle
+
+The release workflow publishes a self-contained Windows x64 deployment zip to GitHub Releases. The asset is named like `syncfactors-<version>-win-x64.zip` and includes the API, worker, sample config, docs, and scripts.
+
+After extracting the zip on a Windows host, start the applications from the bundle root:
+
+```powershell
+.\app\api\SyncFactors.Api.exe
+.\app\worker\SyncFactors.Worker.exe
+```
+
+The bundle is self-contained, so the target Windows host does not need a separate .NET runtime install.
+
 To validate a sanitized SuccessFactors export or fixture-style worker document against the expected source contract:
 
 ```powershell
