@@ -1,0 +1,88 @@
+{
+  "name": "routing-lifecycle",
+  "tags": ["routing", "real-ad", "production-readiness"],
+  "riskLevel": "destructive",
+  "preflight": {
+    "apiHealth": true,
+    "mockHealth": true,
+    "workerHeartbeat": true,
+    "activeDirectory": true,
+    "managedOuSnapshot": true
+  },
+  "expectedQueueStatus": "Completed",
+  "expectedRunStatus": "Succeeded",
+  "expectedDurationSeconds": 120,
+  "resetAdBeforeScenario": true,
+  "resetMockBeforeScenario": true,
+  "syncMode": "BulkSync",
+  "iterations": [
+    {
+      "order": 1,
+      "name": "route-prehire",
+      "mutations": [
+        {
+          "workerId": "10003",
+          "set": {
+            "startDate": "2099-01-15",
+            "lifecycleState": "preboarding",
+            "employmentStatus": "64300",
+            "emplStatus": "64300",
+            "company": "CORP",
+            "department": "Routing"
+          }
+        }
+      ],
+      "expectation": {
+        "runStatus": "Succeeded",
+        "bucketCounts": {
+          "creates": 1
+        },
+        "workerOperations": [
+          {
+            "workerId": "10003",
+            "operations": ["CreateUser"]
+          }
+        ]
+      }
+    },
+    {
+      "order": 2,
+      "name": "route-active",
+      "mutations": [
+        {
+          "workerId": "10003",
+          "set": {
+            "startDate": "2026-03-15",
+            "lifecycleState": "active",
+            "company": "CORP Routing"
+          }
+        }
+      ],
+      "expectation": {
+        "runStatus": "Succeeded",
+        "bucketCounts": {
+          "enables": 1
+        },
+        "workerOperations": [
+          {
+            "workerId": "10003",
+            "operations": ["MoveUser"]
+          }
+        ]
+      }
+    }
+  ],
+  "finalExpectation": {
+    "expectedAdUsers": [
+      {
+        "workerId": "10003",
+        "samAccountName": "10003",
+        "parentOu": "{{activeOu}}",
+        "enabled": true,
+        "attributes": {
+          "company": "CORP Routing"
+        }
+      }
+    ]
+  }
+}

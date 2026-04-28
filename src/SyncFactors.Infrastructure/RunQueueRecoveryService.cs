@@ -14,7 +14,7 @@ public sealed class RunQueueRecoveryService(
 {
     private static readonly TimeSpan FreshRunningHeartbeatAge = TimeSpan.FromMinutes(2);
 
-    public async Task<int> RecoverIfNeededAsync(string trigger, CancellationToken cancellationToken)
+    public async Task<int> RecoverIfNeededAsync(string trigger, CancellationToken cancellationToken, bool ignoreFreshHeartbeat = false)
     {
         var current = await runQueueStore.GetPendingOrActiveAsync(cancellationToken);
         var runtime = await runtimeStatusStore.GetCurrentAsync(cancellationToken);
@@ -32,7 +32,7 @@ public sealed class RunQueueRecoveryService(
 
         var heartbeat = await workerHeartbeatStore.GetCurrentAsync(cancellationToken);
         var now = timeProvider.GetUtcNow();
-        if (heartbeat is not null)
+        if (!ignoreFreshHeartbeat && heartbeat is not null)
         {
             var age = now - heartbeat.LastSeenAt;
             if (age <= FreshRunningHeartbeatAge &&

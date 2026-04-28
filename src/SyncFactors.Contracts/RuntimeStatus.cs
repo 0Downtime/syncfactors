@@ -181,6 +181,19 @@ public sealed record StartRunRequest(
     string RunTrigger = "AdHoc",
     string? RequestedBy = null);
 
+public sealed record RunQueueRecoveryProbeRequest(
+    string? RequestId,
+    string Status,
+    string? ExpectedStatus = null,
+    string Mode = "BulkSync",
+    bool DryRun = false,
+    string RunTrigger = "AutomationRecoveryProbe",
+    string? RequestedBy = "Automation",
+    string? RunId = null,
+    string? WorkerName = "automation-recovery-probe",
+    int StartedMinutesAgo = 10,
+    bool Force = true);
+
 public sealed record SyncScheduleStatus(
     bool Enabled,
     int IntervalMinutes,

@@ -92,6 +92,8 @@ function Get-RequiredWorktreeEnvTemplateValues {
     $values['SYNCFACTORS_TLS_CERT_PASSWORD'] = ''
     $values['MOCK_SF_SYNTHETIC_POPULATION_ENABLED'] = 'true'
     $values['MOCK_SF_TARGET_WORKER_COUNT'] = '1000'
+    $values['SYNCFACTORS_AUTOMATION_USERNAME'] = ''
+    $values['SYNCFACTORS_AUTOMATION_PASSWORD'] = ''
     $values['SYNCFACTORS_KEYCHAIN_SERVICE'] = 'syncfactors'
     $values['SF_AD_SYNC_SF_USERNAME'] = ''
     $values['SF_AD_SYNC_SF_PASSWORD'] = ''
@@ -442,6 +444,8 @@ function Get-SyncFactorsSecureStoreVariableNames {
     return @(
         'SYNCFACTORS__AUTH__OIDC__CLIENTSECRET',
         'SYNCFACTORS__AUTH__BOOTSTRAPADMIN__PASSWORD',
+        'SYNCFACTORS_AUTOMATION_USERNAME',
+        'SYNCFACTORS_AUTOMATION_PASSWORD',
         'SF_AD_SYNC_SF_USERNAME',
         'SF_AD_SYNC_SF_PASSWORD',
         'SF_AD_SYNC_SF_CLIENT_ID',

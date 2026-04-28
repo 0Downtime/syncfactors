@@ -15,6 +15,7 @@
     <Compile Include="DirectoryServiceRuntimeSelector.cs" />
     <Compile Include="HealthEndpointMappings.cs" />
     <Compile Include="LauncherProbe.cs" />
+    <Compile Include="OidcRoleResolver.cs" />
     <Compile Include="AdminConfigurationSnapshotBuilder.cs" />
     <Compile Include="SpaApiModels.cs" />
     <Compile Include="UiDateTimeFormatter.cs" />

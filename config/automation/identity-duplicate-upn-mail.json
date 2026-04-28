@@ -1,0 +1,116 @@
+{
+  "name": "identity-duplicate-upn-mail",
+  "tags": ["identity", "real-ad", "production-readiness", "duplicate-identity"],
+  "riskLevel": "destructive",
+  "preflight": {
+    "apiHealth": true,
+    "mockHealth": true,
+    "workerHeartbeat": true,
+    "activeDirectory": true,
+    "managedOuSnapshot": true
+  },
+  "expectedQueueStatus": "Completed",
+  "expectedRunStatus": "Succeeded",
+  "expectedDurationSeconds": 120,
+  "resetAdBeforeScenario": true,
+  "resetMockBeforeScenario": true,
+  "syncMode": "BulkSync",
+  "iterations": [
+    {
+      "order": 1,
+      "name": "create-workers-with-duplicate-preferred-upn-base",
+      "mutations": [
+        {
+          "workerId": "10003",
+          "set": {
+            "userName": "10003",
+            "userId": "10003",
+            "firstName": "Worker103",
+            "lastName": "Sample103",
+            "preferredName": "Casey",
+            "displayName": "Casey Sample103",
+            "email": "user.10003@example.test",
+            "startDate": "2026-03-15",
+            "lifecycleState": "active",
+            "employmentStatus": "64300",
+            "emplStatus": "64300",
+            "company": "CORP Identity",
+            "department": "Identity"
+          }
+        },
+        {
+          "workerId": "90003",
+          "worker": {
+            "personIdExternal": "90003",
+            "personId": "90003",
+            "perPersonUuid": "uuid-90003",
+            "userName": "90003",
+            "userId": "90003",
+            "email": "user.90003@example.test",
+            "emailType": "B",
+            "firstName": "Worker90003",
+            "lastName": "Sample103",
+            "preferredName": "Casey",
+            "displayName": "Casey Sample103",
+            "startDate": "2026-03-15",
+            "employmentStatus": "64300",
+            "lifecycleState": "active",
+            "department": "Identity",
+            "departmentName": "Identity",
+            "company": "CORP Identity",
+            "companyId": "COMP-IDENTITY",
+            "jobTitle": "Identity Conflict Tester",
+            "businessUnit": "Automation",
+            "division": "Identity",
+            "costCenter": "ID-100",
+            "costCenterDescription": "Identity Automation",
+            "costCenterId": "ID100",
+            "employeeClass": "Employee",
+            "employeeType": "Regular",
+            "twoCharCountryCode": "US",
+            "activeEmploymentsCount": "1",
+            "scenarioTags": ["active", "identity", "duplicate-upn-mail"]
+          }
+        }
+      ],
+      "expectation": {
+        "runStatus": "Succeeded",
+        "bucketCounts": {
+          "creates": 2
+        },
+        "workerOperations": [
+          {
+            "workerId": "10003",
+            "operations": ["CreateUser"]
+          },
+          {
+            "workerId": "90003",
+            "operations": ["CreateUser"]
+          }
+        ]
+      }
+    }
+  ],
+  "finalExpectation": {
+    "expectedAdUsers": [
+      {
+        "workerId": "10003",
+        "samAccountName": "10003",
+        "parentOu": "{{activeOu}}",
+        "enabled": true,
+        "attributes": {
+          "company": "CORP Identity"
+        }
+      },
+      {
+        "workerId": "90003",
+        "samAccountName": "90003",
+        "parentOu": "{{activeOu}}",
+        "enabled": true,
+        "attributes": {
+          "company": "CORP Identity"
+        }
+      }
+    ]
+  }
+}

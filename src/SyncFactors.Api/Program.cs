@@ -413,6 +413,14 @@ readApi.MapGet("/runs/queue", async (IRunQueueStore queueStore, CancellationToke
     return Results.Ok(new { request });
 });
 
+readApi.MapGet("/runs/queue/{requestId}", async (string requestId, IRunQueueStore queueStore, CancellationToken cancellationToken) =>
+{
+    var request = await queueStore.GetAsync(requestId, cancellationToken);
+    return request is null
+        ? Results.NotFound(new { error = $"Run queue request '{requestId}' was not found." })
+        : Results.Ok(new { request });
+});
+
 operatorApi.MapPost("/runs", async (StartRunRequest request, ClaimsPrincipal user, IRunQueueStore queueStore, ISecurityAuditService audit, CancellationToken cancellationToken) =>
 {
     if (await queueStore.HasPendingOrActiveRunAsync(cancellationToken))
@@ -599,6 +607,43 @@ operatorApi.MapPost("/runs/delete-all", async (
     return Results.Accepted($"/api/runs/{queued.RequestId}", queued);
 });
 
+operatorApi.MapPost("/admin/runs/queue/recovery-probe", async Task<IResult> (
+    RunQueueRecoveryProbeRequest request,
+    ClaimsPrincipal user,
+    IRunQueueStore queueStore,
+    RunQueueRecoveryService recoveryService,
+    ISecurityAuditService audit,
+    IWebHostEnvironment environment,
+    CancellationToken cancellationToken) =>
+{
+    if (!environment.IsDevelopment())
+    {
+        return Results.NotFound();
+    }
+
+    if (!string.Equals(request.Status, "InProgress", StringComparison.OrdinalIgnoreCase) &&
+        !string.Equals(request.Status, "CancelRequested", StringComparison.OrdinalIgnoreCase))
+    {
+        return Results.BadRequest(new { error = "Recovery probe status must be InProgress or CancelRequested." });
+    }
+
+    var seeded = await queueStore.SeedRecoveryProbeAsync(request, cancellationToken);
+    var recovered = await recoveryService.RecoverIfNeededAsync(
+        "automation recovery probe",
+        cancellationToken,
+        ignoreFreshHeartbeat: request.Force);
+    var latest = await queueStore.GetAsync(seeded.RequestId, cancellationToken);
+    audit.Write(
+        "RunQueueRecoveryProbed",
+        recovered > 0 ? "Success" : "NoOp",
+        ("RequestedBy", ResolveRequestedBy(user, "API")),
+        ("RequestId", seeded.RequestId),
+        ("SeedStatus", request.Status),
+        ("Recovered", recovered),
+        ("FinalStatus", latest?.Status));
+    return Results.Ok(new { seeded, recovered, request = latest });
+});
+
 adminApi.MapGet("/admin/users", async (ILocalAuthService authService, CancellationToken cancellationToken) =>
 {
     var users = await authService.ListUsersAsync(cancellationToken);
@@ -702,6 +747,11 @@ static void ValidateAuthConfiguration(WebApplication app)
     if (string.Equals(mode, "oidc", StringComparison.OrdinalIgnoreCase) && !oidcEnabled)
     {
         throw new InvalidOperationException("SyncFactors:Auth mode 'oidc' requires OIDC authority and client ID.");
+    }
+
+    if (oidcEnabled && !OidcRoleResolver.HasConfiguredRoleGroups(authOptions))
+    {
+        throw new InvalidOperationException("SyncFactors:Auth:Oidc must configure at least one ViewerGroups, OperatorGroups, or AdminGroups value when OIDC is enabled.");
     }
 
     if (authOptions.IdleTimeoutMinutes is < LocalAuthOptions.MinIdleTimeoutMinutes or > LocalAuthOptions.MaxIdleTimeoutMinutes)
@@ -889,40 +939,11 @@ static void ApplyOidcIdentity(ClaimsIdentity identity, LocalAuthOptions authSett
     }
 
     RemoveClaims(identity, ClaimTypes.Role);
-    foreach (var role in ResolveOidcRoles(identity, authSettings))
+    foreach (var role in OidcRoleResolver.ResolveRoles(identity, authSettings))
     {
         identity.AddClaim(new Claim(ClaimTypes.Role, role));
     }
 }
-
-static IReadOnlyList<string> ResolveOidcRoles(ClaimsIdentity identity, LocalAuthOptions authSettings)
-{
-    var groups = identity.FindAll(authSettings.Oidc.RolesClaimType)
-        .Select(claim => claim.Value)
-        .Where(value => !string.IsNullOrWhiteSpace(value))
-        .ToHashSet(StringComparer.OrdinalIgnoreCase);
-
-    var roles = new List<string>();
-    if (MatchesAny(groups, authSettings.Oidc.AdminGroups))
-    {
-        roles.Add(SecurityRoles.Admin);
-    }
-
-    if (MatchesAny(groups, authSettings.Oidc.OperatorGroups))
-    {
-        roles.Add(SecurityRoles.Operator);
-    }
-
-    if (MatchesAny(groups, authSettings.Oidc.ViewerGroups) || roles.Count == 0)
-    {
-        roles.Add(SecurityRoles.Viewer);
-    }
-
-    return roles.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
-}
-
-static bool MatchesAny(HashSet<string> groups, IEnumerable<string> candidates) =>
-    candidates.Any(candidate => groups.Contains(candidate));
 
 static Task HandleAuthRedirectAsync(Microsoft.AspNetCore.Authentication.RedirectContext<CookieAuthenticationOptions> context, int statusCode)
 {

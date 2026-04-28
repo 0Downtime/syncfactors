@@ -1,0 +1,73 @@
+{
+  "name": "guardrails-malformed-source",
+  "tags": ["guardrails", "malformed-source", "production-readiness"],
+  "riskLevel": "safe",
+  "preflight": {
+    "apiHealth": false,
+    "mockHealth": true,
+    "workerHeartbeat": false,
+    "activeDirectory": false,
+    "managedOuSnapshot": false
+  },
+  "expectedQueueStatus": "Failed",
+  "expectedRunStatus": "Failed",
+  "expectedDurationSeconds": 60,
+  "resetAdBeforeScenario": false,
+  "resetMockBeforeScenario": true,
+  "syncMode": "BulkSync",
+  "iterations": [
+    {
+      "order": 1,
+      "name": "malformed-successfactors-list-response",
+      "mutations": [
+        {
+          "workerId": "92001",
+          "worker": {
+            "personIdExternal": "92001",
+            "personId": "92001",
+            "perPersonUuid": "uuid-92001",
+            "userName": "92001",
+            "userId": "92001",
+            "email": "malformed.source.92001@example.test",
+            "emailType": "B",
+            "firstName": "Morgan",
+            "lastName": "Malformed",
+            "preferredName": "Morgan",
+            "displayName": "Morgan Malformed",
+            "startDate": "2026-03-15",
+            "employmentStatus": "64300",
+            "lifecycleState": "active",
+            "department": "Guardrails",
+            "departmentName": "Guardrails",
+            "company": "CORP Guardrails",
+            "jobTitle": "Malformed Source Tester",
+            "businessUnit": "Automation",
+            "division": "Guardrails",
+            "costCenter": "GR-100",
+            "costCenterDescription": "Guardrail Automation",
+            "costCenterId": "GR100",
+            "employeeClass": "Employee",
+            "employeeType": "Regular",
+            "twoCharCountryCode": "US",
+            "activeEmploymentsCount": "1",
+            "response": {
+              "forceUnauthorized": false,
+              "forceNotFound": false,
+              "forceMalformedPayload": true,
+              "forceEmptyResults": false
+            },
+            "scenarioTags": ["active", "guardrails", "malformed-source"]
+          }
+        }
+      ],
+      "expectation": {
+        "bucketCounts": {},
+        "workerOperations": []
+      }
+    }
+  ],
+  "finalExpectation": {
+    "allowUnexpectedAdUsers": true,
+    "expectedAdUsers": []
+  }
+}

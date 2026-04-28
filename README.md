@@ -148,6 +148,39 @@ Run the checked-in lifecycle simulator sample:
 pwsh ./scripts/Test-SyncFactorsLifecycleSimulation.ps1
 ```
 
+Run ad hoc real AD end-to-end automation against the mock SuccessFactors stack:
+
+```powershell
+pwsh ./scripts/Bootstrap-SyncFactorsE2EAutomation.ps1
+pwsh ./scripts/Run-SyncFactorsE2EAutomation.ps1 `
+  -Scenario ./config/automation/sample-real-ad-lifecycle.json `
+  -AllowAdReset `
+  -IncludeDestructive `
+  -StartStack
+```
+
+This drives Mock SuccessFactors, the API run queue, the worker, and configured AD test OUs. `-AllowAdReset` is required because the runner queues the destructive delete-all reset before scenarios that declare `resetAdBeforeScenario`.
+
+The bootstrap script creates or updates a local automation Operator account in SQLite, stores `SYNCFACTORS_AUTOMATION_USERNAME` and `SYNCFACTORS_AUTOMATION_PASSWORD` in the same secure store as the normal launcher, and switches the worktree auth mode to hybrid so OIDC remains primary while local automation login is available. Restart the API/stack after bootstrapping.
+
+You can also manage those secrets directly in `.env.worktree`, Windows Credential Manager, or the macOS Keychain:
+
+```bash
+./scripts/codex/set-macos-keychain-secret.sh SYNCFACTORS_AUTOMATION_USERNAME
+./scripts/codex/set-macos-keychain-secret.sh SYNCFACTORS_AUTOMATION_PASSWORD
+```
+
+Run the production-readiness gate against the real local stack:
+
+```powershell
+pwsh ./scripts/Run-SyncFactorsProductionReadiness.ps1 `
+  -AllowAdReset `
+  -IncludeDestructive `
+  -StartStack
+```
+
+The readiness gate runs build, tests, lifecycle simulator coverage, config/AD OU preflight, and the real API/worker/AD scenario suites tagged `smoke`, `identity`, and `routing`. Add `-IncludeScale` or `-IncludeRecovery` for the heavier release-gated suites. Reports land under `state/runtime/automation-reports/`.
+
 Run the focused multi-user sample:
 
 ```powershell

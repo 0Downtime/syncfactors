@@ -1,0 +1,32 @@
+<Project>
+  <Target Name="ResolveSyncFactorsGitVersion" BeforeTargets="GetAssemblyVersion;GenerateAssemblyInfo">
+    <PropertyGroup>
+      <SyncFactorsGitDirectory>$(MSBuildThisFileDirectory)</SyncFactorsGitDirectory>
+    </PropertyGroup>
+
+    <Exec
+      Command="git -C &quot;$(SyncFactorsGitDirectory)&quot; rev-list --count HEAD"
+      ConsoleToMSBuild="true"
+      IgnoreExitCode="true"
+      StandardOutputImportance="Low"
+      StandardErrorImportance="Low"
+      Condition="'$(SyncFactorsCommitCount)' == ''">
+      <Output TaskParameter="ConsoleOutput" ItemName="SyncFactorsCommitCountOutput" />
+      <Output TaskParameter="ExitCode" PropertyName="SyncFactorsCommitCountExitCode" />
+    </Exec>
+
+    <PropertyGroup Condition="'$(SyncFactorsCommitCount)' == '' and '$(SyncFactorsCommitCountExitCode)' == '0' and '@(SyncFactorsCommitCountOutput)' != ''">
+      <SyncFactorsCommitCount>@(SyncFactorsCommitCountOutput)</SyncFactorsCommitCount>
+    </PropertyGroup>
+
+    <PropertyGroup Condition="'$(SyncFactorsCommitCount)' != '' and '$(SyncFactorsBaseVersion)' != ''">
+      <SyncFactorsVersionPrefix>$([System.Text.RegularExpressions.Regex]::Match('$(SyncFactorsBaseVersion)', '^(\d+\.\d+)').Groups[1].Value)</SyncFactorsVersionPrefix>
+    </PropertyGroup>
+
+    <PropertyGroup Condition="'$(SyncFactorsVersionPrefix)' != '' and '$(SyncFactorsCommitCount)' != '' and '$(Version)' == '$(SyncFactorsBaseVersion)'">
+      <Version>$(SyncFactorsVersionPrefix).$(SyncFactorsCommitCount)</Version>
+      <InformationalVersion>$(Version)</InformationalVersion>
+      <PackageVersion>$(Version)</PackageVersion>
+    </PropertyGroup>
+  </Target>
+</Project>

@@ -21,10 +21,12 @@ if (-not (Test-Path -Path $VersionPath -PathType Leaf)) {
     throw "Version file '$VersionPath' was not found."
 }
 
-$baseVersion = (Get-Content -Path $VersionPath -Raw).Trim()
-if ($baseVersion -notmatch '^\d+\.\d+\.\d+$') {
+$versionFileValue = (Get-Content -Path $VersionPath -Raw).Trim()
+if ($versionFileValue -notmatch '^\d+\.\d+\.\d+$') {
     throw "Version file '$VersionPath' must contain a stable SemVer version like 0.1.0."
 }
+
+$versionPrefix = [regex]::Match($versionFileValue, '^(\d+\.\d+)').Groups[1].Value
 
 if (-not $CommitSha) {
     if ($env:GITHUB_SHA) {
@@ -40,6 +42,12 @@ if ($resolvedCommitSha -notmatch '^[0-9a-fA-F]{7,40}$') {
     throw "Commit SHA '$resolvedCommitSha' is not a valid Git SHA."
 }
 
+$commitCount = (git -C $repoRoot rev-list --count $resolvedCommitSha).Trim()
+if ($commitCount -notmatch '^\d+$' -or [int]$commitCount -le 0) {
+    throw "Could not resolve a positive git commit count for '$resolvedCommitSha'."
+}
+
+$baseVersion = "$versionPrefix.$commitCount"
 $shortShaLength = [Math]::Min(7, $resolvedCommitSha.Length)
 $shortSha = $resolvedCommitSha.Substring(0, $shortShaLength).ToLowerInvariant()
 
@@ -65,7 +73,7 @@ switch ($Channel) {
         }
 
         if ($resolvedVersion -ne $baseVersion) {
-            throw "Stable release version '$resolvedVersion' must match the VERSION file value '$baseVersion'."
+            throw "Stable release version '$resolvedVersion' must match the git commit count version '$baseVersion'."
         }
 
         $isPrerelease = $false
@@ -75,6 +83,8 @@ switch ($Channel) {
 [pscustomobject]@{
     channel = $Channel
     baseVersion = $baseVersion
+    versionFileValue = $versionFileValue
+    commitCount = [int]$commitCount
     version = $resolvedVersion
     tag = "v$resolvedVersion"
     isPrerelease = $isPrerelease

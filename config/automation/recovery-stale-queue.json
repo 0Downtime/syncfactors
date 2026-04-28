@@ -1,0 +1,52 @@
+{
+  "name": "recovery-stale-queue",
+  "tags": [
+    "recovery",
+    "stale-queue",
+    "production-readiness"
+  ],
+  "riskLevel": "recovery",
+  "preflight": {
+    "apiHealth": true,
+    "mockHealth": false,
+    "workerHeartbeat": false,
+    "activeDirectory": false,
+    "managedOuSnapshot": false
+  },
+  "resetAdBeforeScenario": false,
+  "resetMockBeforeScenario": false,
+  "syncMode": "BulkSync",
+  "expectedAuditEvents": [
+    "RunQueueRecoveryProbed"
+  ],
+  "iterations": [
+    {
+      "order": 1,
+      "name": "recover stale in-progress request",
+      "mutations": [],
+      "queueRecovery": {
+        "status": "InProgress",
+        "expectedStatus": "Failed",
+        "runId": "automation-stale-in-progress",
+        "startedMinutesAgo": 15,
+        "force": true
+      }
+    },
+    {
+      "order": 2,
+      "name": "recover stale cancel-requested request",
+      "mutations": [],
+      "queueRecovery": {
+        "status": "CancelRequested",
+        "expectedStatus": "Canceled",
+        "runId": "automation-stale-cancel",
+        "startedMinutesAgo": 15,
+        "force": true
+      }
+    }
+  ],
+  "finalExpectation": {
+    "expectedAdUsers": [],
+    "allowUnexpectedAdUsers": true
+  }
+}

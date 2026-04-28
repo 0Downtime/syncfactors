@@ -149,6 +149,7 @@ public sealed class FullSyncRunService(
             entries.Capacity = workers.Count;
             operations.Capacity = workers.Count;
             var createCount = 0;
+            var reservedCreateEmailAddresses = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
             for (var index = 0; index < workers.Count; index++)
             {
@@ -159,6 +160,7 @@ public sealed class FullSyncRunService(
                     index,
                     createCount,
                     disableCount,
+                    reservedCreateEmailAddresses,
                     cancellationToken);
                 entries.Add(outcome.Entry);
                 operations.Add(outcome.Operation);
@@ -287,11 +289,13 @@ public sealed class FullSyncRunService(
         int index,
         int createCount,
         int disableCount,
+        ISet<string> reservedCreateEmailAddresses,
         CancellationToken cancellationToken)
     {
         try
         {
             var plan = await planningService.PlanAsync(worker, logPath: null, cancellationToken);
+            plan = ReserveInRunCreateEmail(plan, reservedCreateEmailAddresses);
             var bucket = ResolveExecutionBucket(plan);
             var action = plan.Identity.MatchedExistingUser ? "UpdateUser" : "CreateUser";
             var succeeded = true;
@@ -541,6 +545,66 @@ public sealed class FullSyncRunService(
         return plan.Bucket == "updates" && plan.AttributeChanges.All(change => !change.Changed)
             ? "unchanged"
             : plan.Bucket;
+    }
+
+    private static PlannedWorkerAction ReserveInRunCreateEmail(
+        PlannedWorkerAction plan,
+        ISet<string> reservedCreateEmailAddresses)
+    {
+        if (plan.Identity.MatchedExistingUser ||
+            string.IsNullOrWhiteSpace(plan.ProposedEmailAddress) ||
+            !plan.Operations.Any(operation => string.Equals(operation.Kind, "CreateUser", StringComparison.OrdinalIgnoreCase)))
+        {
+            return plan;
+        }
+
+        var resolvedEmailAddress = ResolveAvailableInRunEmailAddress(plan.ProposedEmailAddress, reservedCreateEmailAddresses);
+        reservedCreateEmailAddresses.Add(resolvedEmailAddress);
+        if (string.Equals(resolvedEmailAddress, plan.ProposedEmailAddress, StringComparison.OrdinalIgnoreCase))
+        {
+            return plan;
+        }
+
+        return plan with
+        {
+            ProposedEmailAddress = resolvedEmailAddress,
+            AttributeChanges = RewriteEmailAttributeChanges(plan.AttributeChanges, resolvedEmailAddress)
+        };
+    }
+
+    private static string ResolveAvailableInRunEmailAddress(string proposedEmailAddress, ISet<string> reservedEmailAddresses)
+    {
+        if (!reservedEmailAddresses.Contains(proposedEmailAddress))
+        {
+            return proposedEmailAddress;
+        }
+
+        var atIndex = proposedEmailAddress.IndexOf('@', StringComparison.Ordinal);
+        var localPart = atIndex > 0 ? proposedEmailAddress[..atIndex] : proposedEmailAddress;
+        var domain = atIndex > 0 ? proposedEmailAddress[atIndex..] : string.Empty;
+        for (var suffix = 2; suffix < 1000; suffix++)
+        {
+            var candidate = $"{localPart}{suffix}{domain}";
+            if (!reservedEmailAddresses.Contains(candidate))
+            {
+                return candidate;
+            }
+        }
+
+        throw new InvalidOperationException($"Could not reserve a unique in-run email address for proposed value '{proposedEmailAddress}'.");
+    }
+
+    private static IReadOnlyList<AttributeChange> RewriteEmailAttributeChanges(
+        IReadOnlyList<AttributeChange> attributeChanges,
+        string emailAddress)
+    {
+        return attributeChanges
+            .Select(change =>
+                string.Equals(change.Attribute, "UserPrincipalName", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(change.Attribute, "mail", StringComparison.OrdinalIgnoreCase)
+                    ? change with { After = emailAddress, Changed = !string.Equals(change.Before, emailAddress, StringComparison.Ordinal) }
+                    : change)
+            .ToArray();
     }
 
     private static void IncrementBucket(IDictionary<string, int> tally, string bucket)

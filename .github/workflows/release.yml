@@ -7,8 +7,8 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: Stable SemVer version to publish. Must match the VERSION file at the target ref.
-        required: true
+        description: Optional stable SemVer override. Must match 0.1.<commit-count> at the target ref.
+        required: false
         type: string
       target_ref:
         description: Branch, tag, or commit SHA to release.

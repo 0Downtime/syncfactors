@@ -1,0 +1,147 @@
+{
+  "name": "identity-manager-resolution",
+  "tags": ["identity", "real-ad", "production-readiness", "manager-resolution"],
+  "riskLevel": "destructive",
+  "preflight": {
+    "apiHealth": true,
+    "mockHealth": true,
+    "workerHeartbeat": true,
+    "activeDirectory": true,
+    "managedOuSnapshot": true
+  },
+  "expectedQueueStatus": "Completed",
+  "expectedRunStatus": "Succeeded",
+  "expectedDurationSeconds": 120,
+  "resetAdBeforeScenario": true,
+  "resetMockBeforeScenario": true,
+  "syncMode": "BulkSync",
+  "iterations": [
+    {
+      "order": 1,
+      "name": "create-manager",
+      "mutations": [
+        {
+          "workerId": "91000",
+          "worker": {
+            "personIdExternal": "91000",
+            "personId": "91000",
+            "perPersonUuid": "uuid-91000",
+            "userName": "91000",
+            "userId": "91000",
+            "email": "manager.automation.91000@example.test",
+            "emailType": "B",
+            "firstName": "Mara",
+            "lastName": "Manager",
+            "preferredName": "Mara",
+            "displayName": "Mara Manager",
+            "startDate": "2026-03-15",
+            "employmentStatus": "64300",
+            "lifecycleState": "active",
+            "department": "Identity",
+            "departmentName": "Identity",
+            "company": "CORP Identity",
+            "jobTitle": "Automation Manager",
+            "businessUnit": "Automation",
+            "division": "Identity",
+            "costCenter": "ID-200",
+            "costCenterDescription": "Identity Automation",
+            "costCenterId": "ID200",
+            "employeeClass": "Employee",
+            "employeeType": "Regular",
+            "twoCharCountryCode": "US",
+            "activeEmploymentsCount": "1",
+            "scenarioTags": ["active", "identity", "manager-resolution"]
+          }
+        }
+      ],
+      "expectation": {
+        "runStatus": "Succeeded",
+        "bucketCounts": {
+          "creates": 1
+        },
+        "workerOperations": [
+          {
+            "workerId": "91000",
+            "operations": ["CreateUser"]
+          }
+        ]
+      }
+    },
+    {
+      "order": 2,
+      "name": "create-direct-report-with-manager",
+      "mutations": [
+        {
+          "workerId": "91001",
+          "worker": {
+            "personIdExternal": "91001",
+            "personId": "91001",
+            "perPersonUuid": "uuid-91001",
+            "userName": "91001",
+            "userId": "91001",
+            "email": "report.automation.91001@example.test",
+            "emailType": "B",
+            "firstName": "Riley",
+            "lastName": "Report",
+            "preferredName": "Riley",
+            "displayName": "Riley Report",
+            "startDate": "2026-03-15",
+            "employmentStatus": "64300",
+            "lifecycleState": "active",
+            "department": "Identity",
+            "departmentName": "Identity",
+            "company": "CORP Identity",
+            "jobTitle": "Automation Direct Report",
+            "businessUnit": "Automation",
+            "division": "Identity",
+            "costCenter": "ID-200",
+            "costCenterDescription": "Identity Automation",
+            "costCenterId": "ID200",
+            "employeeClass": "Employee",
+            "employeeType": "Regular",
+            "managerId": "91000",
+            "twoCharCountryCode": "US",
+            "activeEmploymentsCount": "1",
+            "scenarioTags": ["active", "identity", "manager-resolution"]
+          }
+        }
+      ],
+      "expectation": {
+        "runStatus": "Succeeded",
+        "bucketCounts": {
+          "creates": 1,
+          "unchanged": 1
+        },
+        "workerOperations": [
+          {
+            "workerId": "91001",
+            "operations": ["CreateUser"]
+          }
+        ]
+      }
+    }
+  ],
+  "finalExpectation": {
+    "expectedAdUsers": [
+      {
+        "workerId": "91000",
+        "samAccountName": "91000",
+        "parentOu": "{{activeOu}}",
+        "enabled": true,
+        "attributes": {
+          "company": "CORP Identity"
+        }
+      },
+      {
+        "workerId": "91001",
+        "samAccountName": "91001",
+        "parentOu": "{{activeOu}}",
+        "enabled": true,
+        "attributes": {
+          "company": "CORP Identity",
+          "manager": "CN=91000,{{activeOu}}"
+        }
+      }
+    ]
+  }
+}
