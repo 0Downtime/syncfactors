@@ -99,6 +99,19 @@ public sealed class DeletionQueueModel(
             ? $"Overdue by {item.OverdueDays} day{(item.OverdueDays == 1 ? string.Empty : "s")}"
             : $"{item.DaysLeft} day{(item.DaysLeft == 1 ? string.Empty : "s")} left";
 
+    public string FormatStatus(GraveyardDeletionQueueItem item)
+    {
+        var status = EmploymentStatusDisplay.Describe(item.Status);
+        if (status is null)
+        {
+            return item.Status;
+        }
+
+        return string.Equals(status.Code, status.Label, StringComparison.OrdinalIgnoreCase)
+            ? status.Code
+            : $"{status.Label} ({status.Code})";
+    }
+
     private async Task LoadAsync(CancellationToken cancellationToken)
     {
         var snapshot = await deletionQueueService.GetSnapshotAsync(cancellationToken);
@@ -137,6 +150,7 @@ public sealed class DeletionQueueModel(
                 Contains(user.SamAccountName, filter) ||
                 Contains(user.DisplayName, filter) ||
                 Contains(user.Status, filter) ||
+                Contains(FormatStatus(user), filter) ||
                 Contains(user.DistinguishedName, filter) ||
                 Contains(user.HoldPlacedBy, filter))
             .ToArray();

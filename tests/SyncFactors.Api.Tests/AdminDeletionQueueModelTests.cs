@@ -48,6 +48,32 @@ public sealed class AdminDeletionQueueModelTests
     }
 
     [Fact]
+    public async Task FormatStatus_ReturnsEmployeeStatusLabelBeforeCode()
+    {
+        var model = CreateModel(new CapturingRetentionStore([CreateRecord("10001", false, status: "64308")]));
+
+        await model.OnGetAsync(CancellationToken.None);
+
+        Assert.Equal("Terminated (64308)", model.FormatStatus(model.PendingUsers[0]));
+    }
+
+    [Fact]
+    public async Task OnGetAsync_FiltersByFormattedStatusLabel()
+    {
+        var model = CreateModel(new CapturingRetentionStore(
+            [
+                CreateRecord("10001", false, status: "64308"),
+                CreateRecord("10002", false, status: "64300")
+            ]));
+        model.Filter = "Terminated";
+
+        await model.OnGetAsync(CancellationToken.None);
+
+        Assert.Single(model.PendingUsers);
+        Assert.Equal("10001", model.PendingUsers[0].WorkerId);
+    }
+
+    [Fact]
     public async Task OnGetAsync_PaginatesPendingUsers_AtTwentyFivePerPage()
     {
         var records = Enumerable.Range(1, 30)
@@ -169,13 +195,13 @@ public sealed class AdminDeletionQueueModelTests
     private static IReadOnlyList<GraveyardRetentionRecord> recordsFromStore(CapturingRetentionStore store) =>
         store.Records;
 
-    private static GraveyardRetentionRecord CreateRecord(string workerId, bool isOnHold) =>
+    private static GraveyardRetentionRecord CreateRecord(string workerId, bool isOnHold, string status = "T") =>
         new(
             WorkerId: workerId,
             SamAccountName: workerId,
             DisplayName: $"Worker {workerId}",
             DistinguishedName: $"CN=Worker {workerId},OU=Graveyard,DC=example,DC=com",
-            Status: "T",
+            Status: status,
             EndDateUtc: DateTimeOffset.Parse("2026-02-01T00:00:00Z"),
             LastObservedAtUtc: DateTimeOffset.Parse("2026-04-01T00:00:00Z"),
             Active: true,
