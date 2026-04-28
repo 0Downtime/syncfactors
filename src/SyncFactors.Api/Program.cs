@@ -156,6 +156,7 @@ builder.Services.AddSingleton<IRunRepository, SqliteRunRepository>();
 builder.Services.AddSingleton<SqliteGraveyardRetentionStore>();
 builder.Services.AddSingleton<IGraveyardRetentionStore>(serviceProvider => serviceProvider.GetRequiredService<SqliteGraveyardRetentionStore>());
 builder.Services.AddTransient<RunEntriesQueryService>();
+builder.Services.AddTransient<ExceptionQueueQueryService>();
 builder.Services.AddTransient<GraveyardDeletionQueueService>();
 builder.Services.AddSingleton<IRunQueueStore, SqliteRunQueueStore>();
 builder.Services.AddSingleton<RunQueueRecoveryService>();

@@ -3104,6 +3104,43 @@ a:focus-visible {
   margin-bottom: 18px;
 }
 
+.exception-summary-grid {
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+}
+
+.exception-summary-card {
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.exception-summary-card:hover {
+  text-decoration: none;
+}
+
+.exception-summary-card.active {
+  border-color: var(--accent);
+  box-shadow: var(--focus);
+}
+
+.exception-summary-card h2 {
+  margin: 0;
+  font-size: 2rem;
+  line-height: 1;
+}
+
+.exception-list {
+  display: grid;
+  gap: 14px;
+}
+
+.exception-card {
+  margin: 0;
+}
+
+.exception-actions {
+  margin-top: 14px;
+}
+
 .failure-inspector-grid {
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   margin-top: 16px;
