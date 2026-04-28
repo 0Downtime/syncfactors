@@ -607,6 +607,43 @@ operatorApi.MapPost("/runs/delete-all", async (
     return Results.Accepted($"/api/runs/{queued.RequestId}", queued);
 });
 
+operatorApi.MapPost("/admin/runs/queue/recovery-probe", async Task<IResult> (
+    RunQueueRecoveryProbeRequest request,
+    ClaimsPrincipal user,
+    IRunQueueStore queueStore,
+    RunQueueRecoveryService recoveryService,
+    ISecurityAuditService audit,
+    IWebHostEnvironment environment,
+    CancellationToken cancellationToken) =>
+{
+    if (!environment.IsDevelopment())
+    {
+        return Results.NotFound();
+    }
+
+    if (!string.Equals(request.Status, "InProgress", StringComparison.OrdinalIgnoreCase) &&
+        !string.Equals(request.Status, "CancelRequested", StringComparison.OrdinalIgnoreCase))
+    {
+        return Results.BadRequest(new { error = "Recovery probe status must be InProgress or CancelRequested." });
+    }
+
+    var seeded = await queueStore.SeedRecoveryProbeAsync(request, cancellationToken);
+    var recovered = await recoveryService.RecoverIfNeededAsync(
+        "automation recovery probe",
+        cancellationToken,
+        ignoreFreshHeartbeat: request.Force);
+    var latest = await queueStore.GetAsync(seeded.RequestId, cancellationToken);
+    audit.Write(
+        "RunQueueRecoveryProbed",
+        recovered > 0 ? "Success" : "NoOp",
+        ("RequestedBy", ResolveRequestedBy(user, "API")),
+        ("RequestId", seeded.RequestId),
+        ("SeedStatus", request.Status),
+        ("Recovered", recovered),
+        ("FinalStatus", latest?.Status));
+    return Results.Ok(new { seeded, recovered, request = latest });
+});
+
 adminApi.MapGet("/admin/users", async (ILocalAuthService authService, CancellationToken cancellationToken) =>
 {
     var users = await authService.ListUsersAsync(cancellationToken);

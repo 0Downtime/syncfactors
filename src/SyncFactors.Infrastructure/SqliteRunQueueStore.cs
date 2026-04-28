@@ -336,6 +336,77 @@ public sealed class SqliteRunQueueStore(SqlitePathResolver pathResolver) : IRunQ
         return await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
+    public async Task<RunQueueRequest> SeedRecoveryProbeAsync(RunQueueRecoveryProbeRequest request, CancellationToken cancellationToken)
+    {
+        if (!string.Equals(request.Status, "InProgress", StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(request.Status, "CancelRequested", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("Recovery probe status must be InProgress or CancelRequested.");
+        }
+
+        var databasePath = pathResolver.ResolveConfiguredPath() ?? pathResolver.Resolve();
+        if (string.IsNullOrWhiteSpace(databasePath))
+        {
+            throw new InvalidOperationException("SQLite path could not be resolved.");
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        var startedAt = now.AddMinutes(-Math.Max(1, request.StartedMinutesAgo));
+        var seeded = new RunQueueRequest(
+            RequestId: string.IsNullOrWhiteSpace(request.RequestId)
+                ? $"recovery-probe-{now:yyyyMMddHHmmssfff}"
+                : request.RequestId,
+            Mode: string.IsNullOrWhiteSpace(request.Mode) ? "BulkSync" : request.Mode,
+            DryRun: request.DryRun,
+            RunTrigger: string.IsNullOrWhiteSpace(request.RunTrigger) ? "AutomationRecoveryProbe" : request.RunTrigger,
+            RequestedBy: request.RequestedBy,
+            Status: request.Status,
+            RequestedAt: startedAt,
+            StartedAt: startedAt,
+            CompletedAt: null,
+            RunId: request.RunId,
+            ErrorMessage: null);
+
+        await using var connection = new SqliteConnection($"Data Source={databasePath}");
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            INSERT OR REPLACE INTO run_queue (
+              request_id,
+              mode,
+              dry_run,
+              run_trigger,
+              requested_by,
+              status,
+              requested_at,
+              started_at,
+              completed_at,
+              run_id,
+              worker_name,
+              error_message
+            )
+            VALUES (
+              $requestId,
+              $mode,
+              $dryRun,
+              $runTrigger,
+              $requestedBy,
+              $status,
+              $requestedAt,
+              $startedAt,
+              NULL,
+              $runId,
+              $workerName,
+              NULL
+            );
+            """;
+        Bind(command, seeded, request.WorkerName);
+        command.Parameters.AddWithValue("$runId", (object?)seeded.RunId ?? DBNull.Value);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+        return seeded;
+    }
+
     private async Task UpdateTerminalStatusAsync(string requestId, string status, string? runId, string? errorMessage, CancellationToken cancellationToken)
     {
         var databasePath = pathResolver.ResolveConfiguredPath() ?? pathResolver.Resolve();

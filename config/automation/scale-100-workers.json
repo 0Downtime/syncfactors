@@ -14,6 +14,7 @@
   "expectedDurationSeconds": 900,
   "resetAdBeforeScenario": true,
   "resetMockBeforeScenario": true,
+  "isolateMockBeforeScenario": false,
   "syncMode": "BulkSync",
   "iterations": [
     {
@@ -34,7 +35,8 @@
       "expectation": {
         "runStatus": "Succeeded",
         "bucketCounts": {
-          "creates": 1
+          "creates": 700,
+          "unchanged": 100
         },
         "workerOperations": [
           {
@@ -46,6 +48,7 @@
     }
   ],
   "finalExpectation": {
+    "allowUnexpectedAdUsers": true,
     "expectedAdUsers": [
       {
         "workerId": "10003",

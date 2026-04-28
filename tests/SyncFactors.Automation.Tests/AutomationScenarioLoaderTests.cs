@@ -96,6 +96,40 @@ public sealed class AutomationScenarioLoaderTests
     }
 
     [Fact]
+    public async Task LoadAsync_AcceptsRecoveryProbeIterationWithoutRunExpectation()
+    {
+        using var temp = new TempScenarioDirectory();
+        var path = temp.Write(
+            "recovery.json",
+            """
+            {
+              "name": "recovery",
+              "riskLevel": "recovery",
+              "iterations": [
+                {
+                  "order": 1,
+                  "mutations": [],
+                  "queueRecovery": {
+                    "status": "InProgress",
+                    "expectedStatus": "Failed"
+                  }
+                }
+              ],
+              "finalExpectation": {
+                "expectedAdUsers": [],
+                "allowUnexpectedAdUsers": true
+              }
+            }
+            """);
+
+        var scenarios = await ScenarioLoader.LoadAsync([path], new HashSet<string>(StringComparer.OrdinalIgnoreCase), CancellationToken.None);
+
+        var scenario = Assert.Single(scenarios);
+        Assert.Equal(AutomationRiskLevels.Recovery, scenario.RiskLevel);
+        Assert.Equal("InProgress", Assert.Single(scenario.Iterations).QueueRecovery!.Status);
+    }
+
+    [Fact]
     public async Task LoadAsync_RejectsUnknownRiskLevel()
     {
         using var temp = new TempScenarioDirectory();
@@ -245,6 +279,7 @@ public sealed class AutomationScenarioLoaderTests
             Preflight: null,
             ResetAdBeforeScenario: true,
             ResetMockBeforeScenario: true,
+            IsolateMockBeforeScenario: true,
             SyncMode: "BulkSync",
             ExpectedDurationSeconds: null,
             ExpectedRunStatus: null,
@@ -257,6 +292,7 @@ public sealed class AutomationScenarioLoaderTests
                     Order: 1,
                     Name: "run",
                     Mutations: [],
+                    QueueRecovery: null,
                     Expectation: new AutomationIterationExpectation(
                         RunStatus: "Succeeded",
                         BucketCounts: new Dictionary<string, int>(),

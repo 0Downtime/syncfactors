@@ -180,6 +180,8 @@ public interface IRunQueueStore
     Task CompleteAsync(string requestId, string runId, CancellationToken cancellationToken);
     Task CancelAsync(string requestId, string? runId, string? errorMessage, CancellationToken cancellationToken);
     Task FailAsync(string requestId, string? runId, string errorMessage, CancellationToken cancellationToken);
+    Task<RunQueueRequest> SeedRecoveryProbeAsync(RunQueueRecoveryProbeRequest request, CancellationToken cancellationToken) =>
+        throw new NotSupportedException("Run queue recovery probes are not supported by this store.");
     Task<int> RecoverOrphanedActiveRunsAsync(string? errorMessage, CancellationToken cancellationToken) =>
         Task.FromResult(0);
 }

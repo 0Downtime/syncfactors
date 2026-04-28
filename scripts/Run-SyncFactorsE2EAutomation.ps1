@@ -116,7 +116,7 @@ if ([string]::IsNullOrWhiteSpace($username) -or [string]::IsNullOrWhiteSpace($pa
 if ($StartStack) {
     Write-AutomationStage "Starting local mock stack"
     $runScript = Join-Path $projectRoot 'scripts/codex/run.ps1'
-    $stackArgs = @('-Service', 'stack', '-Profile', 'mock')
+    $stackArgs = @('-Service', 'stack', '-Profile', 'mock', '-Restart')
     if ($SkipBuild) {
         $stackArgs += '-SkipBuild'
     }

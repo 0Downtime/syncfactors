@@ -110,6 +110,8 @@ public sealed class BulkRunCoordinator(
         var processedWorkers = 0;
         var createCount = 0;
         var disableCount = 0;
+        var reservedCreateEmailAddresses = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var reservedCreateEmailLock = new object();
 
         async Task<RunPopulationTotals?> GetPopulationTotalsAsync()
         {
@@ -187,6 +189,11 @@ public sealed class BulkRunCoordinator(
                     try
                     {
                         var plan = await planningService.PlanAsync(worker, logPath: null, ct);
+                        lock (reservedCreateEmailLock)
+                        {
+                            plan = ReserveInRunCreateEmail(plan, reservedCreateEmailAddresses);
+                        }
+
                         var bucket = ResolveExecutionBucket(plan);
                         string? reason = plan.Reason;
                         string? action = null;
@@ -510,6 +517,66 @@ public sealed class BulkRunCoordinator(
                plan.AttributeChanges.All(change => !change.Changed)
             ? "unchanged"
             : plan.Bucket;
+    }
+
+    private static PlannedWorkerAction ReserveInRunCreateEmail(
+        PlannedWorkerAction plan,
+        ISet<string> reservedCreateEmailAddresses)
+    {
+        if (plan.Identity.MatchedExistingUser ||
+            string.IsNullOrWhiteSpace(plan.ProposedEmailAddress) ||
+            !plan.Operations.Any(operation => string.Equals(operation.Kind, "CreateUser", StringComparison.OrdinalIgnoreCase)))
+        {
+            return plan;
+        }
+
+        var resolvedEmailAddress = ResolveAvailableInRunEmailAddress(plan.ProposedEmailAddress, reservedCreateEmailAddresses);
+        reservedCreateEmailAddresses.Add(resolvedEmailAddress);
+        if (string.Equals(resolvedEmailAddress, plan.ProposedEmailAddress, StringComparison.OrdinalIgnoreCase))
+        {
+            return plan;
+        }
+
+        return plan with
+        {
+            ProposedEmailAddress = resolvedEmailAddress,
+            AttributeChanges = RewriteEmailAttributeChanges(plan.AttributeChanges, resolvedEmailAddress)
+        };
+    }
+
+    private static string ResolveAvailableInRunEmailAddress(string proposedEmailAddress, ISet<string> reservedEmailAddresses)
+    {
+        if (!reservedEmailAddresses.Contains(proposedEmailAddress))
+        {
+            return proposedEmailAddress;
+        }
+
+        var atIndex = proposedEmailAddress.IndexOf('@', StringComparison.Ordinal);
+        var localPart = atIndex > 0 ? proposedEmailAddress[..atIndex] : proposedEmailAddress;
+        var domain = atIndex > 0 ? proposedEmailAddress[atIndex..] : string.Empty;
+        for (var suffix = 2; suffix < 1000; suffix++)
+        {
+            var candidate = $"{localPart}{suffix}{domain}";
+            if (!reservedEmailAddresses.Contains(candidate))
+            {
+                return candidate;
+            }
+        }
+
+        throw new InvalidOperationException($"Could not reserve a unique in-run email address for proposed value '{proposedEmailAddress}'.");
+    }
+
+    private static IReadOnlyList<AttributeChange> RewriteEmailAttributeChanges(
+        IReadOnlyList<AttributeChange> attributeChanges,
+        string emailAddress)
+    {
+        return attributeChanges
+            .Select(change =>
+                string.Equals(change.Attribute, "UserPrincipalName", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(change.Attribute, "mail", StringComparison.OrdinalIgnoreCase)
+                    ? change with { After = emailAddress, Changed = !string.Equals(change.Before, emailAddress, StringComparison.Ordinal) }
+                    : change)
+            .ToArray();
     }
 
     private static JsonElement BuildEntryItem(PlannedWorkerAction plan, bool dryRun, string bucket, string? action, bool applied, bool succeeded, string? reason, DirectoryCommandResult? commandResult = null)

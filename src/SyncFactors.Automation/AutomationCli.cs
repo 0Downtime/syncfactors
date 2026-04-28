@@ -175,6 +175,7 @@ public static class ScenarioLoader
                 Tags = loaded.Tags ?? [],
                 Iterations = loaded.Iterations ?? [],
                 ExpectedAuditEvents = loaded.ExpectedAuditEvents ?? [],
+                IsolateMockBeforeScenario = loaded.IsolateMockBeforeScenario ?? true,
                 RiskLevel = string.IsNullOrWhiteSpace(loaded.RiskLevel) ? AutomationRiskLevels.Safe : loaded.RiskLevel
             };
             Validate(scenario);
@@ -245,9 +246,9 @@ public static class ScenarioLoader
                 throw new InvalidOperationException($"Scenario '{scenario.Name}' has non-contiguous iteration order.");
             }
 
-            if (iteration.Expectation is null)
+            if (iteration.Expectation is null && iteration.QueueRecovery is null)
             {
-                throw new InvalidOperationException($"Scenario '{scenario.Name}' iteration {iteration.Order} is missing expectation.");
+                throw new InvalidOperationException($"Scenario '{scenario.Name}' iteration {iteration.Order} is missing expectation or queueRecovery.");
             }
         }
     }
@@ -422,7 +423,14 @@ public sealed class AutomationRunner(AutomationOptions options, TextWriter outpu
             await AutomationConsole.WriteStageAsync(output, $"[{scenario.Name}] Resetting mock SuccessFactors runtime workers.");
             await EnsureSuccessAsync(await _mockClient.PostAsync("/api/admin/reset", null, cancellationToken), "mock reset", cancellationToken);
             await AutomationConsole.WritePassAsync(output, $"[{scenario.Name}] Mock reset completed.");
-            await IsolateMockWorkersAsync(scenario, cancellationToken);
+            if (scenario.IsolateMockBeforeScenario == true)
+            {
+                await IsolateMockWorkersAsync(scenario, cancellationToken);
+            }
+            else
+            {
+                await AutomationConsole.WriteWarningAsync(output, $"[{scenario.Name}] Mock source isolation disabled; scenario will run against full mock population.");
+            }
         }
 
         if (scenario.ResetAdBeforeScenario)
@@ -447,6 +455,13 @@ public sealed class AutomationRunner(AutomationOptions options, TextWriter outpu
         foreach (var iteration in scenario.Iterations.OrderBy(iteration => iteration.Order))
         {
             await AutomationConsole.WriteStageAsync(output, $"[{scenario.Name}] Iteration {iteration.Order}: {iteration.Name ?? $"Iteration {iteration.Order}"}");
+            if (iteration.QueueRecovery is not null)
+            {
+                var recoveryFailures = await RunQueueRecoveryProbeAsync(scenario, iteration, iterationReports, cancellationToken);
+                failures.AddRange(recoveryFailures.Select(failure => $"Iteration {iteration.Order}: {failure}"));
+                continue;
+            }
+
             await AutomationConsole.WriteInfoAsync(output, $"[{scenario.Name}] Applying {iteration.Mutations?.Count ?? 0} mock worker mutation(s).");
             await ApplyMutationsAsync(iteration.Mutations ?? [], cancellationToken);
             await AutomationConsole.WriteStageAsync(output, $"[{scenario.Name}] Queueing live sync run.");
@@ -455,7 +470,10 @@ public sealed class AutomationRunner(AutomationOptions options, TextWriter outpu
                 new { dryRun = false, mode = scenario.SyncMode, runTrigger = "Automation", requestedBy = "Automation" },
                 cancellationToken);
             var iterationFailures = new List<string>();
-            if (!string.Equals(queued.Status, "Completed", StringComparison.OrdinalIgnoreCase) || string.IsNullOrWhiteSpace(queued.RunId))
+            var expectsQueueFailure = !string.IsNullOrWhiteSpace(scenario.ExpectedQueueStatus) &&
+                !string.Equals(scenario.ExpectedQueueStatus, "Completed", StringComparison.OrdinalIgnoreCase);
+            if (!expectsQueueFailure &&
+                (!string.Equals(queued.Status, "Completed", StringComparison.OrdinalIgnoreCase) || string.IsNullOrWhiteSpace(queued.RunId)))
             {
                 iterationFailures.Add($"Run queue request {queued.RequestId} ended with status {queued.Status}: {queued.ErrorMessage}");
             }
@@ -509,12 +527,17 @@ public sealed class AutomationRunner(AutomationOptions options, TextWriter outpu
         failures.AddRange(await VerifyAdAsync(scenario, cancellationToken));
         var finalSnapshot = await CaptureManagedOuSnapshotAsync(scenario, "final", cancellationToken);
         var config = new SyncFactorsConfigurationLoader(new SyncFactorsConfigPathResolver(options.ConfigPath, options.MappingConfigPath)).GetSyncConfig();
-        var adDiff = AutomationAdDiff.Build(ResolveExpectedUsers(scenario.FinalExpectation?.ExpectedAdUsers ?? scenario.FinalExpectation?.DirectoryUsers ?? [], config), finalSnapshot);
+        var adDiff = AutomationAdDiff.Build(
+            ResolveExpectedUsers(scenario.FinalExpectation?.ExpectedAdUsers ?? scenario.FinalExpectation?.DirectoryUsers ?? [], config),
+            finalSnapshot,
+            scenario.FinalExpectation?.AllowUnexpectedAdUsers == true);
         failures.AddRange(adDiff.Where(diff => diff.Severity.Equals("Failure", StringComparison.OrdinalIgnoreCase)).Select(diff => diff.Message));
         if (options.Idempotency)
         {
             failures.AddRange(await RunIdempotencyCheckAsync(scenario, cancellationToken));
         }
+
+        failures.AddRange(await VerifyAuditEventsAsync(scenario, startedAt, cancellationToken));
 
         if (scenario.ExpectedDurationSeconds is { } expectedDurationSeconds &&
             DateTimeOffset.UtcNow - startedAt > TimeSpan.FromSeconds(expectedDurationSeconds))
@@ -624,6 +647,57 @@ public sealed class AutomationRunner(AutomationOptions options, TextWriter outpu
         }
     }
 
+    private async Task<IReadOnlyList<string>> RunQueueRecoveryProbeAsync(
+        AutomationScenario scenario,
+        AutomationIteration iteration,
+        List<AutomationIterationReport> iterationReports,
+        CancellationToken cancellationToken)
+    {
+        var probe = iteration.QueueRecovery ?? throw new InvalidOperationException("Queue recovery probe was missing.");
+        await AutomationConsole.WriteInfoAsync(output, $"[{scenario.Name}] Seeding stale queue probe status={probe.Status} expected={probe.ExpectedStatus}.");
+        var response = await _apiClient.PostAsJsonAsync("/api/admin/runs/queue/recovery-probe", probe, cancellationToken);
+        await EnsureSuccessAsync(response, "queue recovery probe", cancellationToken);
+        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+        var payload = await JsonSerializer.DeserializeAsync<JsonObject>(stream, AutomationCliJson.Options, cancellationToken)
+            ?? throw new InvalidOperationException("Queue recovery probe returned empty JSON.");
+        var request = payload["request"]?.Deserialize<RunQueueRequest>(AutomationCliJson.Options)
+            ?? throw new InvalidOperationException("Queue recovery probe response did not contain request.");
+        var recovered = payload["recovered"]?.GetValue<int>() ?? 0;
+        var expectedStatus = string.IsNullOrWhiteSpace(probe.ExpectedStatus)
+            ? (string.Equals(probe.Status, "CancelRequested", StringComparison.OrdinalIgnoreCase) ? "Canceled" : "Failed")
+            : probe.ExpectedStatus;
+        var failures = new List<string>();
+        if (!string.Equals(request.Status, expectedStatus, StringComparison.OrdinalIgnoreCase))
+        {
+            failures.Add($"queue recovery probe {request.RequestId} expected status {expectedStatus} but found {request.Status}.");
+        }
+
+        if (recovered <= 0)
+        {
+            failures.Add($"queue recovery probe {request.RequestId} did not recover any stale queue rows.");
+        }
+
+        if (failures.Count == 0)
+        {
+            await AutomationConsole.WritePassAsync(output, $"[{scenario.Name}] Recovery probe completed. request={request.RequestId} status={request.Status} recovered={recovered}");
+        }
+        else
+        {
+            await AutomationConsole.WriteFailureAsync(output, $"[{scenario.Name}] Recovery probe failed. request={request.RequestId} status={request.Status} recovered={recovered}");
+            await WriteFailureDiagnosticsAsync(scenario, failures, iteration, request.RunId);
+        }
+
+        iterationReports.Add(new AutomationIterationReport(
+            Order: iteration.Order,
+            Name: iteration.Name ?? $"Iteration {iteration.Order}",
+            RequestId: request.RequestId,
+            RunId: request.RunId,
+            QueueStatus: request.Status,
+            BucketCounts: new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase),
+            Failures: failures));
+        return failures;
+    }
+
     private async Task<AutomationPreflightResult> ProbeWorkerHeartbeatAsync(string? expectedStatus, CancellationToken cancellationToken)
     {
         try
@@ -730,7 +804,7 @@ public sealed class AutomationRunner(AutomationOptions options, TextWriter outpu
             if (mutation.Worker is not null)
             {
                 worker = CloneObject(mutation.Worker);
-                exists = await MockWorkerExistsAsync(mutation.WorkerId, cancellationToken);
+                exists = await MockWorkerExistsInListAsync(mutation.WorkerId, cancellationToken);
             }
             else
             {
@@ -825,6 +899,13 @@ public sealed class AutomationRunner(AutomationOptions options, TextWriter outpu
 
         await EnsureSuccessAsync(response, $"load mock worker {workerId}", cancellationToken);
         return true;
+    }
+
+    private async Task<bool> MockWorkerExistsInListAsync(string workerId, CancellationToken cancellationToken)
+    {
+        var payload = await GetJsonObjectAsync(_mockClient, "/api/admin/workers", cancellationToken);
+        var workers = payload["workers"]?.AsArray().OfType<JsonObject>() ?? [];
+        return workers.Any(worker => string.Equals(ReadString(worker, "personIdExternal"), workerId, StringComparison.OrdinalIgnoreCase));
     }
 
     private async Task<JsonObject> GetMockWorkerAsync(string workerId, CancellationToken cancellationToken)
@@ -1005,6 +1086,68 @@ public sealed class AutomationRunner(AutomationOptions options, TextWriter outpu
         return failures;
     }
 
+    private async Task<IReadOnlyList<string>> VerifyAuditEventsAsync(
+        AutomationScenario scenario,
+        DateTimeOffset scenarioStartedAt,
+        CancellationToken cancellationToken)
+    {
+        if (scenario.ExpectedAuditEvents.Count == 0)
+        {
+            return [];
+        }
+
+        await AutomationConsole.WriteStageAsync(output, $"[{scenario.Name}] Verifying audit events.");
+        var auditPath = SecurityAuditService.ResolveAuditPath();
+        if (!File.Exists(auditPath))
+        {
+            return [$"Expected audit events [{string.Join(", ", scenario.ExpectedAuditEvents)}], but audit log was not found at {auditPath}."];
+        }
+
+        var found = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        await foreach (var line in File.ReadLinesAsync(auditPath, cancellationToken))
+        {
+            if (string.IsNullOrWhiteSpace(line))
+            {
+                continue;
+            }
+
+            JsonObject? entry;
+            try
+            {
+                entry = JsonNode.Parse(line)?.AsObject();
+            }
+            catch (JsonException)
+            {
+                continue;
+            }
+
+            var eventType = ReadString(entry, "eventType");
+            var timestampText = ReadString(entry, "timestampUtc");
+            if (string.IsNullOrWhiteSpace(eventType) ||
+                !DateTimeOffset.TryParse(timestampText, out var timestamp) ||
+                timestamp < scenarioStartedAt.AddSeconds(-5))
+            {
+                continue;
+            }
+
+            if (scenario.ExpectedAuditEvents.Contains(eventType, StringComparer.OrdinalIgnoreCase))
+            {
+                found.Add(eventType);
+            }
+        }
+
+        var failures = scenario.ExpectedAuditEvents
+            .Where(expected => !found.Contains(expected))
+            .Select(expected => $"Expected audit event {expected} was not written to {auditPath}.")
+            .ToArray();
+        if (failures.Length == 0)
+        {
+            await AutomationConsole.WritePassAsync(output, $"[{scenario.Name}] Audit events verified: {string.Join(", ", scenario.ExpectedAuditEvents)}.");
+        }
+
+        return failures;
+    }
+
     private async Task WriteFailureDiagnosticsAsync(
         AutomationScenario scenario,
         IReadOnlyList<string> failures,
@@ -1098,24 +1241,24 @@ public sealed class AutomationRunner(AutomationOptions options, TextWriter outpu
     }
 
     private static string? ResolveOuToken(string? value, SyncFactorsConfigDocument config) =>
-        value switch
-        {
-            "{{activeOu}}" => config.Ad.DefaultActiveOu,
-            "{{prehireOu}}" => config.Ad.PrehireOu,
-            "{{graveyardOu}}" => config.Ad.GraveyardOu,
-            "{{leaveOu}}" => string.IsNullOrWhiteSpace(config.Ad.LeaveOu) ? config.Ad.DefaultActiveOu : config.Ad.LeaveOu,
-            _ => value
-        };
+        ResolveConfiguredToken(value, config);
 
     private static string? ResolveAttributeToken(string? value, SyncFactorsConfigDocument config) =>
-        value switch
+        ResolveConfiguredToken(value, config);
+
+    private static string? ResolveConfiguredToken(string? value, SyncFactorsConfigDocument config)
+    {
+        if (string.IsNullOrWhiteSpace(value))
         {
-            "{{activeOu}}" => config.Ad.DefaultActiveOu,
-            "{{prehireOu}}" => config.Ad.PrehireOu,
-            "{{graveyardOu}}" => config.Ad.GraveyardOu,
-            "{{leaveOu}}" => string.IsNullOrWhiteSpace(config.Ad.LeaveOu) ? config.Ad.DefaultActiveOu : config.Ad.LeaveOu,
-            _ => value
-        };
+            return value;
+        }
+
+        return value
+            .Replace("{{activeOu}}", config.Ad.DefaultActiveOu, StringComparison.OrdinalIgnoreCase)
+            .Replace("{{prehireOu}}", config.Ad.PrehireOu, StringComparison.OrdinalIgnoreCase)
+            .Replace("{{graveyardOu}}", config.Ad.GraveyardOu, StringComparison.OrdinalIgnoreCase)
+            .Replace("{{leaveOu}}", string.IsNullOrWhiteSpace(config.Ad.LeaveOu) ? config.Ad.DefaultActiveOu : config.Ad.LeaveOu, StringComparison.OrdinalIgnoreCase);
+    }
 
     private static IReadOnlyDictionary<string, int> ExtractBucketCounts(JsonObject? runDetail, IReadOnlyList<JsonObject> entries)
     {
@@ -1461,6 +1604,11 @@ public static class AutomationFailureAnalyzer
             Add(checks, "performance threshold or blocked worker", "worker throughput, expectedDurationSeconds, and queue/runtime timestamps.");
         }
 
+        if (text.Contains("audit"))
+        {
+            Add(checks, "audit event persistence", "state/runtime/security-audit.jsonl, API logs, and expectedAuditEvents in the scenario.");
+        }
+
         if (checks.Count == 0)
         {
             Add(checks, "scenario assertion or runtime dependency", $"failure line, report JSON, and scenario file {FormatScenarioPath(scenarioPath)}.");
@@ -1485,6 +1633,7 @@ public sealed record AutomationScenario(
     [property: JsonPropertyName("preflight")] AutomationPreflightOptions? Preflight,
     [property: JsonPropertyName("resetAdBeforeScenario")] bool ResetAdBeforeScenario,
     [property: JsonPropertyName("resetMockBeforeScenario")] bool ResetMockBeforeScenario,
+    [property: JsonPropertyName("isolateMockBeforeScenario")] bool? IsolateMockBeforeScenario,
     [property: JsonPropertyName("syncMode")] string SyncMode,
     [property: JsonPropertyName("expectedDurationSeconds")] int? ExpectedDurationSeconds,
     [property: JsonPropertyName("expectedRunStatus")] string? ExpectedRunStatus,
@@ -1501,6 +1650,7 @@ public sealed record AutomationIteration(
     [property: JsonPropertyName("order")] int Order,
     [property: JsonPropertyName("name")] string? Name,
     [property: JsonPropertyName("mutations")] IReadOnlyList<AutomationWorkerMutation> Mutations,
+    [property: JsonPropertyName("queueRecovery")] RunQueueRecoveryProbeRequest? QueueRecovery,
     [property: JsonPropertyName("expectation")] AutomationIterationExpectation? Expectation,
     [property: JsonPropertyName("sourceAssertions")] JsonObject? SourceAssertions,
     [property: JsonPropertyName("runAssertions")] JsonObject? RunAssertions,
@@ -1531,7 +1681,8 @@ public sealed record AutomationExpectedWorkerOperation(
 
 public sealed record AutomationFinalExpectation(
     [property: JsonPropertyName("expectedAdUsers")] IReadOnlyList<AutomationExpectedAdUser>? ExpectedAdUsers,
-    [property: JsonPropertyName("directoryUsers")] IReadOnlyList<AutomationExpectedAdUser>? DirectoryUsers);
+    [property: JsonPropertyName("directoryUsers")] IReadOnlyList<AutomationExpectedAdUser>? DirectoryUsers,
+    [property: JsonPropertyName("allowUnexpectedAdUsers")] bool AllowUnexpectedAdUsers = false);
 
 public sealed record AutomationExpectedAdUser(
     [property: JsonPropertyName("workerId")] string WorkerId,
@@ -1625,7 +1776,8 @@ public static class AutomationAdDiff
 {
     public static IReadOnlyList<AutomationAdDiffItem> Build(
         IReadOnlyList<AutomationExpectedAdUser> expectedUsers,
-        AutomationAdSnapshot? actualSnapshot)
+        AutomationAdSnapshot? actualSnapshot,
+        bool allowUnexpectedUsers = false)
     {
         if (actualSnapshot is null)
         {
@@ -1670,7 +1822,7 @@ public static class AutomationAdDiff
             }
         }
 
-        foreach (var unexpected in actualSnapshot.Users.Where(user => !string.IsNullOrWhiteSpace(user.WorkerId) && !expectedByWorker.ContainsKey(user.WorkerId!)))
+        foreach (var unexpected in actualSnapshot.Users.Where(user => !allowUnexpectedUsers && !string.IsNullOrWhiteSpace(user.WorkerId) && !expectedByWorker.ContainsKey(user.WorkerId!)))
         {
             diffs.Add(new AutomationAdDiffItem(
                 "Failure",
