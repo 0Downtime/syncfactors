@@ -1,11 +1,11 @@
 import * as signalR from "@microsoft/signalr";
 import * as echarts from "echarts/core";
 import { BarChart, PieChart } from "echarts/charts";
-import { GridComponent, LegendComponent, TooltipComponent } from "echarts/components";
+import { GraphicComponent, GridComponent, LegendComponent, TooltipComponent } from "echarts/components";
 import { CanvasRenderer } from "echarts/renderers";
 import { animate, stagger } from "motion";
 
-echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponent, CanvasRenderer]);
+echarts.use([BarChart, PieChart, GraphicComponent, GridComponent, LegendComponent, TooltipComponent, CanvasRenderer]);
 
 (function () {
     const dashboardPollIntervalMs = 15000;
@@ -826,18 +826,24 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
             {
                 label: "Changed",
                 value: formatBucketCount(changedTotal),
-                meta: formatRunPercent(changedTotal, runTotal) + " of run"
+                meta: formatRunPercent(changedTotal, runTotal) + " of run",
+                tone: "accent",
+                share: runTotal > 0 ? changedTotal / runTotal : 0
             },
             {
                 label: "Unchanged",
                 value: formatBucketCount(unchanged),
                 meta: formatRunPercent(unchanged, runTotal) + " of run",
-                bucketKey: "unchanged"
+                bucketKey: "unchanged",
+                tone: "dim",
+                share: runTotal > 0 ? unchanged / runTotal : 0
             },
             {
                 label: "Total",
                 value: formatBucketCount(runTotal),
-                meta: runDisplayName(focusRun)
+                meta: runDisplayName(focusRun),
+                tone: "info",
+                share: 1
             }
         ];
 
@@ -845,7 +851,10 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
             const node = item.bucketKey ? document.createElement("button") : document.createElement("div");
             node.className = "bucket-summary-item" +
                 (item.bucketKey ? " bucket-summary-button" : "") +
+                (item.tone ? " " + item.tone : "") +
                 (selectedBucketKey === item.bucketKey ? " active" : "");
+            node.style.setProperty("--bucket-share", (Math.max(0.02, Math.min(1, item.share || 0)) * 100) + "%");
+            node.title = item.label + ": " + item.value + " (" + item.meta + ")";
 
             if (item.bucketKey) {
                 node.type = "button";
@@ -1940,8 +1949,49 @@ echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponen
                 orient: "vertical",
                 right: 0,
                 top: "middle",
+                itemGap: 12,
+                itemWidth: 14,
+                itemHeight: 10,
                 textStyle: { color: palette.muted }
             },
+            graphic: [
+                {
+                    type: "group",
+                    left: "36%",
+                    top: "54%",
+                    bounding: "raw",
+                    children: [
+                        {
+                            type: "text",
+                            left: "center",
+                            top: -18,
+                            style: {
+                                text: formatBucketCount(changedTotal),
+                                fill: palette.text,
+                                fontSize: 24,
+                                fontWeight: 700,
+                                lineHeight: 26,
+                                textAlign: "center"
+                            },
+                            silent: true
+                        },
+                        {
+                            type: "text",
+                            left: "center",
+                            top: 12,
+                            style: {
+                                text: "changed",
+                                fill: palette.muted,
+                                fontSize: 12,
+                                fontWeight: 600,
+                                textAlign: "center"
+                            },
+                            silent: true
+                        }
+                    ],
+                    silent: true
+                }
+            ],
             series: [
                 {
                     type: "pie",
