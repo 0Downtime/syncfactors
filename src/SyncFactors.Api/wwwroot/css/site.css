@@ -491,6 +491,43 @@ a:focus-visible {
   padding: 18px 0 40px;
 }
 
+.app-footer {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  padding: 4px 0 12px;
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.environment-corner-banner {
+  position: fixed;
+  right: -76px;
+  bottom: 38px;
+  z-index: 55;
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  width: 280px;
+  padding: 8px 18px;
+  transform: rotate(-45deg);
+  background: #c1121f;
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.34);
+  box-shadow: 0 14px 30px rgba(92, 0, 8, 0.3);
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  line-height: 1;
+  text-transform: uppercase;
+  pointer-events: none;
+}
+
+.environment-corner-banner span {
+  font-weight: 700;
+}
+
 .toast-region {
   position: fixed;
   right: 18px;
