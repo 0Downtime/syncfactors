@@ -2583,6 +2583,29 @@ a:focus-visible {
   margin-top: 10px;
 }
 
+.oidc-group-table td,
+.oidc-group-table th {
+  vertical-align: top;
+}
+
+.oidc-member-list {
+  display: grid;
+  gap: 8px;
+  min-width: 260px;
+}
+
+.oidc-member {
+  display: grid;
+  grid-template-columns: minmax(160px, 1fr) auto auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.oidc-member strong,
+.oidc-member .muted {
+  display: block;
+}
+
 .bucket-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));

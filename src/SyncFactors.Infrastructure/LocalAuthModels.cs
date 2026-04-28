@@ -24,6 +24,15 @@ public sealed record LocalUserSummary(
     int FailedLoginCount,
     DateTimeOffset? LockoutEndAt);
 
+public sealed record OidcAccountRecord(
+    string Subject,
+    string Username,
+    string? DisplayName,
+    string AccessLevel,
+    IReadOnlyList<string> Groups,
+    DateTimeOffset FirstSeenAt,
+    DateTimeOffset LastLoginAt);
+
 public sealed record LocalUserCommandResult(
     bool Succeeded,
     string Message)

@@ -28,6 +28,63 @@
     </section>
 }
 
+@if (Model.IsOidcAccessOverviewEnabled)
+{
+    <section class="panel">
+        <div class="section-heading">
+            <div>
+                <p class="eyebrow">OpenID Connect</p>
+                <h2>SSO Groups</h2>
+            </div>
+        </div>
+        <div class="table-scroll">
+            <table class="data-table oidc-group-table">
+                <thead>
+                    <tr>
+                        <th>Group</th>
+                        <th>Grants</th>
+                        <th>Accounts</th>
+                    </tr>
+                </thead>
+                <tbody>
+                @foreach (var group in Model.OidcGroups)
+                {
+                    <tr>
+                        <td>@group.GroupName</td>
+                        <td><span class="badge @Model.AccessBadgeClass(group.AccessLevel)">@group.AccessLevel</span></td>
+                        <td>
+                            @if (group.Members.Count == 0)
+                            {
+                                <span class="muted">No signed-in accounts</span>
+                            }
+                            else
+                            {
+                                <div class="oidc-member-list">
+                                @foreach (var member in group.Members)
+                                {
+                                    <div class="oidc-member">
+                                        <div>
+                                            <strong>@member.Username</strong>
+                                            @if (!string.IsNullOrWhiteSpace(member.DisplayName))
+                                            {
+                                                <span class="muted">@member.DisplayName</span>
+                                            }
+                                        </div>
+                                        <span class="badge @Model.AccessBadgeClass(member.AccessLevel)">@member.AccessLevel</span>
+                                        <span class="muted">@SyncFactors.Api.UiDateTimeFormatter.FormatDateTime(member.LastLoginAt)</span>
+                                    </div>
+                                }
+                                </div>
+                            }
+                        </td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+    </section>
+}
+
 @if (Model.IsLocalUserManagementEnabled)
 {
     <section class="panel-grid admin-user-grid">

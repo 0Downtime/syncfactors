@@ -36,6 +36,30 @@ internal static class OidcRoleResolver
         HasAny(authSettings.Oidc.OperatorGroups) ||
         HasAny(authSettings.Oidc.AdminGroups);
 
+    public static string ResolveAccessLevel(IEnumerable<string> roles)
+    {
+        var roleSet = roles
+            .Where(role => !string.IsNullOrWhiteSpace(role))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        if (roleSet.Contains(SecurityRoles.Admin) || roleSet.Contains(SecurityRoles.BreakGlassAdmin))
+        {
+            return SecurityRoles.Admin;
+        }
+
+        if (roleSet.Contains(SecurityRoles.Operator))
+        {
+            return SecurityRoles.Operator;
+        }
+
+        if (roleSet.Contains(SecurityRoles.Viewer))
+        {
+            return SecurityRoles.Viewer;
+        }
+
+        return "No Access";
+    }
+
     private static bool MatchesAny(HashSet<string> groups, IEnumerable<string> candidates) =>
         candidates.Any(candidate => !string.IsNullOrWhiteSpace(candidate) && groups.Contains(candidate));
 
