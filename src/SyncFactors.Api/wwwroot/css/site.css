@@ -1176,6 +1176,59 @@ a:focus-visible {
   min-height: 230px;
 }
 
+.bucket-summary-strip {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin: 14px 0 4px;
+}
+
+.bucket-summary-strip:empty {
+  display: none;
+}
+
+.bucket-summary-item {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--text);
+  background: color-mix(in srgb, var(--panel-strong) 70%, transparent);
+  text-align: left;
+}
+
+.bucket-summary-button {
+  appearance: none;
+  cursor: pointer;
+  font: inherit;
+}
+
+.bucket-summary-button:hover,
+.bucket-summary-button.active {
+  border-color: color-mix(in srgb, var(--accent) 60%, var(--line));
+  background: color-mix(in srgb, var(--accent-soft) 52%, var(--panel-strong));
+}
+
+.bucket-summary-label,
+.bucket-summary-meta {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 0.72rem;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bucket-summary-value {
+  overflow: hidden;
+  font-size: 1.08rem;
+  line-height: 1.1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .analytics-empty,
 .analytics-meta {
   margin: 8px 0 0;
@@ -1441,6 +1494,10 @@ a:focus-visible {
 }
 
 @media (max-width: 960px) {
+  .bucket-summary-strip {
+    grid-template-columns: 1fr;
+  }
+
   .recent-runs-header {
     flex-direction: column;
   }
