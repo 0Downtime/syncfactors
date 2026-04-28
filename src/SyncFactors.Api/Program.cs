@@ -139,9 +139,21 @@ builder.Services.AddHttpClient<IDependencyHealthService, DependencyHealthService
     });
 builder.Services.AddTransient<IWorkerSource>(serviceProvider => serviceProvider.GetRequiredService<SuccessFactorsWorkerSource>());
 builder.Services.AddTransient<ActiveDirectoryGateway>();
-builder.Services.AddTransient<IDirectoryGateway>(serviceProvider => serviceProvider.GetRequiredService<ActiveDirectoryGateway>());
+builder.Services.AddTransient<IDirectoryGateway>(serviceProvider =>
+{
+    var config = serviceProvider.GetRequiredService<SyncFactorsConfigurationLoader>().GetSyncConfig();
+    return DirectoryServiceRuntimeSelector.UseScaffoldDirectoryServices(config, builder.Configuration["SYNCFACTORS_RUN_PROFILE"])
+        ? serviceProvider.GetRequiredService<ScaffoldDirectoryGateway>()
+        : serviceProvider.GetRequiredService<ActiveDirectoryGateway>();
+});
 builder.Services.AddTransient<ActiveDirectoryCommandGateway>();
-builder.Services.AddTransient<IDirectoryCommandGateway>(serviceProvider => serviceProvider.GetRequiredService<ActiveDirectoryCommandGateway>());
+builder.Services.AddTransient<IDirectoryCommandGateway>(serviceProvider =>
+{
+    var config = serviceProvider.GetRequiredService<SyncFactorsConfigurationLoader>().GetSyncConfig();
+    return DirectoryServiceRuntimeSelector.UseScaffoldDirectoryServices(config, builder.Configuration["SYNCFACTORS_RUN_PROFILE"])
+        ? serviceProvider.GetRequiredService<ScaffoldDirectoryCommandGateway>()
+        : serviceProvider.GetRequiredService<ActiveDirectoryCommandGateway>();
+});
 builder.Services.AddSingleton<IAttributeMappingProvider, AttributeMappingProvider>();
 builder.Services.AddSingleton<IIdentityMatcher, IdentityMatcher>();
 builder.Services.AddSingleton<ILifecyclePolicy, LifecyclePolicy>();
