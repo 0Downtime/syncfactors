@@ -2606,6 +2606,15 @@ a:focus-visible {
   display: block;
 }
 
+.role-permission-summary {
+  margin-top: 22px;
+}
+
+.role-permission-summary h3 {
+  margin: 0 0 10px;
+  font-size: 1rem;
+}
+
 .bucket-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
