@@ -168,15 +168,55 @@ function Initialize-SyncFactorsHttpsEnvironment {
     $env:ASPNETCORE_Kestrel__Certificates__Default__Password = $certificatePassword
 }
 
-function Invoke-SolutionBuild {
+function Resolve-SyncFactorsBuildVersion {
     param(
         [Parameter(Mandatory)]
         [string]$ProjectRoot
     )
 
+    if (-not [string]::IsNullOrWhiteSpace($env:SYNCFACTORS_BUILD_VERSION)) {
+        return $env:SYNCFACTORS_BUILD_VERSION.Trim()
+    }
+
+    $releaseInfoScript = Join-Path $ProjectRoot 'scripts/Get-SyncFactorsReleaseInfo.ps1'
+    if ((Get-Command 'git' -ErrorAction SilentlyContinue) -and (Test-Path $releaseInfoScript)) {
+        try {
+            $commitSha = (& git -C $ProjectRoot rev-parse HEAD 2>$null).Trim()
+            if (-not [string]::IsNullOrWhiteSpace($commitSha)) {
+                $releaseInfo = & $releaseInfoScript -Channel Stable -CommitSha $commitSha
+                if (-not [string]::IsNullOrWhiteSpace([string]$releaseInfo.version)) {
+                    return [string]$releaseInfo.version
+                }
+            }
+        }
+        catch {
+            Write-Warning "Could not resolve git-derived SyncFactors build version. Falling back to VERSION file. $_"
+        }
+    }
+
+    $versionPath = Join-Path $ProjectRoot 'VERSION'
+    if (Test-Path $versionPath) {
+        return (Get-Content -Path $versionPath -Raw).Trim()
+    }
+
+    return '0.0.0'
+}
+
+function Invoke-SolutionBuild {
+    param(
+        [Parameter(Mandatory)]
+        [string]$ProjectRoot,
+        [Parameter(Mandatory)]
+        [string]$BuildVersion
+    )
+
     Initialize-DotnetEnvironment -ProjectRoot $ProjectRoot
 
-    dotnet build (Join-Path $ProjectRoot 'SyncFactors.Next.sln') -m:1 -p:UseSharedCompilation=false
+    dotnet build (Join-Path $ProjectRoot 'SyncFactors.Next.sln') `
+        -m:1 `
+        -p:UseSharedCompilation=false `
+        "-p:Version=$BuildVersion" `
+        "-p:InformationalVersion=$BuildVersion"
     if ($LASTEXITCODE -ne 0) {
         throw "dotnet build failed."
     }
@@ -230,11 +270,14 @@ function Invoke-DotnetProjectRun {
     try {
         Initialize-DotnetEnvironment -ProjectRoot $ProjectRoot
 
+        $buildVersion = Resolve-SyncFactorsBuildVersion -ProjectRoot $ProjectRoot
+        Write-Host "Build version: $buildVersion" -ForegroundColor Cyan
+
         $dotnetRunArguments = @()
 
         if (-not $SkipBuild) {
-            Invoke-SolutionBuild -ProjectRoot $ProjectRoot
-            $dotnetRunArguments += '--no-restore'
+            Invoke-SolutionBuild -ProjectRoot $ProjectRoot -BuildVersion $buildVersion
+            $dotnetRunArguments += '--no-build'
         }
         else {
             $dotnetRunArguments += '--no-build'
