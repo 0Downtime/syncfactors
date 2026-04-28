@@ -24,7 +24,9 @@ public static class AutomationCli
             }
 
             await using var runner = new AutomationRunner(options, output);
+            await output.WriteLineAsync($"Loaded {scenarios.Count} scenario(s).");
             var report = await runner.RunAsync(scenarios, cancellationToken);
+            await output.WriteLineAsync($"Writing reports to {options.ReportPath} and {Path.ChangeExtension(options.ReportPath, ".json")}.");
             await AutomationReportWriter.WriteAsync(report, options.ReportPath, cancellationToken);
             AutomationReportWriter.WriteSummary(output, report, options.ReportPath);
             return report.Passed ? 0 : 1;
@@ -233,8 +235,13 @@ public sealed class AutomationRunner(AutomationOptions options, TextWriter outpu
     {
         _apiClient.BaseAddress = options.ApiUrl;
         _mockClient.BaseAddress = options.MockUrl;
+        await output.WriteLineAsync($"API URL: {options.ApiUrl}");
+        await output.WriteLineAsync($"Mock URL: {options.MockUrl}");
+        await output.WriteLineAsync("Validating local automation safety settings.");
         ValidateLocalConfigurationSafety();
+        await output.WriteLineAsync("Authenticating to SyncFactors API.");
         await AuthenticateAsync(cancellationToken);
+        await output.WriteLineAsync("Authentication completed.");
 
         var scenarioReports = new List<AutomationScenarioReport>();
         foreach (var scenario in scenarios)
@@ -313,7 +320,9 @@ public sealed class AutomationRunner(AutomationOptions options, TextWriter outpu
 
         if (scenario.ResetMockBeforeScenario)
         {
+            await output.WriteLineAsync($"[{scenario.Name}] Resetting mock SuccessFactors runtime workers.");
             await EnsureSuccessAsync(await _mockClient.PostAsync("/api/admin/reset", null, cancellationToken), "mock reset", cancellationToken);
+            await output.WriteLineAsync($"[{scenario.Name}] Mock reset completed.");
         }
 
         if (scenario.ResetAdBeforeScenario)
@@ -323,16 +332,24 @@ public sealed class AutomationRunner(AutomationOptions options, TextWriter outpu
                 throw new InvalidOperationException($"Scenario '{scenario.Name}' requires AD reset. Re-run with --allow-ad-reset after confirming the configured AD OUs are test-only.");
             }
 
+            await output.WriteLineAsync($"[{scenario.Name}] Queueing destructive AD test OU reset.");
             var reset = await QueueAndWaitAsync("/api/runs/delete-all", new { confirmationText = "DELETE ALL USERS" }, cancellationToken);
             if (!string.Equals(reset.Status, "Completed", StringComparison.OrdinalIgnoreCase))
             {
                 failures.Add($"AD reset failed: {reset.ErrorMessage ?? reset.Status}");
             }
+            else
+            {
+                await output.WriteLineAsync($"[{scenario.Name}] AD reset completed. run={reset.RunId}");
+            }
         }
 
         foreach (var iteration in scenario.Iterations.OrderBy(iteration => iteration.Order))
         {
+            await output.WriteLineAsync($"[{scenario.Name}] Iteration {iteration.Order}: {iteration.Name ?? $"Iteration {iteration.Order}"}");
+            await output.WriteLineAsync($"[{scenario.Name}] Applying {iteration.Mutations?.Count ?? 0} mock worker mutation(s).");
             await ApplyMutationsAsync(iteration.Mutations ?? [], cancellationToken);
+            await output.WriteLineAsync($"[{scenario.Name}] Queueing live sync run.");
             var queued = await QueueAndWaitAsync(
                 "/api/runs",
                 new { dryRun = false, mode = scenario.SyncMode, runTrigger = "Automation", requestedBy = "Automation" },
@@ -347,11 +364,14 @@ public sealed class AutomationRunner(AutomationOptions options, TextWriter outpu
             IReadOnlyList<JsonObject> entries = [];
             if (!string.IsNullOrWhiteSpace(queued.RunId))
             {
+                await output.WriteLineAsync($"[{scenario.Name}] Loading run detail and entries for {queued.RunId}.");
                 runDetail = await GetJsonObjectAsync($"/api/runs/{queued.RunId}", cancellationToken);
                 entries = await GetRunEntriesAsync(queued.RunId, cancellationToken);
                 iterationFailures.AddRange(ValidateIteration(iteration, runDetail, entries));
             }
 
+            await output.WriteLineAsync(
+                $"[{scenario.Name}] Iteration {iteration.Order} completed. queue={queued.Status} run={queued.RunId ?? "(none)"} failures={iterationFailures.Count} buckets={FormatCounts(ExtractBucketCounts(runDetail, entries))}");
             failures.AddRange(iterationFailures.Select(failure => $"Iteration {iteration.Order}: {failure}"));
             iterationReports.Add(new AutomationIterationReport(
                 Order: iteration.Order,
@@ -363,7 +383,9 @@ public sealed class AutomationRunner(AutomationOptions options, TextWriter outpu
                 Failures: iterationFailures));
         }
 
+        await output.WriteLineAsync($"[{scenario.Name}] Verifying final AD expectations.");
         failures.AddRange(await VerifyAdAsync(scenario, cancellationToken));
+        await output.WriteLineAsync($"[{scenario.Name}] Scenario completed. result={(failures.Count == 0 ? "PASSED" : "FAILED")} failures={failures.Count}");
         return new AutomationScenarioReport(
             Name: scenario.Name,
             SourcePath: scenario.SourcePath,
@@ -380,6 +402,7 @@ public sealed class AutomationRunner(AutomationOptions options, TextWriter outpu
         {
             if (mutation.RemoveFromSource)
             {
+                await output.WriteLineAsync($"  - deleting mock worker {mutation.WorkerId}");
                 await EnsureSuccessAsync(await _mockClient.DeleteAsync($"/api/admin/workers/{Uri.EscapeDataString(mutation.WorkerId)}", cancellationToken), $"delete mock worker {mutation.WorkerId}", cancellationToken);
                 continue;
             }
@@ -401,6 +424,7 @@ public sealed class AutomationRunner(AutomationOptions options, TextWriter outpu
                 SetJsonPath(worker, pair.Key, pair.Value);
             }
 
+            await output.WriteLineAsync($"  - {(exists ? "updating" : "creating")} mock worker {mutation.WorkerId}");
             var response = exists
                 ? await _mockClient.PutAsJsonAsync($"/api/admin/workers/{Uri.EscapeDataString(mutation.WorkerId)}", worker, cancellationToken)
                 : await _mockClient.PostAsJsonAsync("/api/admin/workers", worker, cancellationToken);
@@ -431,10 +455,18 @@ public sealed class AutomationRunner(AutomationOptions options, TextWriter outpu
         var response = await _apiClient.PostAsJsonAsync(path, body, cancellationToken);
         await EnsureSuccessAsync(response, $"queue {path}", cancellationToken);
         var queued = await ReadRunQueueRequestAsync(response, cancellationToken);
+        await output.WriteLineAsync($"Queued {queued.Mode}. request={queued.RequestId} trigger={queued.RunTrigger} dryRun={queued.DryRun}");
         var deadline = DateTimeOffset.UtcNow.Add(options.Timeout);
+        var lastStatus = queued.Status;
         while (DateTimeOffset.UtcNow < deadline)
         {
             var latest = await GetQueueRequestAsync(queued.RequestId, cancellationToken);
+            if (!string.Equals(latest.Status, lastStatus, StringComparison.OrdinalIgnoreCase))
+            {
+                await output.WriteLineAsync($"  request={latest.RequestId} status={latest.Status} run={latest.RunId ?? "(pending)"}");
+                lastStatus = latest.Status;
+            }
+
             if (IsTerminal(latest.Status))
             {
                 return latest;
@@ -542,6 +574,7 @@ public sealed class AutomationRunner(AutomationOptions options, TextWriter outpu
         var expectedUsers = scenario.FinalExpectation?.ExpectedAdUsers ?? scenario.FinalExpectation?.DirectoryUsers ?? [];
         if (expectedUsers.Count == 0)
         {
+            await output.WriteLineAsync($"[{scenario.Name}] No final AD users declared; skipping AD readback.");
             return [];
         }
 
@@ -559,6 +592,7 @@ public sealed class AutomationRunner(AutomationOptions options, TextWriter outpu
 
         foreach (var expected in expectedUsers)
         {
+            await output.WriteLineAsync($"[{scenario.Name}] Reading AD user {expected.WorkerId}.");
             var worker = new WorkerSnapshot(
                 WorkerId: expected.WorkerId,
                 PreferredName: expected.WorkerId,
@@ -581,6 +615,7 @@ public sealed class AutomationRunner(AutomationOptions options, TextWriter outpu
             }
 
             CompareExpectedUser(expected, actual, failures);
+            await output.WriteLineAsync($"[{scenario.Name}] AD user {expected.WorkerId} found. sam={actual.SamAccountName} enabled={actual.Enabled} dn={actual.DistinguishedName}");
         }
 
         return failures;
@@ -678,6 +713,9 @@ public sealed class AutomationRunner(AutomationOptions options, TextWriter outpu
 
     private static string? ReadString(JsonObject? obj, string name) =>
         obj is not null && obj.TryGetPropertyValue(name, out var value) ? value?.GetValue<string>() : null;
+
+    private static string FormatCounts(IReadOnlyDictionary<string, int> counts) =>
+        counts.Count == 0 ? "(none)" : string.Join(", ", counts.OrderBy(pair => pair.Key).Select(pair => $"{pair.Key}={pair.Value}"));
 
     private static void SetJsonPath(JsonObject obj, string path, string? value)
     {
