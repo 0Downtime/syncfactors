@@ -28,6 +28,92 @@
     </section>
 }
 
+@if (Model.IsOidcAccessOverviewEnabled)
+{
+    <section class="panel">
+        <div class="section-heading">
+            <div>
+                <p class="eyebrow">OpenID Connect</p>
+                <h2>SSO Groups</h2>
+                <p class="muted">Accounts appear after their first successful SSO login.</p>
+                <p class="muted">Recorded accounts may remain visible after group removal; IdP group membership is what governs current access.</p>
+            </div>
+        </div>
+        <div class="table-scroll">
+            <table class="data-table oidc-group-table">
+                <thead>
+                    <tr>
+                        <th>Group</th>
+                        <th>Grants</th>
+                        <th>Accounts</th>
+                    </tr>
+                </thead>
+                <tbody>
+                @foreach (var group in Model.OidcGroups)
+                {
+                    <tr>
+                        <td>@group.GroupName</td>
+                        <td><span class="badge @Model.AccessBadgeClass(group.AccessLevel)">@group.AccessLevel</span></td>
+                        <td>
+                            @if (group.Members.Count == 0)
+                            {
+                                <span class="muted">No recorded logins</span>
+                            }
+                            else
+                            {
+                                <div class="oidc-member-list">
+                                @foreach (var member in group.Members)
+                                {
+                                    <div class="oidc-member">
+                                        <div>
+                                            <strong>@member.Username</strong>
+                                            @if (!string.IsNullOrWhiteSpace(member.DisplayName))
+                                            {
+                                                <span class="muted">@member.DisplayName</span>
+                                            }
+                                        </div>
+                                        <span class="badge @Model.AccessBadgeClass(member.AccessLevel)">@member.AccessLevel</span>
+                                        <span class="muted">@SyncFactors.Api.UiDateTimeFormatter.FormatDateTime(member.LastLoginAt)</span>
+                                    </div>
+                                }
+                                </div>
+                            }
+                        </td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+        <div class="role-permission-summary">
+            <h3>Role Permissions</h3>
+            <div class="table-scroll">
+                <table class="data-table compact">
+                    <thead>
+                        <tr>
+                            <th>Role</th>
+                            <th>Access</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><span class="badge neutral">Viewer</span></td>
+                            <td>Can view dashboards, run history, worker previews, status, and health information.</td>
+                        </tr>
+                        <tr>
+                            <td><span class="badge good">Operator</span></td>
+                            <td>Includes Viewer access, plus can run syncs, generate previews, apply previews, cancel runs, and queue delete-all operations.</td>
+                        </tr>
+                        <tr>
+                            <td><span class="badge info">Admin</span></td>
+                            <td>Includes Operator access, plus can manage configuration, schedules, deletion queue holds, local users, and SSO access visibility.</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </section>
+}
+
 @if (Model.IsLocalUserManagementEnabled)
 {
     <section class="panel-grid admin-user-grid">

@@ -45,3 +45,10 @@ public interface ILocalAuthService
 
     Task<LocalUserCommandResult> DeleteUserAsync(string userId, string actingUserId, CancellationToken cancellationToken);
 }
+
+public interface IOidcAccountStore
+{
+    Task UpsertAsync(OidcAccountRecord account, CancellationToken cancellationToken);
+
+    Task<IReadOnlyList<OidcAccountRecord>> ListAccountsAsync(CancellationToken cancellationToken);
+}

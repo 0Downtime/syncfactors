@@ -77,6 +77,7 @@ builder.Services.AddSingleton<IEmailAddressPolicy, ConfiguredEmailAddressPolicy>
 builder.Services.AddSingleton<ISecurityAuditService, SecurityAuditService>();
 builder.Services.AddSingleton<ILocalUserStore, SqliteLocalUserStore>();
 builder.Services.AddSingleton<ILocalAuthService, LocalAuthService>();
+builder.Services.AddSingleton<IOidcAccountStore, SqliteOidcAccountStore>();
 builder.Services.AddSingleton<Microsoft.AspNetCore.Identity.IPasswordHasher<LocalUserRecord>, Microsoft.AspNetCore.Identity.PasswordHasher<LocalUserRecord>>();
 builder.Services.AddSingleton<ScaffoldDataStore>();
 builder.Services.AddSingleton<ScaffoldWorkerSource>();
@@ -239,14 +240,17 @@ if (oidcEnabled)
         options.TokenValidationParameters.NameClaimType = authSettings.Oidc.DisplayNameClaimType;
         options.Events = new OpenIdConnectEvents
         {
-            OnTokenValidated = context =>
+            OnTokenValidated = async context =>
             {
                 if (context.Principal?.Identity is ClaimsIdentity identity)
                 {
                     ApplyOidcIdentity(identity, authSettings);
+                    var accountStore = context.HttpContext.RequestServices.GetRequiredService<IOidcAccountStore>();
+                    var timeProvider = context.HttpContext.RequestServices.GetRequiredService<TimeProvider>();
+                    await accountStore.UpsertAsync(
+                        BuildOidcAccountRecord(identity, authSettings, timeProvider.GetUtcNow()),
+                        context.HttpContext.RequestAborted);
                 }
-
-                return Task.CompletedTask;
             },
             OnRedirectToIdentityProviderForSignOut = context =>
             {
@@ -294,6 +298,7 @@ await app.Services.GetRequiredService<SqliteDatabaseInitializer>().InitializeAsy
 await app.Services.GetRequiredService<ILocalAuthService>().EnsureBootstrapAdminAsync(CancellationToken.None);
 app.Services.GetRequiredService<SyncFactorsConfigurationValidator>().Validate();
 ValidateAuthConfiguration(app);
+LogRuntimeVersion(app.Logger, "api", typeof(Program).Assembly);
 LogConfiguredEndpoints(app);
 
 app.UseForwardedHeaders();
@@ -324,6 +329,9 @@ app.UseAuthorization();
 
 var api = app.MapGroup("/api");
 var sessionApi = app.MapGroup("/api/session");
+
+api.MapGet("/version", () => Results.Ok(RuntimeBuildInfo.FromAssembly(typeof(Program).Assembly)))
+    .AllowAnonymous();
 
 sessionApi.MapGet(string.Empty, async (HttpContext httpContext, ILocalAuthService authService, CancellationToken cancellationToken) =>
 {
@@ -838,6 +846,17 @@ static void LogConfiguredEndpoints(WebApplication app)
     }
 }
 
+static void LogRuntimeVersion(Microsoft.Extensions.Logging.ILogger logger, string processName, System.Reflection.Assembly assembly)
+{
+    var buildInfo = RuntimeBuildInfo.FromAssembly(assembly);
+    logger.LogInformation(
+        "SyncFactors {ProcessName} starting. Version={Version} CommitSha={CommitSha} Dirty={Dirty}",
+        processName,
+        buildInfo.Version,
+        buildInfo.CommitSha ?? "unknown",
+        buildInfo.Dirty);
+}
+
 static int ResolveActiveDirectoryPort(ActiveDirectoryConfig config)
 {
     if (config.Port is not null)
@@ -955,6 +974,38 @@ static void ApplyOidcIdentity(ClaimsIdentity identity, LocalAuthOptions authSett
     {
         identity.AddClaim(new Claim(ClaimTypes.Role, role));
     }
+}
+
+static OidcAccountRecord BuildOidcAccountRecord(
+    ClaimsIdentity identity,
+    LocalAuthOptions authSettings,
+    DateTimeOffset observedAt)
+{
+    var subject = identity.FindFirst(ClaimTypes.NameIdentifier)?.Value
+        ?? identity.FindFirst("sub")?.Value
+        ?? identity.FindFirst(ClaimTypes.Name)?.Value
+        ?? "oidc-user";
+    var username = identity.FindFirst(ClaimTypes.Name)?.Value
+        ?? identity.FindFirst(authSettings.Oidc.UsernameClaimType)?.Value
+        ?? identity.FindFirst(authSettings.Oidc.DisplayNameClaimType)?.Value
+        ?? subject;
+    var displayName = identity.FindFirst(authSettings.Oidc.DisplayNameClaimType)?.Value;
+    var groups = identity.FindAll(authSettings.Oidc.RolesClaimType)
+        .Select(claim => claim.Value)
+        .Where(value => !string.IsNullOrWhiteSpace(value))
+        .Distinct(StringComparer.OrdinalIgnoreCase)
+        .OrderBy(value => value, StringComparer.OrdinalIgnoreCase)
+        .ToArray();
+    var accessLevel = OidcRoleResolver.ResolveAccessLevel(identity.FindAll(ClaimTypes.Role).Select(claim => claim.Value));
+
+    return new OidcAccountRecord(
+        Subject: subject,
+        Username: username,
+        DisplayName: string.Equals(displayName, username, StringComparison.Ordinal) ? null : displayName,
+        AccessLevel: accessLevel,
+        Groups: groups,
+        FirstSeenAt: observedAt,
+        LastLoginAt: observedAt);
 }
 
 static Task HandleAuthRedirectAsync(Microsoft.AspNetCore.Authentication.RedirectContext<CookieAuthenticationOptions> context, int statusCode)

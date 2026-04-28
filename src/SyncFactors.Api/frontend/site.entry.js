@@ -243,6 +243,39 @@
         });
     }
 
+    function initializeVersionCopy() {
+        const versionButtons = Array.prototype.slice.call(document.querySelectorAll("[data-copy-version]"));
+        if (!versionButtons.length) {
+            return;
+        }
+
+        versionButtons.forEach(function (button) {
+            const version = button.getAttribute("data-copy-version") || "";
+            if (!version) {
+                return;
+            }
+
+            button.addEventListener("click", async function () {
+                try {
+                    await navigator.clipboard.writeText(version);
+                    showToast({
+                        title: "Version Copied",
+                        tone: "good",
+                        message: version,
+                        duration: 2400
+                    });
+                } catch (error) {
+                    showToast({
+                        title: "Copy Failed",
+                        tone: "warn",
+                        message: version,
+                        duration: 3200
+                    });
+                }
+            });
+        });
+    }
+
     function bootstrapCalloutToasts() {
         const seenMessages = new Set();
         const callouts = Array.prototype.slice.call(document.querySelectorAll(".callout.good, .callout.warn, .callout.danger"));
@@ -286,6 +319,7 @@
     initializeSurfaceReveals();
     bootstrapCalloutToasts();
     initializeTransientCallouts();
+    initializeVersionCopy();
 
     window.addEventListener("syncfactors:toast", function (event) {
         showToast(event.detail || {});

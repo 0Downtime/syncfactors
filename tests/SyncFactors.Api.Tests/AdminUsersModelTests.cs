@@ -29,6 +29,49 @@ public sealed class AdminUsersModelTests
     }
 
     [Fact]
+    public async Task OnGetAsync_LoadsOidcGroupsAndKnownMembers()
+    {
+        var oidcStore = new StubOidcAccountStore
+        {
+            Accounts =
+            [
+                new OidcAccountRecord(
+                    Subject: "subject-1",
+                    Username: "alice@example.com",
+                    DisplayName: "Alice Admin",
+                    AccessLevel: SecurityRoles.Admin,
+                    Groups: ["sync-admins", "sync-viewers"],
+                    FirstSeenAt: DateTimeOffset.Parse("2026-04-01T10:00:00Z"),
+                    LastLoginAt: DateTimeOffset.Parse("2026-04-02T10:00:00Z")),
+                new OidcAccountRecord(
+                    Subject: "subject-2",
+                    Username: "oliver@example.com",
+                    DisplayName: null,
+                    AccessLevel: SecurityRoles.Operator,
+                    Groups: ["sync-operators"],
+                    FirstSeenAt: DateTimeOffset.Parse("2026-04-01T11:00:00Z"),
+                    LastLoginAt: DateTimeOffset.Parse("2026-04-02T11:00:00Z"))
+            ]
+        };
+        var model = CreateModel(new StubAdminAuthService(), oidcStore, mode: "oidc", oidcOptions: new OidcOptions
+        {
+            AdminGroups = ["sync-admins"],
+            OperatorGroups = ["sync-operators"],
+            ViewerGroups = ["sync-viewers"]
+        });
+
+        await model.OnGetAsync(CancellationToken.None);
+
+        Assert.True(model.IsOidcAccessOverviewEnabled);
+        Assert.Equal(3, model.OidcGroups.Count);
+        var adminGroup = model.OidcGroups.Single(group => group.GroupName == "sync-admins");
+        Assert.Equal(SecurityRoles.Admin, adminGroup.AccessLevel);
+        var member = Assert.Single(adminGroup.Members);
+        Assert.Equal("alice@example.com", member.Username);
+        Assert.Equal(SecurityRoles.Admin, member.AccessLevel);
+    }
+
+    [Fact]
     public async Task OnPostCreateAsync_CreatesUserWhenPasswordsMatch()
     {
         var service = new StubAdminAuthService();
@@ -63,7 +106,7 @@ public sealed class AdminUsersModelTests
     public async Task OnPostDeleteAsync_UsesCurrentUserAsActor()
     {
         var service = new StubAdminAuthService();
-        var model = CreateModel(service, "admin-1");
+        var model = CreateModel(service, actingUserId: "admin-1");
 
         var result = await model.OnPostDeleteAsync("user-2", CancellationToken.None);
 
@@ -76,7 +119,7 @@ public sealed class AdminUsersModelTests
     public async Task OnPostChangeRoleAsync_UsesRequestedRoleAndActor()
     {
         var service = new StubAdminAuthService();
-        var model = CreateModel(service, "admin-1");
+        var model = CreateModel(service, actingUserId: "admin-1");
 
         var result = await model.OnPostChangeRoleAsync("user-2", true, CancellationToken.None);
 
@@ -116,13 +159,20 @@ public sealed class AdminUsersModelTests
         Assert.True(model.IsLocalUserManagementEnabled);
     }
 
-    private static UsersModel CreateModel(StubAdminAuthService service, string actingUserId = "admin-1", string mode = "local-break-glass")
+    private static UsersModel CreateModel(
+        StubAdminAuthService service,
+        StubOidcAccountStore? oidcStore = null,
+        string actingUserId = "admin-1",
+        string mode = "local-break-glass",
+        OidcOptions? oidcOptions = null)
     {
         return new UsersModel(
             service,
+            oidcStore ?? new StubOidcAccountStore(),
             Options.Create(new LocalAuthOptions
             {
-                Mode = mode
+                Mode = mode,
+                Oidc = oidcOptions ?? new OidcOptions()
             }))
         {
             PageContext = new PageContext
@@ -138,6 +188,24 @@ public sealed class AdminUsersModelTests
                 }
             }
         };
+    }
+
+    private sealed class StubOidcAccountStore : IOidcAccountStore
+    {
+        public IReadOnlyList<OidcAccountRecord> Accounts { get; set; } = [];
+
+        public Task UpsertAsync(OidcAccountRecord account, CancellationToken cancellationToken)
+        {
+            _ = account;
+            _ = cancellationToken;
+            return Task.CompletedTask;
+        }
+
+        public Task<IReadOnlyList<OidcAccountRecord>> ListAccountsAsync(CancellationToken cancellationToken)
+        {
+            _ = cancellationToken;
+            return Task.FromResult(Accounts);
+        }
     }
 
     private sealed class StubAdminAuthService : ILocalAuthService

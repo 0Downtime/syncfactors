@@ -8,7 +8,10 @@ using SyncFactors.Infrastructure;
 namespace SyncFactors.Api.Pages.Admin;
 
 [Authorize(Roles = "Admin,BreakGlassAdmin")]
-public sealed class UsersModel(ILocalAuthService localAuthService, IOptions<LocalAuthOptions> authOptions) : PageModel
+public sealed class UsersModel(
+    ILocalAuthService localAuthService,
+    IOidcAccountStore oidcAccountStore,
+    IOptions<LocalAuthOptions> authOptions) : PageModel
 {
     [BindProperty]
     public string CreateUsername { get; set; } = string.Empty;
@@ -23,6 +26,8 @@ public sealed class UsersModel(ILocalAuthService localAuthService, IOptions<Loca
     public bool CreateIsAdmin { get; set; }
 
     public IReadOnlyList<LocalUserSummary> Users { get; private set; } = [];
+
+    public IReadOnlyList<OidcGroupAccessSummary> OidcGroups { get; private set; } = [];
 
     [TempData]
     public string? ErrorMessage { get; set; }
@@ -67,9 +72,27 @@ public sealed class UsersModel(ILocalAuthService localAuthService, IOptions<Loca
         _ => "Use this page to manage the local accounts that sign in directly to the portal."
     };
 
+    public bool IsOidcAccessOverviewEnabled =>
+        (string.Equals(AuthenticationMode, "oidc", StringComparison.Ordinal) ||
+         string.Equals(AuthenticationMode, "hybrid", StringComparison.Ordinal)) &&
+        OidcRoleResolver.HasConfiguredRoleGroups(authOptions.Value);
+
+    public string AccessBadgeClass(string accessLevel) => accessLevel switch
+    {
+        SecurityRoles.Admin => "info",
+        SecurityRoles.Operator => "good",
+        SecurityRoles.Viewer => "neutral",
+        _ => "dim"
+    };
+
     public async Task OnGetAsync(CancellationToken cancellationToken)
     {
         Users = await localAuthService.ListUsersAsync(cancellationToken);
+        if (IsOidcAccessOverviewEnabled)
+        {
+            var accounts = await oidcAccountStore.ListAccountsAsync(cancellationToken);
+            OidcGroups = BuildOidcGroups(authOptions.Value, accounts);
+        }
     }
 
     public async Task<IActionResult> OnPostCreateAsync(CancellationToken cancellationToken)
@@ -173,4 +196,73 @@ public sealed class UsersModel(ILocalAuthService localAuthService, IOptions<Loca
         SuccessMessage = null;
         return false;
     }
+
+    private static IReadOnlyList<OidcGroupAccessSummary> BuildOidcGroups(
+        LocalAuthOptions authOptions,
+        IReadOnlyList<OidcAccountRecord> accounts)
+    {
+        var configuredGroups = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        AddGroups(configuredGroups, authOptions.Oidc.AdminGroups, SecurityRoles.Admin);
+        AddGroups(configuredGroups, authOptions.Oidc.OperatorGroups, SecurityRoles.Operator);
+        AddGroups(configuredGroups, authOptions.Oidc.ViewerGroups, SecurityRoles.Viewer);
+
+        return configuredGroups
+            .OrderByDescending(pair => AccessPriority(pair.Value))
+            .ThenBy(pair => pair.Key, StringComparer.OrdinalIgnoreCase)
+            .Select(pair =>
+            {
+                var members = accounts
+                    .Where(account => account.Groups.Any(group => string.Equals(group, pair.Key, StringComparison.OrdinalIgnoreCase)))
+                    .OrderBy(account => account.Username, StringComparer.OrdinalIgnoreCase)
+                    .ThenBy(account => account.Subject, StringComparer.OrdinalIgnoreCase)
+                    .Select(account => new OidcGroupMemberSummary(
+                        Subject: account.Subject,
+                        Username: account.Username,
+                        DisplayName: account.DisplayName,
+                        AccessLevel: account.AccessLevel,
+                        LastLoginAt: account.LastLoginAt))
+                    .ToArray();
+
+                return new OidcGroupAccessSummary(pair.Key, pair.Value, members);
+            })
+            .ToArray();
+    }
+
+    private static void AddGroups(Dictionary<string, string> configuredGroups, IEnumerable<string> groups, string accessLevel)
+    {
+        foreach (var group in groups)
+        {
+            var trimmed = group.Trim();
+            if (string.IsNullOrWhiteSpace(trimmed))
+            {
+                continue;
+            }
+
+            if (!configuredGroups.TryGetValue(trimmed, out var existingAccess) ||
+                AccessPriority(accessLevel) > AccessPriority(existingAccess))
+            {
+                configuredGroups[trimmed] = accessLevel;
+            }
+        }
+    }
+
+    private static int AccessPriority(string accessLevel) => accessLevel switch
+    {
+        SecurityRoles.Admin => 3,
+        SecurityRoles.Operator => 2,
+        SecurityRoles.Viewer => 1,
+        _ => 0
+    };
+
+    public sealed record OidcGroupAccessSummary(
+        string GroupName,
+        string AccessLevel,
+        IReadOnlyList<OidcGroupMemberSummary> Members);
+
+    public sealed record OidcGroupMemberSummary(
+        string Subject,
+        string Username,
+        string? DisplayName,
+        string AccessLevel,
+        DateTimeOffset LastLoginAt);
 }
