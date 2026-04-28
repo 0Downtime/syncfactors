@@ -18,7 +18,7 @@ public sealed class SqliteDatabaseInitializer(SqlitePathResolver pathResolver)
         var directory = Path.GetDirectoryName(databasePath);
         if (!string.IsNullOrWhiteSpace(directory))
         {
-            Directory.CreateDirectory(directory);
+            RuntimeFileSecurity.EnsureDirectory(directory);
         }
 
         await using var connection = OpenConnection(databasePath);
@@ -113,6 +113,7 @@ public sealed class SqliteDatabaseInitializer(SqlitePathResolver pathResolver)
         }
 
         await transaction.CommitAsync(cancellationToken);
+        RuntimeFileSecurity.HardenSqliteFiles(databasePath);
     }
 
     private static async Task ApplyVersion1Async(
