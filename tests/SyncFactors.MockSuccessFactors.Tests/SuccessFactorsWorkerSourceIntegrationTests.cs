@@ -20,6 +20,19 @@ public sealed class SuccessFactorsWorkerSourceIntegrationTests
 
     private static string GetUserId(string workerId) => workerId;
 
+    private static int CountOccurrences(string value, string token)
+    {
+        var count = 0;
+        var index = 0;
+        while ((index = value.IndexOf(token, index, StringComparison.Ordinal)) >= 0)
+        {
+            count++;
+            index += token.Length;
+        }
+
+        return count;
+    }
+
     [Fact]
     public async Task WorkerSource_CanResolveWorker_FromMockApi()
     {
@@ -1462,7 +1475,7 @@ public sealed class SuccessFactorsWorkerSourceIntegrationTests
     }
 
     [Fact]
-    public async Task ListWorkersAsync_AddsRecentInactiveRetentionClause_WhenConfigured()
+    public async Task ListWorkersAsync_AddsInactivePrehireAndRecentInactiveRetentionClauses_WhenConfigured()
     {
         var handler = new CaptureListRequestHttpHandler();
         using var client = new HttpClient(handler)
@@ -1554,13 +1567,38 @@ public sealed class SuccessFactorsWorkerSourceIntegrationTests
         var filter = queryCollection["$filter"].ToString();
         var expectedFilters = new[]
         {
-            "(emplStatus in '64300','64303','64304') or (emplStatus eq '64308' and endDate ge datetime'" +
+            "(emplStatus in '64300','64303','64304') or (emplStatus eq 'I' and startDate le datetime'" +
+            $"{beforeDate.AddDays(7):yyyy-MM-ddTHH:mm:ss}') or (emplStatus eq '64308' and endDate ge datetime'" +
             $"{beforeDate.AddDays(-180):yyyy-MM-ddTHH:mm:ss}')",
-            "(emplStatus in '64300','64303','64304') or (emplStatus eq '64308' and endDate ge datetime'" +
+            "(emplStatus in '64300','64303','64304') or (emplStatus eq 'I' and startDate le datetime'" +
+            $"{afterDate.AddDays(7):yyyy-MM-ddTHH:mm:ss}') or (emplStatus eq '64308' and endDate ge datetime'" +
             $"{afterDate.AddDays(-180):yyyy-MM-ddTHH:mm:ss}')"
         }.Distinct(StringComparer.Ordinal).ToArray();
 
         Assert.Contains(filter, expectedFilters);
+
+        var deltaHandler = new CaptureListRequestHttpHandler();
+        using var deltaClient = new HttpClient(deltaHandler)
+        {
+            BaseAddress = new Uri("http://mock-successfactors.local")
+        };
+        var deltaWorkerSource = new SuccessFactorsWorkerSource(
+            deltaClient,
+            configLoader,
+            new ConfiguredDeltaSyncService("lastModifiedDateTime ge datetimeoffset'2026-03-30T12:00:00Z'"),
+            fallbackSource,
+            NullLogger<SuccessFactorsWorkerSource>.Instance);
+
+        await foreach (var worker in deltaWorkerSource.ListWorkersAsync(WorkerListingMode.DeltaPreferred, CancellationToken.None))
+        {
+            workerCount++;
+        }
+
+        Assert.NotNull(deltaHandler.LastRequestUri);
+        var deltaQueryCollection = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(deltaHandler.LastRequestUri!.Query);
+        var deltaFilter = deltaQueryCollection["$filter"].ToString();
+        Assert.Contains("lastModifiedDateTime ge datetimeoffset'2026-03-30T12:00:00Z'", deltaFilter, StringComparison.Ordinal);
+        Assert.Equal(1, CountOccurrences(deltaFilter, "emplStatus eq 'I'"));
     }
 
     [Fact]

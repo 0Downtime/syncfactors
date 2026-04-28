@@ -167,7 +167,7 @@ public sealed class SuccessFactorsWorkerSource(
         var previewLookup = config.SuccessFactors.PreviewQuery is null
             ? null
             : await BuildPreviewLookupAsync(config, cancellationToken);
-        var effectiveQuery = await BuildEffectiveListQueryAsync(query, mode, cancellationToken);
+        var effectiveQuery = await BuildEffectiveListQueryAsync(query, mode, config.Sync.EnableBeforeStartDays, cancellationToken);
         var pageSize = Math.Max(1, effectiveQuery.PageSize);
         var firstRequestUri = BuildServerPagedListRequestUri(config, effectiveQuery, pageSize);
         SuccessFactorsResponsePayload? firstPayload = null;
@@ -204,6 +204,7 @@ public sealed class SuccessFactorsWorkerSource(
     private async Task<SuccessFactorsQueryConfig> BuildEffectiveListQueryAsync(
         SuccessFactorsQueryConfig query,
         WorkerListingMode mode,
+        int enableBeforeStartDays,
         CancellationToken cancellationToken)
     {
         if (mode != WorkerListingMode.DeltaPreferred)
@@ -232,7 +233,7 @@ public sealed class SuccessFactorsWorkerSource(
             deltaWindow.DeltaField,
             deltaWindow.CheckpointUtc,
             deltaWindow.EffectiveSinceUtc);
-        var populationFilter = BuildListFilter(query);
+        var populationFilter = BuildListFilter(query, enableBeforeStartDays);
         return query with
         {
             BaseFilter = CombineFilters(populationFilter, deltaWindow.Filter),
@@ -1067,7 +1068,7 @@ public sealed class SuccessFactorsWorkerSource(
             $"$select={Uri.EscapeDataString(string.Join(",", query.Select))}"
         };
 
-        var listFilter = BuildListFilter(query);
+        var listFilter = BuildListFilter(query, config.Sync.EnableBeforeStartDays);
         if (!string.IsNullOrWhiteSpace(listFilter))
         {
             parts.Add($"$filter={Uri.EscapeDataString(listFilter)}");
@@ -1103,7 +1104,7 @@ public sealed class SuccessFactorsWorkerSource(
             $"$select={Uri.EscapeDataString(string.Join(",", query.Select))}"
         };
 
-        var listFilter = BuildListFilter(query);
+        var listFilter = BuildListFilter(query, config.Sync.EnableBeforeStartDays);
         if (!string.IsNullOrWhiteSpace(listFilter))
         {
             parts.Add($"$filter={Uri.EscapeDataString(listFilter)}");
@@ -1159,23 +1160,53 @@ public sealed class SuccessFactorsWorkerSource(
             : new Uri(new Uri(requestUri), next).ToString();
     }
 
-    private static string? BuildListFilter(SuccessFactorsQueryConfig query)
+    private static string? BuildListFilter(SuccessFactorsQueryConfig query, int enableBeforeStartDays)
     {
+        var clauses = new List<string>();
         var baseFilter = string.IsNullOrWhiteSpace(query.BaseFilter)
             ? null
             : query.BaseFilter.Trim();
+        if (baseFilter is not null)
+        {
+            clauses.Add(baseFilter);
+        }
 
+        if (baseFilter is not null &&
+            string.Equals(query.EntitySet, "EmpJob", StringComparison.OrdinalIgnoreCase) &&
+            !ContainsInactivePrehireClause(baseFilter))
+        {
+            clauses.Add(BuildInactivePrehireClause(DateTime.UtcNow.Date.AddDays(enableBeforeStartDays)));
+        }
         if (query.InactiveRetentionDays is null)
         {
-            return baseFilter;
+            return CombineOrClauses(clauses);
         }
 
         var cutoff = DateTime.UtcNow.Date.AddDays(-query.InactiveRetentionDays.Value);
-        var retentionClause = BuildInactiveRetentionClause(query, cutoff);
+        clauses.Add(BuildInactiveRetentionClause(query, cutoff));
 
-        return string.IsNullOrWhiteSpace(baseFilter)
-            ? retentionClause
-            : $"({baseFilter}) or ({retentionClause})";
+        return CombineOrClauses(clauses);
+    }
+
+    private static string CombineOrClauses(IReadOnlyList<string> clauses)
+    {
+        return clauses.Count switch
+        {
+            0 => string.Empty,
+            1 => clauses[0],
+            _ => string.Join(" or ", clauses.Select(clause => $"({clause})"))
+        };
+    }
+
+    private static string BuildInactivePrehireClause(DateTime today)
+    {
+        return $"emplStatus eq 'I' and startDate le datetime'{today.ToString("yyyy-MM-ddTHH:mm:ss", CultureInfo.InvariantCulture)}'";
+    }
+
+    private static bool ContainsInactivePrehireClause(string filter)
+    {
+        return filter.Contains("emplStatus eq 'I'", StringComparison.OrdinalIgnoreCase) &&
+               filter.Contains("startDate le datetime'", StringComparison.OrdinalIgnoreCase);
     }
 
     private static string BuildInactiveRetentionClause(SuccessFactorsQueryConfig query, DateTime cutoff)
