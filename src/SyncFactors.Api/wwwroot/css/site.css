@@ -493,12 +493,30 @@ a:focus-visible {
 
 .app-footer {
   display: flex;
+  align-items: center;
   justify-content: center;
   gap: 10px;
   padding: 4px 0 12px;
   color: var(--muted);
   font-size: 0.82rem;
   font-weight: 600;
+}
+
+.version-copy-button {
+  appearance: none;
+  padding: 2px 6px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font: inherit;
+}
+
+.version-copy-button:hover {
+  border-color: var(--line);
+  background: var(--panel-alt);
+  color: var(--ink);
 }
 
 .environment-corner-banner {
