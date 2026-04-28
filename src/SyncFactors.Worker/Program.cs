@@ -6,7 +6,10 @@ using SyncFactors.Domain;
 using SyncFactors.Infrastructure;
 using System.Net;
 
+const string WindowsServiceName = "SyncFactors.Worker";
+
 var builder = Host.CreateApplicationBuilder(args);
+ConfigureWindowsService(builder.Services, WindowsServiceName);
 ConfigureLocalFileLogging(
     builder.Logging,
     processName: "worker",
@@ -247,6 +250,31 @@ static void ConfigureLocalFileLogging(
 
     logging.AddSerilog(logger, dispose: true);
     logging.AddProvider(new RunScopedFileLoggerProvider(directoryValue));
+}
+
+static void ConfigureWindowsService(IServiceCollection services, string serviceName)
+{
+    services.AddWindowsService(options =>
+    {
+        options.ServiceName = serviceName;
+    });
+
+    if (OperatingSystem.IsWindows())
+    {
+        ConfigureWindowsEventLog(services, serviceName);
+    }
+}
+
+[System.Runtime.Versioning.SupportedOSPlatform("windows")]
+static void ConfigureWindowsEventLog(IServiceCollection services, string serviceName)
+{
+    services.Configure<Microsoft.Extensions.Logging.EventLog.EventLogSettings>(options =>
+    {
+#pragma warning disable CA1416
+        options.LogName = "Application";
+        options.SourceName = serviceName;
+#pragma warning restore CA1416
+    });
 }
 
 static void ConfigureApplicationInsights(HostApplicationBuilder builder)
