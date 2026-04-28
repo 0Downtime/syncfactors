@@ -29,16 +29,21 @@ public static class AutomationCli
             }
 
             await using var runner = new AutomationRunner(options, output);
-            await output.WriteLineAsync($"Loaded {scenarios.Count} scenario(s).");
+            await AutomationConsole.WriteInfoAsync(output, $"Loaded {scenarios.Count} scenario(s).");
             var report = await runner.RunAsync(scenarios, cancellationToken);
-            await output.WriteLineAsync($"Writing reports to {options.ReportPath} and {Path.ChangeExtension(options.ReportPath, ".json")}.");
+            await AutomationConsole.WriteInfoAsync(output, $"Writing reports to {options.ReportPath} and {Path.ChangeExtension(options.ReportPath, ".json")}.");
             await AutomationReportWriter.WriteAsync(report, options.ReportPath, cancellationToken);
             AutomationReportWriter.WriteSummary(output, report, options.ReportPath);
             return report.Passed ? 0 : 1;
         }
         catch (Exception ex)
         {
-            await output.WriteLineAsync($"Automation failed: {ex.Message}");
+            await AutomationConsole.WriteFailureAsync(output, $"Automation failed: {ex.Message}");
+            foreach (var diagnosis in AutomationFailureAnalyzer.Analyze(ex.Message, null))
+            {
+                await AutomationConsole.WriteActionAsync(output, $"Likely failed: {diagnosis.LikelyFailure}");
+                await AutomationConsole.WriteActionAsync(output, $"Check: {diagnosis.Check}");
+            }
             return 1;
         }
     }
@@ -308,18 +313,18 @@ public sealed class AutomationRunner(AutomationOptions options, TextWriter outpu
     {
         _apiClient.BaseAddress = options.ApiUrl;
         _mockClient.BaseAddress = options.MockUrl;
-        await output.WriteLineAsync($"API URL: {options.ApiUrl}");
-        await output.WriteLineAsync($"Mock URL: {options.MockUrl}");
-        await output.WriteLineAsync("Validating local automation safety settings.");
+        await AutomationConsole.WriteStageAsync(output, $"API URL: {options.ApiUrl}");
+        await AutomationConsole.WriteStageAsync(output, $"Mock URL: {options.MockUrl}");
+        await AutomationConsole.WriteStageAsync(output, "Validating local automation safety settings.");
         ValidateLocalConfigurationSafety();
-        await output.WriteLineAsync("Authenticating to SyncFactors API.");
+        await AutomationConsole.WriteStageAsync(output, "Authenticating to SyncFactors API.");
         await AuthenticateAsync(cancellationToken);
-        await output.WriteLineAsync("Authentication completed.");
+        await AutomationConsole.WritePassAsync(output, "Authentication completed.");
 
         var scenarioReports = new List<AutomationScenarioReport>();
         foreach (var scenario in scenarios)
         {
-            await output.WriteLineAsync($"Running scenario: {scenario.Name}");
+            await AutomationConsole.WriteStageAsync(output, $"Running scenario: {scenario.Name} risk={scenario.RiskLevel}");
             scenarioReports.Add(await RunScenarioAsync(scenario, cancellationToken));
         }
 
@@ -394,6 +399,7 @@ public sealed class AutomationRunner(AutomationOptions options, TextWriter outpu
         failures.AddRange(preflightResults.Where(result => !result.Passed).Select(result => $"Preflight {result.Name} failed: {result.Message}"));
         if (failures.Count > 0)
         {
+            await WriteFailureDiagnosticsAsync(scenario, failures, null, null);
             return new AutomationScenarioReport(
                 Name: scenario.Name,
                 SourcePath: scenario.SourcePath,
@@ -413,9 +419,9 @@ public sealed class AutomationRunner(AutomationOptions options, TextWriter outpu
 
         if (scenario.ResetMockBeforeScenario)
         {
-            await output.WriteLineAsync($"[{scenario.Name}] Resetting mock SuccessFactors runtime workers.");
+            await AutomationConsole.WriteStageAsync(output, $"[{scenario.Name}] Resetting mock SuccessFactors runtime workers.");
             await EnsureSuccessAsync(await _mockClient.PostAsync("/api/admin/reset", null, cancellationToken), "mock reset", cancellationToken);
-            await output.WriteLineAsync($"[{scenario.Name}] Mock reset completed.");
+            await AutomationConsole.WritePassAsync(output, $"[{scenario.Name}] Mock reset completed.");
         }
 
         if (scenario.ResetAdBeforeScenario)
@@ -425,7 +431,7 @@ public sealed class AutomationRunner(AutomationOptions options, TextWriter outpu
                 throw new InvalidOperationException($"Scenario '{scenario.Name}' requires AD reset. Re-run with --allow-ad-reset after confirming the configured AD OUs are test-only.");
             }
 
-            await output.WriteLineAsync($"[{scenario.Name}] Queueing destructive AD test OU reset.");
+            await AutomationConsole.WriteWarningAsync(output, $"[{scenario.Name}] Queueing destructive AD test OU reset.");
             var reset = await QueueAndWaitAsync("/api/runs/delete-all", new { confirmationText = "DELETE ALL USERS" }, cancellationToken);
             if (!string.Equals(reset.Status, "Completed", StringComparison.OrdinalIgnoreCase))
             {
@@ -433,16 +439,16 @@ public sealed class AutomationRunner(AutomationOptions options, TextWriter outpu
             }
             else
             {
-                await output.WriteLineAsync($"[{scenario.Name}] AD reset completed. run={reset.RunId}");
+                await AutomationConsole.WritePassAsync(output, $"[{scenario.Name}] AD reset completed. run={reset.RunId}");
             }
         }
 
         foreach (var iteration in scenario.Iterations.OrderBy(iteration => iteration.Order))
         {
-            await output.WriteLineAsync($"[{scenario.Name}] Iteration {iteration.Order}: {iteration.Name ?? $"Iteration {iteration.Order}"}");
-            await output.WriteLineAsync($"[{scenario.Name}] Applying {iteration.Mutations?.Count ?? 0} mock worker mutation(s).");
+            await AutomationConsole.WriteStageAsync(output, $"[{scenario.Name}] Iteration {iteration.Order}: {iteration.Name ?? $"Iteration {iteration.Order}"}");
+            await AutomationConsole.WriteInfoAsync(output, $"[{scenario.Name}] Applying {iteration.Mutations?.Count ?? 0} mock worker mutation(s).");
             await ApplyMutationsAsync(iteration.Mutations ?? [], cancellationToken);
-            await output.WriteLineAsync($"[{scenario.Name}] Queueing live sync run.");
+            await AutomationConsole.WriteStageAsync(output, $"[{scenario.Name}] Queueing live sync run.");
             var queued = await QueueAndWaitAsync(
                 "/api/runs",
                 new { dryRun = false, mode = scenario.SyncMode, runTrigger = "Automation", requestedBy = "Automation" },
@@ -463,7 +469,7 @@ public sealed class AutomationRunner(AutomationOptions options, TextWriter outpu
             IReadOnlyList<JsonObject> entries = [];
             if (!string.IsNullOrWhiteSpace(queued.RunId))
             {
-                await output.WriteLineAsync($"[{scenario.Name}] Loading run detail and entries for {queued.RunId}.");
+                await AutomationConsole.WriteInfoAsync(output, $"[{scenario.Name}] Loading run detail and entries for {queued.RunId}.");
                 runDetail = await GetJsonObjectAsync($"/api/runs/{queued.RunId}", cancellationToken);
                 entries = await GetRunEntriesAsync(queued.RunId, cancellationToken);
                 iterationFailures.AddRange(ValidateIteration(iteration, runDetail, entries));
@@ -477,8 +483,16 @@ public sealed class AutomationRunner(AutomationOptions options, TextWriter outpu
                 }
             }
 
-            await output.WriteLineAsync(
-                $"[{scenario.Name}] Iteration {iteration.Order} completed. queue={queued.Status} run={queued.RunId ?? "(none)"} failures={iterationFailures.Count} buckets={FormatCounts(ExtractBucketCounts(runDetail, entries))}");
+            var iterationSummary = $"[{scenario.Name}] Iteration {iteration.Order} completed. queue={queued.Status} run={queued.RunId ?? "(none)"} failures={iterationFailures.Count} buckets={FormatCounts(ExtractBucketCounts(runDetail, entries))}";
+            if (iterationFailures.Count == 0)
+            {
+                await AutomationConsole.WritePassAsync(output, iterationSummary);
+            }
+            else
+            {
+                await AutomationConsole.WriteFailureAsync(output, iterationSummary);
+                await WriteFailureDiagnosticsAsync(scenario, iterationFailures, iteration, queued.RunId);
+            }
             failures.AddRange(iterationFailures.Select(failure => $"Iteration {iteration.Order}: {failure}"));
             iterationReports.Add(new AutomationIterationReport(
                 Order: iteration.Order,
@@ -490,7 +504,7 @@ public sealed class AutomationRunner(AutomationOptions options, TextWriter outpu
                 Failures: iterationFailures));
         }
 
-        await output.WriteLineAsync($"[{scenario.Name}] Verifying final AD expectations.");
+        await AutomationConsole.WriteStageAsync(output, $"[{scenario.Name}] Verifying final AD expectations.");
         failures.AddRange(await VerifyAdAsync(scenario, cancellationToken));
         var finalSnapshot = await CaptureManagedOuSnapshotAsync(scenario, "final", cancellationToken);
         var adDiff = AutomationAdDiff.Build(scenario.FinalExpectation?.ExpectedAdUsers ?? scenario.FinalExpectation?.DirectoryUsers ?? [], finalSnapshot);
@@ -507,7 +521,15 @@ public sealed class AutomationRunner(AutomationOptions options, TextWriter outpu
         }
 
         var lastIteration = iterationReports.LastOrDefault();
-        await output.WriteLineAsync($"[{scenario.Name}] Scenario completed. result={(failures.Count == 0 ? "PASSED" : "FAILED")} failures={failures.Count}");
+        if (failures.Count == 0)
+        {
+            await AutomationConsole.WritePassAsync(output, $"[{scenario.Name}] Scenario completed. result=PASSED failures=0");
+        }
+        else
+        {
+            await AutomationConsole.WriteFailureAsync(output, $"[{scenario.Name}] Scenario completed. result=FAILED failures={failures.Count}");
+            await WriteFailureDiagnosticsAsync(scenario, failures, null, lastIteration?.RunId);
+        }
         return new AutomationScenarioReport(
             Name: scenario.Name,
             SourcePath: scenario.SourcePath,
@@ -564,7 +586,15 @@ public sealed class AutomationRunner(AutomationOptions options, TextWriter outpu
 
         foreach (var result in results)
         {
-            await output.WriteLineAsync($"[{scenario.Name}] Preflight {result.Name}: {(result.Passed ? "PASS" : "FAIL")} - {result.Message}");
+            var message = $"[{scenario.Name}] Preflight {result.Name}: {(result.Passed ? "PASS" : "FAIL")} - {result.Message}";
+            if (result.Passed)
+            {
+                await AutomationConsole.WritePassAsync(output, message);
+            }
+            else
+            {
+                await AutomationConsole.WriteFailureAsync(output, message);
+            }
         }
 
         return results;
@@ -624,7 +654,7 @@ public sealed class AutomationRunner(AutomationOptions options, TextWriter outpu
         var users = new List<AutomationAdSnapshotUser>();
         foreach (var ou in GetManagedOus(config))
         {
-            await output.WriteLineAsync($"[{scenario.Name}] Capturing {phase} AD snapshot for {ou.Name}: {ou.DistinguishedName}");
+            await AutomationConsole.WriteInfoAsync(output, $"[{scenario.Name}] Capturing {phase} AD snapshot for {ou.Name}: {ou.DistinguishedName}");
             var ouUsers = await gateway.ListUsersInOuAsync(ou.DistinguishedName, cancellationToken);
             users.AddRange(ouUsers.Select(user => AutomationAdSnapshotUser.FromDirectoryUser(ou.Name, ou.DistinguishedName, user, config.Ad.IdentityAttribute)));
         }
@@ -632,7 +662,7 @@ public sealed class AutomationRunner(AutomationOptions options, TextWriter outpu
         var duplicates = AutomationAdDiff.FindDuplicateDirectoryValues(users);
         foreach (var duplicate in duplicates)
         {
-            await output.WriteLineAsync($"[{scenario.Name}] AD snapshot warning: {duplicate.Message}");
+            await AutomationConsole.WriteWarningAsync(output, $"[{scenario.Name}] AD snapshot warning: {duplicate.Message}");
         }
 
         return new AutomationAdSnapshot(phase, DateTimeOffset.UtcNow, users.Count, users, duplicates);
@@ -655,7 +685,7 @@ public sealed class AutomationRunner(AutomationOptions options, TextWriter outpu
 
     private async Task<IReadOnlyList<string>> RunIdempotencyCheckAsync(AutomationScenario scenario, CancellationToken cancellationToken)
     {
-        await output.WriteLineAsync($"[{scenario.Name}] Running idempotency check with one extra live sync.");
+        await AutomationConsole.WriteStageAsync(output, $"[{scenario.Name}] Running idempotency check with one extra live sync.");
         var failures = new List<string>();
         var queued = await QueueAndWaitAsync(
             "/api/runs",
@@ -688,7 +718,7 @@ public sealed class AutomationRunner(AutomationOptions options, TextWriter outpu
         {
             if (mutation.RemoveFromSource)
             {
-                await output.WriteLineAsync($"  - deleting mock worker {mutation.WorkerId}");
+                await AutomationConsole.WriteWarningAsync(output, $"  - deleting mock worker {mutation.WorkerId}");
                 await EnsureSuccessAsync(await _mockClient.DeleteAsync($"/api/admin/workers/{Uri.EscapeDataString(mutation.WorkerId)}", cancellationToken), $"delete mock worker {mutation.WorkerId}", cancellationToken);
                 continue;
             }
@@ -710,7 +740,7 @@ public sealed class AutomationRunner(AutomationOptions options, TextWriter outpu
                 SetJsonPath(worker, pair.Key, pair.Value);
             }
 
-            await output.WriteLineAsync($"  - {(exists ? "updating" : "creating")} mock worker {mutation.WorkerId}");
+            await AutomationConsole.WriteInfoAsync(output, $"  - {(exists ? "updating" : "creating")} mock worker {mutation.WorkerId}");
             var response = exists
                 ? await _mockClient.PutAsJsonAsync($"/api/admin/workers/{Uri.EscapeDataString(mutation.WorkerId)}", worker, cancellationToken)
                 : await _mockClient.PostAsJsonAsync("/api/admin/workers", worker, cancellationToken);
@@ -741,7 +771,7 @@ public sealed class AutomationRunner(AutomationOptions options, TextWriter outpu
         var response = await _apiClient.PostAsJsonAsync(path, body, cancellationToken);
         await EnsureSuccessAsync(response, $"queue {path}", cancellationToken);
         var queued = await ReadRunQueueRequestAsync(response, cancellationToken);
-        await output.WriteLineAsync($"Queued {queued.Mode}. request={queued.RequestId} trigger={queued.RunTrigger} dryRun={queued.DryRun}");
+        await AutomationConsole.WriteInfoAsync(output, $"Queued {queued.Mode}. request={queued.RequestId} trigger={queued.RunTrigger} dryRun={queued.DryRun}");
         var deadline = DateTimeOffset.UtcNow.Add(options.Timeout);
         var lastStatus = queued.Status;
         while (DateTimeOffset.UtcNow < deadline)
@@ -749,7 +779,7 @@ public sealed class AutomationRunner(AutomationOptions options, TextWriter outpu
             var latest = await GetQueueRequestAsync(queued.RequestId, cancellationToken);
             if (!string.Equals(latest.Status, lastStatus, StringComparison.OrdinalIgnoreCase))
             {
-                await output.WriteLineAsync($"  request={latest.RequestId} status={latest.Status} run={latest.RunId ?? "(pending)"}");
+                await AutomationConsole.WriteInfoAsync(output, $"  request={latest.RequestId} status={latest.Status} run={latest.RunId ?? "(pending)"}");
                 lastStatus = latest.Status;
             }
 
@@ -860,7 +890,7 @@ public sealed class AutomationRunner(AutomationOptions options, TextWriter outpu
         var expectedUsers = scenario.FinalExpectation?.ExpectedAdUsers ?? scenario.FinalExpectation?.DirectoryUsers ?? [];
         if (expectedUsers.Count == 0)
         {
-            await output.WriteLineAsync($"[{scenario.Name}] No final AD users declared; skipping AD readback.");
+            await AutomationConsole.WriteWarningAsync(output, $"[{scenario.Name}] No final AD users declared; skipping AD readback.");
             return [];
         }
 
@@ -878,7 +908,7 @@ public sealed class AutomationRunner(AutomationOptions options, TextWriter outpu
 
         foreach (var expected in expectedUsers)
         {
-            await output.WriteLineAsync($"[{scenario.Name}] Reading AD user {expected.WorkerId}.");
+            await AutomationConsole.WriteInfoAsync(output, $"[{scenario.Name}] Reading AD user {expected.WorkerId}.");
             var worker = new WorkerSnapshot(
                 WorkerId: expected.WorkerId,
                 PreferredName: expected.WorkerId,
@@ -901,10 +931,52 @@ public sealed class AutomationRunner(AutomationOptions options, TextWriter outpu
             }
 
             CompareExpectedUser(expected, actual, failures);
-            await output.WriteLineAsync($"[{scenario.Name}] AD user {expected.WorkerId} found. sam={actual.SamAccountName} enabled={actual.Enabled} dn={actual.DistinguishedName}");
+            await AutomationConsole.WritePassAsync(output, $"[{scenario.Name}] AD user {expected.WorkerId} found. sam={actual.SamAccountName} enabled={actual.Enabled} dn={actual.DistinguishedName}");
         }
 
         return failures;
+    }
+
+    private async Task WriteFailureDiagnosticsAsync(
+        AutomationScenario scenario,
+        IReadOnlyList<string> failures,
+        AutomationIteration? iteration,
+        string? runId)
+    {
+        if (failures.Count == 0)
+        {
+            return;
+        }
+
+        await AutomationConsole.WriteFailureAsync(output, $"[{scenario.Name}] Failure diagnostics:");
+        var distinct = failures
+            .SelectMany(failure => AutomationFailureAnalyzer.Analyze(failure, scenario))
+            .DistinctBy(diagnosis => $"{diagnosis.LikelyFailure}|{diagnosis.Check}", StringComparer.OrdinalIgnoreCase)
+            .Take(8)
+            .ToArray();
+        foreach (var failure in failures.Take(8))
+        {
+            await AutomationConsole.WriteFailureAsync(output, $"  failure: {failure}");
+        }
+
+        foreach (var diagnosis in distinct)
+        {
+            await AutomationConsole.WriteActionAsync(output, $"  likely failed: {diagnosis.LikelyFailure}");
+            await AutomationConsole.WriteActionAsync(output, $"  check: {diagnosis.Check}");
+        }
+
+        if (iteration is not null)
+        {
+            await AutomationConsole.WriteActionAsync(output, $"  scenario file: {scenario.SourcePath}");
+            await AutomationConsole.WriteActionAsync(output, $"  iteration: {iteration.Order} {iteration.Name ?? string.Empty}".TrimEnd());
+        }
+
+        if (!string.IsNullOrWhiteSpace(runId))
+        {
+            await AutomationConsole.WriteActionAsync(output, $"  run detail: {options.ApiUrl.ToString().TrimEnd('/')}/Runs/Detail?runId={Uri.EscapeDataString(runId)}");
+        }
+
+        await AutomationConsole.WriteActionAsync(output, $"  report: {options.ReportPath}");
     }
 
     private static void CompareExpectedUser(AutomationExpectedAdUser expected, DirectoryUserSnapshot actual, List<string> failures)
@@ -1060,10 +1132,19 @@ public static class AutomationReportWriter
 
     public static void WriteSummary(TextWriter output, AutomationRunReport report, string markdownPath)
     {
-        output.WriteLine($"Automation Result: {(report.Passed ? "PASSED" : "FAILED")}");
+        AutomationConsole.WriteLine(output, $"Automation Result: {(report.Passed ? "PASSED" : "FAILED")}", report.Passed ? AutomationConsoleKind.Pass : AutomationConsoleKind.Failure);
         output.WriteLine($"Scenarios: {report.Scenarios.Count}");
         output.WriteLine($"Markdown Report: {markdownPath}");
         output.WriteLine($"Json Report: {Path.ChangeExtension(markdownPath, ".json")}");
+        foreach (var scenario in report.Scenarios.Where(scenario => !scenario.Passed))
+        {
+            AutomationConsole.WriteLine(output, $"Failed scenario: {scenario.Name}", AutomationConsoleKind.Failure);
+            foreach (var diagnosis in BuildScenarioDiagnoses(scenario).Take(4))
+            {
+                AutomationConsole.WriteLine(output, $"  likely failed: {diagnosis.LikelyFailure}", AutomationConsoleKind.Action);
+                AutomationConsole.WriteLine(output, $"  check: {diagnosis.Check}", AutomationConsoleKind.Action);
+            }
+        }
     }
 
     private static string BuildMarkdown(AutomationRunReport report)
@@ -1105,6 +1186,17 @@ public static class AutomationReportWriter
                 builder.AppendLine($"- failure: {failure}");
             }
 
+            var diagnoses = BuildScenarioDiagnoses(scenario).ToArray();
+            if (diagnoses.Length > 0)
+            {
+                builder.AppendLine("Failure diagnosis:");
+                foreach (var diagnosis in diagnoses)
+                {
+                    builder.AppendLine($"- likely failed: {diagnosis.LikelyFailure}");
+                    builder.AppendLine($"  check: {diagnosis.Check}");
+                }
+            }
+
             foreach (var iteration in scenario.Iterations)
             {
                 builder.AppendLine($"- {iteration.Order}. {iteration.Name}: {iteration.QueueStatus} run=`{iteration.RunId ?? "(none)"}` buckets={FormatCounts(iteration.BucketCounts)}");
@@ -1122,6 +1214,168 @@ public static class AutomationReportWriter
 
     private static string FormatCounts(IReadOnlyDictionary<string, int> counts) =>
         counts.Count == 0 ? "(none)" : string.Join(", ", counts.OrderBy(pair => pair.Key).Select(pair => $"{pair.Key}={pair.Value}"));
+
+    private static IReadOnlyList<AutomationFailureDiagnosis> BuildScenarioDiagnoses(AutomationScenarioReport scenario)
+    {
+        return scenario.Failures
+            .Concat(scenario.Iterations.SelectMany(iteration => iteration.Failures.Select(failure => $"Iteration {iteration.Order}: {failure}")))
+            .Concat(scenario.Diagnostics.AdDiff.Select(diff => diff.Message))
+            .SelectMany(failure => AutomationFailureAnalyzer.Analyze(failure, scenario.SourcePath))
+            .DistinctBy(diagnosis => $"{diagnosis.LikelyFailure}|{diagnosis.Check}", StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+}
+
+public enum AutomationConsoleKind
+{
+    Info,
+    Stage,
+    Pass,
+    Warning,
+    Failure,
+    Action
+}
+
+public static class AutomationConsole
+{
+    private const string Reset = "\u001b[0m";
+
+    public static Task WriteInfoAsync(TextWriter output, string message) =>
+        WriteLineAsync(output, message, AutomationConsoleKind.Info);
+
+    public static Task WriteStageAsync(TextWriter output, string message) =>
+        WriteLineAsync(output, message, AutomationConsoleKind.Stage);
+
+    public static Task WritePassAsync(TextWriter output, string message) =>
+        WriteLineAsync(output, message, AutomationConsoleKind.Pass);
+
+    public static Task WriteWarningAsync(TextWriter output, string message) =>
+        WriteLineAsync(output, message, AutomationConsoleKind.Warning);
+
+    public static Task WriteFailureAsync(TextWriter output, string message) =>
+        WriteLineAsync(output, message, AutomationConsoleKind.Failure);
+
+    public static Task WriteActionAsync(TextWriter output, string message) =>
+        WriteLineAsync(output, message, AutomationConsoleKind.Action);
+
+    public static Task WriteLineAsync(TextWriter output, string message, AutomationConsoleKind kind)
+    {
+        WriteLine(output, message, kind);
+        return Task.CompletedTask;
+    }
+
+    public static void WriteLine(TextWriter output, string message, AutomationConsoleKind kind)
+    {
+        output.WriteLine(Format(message, kind));
+    }
+
+    private static string Format(string message, AutomationConsoleKind kind)
+    {
+        if (!UseColor())
+        {
+            return message;
+        }
+
+        return $"{Color(kind)}{Prefix(kind)}{message}{Reset}";
+    }
+
+    private static bool UseColor()
+    {
+        if (Environment.GetEnvironmentVariable("NO_COLOR") is not null)
+        {
+            return false;
+        }
+
+        return !Console.IsOutputRedirected;
+    }
+
+    private static string Prefix(AutomationConsoleKind kind) =>
+        kind switch
+        {
+            AutomationConsoleKind.Pass => "PASS ",
+            AutomationConsoleKind.Warning => "WARN ",
+            AutomationConsoleKind.Failure => "FAIL ",
+            AutomationConsoleKind.Action => "NEXT ",
+            AutomationConsoleKind.Stage => "==> ",
+            _ => string.Empty
+        };
+
+    private static string Color(AutomationConsoleKind kind) =>
+        kind switch
+        {
+            AutomationConsoleKind.Pass => "\u001b[32m",
+            AutomationConsoleKind.Warning => "\u001b[33m",
+            AutomationConsoleKind.Failure => "\u001b[31m",
+            AutomationConsoleKind.Action => "\u001b[36m",
+            AutomationConsoleKind.Stage => "\u001b[35m",
+            _ => "\u001b[37m"
+        };
+}
+
+public sealed record AutomationFailureDiagnosis(string LikelyFailure, string Check);
+
+public static class AutomationFailureAnalyzer
+{
+    public static IReadOnlyList<AutomationFailureDiagnosis> Analyze(string failure, object? scenarioContext)
+    {
+        var scenarioPath = scenarioContext as string ?? (scenarioContext as AutomationScenario)?.SourcePath;
+        var checks = new List<AutomationFailureDiagnosis>();
+        var text = failure.ToLowerInvariant();
+        if (text.Contains("preflight"))
+        {
+            Add(checks, "environment dependency preflight", "API/worker/mock/AD availability, then rerun with same command.");
+        }
+
+        if (text.Contains("api") || text.Contains("login") || text.Contains("401") || text.Contains("403") || text.Contains("http"))
+        {
+            Add(checks, "API/auth/local automation login", "API logs, /api/health, SYNCFACTORS_AUTOMATION_USERNAME/PASSWORD, and hybrid local auth bootstrap.");
+        }
+
+        if (text.Contains("mock") || text.Contains("successfactors") || text.Contains("/api/admin/workers"))
+        {
+            Add(checks, "mock SuccessFactors state or mutation", "mock service logs and the worker payload in the scenario file.");
+        }
+
+        if (text.Contains("queue") || text.Contains("request") || text.Contains("canceled") || text.Contains("timeout"))
+        {
+            Add(checks, "run queue or worker processing", "API /api/runs/queue/{requestId}, worker logs, and stale runtime status.");
+        }
+
+        if (text.Contains("runstatus") || text.Contains("bucket") || text.Contains("operation") || text.Contains("unchanged"))
+        {
+            Add(checks, "sync engine planning/execution bucket mismatch", $"run detail entries and expectation block in {FormatScenarioPath(scenarioPath)}.");
+        }
+
+        if (text.Contains("ad ") || text.Contains("active directory") || text.Contains("ldap") || text.Contains("managed ou") || text.Contains("expected ou") || text.Contains("enabled"))
+        {
+            Add(checks, "Active Directory final state mismatch", "managed test OUs, AD bind/search permissions, and finalExpectation expectedAdUsers.");
+        }
+
+        if (text.Contains("duplicate") || text.Contains("sam") || text.Contains("upn") || text.Contains("mail"))
+        {
+            Add(checks, "identity uniqueness or correlation", "sAMAccountName/UPN/mail values in AD snapshot and identity correlation config.");
+        }
+
+        if (text.Contains("duration") || text.Contains("timed out"))
+        {
+            Add(checks, "performance threshold or blocked worker", "worker throughput, expectedDurationSeconds, and queue/runtime timestamps.");
+        }
+
+        if (checks.Count == 0)
+        {
+            Add(checks, "scenario assertion or runtime dependency", $"failure line, report JSON, and scenario file {FormatScenarioPath(scenarioPath)}.");
+        }
+
+        return checks;
+    }
+
+    private static void Add(ICollection<AutomationFailureDiagnosis> checks, string likelyFailure, string check)
+    {
+        checks.Add(new AutomationFailureDiagnosis(likelyFailure, check));
+    }
+
+    private static string FormatScenarioPath(string? scenarioPath) =>
+        string.IsNullOrWhiteSpace(scenarioPath) ? "(unknown scenario)" : scenarioPath;
 }
 
 public sealed record AutomationScenario(

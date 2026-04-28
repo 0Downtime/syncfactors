@@ -22,6 +22,36 @@ $projectRoot = Resolve-ProjectRoot
 $readinessStarted = Get-Date
 $summary = [System.Collections.Generic.List[object]]::new()
 
+function Get-ReadinessFailureHint {
+    param([string]$Name)
+
+    if ($Name -like '*stack*') {
+        return [pscustomobject]@{ LikelyFailed = 'local API/mock/worker startup'; Check = 'scripts/codex/run.ps1 output, port conflicts, HTTPS cert, profile=mock config.' }
+    }
+
+    if ($Name -like '*build*') {
+        return [pscustomobject]@{ LikelyFailed = 'compile or restore'; Check = 'dotnet build output and first compiler error.' }
+    }
+
+    if ($Name -like '*tests*') {
+        return [pscustomobject]@{ LikelyFailed = 'unit/integration regression'; Check = 'failed test name and test project output.' }
+    }
+
+    if ($Name -like '*simulator*') {
+        return [pscustomobject]@{ LikelyFailed = 'fast lifecycle simulator expectation'; Check = 'state/runtime lifecycle simulation report and mock scenario expectations.' }
+    }
+
+    if ($Name -like '*AD OU*' -or $Name -like '*precheck*') {
+        return [pscustomobject]@{ LikelyFailed = 'AD bind/search/write access or unsafe OU config'; Check = 'config/local.mock-successfactors.real-ad.sync-config.json, AD credentials, managed OU existence, write permissions.' }
+    }
+
+    if ($Name -like '*scenario*') {
+        return [pscustomobject]@{ LikelyFailed = 'real API/worker/AD E2E scenario'; Check = 'E2E report, worker logs, run queue request, run detail entries, and AD managed OU snapshot.' }
+    }
+
+    return [pscustomobject]@{ LikelyFailed = 'readiness stage dependency'; Check = 'stage output above and generated readiness JSON.' }
+}
+
 function Invoke-ReadinessStage {
     param(
         [Parameter(Mandatory)]
@@ -44,14 +74,19 @@ function Invoke-ReadinessStage {
         Write-Host "PASS: $Name" -ForegroundColor Green
     }
     catch {
+        $hint = Get-ReadinessFailureHint -Name $Name
         $summary.Add([pscustomobject]@{
             Name = $Name
             Passed = $false
             StartedAt = $started.ToUniversalTime().ToString('O')
             CompletedAt = (Get-Date).ToUniversalTime().ToString('O')
             Error = [string]$_.Exception.Message
+            LikelyFailed = $hint.LikelyFailed
+            Check = $hint.Check
         })
         Write-Host "FAIL: $Name - $($_.Exception.Message)" -ForegroundColor Red
+        Write-Host "NEXT Likely failed: $($hint.LikelyFailed)" -ForegroundColor Cyan
+        Write-Host "NEXT Check: $($hint.Check)" -ForegroundColor Cyan
         throw
     }
 }
@@ -190,6 +225,10 @@ foreach ($stage in $summary) {
     $stageStatus = if ($stage.Passed) { 'PASS' } else { 'FAIL' }
     $stageError = if ([string]::IsNullOrWhiteSpace([string]$stage.Error)) { '' } else { ': ' + [string]$stage.Error }
     [void]$markdown.AppendLine(('- {0} {1}{2}' -f $stageStatus, $stage.Name, $stageError))
+    if (-not $stage.Passed) {
+        [void]$markdown.AppendLine("  likely failed: $($stage.LikelyFailed)")
+        [void]$markdown.AppendLine("  check: $($stage.Check)")
+    }
 }
 [void]$markdown.AppendLine()
 [void]$markdown.AppendLine('## Rerun')
