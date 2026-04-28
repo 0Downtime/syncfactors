@@ -10,7 +10,6 @@ public interface IApplyPreviewService
 }
 
 public sealed class ApplyPreviewService(
-    IWorkerSource workerSource,
     IDirectoryMutationCommandBuilder commandBuilder,
     IDirectoryCommandGateway directoryCommandGateway,
     IRunRepository runRepository,
@@ -53,12 +52,7 @@ public sealed class ApplyPreviewService(
 
         ValidatePreviewIsSafeToApply(preview);
 
-        var worker = await workerSource.GetWorkerAsync(request.WorkerId, cancellationToken);
-        if (worker is null)
-        {
-            logger.LogWarning("Apply preview could not resolve worker. WorkerId={WorkerId}", request.WorkerId);
-            throw new InvalidOperationException($"Worker {request.WorkerId} could not be resolved.");
-        }
+        var worker = BuildWorkerSnapshotFromPreview(preview);
 
         var command = commandBuilder.Build(worker, preview);
         var action = command.Action;
@@ -133,6 +127,42 @@ public sealed class ApplyPreviewService(
     {
         using var document = JsonDocument.Parse(json);
         return document.RootElement.Clone();
+    }
+
+    private static WorkerSnapshot BuildWorkerSnapshotFromPreview(WorkerPreviewResult preview)
+    {
+        if (string.IsNullOrWhiteSpace(preview.TargetOu))
+        {
+            throw new InvalidOperationException("Preview cannot be applied because the target OU is missing.");
+        }
+
+        var attributes = preview.SourceAttributes
+            .GroupBy(row => row.Attribute, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(
+                group => group.Key,
+                group => (string?)group.Last().Value,
+                StringComparer.OrdinalIgnoreCase);
+        var preferredName = GetSourceAttributeValue(attributes, "preferredName")
+            ?? GetSourceAttributeValue(attributes, "firstName")
+            ?? "Unknown";
+        var lastName = GetSourceAttributeValue(attributes, "lastName") ?? "Worker";
+        var department = GetSourceAttributeValue(attributes, "department") ?? "Unknown";
+
+        return new WorkerSnapshot(
+            WorkerId: preview.WorkerId,
+            PreferredName: preferredName,
+            LastName: lastName,
+            Department: department,
+            TargetOu: preview.TargetOu,
+            IsPrehire: false,
+            Attributes: attributes);
+    }
+
+    private static string? GetSourceAttributeValue(IReadOnlyDictionary<string, string?> attributes, string attributeName)
+    {
+        return attributes.TryGetValue(attributeName, out var value) && !string.IsNullOrWhiteSpace(value)
+            ? value
+            : null;
     }
 
     private static string? GetPreviewAttributeValue(WorkerPreviewResult preview, string attributeName)
