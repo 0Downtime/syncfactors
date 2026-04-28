@@ -62,7 +62,7 @@ public sealed class SyncFactorsConfigurationLoaderTests
     {
         var config = await LoadConfigAsync(adJson: null);
 
-        Assert.Equal("Exampleenergy.com", config.Ad.UpnSuffix);
+        Assert.Equal("spireenergy.com", config.Ad.UpnSuffix);
     }
 
     [Fact]

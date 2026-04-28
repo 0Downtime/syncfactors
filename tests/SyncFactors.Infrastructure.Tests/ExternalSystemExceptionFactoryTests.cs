@@ -18,7 +18,7 @@ public sealed class ExternalSystemExceptionFactoryTests
         Assert.NotNull(method);
 
         var config = new ActiveDirectoryConfig(
-            Server: "192.0.2.10",
+            Server: "10.1.182.35",
             Port: 389,
             Username: "svc_syncfactors@example.local",
             BindPassword: "secret",
@@ -34,10 +34,10 @@ public sealed class ExternalSystemExceptionFactoryTests
                 TrustedCertificateThumbprints: []),
             IdentityPolicy: new ActiveDirectoryIdentityPolicyConfig(false));
 
-        var exception = Assert.IsType<InvalidOperationException>(method!.Invoke(null, ["command 'CreateUser'", config, "A different AD account already uses userPrincipalName 'brian.oliver@Exampleenergy.com' for create worker 45086.", "Step=PreflightIdentityConflict WorkerId=45086", "Resolve the existing AD account that already owns this UPN or mail value, or change the planned suffix/value before retrying."]));
+        var exception = Assert.IsType<InvalidOperationException>(method!.Invoke(null, ["command 'CreateUser'", config, "A different AD account already uses userPrincipalName 'brian.oliver@spireenergy.com' for create worker 45086.", "Step=PreflightIdentityConflict WorkerId=45086", "Resolve the existing AD account that already owns this UPN or mail value, or change the planned suffix/value before retrying."]));
 
-        Assert.Contains("Active Directory command 'CreateUser' failed against LDAP server '192.0.2.10'.", exception.Message, StringComparison.Ordinal);
-        Assert.Contains("A different AD account already uses userPrincipalName 'brian.oliver@Exampleenergy.com' for create worker 45086.", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("Active Directory command 'CreateUser' failed against LDAP server '10.1.182.35'.", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("A different AD account already uses userPrincipalName 'brian.oliver@spireenergy.com' for create worker 45086.", exception.Message, StringComparison.Ordinal);
         Assert.Contains("Details: Step=PreflightIdentityConflict WorkerId=45086", exception.Message, StringComparison.Ordinal);
         Assert.Contains("Next check: Resolve the existing AD account", exception.Message, StringComparison.Ordinal);
     }
@@ -97,9 +97,9 @@ public sealed class ExternalSystemExceptionFactoryTests
         var markerKey = Assert.IsType<string>(markerField!.GetRawConstantValue());
 
         var exception = Assert.IsType<InvalidOperationException>(
-            method!.Invoke(null, ["lookup", "example-env-01.Exampleqa.biz", TimeSpan.FromSeconds(10), new TimeoutException("Timed out.")]));
+            method!.Invoke(null, ["lookup", "qadc-01.spireqa.biz", TimeSpan.FromSeconds(10), new TimeoutException("Timed out.")]));
 
-        Assert.Equal("Active Directory lookup timed out against LDAP server 'example-env-01.Exampleqa.biz' after 10 seconds.", exception.Message);
+        Assert.Equal("Active Directory lookup timed out against LDAP server 'qadc-01.spireqa.biz' after 10 seconds.", exception.Message);
         Assert.True(exception.Data.Contains(markerKey));
         Assert.Equal(true, exception.Data[markerKey]);
     }
@@ -121,9 +121,9 @@ public sealed class ExternalSystemExceptionFactoryTests
             Username: "svc_syncfactors@example.local",
             BindPassword: "secret",
             IdentityAttribute: "employeeID",
-            DefaultActiveOu: "OU=POWERSHELL,OU=ExampleQA-Users,DC=ExampleQA,DC=biz",
-            PrehireOu: "OU=Prehire,OU=ExampleQA-Users,DC=ExampleQA,DC=biz",
-            GraveyardOu: "OU=GRAVEYARD,OU=ExampleQA-Users,DC=ExampleQA,DC=biz",
+            DefaultActiveOu: "OU=POWERSHELL,OU=SpireQA-Users,DC=spireQA,DC=biz",
+            PrehireOu: "OU=Prehire,OU=SpireQA-Users,DC=spireQA,DC=biz",
+            GraveyardOu: "OU=GRAVEYARD,OU=SpireQA-Users,DC=spireQA,DC=biz",
             Transport: new ActiveDirectoryTransportConfig(
                 Mode: "ldap",
                 AllowLdapFallback: false,
@@ -131,18 +131,18 @@ public sealed class ExternalSystemExceptionFactoryTests
                 RequireSigning: false,
                 TrustedCertificateThumbprints: []),
             IdentityPolicy: new ActiveDirectoryIdentityPolicyConfig(false),
-            LeaveOu: "OU=LEAVE USERS,OU=ExampleQA-Users,DC=ExampleQA,DC=biz");
+            LeaveOu: "OU=LEAVE USERS,OU=SpireQA-Users,DC=spireQA,DC=biz");
 
         var directoryException = new DirectoryOperationException(
-            "The object does not exist. 0000208D: NameErr: DSID-0310028D, problem 2001 (NO_OBJECT), data 0, best match of:\n\t'OU=ExampleQA-Users,DC=ExampleQA,DC=biz'");
+            "The object does not exist. 0000208D: NameErr: DSID-0310028D, problem 2001 (NO_OBJECT), data 0, best match of:\n\t'OU=SpireQA-Users,DC=spireQA,DC=biz'");
 
         var exception = Assert.IsType<InvalidOperationException>(method!.Invoke(null, ["lookup", config, directoryException]));
 
         Assert.Contains("The directory search base does not exist or is misconfigured.", exception.Message, StringComparison.Ordinal);
-        Assert.Contains("Best match in AD was 'OU=ExampleQA-Users,DC=ExampleQA,DC=biz'.", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("Best match in AD was 'OU=SpireQA-Users,DC=spireQA,DC=biz'.", exception.Message, StringComparison.Ordinal);
         Assert.Contains("Raw AD error: The object does not exist.", exception.Message, StringComparison.Ordinal);
-        Assert.Contains("defaultActiveOu='OU=POWERSHELL,OU=ExampleQA-Users,DC=ExampleQA,DC=biz'", exception.Message, StringComparison.Ordinal);
-        Assert.Contains("leaveOu='OU=LEAVE USERS,OU=ExampleQA-Users,DC=ExampleQA,DC=biz'", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("defaultActiveOu='OU=POWERSHELL,OU=SpireQA-Users,DC=spireQA,DC=biz'", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("leaveOu='OU=LEAVE USERS,OU=SpireQA-Users,DC=spireQA,DC=biz'", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -159,12 +159,12 @@ public sealed class ExternalSystemExceptionFactoryTests
         var config = new ActiveDirectoryConfig(
             Server: "localhost",
             Port: 636,
-            Username: "svc_successfactors@Exampleqa.biz",
+            Username: "svc_successfactors@spireqa.biz",
             BindPassword: "secret",
             IdentityAttribute: "employeeID",
-            DefaultActiveOu: "OU=POWERSHELL,OU=ExampleQA-Users,DC=ExampleQA,DC=biz",
-            PrehireOu: "OU=Prehire,OU=ExampleQA-Users,DC=ExampleQA,DC=biz",
-            GraveyardOu: "OU=GRAVEYARD,OU=ExampleQA-Users,DC=ExampleQA,DC=biz",
+            DefaultActiveOu: "OU=POWERSHELL,OU=SpireQA-Users,DC=spireQA,DC=biz",
+            PrehireOu: "OU=Prehire,OU=SpireQA-Users,DC=spireQA,DC=biz",
+            GraveyardOu: "OU=GRAVEYARD,OU=SpireQA-Users,DC=spireQA,DC=biz",
             Transport: new ActiveDirectoryTransportConfig(
                 Mode: "ldaps",
                 AllowLdapFallback: false,
@@ -175,15 +175,15 @@ public sealed class ExternalSystemExceptionFactoryTests
 
         var ldapException = new LdapException(
             32,
-            "The object does not exist. 0000208D: NameErr: DSID-0310028D, problem 2001 (NO_OBJECT), data 0, best match of:\n\t'OU=POWERSHELL,OU=ExampleQA-Users,DC=ExampleQA,DC=biz'");
-        var details = "Step=CreateUser WorkerId=30008382 SamAccountName=30008382 DistinguishedName=CN=30008382,OU=POWERSHELL,OU=ExampleQA-Users,DC=ExampleQA,DC=biz TargetOu=OU=POWERSHELL,OU=ExampleQA-Users,DC=ExampleQA,DC=biz";
+            "The object does not exist. 0000208D: NameErr: DSID-0310028D, problem 2001 (NO_OBJECT), data 0, best match of:\n\t'OU=POWERSHELL,OU=SpireQA-Users,DC=spireQA,DC=biz'");
+        var details = "Step=CreateUser WorkerId=30008382 SamAccountName=30008382 DistinguishedName=CN=30008382,OU=POWERSHELL,OU=SpireQA-Users,DC=spireQA,DC=biz TargetOu=OU=POWERSHELL,OU=SpireQA-Users,DC=spireQA,DC=biz";
 
         var exception = Assert.IsType<InvalidOperationException>(method!.Invoke(null, ["command 'CreateUser'", config, ldapException, details]));
 
-        Assert.Contains("Active Directory reported NO_OBJECT while creating 'CN=30008382,OU=POWERSHELL,OU=ExampleQA-Users,DC=ExampleQA,DC=biz' under target OU 'OU=POWERSHELL,OU=ExampleQA-Users,DC=ExampleQA,DC=biz'.", exception.Message, StringComparison.Ordinal);
-        Assert.Contains("Best match in AD was 'OU=POWERSHELL,OU=ExampleQA-Users,DC=ExampleQA,DC=biz'.", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("Active Directory reported NO_OBJECT while creating 'CN=30008382,OU=POWERSHELL,OU=SpireQA-Users,DC=spireQA,DC=biz' under target OU 'OU=POWERSHELL,OU=SpireQA-Users,DC=spireQA,DC=biz'.", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("Best match in AD was 'OU=POWERSHELL,OU=SpireQA-Users,DC=spireQA,DC=biz'.", exception.Message, StringComparison.Ordinal);
         Assert.Contains("Raw AD error: The object does not exist.", exception.Message, StringComparison.Ordinal);
-        Assert.Contains("Current create target DN='CN=30008382,OU=POWERSHELL,OU=ExampleQA-Users,DC=ExampleQA,DC=biz', targetOu='OU=POWERSHELL,OU=ExampleQA-Users,DC=ExampleQA,DC=biz'.", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("Current create target DN='CN=30008382,OU=POWERSHELL,OU=SpireQA-Users,DC=spireQA,DC=biz', targetOu='OU=POWERSHELL,OU=SpireQA-Users,DC=spireQA,DC=biz'.", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -200,12 +200,12 @@ public sealed class ExternalSystemExceptionFactoryTests
         var config = new ActiveDirectoryConfig(
             Server: "localhost",
             Port: 636,
-            Username: "svc_successfactors@Exampleqa.biz",
+            Username: "svc_successfactors@spireqa.biz",
             BindPassword: "secret",
             IdentityAttribute: "employeeID",
-            DefaultActiveOu: "OU=POWERSHELL,OU=ExampleQA-Users,DC=ExampleQA,DC=biz",
-            PrehireOu: "OU=Prehire,OU=ExampleQA-Users,DC=ExampleQA,DC=biz",
-            GraveyardOu: "OU=GRAVEYARD,OU=ExampleQA-Users,DC=ExampleQA,DC=biz",
+            DefaultActiveOu: "OU=POWERSHELL,OU=SpireQA-Users,DC=spireQA,DC=biz",
+            PrehireOu: "OU=Prehire,OU=SpireQA-Users,DC=spireQA,DC=biz",
+            GraveyardOu: "OU=GRAVEYARD,OU=SpireQA-Users,DC=spireQA,DC=biz",
             Transport: new ActiveDirectoryTransportConfig(
                 Mode: "ldaps",
                 AllowLdapFallback: false,
@@ -216,15 +216,15 @@ public sealed class ExternalSystemExceptionFactoryTests
 
         var ldapException = new LdapException(
             32,
-            "The object does not exist. 0000208D: NameErr: DSID-0310028D, problem 2001 (NO_OBJECT), data 0, best match of:\n\t'OU=POWERSHELL,OU=ExampleQA-Users,DC=ExampleQA,DC=biz'");
-        var details = "Step=PreflightIdentityConflictSearch WorkerId=30008382 SamAccountName=30008382 DistinguishedName=CN=30008382,OU=POWERSHELL,OU=ExampleQA-Users,DC=ExampleQA,DC=biz TargetOu=OU=POWERSHELL,OU=ExampleQA-Users,DC=ExampleQA,DC=biz";
+            "The object does not exist. 0000208D: NameErr: DSID-0310028D, problem 2001 (NO_OBJECT), data 0, best match of:\n\t'OU=POWERSHELL,OU=SpireQA-Users,DC=spireQA,DC=biz'");
+        var details = "Step=PreflightIdentityConflictSearch WorkerId=30008382 SamAccountName=30008382 DistinguishedName=CN=30008382,OU=POWERSHELL,OU=SpireQA-Users,DC=spireQA,DC=biz TargetOu=OU=POWERSHELL,OU=SpireQA-Users,DC=spireQA,DC=biz";
 
         var exception = Assert.IsType<InvalidOperationException>(method!.Invoke(null, ["command 'CreateUser'", config, ldapException, details]));
 
-        Assert.Contains("Active Directory reported NO_OBJECT while creating 'CN=30008382,OU=POWERSHELL,OU=ExampleQA-Users,DC=ExampleQA,DC=biz' under target OU 'OU=POWERSHELL,OU=ExampleQA-Users,DC=ExampleQA,DC=biz'.", exception.Message, StringComparison.Ordinal);
-        Assert.Contains("Best match in AD was 'OU=POWERSHELL,OU=ExampleQA-Users,DC=ExampleQA,DC=biz'.", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("Active Directory reported NO_OBJECT while creating 'CN=30008382,OU=POWERSHELL,OU=SpireQA-Users,DC=spireQA,DC=biz' under target OU 'OU=POWERSHELL,OU=SpireQA-Users,DC=spireQA,DC=biz'.", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("Best match in AD was 'OU=POWERSHELL,OU=SpireQA-Users,DC=spireQA,DC=biz'.", exception.Message, StringComparison.Ordinal);
         Assert.Contains("Raw AD error: The object does not exist.", exception.Message, StringComparison.Ordinal);
-        Assert.Contains("Current create target DN='CN=30008382,OU=POWERSHELL,OU=ExampleQA-Users,DC=ExampleQA,DC=biz', targetOu='OU=POWERSHELL,OU=ExampleQA-Users,DC=ExampleQA,DC=biz'.", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("Current create target DN='CN=30008382,OU=POWERSHELL,OU=SpireQA-Users,DC=spireQA,DC=biz', targetOu='OU=POWERSHELL,OU=SpireQA-Users,DC=spireQA,DC=biz'.", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -239,7 +239,7 @@ public sealed class ExternalSystemExceptionFactoryTests
         Assert.NotNull(method);
 
         var config = new ActiveDirectoryConfig(
-            Server: "192.0.2.10",
+            Server: "10.1.182.35",
             Port: 389,
             Username: "svc_syncfactors@example.local",
             BindPassword: "secret",

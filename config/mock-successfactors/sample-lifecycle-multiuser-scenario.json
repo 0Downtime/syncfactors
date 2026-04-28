@@ -10,8 +10,8 @@
       "attributes": {
         "employeeID": "10002",
         "displayName": "Sample102, Alex",
-        "UserPrincipalName": "alex.sample102@Exampleenergy.com",
-        "mail": "alex.sample102@Exampleenergy.com",
+        "UserPrincipalName": "alex.sample102@spireenergy.com",
+        "mail": "alex.sample102@spireenergy.com",
         "company": "Legacy CORP",
         "streetAddress": "2 Old Campus"
       }
@@ -25,8 +25,8 @@
       "attributes": {
         "employeeID": "10004",
         "displayName": "Sample104, Morgan",
-        "UserPrincipalName": "morgan.sample104@Exampleenergy.com",
-        "mail": "morgan.sample104@Exampleenergy.com",
+        "UserPrincipalName": "morgan.sample104@spireenergy.com",
+        "mail": "morgan.sample104@spireenergy.com",
         "company": "CORP",
         "streetAddress": "104 Example Way"
       }
@@ -40,8 +40,8 @@
       "attributes": {
         "employeeID": "10007",
         "displayName": "Sample107, Jamie",
-        "UserPrincipalName": "jamie.sample107@Exampleenergy.com",
-        "mail": "jamie.sample107@Exampleenergy.com",
+        "UserPrincipalName": "jamie.sample107@spireenergy.com",
+        "mail": "jamie.sample107@spireenergy.com",
         "company": "CORP",
         "streetAddress": "107 Example Way"
       }

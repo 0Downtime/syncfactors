@@ -190,7 +190,7 @@ public sealed class AttributeDiffServiceTests
             IsPrehire: false,
             Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
             {
-                ["employmentNav[0].jobInfoNav[0].companyNav.name_localized"] = "Example Services, Inc."
+                ["employmentNav[0].jobInfoNav[0].companyNav.name_localized"] = "Spire Services, Inc."
             });
 
         var changes = await diffService.BuildDiffAsync(
@@ -201,7 +201,7 @@ public sealed class AttributeDiffServiceTests
             CancellationToken.None);
 
         var companyChange = Assert.Single(changes, change => change.Attribute == "company");
-        Assert.Equal("Example Services Inc", companyChange.After);
+        Assert.Equal("Spire Services Inc", companyChange.After);
         Assert.True(companyChange.Changed);
     }
 
@@ -488,22 +488,22 @@ public sealed class AttributeDiffServiceTests
             DisplayName: "Smith, John",
             Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
             {
-                ["UserPrincipalName"] = "existing.upn@Exampleenergy.com",
-                ["mail"] = "existing.mail@Exampleenergy.com"
+                ["UserPrincipalName"] = "existing.upn@spireenergy.com",
+                ["mail"] = "existing.mail@spireenergy.com"
             });
 
         var changes = await diffService.BuildDiffAsync(
             worker,
             directoryUser,
-            proposedEmailAddress: "john.smith2@Exampleenergy.com",
+            proposedEmailAddress: "john.smith2@spireenergy.com",
             logPath: null,
             CancellationToken.None);
 
         var upnChange = Assert.Single(changes, change => change.Attribute == "UserPrincipalName");
         var mailChange = Assert.Single(changes, change => change.Attribute == "mail");
-        Assert.Equal("existing.upn@Exampleenergy.com", upnChange.After);
+        Assert.Equal("existing.upn@spireenergy.com", upnChange.After);
         Assert.False(upnChange.Changed);
-        Assert.Equal("existing.mail@Exampleenergy.com", mailChange.After);
+        Assert.Equal("existing.mail@spireenergy.com", mailChange.After);
         Assert.False(mailChange.Changed);
     }
 
@@ -606,14 +606,14 @@ public sealed class AttributeDiffServiceTests
             Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
             {
                 ["displayName"] = "Sample101, Winnie",
-                ["UserPrincipalName"] = "winnie.sample1012@Exampleenergy.com",
-                ["mail"] = "winnie.sample1012@Exampleenergy.com"
+                ["UserPrincipalName"] = "winnie.sample1012@spireenergy.com",
+                ["mail"] = "winnie.sample1012@spireenergy.com"
             });
 
         var changes = await diffService.BuildDiffAsync(
             worker,
             directoryUser,
-            proposedEmailAddress: "winnie.sample1012@Exampleenergy.com",
+            proposedEmailAddress: "winnie.sample1012@spireenergy.com",
             logPath: null,
             CancellationToken.None);
 
@@ -623,8 +623,8 @@ public sealed class AttributeDiffServiceTests
             change =>
             {
                 Assert.Equal("UserPrincipalName", change.Attribute);
-                Assert.Equal("winnie.sample1012@Exampleenergy.com", change.Before);
-                Assert.Equal("winnie.sample1012@Exampleenergy.com", change.After);
+                Assert.Equal("winnie.sample1012@spireenergy.com", change.Before);
+                Assert.Equal("winnie.sample1012@spireenergy.com", change.After);
                 Assert.False(change.Changed);
             },
             change =>
@@ -637,8 +637,8 @@ public sealed class AttributeDiffServiceTests
             change =>
             {
                 Assert.Equal("mail", change.Attribute);
-                Assert.Equal("winnie.sample1012@Exampleenergy.com", change.Before);
-                Assert.Equal("winnie.sample1012@Exampleenergy.com", change.After);
+                Assert.Equal("winnie.sample1012@spireenergy.com", change.Before);
+                Assert.Equal("winnie.sample1012@spireenergy.com", change.After);
                 Assert.False(change.Changed);
             });
     }
@@ -889,15 +889,15 @@ public sealed class AttributeDiffServiceTests
             Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
             {
                 ["displayName"] = "Old Display",
-                ["UserPrincipalName"] = "old.email@Exampleenergy.com",
-                ["mail"] = "old.email@Exampleenergy.com",
+                ["UserPrincipalName"] = "old.email@spireenergy.com",
+                ["mail"] = "old.email@spireenergy.com",
                 ["department"] = "Old Department"
             });
 
         var changes = await diffService.BuildDiffAsync(
             worker,
             directoryUser,
-            proposedEmailAddress: "preview.email@Exampleenergy.com",
+            proposedEmailAddress: "preview.email@spireenergy.com",
             logPath: null,
             CancellationToken.None);
 
@@ -907,8 +907,8 @@ public sealed class AttributeDiffServiceTests
             change =>
             {
                 Assert.Equal("UserPrincipalName", change.Attribute);
-                Assert.Equal("old.email@Exampleenergy.com", change.Before);
-                Assert.Equal("old.email@Exampleenergy.com", change.After);
+                Assert.Equal("old.email@spireenergy.com", change.Before);
+                Assert.Equal("old.email@spireenergy.com", change.After);
                 Assert.False(change.Changed);
             },
             change =>
@@ -928,8 +928,8 @@ public sealed class AttributeDiffServiceTests
             change =>
             {
                 Assert.Equal("mail", change.Attribute);
-                Assert.Equal("old.email@Exampleenergy.com", change.Before);
-                Assert.Equal("old.email@Exampleenergy.com", change.After);
+                Assert.Equal("old.email@spireenergy.com", change.Before);
+                Assert.Equal("old.email@spireenergy.com", change.After);
                 Assert.False(change.Changed);
             });
     }

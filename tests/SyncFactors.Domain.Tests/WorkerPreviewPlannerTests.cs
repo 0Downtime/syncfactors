@@ -18,7 +18,7 @@ public sealed class WorkerPreviewPlannerTests
             IsPrehire: false,
             Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
             {
-                ["company"] = "Example Services, Inc.",
+                ["company"] = "Spire Services, Inc.",
                 ["department"] = "Infrastructure & Security"
             });
 
@@ -57,9 +57,9 @@ public sealed class WorkerPreviewPlannerTests
             IsPrehire: false,
             Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
             {
-                ["company"] = "Example Services, Inc.",
+                ["company"] = "Spire Services, Inc.",
                 ["department"] = "Infrastructure & Security",
-                ["employmentNav[0].jobInfoNav[0].companyNav.name_localized"] = "Example Services, Inc.",
+                ["employmentNav[0].jobInfoNav[0].companyNav.name_localized"] = "Spire Services, Inc.",
                 ["employmentNav[0].jobInfoNav[0].locationNav.name"] = "STL - 700 Market",
                 ["emptyValue"] = null
             });
@@ -80,9 +80,9 @@ public sealed class WorkerPreviewPlannerTests
 
         var preview = await planner.PreviewAsync("44522", CancellationToken.None);
 
-        Assert.Contains(preview.SourceAttributes, attribute => attribute.Attribute == "company" && attribute.Value == "Example Services, Inc.");
+        Assert.Contains(preview.SourceAttributes, attribute => attribute.Attribute == "company" && attribute.Value == "Spire Services, Inc.");
         Assert.Contains(preview.SourceAttributes, attribute => attribute.Attribute == "department" && attribute.Value == "Infrastructure & Security");
-        Assert.Contains(preview.SourceAttributes, attribute => attribute.Attribute == "employmentNav[0].jobInfoNav[0].companyNav.name_localized" && attribute.Value == "Example Services, Inc.");
+        Assert.Contains(preview.SourceAttributes, attribute => attribute.Attribute == "employmentNav[0].jobInfoNav[0].companyNav.name_localized" && attribute.Value == "Spire Services, Inc.");
         Assert.Contains(preview.SourceAttributes, attribute => attribute.Attribute == "employmentNav[0].jobInfoNav[0].locationNav.name" && attribute.Value == "STL - 700 Market");
         Assert.DoesNotContain(preview.SourceAttributes, attribute => attribute.Attribute == "emptyValue");
     }
@@ -116,7 +116,7 @@ public sealed class WorkerPreviewPlannerTests
 
         await planner.PreviewAsync("44522", CancellationToken.None);
 
-        Assert.Equal("christopher.brien@Exampleenergy.com", diffService.LastProposedEmailAddress);
+        Assert.Equal("christopher.brien@spireenergy.com", diffService.LastProposedEmailAddress);
     }
 
     [Fact]
@@ -131,7 +131,7 @@ public sealed class WorkerPreviewPlannerTests
             IsPrehire: false,
             Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
             {
-                ["company"] = "Example Services, Inc.",
+                ["company"] = "Spire Services, Inc.",
                 ["department"] = "Infrastructure & Security"
             });
 
@@ -154,8 +154,8 @@ public sealed class WorkerPreviewPlannerTests
 
         var preview = await planner.PreviewAsync("44522", CancellationToken.None);
 
-        Assert.Equal("christopher.brien@Exampleenergy.com", preview.DiffRows.Single(row => row.Attribute == "UserPrincipalName").After);
-        Assert.Equal("christopher.brien@Exampleenergy.com", preview.DiffRows.Single(row => row.Attribute == "mail").After);
+        Assert.Equal("christopher.brien@spireenergy.com", preview.DiffRows.Single(row => row.Attribute == "UserPrincipalName").After);
+        Assert.Equal("christopher.brien@spireenergy.com", preview.DiffRows.Single(row => row.Attribute == "mail").After);
     }
 
     [Fact]
@@ -191,7 +191,7 @@ public sealed class WorkerPreviewPlannerTests
         Assert.Equal(1, directoryGateway.FindByWorkerCalls);
         Assert.Equal(0, directoryGateway.LegacyEmailLookupCalls);
         Assert.Same(directoryGateway.DirectoryUser, directoryGateway.LastExistingDirectoryUser);
-        Assert.Equal("christopher.brien2@Exampleenergy.com", diffService.LastProposedEmailAddress);
+        Assert.Equal("christopher.brien2@spireenergy.com", diffService.LastProposedEmailAddress);
     }
 
     [Fact]
@@ -243,7 +243,7 @@ public sealed class WorkerPreviewPlannerTests
             Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
             {
                 ["emplStatus"] = "64300",
-                ["company"] = "Example Services, Inc.",
+                ["company"] = "Spire Services, Inc.",
                 ["department"] = "Infrastructure & Security"
             });
 
@@ -473,7 +473,7 @@ public sealed class WorkerPreviewPlannerTests
 
         Assert.Null(preview.ReviewCaseType);
         Assert.Empty(preview.MissingSourceAttributes);
-        Assert.Equal("christopher.brien@Exampleenergy.com", preview.DiffRows.Single(row => row.Attribute == "UserPrincipalName").After);
+        Assert.Equal("christopher.brien@spireenergy.com", preview.DiffRows.Single(row => row.Attribute == "UserPrincipalName").After);
     }
 
     [Fact]
@@ -533,7 +533,7 @@ public sealed class WorkerPreviewPlannerTests
             IsPrehire: false,
             Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
             {
-                ["company"] = "Example Services, Inc.",
+                ["company"] = "Spire Services, Inc.",
                 ["department"] = "Infrastructure & Security",
                 ["managerId"] = "10004"
             });
@@ -570,7 +570,7 @@ public sealed class WorkerPreviewPlannerTests
             IsPrehire: false,
             Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
             {
-                ["company"] = "Example Services, Inc.",
+                ["company"] = "Spire Services, Inc.",
                 ["department"] = "Infrastructure & Security",
                 ["managerId"] = "10004"
             });
@@ -607,7 +607,7 @@ public sealed class WorkerPreviewPlannerTests
             IsPrehire: false,
             Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
             {
-                ["company"] = "Example Services, Inc.",
+                ["company"] = "Spire Services, Inc.",
                 ["department"] = "Infrastructure & Security",
                 ["managerId"] = "10004"
             });
@@ -646,7 +646,7 @@ public sealed class WorkerPreviewPlannerTests
             IsPrehire: false,
             Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
             {
-                ["company"] = "Example Services, Inc.",
+                ["company"] = "Spire Services, Inc.",
                 ["department"] = "Infrastructure & Security"
             });
 
@@ -741,9 +741,9 @@ public sealed class WorkerPreviewPlannerTests
 
         var preview = await planner.PreviewAsync("44522", CancellationToken.None);
 
-        Assert.Equal("existing.upn@Exampleenergy.com", preview.DiffRows.Single(row => row.Attribute == "UserPrincipalName").After);
+        Assert.Equal("existing.upn@spireenergy.com", preview.DiffRows.Single(row => row.Attribute == "UserPrincipalName").After);
         Assert.False(preview.DiffRows.Single(row => row.Attribute == "UserPrincipalName").Changed);
-        Assert.Equal("existing.mail@Exampleenergy.com", preview.DiffRows.Single(row => row.Attribute == "mail").After);
+        Assert.Equal("existing.mail@spireenergy.com", preview.DiffRows.Single(row => row.Attribute == "mail").After);
         Assert.False(preview.DiffRows.Single(row => row.Attribute == "mail").Changed);
     }
 
@@ -759,7 +759,7 @@ public sealed class WorkerPreviewPlannerTests
             IsPrehire: false,
             Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
             {
-                ["company"] = "Example Services, Inc.",
+                ["company"] = "Spire Services, Inc.",
                 ["department"] = "Infrastructure"
             });
 
@@ -801,7 +801,7 @@ public sealed class WorkerPreviewPlannerTests
             IsPrehire: false,
             Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
             {
-                ["company"] = "Example Services, Inc.",
+                ["company"] = "Spire Services, Inc.",
                 ["department"] = "Infrastructure & Security",
                 ["emplStatus"] = "L"
             });
@@ -843,7 +843,7 @@ public sealed class WorkerPreviewPlannerTests
             IsPrehire: false,
             Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
             {
-                ["company"] = "Example Services, Inc.",
+                ["company"] = "Spire Services, Inc.",
                 ["department"] = "Infrastructure & Security"
             });
 
@@ -882,7 +882,7 @@ public sealed class WorkerPreviewPlannerTests
             IsPrehire: false,
             Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
             {
-                ["company"] = "Example Services, Inc.",
+                ["company"] = "Spire Services, Inc.",
                 ["department"] = "Infrastructure & Security",
                 ["emplStatus"] = "T"
             });
@@ -924,7 +924,7 @@ public sealed class WorkerPreviewPlannerTests
             IsPrehire: false,
             Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
             {
-                ["company"] = "Example Services, Inc.",
+                ["company"] = "Spire Services, Inc.",
                 ["department"] = "Infrastructure",
                 ["emplStatus"] = "T"
             });
@@ -967,7 +967,7 @@ public sealed class WorkerPreviewPlannerTests
             IsPrehire: false,
             Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
             {
-                ["company"] = "Example Services, Inc.",
+                ["company"] = "Spire Services, Inc.",
                 ["department"] = "Infrastructure & Security",
                 ["managerId"] = "10004"
             });
@@ -1222,8 +1222,8 @@ public sealed class WorkerPreviewPlannerTests
                 DisplayName: "Brien, Christopher",
                 Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
                 {
-                    ["UserPrincipalName"] = "existing.upn@Exampleenergy.com",
-                    ["mail"] = "existing.mail@Exampleenergy.com"
+                    ["UserPrincipalName"] = "existing.upn@spireenergy.com",
+                    ["mail"] = "existing.mail@spireenergy.com"
                 }));
         }
 
@@ -1397,8 +1397,8 @@ public sealed class WorkerPreviewPlannerTests
                 Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
                 {
                     ["department"] = "Infrastructure & Security",
-                    ["UserPrincipalName"] = "existing.upn@Exampleenergy.com",
-                    ["mail"] = "existing.mail@Exampleenergy.com"
+                    ["UserPrincipalName"] = "existing.upn@spireenergy.com",
+                    ["mail"] = "existing.mail@spireenergy.com"
                 }));
         }
 
@@ -1432,8 +1432,8 @@ public sealed class WorkerPreviewPlannerTests
                 Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
                 {
                     ["department"] = "Infrastructure & Security",
-                    ["UserPrincipalName"] = "existing.upn@Exampleenergy.com",
-                    ["mail"] = "existing.mail@Exampleenergy.com"
+                    ["UserPrincipalName"] = "existing.upn@spireenergy.com",
+                    ["mail"] = "existing.mail@spireenergy.com"
                 }));
         }
 
@@ -1467,8 +1467,8 @@ public sealed class WorkerPreviewPlannerTests
                 Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
                 {
                     ["department"] = "Infrastructure & Security",
-                    ["UserPrincipalName"] = "existing.upn@Exampleenergy.com",
-                    ["mail"] = "existing.mail@Exampleenergy.com",
+                    ["UserPrincipalName"] = "existing.upn@spireenergy.com",
+                    ["mail"] = "existing.mail@spireenergy.com",
                     ["manager"] = "CN=Old Manager,OU=Employees,DC=example,DC=com"
                 }));
         }

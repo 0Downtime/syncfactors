@@ -24,7 +24,7 @@ public sealed class DirectoryMutationCommandBuilderTests
                 ["email"] = "david.larussa@example.com",
                 ["costCenterId"] = "10002",
                 ["costCenterDescription"] = "Corporate - Direct",
-                ["company"] = "Example Missouri Inc",
+                ["company"] = "Spire Missouri Inc",
                 ["location"] = "STL - 700 Market",
                 ["jobTitle"] = "Coord, Damage Prevention",
                 ["employeeType"] = "61920",
@@ -47,7 +47,7 @@ public sealed class DirectoryMutationCommandBuilderTests
                 ["UserPrincipalName"] = "david.larussa@example.com",
                 ["mail"] = "david.larussa@example.com",
                 ["department"] = "10002 Corporate - Direct",
-                ["company"] = "Example Missouri Inc",
+                ["company"] = "Spire Missouri Inc",
                 ["physicalDeliveryOfficeName"] = "STL - 700 Market",
                 ["title"] = "Coord, Damage Prevention",
                 ["streetAddress"] = "700 Market St",
@@ -248,8 +248,8 @@ public sealed class DirectoryMutationCommandBuilderTests
 
         var command = new DirectoryMutationCommandBuilder().Build(worker, preview);
 
-        Assert.Equal("45086@Exampleenergy.com", command.UserPrincipalName);
-        Assert.Equal("45086@Exampleenergy.com", command.Mail);
+        Assert.Equal("45086@spireenergy.com", command.UserPrincipalName);
+        Assert.Equal("45086@spireenergy.com", command.Mail);
     }
 
     [Fact]
@@ -274,11 +274,11 @@ public sealed class DirectoryMutationCommandBuilderTests
                 Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)),
             Identity: new IdentityMatchResult("creates", MatchedExistingUser: false, SamAccountName: "44522", Reason: null, OperatorActionSummary: null),
             ManagerDistinguishedName: null,
-            ProposedEmailAddress: "Christopher.Brien@ExampleEnergy.com",
+            ProposedEmailAddress: "Christopher.Brien@SpireEnergy.com",
             AttributeChanges:
             [
-                new AttributeChange("UserPrincipalName", "resolved email local-part", "(unset)", "Christopher.Brien@ExampleEnergy.com", true),
-                new AttributeChange("mail", "resolved email local-part", "(unset)", "Christopher.Brien@ExampleEnergy.com", true)
+                new AttributeChange("UserPrincipalName", "resolved email local-part", "(unset)", "Christopher.Brien@SpireEnergy.com", true),
+                new AttributeChange("mail", "resolved email local-part", "(unset)", "Christopher.Brien@SpireEnergy.com", true)
             ],
             MissingSourceAttributes: [],
             Bucket: "creates",
@@ -295,10 +295,10 @@ public sealed class DirectoryMutationCommandBuilderTests
 
         var command = new DirectoryMutationCommandBuilder().Build(plan);
 
-        Assert.Equal("christopher.brien@Exampleenergy.com", command.UserPrincipalName);
-        Assert.Equal("christopher.brien@Exampleenergy.com", command.Mail);
-        Assert.Equal("christopher.brien@Exampleenergy.com", command.Attributes["UserPrincipalName"]);
-        Assert.Equal("christopher.brien@Exampleenergy.com", command.Attributes["mail"]);
+        Assert.Equal("christopher.brien@spireenergy.com", command.UserPrincipalName);
+        Assert.Equal("christopher.brien@spireenergy.com", command.Mail);
+        Assert.Equal("christopher.brien@spireenergy.com", command.Attributes["UserPrincipalName"]);
+        Assert.Equal("christopher.brien@spireenergy.com", command.Attributes["mail"]);
     }
 
     private sealed class StubAttributeMappingProvider : IAttributeMappingProvider

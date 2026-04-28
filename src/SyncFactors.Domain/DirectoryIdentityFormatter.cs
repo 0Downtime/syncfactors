@@ -5,7 +5,7 @@ namespace SyncFactors.Domain;
 
 public static class DirectoryIdentityFormatter
 {
-    public const string CorporateEmailDomain = "Exampleenergy.com";
+    public const string CorporateEmailDomain = "spireenergy.com";
 
     public static string BuildDisplayName(string firstName, string lastName)
     {
