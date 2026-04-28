@@ -9,6 +9,7 @@ public sealed class IndexModel(
     IDashboardSnapshotService dashboardSnapshotService,
     DashboardSettingsProvider dashboardSettingsProvider,
     ISyncScheduleStore syncScheduleStore,
+    IRunQueueStore runQueueStore,
     IWebHostEnvironment hostEnvironment) : PageModel
 {
     public RuntimeStatus Status { get; private set; } = new(
@@ -45,6 +46,13 @@ public sealed class IndexModel(
     public int HealthProbeIntervalSeconds { get; private set; }
 
     public int DefaultHealthProbeIntervalSeconds { get; private set; }
+
+    public RunQueueRequest? CurrentQueueRequest { get; private set; }
+
+    public bool HasPendingOrActiveRun => CurrentQueueRequest is not null;
+
+    public bool CancellationRequested =>
+        string.Equals(CurrentQueueRequest?.Status, "CancelRequested", StringComparison.OrdinalIgnoreCase);
 
     public bool IsDevelopment { get; } = hostEnvironment.IsDevelopment();
 
@@ -103,11 +111,26 @@ public sealed class IndexModel(
         return RedirectToPage();
     }
 
+    public async Task<IActionResult> OnPostCancelRunAsync(CancellationToken cancellationToken)
+    {
+        if (!await runQueueStore.CancelPendingOrActiveAsync(ResolveRequestedBy(), cancellationToken))
+        {
+            ErrorMessage = "No queued or active run was available to cancel.";
+            SuccessMessage = null;
+            return RedirectToPage();
+        }
+
+        SuccessMessage = "Run cancellation requested.";
+        ErrorMessage = null;
+        return RedirectToPage();
+    }
+
     private async Task LoadSnapshotAsync(CancellationToken cancellationToken)
     {
         var snapshot = await dashboardSnapshotService.GetSnapshotAsync(cancellationToken);
         var settings = await dashboardSettingsProvider.GetHealthProbeStateAsync(cancellationToken);
         Schedule = await syncScheduleStore.GetCurrentAsync(cancellationToken);
+        CurrentQueueRequest = await runQueueStore.GetPendingOrActiveAsync(cancellationToken);
         Status = snapshot.Status;
         Runs = snapshot.Runs;
         ActiveRun = snapshot.ActiveRun;
@@ -120,4 +143,9 @@ public sealed class IndexModel(
         HealthProbeIntervalSeconds = settings.IntervalSeconds;
         DefaultHealthProbeIntervalSeconds = settings.DefaultIntervalSeconds;
     }
+
+    private string ResolveRequestedBy() =>
+        string.IsNullOrWhiteSpace(PageContext?.HttpContext?.User.Identity?.Name)
+            ? "Dashboard"
+            : PageContext.HttpContext.User.Identity!.Name!;
 }
