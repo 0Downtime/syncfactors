@@ -749,6 +749,11 @@ static void ValidateAuthConfiguration(WebApplication app)
         throw new InvalidOperationException("SyncFactors:Auth mode 'oidc' requires OIDC authority and client ID.");
     }
 
+    if (oidcEnabled && !OidcRoleResolver.HasConfiguredRoleGroups(authOptions))
+    {
+        throw new InvalidOperationException("SyncFactors:Auth:Oidc must configure at least one ViewerGroups, OperatorGroups, or AdminGroups value when OIDC is enabled.");
+    }
+
     if (authOptions.IdleTimeoutMinutes is < LocalAuthOptions.MinIdleTimeoutMinutes or > LocalAuthOptions.MaxIdleTimeoutMinutes)
     {
         throw new InvalidOperationException($"SyncFactors:Auth:IdleTimeoutMinutes must be between {LocalAuthOptions.MinIdleTimeoutMinutes} and {LocalAuthOptions.MaxIdleTimeoutMinutes}.");
@@ -934,40 +939,11 @@ static void ApplyOidcIdentity(ClaimsIdentity identity, LocalAuthOptions authSett
     }
 
     RemoveClaims(identity, ClaimTypes.Role);
-    foreach (var role in ResolveOidcRoles(identity, authSettings))
+    foreach (var role in OidcRoleResolver.ResolveRoles(identity, authSettings))
     {
         identity.AddClaim(new Claim(ClaimTypes.Role, role));
     }
 }
-
-static IReadOnlyList<string> ResolveOidcRoles(ClaimsIdentity identity, LocalAuthOptions authSettings)
-{
-    var groups = identity.FindAll(authSettings.Oidc.RolesClaimType)
-        .Select(claim => claim.Value)
-        .Where(value => !string.IsNullOrWhiteSpace(value))
-        .ToHashSet(StringComparer.OrdinalIgnoreCase);
-
-    var roles = new List<string>();
-    if (MatchesAny(groups, authSettings.Oidc.AdminGroups))
-    {
-        roles.Add(SecurityRoles.Admin);
-    }
-
-    if (MatchesAny(groups, authSettings.Oidc.OperatorGroups))
-    {
-        roles.Add(SecurityRoles.Operator);
-    }
-
-    if (MatchesAny(groups, authSettings.Oidc.ViewerGroups) || roles.Count == 0)
-    {
-        roles.Add(SecurityRoles.Viewer);
-    }
-
-    return roles.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
-}
-
-static bool MatchesAny(HashSet<string> groups, IEnumerable<string> candidates) =>
-    candidates.Any(candidate => groups.Contains(candidate));
 
 static Task HandleAuthRedirectAsync(Microsoft.AspNetCore.Authentication.RedirectContext<CookieAuthenticationOptions> context, int statusCode)
 {
