@@ -59,8 +59,8 @@
                     <details class="nav-menu" data-nav-menu>
                         <summary class="@(isPreviewPage || isLookupPage ? "is-active" : null)">Tools</summary>
                         <div class="nav-menu-panel">
-                            <a class="@(isPreviewPage ? "is-active" : null)" asp-page="/Preview">Manual Provision</a>
-                            <a class="@(isLookupPage ? "is-active" : null)" asp-page="/Lookup">OData Lookup</a>
+                            <a class="@(isPreviewPage ? "is-active" : null)" asp-page="/Preview">Provision</a>
+                            <a class="@(isLookupPage ? "is-active" : null)" asp-page="/Lookup">Lookup</a>
                         </div>
                     </details>
                     @if (isAdmin)
@@ -69,8 +69,8 @@
                             <summary class="@(isAdminPage ? "is-active" : null)">Admin</summary>
                             <div class="nav-menu-panel">
                                 <a class="@(isAdminUsersPage ? "is-active" : null)" asp-page="/Admin/Users">Users</a>
-                                <a class="@(isAdminDeletionQueuePage ? "is-active" : null)" asp-page="/Admin/DeletionQueue">Deletion Queue</a>
-                                <a class="@(isAdminConfigurationPage ? "is-active" : null)" asp-page="/Admin/Configuration">Configuration</a>
+                                <a class="@(isAdminDeletionQueuePage ? "is-active" : null)" asp-page="/Admin/DeletionQueue">Deletions</a>
+                                <a class="@(isAdminConfigurationPage ? "is-active" : null)" asp-page="/Admin/Configuration">Config</a>
                             </div>
                         </details>
                     }
@@ -87,7 +87,7 @@
                                 ? "Viewer"
                                 : "Unknown";
                     <details class="nav-menu auth-menu" data-nav-menu>
-                        <summary>@role</summary>
+                        <summary>@(User.Identity.Name ?? "Account")</summary>
                         <div class="nav-menu-panel auth-menu-panel">
                             <div class="muted auth-user">
                                 <span>Signed in as <strong>@User.Identity.Name</strong></span>
