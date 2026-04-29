@@ -23,6 +23,7 @@
     var isDashboardPage = currentPage == "/Index";
     var isSyncPage = currentPage.StartsWith("/Sync", StringComparison.OrdinalIgnoreCase);
     var isPreviewPage = currentPage.StartsWith("/Preview", StringComparison.OrdinalIgnoreCase);
+    var isLookupPage = currentPage.StartsWith("/Lookup", StringComparison.OrdinalIgnoreCase);
     var isAdminPage = currentPage.StartsWith("/Admin", StringComparison.OrdinalIgnoreCase);
     var isAdminUsersPage = currentPage.StartsWith("/Admin/Users", StringComparison.OrdinalIgnoreCase);
     var isAdminDeletionQueuePage = currentPage.StartsWith("/Admin/DeletionQueue", StringComparison.OrdinalIgnoreCase);
@@ -54,6 +55,7 @@
                     <a class="@(isDashboardPage ? "is-active" : null)" asp-page="/Index">Dashboard</a>
                     <a class="@(isSyncPage ? "is-active" : null)" asp-page="/Sync">Sync</a>
                     <a class="@(isPreviewPage ? "is-active" : null)" asp-page="/Preview">Manual Provision</a>
+                    <a class="@(isLookupPage ? "is-active" : null)" asp-page="/Lookup">OData Lookup</a>
                     @if (isAdmin)
                     {
                         <details class="nav-menu" data-nav-menu>
