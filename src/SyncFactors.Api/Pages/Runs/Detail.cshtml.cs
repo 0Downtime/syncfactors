@@ -285,6 +285,24 @@ public sealed class DetailModel(RunEntriesQueryService queryService) : PageModel
             .ToArray();
     }
 
+    public IReadOnlyList<EntrySnapshotPanel> GetEntrySnapshotPanels(RunEntry entry)
+    {
+        if (!IsEntryDetail)
+        {
+            return [];
+        }
+
+        return
+        [
+            BuildSnapshotPanel(entry.Item, "sourceSnapshot", "Source Snapshot", "SuccessFactors values captured before planning."),
+            BuildSnapshotPanel(entry.Item, "directoryBefore", "AD Before", "Directory state observed before planning."),
+            BuildSnapshotPanel(entry.Item, "plannedDirectoryState", "Planned AD State", "Target account state and operations saved for this run."),
+            BuildSnapshotPanel(entry.Item, "plannedCommand", "Planned Command", "Sanitized AD command SyncFactors would send for an auto-applicable entry.", nullSummary: "No AD command was planned for this entry."),
+            BuildSnapshotPanel(entry.Item, "liveResult", "Live Verification", "Real sync execution and readback result saved for this entry.", nullSummary: IsDryRun ? "Dry runs do not have live verification." : "No live AD result was captured for this entry."),
+            BuildSnapshotPanel(entry.Item, "captureMetadata", "Capture Metadata", "Run and configuration fingerprints captured with this entry.")
+        ];
+    }
+
     public string? GetPrimarySummaryDisplay(RunEntry entry)
     {
         var primarySummary = entry.PrimarySummary?.Trim();
@@ -768,6 +786,109 @@ public sealed class DetailModel(RunEntriesQueryService queryService) : PageModel
     private static int GetItemArrayCount(JsonElement item, string propertyName)
         => GetItemArray(item, propertyName).Count;
 
+    private static EntrySnapshotPanel BuildSnapshotPanel(
+        JsonElement item,
+        string propertyName,
+        string title,
+        string summary,
+        string? nullSummary = null)
+    {
+        if (item.ValueKind != JsonValueKind.Object || !item.TryGetProperty(propertyName, out var property))
+        {
+            return new EntrySnapshotPanel(
+                title,
+                "neutral",
+                "Not captured for this older run.",
+                [new EntrySnapshotFact("Status", "not captured for this older run")]);
+        }
+
+        if (property.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
+        {
+            return new EntrySnapshotPanel(
+                title,
+                "neutral",
+                nullSummary ?? "No value was captured for this entry.",
+                [new EntrySnapshotFact("Status", nullSummary ?? "No value was captured for this entry.")]);
+        }
+
+        var facts = FlattenSnapshotFacts(property).ToArray();
+        return new EntrySnapshotPanel(
+            title,
+            "neutral",
+            summary,
+            facts.Length > 0 ? facts : [new EntrySnapshotFact("Snapshot", FormatJsonValue(property))]);
+    }
+
+    private static IEnumerable<EntrySnapshotFact> FlattenSnapshotFacts(JsonElement value, string? prefix = null)
+    {
+        if (value.ValueKind != JsonValueKind.Object)
+        {
+            if (!string.IsNullOrWhiteSpace(prefix))
+            {
+                yield return new EntrySnapshotFact(prefix, FormatJsonValue(value));
+            }
+
+            yield break;
+        }
+
+        foreach (var property in value.EnumerateObject())
+        {
+            var label = string.IsNullOrWhiteSpace(prefix)
+                ? ToDisplayLabel(property.Name)
+                : $"{prefix} · {ToDisplayLabel(property.Name)}";
+            if (property.Value.ValueKind == JsonValueKind.Object)
+            {
+                foreach (var nested in FlattenSnapshotFacts(property.Value, label))
+                {
+                    yield return nested;
+                }
+
+                continue;
+            }
+
+            yield return new EntrySnapshotFact(label, FormatJsonValue(property.Value));
+        }
+    }
+
+    private static string FormatJsonValue(JsonElement value)
+    {
+        return value.ValueKind switch
+        {
+            JsonValueKind.String => value.GetString() ?? string.Empty,
+            JsonValueKind.Number => value.GetRawText(),
+            JsonValueKind.True => "true",
+            JsonValueKind.False => "false",
+            JsonValueKind.Null => "(unset)",
+            JsonValueKind.Array => value.GetArrayLength() == 0
+                ? "(none)"
+                : JsonSerializer.Serialize(value, JsonlSerializerOptions),
+            JsonValueKind.Object => JsonSerializer.Serialize(value, JsonlSerializerOptions),
+            _ => value.GetRawText()
+        };
+    }
+
+    private static string ToDisplayLabel(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return value;
+        }
+
+        var builder = new StringBuilder(value.Length + 8);
+        for (var index = 0; index < value.Length; index++)
+        {
+            var character = value[index];
+            if (index > 0 && char.IsUpper(character) && char.IsLower(value[index - 1]))
+            {
+                builder.Append(' ');
+            }
+
+            builder.Append(index == 0 ? char.ToUpperInvariant(character) : character);
+        }
+
+        return builder.ToString();
+    }
+
     private static IReadOnlyList<JsonElement> GetItemArray(JsonElement item, string propertyName)
     {
         if (item.ValueKind != JsonValueKind.Object || !item.TryGetProperty(propertyName, out var property) || property.ValueKind != JsonValueKind.Array)
@@ -1020,6 +1141,16 @@ public sealed class DetailModel(RunEntriesQueryService queryService) : PageModel
         IReadOnlyList<EntryExecutionFact> Facts);
 
     public sealed record EntryExecutionFact(
+        string Label,
+        string Value);
+
+    public sealed record EntrySnapshotPanel(
+        string Title,
+        string ToneCssClass,
+        string Summary,
+        IReadOnlyList<EntrySnapshotFact> Facts);
+
+    public sealed record EntrySnapshotFact(
         string Label,
         string Value);
 

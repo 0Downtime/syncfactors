@@ -15,7 +15,8 @@ public sealed class FullSyncRunService(
     RealSyncSettings realSyncSettings,
     WorkerRunSettings settings,
     LifecyclePolicySettings lifecycleSettings,
-    ILogger<FullSyncRunService> logger) : IFullSyncRunService
+    ILogger<FullSyncRunService> logger,
+    IRunCaptureMetadataProvider? runCaptureMetadataProvider = null) : IFullSyncRunService
 {
     public async Task<RunLaunchResult> LaunchAsync(LaunchFullRunRequest request, CancellationToken cancellationToken)
     {
@@ -32,6 +33,9 @@ public sealed class FullSyncRunService(
         var startedAt = DateTimeOffset.UtcNow;
         var runId = $"full-sync-{startedAt:yyyyMMddHHmmss}";
         var mode = request.DryRun ? "FullSyncDryRun" : "FullSyncLive";
+        const string SyncScope = "Full sync";
+        var captureMetadataProvider = runCaptureMetadataProvider ?? NullRunCaptureMetadataProvider.Instance;
+        var captureMetadata = captureMetadataProvider.Create(runId, request.DryRun, SyncScope);
         using var logScope = RunLoggingScope.Begin(logger, runId, mode);
         var startStatus = new RuntimeStatus(
             Status: "InProgress",
@@ -157,10 +161,12 @@ public sealed class FullSyncRunService(
                     runId,
                     workers[index],
                     request.DryRun,
+                    SyncScope,
                     index,
                     createCount,
                     disableCount,
                     reservedCreateEmailAddresses,
+                    captureMetadata,
                     cancellationToken);
                 entries.Add(outcome.Entry);
                 operations.Add(outcome.Operation);
@@ -286,10 +292,12 @@ public sealed class FullSyncRunService(
         string runId,
         WorkerSnapshot worker,
         bool dryRun,
+        string syncScope,
         int index,
         int createCount,
         int disableCount,
         ISet<string> reservedCreateEmailAddresses,
+        RunCaptureMetadata captureMetadata,
         CancellationToken cancellationToken)
     {
         try
@@ -304,6 +312,8 @@ public sealed class FullSyncRunService(
                 : $"Prepared {action} for {plan.Identity.SamAccountName}.";
             string? distinguishedName = plan.DirectoryUser.DistinguishedName;
             DirectoryCommandResult? commandResult = null;
+            DirectoryMutationCommand? plannedCommand = null;
+            var applied = false;
 
             if (string.Equals(bucket, "creates", StringComparison.OrdinalIgnoreCase) &&
                 createCount + 1 > settings.MaxCreatesPerRun)
@@ -320,12 +330,14 @@ public sealed class FullSyncRunService(
                 message = $"Disable guardrail exceeded. MaxDisablesPerRun={settings.MaxDisablesPerRun}.";
             }
 
-            if (!dryRun && plan.Operations.Count > 0 && bucket != "guardrailFailures")
+            if (!dryRun && plan.CanAutoApply && plan.Operations.Count > 0 && bucket != "guardrailFailures")
             {
                 try
                 {
-                    var result = await directoryCommandGateway.ExecuteAsync(mutationCommandBuilder.Build(plan), cancellationToken);
+                    plannedCommand = mutationCommandBuilder.Build(plan);
+                    var result = await directoryCommandGateway.ExecuteAsync(plannedCommand, cancellationToken);
                     commandResult = result;
+                    applied = true;
                     succeeded = result.Succeeded;
                     distinguishedName = result.DistinguishedName ?? distinguishedName;
                     message = result.Message;
@@ -336,6 +348,7 @@ public sealed class FullSyncRunService(
                 }
                 catch (Exception ex)
                 {
+                    applied = true;
                     succeeded = false;
                     bucket = "conflicts";
                     message = ex.Message;
@@ -350,59 +363,25 @@ public sealed class FullSyncRunService(
                 message = plan.Reason ?? $"No synced attributes changed for {worker.WorkerId}.";
             }
 
-            var item = ToJsonElement(new
+            if (dryRun && plan.CanAutoApply && plan.Operations.Count > 0 && bucket != "guardrailFailures")
             {
-                workerId = plan.Worker.WorkerId,
-                samAccountName = plan.Identity.SamAccountName,
-                reviewCategory = plan.ReviewCategory,
-                reviewCaseType = plan.ReviewCaseType,
-                targetOu = plan.TargetOu,
-                currentDistinguishedName = plan.DirectoryUser.DistinguishedName,
-                emplStatus = ResolveSourceAttribute(plan.Worker.Attributes, "emplStatus"),
-                endDate = ResolveSourceAttribute(plan.Worker.Attributes, "endDate"),
-                currentOu = plan.CurrentOu,
-                managerId = plan.Worker.Attributes.TryGetValue("managerId", out var managerId) ? managerId : null,
-                managerDistinguishedName = plan.ManagerDistinguishedName,
-                reason = message,
-                matchedExistingUser = plan.Identity.MatchedExistingUser,
-                proposedEnable = plan.TargetEnabled,
-                currentEnabled = plan.CurrentEnabled,
-                verifiedEnabled = commandResult?.VerifiedEnabled,
-                verifiedDistinguishedName = commandResult?.VerifiedDistinguishedName,
-                verifiedParentOu = commandResult?.VerifiedParentOu,
-                proposedEmailAddress = plan.ProposedEmailAddress,
-                missingSourceAttributes = plan.MissingSourceAttributes.Select(attribute => new
-                {
-                    attribute = attribute.Attribute,
-                    reason = attribute.Reason
-                }).ToArray(),
-                operations = plan.Operations.Select(operation => new
-                {
-                    kind = operation.Kind,
-                    targetOu = operation.TargetOu
-                }).ToArray(),
-                changedAttributeDetails = plan.AttributeChanges
-                    .Where(change => change.Changed)
-                    .Select(change => new
-                    {
-                        targetAttribute = change.Attribute,
-                        sourceField = change.Source,
-                        currentAdValue = change.Before == "(unset)" ? null : change.Before,
-                        proposedValue = change.After == "(unset)" ? null : change.After
-                    })
-                    .ToArray(),
-                decisionTree = (plan.DecisionSteps ?? [])
-                    .Select(step => new
-                    {
-                        step = step.Step,
-                        outcome = step.Outcome,
-                        detail = step.Detail,
-                        tone = step.Tone
-                    })
-                    .ToArray(),
+                plannedCommand = mutationCommandBuilder.Build(plan);
+            }
+
+            var item = RunEntrySnapshotBuilder.Build(
+                runId,
+                dryRun,
+                syncScope,
+                plan,
+                bucket,
+                action,
+                applied,
                 succeeded,
-                message
-            });
+                message,
+                plannedCommand,
+                commandResult,
+                captureMetadata,
+                lifecycleSettings.DirectoryIdentityAttribute);
 
             return new WorkerOutcome(
                 Bucket: bucket,
@@ -456,15 +435,13 @@ public sealed class FullSyncRunService(
                     ReviewCategory: "ExternalSystem",
                     ReviewCaseType: "WorkerPlanningFailed",
                     StartedAt: DateTimeOffset.UtcNow,
-                    Item: ToJsonElement(new
-                    {
-                        workerId = worker.WorkerId,
-                        bucket = "conflicts",
-                        emplStatus = ResolveSourceAttribute(worker.Attributes, "emplStatus"),
-                        endDate = ResolveSourceAttribute(worker.Attributes, "endDate"),
-                        reason = ex.Message,
-                        succeeded = false
-                    })),
+                    Item: RunEntrySnapshotBuilder.BuildPlanningFailure(
+                        runId,
+                        dryRun,
+                        syncScope,
+                        worker,
+                        ex.Message,
+                        captureMetadata)),
                 Operation: new
                 {
                     workerId = worker.WorkerId,

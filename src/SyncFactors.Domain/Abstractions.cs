@@ -107,6 +107,11 @@ public interface IWorkerPlanningService
     Task<PlannedWorkerAction> PlanAsync(WorkerSnapshot worker, string? logPath, CancellationToken cancellationToken);
 }
 
+public interface IRunCaptureMetadataProvider
+{
+    RunCaptureMetadata Create(string runId, bool dryRun, string syncScope);
+}
+
 public interface IDirectoryMutationCommandBuilder
 {
     DirectoryMutationCommand Build(PlannedWorkerAction plan);

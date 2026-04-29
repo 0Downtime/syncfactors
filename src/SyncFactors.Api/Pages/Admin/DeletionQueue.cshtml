@@ -81,7 +81,7 @@
                                 <span class="muted">@(user.SamAccountName ?? "SAM unavailable")</span>
                             </div>
                         </td>
-                        <td><span class="badge @(user.OverdueDays > 0 ? "bad" : user.IsEligibleForDeletion ? "warn" : "neutral")">@user.Status</span></td>
+                        <td><span class="badge @(user.OverdueDays > 0 ? "bad" : user.IsEligibleForDeletion ? "warn" : "neutral")">@Model.FormatStatus(user)</span></td>
                         <td>@SyncFactors.Api.UiDateTimeFormatter.FormatDate(user.AnchorDateUtc)</td>
                         <td>@SyncFactors.Api.UiDateTimeFormatter.FormatDate(user.DueDateUtc)</td>
                         <td>
@@ -164,7 +164,7 @@
                                 <span class="muted">@(user.SamAccountName ?? "SAM unavailable")</span>
                             </div>
                         </td>
-                        <td><span class="badge dim">@user.Status</span></td>
+                        <td><span class="badge dim">@Model.FormatStatus(user)</span></td>
                         <td>@SyncFactors.Api.UiDateTimeFormatter.FormatDate(user.DueDateUtc)</td>
                         <td>@SyncFactors.Api.UiDateTimeFormatter.FormatDateTime(user.HoldPlacedAtUtc, "Unknown")</td>
                         <td>@(user.HoldPlacedBy ?? "Unknown")</td>
