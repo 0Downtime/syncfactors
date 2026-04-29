@@ -1705,8 +1705,54 @@ public sealed class SuccessFactorsWorkerSourceIntegrationTests
         Assert.NotNull(deltaHandler.LastRequestUri);
         var deltaQueryCollection = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(deltaHandler.LastRequestUri!.Query);
         var deltaFilter = deltaQueryCollection["$filter"].ToString();
-        Assert.Contains("lastModifiedDateTime ge datetimeoffset'2026-03-30T12:00:00Z'", deltaFilter, StringComparison.Ordinal);
+        var expectedStrictDeltaFilters = new[]
+        {
+            "((emplStatus in '64300','64303','64304') or (emplStatus eq 'I' and startDate le datetime'" +
+            $"{beforeDate.AddDays(7):yyyy-MM-ddTHH:mm:ss}') or (emplStatus eq '64308' and endDate ge datetime'" +
+            $"{beforeDate.AddDays(-180):yyyy-MM-ddTHH:mm:ss}')) and (lastModifiedDateTime ge datetimeoffset'2026-03-30T12:00:00Z')",
+            "((emplStatus in '64300','64303','64304') or (emplStatus eq 'I' and startDate le datetime'" +
+            $"{afterDate.AddDays(7):yyyy-MM-ddTHH:mm:ss}') or (emplStatus eq '64308' and endDate ge datetime'" +
+            $"{afterDate.AddDays(-180):yyyy-MM-ddTHH:mm:ss}')) and (lastModifiedDateTime ge datetimeoffset'2026-03-30T12:00:00Z')"
+        }.Distinct(StringComparer.Ordinal).ToArray();
+
+        Assert.Contains(deltaFilter, expectedStrictDeltaFilters);
         Assert.Equal(1, CountOccurrences(deltaFilter, "emplStatus eq 'I'"));
+
+        var sweepHandler = new CaptureListRequestHttpHandler();
+        using var sweepClient = new HttpClient(sweepHandler)
+        {
+            BaseAddress = new Uri("http://mock-successfactors.local")
+        };
+        var sweepWorkerSource = new SuccessFactorsWorkerSource(
+            sweepClient,
+            configLoader,
+            new ConfiguredDeltaSyncService("lastModifiedDateTime ge datetimeoffset'2026-03-30T12:00:00Z'"),
+            fallbackSource,
+            NullLogger<SuccessFactorsWorkerSource>.Instance);
+
+        await foreach (var worker in sweepWorkerSource.ListWorkersAsync(WorkerListingMode.DeltaPreferredWithPrehireSweep, CancellationToken.None))
+        {
+            workerCount++;
+        }
+
+        Assert.NotNull(sweepHandler.LastRequestUri);
+        var sweepQueryCollection = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(sweepHandler.LastRequestUri!.Query);
+        var sweepFilter = sweepQueryCollection["$filter"].ToString();
+        var expectedDeltaFilters = new[]
+        {
+            "(((emplStatus in '64300','64303','64304') or (emplStatus eq '64308' and endDate ge datetime'" +
+            $"{beforeDate.AddDays(-180):yyyy-MM-ddTHH:mm:ss}')) and (lastModifiedDateTime ge datetimeoffset'2026-03-30T12:00:00Z')) or (emplStatus eq 'I' and startDate le datetime'" +
+            $"{beforeDate.AddDays(7):yyyy-MM-ddTHH:mm:ss}')",
+            "(((emplStatus in '64300','64303','64304') or (emplStatus eq '64308' and endDate ge datetime'" +
+            $"{afterDate.AddDays(-180):yyyy-MM-ddTHH:mm:ss}')) and (lastModifiedDateTime ge datetimeoffset'2026-03-30T12:00:00Z')) or (emplStatus eq 'I' and startDate le datetime'" +
+            $"{afterDate.AddDays(7):yyyy-MM-ddTHH:mm:ss}')"
+        }.Distinct(StringComparer.Ordinal).ToArray();
+
+        Assert.Contains(sweepFilter, expectedDeltaFilters);
+        Assert.Equal(1, CountOccurrences(sweepFilter, "emplStatus eq 'I'"));
+        Assert.True(
+            sweepFilter.IndexOf("lastModifiedDateTime", StringComparison.Ordinal) <
+            sweepFilter.LastIndexOf("emplStatus eq 'I'", StringComparison.Ordinal));
     }
 
     [Fact]

@@ -40,6 +40,7 @@ public sealed class SyncScheduleCoordinator(
             await runQueueStore.EnqueueAsync(
                 new StartRunRequest(
                     DryRun: !realSyncSettings.Enabled,
+                    Mode: "BulkSync",
                     RunTrigger: "Scheduled",
                     RequestedBy: "Sync schedule"),
                 cancellationToken);

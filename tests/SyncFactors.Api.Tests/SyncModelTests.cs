@@ -64,6 +64,44 @@ public sealed class SyncModelTests
     }
 
     [Fact]
+    public async Task OnPostStartRunAsync_QueuesPrehireSweepModeWhenSelected()
+    {
+        var queueStore = new CapturingRunQueueStore();
+        var model = new SyncModel(CreateDashboardService(), queueStore, new RealSyncSettings(), new StubSyncScheduleStore())
+        {
+            RunMode = "LiveRun",
+            AdHocSyncMode = SyncModel.BulkSyncWithPrehireSweepMode
+        };
+
+        var result = await model.OnPostStartRunAsync(CancellationToken.None);
+
+        Assert.IsType<RedirectToPageResult>(result);
+        Assert.NotNull(queueStore.LastRequest);
+        Assert.False(queueStore.LastRequest!.DryRun);
+        Assert.Equal("BulkSyncWithPrehireSweep", queueStore.LastRequest.Mode);
+        Assert.Equal("AdHoc", queueStore.LastRequest.RunTrigger);
+        Assert.Equal("Live provisioning run queued.", model.SuccessMessage);
+        Assert.Null(model.ErrorMessage);
+    }
+
+    [Fact]
+    public async Task OnPostStartRunAsync_RejectsUnsupportedAdHocSyncMode()
+    {
+        var queueStore = new CapturingRunQueueStore();
+        var model = new SyncModel(CreateDashboardService(), queueStore, new RealSyncSettings(), new StubSyncScheduleStore())
+        {
+            AdHocSyncMode = "UnexpectedMode"
+        };
+
+        var result = await model.OnPostStartRunAsync(CancellationToken.None);
+
+        Assert.IsType<RedirectToPageResult>(result);
+        Assert.Null(queueStore.LastRequest);
+        Assert.Equal("Choose a supported ad hoc sync type.", model.ErrorMessage);
+        Assert.Null(model.SuccessMessage);
+    }
+
+    [Fact]
     public async Task OnPostStartRunAsync_RejectsLiveRunWhenRealSyncIsDisabled()
     {
         var queueStore = new CapturingRunQueueStore();

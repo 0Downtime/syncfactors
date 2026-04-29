@@ -77,6 +77,29 @@ public sealed class UiRunFormattingTests
     }
 
     [Fact]
+    public void RuntimeDisplayName_LabelsPrehireSweepRuns()
+    {
+        var status = new RuntimeStatus(
+            Status: "Pending",
+            Stage: "Queued",
+            RunId: "bulk-20260418120000000",
+            Mode: "BulkSyncWithPrehireSweep",
+            DryRun: false,
+            ProcessedWorkers: 0,
+            TotalWorkers: 0,
+            CurrentWorkerId: null,
+            LastAction: null,
+            StartedAt: null,
+            LastUpdatedAt: null,
+            CompletedAt: null,
+            ErrorMessage: null);
+
+        var displayName = UiRunFormatting.RuntimeDisplayName(status);
+
+        Assert.Equal("Live Sync + Due Prehires · bulk-20260418120000000", displayName);
+    }
+
+    [Fact]
     public void RunBucketSummary_IncludesLegacyQuarantinedBucket()
     {
         var run = CreateRunSummary(

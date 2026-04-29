@@ -99,6 +99,11 @@ public static partial class UiRunFormatting
             return dryRun ? "Dry Run" : "Live Sync";
         }
 
+        if (string.Equals(mode, "BulkSyncWithPrehireSweep", StringComparison.OrdinalIgnoreCase))
+        {
+            return dryRun ? "Dry Run + Due Prehires" : "Live Sync + Due Prehires";
+        }
+
         var modeLabel = DisplayLabel(mode);
         return dryRun ? $"{modeLabel} Dry Run" : modeLabel;
     }

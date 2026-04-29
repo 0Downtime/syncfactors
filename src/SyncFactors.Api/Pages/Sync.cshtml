@@ -101,7 +101,7 @@
 
     <article class="panel sync-ad-hoc-panel">
         <h2>Ad Hoc Run</h2>
-        <p class="muted">Full-source sync only. Dry-run is the default and safest option.</p>
+        <p class="muted">Dry-run is the default and safest option.</p>
         @if (!Model.RealSyncEnabled)
         {
             <p class="callout warn">Live provisioning is disabled in this environment. Ad hoc runs are limited to dry run.</p>
@@ -116,6 +116,13 @@
                 <select asp-for="RunMode" disabled="@Model.HasPendingOrActiveRun">
                     <option value="DryRun">Dry run</option>
                     <option value="LiveRun" disabled="@(!Model.RealSyncEnabled)">Live provisioning</option>
+                </select>
+            </label>
+            <label>
+                <span>Sync type</span>
+                <select asp-for="AdHocSyncMode" disabled="@Model.HasPendingOrActiveRun">
+                    <option value="@SyncFactors.Api.Pages.SyncModel.BulkSyncMode">Delta sync</option>
+                    <option value="@SyncFactors.Api.Pages.SyncModel.BulkSyncWithPrehireSweepMode">Delta sync + due prehires</option>
                 </select>
             </label>
             <div class="filter-actions">

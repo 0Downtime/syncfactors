@@ -296,6 +296,10 @@ echarts.use([BarChart, PieChart, GraphicComponent, GridComponent, LegendComponen
             return run && run.dryRun ? "Dry Run" : "Live Sync";
         }
 
+        if (String(mode || "").toLowerCase() === "bulksyncwithprehiresweep") {
+            return run && run.dryRun ? "Dry Run + Due Prehires" : "Live Sync + Due Prehires";
+        }
+
         const modeLabel = displayLabel(mode);
         return run && run.dryRun ? modeLabel + " Dry Run" : modeLabel;
     }

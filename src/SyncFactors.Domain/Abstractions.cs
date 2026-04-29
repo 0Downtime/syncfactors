@@ -23,7 +23,8 @@ public interface IWorkerSource
 public enum WorkerListingMode
 {
     Full = 0,
-    DeltaPreferred = 1
+    DeltaPreferred = 1,
+    DeltaPreferredWithPrehireSweep = 2
 }
 
 public interface IDeltaSyncService

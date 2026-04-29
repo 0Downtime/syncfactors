@@ -15,10 +15,15 @@ public sealed class SyncModel(
     private const string DryRunMode = "DryRun";
     private const string LiveRunMode = "LiveRun";
     private const string DeleteAllUsersMode = "DeleteAllUsers";
+    public const string BulkSyncMode = "BulkSync";
+    public const string BulkSyncWithPrehireSweepMode = "BulkSyncWithPrehireSweep";
     public const string DeleteAllUsersConfirmationPhrase = "DELETE ALL USERS";
 
     [BindProperty]
     public string RunMode { get; set; } = DryRunMode;
+
+    [BindProperty]
+    public string AdHocSyncMode { get; set; } = BulkSyncMode;
 
     [BindProperty]
     public bool ScheduleEnabled { get; set; }
@@ -107,10 +112,17 @@ public sealed class SyncModel(
             return RedirectToPage(new { PageNumber });
         }
 
+        if (!IsSupportedAdHocSyncMode(AdHocSyncMode))
+        {
+            ErrorMessage = "Choose a supported ad hoc sync type.";
+            SuccessMessage = null;
+            return RedirectToPage(new { PageNumber });
+        }
+
         await runQueueStore.EnqueueAsync(
             new StartRunRequest(
                 DryRun: !string.Equals(RunMode, LiveRunMode, StringComparison.Ordinal),
-                Mode: "BulkSync",
+                Mode: AdHocSyncMode,
                 RunTrigger: "AdHoc",
                 RequestedBy: ResolveRequestedBy()),
             cancellationToken);
@@ -218,4 +230,8 @@ public sealed class SyncModel(
         string.IsNullOrWhiteSpace(PageContext?.HttpContext?.User.Identity?.Name)
             ? "Sync page"
             : PageContext.HttpContext.User.Identity!.Name!;
+
+    private static bool IsSupportedAdHocSyncMode(string? mode) =>
+        string.Equals(mode, BulkSyncMode, StringComparison.Ordinal) ||
+        string.Equals(mode, BulkSyncWithPrehireSweepMode, StringComparison.Ordinal);
 }

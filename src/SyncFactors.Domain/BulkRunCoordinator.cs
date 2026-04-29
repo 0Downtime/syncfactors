@@ -32,19 +32,21 @@ public sealed class BulkRunCoordinator(
         using var runCancellationSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         var runCancellationToken = runCancellationSource.Token;
         var cancellationMonitor = MonitorCancellationAsync(request.RequestId, runCancellationSource, cancellationToken);
-        var syncScope = await DetermineSyncScopeAsync(cancellationToken);
+        var runMode = ResolveRunMode(request);
+        var listingMode = ResolveWorkerListingMode(request);
+        var syncScope = await DetermineSyncScopeAsync(listingMode, cancellationToken);
         var extractionStartedAt = timeProvider.GetUtcNow();
         var runId = $"bulk-{timeProvider.GetUtcNow():yyyyMMddHHmmssfff}";
         var startedAt = timeProvider.GetUtcNow();
         var captureMetadataProvider = runCaptureMetadataProvider ?? NullRunCaptureMetadataProvider.Instance;
         var captureMetadata = captureMetadataProvider.Create(runId, request.DryRun, syncScope);
-        using var logScope = RunLoggingScope.Begin(logger, runId, mode: "BulkSync", request.RequestId);
+        using var logScope = RunLoggingScope.Begin(logger, runId, runMode, request.RequestId);
         var tally = new RunTally(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
         RunPopulationTotals? populationTotals = null;
 
         await runLifecycleService.StartRunAsync(
             runId,
-            mode: "BulkSync",
+            mode: runMode,
             dryRun: request.DryRun,
             runTrigger: request.RunTrigger,
             requestedBy: request.RequestedBy,
@@ -56,7 +58,7 @@ public sealed class BulkRunCoordinator(
         GuardrailExceededException? guardrailFailure = null;
         try
         {
-            await foreach (var worker in workerSource.ListWorkersAsync(WorkerListingMode.DeltaPreferred, runCancellationToken))
+            await foreach (var worker in workerSource.ListWorkersAsync(listingMode, runCancellationToken))
             {
                 workers.Add(worker);
             }
@@ -68,7 +70,7 @@ public sealed class BulkRunCoordinator(
             {
                 await runLifecycleService.CancelRunAsync(
                     runId,
-                    mode: "BulkSync",
+                    mode: runMode,
                     dryRun: request.DryRun,
                     processedWorkers: 0,
                     totalWorkers: 0,
@@ -87,7 +89,7 @@ public sealed class BulkRunCoordinator(
         {
             await runLifecycleService.FailRunAsync(
                 runId,
-                mode: "BulkSync",
+                mode: runMode,
                 dryRun: request.DryRun,
                 processedWorkers: 0,
                 totalWorkers: 0,
@@ -166,7 +168,7 @@ public sealed class BulkRunCoordinator(
                 await runLifecycleService.AppendRunEntryAsync(runId, entry, cancellationToken);
                 await runLifecycleService.RecordProgressAsync(
                     runId,
-                    mode: "BulkSync",
+                    mode: runMode,
                     dryRun: request.DryRun,
                     processedWorkers: processedWorkers,
                     totalWorkers: totalWorkers,
@@ -341,7 +343,7 @@ public sealed class BulkRunCoordinator(
             populationTotals = await GetPopulationTotalsAsync();
             await runLifecycleService.CompleteRunAsync(
                 runId,
-                mode: "BulkSync",
+                mode: runMode,
                 dryRun: request.DryRun,
                 totalWorkers: totalWorkers,
                 tally: tally,
@@ -371,7 +373,7 @@ public sealed class BulkRunCoordinator(
 
                 await runLifecycleService.FailRunAsync(
                     runId,
-                    mode: "BulkSync",
+                    mode: runMode,
                     dryRun: request.DryRun,
                     processedWorkers: processedWorkers,
                     totalWorkers: totalWorkers,
@@ -398,7 +400,7 @@ public sealed class BulkRunCoordinator(
 
                 await runLifecycleService.CancelRunAsync(
                     runId,
-                    mode: "BulkSync",
+                    mode: runMode,
                     dryRun: request.DryRun,
                     processedWorkers: processedWorkers,
                     totalWorkers: totalWorkers,
@@ -426,7 +428,7 @@ public sealed class BulkRunCoordinator(
 
             await runLifecycleService.FailRunAsync(
                 runId,
-                mode: "BulkSync",
+                mode: runMode,
                 dryRun: request.DryRun,
                 processedWorkers: processedWorkers,
                 totalWorkers: totalWorkers,
@@ -506,7 +508,21 @@ public sealed class BulkRunCoordinator(
                tally.ManualReview == 0;
     }
 
-    private async Task<string> DetermineSyncScopeAsync(CancellationToken cancellationToken)
+    private static WorkerListingMode ResolveWorkerListingMode(RunQueueRequest request)
+    {
+        return string.Equals(ResolveRunMode(request), "BulkSyncWithPrehireSweep", StringComparison.OrdinalIgnoreCase)
+            ? WorkerListingMode.DeltaPreferredWithPrehireSweep
+            : WorkerListingMode.DeltaPreferred;
+    }
+
+    private static string ResolveRunMode(RunQueueRequest request)
+    {
+        return string.Equals(request.Mode, "BulkSyncWithPrehireSweep", StringComparison.OrdinalIgnoreCase)
+            ? "BulkSyncWithPrehireSweep"
+            : "BulkSync";
+    }
+
+    private async Task<string> DetermineSyncScopeAsync(WorkerListingMode listingMode, CancellationToken cancellationToken)
     {
         var deltaWindow = await deltaSyncService.GetWindowAsync(cancellationToken);
         if (!deltaWindow.Enabled || !deltaWindow.HasCheckpoint || string.IsNullOrWhiteSpace(deltaWindow.Filter))
@@ -514,7 +530,9 @@ public sealed class BulkRunCoordinator(
             return "Bulk full scan";
         }
 
-        return "Delta";
+        return listingMode == WorkerListingMode.DeltaPreferredWithPrehireSweep
+            ? "Delta plus due prehires"
+            : "Delta";
     }
 
     private static string ResolveExecutionBucket(PlannedWorkerAction plan)
@@ -628,7 +646,7 @@ public sealed class BulkRunCoordinator(
             syncScope,
             runId,
             requestId = request.RequestId,
-            mode = request.Mode,
+            mode = ResolveRunMode(request),
             runTrigger = request.RunTrigger,
             requestedBy = request.RequestedBy,
             dryRun = request.DryRun,

@@ -30,6 +30,7 @@ public sealed class SyncScheduleCoordinatorTests
         Assert.True(queued);
         Assert.NotNull(queueStore.LastRequest);
         Assert.False(queueStore.LastRequest!.DryRun);
+        Assert.Equal("BulkSync", queueStore.LastRequest.Mode);
         Assert.Equal("Scheduled", queueStore.LastRequest.RunTrigger);
         Assert.Equal("Sync schedule", queueStore.LastRequest.RequestedBy);
         Assert.Equal(DateTimeOffset.Parse("2026-03-30T12:00:00Z"), scheduleStore.LastSuccessfulEnqueueAt);

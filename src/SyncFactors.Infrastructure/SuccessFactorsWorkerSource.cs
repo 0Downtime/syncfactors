@@ -207,7 +207,8 @@ public sealed class SuccessFactorsWorkerSource(
         int enableBeforeStartDays,
         CancellationToken cancellationToken)
     {
-        if (mode != WorkerListingMode.DeltaPreferred)
+        if (mode != WorkerListingMode.DeltaPreferred &&
+            mode != WorkerListingMode.DeltaPreferredWithPrehireSweep)
         {
             return query;
         }
@@ -233,10 +234,13 @@ public sealed class SuccessFactorsWorkerSource(
             deltaWindow.DeltaField,
             deltaWindow.CheckpointUtc,
             deltaWindow.EffectiveSinceUtc);
-        var populationFilter = BuildListFilter(query, enableBeforeStartDays);
+        var baseFilter = mode == WorkerListingMode.DeltaPreferredWithPrehireSweep
+            ? BuildDeltaListFilter(query, enableBeforeStartDays, deltaWindow.Filter)
+            : CombineFilters(BuildListFilter(query, enableBeforeStartDays), deltaWindow.Filter);
+
         return query with
         {
-            BaseFilter = CombineFilters(populationFilter, deltaWindow.Filter),
+            BaseFilter = baseFilter,
             InactiveRetentionDays = null
         };
     }
@@ -1279,6 +1283,40 @@ public sealed class SuccessFactorsWorkerSource(
 
         var cutoff = DateTime.UtcNow.Date.AddDays(-query.InactiveRetentionDays.Value);
         clauses.Add(BuildInactiveRetentionClause(query, cutoff));
+
+        return CombineOrClauses(clauses);
+    }
+
+    private static string? BuildDeltaListFilter(SuccessFactorsQueryConfig query, int enableBeforeStartDays, string deltaFilter)
+    {
+        var deltaScopedClauses = new List<string>();
+        var baseFilter = string.IsNullOrWhiteSpace(query.BaseFilter)
+            ? null
+            : query.BaseFilter.Trim();
+        if (baseFilter is not null)
+        {
+            deltaScopedClauses.Add(baseFilter);
+        }
+
+        if (query.InactiveRetentionDays is not null)
+        {
+            var cutoff = DateTime.UtcNow.Date.AddDays(-query.InactiveRetentionDays.Value);
+            deltaScopedClauses.Add(BuildInactiveRetentionClause(query, cutoff));
+        }
+
+        var deltaScopedFilter = CombineFilters(CombineOrClauses(deltaScopedClauses), deltaFilter);
+        var clauses = new List<string>();
+        if (!string.IsNullOrWhiteSpace(deltaScopedFilter))
+        {
+            clauses.Add(deltaScopedFilter);
+        }
+
+        if (baseFilter is not null &&
+            string.Equals(query.EntitySet, "EmpJob", StringComparison.OrdinalIgnoreCase) &&
+            !ContainsInactivePrehireClause(baseFilter))
+        {
+            clauses.Add(BuildInactivePrehireClause(DateTime.UtcNow.Date.AddDays(enableBeforeStartDays)));
+        }
 
         return CombineOrClauses(clauses);
     }

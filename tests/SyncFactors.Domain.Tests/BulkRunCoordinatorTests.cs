@@ -49,6 +49,90 @@ public sealed class BulkRunCoordinatorTests
     }
 
     [Fact]
+    public async Task ExecuteAsync_BulkSync_UsesDeltaPreferredWorkerListing()
+    {
+        CapturingRunLifecycleService.Entries.Clear();
+        CapturingRunLifecycleService.Reset();
+        var workerSource = new StubWorkerSource([CreateWorker("10001")]);
+        var coordinator = new BulkRunCoordinator(
+            workerSource,
+            new CapturingDeltaSyncService(),
+            new StubRunQueueStore(),
+            new StubGraveyardRetentionStore(),
+            new StubWorkerPlanningService(),
+            new StubDirectoryMutationCommandBuilder(),
+            new StubDirectoryCommandGateway(),
+            new StubDirectoryGateway(),
+            new CapturingRunLifecycleService(),
+            new RealSyncSettings(),
+            new WorkerRunSettings(MaxCreatesPerRun: 10),
+            CreateLifecycleSettings(),
+            NullLogger<BulkRunCoordinator>.Instance,
+            TimeProvider.System);
+
+        await coordinator.ExecuteAsync(
+            new RunQueueRequest(
+                RequestId: "req-bulk",
+                Mode: "BulkSync",
+                DryRun: true,
+                RunTrigger: "AdHoc",
+                RequestedBy: "test",
+                Status: "Pending",
+                RequestedAt: DateTimeOffset.UtcNow,
+                StartedAt: null,
+                CompletedAt: null,
+                RunId: null,
+                ErrorMessage: null),
+            maxDegreeOfParallelism: 1,
+            CancellationToken.None);
+
+        Assert.Equal(WorkerListingMode.DeltaPreferred, workerSource.LastMode);
+        Assert.Equal("BulkSync", CapturingRunLifecycleService.LastStartMode);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_BulkSyncWithPrehireSweep_UsesDeltaPreferredWithPrehireSweep()
+    {
+        CapturingRunLifecycleService.Entries.Clear();
+        CapturingRunLifecycleService.Reset();
+        var workerSource = new StubWorkerSource([CreateWorker("10001")]);
+        var coordinator = new BulkRunCoordinator(
+            workerSource,
+            new CapturingDeltaSyncService(),
+            new StubRunQueueStore(),
+            new StubGraveyardRetentionStore(),
+            new StubWorkerPlanningService(),
+            new StubDirectoryMutationCommandBuilder(),
+            new StubDirectoryCommandGateway(),
+            new StubDirectoryGateway(),
+            new CapturingRunLifecycleService(),
+            new RealSyncSettings(),
+            new WorkerRunSettings(MaxCreatesPerRun: 10),
+            CreateLifecycleSettings(),
+            NullLogger<BulkRunCoordinator>.Instance,
+            TimeProvider.System);
+
+        await coordinator.ExecuteAsync(
+            new RunQueueRequest(
+                RequestId: "req-prehire-sweep",
+                Mode: "BulkSyncWithPrehireSweep",
+                DryRun: true,
+                RunTrigger: "AdHoc",
+                RequestedBy: "test",
+                Status: "Pending",
+                RequestedAt: DateTimeOffset.UtcNow,
+                StartedAt: null,
+                CompletedAt: null,
+                RunId: null,
+                ErrorMessage: null),
+            maxDegreeOfParallelism: 1,
+            CancellationToken.None);
+
+        Assert.Equal(WorkerListingMode.DeltaPreferredWithPrehireSweep, workerSource.LastMode);
+        Assert.Equal("BulkSyncWithPrehireSweep", CapturingRunLifecycleService.LastStartMode);
+    }
+
+    [Fact]
     public async Task ExecuteAsync_ContinuesWhenWorkerPlanningFails()
     {
         CapturingRunLifecycleService.Entries.Clear();
@@ -606,6 +690,8 @@ public sealed class BulkRunCoordinatorTests
 
     private sealed class StubWorkerSource(IReadOnlyList<WorkerSnapshot> workers) : IWorkerSource
     {
+        public WorkerListingMode? LastMode { get; private set; }
+
         public Task<WorkerSnapshot?> GetWorkerAsync(string workerId, CancellationToken cancellationToken)
         {
             _ = cancellationToken;
@@ -614,7 +700,7 @@ public sealed class BulkRunCoordinatorTests
 
         public async IAsyncEnumerable<WorkerSnapshot> ListWorkersAsync(WorkerListingMode mode, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
         {
-            _ = mode;
+            LastMode = mode;
             foreach (var worker in workers)
             {
                 cancellationToken.ThrowIfCancellationRequested();
@@ -990,6 +1076,7 @@ public sealed class BulkRunCoordinatorTests
         public static int StartCalls { get; private set; }
         public static int CompletedCalls { get; private set; }
         public static int FailedCalls { get; private set; }
+        public static string? LastStartMode { get; private set; }
         public static JsonElement? LastCompletedReport { get; private set; }
 
         public static void Reset()
@@ -997,6 +1084,7 @@ public sealed class BulkRunCoordinatorTests
             StartCalls = 0;
             CompletedCalls = 0;
             FailedCalls = 0;
+            LastStartMode = null;
             LastCompletedReport = null;
         }
 
@@ -1010,7 +1098,6 @@ public sealed class BulkRunCoordinatorTests
         public Task StartRunAsync(string runId, string mode, bool dryRun, string runTrigger, string? requestedBy, int totalWorkers, string? initialAction, CancellationToken cancellationToken)
         {
             _ = runId;
-            _ = mode;
             _ = dryRun;
             _ = runTrigger;
             _ = requestedBy;
@@ -1018,6 +1105,7 @@ public sealed class BulkRunCoordinatorTests
             _ = initialAction;
             _ = cancellationToken;
             StartCalls++;
+            LastStartMode = mode;
             Entries.Clear();
             return Task.CompletedTask;
         }
