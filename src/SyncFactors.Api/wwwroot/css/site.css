@@ -132,8 +132,8 @@ a:focus-visible {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 24px;
-  padding: 14px 18px;
+  gap: 18px;
+  padding: 10px 14px;
   border: 1px solid var(--line);
   border-radius: var(--radius-md);
   background:
@@ -179,7 +179,7 @@ a:focus-visible {
 .brand {
   display: inline-flex;
   align-items: center;
-  max-width: min(100%, 540px);
+  max-width: min(100%, 340px);
   color: var(--ink);
 }
 
@@ -187,7 +187,7 @@ a:focus-visible {
   display: block;
   width: 100%;
   height: auto;
-  max-height: 56px;
+  max-height: 44px;
 }
 
 .brand-logo-light {
@@ -237,10 +237,11 @@ a:focus-visible {
 
 .topbar-actions {
   display: flex;
-  gap: 12px;
+  gap: 8px;
   align-items: center;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   justify-content: flex-end;
+  min-width: 0;
 }
 
 .auth-actions {
@@ -270,7 +271,8 @@ a:focus-visible {
 .nav {
   display: flex;
   gap: 6px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  min-width: 0;
 }
 
 .nav-menu {
@@ -285,7 +287,7 @@ a:focus-visible {
   align-items: center;
   justify-content: center;
   min-height: 38px;
-  padding: 0 14px;
+  padding: 0 12px;
   position: relative;
   overflow: hidden;
   border-radius: var(--radius-sm);
@@ -293,6 +295,7 @@ a:focus-visible {
   background: var(--panel);
   color: var(--ink);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18);
+  white-space: nowrap;
 }
 
 .nav-menu summary {
@@ -378,6 +381,20 @@ a:focus-visible {
 
 .nav-menu-panel a::after {
   inset-inline: 12px;
+}
+
+.auth-menu-panel {
+  gap: 10px;
+  min-width: 270px;
+}
+
+.auth-menu-panel .auth-user {
+  padding: 2px 4px 4px;
+}
+
+.auth-menu-panel .theme-toggle,
+.auth-menu-panel .link-button {
+  width: 100%;
 }
 
 .danger-button {
@@ -521,6 +538,7 @@ a:focus-visible {
 
 .environment-corner-banner {
   position: fixed;
+  --environment-banner-font-size: 0.78rem;
   right: -76px;
   bottom: 56px;
   z-index: 55;
@@ -535,9 +553,9 @@ a:focus-visible {
   color: #fff;
   border: 1px solid rgba(255, 255, 255, 0.34);
   box-shadow: 0 14px 30px rgba(92, 0, 8, 0.3);
-  font-size: 0.78rem;
+  font-size: var(--environment-banner-font-size);
   font-weight: 800;
-  letter-spacing: 0.06em;
+  letter-spacing: 0;
   line-height: 1.2;
   text-transform: uppercase;
   white-space: nowrap;

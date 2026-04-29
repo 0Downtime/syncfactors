@@ -56,8 +56,13 @@
                     <a class="@(isDashboardPage ? "is-active" : null)" asp-page="/Index">Dashboard</a>
                     <a class="@(isSyncPage ? "is-active" : null)" asp-page="/Sync">Sync</a>
                     <a class="@(isExceptionsPage ? "is-active" : null)" asp-page="/Exceptions">Exceptions</a>
-                    <a class="@(isPreviewPage ? "is-active" : null)" asp-page="/Preview">Manual Provision</a>
-                    <a class="@(isLookupPage ? "is-active" : null)" asp-page="/Lookup">OData Lookup</a>
+                    <details class="nav-menu" data-nav-menu>
+                        <summary class="@(isPreviewPage || isLookupPage ? "is-active" : null)">Tools</summary>
+                        <div class="nav-menu-panel">
+                            <a class="@(isPreviewPage ? "is-active" : null)" asp-page="/Preview">Manual Provision</a>
+                            <a class="@(isLookupPage ? "is-active" : null)" asp-page="/Lookup">OData Lookup</a>
+                        </div>
+                    </details>
                     @if (isAdmin)
                     {
                         <details class="nav-menu" data-nav-menu>
@@ -79,21 +84,32 @@
                             : User.IsInRole("Operator")
                                 ? "Operator"
                                 : User.IsInRole("Viewer")
-                                    ? "Viewer"
-                                    : "Unknown";
-                    <div class="auth-actions">
-                        <a class="link-button" asp-page="/Logout">Logout</a>
-                        <div class="muted auth-user">
-                            <span>Signed in as <strong>@User.Identity.Name</strong></span>
-                            <span class="auth-role">Role: @role</span>
+                                ? "Viewer"
+                                : "Unknown";
+                    <details class="nav-menu auth-menu" data-nav-menu>
+                        <summary>@role</summary>
+                        <div class="nav-menu-panel auth-menu-panel">
+                            <div class="muted auth-user">
+                                <span>Signed in as <strong>@User.Identity.Name</strong></span>
+                                <span class="auth-role">Role: @role</span>
+                            </div>
+                            <div class="theme-toggle" id="theme-toggle" role="group" aria-label="Color mode">
+                                <button class="theme-toggle-option" type="button" data-theme-option="system" aria-pressed="false">System</button>
+                                <button class="theme-toggle-option" type="button" data-theme-option="light" aria-pressed="false">Light</button>
+                                <button class="theme-toggle-option" type="button" data-theme-option="dark" aria-pressed="false">Dark</button>
+                            </div>
+                            <a class="link-button" asp-page="/Logout">Logout</a>
                         </div>
+                    </details>
+                }
+                else
+                {
+                    <div class="theme-toggle" id="theme-toggle" role="group" aria-label="Color mode">
+                        <button class="theme-toggle-option" type="button" data-theme-option="system" aria-pressed="false">System</button>
+                        <button class="theme-toggle-option" type="button" data-theme-option="light" aria-pressed="false">Light</button>
+                        <button class="theme-toggle-option" type="button" data-theme-option="dark" aria-pressed="false">Dark</button>
                     </div>
                 }
-                <div class="theme-toggle" id="theme-toggle" role="group" aria-label="Color mode">
-                    <button class="theme-toggle-option" type="button" data-theme-option="system" aria-pressed="false">System</button>
-                    <button class="theme-toggle-option" type="button" data-theme-option="light" aria-pressed="false">Light</button>
-                    <button class="theme-toggle-option" type="button" data-theme-option="dark" aria-pressed="false">Dark</button>
-                </div>
             </div>
         </header>
         <main class="content">

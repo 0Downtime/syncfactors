@@ -13,7 +13,39 @@ $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.DirectoryServices.Protocols
 
 function Get-RepoRoot {
-    return [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
+    $envRepoRoot = [Environment]::GetEnvironmentVariable('REPO_ROOT')
+    if (-not [string]::IsNullOrWhiteSpace($envRepoRoot)) {
+        $resolvedEnvRepoRoot = [System.IO.Path]::GetFullPath($envRepoRoot)
+        if ((Test-Path (Join-Path $resolvedEnvRepoRoot 'SyncFactors.Next.sln')) -or
+            (Test-Path (Join-Path $resolvedEnvRepoRoot '.git'))) {
+            return $resolvedEnvRepoRoot
+        }
+
+        throw "REPO_ROOT does not point to a SyncFactors repository root: $resolvedEnvRepoRoot"
+    }
+
+    $candidates = @(
+        $PSScriptRoot,
+        (Get-Location).Path
+    )
+
+    foreach ($candidate in $candidates) {
+        if ([string]::IsNullOrWhiteSpace($candidate)) {
+            continue
+        }
+
+        $current = [System.IO.DirectoryInfo]::new([System.IO.Path]::GetFullPath($candidate))
+        while ($null -ne $current) {
+            if ((Test-Path (Join-Path $current.FullName 'SyncFactors.Next.sln')) -or
+                (Test-Path (Join-Path $current.FullName '.git'))) {
+                return $current.FullName
+            }
+
+            $current = $current.Parent
+        }
+    }
+
+    throw "Could not resolve SyncFactors repository root from script path '$PSScriptRoot' or current directory '$((Get-Location).Path)'. Set REPO_ROOT to the repository root and retry."
 }
 
 function Get-FullPathFromRepoRoot {
