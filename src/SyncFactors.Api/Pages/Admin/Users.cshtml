@@ -1,5 +1,6 @@
 @page
 @model SyncFactors.Api.Pages.Admin.UsersModel
+@using SyncFactors.Infrastructure
 @{
     ViewData["Title"] = "Users";
 }
@@ -132,9 +133,13 @@
                     <span>Confirm password</span>
                     <input asp-for="CreatePasswordConfirmation" type="password" autocomplete="new-password" />
                 </label>
-                <label class="filter-check">
-                    <span>Create as admin</span>
-                    <input asp-for="CreateIsAdmin" type="checkbox" />
+                <label>
+                    <span>Role</span>
+                    <select asp-for="CreateRole">
+                        <option value="@SecurityRoles.Viewer">Viewer</option>
+                        <option value="@SecurityRoles.Operator">Operator</option>
+                        <option value="@SecurityRoles.Admin">Admin</option>
+                    </select>
                 </label>
                 <div class="filter-actions">
                     <button type="submit">Create user</button>
@@ -180,9 +185,13 @@
                         <td>
                             <form method="post" asp-page-handler="ChangeRole" class="admin-user-role-form">
                                 <input type="hidden" name="userId" value="@user.UserId" />
-                                <input type="hidden" name="makeAdmin" value="@(string.Equals(user.Role, "Admin", StringComparison.OrdinalIgnoreCase) ? "false" : "true")" />
-                                <span class="badge @(string.Equals(user.Role, "Admin", StringComparison.OrdinalIgnoreCase) ? "info" : "neutral")">@user.Role</span>
-                                <button type="submit" class="link-button admin-user-compact-button">@(string.Equals(user.Role, "Admin", StringComparison.OrdinalIgnoreCase) ? "Set regular" : "Set admin")</button>
+                                <span class="badge @Model.AccessBadgeClass(user.Role)">@user.Role</span>
+                                <select name="role" aria-label="Role for @user.Username">
+                                    <option value="@SecurityRoles.Viewer" selected="@(string.Equals(user.Role, SecurityRoles.Viewer, StringComparison.OrdinalIgnoreCase))">Viewer</option>
+                                    <option value="@SecurityRoles.Operator" selected="@(string.Equals(user.Role, SecurityRoles.Operator, StringComparison.OrdinalIgnoreCase))">Operator</option>
+                                    <option value="@SecurityRoles.Admin" selected="@(string.Equals(user.Role, SecurityRoles.Admin, StringComparison.OrdinalIgnoreCase))">Admin</option>
+                                </select>
+                                <button type="submit" class="link-button admin-user-compact-button">Set role</button>
                             </form>
                         </td>
                         <td>

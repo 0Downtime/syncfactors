@@ -381,7 +381,7 @@ sessionApi.MapPost("/logout", async (HttpContext httpContext) =>
     return Results.Ok(LocalSessionManager.AnonymousSession);
 }).AllowAnonymous();
 
-app.MapPublicHealthEndpoints();
+app.MapPublicHealthEndpoints(ViewerPolicy);
 
 var readApi = api.MapGroup(string.Empty)
     .RequireAuthorization(ViewerPolicy);
@@ -689,13 +689,13 @@ adminApi.MapPost("/admin/users", async (
     ISecurityAuditService audit,
     CancellationToken cancellationToken) =>
 {
-    var result = await authService.CreateUserAsync(request.Username, request.Password, request.IsAdmin, cancellationToken);
+    var result = await authService.CreateUserAsync(request.Username, request.Password, request.ResolvedRole, cancellationToken);
     audit.Write(
         "LocalUserCreated",
         result.Succeeded ? "Success" : "Failure",
         ("RequestedBy", ResolveRequestedBy(user, "API")),
         ("Username", request.Username),
-        ("Role", request.IsAdmin ? SecurityRoles.Admin : SecurityRoles.Viewer));
+        ("Role", request.ResolvedRole));
     return result.Succeeded ? Results.Ok(result) : Results.BadRequest(result);
 });
 
@@ -721,13 +721,13 @@ adminApi.MapPost("/admin/users/{userId}/role", async (
     CancellationToken cancellationToken) =>
 {
     var actingUserId = user.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
-    var result = await authService.SetUserRoleAsync(userId, request.IsAdmin, actingUserId, cancellationToken);
+    var result = await authService.SetUserRoleAsync(userId, request.ResolvedRole, actingUserId, cancellationToken);
     audit.Write(
         "LocalUserRoleUpdated",
         result.Succeeded ? "Success" : "Failure",
         ("RequestedBy", ResolveRequestedBy(user, "API")),
         ("UserId", userId),
-        ("Role", request.IsAdmin ? SecurityRoles.Admin : SecurityRoles.Viewer));
+        ("Role", request.ResolvedRole));
     return result.Succeeded ? Results.Ok(result) : Results.BadRequest(result);
 });
 

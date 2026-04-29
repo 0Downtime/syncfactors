@@ -151,12 +151,18 @@ public sealed class LocalAuthService(
     public Task<LocalUserRecord?> FindUserByIdAsync(string userId, CancellationToken cancellationToken) =>
         userStore.FindByIdAsync(userId, cancellationToken);
 
-    public async Task<LocalUserCommandResult> CreateUserAsync(string username, string password, bool isAdmin, CancellationToken cancellationToken)
+    public async Task<LocalUserCommandResult> CreateUserAsync(string username, string password, string role, CancellationToken cancellationToken)
     {
         var normalizedUsername = NormalizeUsername(username);
         if (normalizedUsername is null)
         {
             return LocalUserCommandResult.Failure("Username is required.");
+        }
+
+        var normalizedRole = NormalizeManagedRole(role);
+        if (normalizedRole is null)
+        {
+            return LocalUserCommandResult.Failure("Role must be Viewer, Operator, or Admin.");
         }
 
         var passwordValidation = ValidatePassword(password);
@@ -172,13 +178,12 @@ public sealed class LocalAuthService(
         }
 
         var now = timeProvider.GetUtcNow();
-        var role = isAdmin ? "Admin" : "Operator";
         var user = new LocalUserRecord(
             UserId: $"local-{Guid.NewGuid():N}",
             Username: username.Trim(),
             NormalizedUsername: normalizedUsername,
             PasswordHash: string.Empty,
-            Role: role,
+            Role: normalizedRole,
             IsActive: true,
             CreatedAt: now,
             UpdatedAt: now,
@@ -187,7 +192,7 @@ public sealed class LocalAuthService(
             LockoutEndAt: null);
         await userStore.CreateAsync(user with { PasswordHash = passwordHasher.HashPassword(user, password) }, cancellationToken);
         securityAuditService.Write("LocalUserCreated", "Success", ("UserId", user.UserId), ("Username", user.Username), ("Role", user.Role));
-        return LocalUserCommandResult.Success($"{role} user '{user.Username}' created.");
+        return LocalUserCommandResult.Success($"{normalizedRole} user '{user.Username}' created.");
     }
 
     public async Task<LocalUserCommandResult> ResetPasswordAsync(string userId, string newPassword, CancellationToken cancellationToken)
@@ -217,11 +222,17 @@ public sealed class LocalAuthService(
         return LocalUserCommandResult.Success($"Password reset for '{user.Username}'.");
     }
 
-    public async Task<LocalUserCommandResult> SetUserRoleAsync(string userId, bool isAdmin, string actingUserId, CancellationToken cancellationToken)
+    public async Task<LocalUserCommandResult> SetUserRoleAsync(string userId, string role, string actingUserId, CancellationToken cancellationToken)
     {
         if (string.Equals(userId, actingUserId, StringComparison.Ordinal))
         {
             return LocalUserCommandResult.Failure("You cannot change your own role.");
+        }
+
+        var targetRole = NormalizeManagedRole(role);
+        if (targetRole is null)
+        {
+            return LocalUserCommandResult.Failure("Role must be Viewer, Operator, or Admin.");
         }
 
         var user = await userStore.FindByIdAsync(userId, cancellationToken);
@@ -230,13 +241,12 @@ public sealed class LocalAuthService(
             return LocalUserCommandResult.Failure("User could not be found.");
         }
 
-        var targetRole = isAdmin ? "Admin" : "Operator";
         if (string.Equals(user.Role, targetRole, StringComparison.OrdinalIgnoreCase))
         {
-            return LocalUserCommandResult.Success($"User '{user.Username}' is already an {targetRole.ToLowerInvariant()}.");
+            return LocalUserCommandResult.Success($"User '{user.Username}' already has role {targetRole}.");
         }
 
-        if (!isAdmin)
+        if (!string.Equals(targetRole, SecurityRoles.Admin, StringComparison.OrdinalIgnoreCase))
         {
             var adminProtection = await ValidateAdminProtectionAsync(user, cancellationToken);
             if (adminProtection is not null)
@@ -340,6 +350,26 @@ public sealed class LocalAuthService(
         }
 
         return SqliteLocalUserStore.NormalizeUsername(username);
+    }
+
+    private static string? NormalizeManagedRole(string role)
+    {
+        if (string.Equals(role, SecurityRoles.Viewer, StringComparison.OrdinalIgnoreCase))
+        {
+            return SecurityRoles.Viewer;
+        }
+
+        if (string.Equals(role, SecurityRoles.Operator, StringComparison.OrdinalIgnoreCase))
+        {
+            return SecurityRoles.Operator;
+        }
+
+        if (string.Equals(role, SecurityRoles.Admin, StringComparison.OrdinalIgnoreCase))
+        {
+            return SecurityRoles.Admin;
+        }
+
+        return null;
     }
 
     private static string? ValidatePassword(string password)
