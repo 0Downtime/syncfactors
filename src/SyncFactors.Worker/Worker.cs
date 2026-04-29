@@ -43,14 +43,21 @@ public sealed class Worker(
                     var runId = string.Equals(claimed.Mode, "DeleteAllUsers", StringComparison.OrdinalIgnoreCase)
                         ? await deleteAllUsersCoordinator.ExecuteAsync(claimed, stoppingToken)
                         : await bulkRunCoordinator.ExecuteAsync(claimed, maxDegreeOfParallelism, stoppingToken);
-                    await runQueueStore.CompleteAsync(claimed.RequestId, runId, stoppingToken);
-                    await WriteHeartbeatAsync(startedAt, "Idle", $"Completed queued run {claimed.RequestId}.", stoppingToken);
+                    await runQueueStore.CompleteAsync(claimed.RequestId, runId, CancellationToken.None);
+                    await TryWriteHeartbeatAsync(startedAt, "Idle", $"Completed queued run {claimed.RequestId}.", CancellationToken.None);
                 }
                 catch (RunCanceledException ex)
                 {
                     logger.LogInformation("Queued run canceled. RequestId={RequestId}", claimed.RequestId);
-                    await runQueueStore.CancelAsync(claimed.RequestId, ex.RunId, ex.Message, stoppingToken);
-                    await WriteHeartbeatAsync(startedAt, "Idle", $"Run {claimed.RequestId} canceled.", stoppingToken);
+                    await runQueueStore.CancelAsync(claimed.RequestId, ex.RunId, ex.Message, CancellationToken.None);
+                    await TryWriteHeartbeatAsync(startedAt, "Idle", $"Run {claimed.RequestId} canceled.", CancellationToken.None);
+                }
+                catch (OperationCanceledException ex) when (stoppingToken.IsCancellationRequested)
+                {
+                    logger.LogWarning(ex, "Worker stopped while a queued run was active. RequestId={RequestId}", claimed.RequestId);
+                    await runQueueStore.FailAsync(claimed.RequestId, null, "Worker stopped while processing the queued run.", CancellationToken.None);
+                    await TryWriteHeartbeatAsync(startedAt, "Stopping", $"Worker stopped while processing run {claimed.RequestId}.", CancellationToken.None);
+                    throw;
                 }
                 catch (Exception ex)
                 {
@@ -58,13 +65,13 @@ public sealed class Worker(
                     var failedRunId = ex is GuardrailExceededException guardrailExceededException
                         ? guardrailExceededException.RunId
                         : null;
-                    await runQueueStore.FailAsync(claimed.RequestId, failedRunId, ex.Message, stoppingToken);
-                    await WriteHeartbeatAsync(startedAt, "Idle", $"Run {claimed.RequestId} failed.", stoppingToken);
+                    await runQueueStore.FailAsync(claimed.RequestId, failedRunId, ex.Message, CancellationToken.None);
+                    await TryWriteHeartbeatAsync(startedAt, "Idle", $"Run {claimed.RequestId} failed.", CancellationToken.None);
                 }
                 finally
                 {
                     heartbeatCts.Cancel();
-                    await AwaitHeartbeatPumpAsync(heartbeatTask, stoppingToken);
+                    await AwaitHeartbeatPumpAsync(heartbeatTask);
                 }
             }
             else
@@ -90,6 +97,22 @@ public sealed class Worker(
                 StartedAt: startedAt,
                 LastSeenAt: timeProvider.GetUtcNow()),
             cancellationToken);
+    }
+
+    private async Task TryWriteHeartbeatAsync(
+        DateTimeOffset startedAt,
+        string state,
+        string activity,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await WriteHeartbeatAsync(startedAt, state, activity, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Failed to persist worker heartbeat. State={State} Activity={Activity}", state, activity);
+        }
     }
 
     private async Task PumpHeartbeatsAsync(
@@ -122,13 +145,13 @@ public sealed class Worker(
         }
     }
 
-    private static async Task AwaitHeartbeatPumpAsync(Task heartbeatTask, CancellationToken cancellationToken)
+    private static async Task AwaitHeartbeatPumpAsync(Task heartbeatTask)
     {
         try
         {
             await heartbeatTask;
         }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        catch (OperationCanceledException)
         {
         }
     }
