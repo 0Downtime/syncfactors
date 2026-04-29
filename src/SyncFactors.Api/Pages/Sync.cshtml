@@ -216,6 +216,7 @@
                         <th>Scope</th>
                         <th>Dry Run</th>
                         <th>Workers</th>
+                        <th>Summary</th>
                         <th>Requested By</th>
                         <th>Actions</th>
                     </tr>
@@ -231,6 +232,7 @@
                         <td>@SyncFactors.Api.UiRunFormatting.DisplayLabel(run.SyncScope)</td>
                         <td>@(run.DryRun ? "Yes" : "No")</td>
                         <td>@run.TotalWorkers</td>
+                        <td title="@SyncFactors.Api.UiRunFormatting.RunBucketSummary(run)"><span class="summary-value">@SyncFactors.Api.UiRunFormatting.RunBucketSummary(run)</span></td>
                         <td>@(run.RequestedBy ?? "n/a")</td>
                         <td><a asp-page="/Runs/Detail" asp-route-runId="@run.RunId">Open</a></td>
                     </tr>

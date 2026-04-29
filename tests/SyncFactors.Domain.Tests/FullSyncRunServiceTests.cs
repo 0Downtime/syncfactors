@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.Extensions.Logging.Abstractions;
 using SyncFactors.Contracts;
 using SyncFactors.Domain;
@@ -25,7 +26,18 @@ public sealed class FullSyncRunServiceTests
         Assert.Equal("FullSync", runRepository.SavedRuns[^1].ArtifactType);
         Assert.Equal("Succeeded", runRepository.SavedRuns[^1].Status);
         Assert.Single(runRepository.ReplacedEntries);
-        Assert.Equal("creates", runRepository.ReplacedEntries[0].entries.Single().Bucket);
+        var entry = runRepository.ReplacedEntries[0].entries.Single();
+        Assert.Equal("creates", entry.Bucket);
+        Assert.Equal("10001", entry.Item.GetProperty("sourceSnapshot").GetProperty("workerId").GetString());
+        Assert.Equal("90001", entry.Item.GetProperty("sourceSnapshot").GetProperty("managerId").GetString());
+        Assert.False(entry.Item.GetProperty("directoryBefore").GetProperty("matchedExistingUser").GetBoolean());
+        Assert.Equal("OU=LabUsers,DC=example,DC=com", entry.Item.GetProperty("plannedDirectoryState").GetProperty("targetOu").GetString());
+        Assert.True(entry.Item.GetProperty("plannedDirectoryState").GetProperty("targetEnabled").GetBoolean());
+        Assert.Equal("CreateUser", entry.Item.GetProperty("plannedCommand").GetProperty("action").GetString());
+        Assert.Equal(JsonValueKind.Null, entry.Item.GetProperty("liveResult").ValueKind);
+        Assert.True(entry.Item.GetProperty("captureMetadata").GetProperty("dryRun").GetBoolean());
+        Assert.Equal("Full sync", entry.Item.GetProperty("captureMetadata").GetProperty("syncScope").GetString());
+        Assert.Equal("sync.json", entry.Item.GetProperty("captureMetadata").GetProperty("syncConfig").GetProperty("path").GetString());
     }
 
     [Fact]
@@ -48,6 +60,12 @@ public sealed class FullSyncRunServiceTests
         Assert.NotNull(directoryCommandGateway.LastCommand);
         Assert.Equal("CreateUser", directoryCommandGateway.LastCommand!.Action);
         Assert.Equal("Succeeded", runRepository.SavedRuns[^1].Status);
+        var entry = runRepository.ReplacedEntries[0].entries.Single();
+        Assert.Equal("CreateUser", entry.Item.GetProperty("plannedCommand").GetProperty("action").GetString());
+        var liveResult = entry.Item.GetProperty("liveResult");
+        Assert.True(liveResult.GetProperty("applied").GetBoolean());
+        Assert.True(liveResult.GetProperty("succeeded").GetBoolean());
+        Assert.Equal("CreateUser", liveResult.GetProperty("action").GetString());
     }
 
     [Fact]
@@ -95,7 +113,9 @@ public sealed class FullSyncRunServiceTests
         Assert.Equal(1, directoryCommandGateway.ExecuteCount);
         Assert.Equal(1, runRepository.SavedRuns[^1].Creates);
         Assert.Equal(1, runRepository.SavedRuns[^1].GuardrailFailures);
-        Assert.Contains(runRepository.ReplacedEntries[0].entries, entry => entry.WorkerId == "10002" && entry.Bucket == "guardrailFailures");
+        var guardrailEntry = Assert.Single(runRepository.ReplacedEntries[0].entries, entry => entry.WorkerId == "10002" && entry.Bucket == "guardrailFailures");
+        Assert.Equal(JsonValueKind.Null, guardrailEntry.Item.GetProperty("plannedCommand").ValueKind);
+        Assert.Equal(JsonValueKind.Null, guardrailEntry.Item.GetProperty("liveResult").ValueKind);
     }
 
     [Fact]
@@ -139,7 +159,13 @@ public sealed class FullSyncRunServiceTests
         Assert.Equal("Failed", result.Status);
         Assert.Equal("Failed", runRepository.SavedRuns[^1].Status);
         Assert.Equal(1, runRepository.SavedRuns[^1].Conflicts);
-        Assert.Equal("conflicts", runRepository.ReplacedEntries[0].entries.Single().Bucket);
+        var entry = runRepository.ReplacedEntries[0].entries.Single();
+        Assert.Equal("conflicts", entry.Bucket);
+        Assert.Equal("CreateUser", entry.Item.GetProperty("plannedCommand").GetProperty("action").GetString());
+        var liveResult = entry.Item.GetProperty("liveResult");
+        Assert.True(liveResult.GetProperty("applied").GetBoolean());
+        Assert.False(liveResult.GetProperty("succeeded").GetBoolean());
+        Assert.Equal("LDAP bind failed.", liveResult.GetProperty("message").GetString());
         Assert.Equal("Failed", runtimeStatusStore.SavedStatuses[^1].Status);
         Assert.Contains("LDAP bind failed.", result.Message);
     }
@@ -165,7 +191,14 @@ public sealed class FullSyncRunServiceTests
         Assert.Equal("Failed", runRepository.SavedRuns[^1].Status);
         Assert.Equal("Failed", runtimeStatusStore.SavedStatuses[^1].Status);
         Assert.Equal("Completed", runtimeStatusStore.SavedStatuses[^1].Stage);
-        Assert.Equal("conflicts", runRepository.ReplacedEntries[0].entries.Single().Bucket);
+        var entry = runRepository.ReplacedEntries[0].entries.Single();
+        Assert.Equal("conflicts", entry.Bucket);
+        Assert.Equal(JsonValueKind.Null, entry.Item.GetProperty("plannedCommand").ValueKind);
+        Assert.Equal(JsonValueKind.Null, entry.Item.GetProperty("directoryBefore").ValueKind);
+        Assert.Contains(
+            entry.Item.GetProperty("decisionTree").EnumerateArray(),
+            step => step.GetProperty("step").GetString() == "Worker Planning" &&
+                    step.GetProperty("outcome").GetString() == "Failed");
         Assert.Contains("AD lookup failed.", result.Message);
     }
 
@@ -652,7 +685,8 @@ public sealed class FullSyncRunServiceTests
             realSyncSettings,
             settings ?? new WorkerRunSettings(MaxCreatesPerRun: 10, MaxDisablesPerRun: 10),
             CreateLifecycleSettings(),
-            NullLogger<FullSyncRunService>.Instance);
+            NullLogger<FullSyncRunService>.Instance,
+            new StubRunCaptureMetadataProvider());
     }
 
     private static WorkerSnapshot CreateWorker(string workerId, string? managerId, string? emplStatus = null, string? endDate = null)
@@ -993,5 +1027,17 @@ public sealed class FullSyncRunServiceTests
             _ = cancellationToken;
             return Task.FromException<PlannedWorkerAction>(exception);
         }
+    }
+
+    private sealed class StubRunCaptureMetadataProvider : IRunCaptureMetadataProvider
+    {
+        public RunCaptureMetadata Create(string runId, bool dryRun, string syncScope) =>
+            new(
+                SchemaVersion: 1,
+                RunId: runId,
+                DryRun: dryRun,
+                SyncScope: syncScope,
+                SyncConfig: new RunConfigFingerprint("sync.json", "sync-sha"),
+                MappingConfig: new RunConfigFingerprint("mapping.json", "mapping-sha"));
     }
 }

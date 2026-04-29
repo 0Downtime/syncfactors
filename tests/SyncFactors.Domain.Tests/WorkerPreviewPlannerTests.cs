@@ -60,7 +60,7 @@ public sealed class WorkerPreviewPlannerTests
                 ["company"] = "Example Services, Inc.",
                 ["department"] = "Infrastructure & Security",
                 ["employmentNav[0].jobInfoNav[0].companyNav.name_localized"] = "Example Services, Inc.",
-                ["employmentNav[0].jobInfoNav[0].locationNav.name"] = "STL - 700 Market",
+                ["employmentNav[0].jobInfoNav[0].locationNav.name"] = "Example Office",
                 ["emptyValue"] = null
             });
 
@@ -83,7 +83,7 @@ public sealed class WorkerPreviewPlannerTests
         Assert.Contains(preview.SourceAttributes, attribute => attribute.Attribute == "company" && attribute.Value == "Example Services, Inc.");
         Assert.Contains(preview.SourceAttributes, attribute => attribute.Attribute == "department" && attribute.Value == "Infrastructure & Security");
         Assert.Contains(preview.SourceAttributes, attribute => attribute.Attribute == "employmentNav[0].jobInfoNav[0].companyNav.name_localized" && attribute.Value == "Example Services, Inc.");
-        Assert.Contains(preview.SourceAttributes, attribute => attribute.Attribute == "employmentNav[0].jobInfoNav[0].locationNav.name" && attribute.Value == "STL - 700 Market");
+        Assert.Contains(preview.SourceAttributes, attribute => attribute.Attribute == "employmentNav[0].jobInfoNav[0].locationNav.name" && attribute.Value == "Example Office");
         Assert.DoesNotContain(preview.SourceAttributes, attribute => attribute.Attribute == "emptyValue");
     }
 

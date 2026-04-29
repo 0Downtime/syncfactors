@@ -10,7 +10,7 @@ public sealed class FileWorkerPreviewLogWriter : IWorkerPreviewLogWriter
     {
         var previewDirectory = LocalFileLogging.ResolvePreviewLogDirectory(
             Environment.GetEnvironmentVariable(LocalFileLogging.DirectoryEnvironmentVariable));
-        Directory.CreateDirectory(previewDirectory);
+        RuntimeFileSecurity.EnsureDirectory(previewDirectory);
 
         var safeWorkerId = MakeSafeFileName(workerId);
         var suffix = Guid.NewGuid().ToString("N")[..8];
@@ -22,11 +22,12 @@ public sealed class FileWorkerPreviewLogWriter : IWorkerPreviewLogWriter
         var directory = Path.GetDirectoryName(logPath);
         if (!string.IsNullOrWhiteSpace(directory))
         {
-            Directory.CreateDirectory(directory);
+            RuntimeFileSecurity.EnsureDirectory(directory);
         }
 
         var line = JsonSerializer.Serialize(entry, JsonOptions.Default);
         await File.AppendAllTextAsync(logPath, line + Environment.NewLine, cancellationToken);
+        RuntimeFileSecurity.HardenFile(logPath);
     }
 
     private static string MakeSafeFileName(string value)

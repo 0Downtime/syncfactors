@@ -19,7 +19,8 @@ public sealed class BulkRunCoordinator(
     WorkerRunSettings settings,
     LifecyclePolicySettings lifecycleSettings,
     ILogger<BulkRunCoordinator> logger,
-    TimeProvider timeProvider)
+    TimeProvider timeProvider,
+    IRunCaptureMetadataProvider? runCaptureMetadataProvider = null)
 {
     public async Task<string> ExecuteAsync(RunQueueRequest request, int maxDegreeOfParallelism, CancellationToken cancellationToken)
     {
@@ -35,6 +36,8 @@ public sealed class BulkRunCoordinator(
         var extractionStartedAt = timeProvider.GetUtcNow();
         var runId = $"bulk-{timeProvider.GetUtcNow():yyyyMMddHHmmssfff}";
         var startedAt = timeProvider.GetUtcNow();
+        var captureMetadataProvider = runCaptureMetadataProvider ?? NullRunCaptureMetadataProvider.Instance;
+        var captureMetadata = captureMetadataProvider.Create(runId, request.DryRun, syncScope);
         using var logScope = RunLoggingScope.Begin(logger, runId, mode: "BulkSync", request.RequestId);
         var tally = new RunTally(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
         RunPopulationTotals? populationTotals = null;
@@ -208,7 +211,7 @@ public sealed class BulkRunCoordinator(
                             {
                                 bucket = "guardrailFailures";
                                 reason = $"Create guardrail exceeded. MaxCreatesPerRun={settings.MaxCreatesPerRun}.";
-                                var guardrailItem = BuildEntryItem(plan, request.DryRun, bucket, action: null, applied: false, succeeded: false, reason);
+                                var guardrailItem = BuildEntryItem(runId, request.DryRun, syncScope, plan, bucket, action: null, applied: false, succeeded: false, reason, plannedCommand: null, commandResult: null, captureMetadata);
                                 await channel.Writer.WriteAsync(
                                     new WorkerRunResult(
                                         WorkerId: worker.WorkerId,
@@ -240,7 +243,7 @@ public sealed class BulkRunCoordinator(
                             {
                                 bucket = "guardrailFailures";
                                 reason = $"Disable guardrail exceeded. MaxDisablesPerRun={settings.MaxDisablesPerRun}.";
-                                var guardrailItem = BuildEntryItem(plan, request.DryRun, bucket, action: null, applied: false, succeeded: false, reason);
+                                var guardrailItem = BuildEntryItem(runId, request.DryRun, syncScope, plan, bucket, action: null, applied: false, succeeded: false, reason, plannedCommand: null, commandResult: null, captureMetadata);
                                 await channel.Writer.WriteAsync(
                                     new WorkerRunResult(
                                         WorkerId: worker.WorkerId,
@@ -267,12 +270,15 @@ public sealed class BulkRunCoordinator(
                             action = plan.PrimaryAction;
                         }
 
+                        var plannedCommand = action is null || string.Equals(bucket, "guardrailFailures", StringComparison.OrdinalIgnoreCase)
+                            ? null
+                            : mutationCommandBuilder.Build(plan);
+
                         if (!request.DryRun && action is not null)
                         {
                             try
                             {
-                                var command = mutationCommandBuilder.Build(plan);
-                                var result = await directoryCommandGateway.ExecuteAsync(command, ct);
+                                var result = await directoryCommandGateway.ExecuteAsync(plannedCommand!, ct);
                                 commandResult = result;
                                 applied = true;
                                 succeeded = result.Succeeded;
@@ -291,7 +297,7 @@ public sealed class BulkRunCoordinator(
                             }
                         }
 
-                        var item = BuildEntryItem(plan, request.DryRun, bucket, action, applied, succeeded, reason, commandResult);
+                        var item = BuildEntryItem(runId, request.DryRun, syncScope, plan, bucket, action, applied, succeeded, reason, plannedCommand, commandResult, captureMetadata);
                         await UpdateGraveyardRetentionAsync(plan, ct);
                         await channel.Writer.WriteAsync(
                             new WorkerRunResult(
@@ -325,7 +331,7 @@ public sealed class BulkRunCoordinator(
                                 Succeeded: false,
                                 OperationSummary: null,
                                 DiffRows: [],
-                                Item: BuildPlanningFailureItem(worker, ex.Message)),
+                                Item: BuildPlanningFailureItem(runId, request.DryRun, syncScope, worker, ex.Message, captureMetadata)),
                             ct);
                     }
                 });
@@ -579,67 +585,33 @@ public sealed class BulkRunCoordinator(
             .ToArray();
     }
 
-    private static JsonElement BuildEntryItem(PlannedWorkerAction plan, bool dryRun, string bucket, string? action, bool applied, bool succeeded, string? reason, DirectoryCommandResult? commandResult = null)
-    {
-        var changedRows = plan.AttributeChanges
-            .Where(change => change.Changed)
-            .Select(change =>
-                $$"""
-                {
-                  "targetAttribute": "{{Escape(change.Attribute)}}",
-                  "sourceField": {{ToJsonString(change.Source)}},
-                  "currentAdValue": {{ToJsonString(change.Before == "(unset)" ? null : change.Before)}},
-                  "proposedValue": {{ToJsonString(change.After == "(unset)" ? null : change.After)}}
-                }
-                """);
-        var decisionRows = (plan.DecisionSteps ?? [])
-            .Select(step =>
-                $$"""
-                {
-                  "step": "{{Escape(step.Step)}}",
-                  "outcome": "{{Escape(step.Outcome)}}",
-                  "detail": "{{Escape(step.Detail)}}",
-                  "tone": "{{Escape(step.Tone)}}"
-                }
-                """);
-
-        return ParseJson(
-            $$"""
-            {
-              "workerId": "{{Escape(plan.Worker.WorkerId)}}",
-              "samAccountName": "{{Escape(plan.Identity.SamAccountName)}}",
-              "targetOu": "{{Escape(plan.Worker.TargetOu)}}",
-              "emplStatus": {{ToJsonString(ResolveSourceAttribute(plan.Worker.Attributes, "emplStatus"))}},
-              "currentOu": {{ToJsonString(plan.CurrentOu)}},
-              "managerDistinguishedName": {{ToJsonString(plan.ManagerDistinguishedName)}},
-              "reviewCategory": {{ToJsonString(plan.ReviewCategory)}},
-              "reviewCaseType": {{ToJsonString(plan.ReviewCaseType)}},
-              "reason": {{ToJsonString(reason)}},
-              "bucket": "{{Escape(bucket)}}",
-              "action": {{ToJsonString(action)}},
-              "dryRun": {{(dryRun ? "true" : "false")}},
-              "applied": {{(applied ? "true" : "false")}},
-              "succeeded": {{(succeeded ? "true" : "false")}},
-              "currentEnabled": {{ToJsonNullableBoolean(plan.CurrentEnabled)}},
-              "proposedEnable": {{ToJsonNullableBoolean(plan.TargetEnabled)}},
-              "verifiedEnabled": {{ToJsonNullableBoolean(commandResult?.VerifiedEnabled)}},
-              "verifiedDistinguishedName": {{ToJsonString(commandResult?.VerifiedDistinguishedName)}},
-              "verifiedParentOu": {{ToJsonString(commandResult?.VerifiedParentOu)}},
-              "operations": [
-                {{string.Join(",", plan.Operations.Select(operation =>
-                    $$"""
-                    {
-                      "kind": "{{Escape(operation.Kind)}}",
-                      "targetOu": {{ToJsonString(operation.TargetOu)}}
-                    }
-                    """))}}
-              ],
-              "managerRequired": {{(!string.IsNullOrWhiteSpace(plan.Worker.Attributes.TryGetValue("managerId", out var managerId) ? managerId : null) ? "true" : "false")}},
-              "changedAttributeDetails": [{{string.Join(",", changedRows)}}],
-              "decisionTree": [{{string.Join(",", decisionRows)}}]
-            }
-            """);
-    }
+    private JsonElement BuildEntryItem(
+        string runId,
+        bool dryRun,
+        string syncScope,
+        PlannedWorkerAction plan,
+        string bucket,
+        string? action,
+        bool applied,
+        bool succeeded,
+        string? reason,
+        DirectoryMutationCommand? plannedCommand,
+        DirectoryCommandResult? commandResult,
+        RunCaptureMetadata captureMetadata) =>
+        RunEntrySnapshotBuilder.Build(
+            runId,
+            dryRun,
+            syncScope,
+            plan,
+            bucket,
+            action,
+            applied,
+            succeeded,
+            reason,
+            plannedCommand,
+            commandResult,
+            captureMetadata,
+            lifecycleSettings.DirectoryIdentityAttribute);
 
     private static JsonElement BuildReport(
         string runId,
@@ -703,45 +675,14 @@ public sealed class BulkRunCoordinator(
 
     private static string ToJsonString(string? value) => value is null ? "null" : $"\"{Escape(value)}\"";
 
-    private static string ToJsonNullableBoolean(bool? value) => value.HasValue ? (value.Value ? "true" : "false") : "null";
-
-    private static JsonElement BuildPlanningFailureItem(WorkerSnapshot worker, string? reason)
-    {
-        return ParseJson(
-            $$"""
-            {
-              "workerId": "{{Escape(worker.WorkerId)}}",
-              "samAccountName": null,
-              "targetOu": {{ToJsonString(worker.TargetOu)}},
-              "emplStatus": {{ToJsonString(ResolveSourceAttribute(worker.Attributes, "emplStatus"))}},
-              "managerDistinguishedName": null,
-              "reviewCategory": "ExternalSystem",
-              "reviewCaseType": "WorkerPlanningFailed",
-              "reason": {{ToJsonString(reason)}},
-              "bucket": "conflicts",
-              "action": null,
-              "dryRun": true,
-              "applied": false,
-              "succeeded": false,
-              "managerRequired": {{(!string.IsNullOrWhiteSpace(worker.Attributes.TryGetValue("managerId", out var managerId) ? managerId : null) ? "true" : "false")}},
-              "changedAttributeDetails": [],
-              "decisionTree": [
-                {
-                  "step": "Source Worker",
-                  "outcome": "Loaded",
-                  "detail": "Loaded source worker {{Escape(worker.WorkerId)}} before planning failed.",
-                  "tone": "neutral"
-                },
-                {
-                  "step": "Worker Planning",
-                  "outcome": "Failed",
-                  "detail": {{ToJsonString(reason)}},
-                  "tone": "warn"
-                }
-              ]
-            }
-            """);
-    }
+    private static JsonElement BuildPlanningFailureItem(
+        string runId,
+        bool dryRun,
+        string syncScope,
+        WorkerSnapshot worker,
+        string? reason,
+        RunCaptureMetadata captureMetadata) =>
+        RunEntrySnapshotBuilder.BuildPlanningFailure(runId, dryRun, syncScope, worker, reason, captureMetadata);
 
     private async Task UpdateGraveyardRetentionAsync(PlannedWorkerAction plan, CancellationToken cancellationToken)
     {

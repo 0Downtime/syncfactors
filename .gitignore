@@ -9,6 +9,8 @@ coverage.xml
 artifacts/
 .tools/gitleaks/
 .tools/gitleaks-scan/
+.tools/dotnet/
+.tools/dotnet-install.ps1
 node_modules/
 web/dist/
 web/.vite/
@@ -33,6 +35,7 @@ web/.vite/
 .agents/
 .playwright-cli/
 .npm-cache/
+.dotnet-home/
 skills-lock.json
 !.codex/
 !.codex/config.toml
@@ -61,6 +64,7 @@ config/Untitled-*.ps1
 reports/
 logs/
 state/
+installed/
 src/SyncFactors.Api/.\\reports\\mock-output/
 .env.worktree
 /syncfactors.db

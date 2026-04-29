@@ -490,6 +490,134 @@ public sealed class RunDetailModelTests
     }
 
     [Fact]
+    public async Task GetEntrySnapshotPanels_ReadsSavedRunDecisionSnapshot()
+    {
+        var model = new DetailModel(new RunEntriesQueryService(new StubRunRepository(CreateRunDetail(dryRun: true))))
+        {
+            RunId = "bulk-1",
+            EntryId = "entry-snapshot"
+        };
+        await model.OnGetAsync(CancellationToken.None);
+        var entry = new RunEntry(
+            EntryId: "entry-snapshot",
+            RunId: "bulk-1",
+            ArtifactType: "BulkRun",
+            Mode: "BulkSync",
+            Bucket: "updates",
+            BucketLabel: "Updates",
+            WorkerId: "44522",
+            SamAccountName: "44522",
+            Reason: null,
+            ReviewCategory: null,
+            ReviewCaseType: null,
+            StartedAt: DateTimeOffset.UtcNow,
+            ChangeCount: 1,
+            OperationSummary: null,
+            FailureSummary: null,
+            PrimarySummary: null,
+            TopChangedAttributes: [],
+            DiffRows: [],
+            Item: JsonDocument.Parse(
+                """
+                {
+                  "sourceSnapshot": {
+                    "workerId": "44522",
+                    "employmentStatus": "A",
+                    "mappedSourceValues": [
+                      {
+                        "sourceField": "department",
+                        "value": "IT"
+                      }
+                    ]
+                  },
+                  "directoryBefore": {
+                    "matchedExistingUser": true,
+                    "distinguishedName": "CN=44522,OU=Prehire,DC=example,DC=com",
+                    "enabled": true
+                  },
+                  "plannedDirectoryState": {
+                    "targetOu": "OU=LabUsers,DC=example,DC=com",
+                    "targetEnabled": true,
+                    "operations": [
+                      {
+                        "kind": "MoveUser",
+                        "targetOu": "OU=LabUsers,DC=example,DC=com"
+                      }
+                    ]
+                  },
+                  "plannedCommand": {
+                    "action": "MoveUser",
+                    "samAccountName": "44522",
+                    "targetOu": "OU=LabUsers,DC=example,DC=com"
+                  },
+                  "liveResult": null,
+                  "captureMetadata": {
+                    "schemaVersion": 1,
+                    "dryRun": true,
+                    "syncScope": "Full sync",
+                    "syncConfig": {
+                      "path": "/configs/sync.json",
+                      "sha256": "abc123"
+                    }
+                  }
+                }
+                """).RootElement.Clone());
+
+        var panels = model.GetEntrySnapshotPanels(entry);
+
+        Assert.Equal(6, panels.Count);
+        Assert.Equal("Source Snapshot", panels[0].Title);
+        Assert.Contains(panels[0].Facts, fact => fact.Label == "Worker Id" && fact.Value == "44522");
+        Assert.Equal("AD Before", panels[1].Title);
+        Assert.Contains(panels[1].Facts, fact => fact.Label == "Matched Existing User" && fact.Value == "true");
+        Assert.Equal("Planned AD State", panels[2].Title);
+        Assert.Contains(panels[2].Facts, fact => fact.Label == "Target Ou" && fact.Value == "OU=LabUsers,DC=example,DC=com");
+        Assert.Equal("Planned Command", panels[3].Title);
+        Assert.Contains(panels[3].Facts, fact => fact.Label == "Action" && fact.Value == "MoveUser");
+        Assert.Equal("Live Verification", panels[4].Title);
+        Assert.Contains(panels[4].Facts, fact => fact.Label == "Status" && fact.Value == "Dry runs do not have live verification.");
+        Assert.Equal("Capture Metadata", panels[5].Title);
+        Assert.Contains(panels[5].Facts, fact => fact.Label == "Sync Config · Sha256" && fact.Value == "abc123");
+    }
+
+    [Fact]
+    public async Task GetEntrySnapshotPanels_ShowsOlderRunFallbackWhenSnapshotFieldsAreMissing()
+    {
+        var model = new DetailModel(new RunEntriesQueryService(new StubRunRepository(CreateRunDetail(dryRun: false))))
+        {
+            RunId = "bulk-1",
+            EntryId = "entry-old"
+        };
+        await model.OnGetAsync(CancellationToken.None);
+        var entry = new RunEntry(
+            EntryId: "entry-old",
+            RunId: "bulk-1",
+            ArtifactType: "BulkRun",
+            Mode: "BulkSync",
+            Bucket: "updates",
+            BucketLabel: "Updates",
+            WorkerId: "44522",
+            SamAccountName: "44522",
+            Reason: null,
+            ReviewCategory: null,
+            ReviewCaseType: null,
+            StartedAt: DateTimeOffset.UtcNow,
+            ChangeCount: 0,
+            OperationSummary: null,
+            FailureSummary: null,
+            PrimarySummary: null,
+            TopChangedAttributes: [],
+            DiffRows: [],
+            Item: JsonDocument.Parse("""{}""").RootElement.Clone());
+
+        var panels = model.GetEntrySnapshotPanels(entry);
+
+        Assert.Equal(6, panels.Count);
+        Assert.All(panels, panel => Assert.Equal("Not captured for this older run.", panel.Summary));
+        Assert.All(panels, panel => Assert.Contains(panel.Facts, fact => fact.Label == "Status" && fact.Value == "not captured for this older run"));
+    }
+
+    [Fact]
     public void GetPrimarySummaryDisplay_SuppressesDuplicateFailureSummary()
     {
         var model = new DetailModel(new RunEntriesQueryService(new StubRunRepository()));
