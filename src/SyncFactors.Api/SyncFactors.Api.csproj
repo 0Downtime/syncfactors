@@ -28,6 +28,7 @@
     <Compile Include="Pages\Admin\Users.cshtml.cs" />
     <Compile Include="Pages\AccessDenied.cshtml.cs" />
     <Compile Include="Pages\Login.cshtml.cs" />
+    <Compile Include="Pages\Lookup.cshtml.cs" />
     <Compile Include="Pages\Preview.cshtml.cs" />
     <Compile Include="Pages\Logout.cshtml.cs" />
     <Compile Include="Pages\Runs\Detail.cshtml.cs" />
