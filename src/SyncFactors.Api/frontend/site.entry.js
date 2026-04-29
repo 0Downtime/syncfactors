@@ -276,6 +276,47 @@
         });
     }
 
+    function initializeEnvironmentBannerFit() {
+        const banner = document.querySelector(".environment-corner-banner");
+        if (!banner) {
+            return;
+        }
+
+        const maxFontSize = 12.5;
+        const minFontSize = 1;
+
+        function applyFit() {
+            banner.style.setProperty("--environment-banner-font-size", maxFontSize + "px");
+
+            if (banner.scrollWidth <= banner.clientWidth) {
+                return;
+            }
+
+            let low = minFontSize;
+            let high = maxFontSize;
+
+            for (let index = 0; index < 10; index += 1) {
+                const next = (low + high) / 2;
+                banner.style.setProperty("--environment-banner-font-size", next + "px");
+
+                if (banner.scrollWidth <= banner.clientWidth) {
+                    low = next;
+                } else {
+                    high = next;
+                }
+            }
+
+            banner.style.setProperty("--environment-banner-font-size", low + "px");
+        }
+
+        applyFit();
+        window.addEventListener("resize", applyFit, { passive: true });
+
+        if (document.fonts && typeof document.fonts.ready?.then === "function") {
+            document.fonts.ready.then(applyFit);
+        }
+    }
+
     function bootstrapCalloutToasts() {
         const seenMessages = new Set();
         const callouts = Array.prototype.slice.call(document.querySelectorAll(".callout.good, .callout.warn, .callout.danger"));
@@ -320,6 +361,7 @@
     bootstrapCalloutToasts();
     initializeTransientCallouts();
     initializeVersionCopy();
+    initializeEnvironmentBannerFit();
 
     window.addEventListener("syncfactors:toast", function (event) {
         showToast(event.detail || {});
