@@ -22,6 +22,9 @@ concurrency:
   group: release-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: false
 
+env:
+  SYNCFACTORS_RELEASE_RUNTIME: win-x64
+
 jobs:
   prerelease:
     if: github.event_name == 'push'
@@ -46,22 +49,29 @@ jobs:
         run: |
           $info = & ./scripts/Get-SyncFactorsReleaseInfo.ps1 -Channel Prerelease -RunNumber $env:GITHUB_RUN_NUMBER -CommitSha $env:GITHUB_SHA
           "version=$($info.version)" >> $env:GITHUB_OUTPUT
+          "assembly_informational_version=$($info.assemblyInformationalVersion)" >> $env:GITHUB_OUTPUT
           "tag=$($info.tag)" >> $env:GITHUB_OUTPUT
           "commit_sha=$($info.commitSha)" >> $env:GITHUB_OUTPUT
 
       - name: Publish applications
         shell: pwsh
         run: |
-          dotnet publish ./src/SyncFactors.Api/SyncFactors.Api.csproj --configuration Release --output ./artifacts/publish/api /p:Version="${{ steps.release_info.outputs.version }}"
-          dotnet publish ./src/SyncFactors.Worker/SyncFactors.Worker.csproj --configuration Release --output ./artifacts/publish/worker /p:Version="${{ steps.release_info.outputs.version }}"
+          dotnet publish ./src/SyncFactors.Api/SyncFactors.Api.csproj --configuration Release --runtime $env:SYNCFACTORS_RELEASE_RUNTIME --self-contained true --output ./artifacts/publish/api /p:Version="${{ steps.release_info.outputs.version }}" /p:InformationalVersion="${{ steps.release_info.outputs.assembly_informational_version }}" /p:SourceRevisionId="${{ steps.release_info.outputs.commit_sha }}"
+          dotnet publish ./src/SyncFactors.Worker/SyncFactors.Worker.csproj --configuration Release --runtime $env:SYNCFACTORS_RELEASE_RUNTIME --self-contained true --output ./artifacts/publish/worker /p:Version="${{ steps.release_info.outputs.version }}" /p:InformationalVersion="${{ steps.release_info.outputs.assembly_informational_version }}" /p:SourceRevisionId="${{ steps.release_info.outputs.commit_sha }}"
+
+      - name: Validate application versions
+        shell: pwsh
+        run: |
+          ./scripts/Assert-SyncFactorsAssemblyVersion.ps1 -AssemblyPath ./artifacts/publish/api/SyncFactors.Api.dll -ExpectedInformationalVersion "${{ steps.release_info.outputs.assembly_informational_version }}" -ExpectedCommitSha "${{ steps.release_info.outputs.commit_sha }}"
+          ./scripts/Assert-SyncFactorsAssemblyVersion.ps1 -AssemblyPath ./artifacts/publish/worker/SyncFactors.Worker.dll -ExpectedInformationalVersion "${{ steps.release_info.outputs.assembly_informational_version }}" -ExpectedCommitSha "${{ steps.release_info.outputs.commit_sha }}"
 
       - name: Build deployment bundle
         id: bundle
         shell: pwsh
         run: |
           New-Item -Path ./artifacts/releases -ItemType Directory -Force | Out-Null
-          $bundlePath = Join-Path (Resolve-Path ./artifacts/releases) "syncfactors-${{ steps.release_info.outputs.version }}.zip"
-          $bundle = & ./scripts/New-SyncFactorsReleaseBundle.ps1 -OutputPath $bundlePath -Version "${{ steps.release_info.outputs.version }}" -CommitSha "${{ steps.release_info.outputs.commit_sha }}"
+          $bundlePath = Join-Path (Resolve-Path ./artifacts/releases) "syncfactors-${{ steps.release_info.outputs.version }}-$env:SYNCFACTORS_RELEASE_RUNTIME.zip"
+          $bundle = & ./scripts/New-SyncFactorsReleaseBundle.ps1 -OutputPath $bundlePath -Version "${{ steps.release_info.outputs.version }}" -RuntimeIdentifier $env:SYNCFACTORS_RELEASE_RUNTIME -CommitSha "${{ steps.release_info.outputs.commit_sha }}"
           "bundle_path=$($bundle.bundlePath)" >> $env:GITHUB_OUTPUT
 
       - name: Publish prerelease
@@ -105,6 +115,7 @@ jobs:
           $commitSha = (git rev-parse HEAD).Trim()
           $info = & ./scripts/Get-SyncFactorsReleaseInfo.ps1 -Channel Stable -Version $env:RELEASE_VERSION -CommitSha $commitSha
           "version=$($info.version)" >> $env:GITHUB_OUTPUT
+          "assembly_informational_version=$($info.assemblyInformationalVersion)" >> $env:GITHUB_OUTPUT
           "tag=$($info.tag)" >> $env:GITHUB_OUTPUT
           "commit_sha=$($info.commitSha)" >> $env:GITHUB_OUTPUT
 
@@ -156,16 +167,22 @@ jobs:
       - name: Publish applications
         shell: pwsh
         run: |
-          dotnet publish ./src/SyncFactors.Api/SyncFactors.Api.csproj --configuration Release --output ./artifacts/publish/api /p:Version="${{ steps.release_info.outputs.version }}"
-          dotnet publish ./src/SyncFactors.Worker/SyncFactors.Worker.csproj --configuration Release --output ./artifacts/publish/worker /p:Version="${{ steps.release_info.outputs.version }}"
+          dotnet publish ./src/SyncFactors.Api/SyncFactors.Api.csproj --configuration Release --runtime $env:SYNCFACTORS_RELEASE_RUNTIME --self-contained true --output ./artifacts/publish/api /p:Version="${{ steps.release_info.outputs.version }}" /p:InformationalVersion="${{ steps.release_info.outputs.assembly_informational_version }}" /p:SourceRevisionId="${{ steps.release_info.outputs.commit_sha }}"
+          dotnet publish ./src/SyncFactors.Worker/SyncFactors.Worker.csproj --configuration Release --runtime $env:SYNCFACTORS_RELEASE_RUNTIME --self-contained true --output ./artifacts/publish/worker /p:Version="${{ steps.release_info.outputs.version }}" /p:InformationalVersion="${{ steps.release_info.outputs.assembly_informational_version }}" /p:SourceRevisionId="${{ steps.release_info.outputs.commit_sha }}"
+
+      - name: Validate application versions
+        shell: pwsh
+        run: |
+          ./scripts/Assert-SyncFactorsAssemblyVersion.ps1 -AssemblyPath ./artifacts/publish/api/SyncFactors.Api.dll -ExpectedInformationalVersion "${{ steps.release_info.outputs.assembly_informational_version }}" -ExpectedCommitSha "${{ steps.release_info.outputs.commit_sha }}"
+          ./scripts/Assert-SyncFactorsAssemblyVersion.ps1 -AssemblyPath ./artifacts/publish/worker/SyncFactors.Worker.dll -ExpectedInformationalVersion "${{ steps.release_info.outputs.assembly_informational_version }}" -ExpectedCommitSha "${{ steps.release_info.outputs.commit_sha }}"
 
       - name: Build deployment bundle
         id: bundle
         shell: pwsh
         run: |
           New-Item -Path ./artifacts/releases -ItemType Directory -Force | Out-Null
-          $bundlePath = Join-Path (Resolve-Path ./artifacts/releases) "syncfactors-${{ steps.release_info.outputs.version }}.zip"
-          $bundle = & ./scripts/New-SyncFactorsReleaseBundle.ps1 -OutputPath $bundlePath -Version "${{ steps.release_info.outputs.version }}" -CommitSha "${{ steps.release_info.outputs.commit_sha }}"
+          $bundlePath = Join-Path (Resolve-Path ./artifacts/releases) "syncfactors-${{ steps.release_info.outputs.version }}-$env:SYNCFACTORS_RELEASE_RUNTIME.zip"
+          $bundle = & ./scripts/New-SyncFactorsReleaseBundle.ps1 -OutputPath $bundlePath -Version "${{ steps.release_info.outputs.version }}" -RuntimeIdentifier $env:SYNCFACTORS_RELEASE_RUNTIME -CommitSha "${{ steps.release_info.outputs.commit_sha }}"
           "bundle_path=$($bundle.bundlePath)" >> $env:GITHUB_OUTPUT
 
       - name: Publish stable release

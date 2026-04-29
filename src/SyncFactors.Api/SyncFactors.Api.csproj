@@ -30,6 +30,7 @@
     <Compile Include="Pages\Admin\Users.cshtml.cs" />
     <Compile Include="Pages\AccessDenied.cshtml.cs" />
     <Compile Include="Pages\Login.cshtml.cs" />
+    <Compile Include="Pages\Lookup.cshtml.cs" />
     <Compile Include="Pages\Preview.cshtml.cs" />
     <Compile Include="Pages\Logout.cshtml.cs" />
     <Compile Include="Pages\Runs\Detail.cshtml.cs" />
@@ -46,6 +47,7 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.ApplicationInsights.AspNetCore" Version="3.1.0" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.OpenIdConnect" Version="10.0.7" />
+    <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="10.0.7" />
     <PackageReference Include="OpenTelemetry.Api" Version="1.15.3" />
     <PackageReference Include="Serilog.AspNetCore" Version="10.0.0" />
     <PackageReference Include="Serilog.Sinks.File" Version="7.0.0" />
