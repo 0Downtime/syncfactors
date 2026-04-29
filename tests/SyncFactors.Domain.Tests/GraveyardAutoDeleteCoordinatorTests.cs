@@ -81,6 +81,58 @@ public sealed class GraveyardAutoDeleteCoordinatorTests
         Assert.Contains(lifecycle.Entries, entry => entry.WorkerId == "10002" && entry.Bucket == "guardrailFailures");
     }
 
+    [Fact]
+    public async Task ApproveDeleteAsync_DeletesEligibleUser_WhenAutoDeleteIsDisabled()
+    {
+        var retentionStore = new StubGraveyardRetentionStore(
+            [
+                CreateRecord("10001", isOnHold: false, endDateUtc: DateTimeOffset.Parse("2026-02-01T00:00:00Z"))
+            ]);
+        var commandGateway = new CapturingDirectoryCommandGateway();
+        var lifecycle = new CapturingRunLifecycleService();
+        var coordinator = CreateCoordinator(
+            retentionStore,
+            CreateDirectoryGateway("10001"),
+            commandGateway,
+            lifecycle,
+            autoDeleteEnabled: false,
+            now: DateTimeOffset.Parse("2026-04-11T12:00:00Z"));
+
+        var result = await coordinator.ApproveDeleteAsync("10001", "admin", CancellationToken.None);
+
+        Assert.True(result.Succeeded);
+        Assert.StartsWith("graveyard-delete-approval-", result.RunId, StringComparison.Ordinal);
+        Assert.Single(commandGateway.Commands);
+        Assert.Equal(["10001"], retentionStore.ResolvedWorkerIds);
+        Assert.Equal(1, lifecycle.CompletedCalls);
+        Assert.Contains(lifecycle.Entries, entry => entry.WorkerId == "10001" && entry.Bucket == "deletions");
+    }
+
+    [Fact]
+    public async Task ApproveDeleteAsync_BlocksHeldUser()
+    {
+        var retentionStore = new StubGraveyardRetentionStore(
+            [
+                CreateRecord("10001", isOnHold: true, endDateUtc: DateTimeOffset.Parse("2026-02-01T00:00:00Z"))
+            ]);
+        var commandGateway = new CapturingDirectoryCommandGateway();
+        var lifecycle = new CapturingRunLifecycleService();
+        var coordinator = CreateCoordinator(
+            retentionStore,
+            CreateDirectoryGateway("10001"),
+            commandGateway,
+            lifecycle,
+            autoDeleteEnabled: false,
+            now: DateTimeOffset.Parse("2026-04-11T12:00:00Z"));
+
+        var result = await coordinator.ApproveDeleteAsync("10001", "admin", CancellationToken.None);
+
+        Assert.False(result.Succeeded);
+        Assert.Contains("on hold", result.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Empty(commandGateway.Commands);
+        Assert.Empty(lifecycle.Entries);
+    }
+
     private static GraveyardAutoDeleteCoordinator CreateCoordinator(
         StubGraveyardRetentionStore retentionStore,
         IDirectoryGateway directoryGateway,

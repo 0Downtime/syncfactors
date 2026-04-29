@@ -14,6 +14,150 @@ public sealed class GraveyardAutoDeleteCoordinator(
     ILogger<GraveyardAutoDeleteCoordinator> logger,
     TimeProvider timeProvider)
 {
+    public async Task<GraveyardDeletionApprovalResult> ApproveDeleteAsync(
+        string workerId,
+        string? requestedBy,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(workerId))
+        {
+            return new GraveyardDeletionApprovalResult(false, "Worker ID is required.", null);
+        }
+
+        var snapshot = await deletionQueueService.GetSnapshotAsync(cancellationToken);
+        var item = snapshot.Pending.FirstOrDefault(candidate =>
+            string.Equals(candidate.WorkerId, workerId, StringComparison.OrdinalIgnoreCase));
+        if (item is null)
+        {
+            var heldItem = snapshot.Held.FirstOrDefault(candidate =>
+                string.Equals(candidate.WorkerId, workerId, StringComparison.OrdinalIgnoreCase));
+            return heldItem is null
+                ? new GraveyardDeletionApprovalResult(false, $"Worker {workerId} is not in the deletion queue.", null)
+                : new GraveyardDeletionApprovalResult(false, $"Worker {workerId} is on hold. Remove the hold before approving deletion.", null);
+        }
+
+        if (!item.IsEligibleForDeletion)
+        {
+            return new GraveyardDeletionApprovalResult(false, $"Worker {workerId} is not due for deletion yet.", null);
+        }
+
+        var actor = string.IsNullOrWhiteSpace(requestedBy) ? "Admin" : requestedBy;
+        var runId = $"graveyard-delete-approval-{timeProvider.GetUtcNow():yyyyMMddHHmmssfff}";
+        using var logScope = RunLoggingScope.Begin(logger, runId, mode: "GraveyardDeleteApproval");
+        var startedAt = timeProvider.GetUtcNow();
+        var tally = new RunTally(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+
+        await runLifecycleService.StartRunAsync(
+            runId,
+            mode: "GraveyardDeleteApproval",
+            dryRun: false,
+            runTrigger: "AdminApproval",
+            requestedBy: actor,
+            totalWorkers: 1,
+            initialAction: $"Approving graveyard deletion for worker {item.WorkerId}.",
+            cancellationToken);
+
+        try
+        {
+            var result = await DeleteUserAsync(item, deletionCount: 0, cancellationToken);
+            tally = AddToTally(tally, result.Bucket);
+
+            await runLifecycleService.AppendRunEntryAsync(
+                runId,
+                new RunEntryRecord(
+                    EntryId: $"{runId}:{result.Bucket}:{item.WorkerId}:0",
+                    RunId: runId,
+                    Bucket: result.Bucket,
+                    BucketIndex: 0,
+                    WorkerId: item.WorkerId,
+                    SamAccountName: item.SamAccountName,
+                    Reason: result.Reason,
+                    ReviewCategory: result.ReviewCategory,
+                    ReviewCaseType: result.ReviewCaseType,
+                    StartedAt: startedAt,
+                    Item: result.Item),
+                cancellationToken);
+
+            await runLifecycleService.RecordProgressAsync(
+                runId,
+                mode: "GraveyardDeleteApproval",
+                dryRun: false,
+                processedWorkers: 1,
+                totalWorkers: 1,
+                currentWorkerId: item.WorkerId,
+                lastAction: result.Reason ?? result.Action ?? result.Bucket,
+                tally: tally,
+                cancellationToken);
+
+            var report = BuildReport(
+                runId,
+                startedAt,
+                totalWorkers: 1,
+                tally,
+                kind: "graveyardDeleteApproval",
+                syncScope: "Graveyard delete approval",
+                mode: "GraveyardDeleteApproval",
+                runTrigger: "AdminApproval",
+                requestedBy: actor);
+
+            if (string.Equals(result.Bucket, "guardrailFailures", StringComparison.OrdinalIgnoreCase))
+            {
+                await runLifecycleService.FailRunAsync(
+                    runId,
+                    mode: "GraveyardDeleteApproval",
+                    dryRun: false,
+                    processedWorkers: 1,
+                    totalWorkers: 1,
+                    currentWorkerId: item.WorkerId,
+                    errorMessage: result.Reason ?? "Deletion guardrail exceeded.",
+                    tally: tally,
+                    report: report,
+                    startedAt: startedAt,
+                    cancellationToken);
+                return new GraveyardDeletionApprovalResult(false, result.Reason ?? "Deletion guardrail exceeded.", runId);
+            }
+
+            await runLifecycleService.CompleteRunAsync(
+                runId,
+                mode: "GraveyardDeleteApproval",
+                dryRun: false,
+                totalWorkers: 1,
+                tally: tally,
+                report: report,
+                startedAt: startedAt,
+                cancellationToken);
+
+            return string.Equals(result.Bucket, "deletions", StringComparison.OrdinalIgnoreCase)
+                ? new GraveyardDeletionApprovalResult(true, result.Reason ?? $"Deleted AD user {item.SamAccountName ?? item.WorkerId}.", runId)
+                : new GraveyardDeletionApprovalResult(false, result.Reason ?? $"Could not delete worker {item.WorkerId}.", runId);
+        }
+        catch (Exception ex)
+        {
+            await runLifecycleService.FailRunAsync(
+                runId,
+                mode: "GraveyardDeleteApproval",
+                dryRun: false,
+                processedWorkers: 0,
+                totalWorkers: 1,
+                currentWorkerId: item.WorkerId,
+                errorMessage: ex.Message,
+                tally: tally,
+                report: BuildReport(
+                    runId,
+                    startedAt,
+                    totalWorkers: 1,
+                    tally,
+                    kind: "graveyardDeleteApproval",
+                    syncScope: "Graveyard delete approval",
+                    mode: "GraveyardDeleteApproval",
+                    runTrigger: "AdminApproval",
+                    requestedBy: actor),
+                startedAt: startedAt,
+                cancellationToken);
+            return new GraveyardDeletionApprovalResult(false, ex.Message, runId);
+        }
+    }
+
     public async Task<string?> TryExecuteAsync(CancellationToken cancellationToken)
     {
         if (!settings.AutoDeleteEnabled)
@@ -104,7 +248,16 @@ public sealed class GraveyardAutoDeleteCoordinator(
                 dryRun: false,
                 totalWorkers: dueItems.Length,
                 tally: tally,
-                report: BuildReport(runId, startedAt, dueItems.Length, tally),
+                report: BuildReport(
+                    runId,
+                    startedAt,
+                    dueItems.Length,
+                    tally,
+                    kind: "graveyardAutoDelete",
+                    syncScope: "Graveyard auto delete",
+                    mode: "GraveyardAutoDelete",
+                    runTrigger: "GraveyardAutoDelete",
+                    requestedBy: "SyncFactors.Worker"),
                 startedAt: startedAt,
                 cancellationToken);
 
@@ -121,7 +274,16 @@ public sealed class GraveyardAutoDeleteCoordinator(
                 currentWorkerId: null,
                 errorMessage: ex.Message,
                 tally: tally,
-                report: BuildReport(runId, startedAt, dueItems.Length, tally),
+                report: BuildReport(
+                    runId,
+                    startedAt,
+                    dueItems.Length,
+                    tally,
+                    kind: "graveyardAutoDelete",
+                    syncScope: "Graveyard auto delete",
+                    mode: "GraveyardAutoDelete",
+                    runTrigger: "GraveyardAutoDelete",
+                    requestedBy: "SyncFactors.Worker"),
                 startedAt: startedAt,
                 cancellationToken);
             throw;
@@ -137,7 +299,16 @@ public sealed class GraveyardAutoDeleteCoordinator(
                 currentWorkerId: null,
                 errorMessage: ex.Message,
                 tally: tally,
-                report: BuildReport(runId, startedAt, dueItems.Length, tally),
+                report: BuildReport(
+                    runId,
+                    startedAt,
+                    dueItems.Length,
+                    tally,
+                    kind: "graveyardAutoDelete",
+                    syncScope: "Graveyard auto delete",
+                    mode: "GraveyardAutoDelete",
+                    runTrigger: "GraveyardAutoDelete",
+                    requestedBy: "SyncFactors.Worker"),
                 startedAt: startedAt,
                 cancellationToken);
             throw;
@@ -301,17 +472,26 @@ public sealed class GraveyardAutoDeleteCoordinator(
             """);
     }
 
-    private static JsonElement BuildReport(string runId, DateTimeOffset startedAt, int totalWorkers, RunTally tally)
+    private static JsonElement BuildReport(
+        string runId,
+        DateTimeOffset startedAt,
+        int totalWorkers,
+        RunTally tally,
+        string kind,
+        string syncScope,
+        string mode,
+        string runTrigger,
+        string requestedBy)
     {
         return ParseJson(
             $$"""
             {
-              "kind": "graveyardAutoDelete",
-              "syncScope": "Graveyard auto delete",
+              "kind": "{{Escape(kind)}}",
+              "syncScope": "{{Escape(syncScope)}}",
               "runId": "{{runId}}",
-              "mode": "GraveyardAutoDelete",
-              "runTrigger": "GraveyardAutoDelete",
-              "requestedBy": "SyncFactors.Worker",
+              "mode": "{{Escape(mode)}}",
+              "runTrigger": "{{Escape(runTrigger)}}",
+              "requestedBy": "{{Escape(requestedBy)}}",
               "dryRun": false,
               "startedAt": "{{startedAt:O}}",
               "totalWorkers": {{totalWorkers}},
@@ -355,3 +535,8 @@ public sealed class GraveyardAutoDeleteCoordinator(
         IReadOnlyList<DiffRow> DiffRows,
         JsonElement Item);
 }
+
+public sealed record GraveyardDeletionApprovalResult(
+    bool Succeeded,
+    string Message,
+    string? RunId);
