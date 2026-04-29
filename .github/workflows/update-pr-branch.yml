@@ -1,0 +1,100 @@
+name: Update PR Branch
+
+on:
+  push:
+    branches:
+      - main
+  pull_request_target:
+    types:
+      - opened
+      - reopened
+      - synchronize
+      - ready_for_review
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: update-pr-branch-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  update-current-pr:
+    name: Update current PR branch from main
+    if: github.event_name == 'pull_request_target' && github.event.pull_request.base.ref == 'main' && github.event.pull_request.state == 'open' && github.event.pull_request.head.repo.fork == false && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check whether the branch contains main
+        id: branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          base_sha="$(gh api "repos/${REPO}/git/ref/heads/${BASE_REF}" --jq '.object.sha')"
+          head_sha="${HEAD_SHA}"
+          compare_status="$(gh api "repos/${REPO}/compare/${base_sha}...${head_sha}" --jq '.status')"
+
+          echo "base_sha=${base_sha}" >> "$GITHUB_OUTPUT"
+          echo "head_sha=${head_sha}" >> "$GITHUB_OUTPUT"
+          echo "compare_status=${compare_status}" >> "$GITHUB_OUTPUT"
+
+          if [[ "$compare_status" == "behind" || "$compare_status" == "diverged" ]]; then
+            echo "needs_update=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "needs_update=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Update branch
+        if: steps.branch.outputs.needs_update == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ steps.branch.outputs.head_sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          gh api \
+            --method PUT \
+            "repos/${REPO}/pulls/${PR_NUMBER}/update-branch" \
+            -f expected_head_sha="${HEAD_SHA}"
+
+  update-open-prs:
+    name: Update open PR branches from main
+    if: github.event_name != 'pull_request_target'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Update stale PR branches
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE_REF: main
+          REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          base_sha="$(gh api "repos/${REPO}/git/ref/heads/${BASE_REF}" --jq '.object.sha')"
+
+          gh api --paginate "repos/${REPO}/pulls?state=open&base=${BASE_REF}&per_page=100" \
+            --jq '.[] | select(.head.repo.fork == false and .head.repo.full_name == .base.repo.full_name) | @base64' |
+          while IFS= read -r encoded_pr; do
+            pr_json="$(printf '%s' "$encoded_pr" | base64 --decode)"
+            pr_number="$(jq -r '.number' <<< "$pr_json")"
+            head_sha="$(jq -r '.head.sha' <<< "$pr_json")"
+            compare_status="$(gh api "repos/${REPO}/compare/${base_sha}...${head_sha}" --jq '.status')"
+
+            if [[ "$compare_status" == "behind" || "$compare_status" == "diverged" ]]; then
+              gh api \
+                --method PUT \
+                "repos/${REPO}/pulls/${pr_number}/update-branch" \
+                -f expected_head_sha="${head_sha}"
+            fi
+          done
