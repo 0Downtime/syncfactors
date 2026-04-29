@@ -946,6 +946,114 @@ public sealed class SuccessFactorsWorkerSourceIntegrationTests
     }
 
     [Fact]
+    public async Task WorkerSource_GetWorkerAsync_UsesTargetedPreviewBridge_BeforeFullPreviewLookup()
+    {
+        var handler = new TargetedPreviewBridgeHttpHandler();
+        using var client = new HttpClient(handler)
+        {
+            BaseAddress = new Uri("http://mock-successfactors.local")
+        };
+
+        var tempDirectory = Path.Combine(Path.GetTempPath(), "syncfactors-worker-source", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDirectory);
+
+        var syncConfigPath = Path.Combine(tempDirectory, "sync-config.json");
+        var mappingConfigPath = Path.Combine(tempDirectory, "mapping-config.json");
+        var scaffoldDataPath = Path.Combine(tempDirectory, "scaffold-data.json");
+
+        await File.WriteAllTextAsync(syncConfigPath, """
+        {
+          "secrets": {
+            "adServerEnv": null,
+            "adUsernameEnv": null,
+            "adBindPasswordEnv": null,
+            "successFactorsClientIdEnv": null,
+            "successFactorsClientSecretEnv": null
+          },
+          "successFactors": {
+            "baseUrl": "http://mock-successfactors.local/odata/v2",
+            "auth": {
+              "mode": "oauth",
+              "oauth": {
+                "tokenUrl": "http://mock-successfactors.local/oauth/token",
+                "clientId": "mock-client-id",
+                "clientSecret": "mock-client-secret",
+                "companyId": "MOCK"
+              }
+            },
+            "query": {
+              "entitySet": "EmpJob",
+              "identityField": "userId",
+              "deltaField": "lastModifiedDateTime",
+              "select": [
+                "userId",
+                "jobTitle",
+                "company",
+                "department",
+                "location",
+                "startDate"
+              ],
+              "expand": []
+            },
+            "previewQuery": {
+              "entitySet": "PerPerson",
+              "identityField": "personIdExternal",
+              "deltaField": "lastModifiedDateTime",
+              "pageSize": 2,
+              "select": [
+                "personIdExternal",
+                "personalInfoNav/firstName",
+                "personalInfoNav/lastName",
+                "employmentNav/userId"
+              ],
+              "expand": [
+                "employmentNav",
+                "personalInfoNav"
+              ]
+            }
+          },
+          "ad": {
+            "server": "ldap.example.test",
+            "username": "",
+            "bindPassword": "",
+            "identityAttribute": "employeeID",
+            "defaultActiveOu": "OU=LabUsers,DC=example,DC=com",
+            "prehireOu": "OU=Prehire,DC=example,DC=com",
+            "graveyardOu": "OU=LabGraveyard,DC=example,DC=com"
+          },
+          "sync": {
+            "enableBeforeStartDays": 7,
+            "deletionRetentionDays": 90
+          },
+          "safety": {
+            "maxCreatesPerRun": 10,
+            "maxDisablesPerRun": 10,
+            "maxDeletionsPerRun": 10
+          },
+          "reporting": {
+            "outputDirectory": "reports"
+          }
+        }
+        """);
+        await File.WriteAllTextAsync(mappingConfigPath, """{"mappings":[{"source":"personIdExternal","target":"employeeID","enabled":true,"required":true,"transform":"copy"}]}""");
+        await File.WriteAllTextAsync(scaffoldDataPath, """{"workers":[],"directoryUsers":[]}""");
+
+        var configLoader = new SyncFactorsConfigurationLoader(new SyncFactorsConfigPathResolver(syncConfigPath, mappingConfigPath));
+        var scaffoldStore = new ScaffoldDataStore(new ScaffoldDataPathResolver(scaffoldDataPath));
+        var fallbackSource = new ScaffoldWorkerSource(scaffoldStore);
+        var workerSource = new SuccessFactorsWorkerSource(client, configLoader, new DisabledDeltaSyncService(), fallbackSource, NullLogger<SuccessFactorsWorkerSource>.Instance);
+
+        var worker = await workerSource.GetWorkerAsync("u10001", CancellationToken.None);
+
+        Assert.NotNull(worker);
+        Assert.Equal("u10001", worker!.WorkerId);
+        Assert.Equal("p10001", worker.Attributes["personIdExternal"]);
+        Assert.Equal("u10001", worker.Attributes["userId"]);
+        Assert.Equal("Pat", worker.PreferredName);
+        Assert.False(handler.SawFullPreviewLookup);
+    }
+
+    [Fact]
     public async Task WorkerSource_CanResolveWorker_FromExportStylePayload()
     {
         using var client = new HttpClient(new ExportStyleSuccessFactorsHttpHandler())
@@ -2650,6 +2758,105 @@ public sealed class SuccessFactorsWorkerSourceIntegrationTests
                       }
                     }
                     """));
+            }
+
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound));
+        }
+
+        private static HttpResponseMessage JsonResponse(string json)
+        {
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(json, Encoding.UTF8, "application/json")
+            };
+        }
+    }
+
+    private sealed class TargetedPreviewBridgeHttpHandler : HttpMessageHandler
+    {
+        public bool SawFullPreviewLookup { get; private set; }
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            _ = cancellationToken;
+
+            if (request.RequestUri!.AbsolutePath.Equals("/oauth/token", StringComparison.OrdinalIgnoreCase))
+            {
+                var tokenJson = JsonSerializer.Serialize(new TokenResponse("mock-access-token", "Bearer", 3600));
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(tokenJson, Encoding.UTF8, "application/json")
+                });
+            }
+
+            var query = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(request.RequestUri.Query);
+            var filter = query.TryGetValue("$filter", out var filterValue) ? filterValue.ToString() : string.Empty;
+
+            if (request.RequestUri.AbsolutePath.Equals("/odata/v2/EmpJob", StringComparison.OrdinalIgnoreCase) &&
+                filter.Contains("userId eq 'u10001'", StringComparison.Ordinal))
+            {
+                return Task.FromResult(JsonResponse(
+                    """
+                    {
+                      "d": {
+                        "results": [
+                          {
+                            "userId": "u10001",
+                            "jobTitle": "Engineer",
+                            "company": "CORP",
+                            "department": "IT",
+                            "location": "HQ North",
+                            "startDate": "2026-03-10T00:00:00Z"
+                          }
+                        ]
+                      }
+                    }
+                    """));
+            }
+
+            if (request.RequestUri.AbsolutePath.Equals("/odata/v2/PerPerson", StringComparison.OrdinalIgnoreCase) &&
+                filter.Contains("personIdExternal eq 'u10001'", StringComparison.Ordinal))
+            {
+                return Task.FromResult(JsonResponse("""{"d":{"results":[]}}"""));
+            }
+
+            if (request.RequestUri.AbsolutePath.Equals("/odata/v2/PerPerson", StringComparison.OrdinalIgnoreCase) &&
+                filter.Contains("employmentNav/userId eq 'u10001'", StringComparison.Ordinal))
+            {
+                return Task.FromResult(JsonResponse(
+                    """
+                    {
+                      "d": {
+                        "results": [
+                          {
+                            "personIdExternal": "p10001",
+                            "personalInfoNav": {
+                              "results": [
+                                {
+                                  "firstName": "Pat",
+                                  "lastName": "Morgan"
+                                }
+                              ]
+                            },
+                            "employmentNav": {
+                              "results": [
+                                {
+                                  "userId": "u10001"
+                                }
+                              ]
+                            }
+                          }
+                        ]
+                      }
+                    }
+                    """));
+            }
+
+            if (request.RequestUri.AbsolutePath.Equals("/odata/v2/PerPerson", StringComparison.OrdinalIgnoreCase) &&
+                string.IsNullOrWhiteSpace(filter))
+            {
+                SawFullPreviewLookup = true;
+                return Task.FromResult(JsonResponse("""{"d":{"results":[]}}"""));
             }
 
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound));

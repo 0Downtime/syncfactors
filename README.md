@@ -130,6 +130,40 @@ pwsh ./scripts/Validate-SyncFactors.ps1
 
 That command builds the solution, runs the solution test suite, and then runs the lifecycle simulation master suite as an explicit final gate.
 
+## Windows Release Bundle
+
+The release workflow publishes a self-contained Windows x64 deployment zip to GitHub Releases. The asset is named like `syncfactors-<version>-win-x64.zip` and includes the API, worker, sample config, docs, and scripts.
+
+After extracting the zip on a Windows host, start the applications from the bundle root:
+
+```powershell
+.\app\api\SyncFactors.Api.exe
+.\app\worker\SyncFactors.Worker.exe
+```
+
+The bundle is self-contained, so the target Windows host does not need a separate .NET runtime install.
+
+To install the API and worker as Windows Services, run an elevated PowerShell session from the extracted bundle root:
+
+```powershell
+pwsh .\scripts\Install-SyncFactorsWindowsServices.ps1 `
+  -RunProfile real `
+  -ApiUrls https://127.0.0.1:5087
+
+Start-Service SyncFactors.Api
+Start-Service SyncFactors.Worker
+```
+
+The installer creates `SyncFactors.Api` and `SyncFactors.Worker`, registers matching Windows Event Log sources under the Application log, configures restart-on-failure recovery, and writes service environment values for the selected profile, config paths, SQLite path, and local file logging. It also creates local config files from the bundled samples when they are missing. To replace existing service definitions, rerun with `-Force`.
+
+Uninstall the services from an elevated session:
+
+```powershell
+pwsh .\scripts\Uninstall-SyncFactorsWindowsServices.ps1
+```
+
+Use `Event Viewer > Windows Logs > Application` with sources `SyncFactors.Api` and `SyncFactors.Worker` for service startup, shutdown, warning, and error events. Local rolling logs are also enabled by default under `state\logs` inside the bundle root.
+
 To validate a sanitized SuccessFactors export or fixture-style worker document against the expected source contract:
 
 ```powershell

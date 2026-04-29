@@ -5,7 +5,7 @@ namespace SyncFactors.Infrastructure;
 
 public sealed class SqliteDatabaseInitializer(SqlitePathResolver pathResolver)
 {
-    private const int CurrentSchemaVersion = 12;
+    private const int CurrentSchemaVersion = 13;
 
     public async Task InitializeAsync(CancellationToken cancellationToken)
     {
@@ -110,6 +110,12 @@ public sealed class SqliteDatabaseInitializer(SqlitePathResolver pathResolver)
         {
             await ApplyVersion12Async(connection, transaction, cancellationToken);
             await InsertVersionAsync(connection, transaction, 12, cancellationToken);
+        }
+
+        if (!appliedVersions.Contains(13))
+        {
+            await ApplyVersion13Async(connection, transaction, cancellationToken);
+            await InsertVersionAsync(connection, transaction, 13, cancellationToken);
         }
 
         await transaction.CommitAsync(cancellationToken);
@@ -433,6 +439,31 @@ public sealed class SqliteDatabaseInitializer(SqlitePathResolver pathResolver)
         }
     }
 
+    private static async Task ApplyVersion13Async(
+        SqliteConnection connection,
+        DbTransaction transaction,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = (SqliteTransaction)transaction;
+        command.CommandText =
+            """
+            CREATE TABLE IF NOT EXISTS oidc_accounts (
+              subject TEXT NOT NULL PRIMARY KEY,
+              username TEXT NOT NULL,
+              display_name TEXT NULL,
+              access_level TEXT NOT NULL,
+              groups_json TEXT NOT NULL,
+              first_seen_at TEXT NOT NULL,
+              last_login_at TEXT NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_oidc_accounts_access_level
+              ON oidc_accounts (access_level);
+            """;
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
     private static async Task ApplyVersion4Async(
         SqliteConnection connection,
         DbTransaction transaction,
@@ -635,6 +666,7 @@ public sealed class SqliteDatabaseInitializer(SqlitePathResolver pathResolver)
             "sync_schedule" => "PRAGMA table_info(sync_schedule);",
             "worker_heartbeat" => "PRAGMA table_info(worker_heartbeat);",
             "local_users" => "PRAGMA table_info(local_users);",
+            "oidc_accounts" => "PRAGMA table_info(oidc_accounts);",
             "graveyard_retention" => "PRAGMA table_info(graveyard_retention);",
             _ => throw new InvalidOperationException($"Unsupported table name '{tableName}' for schema inspection.")
         };

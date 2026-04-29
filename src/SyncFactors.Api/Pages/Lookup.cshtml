@@ -1,0 +1,145 @@
+@page
+@model SyncFactors.Api.Pages.LookupModel
+@{
+    ViewData["Title"] = "OData Lookup";
+    var result = Model.Result;
+}
+
+<section class="hero hero-compact">
+    <div>
+        <p class="eyebrow">SuccessFactors OData</p>
+        <h1>User Lookup</h1>
+        <p class="lede">Look up a SuccessFactors user by employee ID or person ID external without queueing or previewing a sync workflow.</p>
+    </div>
+</section>
+
+<section class="panel">
+    <form method="get" class="filters preview-form lookup-form">
+        <label class="filter-search">
+            <span>Employee ID or Person ID External</span>
+            <input type="text" name="lookupValue" value="@Model.LookupValue" placeholder="1000123" autocomplete="off" />
+        </label>
+        <div class="filter-actions">
+            <button type="submit">
+                <span class="button-label">Look Up User</span>
+                <span class="button-spinner" aria-hidden="true"></span>
+            </button>
+        </div>
+    </form>
+</section>
+
+@if (!string.IsNullOrWhiteSpace(Model.ErrorMessage))
+{
+    <section class="panel">
+        <p class="callout danger">@Model.ErrorMessage</p>
+    </section>
+}
+
+@if (result is not null)
+{
+    var successfulEntities = result.EntityResults.Count(entity => entity.IsSuccess);
+    var totalItems = result.EntityResults.Sum(entity => entity.ItemCount);
+
+    <section class="preview-inspector-grid lookup-summary-grid">
+        <article class="preview-inspector-card" data-tone="@(result.HasMatches ? "good" : "warn")">
+            <div class="preview-inspector-head">
+                <div>
+                    <p class="eyebrow">Lookup Result</p>
+                    <h2>@result.LookupValue</h2>
+                </div>
+                <span class="badge @(result.HasMatches ? "good" : "warn")">@(result.HasMatches ? "Matched" : "No Match")</span>
+            </div>
+            <div class="metric-strip">
+                <span class="metric-pill"><strong>@totalItems</strong> OData records</span>
+                <span class="metric-pill"><strong>@successfulEntities / @result.EntityResults.Count</strong> entity calls</span>
+                <span class="metric-pill"><strong>@result.Attributes.Count</strong> scalar attributes</span>
+            </div>
+            <p class="muted">Retrieved @SyncFactors.Api.UiDateTimeFormatter.FormatDateTime(result.RetrievedAt).</p>
+        </article>
+
+        <aside class="preview-inspector-card" data-tone="info">
+            <div class="preview-inspector-head">
+                <div>
+                    <p class="eyebrow">Scope</p>
+                    <h2>Raw OData</h2>
+                </div>
+                <span class="badge info">Read only</span>
+            </div>
+            <p class="muted">This lookup calls SuccessFactors directly and does not use the sync mapping, preview planner, run queue, or scaffold fallback.</p>
+        </aside>
+    </section>
+
+    @if (!result.HasMatches)
+    {
+        <section class="panel">
+            <p class="callout warn">No SuccessFactors OData records matched this lookup value.</p>
+        </section>
+    }
+
+    @if (result.Attributes.Count > 0)
+    {
+        <section class="panel">
+            <div class="section-heading">
+                <div>
+                    <p class="eyebrow">Flattened Attributes</p>
+                    <h2>OData Attribute Values</h2>
+                </div>
+            </div>
+            <div class="table-scroll lookup-attribute-scroll">
+                <table class="data-table compact lookup-attribute-table">
+                    <thead>
+                        <tr>
+                            <th>Entity</th>
+                            <th>Path</th>
+                            <th>Value</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    @foreach (var row in result.Attributes)
+                    {
+                        <tr>
+                            <td>@row.EntitySet</td>
+                            <td><code>@row.Path</code></td>
+                            <td><span class="source-value">@row.Value</span></td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    }
+
+    <section class="panel">
+        <div class="section-heading">
+            <div>
+                <p class="eyebrow">Raw Payloads</p>
+                <h2>OData Responses</h2>
+            </div>
+        </div>
+        <div class="lookup-entity-stack">
+        @foreach (var entity in result.EntityResults)
+        {
+            <details class="lookup-entity-card" @(entity.IsSuccess && entity.ItemCount > 0 ? "open" : null)>
+                <summary>
+                    <span>@entity.EntitySet</span>
+                    <span class="badge @(entity.IsSuccess ? entity.ItemCount > 0 ? "good" : "dim" : "warn")">
+                        @(entity.IsSuccess ? $"{entity.ItemCount} records" : $"HTTP {(int?)entity.StatusCode}")
+                    </span>
+                </summary>
+                <dl class="kv preview-meta">
+                    <div><dt>Filter</dt><dd><code>@entity.Filter</code></dd></div>
+                    <div><dt>Request</dt><dd><code>@entity.RequestUri</code></dd></div>
+                    @if (!string.IsNullOrWhiteSpace(entity.Error))
+                    {
+                        <div><dt>Note</dt><dd>@entity.Error</dd></div>
+                    }
+                </dl>
+                @if (!string.IsNullOrWhiteSpace(entity.Json))
+                {
+                    <pre class="lookup-json"><code>@entity.Json</code></pre>
+                }
+            </details>
+        }
+        </div>
+    </section>
+}

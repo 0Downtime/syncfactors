@@ -16,6 +16,7 @@ using System.Text.Json;
 const string ViewerPolicy = "Viewer";
 const string OperatorPolicy = "Operator";
 const string AdminPolicy = "Admin";
+const string WindowsServiceName = "SyncFactors.Api";
 
 var launcherProbeAction = LauncherProbe.GetRequestedAction(args);
 if (!string.IsNullOrWhiteSpace(launcherProbeAction))
@@ -38,6 +39,7 @@ if (!string.IsNullOrWhiteSpace(launcherProbeAction))
 }
 
 var builder = WebApplication.CreateBuilder(args);
+ConfigureWindowsService(builder.Services, WindowsServiceName);
 ConfigureLocalFileLogging(
     builder.Logging,
     processName: "api",
@@ -77,6 +79,7 @@ builder.Services.AddSingleton<IEmailAddressPolicy, ConfiguredEmailAddressPolicy>
 builder.Services.AddSingleton<ISecurityAuditService, SecurityAuditService>();
 builder.Services.AddSingleton<ILocalUserStore, SqliteLocalUserStore>();
 builder.Services.AddSingleton<ILocalAuthService, LocalAuthService>();
+builder.Services.AddSingleton<IOidcAccountStore, SqliteOidcAccountStore>();
 builder.Services.AddSingleton<Microsoft.AspNetCore.Identity.IPasswordHasher<LocalUserRecord>, Microsoft.AspNetCore.Identity.PasswordHasher<LocalUserRecord>>();
 builder.Services.AddSingleton<ScaffoldDataStore>();
 builder.Services.AddSingleton<ScaffoldWorkerSource>();
@@ -131,6 +134,11 @@ builder.Services.AddHttpClient<SuccessFactorsWorkerSource>()
     {
         AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate
     });
+builder.Services.AddHttpClient<SuccessFactorsUserLookupService>()
+    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+    {
+        AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate
+    });
 builder.Services.AddHttpClient<IDependencyHealthService, DependencyHealthService>()
     .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
     {
@@ -138,9 +146,21 @@ builder.Services.AddHttpClient<IDependencyHealthService, DependencyHealthService
     });
 builder.Services.AddTransient<IWorkerSource>(serviceProvider => serviceProvider.GetRequiredService<SuccessFactorsWorkerSource>());
 builder.Services.AddTransient<ActiveDirectoryGateway>();
-builder.Services.AddTransient<IDirectoryGateway>(serviceProvider => serviceProvider.GetRequiredService<ActiveDirectoryGateway>());
+builder.Services.AddTransient<IDirectoryGateway>(serviceProvider =>
+{
+    var config = serviceProvider.GetRequiredService<SyncFactorsConfigurationLoader>().GetSyncConfig();
+    return DirectoryServiceRuntimeSelector.UseScaffoldDirectoryServices(config, builder.Configuration["SYNCFACTORS_RUN_PROFILE"])
+        ? serviceProvider.GetRequiredService<ScaffoldDirectoryGateway>()
+        : serviceProvider.GetRequiredService<ActiveDirectoryGateway>();
+});
 builder.Services.AddTransient<ActiveDirectoryCommandGateway>();
-builder.Services.AddTransient<IDirectoryCommandGateway>(serviceProvider => serviceProvider.GetRequiredService<ActiveDirectoryCommandGateway>());
+builder.Services.AddTransient<IDirectoryCommandGateway>(serviceProvider =>
+{
+    var config = serviceProvider.GetRequiredService<SyncFactorsConfigurationLoader>().GetSyncConfig();
+    return DirectoryServiceRuntimeSelector.UseScaffoldDirectoryServices(config, builder.Configuration["SYNCFACTORS_RUN_PROFILE"])
+        ? serviceProvider.GetRequiredService<ScaffoldDirectoryCommandGateway>()
+        : serviceProvider.GetRequiredService<ActiveDirectoryCommandGateway>();
+});
 builder.Services.AddSingleton<IAttributeMappingProvider, AttributeMappingProvider>();
 builder.Services.AddSingleton<IIdentityMatcher, IdentityMatcher>();
 builder.Services.AddSingleton<ILifecyclePolicy, LifecyclePolicy>();
@@ -157,6 +177,7 @@ builder.Services.AddSingleton<SqliteGraveyardRetentionStore>();
 builder.Services.AddSingleton<IGraveyardRetentionStore>(serviceProvider => serviceProvider.GetRequiredService<SqliteGraveyardRetentionStore>());
 builder.Services.AddSingleton<IRunLifecycleService, RunLifecycleService>();
 builder.Services.AddTransient<RunEntriesQueryService>();
+builder.Services.AddTransient<ExceptionQueueQueryService>();
 builder.Services.AddTransient<GraveyardDeletionQueueService>();
 builder.Services.AddTransient<GraveyardAutoDeleteCoordinator>();
 builder.Services.AddSingleton<IRunQueueStore, SqliteRunQueueStore>();
@@ -229,14 +250,17 @@ if (oidcEnabled)
         options.TokenValidationParameters.NameClaimType = authSettings.Oidc.DisplayNameClaimType;
         options.Events = new OpenIdConnectEvents
         {
-            OnTokenValidated = context =>
+            OnTokenValidated = async context =>
             {
                 if (context.Principal?.Identity is ClaimsIdentity identity)
                 {
                     ApplyOidcIdentity(identity, authSettings);
+                    var accountStore = context.HttpContext.RequestServices.GetRequiredService<IOidcAccountStore>();
+                    var timeProvider = context.HttpContext.RequestServices.GetRequiredService<TimeProvider>();
+                    await accountStore.UpsertAsync(
+                        BuildOidcAccountRecord(identity, authSettings, timeProvider.GetUtcNow()),
+                        context.HttpContext.RequestAborted);
                 }
-
-                return Task.CompletedTask;
             },
             OnRedirectToIdentityProviderForSignOut = context =>
             {
@@ -273,6 +297,7 @@ builder.Services.AddRazorPages(options =>
     options.Conventions.AuthorizeFolder("/", ViewerPolicy);
     options.Conventions.AuthorizePage("/Sync", OperatorPolicy);
     options.Conventions.AuthorizePage("/Preview", OperatorPolicy);
+    options.Conventions.AuthorizePage("/Lookup", OperatorPolicy);
     options.Conventions.AuthorizeFolder("/Admin", AdminPolicy);
     options.Conventions.AllowAnonymousToPage("/AccessDenied");
     options.Conventions.AllowAnonymousToPage("/Login");
@@ -284,6 +309,7 @@ await app.Services.GetRequiredService<SqliteDatabaseInitializer>().InitializeAsy
 await app.Services.GetRequiredService<ILocalAuthService>().EnsureBootstrapAdminAsync(CancellationToken.None);
 app.Services.GetRequiredService<SyncFactorsConfigurationValidator>().Validate();
 ValidateAuthConfiguration(app);
+LogRuntimeVersion(app.Logger, "api", typeof(Program).Assembly);
 LogConfiguredEndpoints(app);
 
 app.UseForwardedHeaders();
@@ -314,6 +340,9 @@ app.UseAuthorization();
 
 var api = app.MapGroup("/api");
 var sessionApi = app.MapGroup("/api/session");
+
+api.MapGet("/version", () => Results.Ok(RuntimeBuildInfo.FromAssembly(typeof(Program).Assembly)))
+    .AllowAnonymous();
 
 sessionApi.MapGet(string.Empty, async (HttpContext httpContext, ILocalAuthService authService, CancellationToken cancellationToken) =>
 {
@@ -828,6 +857,17 @@ static void LogConfiguredEndpoints(WebApplication app)
     }
 }
 
+static void LogRuntimeVersion(Microsoft.Extensions.Logging.ILogger logger, string processName, System.Reflection.Assembly assembly)
+{
+    var buildInfo = RuntimeBuildInfo.FromAssembly(assembly);
+    logger.LogInformation(
+        "SyncFactors {ProcessName} starting. Version={Version} CommitSha={CommitSha} Dirty={Dirty}",
+        processName,
+        buildInfo.Version,
+        buildInfo.CommitSha ?? "unknown",
+        buildInfo.Dirty);
+}
+
 static int ResolveActiveDirectoryPort(ActiveDirectoryConfig config)
 {
     if (config.Port is not null)
@@ -947,6 +987,38 @@ static void ApplyOidcIdentity(ClaimsIdentity identity, LocalAuthOptions authSett
     }
 }
 
+static OidcAccountRecord BuildOidcAccountRecord(
+    ClaimsIdentity identity,
+    LocalAuthOptions authSettings,
+    DateTimeOffset observedAt)
+{
+    var subject = identity.FindFirst(ClaimTypes.NameIdentifier)?.Value
+        ?? identity.FindFirst("sub")?.Value
+        ?? identity.FindFirst(ClaimTypes.Name)?.Value
+        ?? "oidc-user";
+    var username = identity.FindFirst(ClaimTypes.Name)?.Value
+        ?? identity.FindFirst(authSettings.Oidc.UsernameClaimType)?.Value
+        ?? identity.FindFirst(authSettings.Oidc.DisplayNameClaimType)?.Value
+        ?? subject;
+    var displayName = identity.FindFirst(authSettings.Oidc.DisplayNameClaimType)?.Value;
+    var groups = identity.FindAll(authSettings.Oidc.RolesClaimType)
+        .Select(claim => claim.Value)
+        .Where(value => !string.IsNullOrWhiteSpace(value))
+        .Distinct(StringComparer.OrdinalIgnoreCase)
+        .OrderBy(value => value, StringComparer.OrdinalIgnoreCase)
+        .ToArray();
+    var accessLevel = OidcRoleResolver.ResolveAccessLevel(identity.FindAll(ClaimTypes.Role).Select(claim => claim.Value));
+
+    return new OidcAccountRecord(
+        Subject: subject,
+        Username: username,
+        DisplayName: string.Equals(displayName, username, StringComparison.Ordinal) ? null : displayName,
+        AccessLevel: accessLevel,
+        Groups: groups,
+        FirstSeenAt: observedAt,
+        LastLoginAt: observedAt);
+}
+
 static Task HandleAuthRedirectAsync(Microsoft.AspNetCore.Authentication.RedirectContext<CookieAuthenticationOptions> context, int statusCode)
 {
     if (context.Request.Path.StartsWithSegments("/api", StringComparison.OrdinalIgnoreCase))
@@ -1035,6 +1107,31 @@ static void ConfigureLocalFileLogging(
 
     logging.AddSerilog(logger, dispose: true);
     logging.AddProvider(new RunScopedFileLoggerProvider(directoryValue));
+}
+
+static void ConfigureWindowsService(IServiceCollection services, string serviceName)
+{
+    services.AddWindowsService(options =>
+    {
+        options.ServiceName = serviceName;
+    });
+
+    if (OperatingSystem.IsWindows())
+    {
+        ConfigureWindowsEventLog(services, serviceName);
+    }
+}
+
+[System.Runtime.Versioning.SupportedOSPlatform("windows")]
+static void ConfigureWindowsEventLog(IServiceCollection services, string serviceName)
+{
+    services.Configure<Microsoft.Extensions.Logging.EventLog.EventLogSettings>(options =>
+    {
+#pragma warning disable CA1416
+        options.LogName = "Application";
+        options.SourceName = serviceName;
+#pragma warning restore CA1416
+    });
 }
 
 static void ConfigureApplicationInsights(WebApplicationBuilder builder)

@@ -493,12 +493,30 @@ a:focus-visible {
 
 .app-footer {
   display: flex;
+  align-items: center;
   justify-content: center;
   gap: 10px;
   padding: 4px 0 12px;
   color: var(--muted);
   font-size: 0.82rem;
   font-weight: 600;
+}
+
+.version-copy-button {
+  appearance: none;
+  padding: 2px 6px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font: inherit;
+}
+
+.version-copy-button:hover {
+  border-color: var(--line);
+  background: var(--panel-alt);
+  color: var(--ink);
 }
 
 .environment-corner-banner {
@@ -2603,6 +2621,38 @@ a:focus-visible {
   margin-top: 10px;
 }
 
+.oidc-group-table td,
+.oidc-group-table th {
+  vertical-align: top;
+}
+
+.oidc-member-list {
+  display: grid;
+  gap: 8px;
+  min-width: 260px;
+}
+
+.oidc-member {
+  display: grid;
+  grid-template-columns: minmax(160px, 1fr) auto auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.oidc-member strong,
+.oidc-member .muted {
+  display: block;
+}
+
+.role-permission-summary {
+  margin-top: 22px;
+}
+
+.role-permission-summary h3 {
+  margin: 0 0 10px;
+  font-size: 1rem;
+}
+
 .bucket-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
@@ -3089,8 +3139,64 @@ a:focus-visible {
   grid-template-columns: minmax(280px, 480px) auto;
 }
 
+.lookup-form {
+  grid-template-columns: minmax(280px, 560px) auto;
+}
+
 .preview-meta {
   margin-top: 18px;
+}
+
+.lookup-summary-grid {
+  margin-bottom: 18px;
+}
+
+.lookup-attribute-scroll {
+  max-height: 560px;
+}
+
+.lookup-attribute-table td {
+  vertical-align: top;
+}
+
+.lookup-attribute-table code,
+.lookup-entity-card code {
+  overflow-wrap: anywhere;
+}
+
+.lookup-entity-stack {
+  display: grid;
+  gap: 12px;
+}
+
+.lookup-entity-card {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--panel-alt);
+}
+
+.lookup-entity-card summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.lookup-json {
+  max-height: 520px;
+  margin: 14px;
+  padding: 14px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  color: var(--ink);
+  font-size: 0.86rem;
+  line-height: 1.45;
+  white-space: pre;
 }
 
 .preview-inspector-grid,
@@ -3102,6 +3208,43 @@ a:focus-visible {
 .preview-inspector-grid {
   grid-template-columns: minmax(0, 1.45fr) minmax(280px, 0.9fr);
   margin-bottom: 18px;
+}
+
+.exception-summary-grid {
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+}
+
+.exception-summary-card {
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.exception-summary-card:hover {
+  text-decoration: none;
+}
+
+.exception-summary-card.active {
+  border-color: var(--accent);
+  box-shadow: var(--focus);
+}
+
+.exception-summary-card h2 {
+  margin: 0;
+  font-size: 2rem;
+  line-height: 1;
+}
+
+.exception-list {
+  display: grid;
+  gap: 14px;
+}
+
+.exception-card {
+  margin: 0;
+}
+
+.exception-actions {
+  margin-top: 14px;
 }
 
 .failure-inspector-grid {
@@ -3582,6 +3725,10 @@ a:focus-visible {
   }
 
   .preview-form {
+    grid-template-columns: 1fr;
+  }
+
+  .lookup-form {
     grid-template-columns: 1fr;
   }
 

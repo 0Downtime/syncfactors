@@ -62,7 +62,6 @@ public sealed class ApplyPreviewServiceTests
 
         var directoryCommandGateway = new CapturingDirectoryCommandGateway();
         var service = new ApplyPreviewService(
-            new StubWorkerSource(worker),
             new DirectoryMutationCommandBuilder(),
             directoryCommandGateway,
             new StubRunRepository(preview),
@@ -142,7 +141,6 @@ public sealed class ApplyPreviewServiceTests
 
         var runRepository = new CapturingRunRepository(preview);
         var service = new ApplyPreviewService(
-            new StubWorkerSource(worker),
             new DirectoryMutationCommandBuilder(),
             new CapturingDirectoryCommandGateway(),
             runRepository,
@@ -214,7 +212,6 @@ public sealed class ApplyPreviewServiceTests
         var runtimeStatusStore = new CapturingRuntimeStatusStore();
         var runRepository = new CapturingRunRepository(preview);
         var service = new ApplyPreviewService(
-            new StubWorkerSource(worker),
             new DirectoryMutationCommandBuilder(),
             new ThrowingDirectoryCommandGateway(new InvalidOperationException("LDAP bind failed.")),
             runRepository,
@@ -290,7 +287,6 @@ public sealed class ApplyPreviewServiceTests
         var runtimeStatusStore = new CapturingRuntimeStatusStore();
         var runRepository = new CapturingRunRepository(preview);
         var service = new ApplyPreviewService(
-            new StubWorkerSource(worker),
             new DirectoryMutationCommandBuilder(),
             new ThrowingDirectoryCommandGateway(new InvalidOperationException("LDAP bind failed.\nServer said no.")),
             runRepository,
@@ -361,7 +357,6 @@ public sealed class ApplyPreviewServiceTests
             Entries: []);
 
         var service = new ApplyPreviewService(
-            new StubWorkerSource(worker),
             new DirectoryMutationCommandBuilder(),
             new CapturingDirectoryCommandGateway(),
             new StubRunRepository(preview),
@@ -431,7 +426,6 @@ public sealed class ApplyPreviewServiceTests
 
         var directoryCommandGateway = new CapturingDirectoryCommandGateway();
         var service = new ApplyPreviewService(
-            new StubWorkerSource(worker),
             new DirectoryMutationCommandBuilder(),
             directoryCommandGateway,
             new StubRunRepository(preview),
@@ -498,7 +492,6 @@ public sealed class ApplyPreviewServiceTests
             Entries: []);
 
         var service = new ApplyPreviewService(
-            new StubWorkerSource(worker),
             new DirectoryMutationCommandBuilder(),
             new CapturingDirectoryCommandGateway(),
             new StubRunRepository(preview),
@@ -561,7 +554,7 @@ public sealed class ApplyPreviewServiceTests
                 new DiffRow("UserPrincipalName", "resolved email local-part", "(unset)", "preview.email@example.test", true),
                 new DiffRow("mail", "resolved email local-part", "(unset)", "preview.email@example.test", true)
             ],
-            SourceAttributes: [],
+            SourceAttributes: [new SourceAttributeRow("managerId", "10004")],
             UsedSourceAttributes: [],
             UnusedSourceAttributes: [],
             MissingSourceAttributes: [],
@@ -574,7 +567,6 @@ public sealed class ApplyPreviewServiceTests
 
         var directoryCommandGateway = new CapturingDirectoryCommandGateway();
         var service = new ApplyPreviewService(
-            new StubWorkerSource(worker),
             new DirectoryMutationCommandBuilder(),
             directoryCommandGateway,
             new StubRunRepository(preview),
@@ -593,24 +585,6 @@ public sealed class ApplyPreviewServiceTests
         var command = Assert.IsType<DirectoryMutationCommand>(directoryCommandGateway.LastCommand);
         Assert.Equal("10004", command.ManagerId);
         Assert.Null(command.ManagerDistinguishedName);
-    }
-
-    private sealed class StubWorkerSource(WorkerSnapshot worker) : IWorkerSource
-    {
-        public Task<WorkerSnapshot?> GetWorkerAsync(string workerId, CancellationToken cancellationToken)
-        {
-            _ = workerId;
-            _ = cancellationToken;
-            return Task.FromResult<WorkerSnapshot?>(worker);
-        }
-
-        public async IAsyncEnumerable<WorkerSnapshot> ListWorkersAsync(WorkerListingMode mode, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
-        {
-            _ = mode;
-            cancellationToken.ThrowIfCancellationRequested();
-            yield return worker;
-            await Task.Yield();
-        }
     }
 
     private sealed class CapturingDirectoryCommandGateway : IDirectoryCommandGateway

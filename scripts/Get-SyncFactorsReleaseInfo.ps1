@@ -80,12 +80,20 @@ switch ($Channel) {
     }
 }
 
+$assemblyInformationalVersion = if ($resolvedVersion.Contains('+')) {
+    $resolvedVersion
+}
+else {
+    "$resolvedVersion+sha.$shortSha"
+}
+
 [pscustomobject]@{
     channel = $Channel
     baseVersion = $baseVersion
     versionFileValue = $versionFileValue
     commitCount = [int]$commitCount
     version = $resolvedVersion
+    assemblyInformationalVersion = $assemblyInformationalVersion
     tag = "v$resolvedVersion"
     isPrerelease = $isPrerelease
     commitSha = $resolvedCommitSha.ToLowerInvariant()

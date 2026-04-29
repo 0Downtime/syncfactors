@@ -22,7 +22,9 @@
     var isAdmin = User.IsInRole("Admin") || User.IsInRole("BreakGlassAdmin");
     var isDashboardPage = currentPage == "/Index";
     var isSyncPage = currentPage.StartsWith("/Sync", StringComparison.OrdinalIgnoreCase);
+    var isExceptionsPage = currentPage.StartsWith("/Exceptions", StringComparison.OrdinalIgnoreCase);
     var isPreviewPage = currentPage.StartsWith("/Preview", StringComparison.OrdinalIgnoreCase);
+    var isLookupPage = currentPage.StartsWith("/Lookup", StringComparison.OrdinalIgnoreCase);
     var isAdminPage = currentPage.StartsWith("/Admin", StringComparison.OrdinalIgnoreCase);
     var isAdminUsersPage = currentPage.StartsWith("/Admin/Users", StringComparison.OrdinalIgnoreCase);
     var isAdminDeletionQueuePage = currentPage.StartsWith("/Admin/DeletionQueue", StringComparison.OrdinalIgnoreCase);
@@ -53,7 +55,9 @@
                 <nav class="nav">
                     <a class="@(isDashboardPage ? "is-active" : null)" asp-page="/Index">Dashboard</a>
                     <a class="@(isSyncPage ? "is-active" : null)" asp-page="/Sync">Sync</a>
+                    <a class="@(isExceptionsPage ? "is-active" : null)" asp-page="/Exceptions">Exceptions</a>
                     <a class="@(isPreviewPage ? "is-active" : null)" asp-page="/Preview">Manual Provision</a>
+                    <a class="@(isLookupPage ? "is-active" : null)" asp-page="/Lookup">OData Lookup</a>
                     @if (isAdmin)
                     {
                         <details class="nav-menu" data-nav-menu>
@@ -97,7 +101,9 @@
         </main>
         <footer class="app-footer" aria-label="Application version">
             <span>SyncFactors</span>
-            <span>v@(appVersion)</span>
+            <button class="version-copy-button" type="button" data-copy-version="@appVersion" title="Copy version">
+                v@(appVersion)
+            </button>
         </footer>
     </div>
     @if (showDevelopmentBanner)
