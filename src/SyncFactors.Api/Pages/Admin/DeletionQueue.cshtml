@@ -90,10 +90,19 @@
                             </span>
                         </td>
                         <td>
-                            <form method="post" asp-page-handler="PlaceHold" asp-route-filter="@Model.Filter" asp-route-pendingPageNumber="@Model.PendingPageNumber" asp-route-heldPageNumber="@Model.HeldPageNumber">
-                                <input type="hidden" name="workerId" value="@user.WorkerId" />
-                                <button type="submit" class="link-button">Place hold</button>
-                            </form>
+                            <div class="admin-user-actions">
+                                @if (user.IsEligibleForDeletion)
+                                {
+                                    <form method="post" asp-page-handler="ApproveDelete" asp-route-filter="@Model.Filter" asp-route-pendingPageNumber="@Model.PendingPageNumber" asp-route-heldPageNumber="@Model.HeldPageNumber">
+                                        <input type="hidden" name="workerId" value="@user.WorkerId" />
+                                        <button type="submit" class="link-button danger-button">Approve delete</button>
+                                    </form>
+                                }
+                                <form method="post" asp-page-handler="PlaceHold" asp-route-filter="@Model.Filter" asp-route-pendingPageNumber="@Model.PendingPageNumber" asp-route-heldPageNumber="@Model.HeldPageNumber">
+                                    <input type="hidden" name="workerId" value="@user.WorkerId" />
+                                    <button type="submit" class="link-button">Place hold</button>
+                                </form>
+                            </div>
                         </td>
                     </tr>
                 }

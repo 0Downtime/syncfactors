@@ -9,6 +9,7 @@ namespace SyncFactors.Api.Pages.Admin;
 [Authorize(Roles = "Admin,BreakGlassAdmin")]
 public sealed class DeletionQueueModel(
     GraveyardDeletionQueueService deletionQueueService,
+    GraveyardAutoDeleteCoordinator deleteCoordinator,
     IGraveyardRetentionStore retentionStore,
     TimeProvider timeProvider) : PageModel
 {
@@ -91,6 +92,34 @@ public sealed class DeletionQueueModel(
             cancellationToken);
         SuccessMessage = $"Removed the deletion hold for worker {workerId}.";
         ErrorMessage = null;
+        return RedirectToCurrentPage();
+    }
+
+    public async Task<IActionResult> OnPostApproveDeleteAsync(string workerId, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(workerId))
+        {
+            ErrorMessage = "Worker ID is required to approve deletion.";
+            SuccessMessage = null;
+            return RedirectToCurrentPage();
+        }
+
+        var result = await deleteCoordinator.ApproveDeleteAsync(workerId, GetActingUserId(), cancellationToken);
+        if (result.Succeeded)
+        {
+            SuccessMessage = string.IsNullOrWhiteSpace(result.RunId)
+                ? result.Message
+                : $"{result.Message} Run {result.RunId}.";
+            ErrorMessage = null;
+        }
+        else
+        {
+            ErrorMessage = string.IsNullOrWhiteSpace(result.RunId)
+                ? result.Message
+                : $"{result.Message} Run {result.RunId}.";
+            SuccessMessage = null;
+        }
+
         return RedirectToCurrentPage();
     }
 
