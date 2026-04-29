@@ -7,6 +7,7 @@ param(
     [string]$RepoRoot,
     [string]$ApiPublishPath,
     [string]$WorkerPublishPath,
+    [string]$RuntimeIdentifier,
     [string]$CommitSha
 )
 
@@ -30,6 +31,29 @@ $resolvedApiPublishPath = (Resolve-Path -Path $ApiPublishPath).ProviderPath
 $resolvedWorkerPublishPath = (Resolve-Path -Path $WorkerPublishPath).ProviderPath
 if (-not $CommitSha) {
     $CommitSha = (git -C $resolvedRepoRoot rev-parse HEAD).Trim()
+}
+
+function Resolve-ApplicationManifestPath {
+    param(
+        [Parameter(Mandatory)]
+        [string]$PublishPath,
+        [Parameter(Mandatory)]
+        [string]$ApplicationName,
+        [Parameter(Mandatory)]
+        [string]$BundlePath
+    )
+
+    $windowsEntryPoint = Join-Path $PublishPath "$ApplicationName.exe"
+    if (Test-Path -Path $windowsEntryPoint -PathType Leaf) {
+        return "$BundlePath/$ApplicationName.exe"
+    }
+
+    $portableEntryPoint = Join-Path $PublishPath "$ApplicationName.dll"
+    if (Test-Path -Path $portableEntryPoint -PathType Leaf) {
+        return "$BundlePath/$ApplicationName.dll"
+    }
+
+    throw "Could not find an entry point for '$ApplicationName' under '$PublishPath'."
 }
 
 $includedRepoPaths = @(
@@ -82,14 +106,23 @@ try {
     $manifest = [ordered]@{
         name = 'SyncFactors'
         version = $Version
-        commitSha = "$CommitSha".Trim().ToLowerInvariant()
-        createdAtUtc = [DateTimeOffset]::UtcNow.ToString('O')
-        applications = @(
-            [ordered]@{ name = 'SyncFactors.Api'; path = 'app/api/SyncFactors.Api.dll' },
-            [ordered]@{ name = 'SyncFactors.Worker'; path = 'app/worker/SyncFactors.Worker.dll' }
-        )
-        includedPaths = @('app/api', 'app/worker') + $includedRepoPaths
     }
+    if ($RuntimeIdentifier) {
+        $manifest.Add('runtimeIdentifier', $RuntimeIdentifier)
+    }
+    $manifest.Add('commitSha', "$CommitSha".Trim().ToLowerInvariant())
+    $manifest.Add('createdAtUtc', [DateTimeOffset]::UtcNow.ToString('O'))
+    $manifest.Add('applications', @(
+        [ordered]@{
+            name = 'SyncFactors.Api'
+            path = Resolve-ApplicationManifestPath -PublishPath $resolvedApiPublishPath -ApplicationName 'SyncFactors.Api' -BundlePath 'app/api'
+        },
+        [ordered]@{
+            name = 'SyncFactors.Worker'
+            path = Resolve-ApplicationManifestPath -PublishPath $resolvedWorkerPublishPath -ApplicationName 'SyncFactors.Worker' -BundlePath 'app/worker'
+        }
+    ))
+    $manifest.Add('includedPaths', @('app/api', 'app/worker') + $includedRepoPaths)
     $manifest | ConvertTo-Json -Depth 10 | Set-Content -Path (Join-Path $stagingRoot 'release-manifest.json') -Encoding UTF8
 
     if (Test-Path -Path $resolvedOutputPath -PathType Leaf) {

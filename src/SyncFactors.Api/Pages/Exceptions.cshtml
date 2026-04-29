@@ -1,0 +1,136 @@
+@page
+@model SyncFactors.Api.Pages.ExceptionsModel
+@{
+    ViewData["Title"] = "Exceptions";
+}
+
+<section class="hero hero-compact">
+    <div>
+        <p class="eyebrow">Operator Triage</p>
+        <h1>Exceptions</h1>
+        <p class="lede">Review failed runs, manual review cases, conflicts, and guardrail failures from one production queue.</p>
+    </div>
+</section>
+
+<section class="preview-inspector-grid exception-summary-grid" aria-label="Exception queue summary">
+    @foreach (var queueType in Model.QueueTypes)
+    {
+        <a class="preview-inspector-card exception-summary-card @(string.Equals(Model.QueueType, queueType.Key, StringComparison.OrdinalIgnoreCase) ? "active" : null)"
+           data-tone="@queueType.Tone"
+           asp-page="/Exceptions"
+           asp-route-queueType="@queueType.Key"
+           asp-route-search="@Model.Search">
+            <div class="preview-inspector-head">
+                <div>
+                    <p class="eyebrow">@queueType.Label</p>
+                    <h2>@Model.GetSummaryCount(queueType.Key)</h2>
+                </div>
+                <span class="badge @queueType.Tone">Open</span>
+            </div>
+        </a>
+    }
+</section>
+
+<section class="panel">
+    <div class="section-heading">
+        <div>
+            <h2>Queue Filters</h2>
+            <p class="muted">Search matches worker IDs, SAM names, reasons, review cases, and saved entry payloads.</p>
+        </div>
+        <a class="link-button subtle-button" asp-page="/Exceptions">Clear</a>
+    </div>
+    <form method="get" class="filters">
+        <label>
+            <span>Queue</span>
+            <select asp-for="QueueType">
+                <option value="">All exception queues</option>
+                @foreach (var queueType in Model.QueueTypes)
+                {
+                    <option value="@queueType.Key">@queueType.Label</option>
+                }
+            </select>
+        </label>
+        <label class="filter-search">
+            <span>Search</span>
+            <input type="text" asp-for="Search" placeholder="worker, SAM, reason, case type..." />
+        </label>
+        <input type="hidden" name="pageNumber" value="1" />
+        <div class="filter-actions">
+            <button type="submit">Apply</button>
+        </div>
+    </form>
+</section>
+
+<section class="panel">
+    <div class="section-heading">
+        <div>
+            <h2>Exception Queue</h2>
+            <p class="muted">Showing page @Model.Queue.Page of @Model.Queue.TotalPages · @Model.Queue.Total total items.</p>
+        </div>
+    </div>
+
+    @if (Model.Queue.Items.Count == 0)
+    {
+        <p class="muted">No exception items matched the current filters.</p>
+    }
+    else
+    {
+        <div class="exception-list">
+            @foreach (var item in Model.Queue.Items)
+            {
+                <article class="entry-card exception-card">
+                    <header class="entry-head">
+                        <div class="entry-identity">
+                            <h3>@item.Label</h3>
+                            <p class="muted">
+                                @SyncFactors.Api.UiDateTimeFormatter.FormatDateTime(item.StartedAt)
+                                · @SyncFactors.Api.UiRunFormatting.RunDisplayName(item.Run)
+                                @if (!string.IsNullOrWhiteSpace(item.WorkerId) || !string.IsNullOrWhiteSpace(item.SamAccountName))
+                                {
+                                    <text> · @(item.WorkerId ?? "n/a") / @(item.SamAccountName ?? "n/a")</text>
+                                }
+                            </p>
+                        </div>
+                        <div class="entry-meta">
+                            <span class="badge @item.Tone">@item.Label</span>
+                            <span class="badge @SyncFactors.Api.UiRunFormatting.StatusBadgeTone(item.Run.Status)">@SyncFactors.Api.UiRunFormatting.DisplayLabel(item.Run.Status)</span>
+                        </div>
+                    </header>
+                    <p>@item.Summary</p>
+                    @if (!string.IsNullOrWhiteSpace(item.Detail))
+                    {
+                        <p class="muted">@item.Detail</p>
+                    }
+                    <div class="filter-actions exception-actions">
+                        <a class="link-button" asp-page="/Runs/Detail" asp-route-runId="@item.Run.RunId">Open run</a>
+                        @if (item.Entry is not null)
+                        {
+                            <a class="link-button subtle-button" asp-page="/Runs/Detail" asp-route-runId="@item.Run.RunId" asp-route-entryId="@item.Entry.EntryId" asp-fragment="entries">Open decision</a>
+                            @if (!string.IsNullOrWhiteSpace(item.WorkerId))
+                            {
+                                <a class="link-button subtle-button" asp-page="/Preview" asp-route-workerId="@item.WorkerId">Preview worker</a>
+                            }
+                        }
+                    </div>
+                </article>
+            }
+        </div>
+    }
+
+    @if (Model.Queue.TotalPages > 1)
+    {
+        <div class="table-pagination">
+            <p class="muted">Showing @Model.Queue.Items.Count items on this page.</p>
+            <div class="filter-actions">
+                @if (Model.HasPreviousPage)
+                {
+                    <a class="link-button" asp-page="/Exceptions" asp-route-queueType="@Model.QueueType" asp-route-search="@Model.Search" asp-route-pageNumber="@(Model.Queue.Page - 1)">Previous</a>
+                }
+                @if (Model.HasNextPage)
+                {
+                    <a class="link-button" asp-page="/Exceptions" asp-route-queueType="@Model.QueueType" asp-route-search="@Model.Search" asp-route-pageNumber="@(Model.Queue.Page + 1)">Next</a>
+                }
+            </div>
+        </div>
+    }
+</section>

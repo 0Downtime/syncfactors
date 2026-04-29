@@ -37,6 +37,7 @@
       "pageSize": 1000,
       "select": [
         "userId",
+        "personIdExternal",
         "emplStatus",
         "jobTitle",
         "company",

@@ -22,6 +22,9 @@ concurrency:
   group: release-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: false
 
+env:
+  SYNCFACTORS_RELEASE_RUNTIME: win-x64
+
 jobs:
   prerelease:
     if: github.event_name == 'push'
@@ -53,8 +56,8 @@ jobs:
       - name: Publish applications
         shell: pwsh
         run: |
-          dotnet publish ./src/SyncFactors.Api/SyncFactors.Api.csproj --configuration Release --output ./artifacts/publish/api /p:Version="${{ steps.release_info.outputs.version }}" /p:InformationalVersion="${{ steps.release_info.outputs.assembly_informational_version }}" /p:SourceRevisionId="${{ steps.release_info.outputs.commit_sha }}"
-          dotnet publish ./src/SyncFactors.Worker/SyncFactors.Worker.csproj --configuration Release --output ./artifacts/publish/worker /p:Version="${{ steps.release_info.outputs.version }}" /p:InformationalVersion="${{ steps.release_info.outputs.assembly_informational_version }}" /p:SourceRevisionId="${{ steps.release_info.outputs.commit_sha }}"
+          dotnet publish ./src/SyncFactors.Api/SyncFactors.Api.csproj --configuration Release --runtime $env:SYNCFACTORS_RELEASE_RUNTIME --self-contained true --output ./artifacts/publish/api /p:Version="${{ steps.release_info.outputs.version }}" /p:InformationalVersion="${{ steps.release_info.outputs.assembly_informational_version }}" /p:SourceRevisionId="${{ steps.release_info.outputs.commit_sha }}"
+          dotnet publish ./src/SyncFactors.Worker/SyncFactors.Worker.csproj --configuration Release --runtime $env:SYNCFACTORS_RELEASE_RUNTIME --self-contained true --output ./artifacts/publish/worker /p:Version="${{ steps.release_info.outputs.version }}" /p:InformationalVersion="${{ steps.release_info.outputs.assembly_informational_version }}" /p:SourceRevisionId="${{ steps.release_info.outputs.commit_sha }}"
 
       - name: Validate application versions
         shell: pwsh
@@ -67,8 +70,8 @@ jobs:
         shell: pwsh
         run: |
           New-Item -Path ./artifacts/releases -ItemType Directory -Force | Out-Null
-          $bundlePath = Join-Path (Resolve-Path ./artifacts/releases) "syncfactors-${{ steps.release_info.outputs.version }}.zip"
-          $bundle = & ./scripts/New-SyncFactorsReleaseBundle.ps1 -OutputPath $bundlePath -Version "${{ steps.release_info.outputs.version }}" -CommitSha "${{ steps.release_info.outputs.commit_sha }}"
+          $bundlePath = Join-Path (Resolve-Path ./artifacts/releases) "syncfactors-${{ steps.release_info.outputs.version }}-$env:SYNCFACTORS_RELEASE_RUNTIME.zip"
+          $bundle = & ./scripts/New-SyncFactorsReleaseBundle.ps1 -OutputPath $bundlePath -Version "${{ steps.release_info.outputs.version }}" -RuntimeIdentifier $env:SYNCFACTORS_RELEASE_RUNTIME -CommitSha "${{ steps.release_info.outputs.commit_sha }}"
           "bundle_path=$($bundle.bundlePath)" >> $env:GITHUB_OUTPUT
 
       - name: Publish prerelease
@@ -164,8 +167,8 @@ jobs:
       - name: Publish applications
         shell: pwsh
         run: |
-          dotnet publish ./src/SyncFactors.Api/SyncFactors.Api.csproj --configuration Release --output ./artifacts/publish/api /p:Version="${{ steps.release_info.outputs.version }}" /p:InformationalVersion="${{ steps.release_info.outputs.assembly_informational_version }}" /p:SourceRevisionId="${{ steps.release_info.outputs.commit_sha }}"
-          dotnet publish ./src/SyncFactors.Worker/SyncFactors.Worker.csproj --configuration Release --output ./artifacts/publish/worker /p:Version="${{ steps.release_info.outputs.version }}" /p:InformationalVersion="${{ steps.release_info.outputs.assembly_informational_version }}" /p:SourceRevisionId="${{ steps.release_info.outputs.commit_sha }}"
+          dotnet publish ./src/SyncFactors.Api/SyncFactors.Api.csproj --configuration Release --runtime $env:SYNCFACTORS_RELEASE_RUNTIME --self-contained true --output ./artifacts/publish/api /p:Version="${{ steps.release_info.outputs.version }}" /p:InformationalVersion="${{ steps.release_info.outputs.assembly_informational_version }}" /p:SourceRevisionId="${{ steps.release_info.outputs.commit_sha }}"
+          dotnet publish ./src/SyncFactors.Worker/SyncFactors.Worker.csproj --configuration Release --runtime $env:SYNCFACTORS_RELEASE_RUNTIME --self-contained true --output ./artifacts/publish/worker /p:Version="${{ steps.release_info.outputs.version }}" /p:InformationalVersion="${{ steps.release_info.outputs.assembly_informational_version }}" /p:SourceRevisionId="${{ steps.release_info.outputs.commit_sha }}"
 
       - name: Validate application versions
         shell: pwsh
@@ -178,8 +181,8 @@ jobs:
         shell: pwsh
         run: |
           New-Item -Path ./artifacts/releases -ItemType Directory -Force | Out-Null
-          $bundlePath = Join-Path (Resolve-Path ./artifacts/releases) "syncfactors-${{ steps.release_info.outputs.version }}.zip"
-          $bundle = & ./scripts/New-SyncFactorsReleaseBundle.ps1 -OutputPath $bundlePath -Version "${{ steps.release_info.outputs.version }}" -CommitSha "${{ steps.release_info.outputs.commit_sha }}"
+          $bundlePath = Join-Path (Resolve-Path ./artifacts/releases) "syncfactors-${{ steps.release_info.outputs.version }}-$env:SYNCFACTORS_RELEASE_RUNTIME.zip"
+          $bundle = & ./scripts/New-SyncFactorsReleaseBundle.ps1 -OutputPath $bundlePath -Version "${{ steps.release_info.outputs.version }}" -RuntimeIdentifier $env:SYNCFACTORS_RELEASE_RUNTIME -CommitSha "${{ steps.release_info.outputs.commit_sha }}"
           "bundle_path=$($bundle.bundlePath)" >> $env:GITHUB_OUTPUT
 
       - name: Publish stable release

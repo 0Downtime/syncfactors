@@ -446,6 +446,17 @@ public sealed class SuccessFactorsWorkerSource(
             return MergeWorkerSnapshots(canonicalWorker, previewWorker);
         }
 
+        var bridgedPreviewWorker = await TryResolvePreviewWorkerByAlternateIdentityAsync(
+            config,
+            previewQuery,
+            canonicalWorker,
+            previewIdentity,
+            cancellationToken);
+        if (bridgedPreviewWorker is not null)
+        {
+            return MergeWorkerSnapshots(canonicalWorker, bridgedPreviewWorker);
+        }
+
         var fallbackPreviewLookup = await BuildPreviewLookupAsync(config, cancellationToken);
         var fallbackPreview = TryMatchPreviewWorker(canonicalWorker, fallbackPreviewLookup, previewQuery.IdentityField);
         return fallbackPreview is null
@@ -458,6 +469,84 @@ public sealed class SuccessFactorsWorkerSource(
         return worker.Attributes.TryGetValue(attributeName, out var value) && !string.IsNullOrWhiteSpace(value)
             ? value
             : null;
+    }
+
+    private async Task<WorkerSnapshot?> TryResolvePreviewWorkerByAlternateIdentityAsync(
+        SyncFactorsConfigDocument config,
+        SuccessFactorsQueryConfig previewQuery,
+        WorkerSnapshot canonicalWorker,
+        string attemptedIdentity,
+        CancellationToken cancellationToken)
+    {
+        foreach (var candidate in ResolvePreviewBridgeLookupCandidates(canonicalWorker))
+        {
+            foreach (var identityField in ResolvePreviewBridgeIdentityFields(previewQuery))
+            {
+                if (string.Equals(identityField, previewQuery.IdentityField, StringComparison.OrdinalIgnoreCase) &&
+                    string.Equals(candidate, attemptedIdentity, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                try
+                {
+                    var bridgedPreview = await TryResolveWorkerAsync(
+                        config,
+                        previewQuery with { IdentityField = identityField },
+                        candidate,
+                        cancellationToken,
+                        canonicalWorker.WorkerId);
+                    if (bridgedPreview is not null)
+                    {
+                        return bridgedPreview;
+                    }
+                }
+                catch (InvalidOperationException ex) when (IsAlternateIdentityCompatibilityFailure(ex))
+                {
+                    logger.LogDebug(
+                        ex,
+                        "SuccessFactors rejected alternate preview identity lookup. IdentityField={IdentityField}",
+                        identityField);
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private static IEnumerable<string> ResolvePreviewBridgeLookupCandidates(WorkerSnapshot worker)
+    {
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var candidate in new[]
+                 {
+                     worker.WorkerId,
+                     GetAttributeValue(worker, "userId"),
+                     GetAttributeValue(worker, "personIdExternal")
+                 })
+        {
+            if (!string.IsNullOrWhiteSpace(candidate) && seen.Add(candidate))
+            {
+                yield return candidate;
+            }
+        }
+    }
+
+    private static IEnumerable<string> ResolvePreviewBridgeIdentityFields(SuccessFactorsQueryConfig previewQuery)
+    {
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var identityField in new[]
+                 {
+                     "employmentNav/userId",
+                     "userId",
+                     "personIdExternal",
+                     previewQuery.IdentityField
+                 })
+        {
+            if (!string.IsNullOrWhiteSpace(identityField) && seen.Add(identityField))
+            {
+                yield return identityField;
+            }
+        }
     }
 
     private static WorkerSnapshot MergeWorkerSnapshots(WorkerSnapshot canonicalWorker, WorkerSnapshot previewWorker)
@@ -1054,6 +1143,12 @@ public sealed class SuccessFactorsWorkerSource(
         return exception.Message.Contains("Status=400", StringComparison.Ordinal) &&
                (requestUri.Contains("customPageSize=", StringComparison.OrdinalIgnoreCase) ||
                 requestUri.Contains("paging=snapshot", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static bool IsAlternateIdentityCompatibilityFailure(InvalidOperationException exception)
+    {
+        return exception.Message.Contains("Status=400", StringComparison.Ordinal) ||
+               exception.Message.Contains("Status=404", StringComparison.Ordinal);
     }
 
     private static string BuildServerPagedListRequestUri(SyncFactorsConfigDocument config, SuccessFactorsQueryConfig query, int pageSize)
