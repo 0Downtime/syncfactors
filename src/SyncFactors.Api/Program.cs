@@ -16,6 +16,7 @@ using System.Text.Json;
 const string ViewerPolicy = "Viewer";
 const string OperatorPolicy = "Operator";
 const string AdminPolicy = "Admin";
+const string WindowsServiceName = "SyncFactors.Api";
 
 var launcherProbeAction = LauncherProbe.GetRequestedAction(args);
 if (!string.IsNullOrWhiteSpace(launcherProbeAction))
@@ -38,6 +39,7 @@ if (!string.IsNullOrWhiteSpace(launcherProbeAction))
 }
 
 var builder = WebApplication.CreateBuilder(args);
+ConfigureWindowsService(builder.Services, WindowsServiceName);
 ConfigureLocalFileLogging(
     builder.Logging,
     processName: "api",
@@ -132,6 +134,11 @@ builder.Services.AddHttpClient<SuccessFactorsWorkerSource>()
     {
         AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate
     });
+builder.Services.AddHttpClient<SuccessFactorsUserLookupService>()
+    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+    {
+        AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate
+    });
 builder.Services.AddHttpClient<IDependencyHealthService, DependencyHealthService>()
     .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
     {
@@ -139,9 +146,21 @@ builder.Services.AddHttpClient<IDependencyHealthService, DependencyHealthService
     });
 builder.Services.AddTransient<IWorkerSource>(serviceProvider => serviceProvider.GetRequiredService<SuccessFactorsWorkerSource>());
 builder.Services.AddTransient<ActiveDirectoryGateway>();
-builder.Services.AddTransient<IDirectoryGateway>(serviceProvider => serviceProvider.GetRequiredService<ActiveDirectoryGateway>());
+builder.Services.AddTransient<IDirectoryGateway>(serviceProvider =>
+{
+    var config = serviceProvider.GetRequiredService<SyncFactorsConfigurationLoader>().GetSyncConfig();
+    return DirectoryServiceRuntimeSelector.UseScaffoldDirectoryServices(config, builder.Configuration["SYNCFACTORS_RUN_PROFILE"])
+        ? serviceProvider.GetRequiredService<ScaffoldDirectoryGateway>()
+        : serviceProvider.GetRequiredService<ActiveDirectoryGateway>();
+});
 builder.Services.AddTransient<ActiveDirectoryCommandGateway>();
-builder.Services.AddTransient<IDirectoryCommandGateway>(serviceProvider => serviceProvider.GetRequiredService<ActiveDirectoryCommandGateway>());
+builder.Services.AddTransient<IDirectoryCommandGateway>(serviceProvider =>
+{
+    var config = serviceProvider.GetRequiredService<SyncFactorsConfigurationLoader>().GetSyncConfig();
+    return DirectoryServiceRuntimeSelector.UseScaffoldDirectoryServices(config, builder.Configuration["SYNCFACTORS_RUN_PROFILE"])
+        ? serviceProvider.GetRequiredService<ScaffoldDirectoryCommandGateway>()
+        : serviceProvider.GetRequiredService<ActiveDirectoryCommandGateway>();
+});
 builder.Services.AddSingleton<IAttributeMappingProvider, AttributeMappingProvider>();
 builder.Services.AddSingleton<IIdentityMatcher, IdentityMatcher>();
 builder.Services.AddSingleton<ILifecyclePolicy, LifecyclePolicy>();
@@ -157,6 +176,7 @@ builder.Services.AddSingleton<IRunRepository, SqliteRunRepository>();
 builder.Services.AddSingleton<SqliteGraveyardRetentionStore>();
 builder.Services.AddSingleton<IGraveyardRetentionStore>(serviceProvider => serviceProvider.GetRequiredService<SqliteGraveyardRetentionStore>());
 builder.Services.AddTransient<RunEntriesQueryService>();
+builder.Services.AddTransient<ExceptionQueueQueryService>();
 builder.Services.AddTransient<GraveyardDeletionQueueService>();
 builder.Services.AddSingleton<IRunQueueStore, SqliteRunQueueStore>();
 builder.Services.AddSingleton<RunQueueRecoveryService>();
@@ -275,6 +295,7 @@ builder.Services.AddRazorPages(options =>
     options.Conventions.AuthorizeFolder("/", ViewerPolicy);
     options.Conventions.AuthorizePage("/Sync", OperatorPolicy);
     options.Conventions.AuthorizePage("/Preview", OperatorPolicy);
+    options.Conventions.AuthorizePage("/Lookup", OperatorPolicy);
     options.Conventions.AuthorizeFolder("/Admin", AdminPolicy);
     options.Conventions.AllowAnonymousToPage("/AccessDenied");
     options.Conventions.AllowAnonymousToPage("/Login");
@@ -1084,6 +1105,31 @@ static void ConfigureLocalFileLogging(
 
     logging.AddSerilog(logger, dispose: true);
     logging.AddProvider(new RunScopedFileLoggerProvider(directoryValue));
+}
+
+static void ConfigureWindowsService(IServiceCollection services, string serviceName)
+{
+    services.AddWindowsService(options =>
+    {
+        options.ServiceName = serviceName;
+    });
+
+    if (OperatingSystem.IsWindows())
+    {
+        ConfigureWindowsEventLog(services, serviceName);
+    }
+}
+
+[System.Runtime.Versioning.SupportedOSPlatform("windows")]
+static void ConfigureWindowsEventLog(IServiceCollection services, string serviceName)
+{
+    services.Configure<Microsoft.Extensions.Logging.EventLog.EventLogSettings>(options =>
+    {
+#pragma warning disable CA1416
+        options.LogName = "Application";
+        options.SourceName = serviceName;
+#pragma warning restore CA1416
+    });
 }
 
 static void ConfigureApplicationInsights(WebApplicationBuilder builder)
