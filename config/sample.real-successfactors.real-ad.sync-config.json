@@ -165,6 +165,10 @@
   "sync": {
     "enableBeforeStartDays": 7,
     "deletionRetentionDays": 45,
+    "runHistoryRetentionDays": 3,
+    "runHistoryVacuumEnabled": true,
+    "runHistoryVacuumMinimumFreedMegabytes": 128,
+    "runHistoryVacuumMinimumIntervalHours": 24,
     "maxDegreeOfParallelism": 4,
     "realSyncEnabled": true,
     "autoDeleteFromGraveyard": false,

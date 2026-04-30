@@ -89,6 +89,39 @@ public sealed class RunLifecycleServiceTests
         Assert.Null(savedRuntime.CurrentWorkerId);
     }
 
+    [Fact]
+    public async Task CompleteRunAsync_PrunesHistoryOlderThanConfiguredRetention()
+    {
+        var runtimeStatusStore = new CapturingRuntimeStatusStore();
+        var runRepository = new CapturingRunRepository(runDetail: null);
+        runRepository.PrunedRunCount = 1;
+        var now = DateTimeOffset.Parse("2026-04-30T15:00:00Z");
+        var service = new RunLifecycleService(
+            runtimeStatusStore,
+            runRepository,
+            new RunHistoryRetentionSettings(
+                RetentionDays: 3,
+                VacuumEnabled: true,
+                VacuumMinimumFreedMegabytes: 64,
+                VacuumMinimumIntervalHours: 12),
+            new FixedTimeProvider(now));
+
+        await service.CompleteRunAsync(
+            runId: "run-1",
+            mode: "BulkSync",
+            dryRun: false,
+            totalWorkers: 1,
+            tally: new RunTally(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1),
+            report: ParseJson("""{"kind":"bulkRun"}"""),
+            startedAt: now.AddMinutes(-5),
+            cancellationToken: CancellationToken.None);
+
+        Assert.Equal(now.AddDays(-3), runRepository.LastPruneCutoffUtc);
+        Assert.Equal(now, runRepository.LastVacuumNowUtc);
+        Assert.Equal(64L * 1024L * 1024L, runRepository.LastVacuumMinimumFreeBytes);
+        Assert.Equal(TimeSpan.FromHours(12), runRepository.LastVacuumMinimumInterval);
+    }
+
     private static JsonElement ParseJson(string json)
     {
         using var document = JsonDocument.Parse(json);
@@ -122,6 +155,12 @@ public sealed class RunLifecycleServiceTests
 
     private sealed class CapturingRunRepository(RunDetail? runDetail) : IRunRepository
     {
+        public DateTimeOffset? LastPruneCutoffUtc { get; private set; }
+        public DateTimeOffset? LastVacuumNowUtc { get; private set; }
+        public long? LastVacuumMinimumFreeBytes { get; private set; }
+        public TimeSpan? LastVacuumMinimumInterval { get; private set; }
+        public int PrunedRunCount { get; set; }
+
         public Task<IReadOnlyList<RunSummary>> ListRunsAsync(CancellationToken cancellationToken)
         {
             _ = cancellationToken;
@@ -172,6 +211,26 @@ public sealed class RunLifecycleServiceTests
             _ = entry;
             _ = cancellationToken;
             throw new NotSupportedException();
+        }
+
+        public Task<int> PruneTerminalRunsStartedBeforeAsync(DateTimeOffset cutoffUtc, CancellationToken cancellationToken)
+        {
+            _ = cancellationToken;
+            LastPruneCutoffUtc = cutoffUtc;
+            return Task.FromResult(PrunedRunCount);
+        }
+
+        public Task<bool> VacuumIfNeededAsync(
+            DateTimeOffset nowUtc,
+            long minimumFreeBytes,
+            TimeSpan minimumInterval,
+            CancellationToken cancellationToken)
+        {
+            _ = cancellationToken;
+            LastVacuumNowUtc = nowUtc;
+            LastVacuumMinimumFreeBytes = minimumFreeBytes;
+            LastVacuumMinimumInterval = minimumInterval;
+            return Task.FromResult(true);
         }
 
         public Task<IReadOnlyList<RunEntry>> GetRunEntriesAsync(
@@ -240,5 +299,10 @@ public sealed class RunLifecycleServiceTests
             _ = cancellationToken;
             throw new NotSupportedException();
         }
+    }
+
+    private sealed class FixedTimeProvider(DateTimeOffset utcNow) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => utcNow;
     }
 }

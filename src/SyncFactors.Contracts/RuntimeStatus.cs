@@ -214,6 +214,12 @@ public sealed record WorkerRunSettings(
     int MaxDisablesPerRun = int.MaxValue,
     int MaxDeletionsPerRun = int.MaxValue);
 
+public sealed record RunHistoryRetentionSettings(
+    int RetentionDays = 3,
+    bool VacuumEnabled = true,
+    int VacuumMinimumFreedMegabytes = 128,
+    int VacuumMinimumIntervalHours = 24);
+
 public sealed record GraveyardDeletionQueueSettings(
     int RetentionDays,
     bool AutoDeleteEnabled);

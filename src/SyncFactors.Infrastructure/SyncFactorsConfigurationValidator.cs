@@ -75,6 +75,21 @@ public sealed class SyncFactorsConfigurationValidator(SyncFactorsConfigurationLo
             throw new InvalidOperationException("SyncFactors sync policy values must be non-negative.");
         }
 
+        if (sync.Sync.RunHistoryRetentionDays <= 0)
+        {
+            throw new InvalidOperationException("SyncFactors sync.runHistoryRetentionDays must be positive.");
+        }
+
+        if (sync.Sync.RunHistoryVacuumMinimumFreedMegabytes < 0)
+        {
+            throw new InvalidOperationException("SyncFactors sync.runHistoryVacuumMinimumFreedMegabytes must be non-negative.");
+        }
+
+        if (sync.Sync.RunHistoryVacuumMinimumIntervalHours <= 0)
+        {
+            throw new InvalidOperationException("SyncFactors sync.runHistoryVacuumMinimumIntervalHours must be positive.");
+        }
+
         if (sync.Sync.MaxDegreeOfParallelism <= 0)
         {
             throw new InvalidOperationException("SyncFactors sync.maxDegreeOfParallelism must be positive.");
