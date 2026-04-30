@@ -1456,35 +1456,85 @@ public sealed class SuccessFactorsWorkerSource(
         string requestUri,
         CancellationToken cancellationToken)
     {
-        using var request = new HttpRequestMessage(HttpMethod.Get, requestUri);
-        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
-        request.Headers.AcceptEncoding.Add(new StringWithQualityHeaderValue("gzip"));
-        request.Headers.AcceptEncoding.Add(new StringWithQualityHeaderValue("deflate"));
-        AddTracingHeaders(request, "list-page");
-        await ApplyAuthenticationAsync(request, configLoader.GetSyncConfig().SuccessFactors.Auth, cancellationToken);
+        var activeSelect = query.Select.ToList();
 
-        using var response = await httpClient.SendAsync(request, cancellationToken);
-        var body = await response.Content.ReadAsStringAsync(cancellationToken);
-        if (response.IsSuccessStatusCode)
+        while (true)
         {
-            var pagingMode = TryGetHeaderValue(response.Headers, "X-SF-Paging");
-            logger.LogInformation(
-                "SuccessFactors list page returned successfully. PagingMode={PagingMode}",
-                string.IsNullOrWhiteSpace(pagingMode) ? "(none)" : pagingMode);
-            return new SuccessFactorsResponsePayload(
-                RequestUri: requestUri,
-                Body: body,
-                StatusCode: (int)response.StatusCode,
-                ContentType: response.Content.Headers.ContentType?.MediaType ?? "(none)",
-                PagingMode: pagingMode);
+            var activeQuery = query with { Select = activeSelect };
+            var activeRequestUri = BuildRequestUriWithSelect(requestUri, activeSelect);
+            using var request = new HttpRequestMessage(HttpMethod.Get, activeRequestUri);
+            request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+            request.Headers.AcceptEncoding.Add(new StringWithQualityHeaderValue("gzip"));
+            request.Headers.AcceptEncoding.Add(new StringWithQualityHeaderValue("deflate"));
+            AddTracingHeaders(request, "list-page");
+            await ApplyAuthenticationAsync(request, configLoader.GetSyncConfig().SuccessFactors.Auth, cancellationToken);
+
+            using var response = await httpClient.SendAsync(request, cancellationToken);
+            var body = await response.Content.ReadAsStringAsync(cancellationToken);
+            if (response.IsSuccessStatusCode)
+            {
+                var pagingMode = TryGetHeaderValue(response.Headers, "X-SF-Paging");
+                logger.LogInformation(
+                    "SuccessFactors list page returned successfully. PagingMode={PagingMode}",
+                    string.IsNullOrWhiteSpace(pagingMode) ? "(none)" : pagingMode);
+                return new SuccessFactorsResponsePayload(
+                    RequestUri: activeRequestUri,
+                    Body: body,
+                    StatusCode: (int)response.StatusCode,
+                    ContentType: response.Content.Headers.ContentType?.MediaType ?? "(none)",
+                    PagingMode: pagingMode);
+            }
+
+            var invalidPropertyPath = TryExtractInvalidPropertyPath(body);
+            var queryPath = ResolveQueryPathFromInvalidProperty(invalidPropertyPath, activeSelect);
+            if (response.StatusCode == HttpStatusCode.BadRequest &&
+                !string.IsNullOrWhiteSpace(queryPath) &&
+                activeSelect.Remove(queryPath))
+            {
+                logger.LogWarning(
+                    "SuccessFactors rejected a configured list property path. Retrying without the rejected field.");
+                continue;
+            }
+
+            throw CreateDetailedSuccessFactorsException(
+                messagePrefix: "SuccessFactors request failed.",
+                response: response,
+                requestUri: activeRequestUri,
+                body: body,
+                query: activeQuery);
+        }
+    }
+
+    private static string BuildRequestUriWithSelect(string requestUri, IReadOnlyList<string> select)
+    {
+        var queryStart = requestUri.IndexOf('?', StringComparison.Ordinal);
+        if (queryStart < 0)
+        {
+            return requestUri;
         }
 
-        throw CreateDetailedSuccessFactorsException(
-            messagePrefix: "SuccessFactors request failed.",
-            response: response,
-            requestUri: requestUri,
-            body: body,
-            query: query);
+        var prefix = requestUri[..(queryStart + 1)];
+        var parts = requestUri[(queryStart + 1)..].Split('&', StringSplitOptions.None);
+        var replacement = $"$select={Uri.EscapeDataString(string.Join(",", select))}";
+        var replaced = false;
+
+        for (var index = 0; index < parts.Length; index++)
+        {
+            var separatorIndex = parts[index].IndexOf('=', StringComparison.Ordinal);
+            var key = separatorIndex < 0 ? parts[index] : parts[index][..separatorIndex];
+            if (!string.Equals(Uri.UnescapeDataString(key), "$select", StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            parts[index] = replacement;
+            replaced = true;
+            break;
+        }
+
+        return replaced
+            ? prefix + string.Join("&", parts)
+            : prefix + string.Join("&", parts.Append(replacement));
     }
 
     private static IReadOnlyList<JsonElement> ExtractWorkerArray(JsonElement root)

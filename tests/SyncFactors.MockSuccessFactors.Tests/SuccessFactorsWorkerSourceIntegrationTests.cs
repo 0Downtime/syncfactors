@@ -1583,6 +1583,94 @@ public sealed class SuccessFactorsWorkerSourceIntegrationTests
     }
 
     [Fact]
+    public async Task ListWorkersAsync_RetriesWithoutInvalidConfiguredProperty_WhenSuccessFactorsRejectsSelectPath()
+    {
+        var handler = new RetryListOnInvalidPropertyHttpHandler();
+        using var client = new HttpClient(handler)
+        {
+            BaseAddress = new Uri("http://mock-successfactors.local")
+        };
+
+        var tempDirectory = Path.Combine(Path.GetTempPath(), "syncfactors-worker-source", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDirectory);
+
+        var syncConfigPath = Path.Combine(tempDirectory, "sync-config.json");
+        var scaffoldDataPath = Path.Combine(tempDirectory, "scaffold-data.json");
+
+        await File.WriteAllTextAsync(syncConfigPath, """
+        {
+          "secrets": {
+            "adServerEnv": null,
+            "adUsernameEnv": null,
+            "adBindPasswordEnv": null
+          },
+          "successFactors": {
+            "baseUrl": "http://mock-successfactors.local/odata/v2",
+            "auth": {
+              "mode": "basic",
+              "basic": {
+                "username": "mock-user",
+                "password": "mock-password"
+              }
+            },
+            "query": {
+              "entitySet": "EmpJob",
+              "identityField": "userId",
+              "deltaField": "lastModifiedDateTime",
+              "select": [
+                "userId",
+                "personIdExternal",
+                "emplStatus",
+                "jobTitle"
+              ],
+              "expand": []
+            }
+          },
+          "ad": {
+            "server": "ldap.example.test",
+            "username": "",
+            "bindPassword": "",
+            "identityAttribute": "employeeID",
+            "defaultActiveOu": "OU=LabUsers,DC=example,DC=com",
+            "prehireOu": "OU=Prehire,DC=example,DC=com",
+            "graveyardOu": "OU=LabGraveyard,DC=example,DC=com"
+          },
+          "sync": {
+            "enableBeforeStartDays": 7,
+            "deletionRetentionDays": 90
+          },
+          "safety": {
+            "maxCreatesPerRun": 10,
+            "maxDisablesPerRun": 10,
+            "maxDeletionsPerRun": 10
+          },
+          "reporting": {
+            "outputDirectory": "reports"
+          }
+        }
+        """);
+        await File.WriteAllTextAsync(scaffoldDataPath, """{"workers":[],"directoryUsers":[]}""");
+
+        var configLoader = new SyncFactorsConfigurationLoader(new SyncFactorsConfigPathResolver(syncConfigPath, null));
+        var scaffoldStore = new ScaffoldDataStore(new ScaffoldDataPathResolver(scaffoldDataPath));
+        var fallbackSource = new ScaffoldWorkerSource(scaffoldStore);
+        var workerSource = new SuccessFactorsWorkerSource(client, configLoader, new DisabledDeltaSyncService(), fallbackSource, NullLogger<SuccessFactorsWorkerSource>.Instance);
+
+        var workers = new List<WorkerSnapshot>();
+        await foreach (var worker in workerSource.ListWorkersAsync(WorkerListingMode.Full, CancellationToken.None))
+        {
+            workers.Add(worker);
+        }
+
+        var listedWorker = Assert.Single(workers);
+        Assert.Equal("10001", listedWorker.WorkerId);
+        Assert.Equal("64300", listedWorker.Attributes["emplStatus"]);
+        Assert.Equal(2, handler.Selects.Count);
+        Assert.Contains("personIdExternal", handler.Selects[0], StringComparison.Ordinal);
+        Assert.DoesNotContain("personIdExternal", handler.Selects[1], StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task ListWorkersAsync_AddsInactivePrehireAndRecentInactiveRetentionClauses_WhenConfigured()
     {
         var handler = new CaptureListRequestHttpHandler();
@@ -2966,6 +3054,59 @@ public sealed class SuccessFactorsWorkerSourceIntegrationTests
                         }
                       ]
                     }
+                  }
+                ]
+              }
+            }
+            """;
+
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(successJson, Encoding.UTF8, "application/json")
+            });
+        }
+    }
+
+    private sealed class RetryListOnInvalidPropertyHttpHandler : HttpMessageHandler
+    {
+        public List<string> Selects { get; } = [];
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            _ = cancellationToken;
+
+            var queryCollection = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(request.RequestUri!.Query);
+            var select = queryCollection["$select"].ToString();
+            Selects.Add(select);
+
+            if (select.Contains("personIdExternal", StringComparison.Ordinal))
+            {
+                var errorJson = """
+                {
+                  "error": {
+                    "code": "COE_PROPERTY_NOT_FOUND",
+                    "message": {
+                      "lang": "en-US",
+                      "value": "[COE0021]Invalid property names: EmpJob/personIdExternal."
+                    }
+                  }
+                }
+                """;
+
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.BadRequest)
+                {
+                    Content = new StringContent(errorJson, Encoding.UTF8, "application/json")
+                });
+            }
+
+            var successJson = """
+            {
+              "d": {
+                "results": [
+                  {
+                    "userId": "10001",
+                    "emplStatus": "64300",
+                    "jobTitle": "Engineer"
                   }
                 ]
               }
