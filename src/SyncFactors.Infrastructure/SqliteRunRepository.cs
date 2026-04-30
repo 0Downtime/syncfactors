@@ -7,6 +7,8 @@ namespace SyncFactors.Infrastructure;
 
 public sealed class SqliteRunRepository(SqlitePathResolver pathResolver) : IRunRepository
 {
+    private const string RunHistoryVacuumMaintenanceKey = "run_history_vacuum";
+
     private static readonly string[] BucketOrder =
     [
         "creates",
@@ -591,6 +593,96 @@ public sealed class SqliteRunRepository(SqlitePathResolver pathResolver) : IRunR
         insertCommand.Parameters.AddWithValue("$startedAt", ToDbValue(entry.StartedAt));
         insertCommand.Parameters.AddWithValue("$itemJson", entry.Item.GetRawText());
         await insertCommand.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    public async Task<int> PruneTerminalRunsStartedBeforeAsync(DateTimeOffset cutoffUtc, CancellationToken cancellationToken)
+    {
+        var databasePath = pathResolver.ResolveConfiguredPath() ?? pathResolver.Resolve();
+        if (string.IsNullOrWhiteSpace(databasePath))
+        {
+            return 0;
+        }
+
+        await using var connection = OpenWriteConnection(databasePath);
+        await connection.OpenAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+
+        await using (var deleteEntriesCommand = connection.CreateCommand())
+        {
+            deleteEntriesCommand.Transaction = (SqliteTransaction)transaction;
+            deleteEntriesCommand.CommandText =
+                """
+                DELETE FROM run_entries
+                WHERE run_id IN (
+                  SELECT run_id
+                  FROM runs
+                  WHERE started_at < $cutoffUtc
+                    AND LOWER(COALESCE(status, '')) IN ('succeeded', 'failed', 'canceled')
+                );
+                """;
+            deleteEntriesCommand.Parameters.AddWithValue("$cutoffUtc", cutoffUtc.ToUniversalTime().ToString("O"));
+            await deleteEntriesCommand.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        int prunedRuns;
+        await using (var deleteRunsCommand = connection.CreateCommand())
+        {
+            deleteRunsCommand.Transaction = (SqliteTransaction)transaction;
+            deleteRunsCommand.CommandText =
+                """
+                DELETE FROM runs
+                WHERE started_at < $cutoffUtc
+                  AND LOWER(COALESCE(status, '')) IN ('succeeded', 'failed', 'canceled');
+                """;
+            deleteRunsCommand.Parameters.AddWithValue("$cutoffUtc", cutoffUtc.ToUniversalTime().ToString("O"));
+            prunedRuns = await deleteRunsCommand.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+        return prunedRuns;
+    }
+
+    public async Task<bool> VacuumIfNeededAsync(
+        DateTimeOffset nowUtc,
+        long minimumFreeBytes,
+        TimeSpan minimumInterval,
+        CancellationToken cancellationToken)
+    {
+        var databasePath = pathResolver.ResolveConfiguredPath() ?? pathResolver.Resolve();
+        if (string.IsNullOrWhiteSpace(databasePath))
+        {
+            return false;
+        }
+
+        await using var connection = OpenWriteConnection(databasePath);
+        await connection.OpenAsync(cancellationToken);
+
+        await SetBusyTimeoutAsync(connection, cancellationToken);
+
+        var freeBytes = await GetFreeBytesAsync(connection, cancellationToken);
+        if (freeBytes < Math.Max(0, minimumFreeBytes))
+        {
+            return false;
+        }
+
+        var lastVacuumAt = await GetLastMaintenanceCompletedAtAsync(connection, RunHistoryVacuumMaintenanceKey, cancellationToken);
+        if (lastVacuumAt is not null &&
+            minimumInterval > TimeSpan.Zero &&
+            nowUtc - lastVacuumAt.Value < minimumInterval)
+        {
+            return false;
+        }
+
+        await using (var vacuumCommand = connection.CreateCommand())
+        {
+            vacuumCommand.CommandTimeout = 1800;
+            vacuumCommand.CommandText = "VACUUM;";
+            await vacuumCommand.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await UpsertMaintenanceCompletedAtAsync(connection, RunHistoryVacuumMaintenanceKey, nowUtc, cancellationToken);
+        RuntimeFileSecurity.HardenSqliteFiles(databasePath);
+        return true;
     }
 
     public async Task<IReadOnlyList<RunEntry>> GetRunEntriesAsync(
@@ -1448,6 +1540,64 @@ public sealed class SqliteRunRepository(SqlitePathResolver pathResolver) : IRunR
     }
 
     private static object ToDbValue(DateTimeOffset? value) => value?.ToString("O") ?? (object)DBNull.Value;
+
+    private static async Task SetBusyTimeoutAsync(SqliteConnection connection, CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = "PRAGMA busy_timeout = 5000;";
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task<long> GetFreeBytesAsync(SqliteConnection connection, CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT freelist_count * page_size
+            FROM pragma_freelist_count(), pragma_page_size();
+            """;
+        var result = await command.ExecuteScalarAsync(cancellationToken);
+        return result is null || result is DBNull ? 0 : Convert.ToInt64(result);
+    }
+
+    private static async Task<DateTimeOffset?> GetLastMaintenanceCompletedAtAsync(
+        SqliteConnection connection,
+        string maintenanceKey,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT last_completed_at
+            FROM maintenance_state
+            WHERE maintenance_key = $maintenanceKey;
+            """;
+        command.Parameters.AddWithValue("$maintenanceKey", maintenanceKey);
+
+        var result = await command.ExecuteScalarAsync(cancellationToken);
+        return result is string value && DateTimeOffset.TryParse(value, out var parsed)
+            ? parsed
+            : null;
+    }
+
+    private static async Task UpsertMaintenanceCompletedAtAsync(
+        SqliteConnection connection,
+        string maintenanceKey,
+        DateTimeOffset completedAt,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            INSERT INTO maintenance_state (maintenance_key, last_completed_at)
+            VALUES ($maintenanceKey, $lastCompletedAt)
+            ON CONFLICT(maintenance_key) DO UPDATE SET
+              last_completed_at = excluded.last_completed_at;
+            """;
+        command.Parameters.AddWithValue("$maintenanceKey", maintenanceKey);
+        command.Parameters.AddWithValue("$lastCompletedAt", completedAt.ToUniversalTime().ToString("O"));
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
 
     private static RunRow MapRunRow(SqliteDataReader reader)
     {

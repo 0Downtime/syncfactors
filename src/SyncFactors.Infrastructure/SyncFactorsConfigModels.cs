@@ -93,6 +93,10 @@ public sealed record ActiveDirectoryIdentityCorrelationConfig(
 public sealed record SyncPolicyConfig(
     int EnableBeforeStartDays,
     int DeletionRetentionDays,
+    int RunHistoryRetentionDays = 3,
+    bool RunHistoryVacuumEnabled = true,
+    int RunHistoryVacuumMinimumFreedMegabytes = 128,
+    int RunHistoryVacuumMinimumIntervalHours = 24,
     int MaxDegreeOfParallelism = 2,
     bool RealSyncEnabled = true,
     bool AutoDeleteFromGraveyard = false,

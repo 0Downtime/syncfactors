@@ -415,7 +415,7 @@ public sealed class ActiveDirectoryCommandGatewayTests
     }
 
     [Fact]
-    public void ShouldRemoveProvisioningGroups_ReturnsTrueForDisabledGraveyardUsers()
+    public void ShouldRemoveProvisioningGroups_ReturnsFalseForDisabledGraveyardUsers()
     {
         var method = typeof(ActiveDirectoryCommandGateway).GetMethod("ShouldRemoveProvisioningGroups", BindingFlags.NonPublic | BindingFlags.Static);
         Assert.NotNull(method);
@@ -450,7 +450,7 @@ public sealed class ActiveDirectoryCommandGatewayTests
 
         var shouldRemove = Assert.IsType<bool>(method!.Invoke(null, [command, config, "CN=45086,OU=Graveyard,DC=example,DC=com"]));
 
-        Assert.True(shouldRemove);
+        Assert.False(shouldRemove);
     }
 
     [Fact]
@@ -490,6 +490,123 @@ public sealed class ActiveDirectoryCommandGatewayTests
         var shouldRemove = Assert.IsType<bool>(method!.Invoke(null, [command, config, "CN=45086,OU=Leave,DC=example,DC=com"]));
 
         Assert.False(shouldRemove);
+    }
+
+    [Fact]
+    public void ShouldAddProvisioningGroups_ReturnsTrueForEnabledActiveUsers()
+    {
+        var method = typeof(ActiveDirectoryCommandGateway).GetMethod("ShouldAddProvisioningGroups", BindingFlags.NonPublic | BindingFlags.Static);
+        Assert.NotNull(method);
+
+        var command = new DirectoryMutationCommand(
+            Action: "UpdateUser",
+            WorkerId: "45086",
+            ManagerId: null,
+            ManagerDistinguishedName: null,
+            SamAccountName: "45086",
+            CommonName: "45086",
+            UserPrincipalName: "45086@example.com",
+            Mail: "45086@example.com",
+            TargetOu: "OU=Active,DC=example,DC=com",
+            DisplayName: "Worker, Example",
+            CurrentDistinguishedName: "CN=45086,OU=Active,DC=example,DC=com",
+            EnableAccount: true,
+            Operations: [new SyncFactors.Contracts.DirectoryOperation("UpdateUser")],
+            Attributes: new Dictionary<string, string?>());
+        var config = new ActiveDirectoryConfig(
+            Server: "localhost",
+            Port: 636,
+            Username: "bind",
+            BindPassword: "secret",
+            IdentityAttribute: "employeeID",
+            DefaultActiveOu: "OU=Active,DC=example,DC=com",
+            PrehireOu: "OU=Prehire,DC=example,DC=com",
+            GraveyardOu: "OU=Graveyard,DC=example,DC=com",
+            Transport: new ActiveDirectoryTransportConfig("ldaps", false, true, true, []),
+            IdentityPolicy: new ActiveDirectoryIdentityPolicyConfig(false),
+            LicensingGroups: ["CN=M365-E3-Prestage,OU=Groups,DC=example,DC=com"]);
+
+        var shouldAdd = Assert.IsType<bool>(method!.Invoke(null, [command, config, "CN=45086,OU=Active,DC=example,DC=com", command.Operations, "ldaps"]));
+
+        Assert.True(shouldAdd);
+    }
+
+    [Fact]
+    public void ShouldAddProvisioningGroups_ReturnsFalseForEnabledPrehireUsers()
+    {
+        var method = typeof(ActiveDirectoryCommandGateway).GetMethod("ShouldAddProvisioningGroups", BindingFlags.NonPublic | BindingFlags.Static);
+        Assert.NotNull(method);
+
+        var command = new DirectoryMutationCommand(
+            Action: "UpdateUser",
+            WorkerId: "45086",
+            ManagerId: null,
+            ManagerDistinguishedName: null,
+            SamAccountName: "45086",
+            CommonName: "45086",
+            UserPrincipalName: "45086@example.com",
+            Mail: "45086@example.com",
+            TargetOu: "OU=Prehire,DC=example,DC=com",
+            DisplayName: "Worker, Example",
+            CurrentDistinguishedName: "CN=45086,OU=Prehire,DC=example,DC=com",
+            EnableAccount: true,
+            Operations: [new SyncFactors.Contracts.DirectoryOperation("UpdateUser")],
+            Attributes: new Dictionary<string, string?>());
+        var config = new ActiveDirectoryConfig(
+            Server: "localhost",
+            Port: 636,
+            Username: "bind",
+            BindPassword: "secret",
+            IdentityAttribute: "employeeID",
+            DefaultActiveOu: "OU=Active,DC=example,DC=com",
+            PrehireOu: "OU=Prehire,DC=example,DC=com",
+            GraveyardOu: "OU=Graveyard,DC=example,DC=com",
+            Transport: new ActiveDirectoryTransportConfig("ldaps", false, true, true, []),
+            IdentityPolicy: new ActiveDirectoryIdentityPolicyConfig(false),
+            LicensingGroups: ["CN=M365-E3-Prestage,OU=Groups,DC=example,DC=com"]);
+
+        var shouldAdd = Assert.IsType<bool>(method!.Invoke(null, [command, config, "CN=45086,OU=Prehire,DC=example,DC=com", command.Operations, "ldaps"]));
+
+        Assert.False(shouldAdd);
+    }
+
+    [Fact]
+    public void ShouldAddProvisioningGroups_ReturnsFalseForActiveCreatesThatCannotBeEnabled()
+    {
+        var method = typeof(ActiveDirectoryCommandGateway).GetMethod("ShouldAddProvisioningGroups", BindingFlags.NonPublic | BindingFlags.Static);
+        Assert.NotNull(method);
+
+        var command = new DirectoryMutationCommand(
+            Action: "CreateUser",
+            WorkerId: "45086",
+            ManagerId: null,
+            ManagerDistinguishedName: null,
+            SamAccountName: "45086",
+            CommonName: "45086",
+            UserPrincipalName: "45086@example.com",
+            Mail: "45086@example.com",
+            TargetOu: "OU=Active,DC=example,DC=com",
+            DisplayName: "Worker, Example",
+            CurrentDistinguishedName: null,
+            EnableAccount: true,
+            Operations: [new SyncFactors.Contracts.DirectoryOperation("CreateUser", "OU=Active,DC=example,DC=com")],
+            Attributes: new Dictionary<string, string?>());
+        var config = new ActiveDirectoryConfig(
+            Server: "localhost",
+            Port: 389,
+            Username: "bind",
+            BindPassword: "secret",
+            IdentityAttribute: "employeeID",
+            DefaultActiveOu: "OU=Active,DC=example,DC=com",
+            PrehireOu: "OU=Prehire,DC=example,DC=com",
+            GraveyardOu: "OU=Graveyard,DC=example,DC=com",
+            Transport: new ActiveDirectoryTransportConfig("ldap", false, false, false, []),
+            IdentityPolicy: new ActiveDirectoryIdentityPolicyConfig(false),
+            LicensingGroups: ["CN=M365-E3-Prestage,OU=Groups,DC=example,DC=com"]);
+
+        var shouldAdd = Assert.IsType<bool>(method!.Invoke(null, [command, config, "CN=45086,OU=Active,DC=example,DC=com", command.Operations, "ldap"]));
+
+        Assert.False(shouldAdd);
     }
 
     [Fact]

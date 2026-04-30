@@ -5,7 +5,7 @@ namespace SyncFactors.Infrastructure;
 
 public sealed class SqliteDatabaseInitializer(SqlitePathResolver pathResolver)
 {
-    private const int CurrentSchemaVersion = 13;
+    private const int CurrentSchemaVersion = 14;
 
     public async Task InitializeAsync(CancellationToken cancellationToken)
     {
@@ -116,6 +116,12 @@ public sealed class SqliteDatabaseInitializer(SqlitePathResolver pathResolver)
         {
             await ApplyVersion13Async(connection, transaction, cancellationToken);
             await InsertVersionAsync(connection, transaction, 13, cancellationToken);
+        }
+
+        if (!appliedVersions.Contains(14))
+        {
+            await ApplyVersion14Async(connection, transaction, cancellationToken);
+            await InsertVersionAsync(connection, transaction, 14, cancellationToken);
         }
 
         await transaction.CommitAsync(cancellationToken);
@@ -461,6 +467,23 @@ public sealed class SqliteDatabaseInitializer(SqlitePathResolver pathResolver)
 
             CREATE INDEX IF NOT EXISTS idx_oidc_accounts_access_level
               ON oidc_accounts (access_level);
+            """;
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task ApplyVersion14Async(
+        SqliteConnection connection,
+        DbTransaction transaction,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = (SqliteTransaction)transaction;
+        command.CommandText =
+            """
+            CREATE TABLE IF NOT EXISTS maintenance_state (
+              maintenance_key TEXT NOT NULL PRIMARY KEY,
+              last_completed_at TEXT NOT NULL
+            );
             """;
         await command.ExecuteNonQueryAsync(cancellationToken);
     }

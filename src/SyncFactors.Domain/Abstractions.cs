@@ -127,6 +127,14 @@ public interface IRunRepository
     Task SaveRunAsync(RunRecord run, CancellationToken cancellationToken);
     Task ReplaceRunEntriesAsync(string runId, IReadOnlyList<RunEntryRecord> entries, CancellationToken cancellationToken);
     Task AppendRunEntryAsync(RunEntryRecord entry, CancellationToken cancellationToken);
+    Task<int> PruneTerminalRunsStartedBeforeAsync(DateTimeOffset cutoffUtc, CancellationToken cancellationToken) =>
+        Task.FromResult(0);
+    Task<bool> VacuumIfNeededAsync(
+        DateTimeOffset nowUtc,
+        long minimumFreeBytes,
+        TimeSpan minimumInterval,
+        CancellationToken cancellationToken) =>
+        Task.FromResult(false);
     Task<IReadOnlyList<RunEntry>> GetRunEntriesAsync(
         string runId,
         string? bucket,
