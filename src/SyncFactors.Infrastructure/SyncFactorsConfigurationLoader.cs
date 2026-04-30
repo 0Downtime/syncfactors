@@ -108,6 +108,10 @@ public sealed class SyncFactorsConfigurationLoader
             Sync: new SyncPolicyConfig(
                 EnableBeforeStartDays: document.GetRequiredObject("sync").GetRequiredInt32("enableBeforeStartDays"),
                 DeletionRetentionDays: document.GetRequiredObject("sync").GetRequiredInt32("deletionRetentionDays"),
+                RunHistoryRetentionDays: TryGetInt32(document.GetRequiredObject("sync"), "runHistoryRetentionDays") ?? 3,
+                RunHistoryVacuumEnabled: document.GetRequiredObject("sync").TryGetBoolean("runHistoryVacuumEnabled") ?? true,
+                RunHistoryVacuumMinimumFreedMegabytes: TryGetInt32(document.GetRequiredObject("sync"), "runHistoryVacuumMinimumFreedMegabytes") ?? 128,
+                RunHistoryVacuumMinimumIntervalHours: TryGetInt32(document.GetRequiredObject("sync"), "runHistoryVacuumMinimumIntervalHours") ?? 24,
                 MaxDegreeOfParallelism: TryGetInt32(document.GetRequiredObject("sync"), "maxDegreeOfParallelism") ?? 2,
                 RealSyncEnabled: document.GetRequiredObject("sync").TryGetBoolean("realSyncEnabled") ?? true,
                 AutoDeleteFromGraveyard: document.GetRequiredObject("sync").TryGetBoolean("autoDeleteFromGraveyard") ?? false,

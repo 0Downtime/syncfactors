@@ -140,7 +140,11 @@ public sealed class ActiveDirectoryCommandGateway(
             };
         }
 
-        if (ShouldRemoveProvisioningGroups(command, config, distinguishedName))
+        if (ShouldAddProvisioningGroups(command, config, distinguishedName, operations, effectiveTransport))
+        {
+            AddUserToProvisioningGroups(connection, distinguishedName!, config, logger, command.WorkerId, command.SamAccountName);
+        }
+        else if (ShouldRemoveProvisioningGroups(command, config, distinguishedName))
         {
             RemoveUserFromProvisioningGroups(connection, distinguishedName!, config, logger, command.WorkerId, command.SamAccountName);
         }
@@ -227,12 +231,6 @@ public sealed class ActiveDirectoryCommandGateway(
             {
                 step = "SetManager";
                 SetManager(connection, dn, managerDn, logger, command.WorkerId);
-            }
-
-            if ((config.LicensingGroups?.Count ?? 0) > 0)
-            {
-                step = "AddProvisioningGroups";
-                AddUserToProvisioningGroups(connection, dn, config, logger, command.WorkerId, command.SamAccountName);
             }
 
             if (canEnableCreatedAccount)
@@ -1317,15 +1315,45 @@ public sealed class ActiveDirectoryCommandGateway(
                exception.Message.Contains("no such attribute", StringComparison.OrdinalIgnoreCase);
     }
 
+    private static bool ShouldAddProvisioningGroups(
+        DirectoryMutationCommand command,
+        ActiveDirectoryConfig config,
+        string? distinguishedName,
+        IReadOnlyList<SyncFactors.Contracts.DirectoryOperation> operations,
+        string effectiveTransport)
+    {
+        return IsActiveProvisioningGroupTarget(command, config, distinguishedName) &&
+               (!HasOperation(operations, "CreateUser") || CanEnableCreatedAccount(command, config, effectiveTransport));
+    }
+
     private static bool ShouldRemoveProvisioningGroups(
+        DirectoryMutationCommand command,
+        ActiveDirectoryConfig config,
+        string? distinguishedName)
+    {
+        _ = command;
+        _ = config;
+        _ = distinguishedName;
+        // Retain group memberships for disabled or terminated users until the AD account is deleted.
+        return false;
+    }
+
+    private static bool IsActiveProvisioningGroupTarget(
         DirectoryMutationCommand command,
         ActiveDirectoryConfig config,
         string? distinguishedName)
     {
         return !string.IsNullOrWhiteSpace(distinguishedName) &&
                (config.LicensingGroups?.Count ?? 0) > 0 &&
-               !command.EnableAccount &&
-               string.Equals(command.TargetOu, config.GraveyardOu, StringComparison.OrdinalIgnoreCase);
+               command.EnableAccount &&
+               string.Equals(command.TargetOu, config.DefaultActiveOu, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool HasOperation(
+        IReadOnlyList<SyncFactors.Contracts.DirectoryOperation> operations,
+        string kind)
+    {
+        return operations.Any(operation => string.Equals(operation.Kind, kind, StringComparison.OrdinalIgnoreCase));
     }
 
     private static bool ShouldVerifyGraveyardMove(

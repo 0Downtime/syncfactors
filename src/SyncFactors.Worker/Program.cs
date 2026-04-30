@@ -35,6 +35,15 @@ builder.Services.AddSingleton(serviceProvider =>
 builder.Services.AddSingleton(serviceProvider =>
 {
     var config = serviceProvider.GetRequiredService<SyncFactorsConfigurationLoader>().GetSyncConfig();
+    return new SyncFactors.Contracts.RunHistoryRetentionSettings(
+        config.Sync.RunHistoryRetentionDays,
+        config.Sync.RunHistoryVacuumEnabled,
+        config.Sync.RunHistoryVacuumMinimumFreedMegabytes,
+        config.Sync.RunHistoryVacuumMinimumIntervalHours);
+});
+builder.Services.AddSingleton(serviceProvider =>
+{
+    var config = serviceProvider.GetRequiredService<SyncFactorsConfigurationLoader>().GetSyncConfig();
     return new SyncFactors.Contracts.RealSyncSettings(config.Sync.RealSyncEnabled);
 });
 builder.Services.AddSingleton(serviceProvider =>

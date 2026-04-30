@@ -539,6 +539,105 @@ public sealed class SqliteRunRepositoryTests
         }
     }
 
+    [Fact]
+    public async Task PruneTerminalRunsStartedBeforeAsync_RemovesOldTerminalRunsAndEntriesOnly()
+    {
+        var databasePath = Path.Combine(Path.GetTempPath(), $"syncfactors-run-prune-{Guid.NewGuid():N}.db");
+
+        try
+        {
+            var repository = await CreateRepositoryAsync(databasePath);
+            var oldRunId = "bulk-old-terminal";
+            var oldActiveRunId = "bulk-old-active";
+            var recentRunId = "bulk-recent-terminal";
+
+            await repository.SaveRunAsync(
+                CreateRunRecord(oldRunId, DateTimeOffset.Parse("2026-04-25T12:00:00Z")) with
+                {
+                    Status = "Succeeded"
+                },
+                CancellationToken.None);
+            await repository.AppendRunEntryAsync(CreateEntry(oldRunId, "unchanged", 0, "10001"), CancellationToken.None);
+
+            await repository.SaveRunAsync(
+                CreateRunRecord(oldActiveRunId, DateTimeOffset.Parse("2026-04-25T13:00:00Z")) with
+                {
+                    Status = "InProgress",
+                    CompletedAt = null,
+                    DurationSeconds = null
+                },
+                CancellationToken.None);
+            await repository.AppendRunEntryAsync(CreateEntry(oldActiveRunId, "unchanged", 0, "10002"), CancellationToken.None);
+
+            await repository.SaveRunAsync(
+                CreateRunRecord(recentRunId, DateTimeOffset.Parse("2026-04-29T12:00:00Z")) with
+                {
+                    Status = "Failed"
+                },
+                CancellationToken.None);
+            await repository.AppendRunEntryAsync(CreateEntry(recentRunId, "conflicts", 0, "10003"), CancellationToken.None);
+
+            var pruned = await repository.PruneTerminalRunsStartedBeforeAsync(
+                DateTimeOffset.Parse("2026-04-27T00:00:00Z"),
+                CancellationToken.None);
+
+            Assert.Equal(1, pruned);
+            Assert.Null(await repository.GetRunAsync(oldRunId, CancellationToken.None));
+            Assert.NotNull(await repository.GetRunAsync(oldActiveRunId, CancellationToken.None));
+            Assert.NotNull(await repository.GetRunAsync(recentRunId, CancellationToken.None));
+            Assert.Equal(0, await repository.CountRunEntriesAsync(oldRunId, null, null, null, null, null, null, CancellationToken.None));
+            Assert.Equal(1, await repository.CountRunEntriesAsync(oldActiveRunId, null, null, null, null, null, null, CancellationToken.None));
+            Assert.Equal(1, await repository.CountRunEntriesAsync(recentRunId, null, null, null, null, null, null, CancellationToken.None));
+        }
+        finally
+        {
+            File.Delete(databasePath);
+        }
+    }
+
+    [Fact]
+    public async Task VacuumIfNeededAsync_RunsAfterPruneAndHonorsMinimumInterval()
+    {
+        var databasePath = Path.Combine(Path.GetTempPath(), $"syncfactors-run-vacuum-{Guid.NewGuid():N}.db");
+
+        try
+        {
+            var repository = await CreateRepositoryAsync(databasePath);
+            var runId = "bulk-old-terminal";
+            var startedAt = DateTimeOffset.Parse("2026-04-25T12:00:00Z");
+
+            await repository.SaveRunAsync(
+                CreateRunRecord(runId, startedAt) with { Status = "Succeeded" },
+                CancellationToken.None);
+            for (var index = 0; index < 100; index++)
+            {
+                await repository.AppendRunEntryAsync(
+                    CreateEntry(runId, "unchanged", index, $"10{index:000}", new
+                    {
+                        workerId = $"10{index:000}",
+                        payload = new string('x', 4096)
+                    }),
+                    CancellationToken.None);
+            }
+
+            var pruned = await repository.PruneTerminalRunsStartedBeforeAsync(
+                DateTimeOffset.Parse("2026-04-27T00:00:00Z"),
+                CancellationToken.None);
+            var now = DateTimeOffset.Parse("2026-04-30T15:00:00Z");
+
+            var firstVacuum = await repository.VacuumIfNeededAsync(now, 0, TimeSpan.FromHours(24), CancellationToken.None);
+            var secondVacuum = await repository.VacuumIfNeededAsync(now.AddHours(1), 0, TimeSpan.FromHours(24), CancellationToken.None);
+
+            Assert.Equal(1, pruned);
+            Assert.True(firstVacuum);
+            Assert.False(secondVacuum);
+        }
+        finally
+        {
+            File.Delete(databasePath);
+        }
+    }
+
     private static async Task<SqliteRunRepository> CreateRepositoryAsync(string databasePath)
     {
         var pathResolver = new SqlitePathResolver(databasePath);
