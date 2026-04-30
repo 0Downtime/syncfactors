@@ -302,6 +302,13 @@ public static class AutomationRiskPolicy
     }
 }
 
+public static class AutomationIdempotencyPolicy
+{
+    public static bool ShouldRun(AutomationScenario scenario) =>
+        string.IsNullOrWhiteSpace(scenario.ExpectedQueueStatus) ||
+        string.Equals(scenario.ExpectedQueueStatus, "Completed", StringComparison.OrdinalIgnoreCase);
+}
+
 public sealed class AutomationRunner(AutomationOptions options, TextWriter output) : IAsyncDisposable
 {
     private readonly HttpClient _apiClient = new(new HttpClientHandler
@@ -532,9 +539,13 @@ public sealed class AutomationRunner(AutomationOptions options, TextWriter outpu
             finalSnapshot,
             scenario.FinalExpectation?.AllowUnexpectedAdUsers == true);
         failures.AddRange(adDiff.Where(diff => diff.Severity.Equals("Failure", StringComparison.OrdinalIgnoreCase)).Select(diff => diff.Message));
-        if (options.Idempotency)
+        if (options.Idempotency && AutomationIdempotencyPolicy.ShouldRun(scenario))
         {
             failures.AddRange(await RunIdempotencyCheckAsync(scenario, cancellationToken));
+        }
+        else if (options.Idempotency)
+        {
+            await AutomationConsole.WriteWarningAsync(output, $"[{scenario.Name}] Skipping idempotency check because the scenario expects a non-completed queue status.");
         }
 
         failures.AddRange(await VerifyAuditEventsAsync(scenario, startedAt, cancellationToken));
@@ -920,11 +931,10 @@ public sealed class AutomationRunner(AutomationOptions options, TextWriter outpu
 
     private async Task<RunQueueRequest> QueueAndWaitAsync(string path, object body, CancellationToken cancellationToken)
     {
-        var response = await _apiClient.PostAsJsonAsync(path, body, cancellationToken);
-        await EnsureSuccessAsync(response, $"queue {path}", cancellationToken);
+        var deadline = DateTimeOffset.UtcNow.Add(options.Timeout);
+        var response = await PostQueueRequestWithRetryAsync(path, body, deadline, cancellationToken);
         var queued = await ReadRunQueueRequestAsync(response, cancellationToken);
         await AutomationConsole.WriteInfoAsync(output, $"Queued {queued.Mode}. request={queued.RequestId} trigger={queued.RunTrigger} dryRun={queued.DryRun}");
-        var deadline = DateTimeOffset.UtcNow.Add(options.Timeout);
         var lastStatus = queued.Status;
         while (DateTimeOffset.UtcNow < deadline)
         {
@@ -944,6 +954,72 @@ public sealed class AutomationRunner(AutomationOptions options, TextWriter outpu
         }
 
         throw new TimeoutException($"Timed out waiting for queue request {queued.RequestId}.");
+    }
+
+    private async Task<HttpResponseMessage> PostQueueRequestWithRetryAsync(string path, object body, DateTimeOffset deadline, CancellationToken cancellationToken)
+    {
+        while (true)
+        {
+            var response = await _apiClient.PostAsJsonAsync(path, body, cancellationToken);
+            if (response.IsSuccessStatusCode)
+            {
+                return response;
+            }
+
+            var bodyText = await response.Content.ReadAsStringAsync(cancellationToken);
+            if (response.StatusCode != System.Net.HttpStatusCode.Conflict ||
+                !bodyText.Contains("pending or in progress", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException($"queue {path} failed with HTTP {(int)response.StatusCode}: {bodyText}");
+            }
+
+            if (DateTimeOffset.UtcNow >= deadline)
+            {
+                throw new TimeoutException($"Timed out waiting to queue {path}. Last failure: HTTP 409: {bodyText}");
+            }
+
+            var active = await GetActiveQueueRequestAsync(cancellationToken);
+            if (active is not null)
+            {
+                await AutomationConsole.WriteWarningAsync(
+                    output,
+                    $"Queue busy with {active.RunTrigger} request {active.RequestId} status={active.Status}; waiting before retrying {path}.");
+                await WaitForQueueRequestAsync(active.RequestId, deadline, cancellationToken);
+                continue;
+            }
+
+            await AutomationConsole.WriteWarningAsync(output, $"Queue busy but active request was not visible; retrying {path} shortly.");
+            await Task.Delay(TimeSpan.FromSeconds(2), cancellationToken);
+        }
+    }
+
+    private async Task WaitForQueueRequestAsync(string requestId, DateTimeOffset deadline, CancellationToken cancellationToken)
+    {
+        var lastStatus = string.Empty;
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            var latest = await GetQueueRequestAsync(requestId, cancellationToken);
+            if (!string.Equals(latest.Status, lastStatus, StringComparison.OrdinalIgnoreCase))
+            {
+                await AutomationConsole.WriteInfoAsync(output, $"  blocking request={latest.RequestId} status={latest.Status} run={latest.RunId ?? "(pending)"}");
+                lastStatus = latest.Status;
+            }
+
+            if (IsTerminal(latest.Status))
+            {
+                return;
+            }
+
+            await Task.Delay(TimeSpan.FromSeconds(2), cancellationToken);
+        }
+
+        throw new TimeoutException($"Timed out waiting for blocking queue request {requestId}.");
+    }
+
+    private async Task<RunQueueRequest?> GetActiveQueueRequestAsync(CancellationToken cancellationToken)
+    {
+        var payload = await GetJsonObjectAsync("/api/runs/queue", cancellationToken);
+        return payload["request"]?.Deserialize<RunQueueRequest>(AutomationCliJson.Options);
     }
 
     private async Task<RunQueueRequest> GetQueueRequestAsync(string requestId, CancellationToken cancellationToken)
