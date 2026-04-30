@@ -1,4 +1,5 @@
 using SyncFactors.Contracts;
+using Microsoft.Extensions.Logging;
 using System.Text.Json;
 
 namespace SyncFactors.Domain;
@@ -21,7 +22,10 @@ public interface IScaffoldRunPlanner
 
 public sealed class RunLifecycleService(
     IRuntimeStatusStore runtimeStatusStore,
-    IRunRepository runRepository) : IRunLifecycleService
+    IRunRepository runRepository,
+    RunHistoryRetentionSettings? runHistoryRetentionSettings = null,
+    TimeProvider? timeProvider = null,
+    ILogger<RunLifecycleService>? logger = null) : IRunLifecycleService
 {
     public async Task ExecutePlannedRunAsync(RunPlan plan, CancellationToken cancellationToken)
     {
@@ -77,6 +81,8 @@ public sealed class RunLifecycleService(
                 CompletedAt: completedAt,
                 ErrorMessage: null),
             cancellationToken);
+
+        await PruneRunHistoryAsync(cancellationToken);
     }
 
     public async Task StartRunAsync(string runId, string mode, bool dryRun, string runTrigger, string? requestedBy, int totalWorkers, string? initialAction, CancellationToken cancellationToken)
@@ -246,6 +252,8 @@ public sealed class RunLifecycleService(
                 CompletedAt: completedAt,
                 ErrorMessage: null),
             cancellationToken);
+
+        await PruneRunHistoryAsync(cancellationToken);
     }
 
     public async Task FailRunAsync(string runId, string mode, bool dryRun, int processedWorkers, int totalWorkers, string? currentWorkerId, string errorMessage, RunTally tally, JsonElement report, DateTimeOffset startedAt, CancellationToken cancellationToken)
@@ -297,6 +305,8 @@ public sealed class RunLifecycleService(
                 CompletedAt: completedAt,
                 ErrorMessage: errorMessage),
             cancellationToken);
+
+        await PruneRunHistoryAsync(cancellationToken);
     }
 
     public async Task CancelRunAsync(string runId, string mode, bool dryRun, int processedWorkers, int totalWorkers, string? currentWorkerId, string? reason, RunTally tally, JsonElement report, DateTimeOffset startedAt, CancellationToken cancellationToken)
@@ -349,6 +359,68 @@ public sealed class RunLifecycleService(
                 CompletedAt: completedAt,
                 ErrorMessage: null),
             cancellationToken);
+
+        await PruneRunHistoryAsync(cancellationToken);
+    }
+
+    private async Task PruneRunHistoryAsync(CancellationToken cancellationToken)
+    {
+        var retentionDays = runHistoryRetentionSettings?.RetentionDays ?? 3;
+        if (retentionDays <= 0)
+        {
+            return;
+        }
+
+        var nowUtc = (timeProvider ?? TimeProvider.System).GetUtcNow();
+        var cutoffUtc = nowUtc.AddDays(-retentionDays);
+        int prunedRuns;
+        try
+        {
+            prunedRuns = await runRepository.PruneTerminalRunsStartedBeforeAsync(cutoffUtc, cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            logger?.LogWarning(ex, "Failed to prune run history.");
+            return;
+        }
+
+        if (prunedRuns <= 0)
+        {
+            return;
+        }
+
+        logger?.LogInformation(
+            "Pruned {RunCount} terminal runs older than {CutoffUtc}.",
+            prunedRuns,
+            cutoffUtc);
+
+        if (!(runHistoryRetentionSettings?.VacuumEnabled ?? true))
+        {
+            return;
+        }
+
+        try
+        {
+            var minimumFreeBytes = (long)(runHistoryRetentionSettings?.VacuumMinimumFreedMegabytes ?? 128) * 1024L * 1024L;
+            var minimumInterval = TimeSpan.FromHours(runHistoryRetentionSettings?.VacuumMinimumIntervalHours ?? 24);
+            var vacuumed = await runRepository.VacuumIfNeededAsync(nowUtc, minimumFreeBytes, minimumInterval, cancellationToken);
+            if (vacuumed)
+            {
+                logger?.LogInformation("Vacuumed SQLite database after run history pruning.");
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            logger?.LogWarning(ex, "Failed to vacuum SQLite database after run history pruning.");
+        }
     }
 
     private static RunRecord ToRunRecord(
