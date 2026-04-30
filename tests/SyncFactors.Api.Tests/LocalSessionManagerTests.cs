@@ -99,13 +99,13 @@ public sealed class LocalSessionManagerTests
         public Task<LocalUserRecord?> FindUserByIdAsync(string userId, CancellationToken cancellationToken) =>
             Task.FromResult(user);
 
-        public Task<LocalUserCommandResult> CreateUserAsync(string username, string password, bool isAdmin, CancellationToken cancellationToken) =>
+        public Task<LocalUserCommandResult> CreateUserAsync(string username, string password, string role, CancellationToken cancellationToken) =>
             Task.FromResult(LocalUserCommandResult.Success("created"));
 
         public Task<LocalUserCommandResult> ResetPasswordAsync(string userId, string newPassword, CancellationToken cancellationToken) =>
             Task.FromResult(LocalUserCommandResult.Success("reset"));
 
-        public Task<LocalUserCommandResult> SetUserRoleAsync(string userId, bool isAdmin, string actingUserId, CancellationToken cancellationToken) =>
+        public Task<LocalUserCommandResult> SetUserRoleAsync(string userId, string role, string actingUserId, CancellationToken cancellationToken) =>
             Task.FromResult(LocalUserCommandResult.Success("role"));
 
         public Task<LocalUserCommandResult> SetUserActiveStateAsync(string userId, bool isActive, string actingUserId, CancellationToken cancellationToken) =>

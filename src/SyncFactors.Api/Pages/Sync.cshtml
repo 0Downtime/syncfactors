@@ -145,22 +145,25 @@
         {
             <p class="callout warn">@Model.Schedule.LastEnqueueError</p>
         }
-        <form method="post" asp-page-handler="SaveSchedule" class="filters" data-sync-form data-sync-action="schedule">
-            <label>
-                <span>Enabled</span>
-                <input asp-for="ScheduleEnabled" type="checkbox" />
-            </label>
-            <label>
-                <span>Interval minutes</span>
-                <input asp-for="IntervalMinutes" type="number" min="5" max="1440" step="1" />
-            </label>
-            <div class="filter-actions">
-                <button type="submit" data-sync-submit>
-                    <span class="button-label">Save schedule</span>
-                    <span class="button-spinner" aria-hidden="true"></span>
-                </button>
-            </div>
-        </form>
+        @if (Model.CanManageSchedule)
+        {
+            <form method="post" asp-page-handler="SaveSchedule" class="filters" data-sync-form data-sync-action="schedule">
+                <label>
+                    <span>Enabled</span>
+                    <input asp-for="ScheduleEnabled" type="checkbox" />
+                </label>
+                <label>
+                    <span>Interval minutes</span>
+                    <input asp-for="IntervalMinutes" type="number" min="5" max="1440" step="1" />
+                </label>
+                <div class="filter-actions">
+                    <button type="submit" data-sync-submit>
+                        <span class="button-label">Save schedule</span>
+                        <span class="button-spinner" aria-hidden="true"></span>
+                    </button>
+                </div>
+            </form>
+        }
     </article>
 </section>
 

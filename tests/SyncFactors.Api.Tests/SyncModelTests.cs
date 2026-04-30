@@ -5,6 +5,7 @@ using System.Security.Claims;
 using SyncFactors.Api.Pages;
 using SyncFactors.Contracts;
 using SyncFactors.Domain;
+using SyncFactors.Infrastructure;
 
 namespace SyncFactors.Api.Tests;
 
@@ -189,6 +190,7 @@ public sealed class SyncModelTests
             ScheduleEnabled = true,
             IntervalMinutes = 45
         };
+        AttachAuthenticatedUser(model, "admin@example.com", SecurityRoles.Admin);
 
         var result = await model.OnPostSaveScheduleAsync(CancellationToken.None);
 
@@ -209,10 +211,28 @@ public sealed class SyncModelTests
             ScheduleEnabled = true,
             IntervalMinutes = 45
         };
+        AttachAuthenticatedUser(model, "admin@example.com", SecurityRoles.Admin);
 
         await model.OnPostSaveScheduleAsync(CancellationToken.None);
 
         Assert.Equal("Recurring dry-run sync enabled every 45 minutes.", model.SuccessMessage);
+    }
+
+    [Fact]
+    public async Task OnPostSaveScheduleAsync_ForbidsOperators()
+    {
+        var scheduleStore = new StubSyncScheduleStore();
+        var model = new SyncModel(CreateDashboardService(), new CapturingRunQueueStore(), new RealSyncSettings(), scheduleStore)
+        {
+            ScheduleEnabled = true,
+            IntervalMinutes = 45
+        };
+        AttachAuthenticatedUser(model, "operator@example.com", SecurityRoles.Operator);
+
+        var result = await model.OnPostSaveScheduleAsync(CancellationToken.None);
+
+        Assert.IsType<ForbidResult>(result);
+        Assert.Null(scheduleStore.LastUpdateRequest);
     }
 
     private static IDashboardSnapshotService CreateDashboardService()
@@ -267,7 +287,7 @@ public sealed class SyncModelTests
         }
     }
 
-    private static void AttachAuthenticatedUser(PageModel model, string username)
+    private static void AttachAuthenticatedUser(PageModel model, string username, string role = SecurityRoles.Operator)
     {
         model.PageContext = new PageContext
         {
@@ -276,7 +296,8 @@ public sealed class SyncModelTests
                 User = new ClaimsPrincipal(
                     new ClaimsIdentity(
                     [
-                        new Claim(ClaimTypes.Name, username)
+                        new Claim(ClaimTypes.Name, username),
+                        new Claim(ClaimTypes.Role, role)
                     ],
                     "Cookies"))
             }

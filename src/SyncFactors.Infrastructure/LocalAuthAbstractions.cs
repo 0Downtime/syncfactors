@@ -35,11 +35,11 @@ public interface ILocalAuthService
 
     Task<LocalUserRecord?> FindUserByIdAsync(string userId, CancellationToken cancellationToken);
 
-    Task<LocalUserCommandResult> CreateUserAsync(string username, string password, bool isAdmin, CancellationToken cancellationToken);
+    Task<LocalUserCommandResult> CreateUserAsync(string username, string password, string role, CancellationToken cancellationToken);
 
     Task<LocalUserCommandResult> ResetPasswordAsync(string userId, string newPassword, CancellationToken cancellationToken);
 
-    Task<LocalUserCommandResult> SetUserRoleAsync(string userId, bool isAdmin, string actingUserId, CancellationToken cancellationToken);
+    Task<LocalUserCommandResult> SetUserRoleAsync(string userId, string role, string actingUserId, CancellationToken cancellationToken);
 
     Task<LocalUserCommandResult> SetUserActiveStateAsync(string userId, bool isActive, string actingUserId, CancellationToken cancellationToken);
 

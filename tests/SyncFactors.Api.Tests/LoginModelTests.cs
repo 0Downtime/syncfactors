@@ -236,11 +236,11 @@ public sealed class LoginModelTests
             return Task.FromResult(user);
         }
 
-        public Task<LocalUserCommandResult> CreateUserAsync(string username, string password, bool isAdmin, CancellationToken cancellationToken)
+        public Task<LocalUserCommandResult> CreateUserAsync(string username, string password, string role, CancellationToken cancellationToken)
         {
             _ = username;
             _ = password;
-            _ = isAdmin;
+            _ = role;
             _ = cancellationToken;
             return Task.FromResult(LocalUserCommandResult.Success("created"));
         }
@@ -253,10 +253,10 @@ public sealed class LoginModelTests
             return Task.FromResult(LocalUserCommandResult.Success("reset"));
         }
 
-        public Task<LocalUserCommandResult> SetUserRoleAsync(string userId, bool isAdmin, string actingUserId, CancellationToken cancellationToken)
+        public Task<LocalUserCommandResult> SetUserRoleAsync(string userId, string role, string actingUserId, CancellationToken cancellationToken)
         {
             _ = userId;
-            _ = isAdmin;
+            _ = role;
             _ = actingUserId;
             _ = cancellationToken;
             return Task.FromResult(LocalUserCommandResult.Success("role"));

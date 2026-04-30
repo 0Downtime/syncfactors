@@ -119,7 +119,7 @@ public sealed class LocalAuthServiceTests
     }
 
     [Fact]
-    public async Task CreateUserAsync_CreatesOperatorByDefault()
+    public async Task CreateUserAsync_CreatesRequestedRole()
     {
         var databasePath = Path.Combine(Path.GetTempPath(), $"syncfactors-auth-create-{Guid.NewGuid():N}.db");
 
@@ -129,12 +129,12 @@ public sealed class LocalAuthServiceTests
             var service = CreateService(store, username: "admin", password: "Password123!");
             await service.EnsureBootstrapAdminAsync(CancellationToken.None);
 
-            var result = await service.CreateUserAsync("alice", "Password1234", isAdmin: false, CancellationToken.None);
+            var result = await service.CreateUserAsync("alice", "Password1234", SecurityRoles.Viewer, CancellationToken.None);
             var user = await store.FindByUsernameAsync("alice", CancellationToken.None);
 
             Assert.True(result.Succeeded);
             Assert.NotNull(user);
-            Assert.Equal("Operator", user!.Role);
+            Assert.Equal(SecurityRoles.Viewer, user!.Role);
         }
         finally
         {
@@ -178,10 +178,10 @@ public sealed class LocalAuthServiceTests
             var store = await CreateStoreAsync(databasePath);
             var service = CreateService(store, username: "admin", password: "Password123!");
             await service.EnsureBootstrapAdminAsync(CancellationToken.None);
-            await service.CreateUserAsync("alice", "Password1234", isAdmin: false, CancellationToken.None);
+            await service.CreateUserAsync("alice", "Password1234", SecurityRoles.Operator, CancellationToken.None);
             var user = await store.FindByUsernameAsync("alice", CancellationToken.None);
 
-            var result = await service.SetUserRoleAsync(user!.UserId, true, "admin-id", CancellationToken.None);
+            var result = await service.SetUserRoleAsync(user!.UserId, SecurityRoles.Admin, "admin-id", CancellationToken.None);
             var updated = await store.FindByUsernameAsync("alice", CancellationToken.None);
 
             Assert.True(result.Succeeded);
@@ -205,7 +205,7 @@ public sealed class LocalAuthServiceTests
             await service.EnsureBootstrapAdminAsync(CancellationToken.None);
             var admin = await store.FindByUsernameAsync("admin", CancellationToken.None);
 
-            var result = await service.SetUserRoleAsync(admin!.UserId, false, "someone-else", CancellationToken.None);
+            var result = await service.SetUserRoleAsync(admin!.UserId, SecurityRoles.Operator, "someone-else", CancellationToken.None);
 
             Assert.False(result.Succeeded);
             Assert.Equal("At least one active admin account must remain.", result.Message);
@@ -249,7 +249,7 @@ public sealed class LocalAuthServiceTests
             var store = await CreateStoreAsync(databasePath);
             var service = CreateService(store, username: "admin", password: "Password123!");
             await service.EnsureBootstrapAdminAsync(CancellationToken.None);
-            await service.CreateUserAsync("alice", "Password1234", isAdmin: false, CancellationToken.None);
+            await service.CreateUserAsync("alice", "Password1234", SecurityRoles.Operator, CancellationToken.None);
             var user = await store.FindByUsernameAsync("alice", CancellationToken.None);
 
             var result = await service.DeleteUserAsync(user!.UserId, "admin-id", CancellationToken.None);

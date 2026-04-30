@@ -30,14 +30,18 @@ public static class LocalAutomationUserBootstrapCommand
             LocalUserCommandResult result;
             if (existing is null)
             {
-                result = await authService.CreateUserAsync(options.Username, options.Password, options.Admin, cancellationToken);
+                result = await authService.CreateUserAsync(
+                    options.Username,
+                    options.Password,
+                    options.Admin ? SecurityRoles.Admin : SecurityRoles.Operator,
+                    cancellationToken);
             }
             else
             {
                 result = await authService.ResetPasswordAsync(existing.UserId, options.Password, cancellationToken);
                 if (result.Succeeded && options.Admin && !string.Equals(existing.Role, SecurityRoles.Admin, StringComparison.OrdinalIgnoreCase))
                 {
-                    result = await authService.SetUserRoleAsync(existing.UserId, isAdmin: true, actingUserId: "automation-bootstrap", cancellationToken);
+                    result = await authService.SetUserRoleAsync(existing.UserId, SecurityRoles.Admin, actingUserId: "automation-bootstrap", cancellationToken);
                 }
 
                 if (result.Succeeded && !existing.IsActive)
