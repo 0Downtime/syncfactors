@@ -223,6 +223,24 @@ public sealed class AutomationScenarioLoaderTests
     }
 
     [Fact]
+    public void IdempotencyPolicy_SkipsScenariosThatExpectQueueFailure()
+    {
+        var scenario = CreateScenario("safe", expectedQueueStatus: "Failed");
+
+        Assert.False(AutomationIdempotencyPolicy.ShouldRun(scenario));
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("Completed")]
+    public void IdempotencyPolicy_RunsForSuccessfulQueueScenarios(string? expectedQueueStatus)
+    {
+        var scenario = CreateScenario("safe", expectedQueueStatus);
+
+        Assert.True(AutomationIdempotencyPolicy.ShouldRun(scenario));
+    }
+
+    [Fact]
     public void AdDiff_CatchesMissingUnexpectedOuEnabledAttributeAndDuplicates()
     {
         var expected = new[]
@@ -271,7 +289,7 @@ public sealed class AutomationScenarioLoaderTests
         Assert.Contains(diffs, diff => diff.Message.Contains("Duplicate AD mail", StringComparison.OrdinalIgnoreCase));
     }
 
-    private static AutomationScenario CreateScenario(string riskLevel) =>
+    private static AutomationScenario CreateScenario(string riskLevel, string? expectedQueueStatus = null) =>
         new(
             Name: "risk-test",
             Tags: ["real-ad"],
@@ -283,7 +301,7 @@ public sealed class AutomationScenarioLoaderTests
             SyncMode: "BulkSync",
             ExpectedDurationSeconds: null,
             ExpectedRunStatus: null,
-            ExpectedQueueStatus: null,
+            ExpectedQueueStatus: expectedQueueStatus,
             ExpectedHealth: null,
             ExpectedAuditEvents: [],
             Iterations:
