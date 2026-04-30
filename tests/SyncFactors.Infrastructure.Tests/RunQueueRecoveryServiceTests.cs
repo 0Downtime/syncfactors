@@ -192,6 +192,65 @@ public sealed class RunQueueRecoveryServiceTests
         Assert.Empty(runtimeStatusStore.SavedStatuses);
     }
 
+    [Fact]
+    public async Task RecoverIfNeededAsync_CompletesQueue_WhenRuntimeAlreadyCompleted()
+    {
+        var now = DateTimeOffset.Parse("2026-04-09T14:00:00Z");
+        var queueStore = new StubRunQueueStore(
+            new RunQueueRequest(
+                RequestId: "req-4",
+                Mode: "BulkSync",
+                DryRun: false,
+                RunTrigger: "AdHoc",
+                RequestedBy: "test",
+                Status: "InProgress",
+                RequestedAt: now.AddMinutes(-6),
+                StartedAt: now.AddMinutes(-5),
+                CompletedAt: null,
+                RunId: null,
+                ErrorMessage: null),
+            recoverResult: 1);
+        var runtimeStatusStore = new StubRuntimeStatusStore(
+            new RuntimeStatus(
+                Status: "Idle",
+                Stage: "Completed",
+                RunId: "run-4",
+                Mode: "BulkSync",
+                DryRun: false,
+                ProcessedWorkers: 10,
+                TotalWorkers: 10,
+                CurrentWorkerId: null,
+                LastAction: "BulkSync run completed.",
+                StartedAt: now.AddMinutes(-5),
+                LastUpdatedAt: now.AddMinutes(-1),
+                CompletedAt: now.AddMinutes(-1),
+                ErrorMessage: null));
+        var runRepository = new StubRunRepository(CreateRunDetail("run-4", "Succeeded", now.AddMinutes(-5)));
+        var heartbeatStore = new StubWorkerHeartbeatStore(
+            new WorkerHeartbeat(
+                Service: "SyncFactors.Worker",
+                State: "Running",
+                Activity: "Executing queued run req-4.",
+                StartedAt: now.AddMinutes(-5),
+                LastSeenAt: now.AddSeconds(-10)));
+        var service = new RunQueueRecoveryService(
+            queueStore,
+            runtimeStatusStore,
+            runRepository,
+            heartbeatStore,
+            new FixedTimeProvider(now),
+            NullLogger<RunQueueRecoveryService>.Instance);
+
+        var recovered = await service.RecoverIfNeededAsync("worker startup", CancellationToken.None);
+
+        Assert.Equal(1, recovered);
+        Assert.Equal(0, queueStore.RecoverCalls);
+        Assert.Equal("req-4", queueStore.CompletedRequestId);
+        Assert.Equal("run-4", queueStore.CompletedRunId);
+        Assert.Empty(runRepository.SavedRuns);
+        Assert.Empty(runtimeStatusStore.SavedStatuses);
+    }
+
     private static RunDetail CreateRunDetail(string runId, string status, DateTimeOffset startedAt, bool dryRun = false)
     {
         return new RunDetail(
@@ -230,6 +289,14 @@ public sealed class RunQueueRecoveryServiceTests
         public int RecoverCalls { get; private set; }
 
         public string? LastRecoveryMessage { get; private set; }
+
+        public string? CompletedRequestId { get; private set; }
+
+        public string? CompletedRunId { get; private set; }
+
+        public string? CanceledRequestId { get; private set; }
+
+        public string? CanceledRunId { get; private set; }
 
         public Task<RunQueueRequest> EnqueueAsync(StartRunRequest request, CancellationToken cancellationToken)
         {
@@ -280,19 +347,19 @@ public sealed class RunQueueRecoveryServiceTests
 
         public Task CompleteAsync(string requestId, string runId, CancellationToken cancellationToken)
         {
-            _ = requestId;
-            _ = runId;
             _ = cancellationToken;
-            throw new NotSupportedException();
+            CompletedRequestId = requestId;
+            CompletedRunId = runId;
+            return Task.CompletedTask;
         }
 
         public Task CancelAsync(string requestId, string? runId, string? errorMessage, CancellationToken cancellationToken)
         {
-            _ = requestId;
-            _ = runId;
             _ = errorMessage;
             _ = cancellationToken;
-            throw new NotSupportedException();
+            CanceledRequestId = requestId;
+            CanceledRunId = runId;
+            return Task.CompletedTask;
         }
 
         public Task FailAsync(string requestId, string? runId, string errorMessage, CancellationToken cancellationToken)

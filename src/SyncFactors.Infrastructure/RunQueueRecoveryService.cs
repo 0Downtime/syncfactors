@@ -30,6 +30,12 @@ public sealed class RunQueueRecoveryService(
             return 0;
         }
 
+        var terminalQueueRecovery = await TryRecoverQueueFromTerminalRuntimeAsync(current, runtime, trigger, cancellationToken);
+        if (terminalQueueRecovery > 0)
+        {
+            return terminalQueueRecovery;
+        }
+
         var heartbeat = await workerHeartbeatStore.GetCurrentAsync(cancellationToken);
         var now = timeProvider.GetUtcNow();
         if (!ignoreFreshHeartbeat && heartbeat is not null)
@@ -80,6 +86,86 @@ public sealed class RunQueueRecoveryService(
 
         return recovered;
     }
+
+    private async Task<int> TryRecoverQueueFromTerminalRuntimeAsync(
+        RunQueueRequest? current,
+        RuntimeStatus? runtime,
+        string trigger,
+        CancellationToken cancellationToken)
+    {
+        if (current is null ||
+            runtime is null ||
+            !IsRecoverableQueueStatus(current.Status) ||
+            string.IsNullOrWhiteSpace(runtime.RunId) ||
+            !RuntimeBelongsToQueue(current, runtime))
+        {
+            return 0;
+        }
+
+        if (IsCompletedRuntime(runtime))
+        {
+            await runQueueStore.CompleteAsync(current.RequestId, runtime.RunId, cancellationToken);
+            logger.LogWarning(
+                "Recovered active queue row from completed runtime status. RequestId={RequestId} RunId={RunId} Trigger={Trigger}",
+                current.RequestId,
+                runtime.RunId,
+                trigger);
+            return 1;
+        }
+
+        if (IsCanceledRuntime(runtime))
+        {
+            await runQueueStore.CancelAsync(
+                current.RequestId,
+                runtime.RunId,
+                runtime.LastAction ?? "Recovered queue row from canceled runtime status.",
+                cancellationToken);
+            logger.LogWarning(
+                "Recovered active queue row from canceled runtime status. RequestId={RequestId} RunId={RunId} Trigger={Trigger}",
+                current.RequestId,
+                runtime.RunId,
+                trigger);
+            return 1;
+        }
+
+        return 0;
+    }
+
+    private static bool IsRecoverableQueueStatus(string status) =>
+        string.Equals(status, "InProgress", StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(status, "CancelRequested", StringComparison.OrdinalIgnoreCase);
+
+    private static bool RuntimeBelongsToQueue(RunQueueRequest current, RuntimeStatus runtime)
+    {
+        if (!string.IsNullOrWhiteSpace(runtime.Mode) &&
+            !string.Equals(current.Mode, runtime.Mode, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        if (!string.IsNullOrWhiteSpace(current.RunId))
+        {
+            return string.Equals(current.RunId, runtime.RunId, StringComparison.OrdinalIgnoreCase);
+        }
+
+        return runtime.StartedAt is not null &&
+               current.StartedAt is not null &&
+               runtime.StartedAt >= current.StartedAt.Value.AddSeconds(-5);
+    }
+
+    private static bool IsCompletedRuntime(RuntimeStatus runtime) =>
+        runtime.CompletedAt is not null &&
+        !string.IsNullOrWhiteSpace(runtime.RunId) &&
+        string.Equals(runtime.Stage, "Completed", StringComparison.OrdinalIgnoreCase) &&
+        (string.Equals(runtime.Status, "Idle", StringComparison.OrdinalIgnoreCase) ||
+         string.Equals(runtime.Status, "Succeeded", StringComparison.OrdinalIgnoreCase));
+
+    private static bool IsCanceledRuntime(RuntimeStatus runtime) =>
+        runtime.CompletedAt is not null &&
+        !string.IsNullOrWhiteSpace(runtime.RunId) &&
+        string.Equals(runtime.Stage, "Canceled", StringComparison.OrdinalIgnoreCase) &&
+        (string.Equals(runtime.Status, "Idle", StringComparison.OrdinalIgnoreCase) ||
+         string.Equals(runtime.Status, "Canceled", StringComparison.OrdinalIgnoreCase));
 
     private async Task RecoverRunAsync(
         string runId,
