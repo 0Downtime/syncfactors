@@ -23,7 +23,7 @@ public sealed class UsersModel(
     public string CreatePasswordConfirmation { get; set; } = string.Empty;
 
     [BindProperty]
-    public bool CreateIsAdmin { get; set; }
+    public string CreateRole { get; set; } = SecurityRoles.Operator;
 
     public IReadOnlyList<LocalUserSummary> Users { get; private set; } = [];
 
@@ -109,7 +109,7 @@ public sealed class UsersModel(
             return RedirectToPage();
         }
 
-        var result = await localAuthService.CreateUserAsync(CreateUsername, CreatePassword, CreateIsAdmin, cancellationToken);
+        var result = await localAuthService.CreateUserAsync(CreateUsername, CreatePassword, CreateRole, cancellationToken);
         SetFlash(result);
         return RedirectToPage();
     }
@@ -133,14 +133,14 @@ public sealed class UsersModel(
         return RedirectToPage();
     }
 
-    public async Task<IActionResult> OnPostChangeRoleAsync(string userId, bool makeAdmin, CancellationToken cancellationToken)
+    public async Task<IActionResult> OnPostChangeRoleAsync(string userId, string role, CancellationToken cancellationToken)
     {
         if (!EnsureLocalUserManagementAvailable())
         {
             return RedirectToPage();
         }
 
-        var result = await localAuthService.SetUserRoleAsync(userId, makeAdmin, GetActingUserId(), cancellationToken);
+        var result = await localAuthService.SetUserRoleAsync(userId, role, GetActingUserId(), cancellationToken);
         SetFlash(result);
         return RedirectToPage();
     }
