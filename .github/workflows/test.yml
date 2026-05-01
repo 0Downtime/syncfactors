@@ -7,16 +7,42 @@ on:
       - master
   pull_request:
 
-permissions: {}
+permissions:
+  actions: read
 
 concurrency:
   group: test-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  select-runner:
+    name: Select runner
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+    outputs:
+      runs-on: ${{ steps.runner.outputs.runs-on }}
+    steps:
+      - name: Prefer Mac self-hosted runner
+        id: runner
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          runner_json="$(gh api "repos/${REPO}/actions/runners?per_page=100" 2>/dev/null || true)"
+          if [[ -n "$runner_json" ]] && jq -e '.runners[]? | select(.name == "Mac" and .status == "online" and .busy == false)' >/dev/null 2>&1 <<< "$runner_json"; then
+            echo 'runs-on=["self-hosted","macOS","X64"]' >> "$GITHUB_OUTPUT"
+          else
+            echo 'runs-on="macos-latest"' >> "$GITHUB_OUTPUT"
+          fi
+
   dotnet:
     name: dotnet
-    runs-on: ubuntu-latest
+    needs: select-runner
+    runs-on: ${{ fromJSON(needs.select-runner.outputs.runs-on) }}
     permissions:
       attestations: write
       contents: read
