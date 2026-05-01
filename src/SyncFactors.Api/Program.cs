@@ -614,14 +614,20 @@ operatorApi.MapPost("/runs/full", async (
         : Results.BadRequest(result);
 });
 
-operatorApi.MapPost("/runs/delete-all", async (
+adminApi.MapPost("/runs/delete-all", async (
     DeleteAllUsersRequest request,
     ClaimsPrincipal user,
     IRunQueueStore queueStore,
     RealSyncSettings realSyncSettings,
     ISecurityAuditService audit,
+    IWebHostEnvironment environment,
     CancellationToken cancellationToken) =>
 {
+    if (!environment.IsDevelopment())
+    {
+        return Results.NotFound();
+    }
+
     if (!realSyncSettings.Enabled)
     {
         return Results.BadRequest(new { error = "Real AD sync is disabled for this environment." });
