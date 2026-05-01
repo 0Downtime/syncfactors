@@ -59,6 +59,8 @@ public sealed class MockAdminOptions
 
     public bool RequireLoopback { get; set; } = true;
 
+    public bool AllowHostHeaderLoopbackFallback { get; set; }
+
     public string Path { get; set; } = "/admin";
 }
 
