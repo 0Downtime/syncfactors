@@ -99,6 +99,26 @@ public sealed record WorkerPreviewHistoryItem(
     string? Reason,
     string Fingerprint);
 
+public sealed record WorkerRunHistoryItem(
+    string RunId,
+    string EntryId,
+    string ArtifactType,
+    string Mode,
+    bool DryRun,
+    string RunStatus,
+    string RunTrigger,
+    DateTimeOffset StartedAt,
+    DateTimeOffset? CompletedAt,
+    string Bucket,
+    string BucketLabel,
+    string? WorkerId,
+    string? SamAccountName,
+    string? Reason,
+    string? ReviewCaseType,
+    int ChangeCount,
+    IReadOnlyList<string> TopChangedAttributes,
+    OperationSummary? OperationSummary);
+
 public sealed record RunEntry(
     string EntryId,
     string RunId,

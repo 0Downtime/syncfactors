@@ -10,11 +10,25 @@ namespace SyncFactors.Api.Tests;
 public sealed class PreviewModelTests
 {
     [Fact]
+    public async Task Worker360_OnGetAsync_WithoutWorkerId_DoesNotCallPreviewPlanner()
+    {
+        var preview = CreatePreview("ignored");
+        var planner = new CapturingWorkerPreviewPlanner(preview);
+        var model = new Worker360Model(planner, new StubApplyPreviewService(), new StubRunRepository(preview));
+
+        await model.OnGetAsync(CancellationToken.None);
+
+        Assert.Equal(0, planner.CallCount);
+        Assert.Null(model.Preview);
+        Assert.Empty(model.RunHistory);
+    }
+
+    [Fact]
     public async Task OnGetAsync_LoadsPreviewForRequestedWorker()
     {
         var preview = CreatePreview(workerId: "10001");
         var planner = new CapturingWorkerPreviewPlanner(preview);
-        var model = new PreviewModel(planner, new StubApplyPreviewService(), new StubRunRepository(preview))
+        var model = new Worker360Model(planner, new StubApplyPreviewService(), new StubRunRepository(preview))
         {
             WorkerId = "10001"
         };
@@ -23,7 +37,43 @@ public sealed class PreviewModelTests
 
         Assert.Equal("10001", planner.LastWorkerId);
         Assert.Same(preview, model.Preview);
+        Assert.Equal("preview-10001", model.RunHistory.Single().RunId);
         Assert.Null(model.ErrorMessage);
+    }
+
+    [Fact]
+    public async Task Worker360_OnGetAsync_PreviewFailureKeepsRunHistory()
+    {
+        var preview = CreatePreview(workerId: "10001");
+        var model = new Worker360Model(
+            new ThrowingWorkerPreviewPlanner(new InvalidOperationException("preview failed")),
+            new StubApplyPreviewService(),
+            new StubRunRepository(preview))
+        {
+            WorkerId = "10001"
+        };
+
+        await model.OnGetAsync(CancellationToken.None);
+
+        Assert.Null(model.Preview);
+        Assert.Equal("preview failed", model.ErrorMessage);
+        Assert.Equal("preview-10001", model.RunHistory.Single().RunId);
+    }
+
+    [Fact]
+    public async Task Preview_OnGetAsync_WithWorkerId_RedirectsToWorker360()
+    {
+        var preview = CreatePreview(workerId: "10001");
+        var model = new PreviewModel(new StubRunRepository(preview))
+        {
+            WorkerId = "10001"
+        };
+
+        var result = await model.OnGetAsync(CancellationToken.None);
+
+        var redirect = Assert.IsType<RedirectToPageResult>(result);
+        Assert.Equal("/Workers", redirect.PageName);
+        Assert.Equal("10001", redirect.RouteValues!["workerId"]);
     }
 
     [Fact]
@@ -39,7 +89,7 @@ public sealed class PreviewModelTests
                 DistinguishedName: "CN=Sample101\\, Winnie,OU=LabUsers,DC=example,DC=com",
                 Message: "Updated AD user 10001.",
                 RunId: "apply-10001-20260327120000"));
-        var model = new PreviewModel(planner, applyService, new StubRunRepository(preview))
+        var model = new Worker360Model(planner, applyService, new StubRunRepository(preview))
         {
             WorkerId = "10001",
             PreviewRunId = preview.RunId!,
@@ -65,7 +115,7 @@ public sealed class PreviewModelTests
     {
         var preview = CreatePreview(workerId: "10001");
         var planner = new CapturingWorkerPreviewPlanner(preview);
-        var model = new PreviewModel(planner, new StubApplyPreviewService(), new StubRunRepository(preview))
+        var model = new Worker360Model(planner, new StubApplyPreviewService(), new StubRunRepository(preview))
         {
             SavedRunId = preview.RunId!
         };
@@ -83,7 +133,7 @@ public sealed class PreviewModelTests
     public async Task OnPostApplyAsync_RequiresWorkerId()
     {
         var preview = CreatePreview("ignored");
-        var model = new PreviewModel(new CapturingWorkerPreviewPlanner(preview), new StubApplyPreviewService(), new StubRunRepository(preview));
+        var model = new Worker360Model(new CapturingWorkerPreviewPlanner(preview), new StubApplyPreviewService(), new StubRunRepository(preview));
 
         var result = await model.OnPostApplyAsync(CancellationToken.None);
 
@@ -99,7 +149,7 @@ public sealed class PreviewModelTests
         var preview = CreatePreview(workerId: "10001");
         var applyService = new ThrowingApplyPreviewService(new InvalidOperationException(
             "Active Directory command 'UpdateUser' failed against LDAP server 'localhost'. The server cannot handle directory requests. Details: Step=ModifyAttributes WorkerId=10001 SamAccountName=winnie DistinguishedName=CN=Sample101\\, Winnie,OU=LabUsers,DC=example,DC=com Attributes=displayName,department,company,streetAddress ManagerId=90001 Next check: Check the target OU, manager resolution, and whether the account already exists with unexpected state."));
-        var model = new PreviewModel(new CapturingWorkerPreviewPlanner(preview), applyService, new StubRunRepository(preview))
+        var model = new Worker360Model(new CapturingWorkerPreviewPlanner(preview), applyService, new StubRunRepository(preview))
         {
             WorkerId = "10001",
             PreviewRunId = preview.RunId!,
@@ -170,7 +220,7 @@ public sealed class PreviewModelTests
             [
                 new SourceAttributeRow("emplStatus", "64303")
             ]);
-        var model = new PreviewModel(new CapturingWorkerPreviewPlanner(preview), new StubApplyPreviewService(), new StubRunRepository(preview));
+        var model = new Worker360Model(new CapturingWorkerPreviewPlanner(preview), new StubApplyPreviewService(), new StubRunRepository(preview));
 
         Assert.Equal("64303 - Unpaid Leave", model.GetEmploymentStatusDisplay(preview));
     }
@@ -234,6 +284,16 @@ public sealed class PreviewModelTests
         }
     }
 
+    private sealed class ThrowingWorkerPreviewPlanner(Exception exception) : IWorkerPreviewPlanner
+    {
+        public Task<WorkerPreviewResult> PreviewAsync(string workerId, CancellationToken cancellationToken)
+        {
+            _ = workerId;
+            _ = cancellationToken;
+            return Task.FromException<WorkerPreviewResult>(exception);
+        }
+    }
+
     private sealed class CapturingApplyPreviewService(DirectoryCommandResult result) : IApplyPreviewService
     {
         public ApplyPreviewRequest? LastRequest { get; private set; }
@@ -268,6 +328,29 @@ public sealed class PreviewModelTests
 
     private sealed class StubRunRepository(WorkerPreviewResult preview) : IRunRepository
     {
+        private readonly IReadOnlyList<WorkerRunHistoryItem> workerHistory =
+        [
+            new WorkerRunHistoryItem(
+                RunId: preview.RunId ?? "preview-run",
+                EntryId: $"{preview.RunId ?? "preview-run"}:updates:0",
+                ArtifactType: preview.ArtifactType ?? "WorkerPreview",
+                Mode: preview.Mode ?? "Preview",
+                DryRun: true,
+                RunStatus: preview.Status ?? "Planned",
+                RunTrigger: "Preview",
+                StartedAt: DateTimeOffset.Parse("2026-04-01T12:00:00Z"),
+                CompletedAt: null,
+                Bucket: preview.Buckets.FirstOrDefault() ?? "updates",
+                BucketLabel: "Updates",
+                WorkerId: preview.WorkerId,
+                SamAccountName: preview.SamAccountName,
+                Reason: preview.Reason,
+                ReviewCaseType: preview.ReviewCaseType,
+                ChangeCount: preview.DiffRows.Count(row => row.Changed),
+                TopChangedAttributes: preview.DiffRows.Where(row => row.Changed).Select(row => row.Attribute).ToArray(),
+                OperationSummary: preview.OperationSummary)
+        ];
+
         public Task<IReadOnlyList<RunSummary>> ListRunsAsync(CancellationToken cancellationToken)
         {
             _ = cancellationToken;
@@ -294,6 +377,20 @@ public sealed class PreviewModelTests
             _ = take;
             _ = cancellationToken;
             return Task.FromResult<IReadOnlyList<WorkerPreviewHistoryItem>>([]);
+        }
+
+        public Task<int> CountWorkerRunHistoryAsync(string workerId, CancellationToken cancellationToken)
+        {
+            _ = workerId;
+            _ = cancellationToken;
+            return Task.FromResult(workerHistory.Count);
+        }
+
+        public Task<IReadOnlyList<WorkerRunHistoryItem>> ListWorkerRunHistoryAsync(string workerId, int skip, int take, CancellationToken cancellationToken)
+        {
+            _ = workerId;
+            _ = cancellationToken;
+            return Task.FromResult<IReadOnlyList<WorkerRunHistoryItem>>(workerHistory.Skip(skip).Take(take).ToArray());
         }
 
         public Task SaveRunAsync(RunRecord run, CancellationToken cancellationToken)

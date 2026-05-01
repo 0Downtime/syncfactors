@@ -362,6 +362,110 @@ public sealed class SqliteRunRepository(SqlitePathResolver pathResolver) : IRunR
         return history;
     }
 
+    public async Task<int> CountWorkerRunHistoryAsync(string workerId, CancellationToken cancellationToken)
+    {
+        var databasePath = pathResolver.Resolve();
+        if (string.IsNullOrWhiteSpace(databasePath) || string.IsNullOrWhiteSpace(workerId))
+        {
+            return 0;
+        }
+
+        await using var connection = OpenConnection(databasePath);
+        await connection.OpenAsync(cancellationToken);
+
+        await using var command = connection.CreateCommand();
+        AddWorkerHistoryFilterParameter(command, workerId);
+        command.CommandText =
+            """
+            SELECT COUNT(1)
+            FROM run_entries e
+            JOIN runs r ON r.run_id = e.run_id
+            WHERE LOWER(COALESCE(e.worker_id, '')) LIKE $workerId ESCAPE '\'
+               OR LOWER(COALESCE(e.sam_account_name, '')) LIKE $workerId ESCAPE '\';
+            """;
+
+        var result = await command.ExecuteScalarAsync(cancellationToken);
+        return result is null || result is DBNull ? 0 : Convert.ToInt32(result);
+    }
+
+    public async Task<IReadOnlyList<WorkerRunHistoryItem>> ListWorkerRunHistoryAsync(
+        string workerId,
+        int skip,
+        int take,
+        CancellationToken cancellationToken)
+    {
+        var databasePath = pathResolver.Resolve();
+        if (string.IsNullOrWhiteSpace(databasePath) || string.IsNullOrWhiteSpace(workerId))
+        {
+            return [];
+        }
+
+        await using var connection = OpenConnection(databasePath);
+        await connection.OpenAsync(cancellationToken);
+
+        await using var command = connection.CreateCommand();
+        AddWorkerHistoryFilterParameter(command, workerId);
+        command.Parameters.AddWithValue("$skip", Math.Max(0, skip));
+        command.Parameters.AddWithValue("$take", Math.Max(1, take));
+        command.CommandText =
+            """
+            SELECT
+              e.entry_id,
+              e.bucket,
+              e.bucket_index,
+              e.worker_id,
+              e.sam_account_name,
+              e.reason,
+              e.review_category,
+              e.review_case_type,
+              e.started_at,
+              e.item_json,
+              r.run_id,
+              r.artifact_type,
+              r.mode,
+              r.dry_run,
+              r.status,
+              r.run_trigger,
+              r.started_at AS run_started_at,
+              r.completed_at AS run_completed_at,
+              r.report_json
+            FROM run_entries e
+            JOIN runs r ON r.run_id = e.run_id
+            WHERE LOWER(COALESCE(e.worker_id, '')) LIKE $workerId ESCAPE '\'
+               OR LOWER(COALESCE(e.sam_account_name, '')) LIKE $workerId ESCAPE '\'
+            ORDER BY COALESCE(r.started_at, '') DESC, COALESCE(e.started_at, '') DESC, e.bucket_index ASC, e.entry_id ASC
+            LIMIT $take OFFSET $skip;
+            """;
+
+        var items = new List<WorkerRunHistoryItem>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var entry = MapEntry(MapEntryRow(reader));
+            items.Add(new WorkerRunHistoryItem(
+                RunId: entry.RunId,
+                EntryId: entry.EntryId,
+                ArtifactType: entry.ArtifactType,
+                Mode: entry.Mode,
+                DryRun: reader.GetInt32(reader.GetOrdinal("dry_run")) != 0,
+                RunStatus: reader.GetStringOrDefault("status") ?? "Unknown",
+                RunTrigger: reader.GetStringOrDefault("run_trigger") ?? "AdHoc",
+                StartedAt: ParseDate(reader.GetStringOrDefault("run_started_at")) ?? entry.StartedAt ?? DateTimeOffset.MinValue,
+                CompletedAt: ParseDate(reader.GetStringOrDefault("run_completed_at")),
+                Bucket: entry.Bucket,
+                BucketLabel: entry.BucketLabel,
+                WorkerId: entry.WorkerId,
+                SamAccountName: entry.SamAccountName,
+                Reason: entry.Reason,
+                ReviewCaseType: entry.ReviewCaseType,
+                ChangeCount: entry.ChangeCount,
+                TopChangedAttributes: entry.TopChangedAttributes,
+                OperationSummary: entry.OperationSummary));
+        }
+
+        return items;
+    }
+
     public async Task SaveRunAsync(RunRecord run, CancellationToken cancellationToken)
     {
         var databasePath = pathResolver.ResolveConfiguredPath() ?? pathResolver.Resolve();
@@ -1018,6 +1122,11 @@ public sealed class SqliteRunRepository(SqlitePathResolver pathResolver) : IRunR
                 ? DBNull.Value
                 : $"%{EscapeLike(filter.ToLowerInvariant())}%");
         command.Parameters.AddWithValue("$employmentStatus", string.IsNullOrWhiteSpace(employmentStatus) ? DBNull.Value : employmentStatus.Trim());
+    }
+
+    private static void AddWorkerHistoryFilterParameter(SqliteCommand command, string workerId)
+    {
+        command.Parameters.AddWithValue("$workerId", $"%{EscapeLike(workerId.Trim().ToLowerInvariant())}%");
     }
 
     private static DateTimeOffset? ParseDate(string? value)
