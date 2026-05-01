@@ -100,12 +100,12 @@ Current dashboard snapshot:
 - Authentication modes for local break-glass, OIDC-only, or hybrid SSO plus break-glass access, with local user management when break-glass is enabled
 - Mock SuccessFactors API for local development, fixture playback, and synthetic worker population
 - Lifecycle simulator for deterministic employee-state progression without a live SuccessFactors endpoint
-- Delete-all testing reset flow from the Sync page that clears configured AD test OUs
+- Development-only delete-all testing reset flow from the Sync page that clears configured AD test OUs
 - Active Directory health checks that validate lookup behavior across configured search bases instead of only doing a bind/base-object probe
 - Due graveyard retention report processing from the worker when alerts are configured
 
 > [!CAUTION]
-> The delete-all/testing reset flow is destructive. It exists for controlled testing and operator workflows and should be treated as dangerous even in non-production environments.
+> The delete-all/testing reset flow is destructive. It exists for controlled development testing, requires administrative access, and should be treated as dangerous even in non-production environments.
 
 ## Status
 
@@ -195,7 +195,7 @@ pwsh ./scripts/Run-SyncFactorsE2EAutomation.ps1 `
 
 This drives Mock SuccessFactors, the API run queue, the worker, and configured AD test OUs. `-AllowAdReset` is required because the runner queues the destructive delete-all reset before scenarios that declare `resetAdBeforeScenario`.
 
-The bootstrap script creates or updates a local automation Operator account in SQLite, stores `SYNCFACTORS_AUTOMATION_USERNAME` and `SYNCFACTORS_AUTOMATION_PASSWORD` in the same secure store as the normal launcher, and switches the worktree auth mode to hybrid so OIDC remains primary while local automation login is available. Restart the API/stack after bootstrapping.
+The bootstrap script creates or updates a local automation Operator account in SQLite, or an Admin account when `-Admin` is passed for delete-all reset scenarios. It stores `SYNCFACTORS_AUTOMATION_USERNAME` and `SYNCFACTORS_AUTOMATION_PASSWORD` in the same secure store as the normal launcher, and switches the worktree auth mode to hybrid so OIDC remains primary while local automation login is available. Restart the API/stack after bootstrapping.
 
 You can also manage those secrets directly in `.env.worktree`, Windows Credential Manager, or the macOS Keychain:
 
@@ -724,6 +724,8 @@ Use `src/SyncFactors.MockSuccessFactors` to run a local SuccessFactors-like API 
 - Default URL: `http://127.0.0.1:18080`
 - Baseline fixture data: `config/mock-successfactors/baseline-fixtures.json`
 - Sample import data for sanitization: `config/mock-successfactors/sample-export.json`
+
+Mock admin endpoints use the actual remote IP address for loopback checks. If a local development harness cannot provide `Connection.RemoteIpAddress`, opt in to the legacy host-header fallback with `MockSuccessFactors:Admin:AllowHostHeaderLoopbackFallback=true`; do not use that fallback when the mock is reachable from non-loopback networks.
 
 Generate sanitized fixtures from exported OData payloads with:
 
