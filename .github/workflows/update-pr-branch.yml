@@ -13,6 +13,7 @@ on:
   workflow_dispatch:
 
 permissions:
+  actions: write
   contents: write
   pull-requests: write
 
@@ -56,16 +57,50 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           HEAD_SHA: ${{ steps.branch.outputs.head_sha }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           REPO: ${{ github.repository }}
         shell: bash
         run: |
           set -euo pipefail
 
+          dispatch_required_workflows() {
+            local ref="$1"
+            local workflow
+
+            for workflow in test.yml security.yml codeql.yml; do
+              gh api \
+                --method POST \
+                "repos/${REPO}/actions/workflows/${workflow}/dispatches" \
+                -f ref="${ref}"
+            done
+          }
+
+          wait_for_updated_head() {
+            local pr_number="$1"
+            local previous_sha="$2"
+            local current_sha
+
+            for _ in {1..12}; do
+              current_sha="$(gh api "repos/${REPO}/pulls/${pr_number}" --jq '.head.sha')"
+              if [[ "$current_sha" != "$previous_sha" ]]; then
+                return 0
+              fi
+
+              sleep 5
+            done
+
+            echo "Timed out waiting for PR #${pr_number} head SHA to change after update-branch."
+            return 1
+          }
+
           gh api \
             --method PUT \
             "repos/${REPO}/pulls/${PR_NUMBER}/update-branch" \
             -f expected_head_sha="${HEAD_SHA}"
+
+          wait_for_updated_head "${PR_NUMBER}" "${HEAD_SHA}"
+          dispatch_required_workflows "${HEAD_REF}"
 
   update-open-prs:
     name: Update open PR branches from main
@@ -81,6 +116,36 @@ jobs:
         run: |
           set -euo pipefail
 
+          dispatch_required_workflows() {
+            local ref="$1"
+            local workflow
+
+            for workflow in test.yml security.yml codeql.yml; do
+              gh api \
+                --method POST \
+                "repos/${REPO}/actions/workflows/${workflow}/dispatches" \
+                -f ref="${ref}"
+            done
+          }
+
+          wait_for_updated_head() {
+            local pr_number="$1"
+            local previous_sha="$2"
+            local current_sha
+
+            for _ in {1..12}; do
+              current_sha="$(gh api "repos/${REPO}/pulls/${pr_number}" --jq '.head.sha')"
+              if [[ "$current_sha" != "$previous_sha" ]]; then
+                return 0
+              fi
+
+              sleep 5
+            done
+
+            echo "Timed out waiting for PR #${pr_number} head SHA to change after update-branch."
+            return 1
+          }
+
           base_sha="$(gh api "repos/${REPO}/git/ref/heads/${BASE_REF}" --jq '.object.sha')"
 
           gh api --paginate "repos/${REPO}/pulls?state=open&base=${BASE_REF}&per_page=100" \
@@ -88,6 +153,7 @@ jobs:
           while IFS= read -r encoded_pr; do
             pr_json="$(printf '%s' "$encoded_pr" | base64 --decode)"
             pr_number="$(jq -r '.number' <<< "$pr_json")"
+            head_ref="$(jq -r '.head.ref' <<< "$pr_json")"
             head_sha="$(jq -r '.head.sha' <<< "$pr_json")"
             compare_status="$(gh api "repos/${REPO}/compare/${base_sha}...${head_sha}" --jq '.status')"
 
@@ -96,5 +162,7 @@ jobs:
                 --method PUT \
                 "repos/${REPO}/pulls/${pr_number}/update-branch" \
                 -f expected_head_sha="${head_sha}"
+              wait_for_updated_head "${pr_number}" "${head_sha}"
+              dispatch_required_workflows "${head_ref}"
             fi
           done
