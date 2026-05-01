@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using SyncFactors.Contracts;
 using SyncFactors.Domain;
+using SyncFactors.Infrastructure;
 
 namespace SyncFactors.Api.Pages;
 
@@ -113,6 +114,11 @@ public sealed class IndexModel(
 
     public async Task<IActionResult> OnPostCancelRunAsync(CancellationToken cancellationToken)
     {
+        if (!CanOperate())
+        {
+            return Forbid();
+        }
+
         if (!await runQueueStore.CancelPendingOrActiveAsync(ResolveRequestedBy(), cancellationToken))
         {
             ErrorMessage = "No queued or active run was available to cancel.";
@@ -148,4 +154,9 @@ public sealed class IndexModel(
         string.IsNullOrWhiteSpace(PageContext?.HttpContext?.User.Identity?.Name)
             ? "Dashboard"
             : PageContext.HttpContext.User.Identity!.Name!;
+
+    private bool CanOperate() =>
+        User.IsInRole(SecurityRoles.Operator) ||
+        User.IsInRole(SecurityRoles.Admin) ||
+        User.IsInRole(SecurityRoles.BreakGlassAdmin);
 }
