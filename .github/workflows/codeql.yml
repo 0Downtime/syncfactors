@@ -39,7 +39,7 @@ jobs:
 
           runner_json="$(gh api "repos/${REPO}/actions/runners?per_page=100" 2>/dev/null || true)"
           if [[ -n "$runner_json" ]] && jq -e '.runners[]? | select(.name == "Mac" and .status == "online" and .busy == false)' >/dev/null 2>&1 <<< "$runner_json"; then
-            echo 'runs-on=["self-hosted","macOS","X64"]' >> "$GITHUB_OUTPUT"
+            echo 'runs-on=["self-hosted","macOS"]' >> "$GITHUB_OUTPUT"
           else
             echo 'runs-on="macos-latest"' >> "$GITHUB_OUTPUT"
           fi
@@ -72,11 +72,32 @@ jobs:
           languages: ${{ matrix.language }}
           build-mode: ${{ matrix.build-mode }}
 
+      - name: Detect .NET architecture
+        if: ${{ matrix.build-mode == 'manual' }}
+        id: dotnet_arch
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          case "$(uname -m)" in
+            arm64|aarch64)
+              echo "architecture=arm64" >> "$GITHUB_OUTPUT"
+              ;;
+            x86_64|amd64)
+              echo "architecture=x64" >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              echo "::error::Unsupported machine architecture: $(uname -m)"
+              exit 1
+              ;;
+          esac
+
       - name: Set up .NET SDK
         if: ${{ matrix.build-mode == 'manual' }}
         uses: actions/setup-dotnet@c2fa09f4bde5ebb9d1777cf28262a3eb3db3ced7 # v5
         with:
           dotnet-version: 10.0.x
+          architecture: ${{ steps.dotnet_arch.outputs.architecture }}
 
       - name: Build solution
         if: ${{ matrix.build-mode == 'manual' }}

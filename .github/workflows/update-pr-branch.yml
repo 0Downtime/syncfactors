@@ -42,9 +42,11 @@ jobs:
           head_sha="${HEAD_SHA}"
           compare_status="$(gh api "repos/${REPO}/compare/${base_sha}...${head_sha}" --jq '.status')"
 
-          echo "base_sha=${base_sha}" >> "$GITHUB_OUTPUT"
-          echo "head_sha=${head_sha}" >> "$GITHUB_OUTPUT"
-          echo "compare_status=${compare_status}" >> "$GITHUB_OUTPUT"
+          {
+            echo "base_sha=${base_sha}"
+            echo "head_sha=${head_sha}"
+            echo "compare_status=${compare_status}"
+          } >> "$GITHUB_OUTPUT"
 
           if [[ "$compare_status" == "behind" || "$compare_status" == "diverged" ]]; then
             echo "needs_update=true" >> "$GITHUB_OUTPUT"

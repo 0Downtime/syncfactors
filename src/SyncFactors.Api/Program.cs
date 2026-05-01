@@ -308,6 +308,7 @@ builder.Services.AddRazorPages(options =>
     options.Conventions.AuthorizePage("/Sync", OperatorPolicy);
     options.Conventions.AuthorizePage("/Preview", OperatorPolicy);
     options.Conventions.AuthorizePage("/Lookup", OperatorPolicy);
+    options.Conventions.AuthorizePage("/Worker360", OperatorPolicy);
     options.Conventions.AuthorizeFolder("/Admin", AdminPolicy);
     options.Conventions.AllowAnonymousToPage("/AccessDenied");
     options.Conventions.AllowAnonymousToPage("/Login");

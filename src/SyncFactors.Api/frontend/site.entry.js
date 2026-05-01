@@ -128,7 +128,7 @@
 
     function initializeSurfaceReveals() {
         const surfaces = Array.prototype.slice.call(document.querySelectorAll(
-            ".hero, .analytics-card, .connection-card, .run-health-card, .sync-status-card, .preview-inspector-card"));
+            ".hero, .analytics-card, .connection-card, .run-health-card, .sync-status-card, .preview-inspector-card, .worker360-detail-grid > .panel"));
 
         if (!surfaces.length) {
             return;
