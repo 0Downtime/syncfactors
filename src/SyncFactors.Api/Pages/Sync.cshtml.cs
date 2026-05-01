@@ -83,6 +83,10 @@ public sealed class SyncModel(
 
     public bool ScheduledRunsAreDryRunOnly => !realSyncSettings.Enabled;
 
+    public bool CanManageSchedule =>
+        User.IsInRole(SecurityRoles.Admin) ||
+        User.IsInRole(SecurityRoles.BreakGlassAdmin);
+
     public bool CanQueueDeleteAllUsers =>
         hostEnvironment.IsDevelopment() &&
         (User.IsInRole(SecurityRoles.Admin) || User.IsInRole(SecurityRoles.BreakGlassAdmin));
@@ -187,6 +191,11 @@ public sealed class SyncModel(
 
     public async Task<IActionResult> OnPostSaveScheduleAsync(CancellationToken cancellationToken)
     {
+        if (!CanManageSchedule)
+        {
+            return Forbid();
+        }
+
         Schedule = await syncScheduleStore.UpdateAsync(
             new UpdateSyncScheduleRequest(
                 Enabled: ScheduleEnabled,

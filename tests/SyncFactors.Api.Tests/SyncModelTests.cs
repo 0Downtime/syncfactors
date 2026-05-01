@@ -7,6 +7,7 @@ using System.Security.Claims;
 using SyncFactors.Api.Pages;
 using SyncFactors.Contracts;
 using SyncFactors.Domain;
+using SyncFactors.Infrastructure;
 
 namespace SyncFactors.Api.Tests;
 
@@ -233,6 +234,7 @@ public sealed class SyncModelTests
         var model = CreateModel(scheduleStore: scheduleStore);
         model.ScheduleEnabled = true;
         model.IntervalMinutes = 45;
+        AttachAuthenticatedUser(model, "admin@example.com", SecurityRoles.Admin);
 
         var result = await model.OnPostSaveScheduleAsync(CancellationToken.None);
 
@@ -251,10 +253,26 @@ public sealed class SyncModelTests
         var model = CreateModel(realSyncSettings: new RealSyncSettings(Enabled: false), scheduleStore: scheduleStore);
         model.ScheduleEnabled = true;
         model.IntervalMinutes = 45;
+        AttachAuthenticatedUser(model, "admin@example.com", SecurityRoles.Admin);
 
         await model.OnPostSaveScheduleAsync(CancellationToken.None);
 
         Assert.Equal("Recurring dry-run sync enabled every 45 minutes.", model.SuccessMessage);
+    }
+
+    [Fact]
+    public async Task OnPostSaveScheduleAsync_ForbidsOperators()
+    {
+        var scheduleStore = new StubSyncScheduleStore();
+        var model = CreateModel(scheduleStore: scheduleStore);
+        model.ScheduleEnabled = true;
+        model.IntervalMinutes = 45;
+        AttachAuthenticatedUser(model, "operator@example.com", SecurityRoles.Operator);
+
+        var result = await model.OnPostSaveScheduleAsync(CancellationToken.None);
+
+        Assert.IsType<ForbidResult>(result);
+        Assert.Null(scheduleStore.LastUpdateRequest);
     }
 
     private static IDashboardSnapshotService CreateDashboardService()

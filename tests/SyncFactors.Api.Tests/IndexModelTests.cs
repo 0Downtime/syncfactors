@@ -86,6 +86,19 @@ public sealed class IndexModelTests
         Assert.Null(model.ErrorMessage);
     }
 
+    [Fact]
+    public async Task OnPostCancelRunAsync_ForbidsViewers()
+    {
+        var runQueueStore = new CapturingRunQueueStore { HasPendingOrActiveRun = true };
+        var model = CreateModel(new StubDashboardSettingsStore(enabledOverride: null), "Production", runQueueStore);
+        AttachUser(model, "viewer@example.com", "Viewer");
+
+        var result = await model.OnPostCancelRunAsync(CancellationToken.None);
+
+        Assert.IsType<ForbidResult>(result);
+        Assert.False(runQueueStore.CancelRequested);
+    }
+
     private static IndexModel CreateModel(
         StubDashboardSettingsStore settingsStore,
         string environmentName,

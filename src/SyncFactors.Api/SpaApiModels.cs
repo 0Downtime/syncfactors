@@ -27,13 +27,25 @@ public sealed record DeleteAllUsersRequest(
 public sealed record CreateLocalUserRequest(
     string Username,
     string Password,
-    bool IsAdmin);
+    bool IsAdmin,
+    string? Role)
+{
+    public string ResolvedRole => string.IsNullOrWhiteSpace(Role)
+        ? (IsAdmin ? SecurityRoles.Admin : SecurityRoles.Operator)
+        : Role.Trim();
+}
 
 public sealed record ResetLocalUserPasswordRequest(
     string NewPassword);
 
 public sealed record SetLocalUserRoleRequest(
-    bool IsAdmin);
+    bool IsAdmin,
+    string? Role)
+{
+    public string ResolvedRole => string.IsNullOrWhiteSpace(Role)
+        ? (IsAdmin ? SecurityRoles.Admin : SecurityRoles.Operator)
+        : Role.Trim();
+}
 
 public sealed record SetLocalUserActiveStateRequest(
     bool IsActive);
