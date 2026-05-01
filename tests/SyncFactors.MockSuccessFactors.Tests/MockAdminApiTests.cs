@@ -27,6 +27,19 @@ public sealed class MockAdminApiTests
     }
 
     [Fact]
+    public async Task AdminApi_RejectsSpoofedLoopbackHostWhenFallbackDisabled()
+    {
+        await using var factory = new MockSuccessFactorsFactory(
+            CreateRuntimePath(),
+            allowHostHeaderLoopbackFallback: false);
+        using var client = CreateLoopbackClient(factory);
+
+        var response = await client.GetAsync("/api/admin/workers");
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
     public async Task AdminApi_RejectsDuplicateIdentity()
     {
         await using var factory = new MockSuccessFactorsFactory(CreateRuntimePath());
@@ -194,7 +207,9 @@ public sealed class MockAdminApiTests
     private static string CreateRuntimePath()
         => Path.Combine(Path.GetTempPath(), $"mock-successfactors-api-{Guid.NewGuid():N}.json");
 
-    private sealed class MockSuccessFactorsFactory(string runtimePath) : WebApplicationFactory<Program>
+    private sealed class MockSuccessFactorsFactory(
+        string runtimePath,
+        bool allowHostHeaderLoopbackFallback = true) : WebApplicationFactory<Program>
     {
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
@@ -207,6 +222,7 @@ public sealed class MockAdminApiTests
                     ["MockSuccessFactors:Runtime:FixturePath"] = runtimePath,
                     ["MockSuccessFactors:Admin:Enabled"] = "true",
                     ["MockSuccessFactors:Admin:RequireLoopback"] = "true",
+                    ["MockSuccessFactors:Admin:AllowHostHeaderLoopbackFallback"] = allowHostHeaderLoopbackFallback.ToString(),
                     ["MockSuccessFactors:Admin:Path"] = "/admin",
                     ["MockSuccessFactors:SyntheticPopulation:Enabled"] = "false"
                 });
