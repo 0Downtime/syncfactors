@@ -38,7 +38,7 @@ jobs:
           set -euo pipefail
 
           runner_json="$(gh api "repos/${REPO}/actions/runners?per_page=100" 2>/dev/null || true)"
-          if [[ -n "$runner_json" ]] && jq -e '.runners[]? | select(.name == "Mac" and .status == "online" and .busy == false)' >/dev/null 2>&1 <<< "$runner_json"; then
+          if [[ -n "$runner_json" ]] && jq -e '.runners[]? | select(.name == "Mac" and .status == "online")' >/dev/null 2>&1 <<< "$runner_json"; then
             echo 'runs-on=["self-hosted","macOS"]' >> "$GITHUB_OUTPUT"
           else
             echo 'runs-on="macos-latest"' >> "$GITHUB_OUTPUT"
