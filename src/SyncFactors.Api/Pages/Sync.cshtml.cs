@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
+using Microsoft.AspNetCore.Hosting;
 using SyncFactors.Contracts;
 using SyncFactors.Domain;
 using SyncFactors.Infrastructure;
@@ -10,7 +11,8 @@ public sealed class SyncModel(
     IDashboardSnapshotService dashboardSnapshotService,
     IRunQueueStore runQueueStore,
     RealSyncSettings realSyncSettings,
-    ISyncScheduleStore syncScheduleStore) : PageModel
+    ISyncScheduleStore syncScheduleStore,
+    IWebHostEnvironment hostEnvironment) : PageModel
 {
     private const int RunsPageSize = 25;
     private const string DryRunMode = "DryRun";
@@ -85,6 +87,10 @@ public sealed class SyncModel(
         User.IsInRole(SecurityRoles.Admin) ||
         User.IsInRole(SecurityRoles.BreakGlassAdmin);
 
+    public bool CanQueueDeleteAllUsers =>
+        hostEnvironment.IsDevelopment() &&
+        (User.IsInRole(SecurityRoles.Admin) || User.IsInRole(SecurityRoles.BreakGlassAdmin));
+
     [TempData]
     public string? ErrorMessage { get; set; }
 
@@ -129,6 +135,12 @@ public sealed class SyncModel(
 
     public async Task<IActionResult> OnPostDeleteAllUsersAsync(CancellationToken cancellationToken)
     {
+        if (!hostEnvironment.IsDevelopment() ||
+            !User.IsInRole(SecurityRoles.Admin) && !User.IsInRole(SecurityRoles.BreakGlassAdmin))
+        {
+            return Forbid();
+        }
+
         if (await runQueueStore.HasPendingOrActiveRunAsync(cancellationToken))
         {
             ErrorMessage = "A run is already pending or in progress.";

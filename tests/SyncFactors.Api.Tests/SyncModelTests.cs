@@ -1,6 +1,8 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.FileProviders;
 using System.Security.Claims;
 using SyncFactors.Api.Pages;
 using SyncFactors.Contracts;
@@ -16,7 +18,7 @@ public sealed class SyncModelTests
     {
         var queueStore = new CapturingRunQueueStore();
         var scheduleStore = new StubSyncScheduleStore();
-        var model = new SyncModel(CreateDashboardService(), queueStore, new RealSyncSettings(), scheduleStore);
+        var model = CreateModel(queueStore: queueStore, scheduleStore: scheduleStore);
 
         await model.OnGetAsync(CancellationToken.None);
 
@@ -29,7 +31,7 @@ public sealed class SyncModelTests
     public async Task OnPostStartRunAsync_QueuesDryRunByDefault()
     {
         var queueStore = new CapturingRunQueueStore();
-        var model = new SyncModel(CreateDashboardService(), queueStore, new RealSyncSettings(), new StubSyncScheduleStore());
+        var model = CreateModel(queueStore: queueStore);
 
         var result = await model.OnPostStartRunAsync(CancellationToken.None);
 
@@ -48,10 +50,8 @@ public sealed class SyncModelTests
     public async Task OnPostStartRunAsync_QueuesLiveRunWhenSelected()
     {
         var queueStore = new CapturingRunQueueStore();
-        var model = new SyncModel(CreateDashboardService(), queueStore, new RealSyncSettings(), new StubSyncScheduleStore())
-        {
-            RunMode = "LiveRun"
-        };
+        var model = CreateModel(queueStore: queueStore);
+        model.RunMode = "LiveRun";
 
         var result = await model.OnPostStartRunAsync(CancellationToken.None);
 
@@ -68,10 +68,8 @@ public sealed class SyncModelTests
     public async Task OnPostStartRunAsync_RejectsLiveRunWhenRealSyncIsDisabled()
     {
         var queueStore = new CapturingRunQueueStore();
-        var model = new SyncModel(CreateDashboardService(), queueStore, new RealSyncSettings(Enabled: false), new StubSyncScheduleStore())
-        {
-            RunMode = "LiveRun"
-        };
+        var model = CreateModel(queueStore: queueStore, realSyncSettings: new RealSyncSettings(Enabled: false));
+        model.RunMode = "LiveRun";
 
         var result = await model.OnPostStartRunAsync(CancellationToken.None);
 
@@ -85,7 +83,7 @@ public sealed class SyncModelTests
     public async Task OnPostStartRunAsync_UsesAuthenticatedUsernameWhenAvailable()
     {
         var queueStore = new CapturingRunQueueStore();
-        var model = new SyncModel(CreateDashboardService(), queueStore, new RealSyncSettings(), new StubSyncScheduleStore());
+        var model = CreateModel(queueStore: queueStore);
         AttachAuthenticatedUser(model, "operator@example.com");
 
         await model.OnPostStartRunAsync(CancellationToken.None);
@@ -93,14 +91,36 @@ public sealed class SyncModelTests
         Assert.Equal("operator@example.com", queueStore.LastRequest?.RequestedBy);
     }
 
+    [Theory]
+    [InlineData("Admin")]
+    [InlineData("BreakGlassAdmin")]
+    public void CanQueueDeleteAllUsers_IsTrueOnlyForDevelopmentAdmins(string role)
+    {
+        var model = CreateModel();
+        AttachAuthenticatedUser(model, "admin@example.com", role);
+
+        Assert.True(model.CanQueueDeleteAllUsers);
+    }
+
+    [Theory]
+    [InlineData("Development", "Operator")]
+    [InlineData("Production", "Admin")]
+    [InlineData("Production", "BreakGlassAdmin")]
+    public void CanQueueDeleteAllUsers_IsFalseWithoutDevelopmentAdminAccess(string environmentName, string role)
+    {
+        var model = CreateModel(environmentName: environmentName);
+        AttachAuthenticatedUser(model, "user@example.com", role);
+
+        Assert.False(model.CanQueueDeleteAllUsers);
+    }
+
     [Fact]
     public async Task OnPostDeleteAllUsersAsync_QueuesDeleteAllUsersRunWhenPhraseMatches()
     {
         var queueStore = new CapturingRunQueueStore();
-        var model = new SyncModel(CreateDashboardService(), queueStore, new RealSyncSettings(), new StubSyncScheduleStore())
-        {
-            DeleteAllUsersConfirmationText = SyncModel.DeleteAllUsersConfirmationPhrase
-        };
+        var model = CreateModel(queueStore: queueStore);
+        model.DeleteAllUsersConfirmationText = SyncModel.DeleteAllUsersConfirmationPhrase;
+        AttachAuthenticatedUser(model, "admin@example.com", "Admin");
 
         var result = await model.OnPostDeleteAllUsersAsync(CancellationToken.None);
 
@@ -114,13 +134,40 @@ public sealed class SyncModelTests
     }
 
     [Fact]
+    public async Task OnPostDeleteAllUsersAsync_ForbidsOutsideDevelopment()
+    {
+        var queueStore = new CapturingRunQueueStore();
+        var model = CreateModel(queueStore: queueStore, environmentName: "Production");
+        model.DeleteAllUsersConfirmationText = SyncModel.DeleteAllUsersConfirmationPhrase;
+        AttachAuthenticatedUser(model, "admin@example.com", "Admin");
+
+        var result = await model.OnPostDeleteAllUsersAsync(CancellationToken.None);
+
+        Assert.IsType<ForbidResult>(result);
+        Assert.Null(queueStore.LastRequest);
+    }
+
+    [Fact]
+    public async Task OnPostDeleteAllUsersAsync_ForbidsNonAdmins()
+    {
+        var queueStore = new CapturingRunQueueStore();
+        var model = CreateModel(queueStore: queueStore);
+        model.DeleteAllUsersConfirmationText = SyncModel.DeleteAllUsersConfirmationPhrase;
+        AttachAuthenticatedUser(model, "operator@example.com", "Operator");
+
+        var result = await model.OnPostDeleteAllUsersAsync(CancellationToken.None);
+
+        Assert.IsType<ForbidResult>(result);
+        Assert.Null(queueStore.LastRequest);
+    }
+
+    [Fact]
     public async Task OnPostDeleteAllUsersAsync_RejectsQueueWhenRealSyncIsDisabled()
     {
         var queueStore = new CapturingRunQueueStore();
-        var model = new SyncModel(CreateDashboardService(), queueStore, new RealSyncSettings(Enabled: false), new StubSyncScheduleStore())
-        {
-            DeleteAllUsersConfirmationText = SyncModel.DeleteAllUsersConfirmationPhrase
-        };
+        var model = CreateModel(queueStore: queueStore, realSyncSettings: new RealSyncSettings(Enabled: false));
+        model.DeleteAllUsersConfirmationText = SyncModel.DeleteAllUsersConfirmationPhrase;
+        AttachAuthenticatedUser(model, "admin@example.com", "Admin");
 
         var result = await model.OnPostDeleteAllUsersAsync(CancellationToken.None);
 
@@ -134,10 +181,9 @@ public sealed class SyncModelTests
     public async Task OnPostDeleteAllUsersAsync_RejectsInvalidConfirmationPhrase()
     {
         var queueStore = new CapturingRunQueueStore();
-        var model = new SyncModel(CreateDashboardService(), queueStore, new RealSyncSettings(), new StubSyncScheduleStore())
-        {
-            DeleteAllUsersConfirmationText = "delete all users"
-        };
+        var model = CreateModel(queueStore: queueStore);
+        model.DeleteAllUsersConfirmationText = "delete all users";
+        AttachAuthenticatedUser(model, "admin@example.com", "Admin");
 
         var result = await model.OnPostDeleteAllUsersAsync(CancellationToken.None);
 
@@ -154,7 +200,7 @@ public sealed class SyncModelTests
         {
             HasPendingOrActiveRun = true
         };
-        var model = new SyncModel(CreateDashboardService(), queueStore, new RealSyncSettings(), new StubSyncScheduleStore());
+        var model = CreateModel(queueStore: queueStore);
 
         var result = await model.OnPostStartRunAsync(CancellationToken.None);
 
@@ -171,7 +217,7 @@ public sealed class SyncModelTests
         {
             PendingOrActiveRun = new RunQueueRequest("req-1", "BulkSync", true, "AdHoc", "Sync page", "InProgress", DateTimeOffset.UtcNow, DateTimeOffset.UtcNow, null, "bulk-1", null)
         };
-        var model = new SyncModel(CreateDashboardService(), queueStore, new RealSyncSettings(), new StubSyncScheduleStore());
+        var model = CreateModel(queueStore: queueStore);
 
         var result = await model.OnPostCancelRunAsync(CancellationToken.None);
 
@@ -185,11 +231,9 @@ public sealed class SyncModelTests
     public async Task OnPostSaveScheduleAsync_UpdatesSchedule()
     {
         var scheduleStore = new StubSyncScheduleStore();
-        var model = new SyncModel(CreateDashboardService(), new CapturingRunQueueStore(), new RealSyncSettings(), scheduleStore)
-        {
-            ScheduleEnabled = true,
-            IntervalMinutes = 45
-        };
+        var model = CreateModel(scheduleStore: scheduleStore);
+        model.ScheduleEnabled = true;
+        model.IntervalMinutes = 45;
         AttachAuthenticatedUser(model, "admin@example.com", SecurityRoles.Admin);
 
         var result = await model.OnPostSaveScheduleAsync(CancellationToken.None);
@@ -206,11 +250,9 @@ public sealed class SyncModelTests
     public async Task OnPostSaveScheduleAsync_UsesDryRunLabelWhenRealSyncIsDisabled()
     {
         var scheduleStore = new StubSyncScheduleStore();
-        var model = new SyncModel(CreateDashboardService(), new CapturingRunQueueStore(), new RealSyncSettings(Enabled: false), scheduleStore)
-        {
-            ScheduleEnabled = true,
-            IntervalMinutes = 45
-        };
+        var model = CreateModel(realSyncSettings: new RealSyncSettings(Enabled: false), scheduleStore: scheduleStore);
+        model.ScheduleEnabled = true;
+        model.IntervalMinutes = 45;
         AttachAuthenticatedUser(model, "admin@example.com", SecurityRoles.Admin);
 
         await model.OnPostSaveScheduleAsync(CancellationToken.None);
@@ -222,11 +264,9 @@ public sealed class SyncModelTests
     public async Task OnPostSaveScheduleAsync_ForbidsOperators()
     {
         var scheduleStore = new StubSyncScheduleStore();
-        var model = new SyncModel(CreateDashboardService(), new CapturingRunQueueStore(), new RealSyncSettings(), scheduleStore)
-        {
-            ScheduleEnabled = true,
-            IntervalMinutes = 45
-        };
+        var model = CreateModel(scheduleStore: scheduleStore);
+        model.ScheduleEnabled = true;
+        model.IntervalMinutes = 45;
         AttachAuthenticatedUser(model, "operator@example.com", SecurityRoles.Operator);
 
         var result = await model.OnPostSaveScheduleAsync(CancellationToken.None);
@@ -278,6 +318,20 @@ public sealed class SyncModelTests
                 CheckedAt: DateTimeOffset.Parse("2026-03-30T12:06:00Z")));
     }
 
+    private static SyncModel CreateModel(
+        CapturingRunQueueStore? queueStore = null,
+        RealSyncSettings? realSyncSettings = null,
+        StubSyncScheduleStore? scheduleStore = null,
+        string environmentName = "Development")
+    {
+        return new SyncModel(
+            CreateDashboardService(),
+            queueStore ?? new CapturingRunQueueStore(),
+            realSyncSettings ?? new RealSyncSettings(),
+            scheduleStore ?? new StubSyncScheduleStore(),
+            new StubWebHostEnvironment(environmentName));
+    }
+
     private sealed class StubDashboardSnapshotService(DashboardSnapshot snapshot) : IDashboardSnapshotService
     {
         public Task<DashboardSnapshot> GetSnapshotAsync(CancellationToken cancellationToken)
@@ -287,21 +341,42 @@ public sealed class SyncModelTests
         }
     }
 
-    private static void AttachAuthenticatedUser(PageModel model, string username, string role = SecurityRoles.Operator)
+    private static void AttachAuthenticatedUser(PageModel model, string username, string? role = null)
     {
+        var claims = new List<Claim>
+        {
+            new(ClaimTypes.Name, username)
+        };
+        if (!string.IsNullOrWhiteSpace(role))
+        {
+            claims.Add(new Claim(ClaimTypes.Role, role));
+        }
+
         model.PageContext = new PageContext
         {
             HttpContext = new DefaultHttpContext
             {
                 User = new ClaimsPrincipal(
                     new ClaimsIdentity(
-                    [
-                        new Claim(ClaimTypes.Name, username),
-                        new Claim(ClaimTypes.Role, role)
-                    ],
+                    claims,
                     "Cookies"))
             }
         };
+    }
+
+    private sealed class StubWebHostEnvironment(string environmentName) : IWebHostEnvironment
+    {
+        public string EnvironmentName { get; set; } = environmentName;
+
+        public string ApplicationName { get; set; } = "SyncFactors.Api.Tests";
+
+        public string WebRootPath { get; set; } = AppContext.BaseDirectory;
+
+        public IFileProvider WebRootFileProvider { get; set; } = new NullFileProvider();
+
+        public string ContentRootPath { get; set; } = AppContext.BaseDirectory;
+
+        public IFileProvider ContentRootFileProvider { get; set; } = new NullFileProvider();
     }
 
     private sealed class CapturingRunQueueStore : IRunQueueStore

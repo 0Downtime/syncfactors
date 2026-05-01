@@ -99,7 +99,7 @@ app.Use(async (httpContext, next) =>
             return;
         }
 
-        if (options.Admin.RequireLoopback && !IsLoopbackRequest(httpContext.Request))
+        if (options.Admin.RequireLoopback && !IsLoopbackRequest(httpContext.Request, options.Admin))
         {
             httpContext.Response.StatusCode = StatusCodes.Status403Forbidden;
             await httpContext.Response.WriteAsJsonAsync(new { error = "Mock admin endpoints are only available from loopback hosts." });
@@ -356,12 +356,17 @@ static MockAdminBucketSnapshot BuildMockBucketSnapshot(MockFixtureStore store, s
         Label: MockFixtureSummaryReporter.DescribeProvisioningBucket(bucket));
 }
 
-static bool IsLoopbackRequest(HttpRequest request)
+static bool IsLoopbackRequest(HttpRequest request, MockAdminOptions adminOptions)
 {
     var remoteIp = request.HttpContext.Connection.RemoteIpAddress;
     if (remoteIp is not null && IPAddress.IsLoopback(remoteIp))
     {
         return true;
+    }
+
+    if (!adminOptions.AllowHostHeaderLoopbackFallback)
+    {
+        return false;
     }
 
     var host = request.Host.Host;
