@@ -24,6 +24,7 @@
     var isSyncPage = currentPage.StartsWith("/Sync", StringComparison.OrdinalIgnoreCase);
     var isExceptionsPage = currentPage.StartsWith("/Exceptions", StringComparison.OrdinalIgnoreCase);
     var isPreviewPage = currentPage.StartsWith("/Preview", StringComparison.OrdinalIgnoreCase);
+    var isWorkersPage = currentPage.StartsWith("/Workers", StringComparison.OrdinalIgnoreCase);
     var isLookupPage = currentPage.StartsWith("/Lookup", StringComparison.OrdinalIgnoreCase);
     var isAdminPage = currentPage.StartsWith("/Admin", StringComparison.OrdinalIgnoreCase);
     var isAdminUsersPage = currentPage.StartsWith("/Admin/Users", StringComparison.OrdinalIgnoreCase);
@@ -57,9 +58,9 @@
                     <a class="@(isSyncPage ? "is-active" : null)" asp-page="/Sync">Sync</a>
                     <a class="@(isExceptionsPage ? "is-active" : null)" asp-page="/Exceptions">Exceptions</a>
                     <details class="nav-menu" data-nav-menu>
-                        <summary class="@(isPreviewPage || isLookupPage ? "is-active" : null)">Tools</summary>
+                        <summary class="@(isPreviewPage || isWorkersPage || isLookupPage ? "is-active" : null)">Tools</summary>
                         <div class="nav-menu-panel">
-                            <a class="@(isPreviewPage ? "is-active" : null)" asp-page="/Preview">Provision</a>
+                            <a class="@(isWorkersPage || isPreviewPage ? "is-active" : null)" asp-page="/Workers">Worker 360</a>
                             <a class="@(isLookupPage ? "is-active" : null)" asp-page="/Lookup">Lookup</a>
                         </div>
                     </details>

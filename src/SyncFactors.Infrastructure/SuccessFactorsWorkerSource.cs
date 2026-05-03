@@ -1611,10 +1611,8 @@ public sealed class SuccessFactorsWorkerSource(
             navigation.TryGetProperty("results", out var results) &&
             results.ValueKind == JsonValueKind.Array)
         {
-            foreach (var item in results.EnumerateArray())
-            {
-                return item.Clone();
-            }
+            var enumerator = results.EnumerateArray();
+            return enumerator.MoveNext() ? enumerator.Current.Clone() : null;
         }
 
         return null;
@@ -2036,10 +2034,8 @@ public sealed class SuccessFactorsWorkerSource(
             property.TryGetProperty("results", out var results) &&
             results.ValueKind == JsonValueKind.Array)
         {
-            foreach (var item in results.EnumerateArray())
-            {
-                return item.Clone();
-            }
+            var enumerator = results.EnumerateArray();
+            return enumerator.MoveNext() ? enumerator.Current.Clone() : null;
         }
 
         if (property.ValueKind == JsonValueKind.Object)

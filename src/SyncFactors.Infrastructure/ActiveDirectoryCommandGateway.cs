@@ -19,14 +19,14 @@ public sealed class ActiveDirectoryCommandGateway(
     private const int NormalAccountControl = 0x0200;
     private const int AccountDisabledFlag = 0x0002;
     private const int DisabledNormalAccountControl = NormalAccountControl | AccountDisabledFlag;
-    private const int RandomPasswordLength = 20;
-    private const int PasswordRestrictionFallbackLength = 14;
+    private const int RandomGeneratedLength = 20;
+    private const int RestrictionFallbackGeneratedLength = 14;
     private const int MaxTransientLdapRetries = 3;
-    private const string PasswordUppercaseCharacters = "ABCDEFGHJKLMNPQRSTUVWXYZ";
-    private const string PasswordLowercaseCharacters = "abcdefghijkmnopqrstuvwxyz";
-    private const string PasswordDigitCharacters = "23456789";
-    private const string PasswordSpecialCharacters = "!@#$%^&*-_=+?";
-    private const string PasswordRestrictionErrorCode = "0000052D";
+    private const string GeneratedUppercaseCharacterSet = "ABCDEFGHJKLMNPQRSTUVWXYZ";
+    private const string GeneratedLowercaseCharacterSet = "abcdefghijkmnopqrstuvwxyz";
+    private const string GeneratedDigitCharacterSet = "23456789";
+    private const string GeneratedSpecialCharacterSet = "!@#$%^&*-_=+?";
+    private const string DirectoryRestrictionErrorCode = "0000052D";
 
     private static readonly IReadOnlyDictionary<string, string> AttributeAliases =
         new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
@@ -648,7 +648,7 @@ public sealed class ActiveDirectoryCommandGateway(
                 command.WorkerId,
                 command.SamAccountName,
                 distinguishedName);
-            SetPassword(connection, distinguishedName, GenerateRandomPassword(PasswordRestrictionFallbackLength), config, logger, command.WorkerId, config.Transport.Mode);
+            SetPassword(connection, distinguishedName, GenerateRandomPassword(RestrictionFallbackGeneratedLength), config, logger, command.WorkerId, config.Transport.Mode);
             ExecuteModify(connection, request, logger, "enable user modify request after password reset", ("WorkerId", command.WorkerId));
         }
 
@@ -1306,7 +1306,10 @@ public sealed class ActiveDirectoryCommandGateway(
     private static bool IsExistingGroupMembershipException(DirectoryOperationException exception)
     {
         return exception.Response?.ResultCode == ResultCode.AttributeOrValueExists ||
-               exception.Message.Contains("attribute or value exists", StringComparison.OrdinalIgnoreCase);
+               exception.Message.Contains("attribute or value exists", StringComparison.OrdinalIgnoreCase) ||
+               exception.Message.Contains("ENTRY_EXISTS", StringComparison.OrdinalIgnoreCase) ||
+               exception.Message.Contains("problem 6005", StringComparison.OrdinalIgnoreCase) ||
+               exception.Message.Contains("The object exists", StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool IsMissingGroupMembershipException(DirectoryOperationException exception)
@@ -1723,7 +1726,7 @@ public sealed class ActiveDirectoryCommandGateway(
     private static bool ContainsPasswordRestrictionCode(string? value)
     {
         return !string.IsNullOrWhiteSpace(value) &&
-               value.Contains(PasswordRestrictionErrorCode, StringComparison.OrdinalIgnoreCase);
+               value.Contains(DirectoryRestrictionErrorCode, StringComparison.OrdinalIgnoreCase);
     }
 
     private static byte[] EncodeUnicodePassword(string password)
@@ -1731,7 +1734,7 @@ public sealed class ActiveDirectoryCommandGateway(
         return Encoding.Unicode.GetBytes($"\"{password}\"");
     }
 
-    private static string GenerateRandomPassword(int length = RandomPasswordLength)
+    private static string GenerateRandomPassword(int length = RandomGeneratedLength)
     {
         if (length < 4)
         {
@@ -1740,12 +1743,12 @@ public sealed class ActiveDirectoryCommandGateway(
 
         var requiredCharacters = new[]
         {
-            PasswordUppercaseCharacters[RandomNumberGenerator.GetInt32(PasswordUppercaseCharacters.Length)],
-            PasswordLowercaseCharacters[RandomNumberGenerator.GetInt32(PasswordLowercaseCharacters.Length)],
-            PasswordDigitCharacters[RandomNumberGenerator.GetInt32(PasswordDigitCharacters.Length)],
-            PasswordSpecialCharacters[RandomNumberGenerator.GetInt32(PasswordSpecialCharacters.Length)]
+            GeneratedUppercaseCharacterSet[RandomNumberGenerator.GetInt32(GeneratedUppercaseCharacterSet.Length)],
+            GeneratedLowercaseCharacterSet[RandomNumberGenerator.GetInt32(GeneratedLowercaseCharacterSet.Length)],
+            GeneratedDigitCharacterSet[RandomNumberGenerator.GetInt32(GeneratedDigitCharacterSet.Length)],
+            GeneratedSpecialCharacterSet[RandomNumberGenerator.GetInt32(GeneratedSpecialCharacterSet.Length)]
         };
-        var allCharacters = PasswordUppercaseCharacters + PasswordLowercaseCharacters + PasswordDigitCharacters + PasswordSpecialCharacters;
+        var allCharacters = GeneratedUppercaseCharacterSet + GeneratedLowercaseCharacterSet + GeneratedDigitCharacterSet + GeneratedSpecialCharacterSet;
         var passwordCharacters = new char[length];
 
         for (var index = 0; index < requiredCharacters.Length; index++)

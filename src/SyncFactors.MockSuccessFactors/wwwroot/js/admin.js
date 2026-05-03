@@ -269,10 +269,24 @@
     }
 
     function bucketClassName(bucket) {
-        return String(bucket || "unknown")
-            .toLowerCase()
-            .replace(/[^a-z0-9]+/g, "-")
-            .replace(/^-+|-+$/g, "") || "unknown";
+        const normalized = [];
+        let lastWasSeparator = true;
+        for (const character of String(bucket || "unknown").toLowerCase()) {
+            const isAlphaNumeric = (character >= "a" && character <= "z") || (character >= "0" && character <= "9");
+            if (isAlphaNumeric) {
+                normalized.push(character);
+                lastWasSeparator = false;
+            } else if (!lastWasSeparator) {
+                normalized.push("-");
+                lastWasSeparator = true;
+            }
+        }
+
+        if (normalized.at(-1) === "-") {
+            normalized.pop();
+        }
+
+        return normalized.join("") || "unknown";
     }
 
     function renderBucketSummary() {

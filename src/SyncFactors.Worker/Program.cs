@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using Serilog;
 using SyncFactors.Domain;
 using SyncFactors.Infrastructure;
+using SyncFactors.Worker;
 using System.Net;
 
 const string WindowsServiceName = "SyncFactors.Worker";

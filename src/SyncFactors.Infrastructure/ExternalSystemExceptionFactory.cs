@@ -5,7 +5,7 @@ namespace SyncFactors.Infrastructure;
 internal static class ExternalSystemExceptionFactory
 {
     internal const string RetryableActiveDirectoryTimeoutMarkerKey = "SyncFactors.Infrastructure.RetryableActiveDirectoryTimeout";
-    private const string PasswordRestrictionErrorCode = "0000052D";
+    private const string DirectoryRestrictionErrorCode = "0000052D";
 
     public static InvalidOperationException CreateActiveDirectoryValidationException(string operation, ActiveDirectoryConfig config, string summary, string? details, string guidance)
     {
@@ -240,7 +240,7 @@ internal static class ExternalSystemExceptionFactory
     private static bool ContainsPasswordRestrictionMarker(string? value)
     {
         return !string.IsNullOrWhiteSpace(value) &&
-               value.Contains(PasswordRestrictionErrorCode, StringComparison.OrdinalIgnoreCase);
+               value.Contains(DirectoryRestrictionErrorCode, StringComparison.OrdinalIgnoreCase);
     }
 
     private static string GetPasswordRestrictionGuidance(ActiveDirectoryConfig config)

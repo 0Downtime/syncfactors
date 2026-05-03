@@ -638,6 +638,78 @@ public sealed class SqliteRunRepositoryTests
         }
     }
 
+    [Fact]
+    public async Task ListWorkerRunHistoryAsync_IncludesAllRunTypesAndOrdersNewestFirst()
+    {
+        var databasePath = Path.Combine(Path.GetTempPath(), $"syncfactors-worker-history-{Guid.NewGuid():N}.db");
+
+        try
+        {
+            var repository = await CreateRepositoryAsync(databasePath);
+
+            await repository.SaveRunAsync(
+                CreateRunRecord("bulk-old", DateTimeOffset.Parse("2026-04-01T12:00:00Z")) with
+                {
+                    Mode = "DryRun",
+                    DryRun = true,
+                    Status = "Succeeded"
+                },
+                CancellationToken.None);
+            await repository.AppendRunEntryAsync(CreateEntry(
+                "bulk-old",
+                "updates",
+                0,
+                "10001",
+                new
+                {
+                    workerId = "10001",
+                    changedAttributeDetails = new[]
+                    {
+                        new { targetAttribute = "department", sourceField = "department", currentAdValue = "Old", proposedValue = "New" }
+                    }
+                }),
+                CancellationToken.None);
+
+            await repository.SaveRunAsync(
+                CreateRunRecord(
+                    "preview-mid",
+                    DateTimeOffset.Parse("2026-04-02T12:00:00Z"),
+                    artifactType: "WorkerPreview",
+                    mode: "Preview") with
+                {
+                    Status = "Planned"
+                },
+                CancellationToken.None);
+            await repository.AppendRunEntryAsync(CreateEntry("preview-mid", "manualReview", 0, "10001"), CancellationToken.None);
+
+            await repository.SaveRunAsync(
+                CreateRunRecord("bulk-new", DateTimeOffset.Parse("2026-04-03T12:00:00Z")) with
+                {
+                    Mode = "LiveRun",
+                    DryRun = false,
+                    Status = "Failed"
+                },
+                CancellationToken.None);
+            await repository.AppendRunEntryAsync(CreateEntry("bulk-new", "conflicts", 0, "20002") with
+            {
+                SamAccountName = "user10001"
+            }, CancellationToken.None);
+
+            var total = await repository.CountWorkerRunHistoryAsync("10001", CancellationToken.None);
+            var history = await repository.ListWorkerRunHistoryAsync("10001", 0, 10, CancellationToken.None);
+
+            Assert.Equal(3, total);
+            Assert.Equal(["bulk-new", "preview-mid", "bulk-old"], history.Select(item => item.RunId).ToArray());
+            Assert.Contains(history, item => item.ArtifactType == "WorkerPreview" && item.Bucket == "manualReview");
+            Assert.Contains(history, item => item.RunId == "bulk-new" && item.SamAccountName == "user10001");
+            Assert.Contains(history, item => item.RunId == "bulk-old" && item.TopChangedAttributes.Contains("department"));
+        }
+        finally
+        {
+            File.Delete(databasePath);
+        }
+    }
+
     private static async Task<SqliteRunRepository> CreateRepositoryAsync(string databasePath)
     {
         var pathResolver = new SqlitePathResolver(databasePath);

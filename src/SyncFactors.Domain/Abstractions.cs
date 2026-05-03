@@ -124,6 +124,10 @@ public interface IRunRepository
     Task<RunDetail?> GetRunAsync(string runId, CancellationToken cancellationToken);
     Task<WorkerPreviewResult?> GetWorkerPreviewAsync(string runId, CancellationToken cancellationToken);
     Task<IReadOnlyList<WorkerPreviewHistoryItem>> ListWorkerPreviewHistoryAsync(string workerId, int take, CancellationToken cancellationToken);
+    Task<int> CountWorkerRunHistoryAsync(string workerId, CancellationToken cancellationToken) =>
+        Task.FromResult(0);
+    Task<IReadOnlyList<WorkerRunHistoryItem>> ListWorkerRunHistoryAsync(string workerId, int skip, int take, CancellationToken cancellationToken) =>
+        Task.FromResult<IReadOnlyList<WorkerRunHistoryItem>>([]);
     Task SaveRunAsync(RunRecord run, CancellationToken cancellationToken);
     Task ReplaceRunEntriesAsync(string runId, IReadOnlyList<RunEntryRecord> entries, CancellationToken cancellationToken);
     Task AppendRunEntryAsync(RunEntryRecord entry, CancellationToken cancellationToken);
