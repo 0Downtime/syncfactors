@@ -165,6 +165,33 @@ public sealed class SyncFactorsConfigurationLoaderTests
     }
 
     [Fact]
+    public async Task GetSyncConfig_DefaultsApprovalPolicyToDisabled_WhenOmitted()
+    {
+        var config = await LoadConfigAsync(adJson: null);
+
+        Assert.False(config.Approval.Enabled);
+        Assert.Empty(config.Approval.RequireFor);
+    }
+
+    [Fact]
+    public async Task GetSyncConfig_LoadsApprovalPolicy_WhenExplicitlyConfigured()
+    {
+        var config = await LoadConfigAsync(
+            adJson: null,
+            approvalJson: """
+              "enabled": true,
+              "requireFor": [
+                " DisableUser ",
+                "DeleteUser",
+                "DisableUser"
+              ]
+            """);
+
+        Assert.True(config.Approval.Enabled);
+        Assert.Equal(["DisableUser", "DeleteUser"], config.Approval.RequireFor);
+    }
+
+    [Fact]
     public async Task GetSyncConfig_DefaultsRealSyncEnabledToTrue_WhenOmitted()
     {
         var config = await LoadConfigAsync(adJson: null);
@@ -266,7 +293,7 @@ public sealed class SyncFactorsConfigurationLoaderTests
         Assert.Equal("Trim", attributeMapping.Transform);
     }
 
-    private static async Task<SyncFactorsConfigDocument> LoadConfigAsync(string? adJson, string? syncJson = null)
+    private static async Task<SyncFactorsConfigDocument> LoadConfigAsync(string? adJson, string? syncJson = null, string? approvalJson = null)
     {
         var tempRoot = Path.Combine(Path.GetTempPath(), "syncfactors-config-loader", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(tempRoot);
@@ -276,6 +303,9 @@ public sealed class SyncFactorsConfigurationLoaderTests
         var renderedSyncJson = string.IsNullOrWhiteSpace(syncJson)
             ? string.Empty
             : $",{Environment.NewLine}{syncJson.Trim()}";
+        var renderedApprovalJson = string.IsNullOrWhiteSpace(approvalJson)
+            ? string.Empty
+            : $",{Environment.NewLine}          \"approval\": {{{Environment.NewLine}{approvalJson.Trim()}{Environment.NewLine}          }}";
 
         var configPath = Path.Combine(tempRoot, "sync-config.json");
         var mappingConfigPath = Path.Combine(tempRoot, "mapping-config.json");
@@ -323,7 +353,7 @@ public sealed class SyncFactorsConfigurationLoaderTests
             "maxCreatesPerRun": 10,
             "maxDisablesPerRun": 10,
             "maxDeletionsPerRun": 10
-          },
+          }{{renderedApprovalJson}},
           "reporting": {
             "outputDirectory": "/tmp"
           }

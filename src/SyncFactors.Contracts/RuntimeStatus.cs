@@ -232,7 +232,9 @@ public sealed record RealSyncSettings(
 public sealed record WorkerRunSettings(
     int MaxCreatesPerRun,
     int MaxDisablesPerRun = int.MaxValue,
-    int MaxDeletionsPerRun = int.MaxValue);
+    int MaxDeletionsPerRun = int.MaxValue,
+    bool ManualReviewDisables = false,
+    bool ManualReviewDeletions = false);
 
 public sealed record RunHistoryRetentionSettings(
     int RetentionDays = 3,

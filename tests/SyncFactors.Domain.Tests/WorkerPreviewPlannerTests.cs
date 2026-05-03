@@ -832,6 +832,46 @@ public sealed class WorkerPreviewPlannerTests
     }
 
     [Fact]
+    public async Task PreviewAsync_ManualReviewDisables_RebucketsDisablePreview()
+    {
+        var worker = new WorkerSnapshot(
+            WorkerId: "44522",
+            PreferredName: "Christopher",
+            LastName: "Brien",
+            Department: "Infrastructure & Security",
+            TargetOu: "OU=Employees,DC=example,DC=com",
+            IsPrehire: false,
+            Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["company"] = "Example Services, Inc.",
+                ["department"] = "Infrastructure & Security",
+                ["emplStatus"] = "L"
+            });
+
+        var planner = new WorkerPreviewPlanner(
+            new StubWorkerSource(worker),
+            new WorkerPlanningService(
+                new ExistingUserDirectoryGateway(),
+                new ExistingUserIdentityMatcher(),
+                CreateLifecyclePolicy(),
+                new UnchangedAttributeDiffService(),
+                new StubAttributeMappingProvider(),
+                NullLogger<WorkerPlanningService>.Instance,
+                new WorkerRunSettings(MaxCreatesPerRun: 10, ManualReviewDisables: true)),
+            new StubAttributeMappingProvider(),
+            new StubWorkerPreviewLogWriter(),
+            new StubRunRepository(),
+            NullLogger<WorkerPreviewPlanner>.Instance);
+
+        var preview = await planner.PreviewAsync("44522", CancellationToken.None);
+
+        Assert.Equal("manualReview", preview.Buckets.Single());
+        Assert.Equal("SafetyPolicy", preview.ReviewCategory);
+        Assert.Equal("DisableRequiresManualReview", preview.ReviewCaseType);
+        Assert.Equal("Disable operation requires manual review by safety policy.", preview.Reason);
+    }
+
+    [Fact]
     public async Task PreviewAsync_ForDisabledExistingUsersWithoutAttributeChanges_UsesEnableBucket()
     {
         var worker = new WorkerSnapshot(

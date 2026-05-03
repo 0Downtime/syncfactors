@@ -68,6 +68,16 @@ builder.Services.AddSingleton(serviceProvider =>
         identityCorrelation?.SuccessorPersonIdExternalAttribute,
         identityCorrelation?.PreviousPersonIdExternalAttribute);
 });
+builder.Services.AddSingleton(serviceProvider =>
+{
+    var config = serviceProvider.GetRequiredService<SyncFactorsConfigurationLoader>().GetSyncConfig();
+    return new WorkerRunSettings(
+        config.Safety.MaxCreatesPerRun,
+        config.Safety.MaxDisablesPerRun,
+        config.Safety.MaxDeletionsPerRun,
+        ManualReviewRequired(config, "DisableUser", "MoveToGraveyardOu"),
+        ManualReviewRequired(config, "DeleteUser"));
+});
 builder.Services.AddSingleton<ILifecyclePolicy, LifecyclePolicy>();
 builder.Services.AddSingleton<IAttributeDiffService, AttributeDiffService>();
 builder.Services.AddSingleton<IActiveDirectoryConnectionPool, ActiveDirectoryConnectionPool>();
@@ -386,6 +396,14 @@ static bool IsLoopbackRequest(HttpRequest request, MockAdminOptions adminOptions
     }
 
     return false;
+}
+
+static bool ManualReviewRequired(SyncFactorsConfigDocument config, params string[] operationKinds)
+{
+    return config.Approval.Enabled &&
+           operationKinds.Any(operationKind =>
+               config.Approval.RequireFor.Any(required =>
+                   string.Equals(required, operationKind, StringComparison.OrdinalIgnoreCase)));
 }
 
 public partial class Program

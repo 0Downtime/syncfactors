@@ -10,10 +10,13 @@ public sealed class WorkerPlanningService(
     IAttributeDiffService attributeDiffService,
     IAttributeMappingProvider attributeMappingProvider,
     ILogger<WorkerPlanningService> logger,
+    WorkerRunSettings? workerRunSettings = null,
     IEmailAddressPolicy? emailAddressPolicy = null,
     IdentityCorrelationSettings? identityCorrelationSettings = null) : IWorkerPlanningService
 {
     private readonly IEmailAddressPolicy _emailAddressPolicy = emailAddressPolicy ?? new DefaultEmailAddressPolicy();
+    private readonly WorkerRunSettings _workerRunSettings =
+        workerRunSettings ?? new WorkerRunSettings(MaxCreatesPerRun: int.MaxValue);
     private readonly IdentityCorrelationSettings _identityCorrelationSettings =
         identityCorrelationSettings ?? new IdentityCorrelationSettings(false, "employeeID", null, null);
 
@@ -141,8 +144,16 @@ public sealed class WorkerPlanningService(
         var targetEnabled = lifecycle.TargetEnabled;
         var operations = BuildOperations(bucket, directoryUser, lifecycle.TargetOu, targetEnabled, attributeChanges);
         bucket = ResolveBucket(bucket, operations);
+        if (ManualReviewSafetyPolicy.RequiresDisableReview(_workerRunSettings, bucket, operations))
+        {
+            bucket = "manualReview";
+            reviewCategory = ManualReviewSafetyPolicy.ReviewCategory;
+            reviewCaseType = ManualReviewSafetyPolicy.DisableReviewCaseType;
+            reason = ManualReviewSafetyPolicy.DisableReviewReason;
+        }
+
         var primaryAction = ResolvePrimaryAction(bucket, operations);
-        var canAutoApply = operations.Count > 0;
+        var canAutoApply = operations.Count > 0 && !string.Equals(bucket, "manualReview", StringComparison.OrdinalIgnoreCase);
         var decisionSteps = BuildDecisionSteps(
             worker,
             directoryUser,

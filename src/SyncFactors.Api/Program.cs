@@ -86,7 +86,12 @@ builder.Services.AddSingleton<ScaffoldWorkerSource>();
 builder.Services.AddSingleton(serviceProvider =>
 {
     var config = serviceProvider.GetRequiredService<SyncFactorsConfigurationLoader>().GetSyncConfig();
-    return new WorkerRunSettings(config.Safety.MaxCreatesPerRun, config.Safety.MaxDisablesPerRun, config.Safety.MaxDeletionsPerRun);
+    return new WorkerRunSettings(
+        config.Safety.MaxCreatesPerRun,
+        config.Safety.MaxDisablesPerRun,
+        config.Safety.MaxDeletionsPerRun,
+        ManualReviewRequired(config, "DisableUser", "MoveToGraveyardOu"),
+        ManualReviewRequired(config, "DeleteUser"));
 });
 builder.Services.AddSingleton(serviceProvider =>
 {
@@ -1151,6 +1156,14 @@ static void ConfigureWindowsEventLog(IServiceCollection services, string service
         options.SourceName = serviceName;
 #pragma warning restore CA1416
     });
+}
+
+static bool ManualReviewRequired(SyncFactorsConfigDocument config, params string[] operationKinds)
+{
+    return config.Approval.Enabled &&
+           operationKinds.Any(operationKind =>
+               config.Approval.RequireFor.Any(required =>
+                   string.Equals(required, operationKind, StringComparison.OrdinalIgnoreCase)));
 }
 
 static void ConfigureApplicationInsights(WebApplicationBuilder builder)
