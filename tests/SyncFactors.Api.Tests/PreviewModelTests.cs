@@ -77,6 +77,41 @@ public sealed class PreviewModelTests
     }
 
     [Fact]
+    public async Task Preview_OnGetAsync_WithRunId_RedirectsToWorker360Worker()
+    {
+        var preview = CreatePreview(workerId: "10001");
+        var model = new PreviewModel(new StubRunRepository(preview))
+        {
+            SavedRunId = preview.RunId,
+            ShowAllAttributes = true
+        };
+
+        var result = await model.OnGetAsync(CancellationToken.None);
+
+        var redirect = Assert.IsType<RedirectToPageResult>(result);
+        Assert.Equal("/Workers", redirect.PageName);
+        Assert.Equal("10001", redirect.RouteValues!["workerId"]);
+        Assert.Equal(preview.RunId, redirect.RouteValues["runId"]);
+        Assert.True((bool)redirect.RouteValues["showAllAttributes"]!);
+    }
+
+    [Fact]
+    public async Task Preview_OnGetAsync_WithUnknownRunId_RedirectsToWorker360Run()
+    {
+        var preview = CreatePreview(workerId: "10001");
+        var model = new PreviewModel(new StubRunRepository(preview, resolvePreview: false))
+        {
+            SavedRunId = "missing-preview"
+        };
+
+        var result = await model.OnGetAsync(CancellationToken.None);
+
+        var redirect = Assert.IsType<RedirectToPageResult>(result);
+        Assert.Equal("/Workers", redirect.PageName);
+        Assert.Equal("missing-preview", redirect.RouteValues!["runId"]);
+    }
+
+    [Fact]
     public async Task OnPostApplyAsync_UsesSameWorkerIdAndReloadsPreview()
     {
         var preview = CreatePreview(workerId: "10001");
@@ -127,6 +162,40 @@ public sealed class PreviewModelTests
         Assert.Equal(preview.WorkerId, model.WorkerId);
         Assert.Equal(preview.RunId, model.PreviewRunId);
         Assert.Null(model.ErrorMessage);
+    }
+
+    [Fact]
+    public async Task OnGetAsync_WithUnknownSavedPreviewShowsError()
+    {
+        var preview = CreatePreview(workerId: "10001");
+        var model = new Worker360Model(
+            new CapturingWorkerPreviewPlanner(preview),
+            new StubApplyPreviewService(),
+            new StubRunRepository(preview, resolvePreview: false))
+        {
+            SavedRunId = "missing-preview"
+        };
+
+        await model.OnGetAsync(CancellationToken.None);
+
+        Assert.Null(model.Preview);
+        Assert.Equal("Preview run missing-preview could not be resolved.", model.ErrorMessage);
+    }
+
+    [Fact]
+    public async Task OnPostApplyAsync_RequiresPreviewRunAndFingerprint()
+    {
+        var preview = CreatePreview(workerId: "10001");
+        var model = new Worker360Model(new CapturingWorkerPreviewPlanner(preview), new StubApplyPreviewService(), new StubRunRepository(preview))
+        {
+            WorkerId = "10001"
+        };
+
+        var result = await model.OnPostApplyAsync(CancellationToken.None);
+
+        Assert.IsType<PageResult>(result);
+        Assert.Equal("Refresh preview before applying.", model.ErrorMessage);
+        Assert.Same(preview, model.Preview);
     }
 
     [Fact]
@@ -223,8 +292,77 @@ public sealed class PreviewModelTests
         Assert.Equal("64303 - Unpaid Leave", Worker360Model.GetEmploymentStatusDisplay(preview));
     }
 
-    private static WorkerPreviewResult CreatePreview(string workerId, IReadOnlyList<SourceAttributeRow>? sourceAttributes = null)
+    [Fact]
+    public async Task Worker360_GetSourceSummary_PrefersKnownFieldsThenUsedFields()
     {
+        var preview = CreatePreview(
+            workerId: "10001",
+            sourceAttributes:
+            [
+                new SourceAttributeRow("department", "Engineering"),
+                new SourceAttributeRow("personIdExternal", "10001"),
+                new SourceAttributeRow("unlistedSource", "ignored")
+            ],
+            usedSourceAttributes:
+            [
+                new SourceAttributeRow("customRouting", "A"),
+                new SourceAttributeRow("department", "duplicate")
+            ]);
+        var model = new Worker360Model(new CapturingWorkerPreviewPlanner(preview), new StubApplyPreviewService(), new StubRunRepository(preview))
+        {
+            WorkerId = "10001"
+        };
+
+        await model.OnGetAsync(CancellationToken.None);
+        var rows = model.GetSourceSummary();
+
+        Assert.Equal(["personIdExternal", "department", "customRouting"], rows.Select(row => row.Attribute).ToArray());
+    }
+
+    [Fact]
+    public async Task Worker360_GetVisibleDiffRows_FiltersChangedRowsUnlessShowingAll()
+    {
+        var preview = CreatePreview(workerId: "10001", includeUnchangedDiff: true);
+        var model = new Worker360Model(new CapturingWorkerPreviewPlanner(preview), new StubApplyPreviewService(), new StubRunRepository(preview))
+        {
+            WorkerId = "10001"
+        };
+
+        await model.OnGetAsync(CancellationToken.None);
+        Assert.All(model.GetVisibleDiffRows(), row => Assert.True(row.Changed));
+
+        model.ShowAllAttributes = true;
+        Assert.Contains(model.GetVisibleDiffRows(), row => !row.Changed);
+    }
+
+    [Fact]
+    public void Worker360_GetDiffGroup_MapsKnownAttributeFamilies()
+    {
+        Assert.Equal("Identity", Worker360Model.GetDiffGroup(new DiffRow("userPrincipalName", "", "", "", true)));
+        Assert.Equal("Organization", Worker360Model.GetDiffGroup(new DiffRow("costCenter", "", "", "", true)));
+        Assert.Equal("Lifecycle", Worker360Model.GetDiffGroup(new DiffRow("emplStatus", "", "", "", true)));
+        Assert.Equal("Routing", Worker360Model.GetDiffGroup(new DiffRow("targetOu", "", "", "", true)));
+        Assert.Equal("Access", Worker360Model.GetDiffGroup(new DiffRow("memberOf", "", "", "", true)));
+        Assert.Equal("Other", Worker360Model.GetDiffGroup(new DiffRow("favoriteColor", "", "", "", true)));
+    }
+
+    private static WorkerPreviewResult CreatePreview(
+        string workerId,
+        IReadOnlyList<SourceAttributeRow>? sourceAttributes = null,
+        IReadOnlyList<SourceAttributeRow>? usedSourceAttributes = null,
+        bool includeUnchangedDiff = false)
+    {
+        var diffRows = new List<DiffRow>
+        {
+            new("displayName", "sAMAccountName", "Old Name", workerId, true),
+            new("UserPrincipalName", "resolved email local-part", "old.email@example.test", "preview.email@example.test", true),
+            new("mail", "resolved email local-part", "old.email@example.test", "preview.email@example.test", true)
+        };
+        if (includeUnchangedDiff)
+        {
+            diffRows.Add(new DiffRow("department", "department", "Engineering", "Engineering", false));
+        }
+
         return new WorkerPreviewResult(
             ReportPath: "/tmp/preview.jsonl",
             RunId: $"preview-{workerId}",
@@ -254,14 +392,9 @@ public sealed class PreviewModelTests
                 TargetOu: "OU=LabUsers,DC=example,DC=com",
                 FromOu: null,
                 ToOu: "OU=LabUsers,DC=example,DC=com"),
-            DiffRows:
-            [
-                new DiffRow("displayName", "sAMAccountName", "Old Name", workerId, true),
-                new DiffRow("UserPrincipalName", "resolved email local-part", "old.email@example.test", "preview.email@example.test", true),
-                new DiffRow("mail", "resolved email local-part", "old.email@example.test", "preview.email@example.test", true)
-            ],
+            DiffRows: diffRows,
             SourceAttributes: sourceAttributes ?? [],
-            UsedSourceAttributes: [],
+            UsedSourceAttributes: usedSourceAttributes ?? [],
             UnusedSourceAttributes: [],
             MissingSourceAttributes: [],
             Entries: []);
@@ -324,7 +457,7 @@ public sealed class PreviewModelTests
         }
     }
 
-    private sealed class StubRunRepository(WorkerPreviewResult preview) : IRunRepository
+    private sealed class StubRunRepository(WorkerPreviewResult preview, bool resolvePreview = true) : IRunRepository
     {
         private readonly IReadOnlyList<WorkerRunHistoryItem> workerHistory =
         [
@@ -366,7 +499,7 @@ public sealed class PreviewModelTests
         {
             _ = runId;
             _ = cancellationToken;
-            return Task.FromResult<WorkerPreviewResult?>(preview);
+            return Task.FromResult(resolvePreview ? preview : null);
         }
 
         public Task<IReadOnlyList<WorkerPreviewHistoryItem>> ListWorkerPreviewHistoryAsync(string workerId, int take, CancellationToken cancellationToken)

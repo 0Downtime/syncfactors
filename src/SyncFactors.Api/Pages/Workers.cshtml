@@ -577,7 +577,15 @@
 <script src="~/js/preview.js" asp-append-version="true"></script>
 
 @functions {
-    private static string DisplayBool(bool? value) => value.HasValue ? (value.Value ? "Yes" : "No") : "Unknown";
+    private static string DisplayBool(bool? value)
+    {
+        if (!value.HasValue)
+        {
+            return "Unknown";
+        }
+
+        return value.Value ? "Yes" : "No";
+    }
 
     private static bool IsHighRiskAttribute(string? attribute)
     {

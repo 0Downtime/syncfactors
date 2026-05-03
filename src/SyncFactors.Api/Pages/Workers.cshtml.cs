@@ -52,8 +52,15 @@ public sealed class Worker360Model(
     public IReadOnlyList<SourceAttributeRow> GetSourceSummary() =>
         Preview is null ? [] : SelectSourceSummary(Preview).ToArray();
 
-    public IReadOnlyList<DiffRow> GetVisibleDiffRows() =>
-        Preview is null ? [] : ShowAllAttributes ? Preview.DiffRows : Preview.DiffRows.Where(row => row.Changed).ToArray();
+    public IReadOnlyList<DiffRow> GetVisibleDiffRows()
+    {
+        if (Preview is null)
+        {
+            return [];
+        }
+
+        return ShowAllAttributes ? Preview.DiffRows : Preview.DiffRows.Where(row => row.Changed).ToArray();
+    }
 
     public static string? GetEmploymentStatusDisplay(WorkerPreviewResult preview)
         => EmploymentStatusDisplay.Format(

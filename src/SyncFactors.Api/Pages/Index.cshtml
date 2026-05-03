@@ -437,25 +437,6 @@
         return "idle";
     }
 
-    private static int ProgressFillWidth(SyncFactors.Contracts.RuntimeStatus status)
-    {
-        var actualPercent = WorkerProgressPercent(status);
-
-        return ProgressVisualState(status) switch
-        {
-            "starting" => 18,
-            "queued" => 16,
-            "canceling" => 32,
-            "planning" => Math.Max(actualPercent, 18),
-            "applypreview" => Math.Max(actualPercent, 38),
-            "syncing" => status.TotalWorkers > 0 ? Math.Max(actualPercent, 12) : 26,
-            "complete" => 100,
-            "failed" => status.TotalWorkers > 0 ? Math.Max(actualPercent, 18) : 100,
-            "canceled" => 18,
-            _ => 8,
-        };
-    }
-
     private static string ProgressLabel(SyncFactors.Contracts.RuntimeStatus status)
     {
         var actualPercent = WorkerProgressPercent(status);

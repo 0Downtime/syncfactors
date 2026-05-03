@@ -282,7 +282,7 @@
             }
         }
 
-        if (normalized[normalized.length - 1] === "-") {
+        if (normalized.at(-1) === "-") {
             normalized.pop();
         }
 
