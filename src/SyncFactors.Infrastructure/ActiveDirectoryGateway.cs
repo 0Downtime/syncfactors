@@ -855,7 +855,7 @@ public sealed class ActiveDirectoryGateway(
         string searchAttribute,
         string searchValue,
         string additionalAttribute,
-        IReadOnlyList<string>? extraAttributes = null)
+        IReadOnlyList<string>? extraAttributes)
     {
         return new SearchRequest(
             searchBase,
@@ -876,7 +876,7 @@ public sealed class ActiveDirectoryGateway(
         string searchBase,
         IReadOnlyList<(string Attribute, string Value)> searchClauses,
         string additionalAttribute,
-        IReadOnlyList<string>? extraAttributes = null)
+        IReadOnlyList<string>? extraAttributes)
     {
         return new SearchRequest(
             searchBase,
