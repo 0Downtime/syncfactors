@@ -36,7 +36,7 @@ else {
     ).Replace('/', 'A').Replace('+', 'B')
 }
 
-Set-Content -Path $paths.PasswordPath -Value $password -NoNewline
+Set-SyncFactorsSecretFile -Path $paths.PasswordPath -Value $password
 
 $arguments = @('dev-certs', 'https', '--export-path', $paths.CertificatePath, '--password', $password)
 if (-not $SkipTrust) {
@@ -56,4 +56,4 @@ Write-Host 'Remote access requires a certificate whose SAN matches the external 
 Write-Host ''
 Write-Host 'Optional .env.worktree overrides:' -ForegroundColor Cyan
 Write-Host "SYNCFACTORS_TLS_CERT_PATH=$($paths.CertificatePath)"
-Write-Host "SYNCFACTORS_TLS_CERT_PASSWORD=$password"
+Write-Host 'SYNCFACTORS_TLS_CERT_PASSWORD=<set from the password file or a secret store>'

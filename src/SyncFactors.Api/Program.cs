@@ -847,15 +847,16 @@ static void LogConfiguredEndpoints(WebApplication app)
         ActiveDirectoryTransportModeFormatter.DescribeStartupTransport(config.Ad.Transport.Mode));
     app.Logger.LogWarning("========== AD ENDPOINT DIAGNOSTIC ==========");
     app.Logger.LogWarning(
-        "[AD-ENDPOINT] ActiveDirectoryServer={ActiveDirectoryServer} ActiveDirectoryPort={ActiveDirectoryPort} ActiveDirectoryAccount={ActiveDirectoryAccount} ActiveDirectorySimpleBindPrincipalFormat={ActiveDirectorySimpleBindPrincipalFormat} ActiveDirectoryTransport={ActiveDirectoryTransport} ActiveDirectoryUsesGlobalCatalog={ActiveDirectoryUsesGlobalCatalog} SuccessFactorsBaseUrl={SuccessFactorsBaseUrl} SuccessFactorsAccount={SuccessFactorsAccount} AuthMode={AuthMode}",
-        config.Ad.Server,
+        "[AD-ENDPOINT] ActiveDirectoryServerConfigured={ActiveDirectoryServerConfigured} ActiveDirectoryPort={ActiveDirectoryPort} ActiveDirectoryAccountConfigured={ActiveDirectoryAccountConfigured} ActiveDirectorySimpleBindPrincipalFormat={ActiveDirectorySimpleBindPrincipalFormat} ActiveDirectoryTransport={ActiveDirectoryTransport} ActiveDirectoryUsesGlobalCatalog={ActiveDirectoryUsesGlobalCatalog} SuccessFactorsBaseUrlConfigured={SuccessFactorsBaseUrlConfigured} SuccessFactorsAccountConfigured={SuccessFactorsAccountConfigured} SuccessFactorsAuthMode={SuccessFactorsAuthMode} AuthMode={AuthMode}",
+        DescribeConfiguredValue(config.Ad.Server),
         activeDirectoryPort,
-        string.IsNullOrWhiteSpace(config.Ad.Username) ? "anonymous" : config.Ad.Username,
+        DescribeConfiguredValue(config.Ad.Username),
         DescribeSimpleBindPrincipalFormat(config.Ad.Username),
         config.Ad.Transport.Mode,
         usesGlobalCatalog,
-        config.SuccessFactors.BaseUrl,
-        DescribeSuccessFactorsAccount(config.SuccessFactors.Auth),
+        DescribeConfiguredValue(config.SuccessFactors.BaseUrl),
+        DescribeSuccessFactorsAccountConfiguration(config.SuccessFactors.Auth),
+        config.SuccessFactors.Auth.Mode,
         authOptions.Mode);
     app.Logger.LogWarning("============================================");
 
@@ -1070,21 +1071,22 @@ static void RemoveClaims(ClaimsIdentity identity, string claimType)
     }
 }
 
-static string DescribeSuccessFactorsAccount(SuccessFactorsAuthConfig auth)
+static string DescribeConfiguredValue(string? value) =>
+    string.IsNullOrWhiteSpace(value) ? "Missing" : "Configured";
+
+static string DescribeSuccessFactorsAccountConfiguration(SuccessFactorsAuthConfig auth)
 {
     if (string.Equals(auth.Mode, "basic", StringComparison.OrdinalIgnoreCase) && auth.Basic is not null)
     {
-        return auth.Basic.Username;
+        return DescribeConfiguredValue(auth.Basic.Username);
     }
 
     if (string.Equals(auth.Mode, "oauth", StringComparison.OrdinalIgnoreCase) && auth.OAuth is not null)
     {
-        return string.IsNullOrWhiteSpace(auth.OAuth.CompanyId)
-            ? $"oauth-client:{auth.OAuth.ClientId}"
-            : $"oauth-client:{auth.OAuth.ClientId} company:{auth.OAuth.CompanyId}";
+        return DescribeConfiguredValue(auth.OAuth.ClientId);
     }
 
-    return $"mode:{auth.Mode}";
+    return "Missing";
 }
 
 static void ConfigureLocalFileLogging(
