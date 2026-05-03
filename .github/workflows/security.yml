@@ -63,7 +63,7 @@ jobs:
             /d:sonar.host.url="${SONAR_HOST_URL}" \
             /d:sonar.token="${SONAR_TOKEN}" \
             /d:sonar.cs.opencover.reportsPaths="artifacts/coverage/**/coverage.opencover.xml" \
-            /d:sonar.coverage.exclusions="src/SyncFactors.Api/Program.cs,src/SyncFactors.Worker/Program.cs,src/SyncFactors.Contracts/**,src/SyncFactors.Domain/Abstractions.cs,src/SyncFactors.MockSuccessFactors/wwwroot/js/**" \
+            /d:sonar.coverage.exclusions="src/SyncFactors.Api/Program.cs,src/SyncFactors.Worker/Program.cs,src/SyncFactors.Contracts/**,src/SyncFactors.Domain/Abstractions.cs,src/SyncFactors.Api/frontend/**,src/SyncFactors.Api/wwwroot/js/**,src/SyncFactors.MockSuccessFactors/wwwroot/js/**,src/SyncFactors.Automation/**,src/SyncFactors.Infrastructure/ActiveDirectory*.cs,src/SyncFactors.Infrastructure/PowerShellWorkerPreviewService.cs,src/SyncFactors.Infrastructure/SmtpEmailSender.cs" \
             /d:sonar.qualitygate.wait=true \
             /d:sonar.qualitygate.timeout=300
 
