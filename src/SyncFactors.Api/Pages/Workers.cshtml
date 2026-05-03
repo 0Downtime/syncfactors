@@ -5,12 +5,14 @@
     var preview = Model.Preview;
     var riskCallouts = preview is null ? [] : BuildRiskCallouts(preview);
     var managerDiff = preview?.DiffRows.FirstOrDefault(row => string.Equals(row.Attribute, "manager", StringComparison.OrdinalIgnoreCase));
-    var employmentStatus = preview is null ? null : Model.GetEmploymentStatusDisplay(preview);
+    var employmentStatus = preview is null ? null : SyncFactors.Api.Pages.Worker360Model.GetEmploymentStatusDisplay(preview);
     var changedCount = preview?.DiffRows.Count(row => row.Changed) ?? 0;
     var unchangedCount = preview?.DiffRows.Count(row => !row.Changed) ?? 0;
     var highRiskChangedCount = preview?.DiffRows.Count(row => row.Changed && IsHighRiskAttribute(row.Attribute)) ?? 0;
     var plannedOperationCount = preview?.Entries.Sum(CountOperations) ?? 0;
     IReadOnlyList<SyncFactors.Contracts.ProvisioningDecisionStep> decisionSteps = preview?.DecisionSteps ?? [];
+    var sourceSummary = Model.GetSourceSummary();
+    var visibleDiffRows = Model.GetVisibleDiffRows();
 }
 
 <section class="hero hero-compact">
@@ -164,7 +166,7 @@
                 </div>
                 <a class="link-button" asp-page="/Lookup" asp-route-lookupValue="@preview.WorkerId">Raw OData</a>
             </div>
-            @if (Model.SourceSummary.Count == 0)
+            @if (sourceSummary.Count == 0)
             {
                 <p class="muted">No populated source summary values were captured.</p>
             }
@@ -174,9 +176,9 @@
                     <table class="data-table compact">
                         <thead><tr><th>Field</th><th>Value</th></tr></thead>
                         <tbody>
-                        @foreach (var row in Model.SourceSummary)
+                        @foreach (var row in sourceSummary)
                         {
-                            <tr><td>@row.Attribute</td><td><span class="source-value" title="@row.Value" tabindex="0">@row.Value</span></td></tr>
+                            <tr><td>@row.Attribute</td><td><span class="source-value" title="@row.Value">@row.Value</span></td></tr>
                         }
                         </tbody>
                     </table>
@@ -191,9 +193,9 @@
                 <div><dt>Matched Existing User</dt><dd>@DisplayBool(preview.MatchedExistingUser)</dd></div>
                 <div><dt>Current Enabled</dt><dd>@DisplayBool(preview.CurrentEnabled)</dd></div>
                 <div><dt>Proposed Enabled</dt><dd>@DisplayBool(preview.ProposedEnable)</dd></div>
-                <div><dt>Target OU</dt><dd><span class="summary-value" title="@(preview.TargetOu ?? "n/a")" tabindex="0">@(preview.TargetOu ?? "n/a")</span></dd></div>
-                <div><dt>Current DN</dt><dd><span class="summary-value" title="@(preview.CurrentDistinguishedName ?? "n/a")" tabindex="0">@(preview.CurrentDistinguishedName ?? "n/a")</span></dd></div>
-                <div><dt>Manager</dt><dd><span class="summary-value" title="@(preview.ManagerDistinguishedName ?? "Unresolved")" tabindex="0">@(preview.ManagerDistinguishedName ?? "Unresolved")</span></dd></div>
+                <div><dt>Target OU</dt><dd><span class="summary-value" title="@(preview.TargetOu ?? "n/a")">@(preview.TargetOu ?? "n/a")</span></dd></div>
+                <div><dt>Current DN</dt><dd><span class="summary-value" title="@(preview.CurrentDistinguishedName ?? "n/a")">@(preview.CurrentDistinguishedName ?? "n/a")</span></dd></div>
+                <div><dt>Manager</dt><dd><span class="summary-value" title="@(preview.ManagerDistinguishedName ?? "Unresolved")">@(preview.ManagerDistinguishedName ?? "Unresolved")</span></dd></div>
             </dl>
         </article>
     </section>
@@ -223,13 +225,13 @@
                 {
                     <div><dt>Employment Status</dt><dd>@employmentStatus</dd></div>
                 }
-                <div><dt>Target OU</dt><dd><span class="summary-value" title="@(preview.TargetOu ?? "n/a")" tabindex="0">@(preview.TargetOu ?? "n/a")</span></dd></div>
-                <div><dt>Current Manager</dt><dd><span class="summary-value" title="@(managerDiff?.Before ?? "Unresolved")" tabindex="0">@(managerDiff?.Before ?? "Unresolved")</span></dd></div>
-                <div><dt>Proposed Manager</dt><dd><span class="summary-value" title="@(preview.ManagerDistinguishedName ?? "Unresolved")" tabindex="0">@(preview.ManagerDistinguishedName ?? "Unresolved")</span></dd></div>
+                <div><dt>Target OU</dt><dd><span class="summary-value" title="@(preview.TargetOu ?? "n/a")">@(preview.TargetOu ?? "n/a")</span></dd></div>
+                <div><dt>Current Manager</dt><dd><span class="summary-value" title="@(managerDiff?.Before ?? "Unresolved")">@(managerDiff?.Before ?? "Unresolved")</span></dd></div>
+                <div><dt>Proposed Manager</dt><dd><span class="summary-value" title="@(preview.ManagerDistinguishedName ?? "Unresolved")">@(preview.ManagerDistinguishedName ?? "Unresolved")</span></dd></div>
                 <div><dt>Enable State</dt><dd>@EnableTransition(preview.CurrentEnabled, preview.ProposedEnable)</dd></div>
                 <div><dt>Matched Existing User</dt><dd>@DisplayBool(preview.MatchedExistingUser)</dd></div>
                 <div><dt>SAM</dt><dd>@(preview.SamAccountName ?? "n/a")</dd></div>
-                <div><dt>Current DN</dt><dd><span class="summary-value" title="@(preview.CurrentDistinguishedName ?? "n/a")" tabindex="0">@(preview.CurrentDistinguishedName ?? "n/a")</span></dd></div>
+                <div><dt>Current DN</dt><dd><span class="summary-value" title="@(preview.CurrentDistinguishedName ?? "n/a")">@(preview.CurrentDistinguishedName ?? "n/a")</span></dd></div>
             </dl>
 
             @if (!string.IsNullOrWhiteSpace(preview.OperationSummary?.Effect))
@@ -387,7 +389,7 @@
             <button class="diff-chip" type="button" data-preview-filter="risk" aria-pressed="false"><strong>@highRiskChangedCount</strong> high-risk</button>
         </div>
 
-        @if (Model.VisibleDiffRows.Count == 0)
+        @if (visibleDiffRows.Count == 0)
         {
             <p class="muted">No synced attributes were recorded for this preview.</p>
         }
@@ -414,16 +416,16 @@
                         </tr>
                     </thead>
                     <tbody data-preview-diff-body>
-                    @foreach (var row in Model.VisibleDiffRows)
+                    @foreach (var row in visibleDiffRows)
                     {
                         <tr class="diff-row @(row.Changed ? "changed" : "same") @(IsHighRiskAttribute(row.Attribute) && row.Changed ? "is-risk" : null)"
                             data-diff-state="@(row.Changed ? "changed" : "unchanged")"
                             data-diff-risk="@((IsHighRiskAttribute(row.Attribute) && row.Changed).ToString().ToLowerInvariant())"
                             data-diff-attribute="@row.Attribute">
                             <td data-label="Attribute">@row.Attribute</td>
-                            <td data-label="Group"><span class="badge neutral">@Model.GetDiffGroup(row)</span></td>
+                            <td data-label="Group"><span class="badge neutral">@SyncFactors.Api.Pages.Worker360Model.GetDiffGroup(row)</span></td>
                             <td class="source-cell" data-label="Source">
-                                <span class="source-path" title="@(row.Source ?? "-")" tabindex="0">@(row.Source ?? "-")</span>
+                                <span class="source-path" title="@(row.Source ?? "-")">@(row.Source ?? "-")</span>
                             </td>
                             <td data-label="Status">
                                 <span class="diff-status @(row.Changed ? "changed" : "same")">
@@ -577,9 +579,6 @@
 @functions {
     private static string DisplayBool(bool? value) => value.HasValue ? (value.Value ? "Yes" : "No") : "Unknown";
 
-    private static bool IsPathLikeAttribute(string attribute) =>
-        attribute.Contains('[') || attribute.Contains('.');
-
     private static bool IsHighRiskAttribute(string? attribute)
     {
         if (string.IsNullOrWhiteSpace(attribute))
@@ -705,7 +704,7 @@
             callouts.Add(preview.ProposedEnable.Value ? "The account will be enabled." : "The account will be disabled.");
         }
 
-        if (!string.IsNullOrWhiteSpace(preview.ManagerDistinguishedName) == false &&
+        if (string.IsNullOrWhiteSpace(preview.ManagerDistinguishedName) &&
             preview.DiffRows.Any(diff => string.Equals(diff.Source, "managerId", StringComparison.OrdinalIgnoreCase)))
         {
             callouts.Add("Manager resolution is still blank for a manager-linked preview.");

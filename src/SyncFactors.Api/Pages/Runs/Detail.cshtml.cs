@@ -956,7 +956,8 @@ public sealed class DetailModel(RunEntriesQueryService queryService) : PageModel
         var match = Regex.Match(
             reason,
             "^Ambiguous AD (?<lookupKind>.+?) lookup for '(?<lookupValue>.*?)' via (?<identityAttribute>.+?)\\. Matched entries: (?<matchedEntries>.+?)\\.$",
-            RegexOptions.CultureInvariant);
+            RegexOptions.CultureInvariant,
+            TimeSpan.FromMilliseconds(250));
         if (!match.Success)
         {
             return null;

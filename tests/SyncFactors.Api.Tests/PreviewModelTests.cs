@@ -220,9 +220,7 @@ public sealed class PreviewModelTests
             [
                 new SourceAttributeRow("emplStatus", "64303")
             ]);
-        var model = new Worker360Model(new CapturingWorkerPreviewPlanner(preview), new StubApplyPreviewService(), new StubRunRepository(preview));
-
-        Assert.Equal("64303 - Unpaid Leave", model.GetEmploymentStatusDisplay(preview));
+        Assert.Equal("64303 - Unpaid Leave", Worker360Model.GetEmploymentStatusDisplay(preview));
     }
 
     private static WorkerPreviewResult CreatePreview(string workerId, IReadOnlyList<SourceAttributeRow>? sourceAttributes = null)
@@ -340,7 +338,7 @@ public sealed class PreviewModelTests
                 RunTrigger: "Preview",
                 StartedAt: DateTimeOffset.Parse("2026-04-01T12:00:00Z"),
                 CompletedAt: null,
-                Bucket: preview.Buckets.FirstOrDefault() ?? "updates",
+                Bucket: preview.Buckets.Count > 0 ? preview.Buckets[0] : "updates",
                 BucketLabel: "Updates",
                 WorkerId: preview.WorkerId,
                 SamAccountName: preview.SamAccountName,

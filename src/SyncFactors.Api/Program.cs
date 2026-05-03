@@ -335,8 +335,8 @@ app.Use(async (context, next) =>
     if (cspEnabled)
     {
         context.Response.Headers["Content-Security-Policy"] =
-            "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; script-src 'self'; connect-src 'self' ws: wss:; frame-ancestors 'none'; base-uri 'self'";
-        context.Response.Headers["X-SyncFactors-Csp-Version"] = "2";
+            "default-src 'self'; style-src 'self'; img-src 'self' data:; script-src 'self'; connect-src 'self' ws: wss:; frame-ancestors 'none'; base-uri 'self'; object-src 'none'; form-action 'self'";
+        context.Response.Headers["X-SyncFactors-Csp-Version"] = "3";
     }
 
     context.Response.Headers["X-Frame-Options"] = "DENY";

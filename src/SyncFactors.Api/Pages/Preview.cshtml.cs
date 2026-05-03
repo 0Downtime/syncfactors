@@ -6,6 +6,8 @@ namespace SyncFactors.Api.Pages;
 
 public sealed class PreviewModel(IRunRepository runRepository) : PageModel
 {
+    private const string WorkersPage = "/Workers";
+
     [BindProperty(SupportsGet = true, Name = "runId")]
     public string? SavedRunId { get; set; }
 
@@ -19,7 +21,7 @@ public sealed class PreviewModel(IRunRepository runRepository) : PageModel
     {
         if (!string.IsNullOrWhiteSpace(WorkerId))
         {
-            return RedirectToPage("/Workers", new
+            return RedirectToPage(WorkersPage, new
             {
                 workerId = WorkerId,
                 showAllAttributes = ShowAllAttributes
@@ -31,7 +33,7 @@ public sealed class PreviewModel(IRunRepository runRepository) : PageModel
             var preview = await runRepository.GetWorkerPreviewAsync(SavedRunId, cancellationToken);
             if (preview is not null)
             {
-                return RedirectToPage("/Workers", new
+                return RedirectToPage(WorkersPage, new
                 {
                     workerId = preview.WorkerId,
                     runId = SavedRunId,
@@ -39,13 +41,13 @@ public sealed class PreviewModel(IRunRepository runRepository) : PageModel
                 });
             }
 
-            return RedirectToPage("/Workers", new
+            return RedirectToPage(WorkersPage, new
             {
                 runId = SavedRunId,
                 showAllAttributes = ShowAllAttributes
             });
         }
 
-        return RedirectToPage("/Workers");
+        return RedirectToPage(WorkersPage);
     }
 }

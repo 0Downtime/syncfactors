@@ -4,7 +4,6 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Security.Application;
 using System.DirectoryServices.Protocols;
 using System.Diagnostics;
-using System.Text.RegularExpressions;
 
 namespace SyncFactors.Infrastructure;
 
@@ -15,7 +14,6 @@ public sealed class ActiveDirectoryGateway(
     ILogger<ActiveDirectoryGateway> logger) : IDirectoryGateway
 {
     private static readonly TimeSpan LdapOperationTimeout = TimeSpan.FromSeconds(10);
-    private static readonly Regex LdapAttributeNamePattern = new("^[A-Za-z][A-Za-z0-9-]*$", RegexOptions.Compiled);
     private const int OuListingPageSize = 500;
     private const int MaxTransientLdapRetries = 3;
 
@@ -1173,11 +1171,24 @@ public sealed class ActiveDirectoryGateway(
 
     private static string ValidateLdapAttributeName(string value)
     {
-        if (!LdapAttributeNamePattern.IsMatch(value))
+        if (!IsLdapAttributeName(value))
         {
             throw new InvalidOperationException($"Invalid LDAP attribute name '{value}'.");
         }
 
         return value;
     }
+
+    private static bool IsLdapAttributeName(string value)
+    {
+        if (string.IsNullOrEmpty(value) || !IsAsciiLetter(value[0]))
+        {
+            return false;
+        }
+
+        return value.Skip(1).All(character => IsAsciiLetter(character) || char.IsAsciiDigit(character) || character == '-');
+    }
+
+    private static bool IsAsciiLetter(char value) =>
+        value is >= 'A' and <= 'Z' or >= 'a' and <= 'z';
 }

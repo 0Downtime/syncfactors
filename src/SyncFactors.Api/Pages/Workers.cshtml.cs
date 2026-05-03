@@ -49,23 +49,19 @@ public sealed class Worker360Model(
 
     public DateTimeOffset? RefreshedAt { get; private set; }
 
-    public IReadOnlyList<SourceAttributeRow> SourceSummary =>
-        Preview is null
-            ? []
-            : SelectSourceSummary(Preview).ToArray();
+    public IReadOnlyList<SourceAttributeRow> GetSourceSummary() =>
+        Preview is null ? [] : SelectSourceSummary(Preview).ToArray();
 
-    public IReadOnlyList<DiffRow> VisibleDiffRows =>
-        Preview is null
-            ? []
-            : (ShowAllAttributes ? Preview.DiffRows : Preview.DiffRows.Where(row => row.Changed).ToArray());
+    public IReadOnlyList<DiffRow> GetVisibleDiffRows() =>
+        Preview is null ? [] : ShowAllAttributes ? Preview.DiffRows : Preview.DiffRows.Where(row => row.Changed).ToArray();
 
-    public string? GetEmploymentStatusDisplay(WorkerPreviewResult preview)
+    public static string? GetEmploymentStatusDisplay(WorkerPreviewResult preview)
         => EmploymentStatusDisplay.Format(
             preview.SourceAttributes
                 .FirstOrDefault(attribute => string.Equals(attribute.Attribute, "emplStatus", StringComparison.OrdinalIgnoreCase))
                 ?.Value);
 
-    public string GetDiffGroup(DiffRow row)
+    public static string GetDiffGroup(DiffRow row)
     {
         var attribute = row.Attribute;
         if (Matches(attribute, "sam", "account", "userprincipalname", "upn", "mail", "email", "cn", "displayname", "givenname", "sn", "surname", "employeeid", "personid"))

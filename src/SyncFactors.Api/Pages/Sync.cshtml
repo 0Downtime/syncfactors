@@ -48,7 +48,7 @@
                         <p class="eyebrow">Next Scheduled Run</p>
                         <h3>Countdown</h3>
                     </div>
-                    <div class="countdown-ring" data-next-run-countdown style="--ring-progress: @(Model.Schedule.NextRunAt.HasValue ? "0.82turn" : "0turn");">
+                    <div class="countdown-ring" data-next-run-countdown>
                         <div class="countdown-copy">
                             <strong data-next-run-countdown-value>@(Model.Schedule.NextRunAt.HasValue ? "Pending" : "Idle")</strong>
                             <span class="muted">until run</span>

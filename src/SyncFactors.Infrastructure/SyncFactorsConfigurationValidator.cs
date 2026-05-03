@@ -1,13 +1,10 @@
 using System.Text.Json;
 using System.Net;
-using System.Text.RegularExpressions;
 
 namespace SyncFactors.Infrastructure;
 
 public sealed class SyncFactorsConfigurationValidator(SyncFactorsConfigurationLoader loader)
 {
-    private static readonly Regex LdapAttributeNamePattern = new("^[A-Za-z][A-Za-z0-9-]*$", RegexOptions.Compiled);
-
     public void Validate()
     {
         var sync = loader.GetSyncConfig();
@@ -274,13 +271,26 @@ public sealed class SyncFactorsConfigurationValidator(SyncFactorsConfigurationLo
         }
 
         var normalized = attribute.Trim();
-        if (!LdapAttributeNamePattern.IsMatch(normalized))
+        if (!IsLdapAttributeName(normalized))
         {
             throw new InvalidOperationException($"SyncFactors {configPath} must be a valid LDAP attribute name.");
         }
 
         return normalized;
     }
+
+    private static bool IsLdapAttributeName(string value)
+    {
+        if (string.IsNullOrEmpty(value) || !IsAsciiLetter(value[0]))
+        {
+            return false;
+        }
+
+        return value.Skip(1).All(character => IsAsciiLetter(character) || char.IsAsciiDigit(character) || character == '-');
+    }
+
+    private static bool IsAsciiLetter(char value) =>
+        value is >= 'A' and <= 'Z' or >= 'a' and <= 'z';
 
     private static string ExtractNamingContext(string distinguishedName)
     {

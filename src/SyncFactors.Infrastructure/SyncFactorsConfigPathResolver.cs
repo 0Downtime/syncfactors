@@ -4,7 +4,6 @@ public sealed class SyncFactorsConfigPathResolver(string? configuredConfigPath, 
 {
     private const string MockProfile = "mock";
     private const string RealProfile = "real";
-    private const string DefaultProfile = MockProfile;
     private const string MockConfigPath = "config/local.mock-successfactors.real-ad.sync-config.json";
     private const string RealConfigPath = "config/local.real-successfactors.real-ad.sync-config.json";
     private const string MappingConfigPath = "config/local.syncfactors.mapping-config.json";
@@ -51,7 +50,7 @@ public sealed class SyncFactorsConfigPathResolver(string? configuredConfigPath, 
             return null;
         }
 
-        return DefaultProfile == RealProfile ? RealConfigPath : MockConfigPath;
+        return MockConfigPath;
     }
 
     private string? ResolveConfiguredMappingConfigPath()
