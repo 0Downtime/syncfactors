@@ -17,6 +17,61 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  sonarcloud:
+    name: SonarCloud Quality Gate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    if: github.actor != 'dependabot[bot]' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+    env:
+      SONAR_ORGANIZATION: 0downtime
+      SONAR_PROJECT_KEY: 0Downtime_sf-ad-sync
+      SONAR_HOST_URL: https://sonarcloud.io
+      SONAR_SCANNER_DOTNET_VERSION: 11.2.1
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up .NET SDK
+        uses: actions/setup-dotnet@c2fa09f4bde5ebb9d1777cf28262a3eb3db3ced7 # v5
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Verify SonarCloud token
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "${SONAR_TOKEN}" ]]; then
+            echo "SONAR_TOKEN repository secret is required for the SonarCloud security gate."
+            exit 1
+          fi
+
+      - name: Install SonarScanner for .NET
+        shell: bash
+        run: dotnet tool install --global dotnet-sonarscanner --version "${SONAR_SCANNER_DOTNET_VERSION}"
+
+      - name: Begin SonarCloud analysis
+        shell: bash
+        run: |
+          dotnet sonarscanner begin \
+            /k:"${SONAR_PROJECT_KEY}" \
+            /o:"${SONAR_ORGANIZATION}" \
+            /d:sonar.host.url="${SONAR_HOST_URL}" \
+            /d:sonar.token="${SONAR_TOKEN}" \
+            /d:sonar.qualitygate.wait=true \
+            /d:sonar.qualitygate.timeout=300
+
+      - name: Build solution for analysis
+        run: dotnet build ./SyncFactors.Next.sln --configuration Release
+
+      - name: End SonarCloud analysis
+        shell: bash
+        run: dotnet sonarscanner end /d:sonar.token="${SONAR_TOKEN}"
+
   semgrep:
     name: Semgrep Security SAST
     runs-on: ubuntu-latest

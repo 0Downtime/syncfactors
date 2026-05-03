@@ -83,3 +83,12 @@ src/SyncFactors.Api/.\\reports\\mock-output/
 /sf-*.xml
 /perperson-*.json
 /config/live*
+
+# Generated SyncFactors IT review artifacts
+/docs/syncfactors-it-review-enterprise.docx
+/docs/syncfactors-it-review-enterprise.pdf
+/docs/syncfactors-it-review.md
+/docs/syncfactors-it-review.pdf
+/scripts/build-syncfactors-it-review-docx.py
+/scripts/generate-syncfactors-it-review-pdf.py
+/scripts/render-pdf-pages.swift
