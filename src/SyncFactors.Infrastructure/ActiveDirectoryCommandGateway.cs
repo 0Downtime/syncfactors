@@ -1306,7 +1306,10 @@ public sealed class ActiveDirectoryCommandGateway(
     private static bool IsExistingGroupMembershipException(DirectoryOperationException exception)
     {
         return exception.Response?.ResultCode == ResultCode.AttributeOrValueExists ||
-               exception.Message.Contains("attribute or value exists", StringComparison.OrdinalIgnoreCase);
+               exception.Message.Contains("attribute or value exists", StringComparison.OrdinalIgnoreCase) ||
+               exception.Message.Contains("ENTRY_EXISTS", StringComparison.OrdinalIgnoreCase) ||
+               exception.Message.Contains("problem 6005", StringComparison.OrdinalIgnoreCase) ||
+               exception.Message.Contains("The object exists", StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool IsMissingGroupMembershipException(DirectoryOperationException exception)
