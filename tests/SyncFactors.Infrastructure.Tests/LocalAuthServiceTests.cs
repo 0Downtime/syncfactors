@@ -59,6 +59,31 @@ public sealed class LocalAuthServiceTests
     }
 
     [Fact]
+    public async Task EnsureBootstrapAdminAsync_AllowsHybridOidcWithoutLocalBootstrapUser()
+    {
+        var databasePath = Path.Combine(Path.GetTempPath(), $"syncfactors-auth-hybrid-{Guid.NewGuid():N}.db");
+
+        try
+        {
+            var store = await CreateStoreAsync(databasePath);
+            var service = CreateService(
+                store,
+                username: null,
+                password: null,
+                mode: "hybrid",
+                oidcConfigured: true);
+
+            await service.EnsureBootstrapAdminAsync(CancellationToken.None);
+
+            Assert.False(await store.AnyUsersAsync(CancellationToken.None));
+        }
+        finally
+        {
+            File.Delete(databasePath);
+        }
+    }
+
+    [Fact]
     public async Task AuthenticateAsync_AcceptsValidPasswordAndRejectsBadPassword()
     {
         var databasePath = Path.Combine(Path.GetTempPath(), $"syncfactors-auth-verify-{Guid.NewGuid():N}.db");
@@ -263,14 +288,19 @@ public sealed class LocalAuthServiceTests
         }
     }
 
-    private static LocalAuthService CreateService(ILocalUserStore store, string? username, string? password)
+    private static LocalAuthService CreateService(
+        ILocalUserStore store,
+        string? username,
+        string? password,
+        string mode = "local-break-glass",
+        bool oidcConfigured = false)
     {
         return new LocalAuthService(
             store,
             new PasswordHasher<LocalUserRecord>(),
             Options.Create(new LocalAuthOptions
             {
-                Mode = "local-break-glass",
+                Mode = mode,
                 BootstrapAdmin = new BootstrapAdminOptions
                 {
                     Username = username,
@@ -281,7 +311,14 @@ public sealed class LocalAuthServiceTests
                     Enabled = true,
                     MaxFailedAttempts = 5,
                     LockoutMinutes = 15
-                }
+                },
+                Oidc = (oidcConfigured
+                    ? new OidcOptions
+                    {
+                        Authority = "https://login.example.test/tenant/v2.0",
+                        ClientId = "client-id"
+                    }
+                    : new OidcOptions())
             }),
             TimeProvider.System,
             new NoOpSecurityAuditService());

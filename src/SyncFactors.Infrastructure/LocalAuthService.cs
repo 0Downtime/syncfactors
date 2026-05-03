@@ -31,8 +31,16 @@ public sealed class LocalAuthService(
         {
             if (!hasUsers)
             {
-                throw new InvalidOperationException(
-                    "Local authentication requires SyncFactors:Auth:BootstrapAdmin:Username and SyncFactors:Auth:BootstrapAdmin:Password when no local users exist.");
+                if (RequiresBootstrapAdmin(options.Value))
+                {
+                    throw new InvalidOperationException(
+                        "Local authentication requires SyncFactors:Auth:BootstrapAdmin:Username and SyncFactors:Auth:BootstrapAdmin:Password when no local users exist.");
+                }
+
+                securityAuditService.Write(
+                    "BootstrapAdminSkipped",
+                    "NoLocalUsers",
+                    ("Mode", options.Value.Mode));
             }
 
             return;
@@ -64,6 +72,25 @@ public sealed class LocalAuthService(
             "Success",
             ("Username", user.Username),
             ("Role", user.Role));
+    }
+
+    private static bool RequiresBootstrapAdmin(LocalAuthOptions authOptions)
+    {
+        if (string.Equals(authOptions.Mode, "local-break-glass", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        var oidcConfigured =
+            !string.IsNullOrWhiteSpace(authOptions.Oidc.Authority) &&
+            !string.IsNullOrWhiteSpace(authOptions.Oidc.ClientId);
+
+        if (string.Equals(authOptions.Mode, "hybrid", StringComparison.OrdinalIgnoreCase) && oidcConfigured)
+        {
+            return false;
+        }
+
+        return authOptions.LocalBreakGlass.Enabled && !oidcConfigured;
     }
 
     public async Task<LocalAuthenticationResult> AuthenticateAsync(string username, string password, CancellationToken cancellationToken)
