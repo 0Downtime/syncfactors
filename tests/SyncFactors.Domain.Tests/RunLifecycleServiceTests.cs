@@ -122,10 +122,213 @@ public sealed class RunLifecycleServiceTests
         Assert.Equal(TimeSpan.FromHours(12), runRepository.LastVacuumMinimumInterval);
     }
 
+    [Fact]
+    public async Task ExecutePlannedRunAsync_PersistsPlanEntriesAndCompletionStatus()
+    {
+        var runtimeStatusStore = new CapturingRuntimeStatusStore();
+        var runRepository = new CapturingRunRepository(runDetail: null);
+        var startedAt = DateTimeOffset.Parse("2026-04-30T15:00:00Z");
+        var plan = new ScaffoldRunPlanner().CreateBootstrapPlan(startedAt);
+        var service = new RunLifecycleService(
+            runtimeStatusStore,
+            runRepository,
+            new RunHistoryRetentionSettings(RetentionDays: 0));
+
+        await service.ExecutePlannedRunAsync(plan, CancellationToken.None);
+
+        Assert.Collection(
+            runRepository.SavedRuns,
+            first => Assert.Equal("InProgress", first.Status),
+            second => Assert.Equal("Succeeded", second.Status));
+        Assert.Equal(plan.Entries, runRepository.ReplacedEntries);
+        Assert.Collection(
+            runtimeStatusStore.SavedStatuses,
+            first => Assert.Equal("Planning", first.Stage),
+            second =>
+            {
+                Assert.Equal("Idle", second.Status);
+                Assert.Equal("Completed", second.Stage);
+                Assert.Equal(plan.TotalWorkers, second.ProcessedWorkers);
+            });
+    }
+
+    [Fact]
+    public async Task RecordProgressAsync_UsesExistingRunMetadataAndTally()
+    {
+        var runtimeStatusStore = new CapturingRuntimeStatusStore();
+        var existing = CreateRunDetail(
+            "run-1",
+            artifactType: "FullSync",
+            runTrigger: "Scheduled",
+            requestedBy: "scheduler");
+        var runRepository = new CapturingRunRepository(existing);
+        var service = new RunLifecycleService(runtimeStatusStore, runRepository);
+
+        await service.RecordProgressAsync(
+            runId: "run-1",
+            mode: "FullSync",
+            dryRun: false,
+            processedWorkers: 3,
+            totalWorkers: 7,
+            currentWorkerId: "10003",
+            lastAction: "Updated worker 10003",
+            tally: new RunTally(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11),
+            cancellationToken: CancellationToken.None);
+
+        var savedRun = Assert.Single(runRepository.SavedRuns);
+        Assert.Equal("FullSync", savedRun.ArtifactType);
+        Assert.Equal("Scheduled", savedRun.RunTrigger);
+        Assert.Equal("scheduler", savedRun.RequestedBy);
+        Assert.Equal(3, savedRun.Enables);
+        Assert.Equal(11, savedRun.Unchanged);
+
+        var savedRuntime = Assert.Single(runtimeStatusStore.SavedStatuses);
+        Assert.Equal("InProgress", savedRuntime.Status);
+        Assert.Equal("FullSync", savedRuntime.Stage);
+        Assert.Equal("10003", savedRuntime.CurrentWorkerId);
+        Assert.Equal("Updated worker 10003", savedRuntime.LastAction);
+    }
+
+    [Fact]
+    public async Task FailRunAsync_PreservesExistingRunMetadataAndRecordsFailureRuntime()
+    {
+        var runtimeStatusStore = new CapturingRuntimeStatusStore();
+        var startedAt = DateTimeOffset.Parse("2026-04-30T15:00:00Z");
+        var runRepository = new CapturingRunRepository(CreateRunDetail(
+            "run-1",
+            artifactType: "BulkRun",
+            runTrigger: "ManualRetry",
+            requestedBy: "operator"));
+        var service = new RunLifecycleService(
+            runtimeStatusStore,
+            runRepository,
+            new RunHistoryRetentionSettings(RetentionDays: 0));
+
+        await service.FailRunAsync(
+            runId: "run-1",
+            mode: "BulkSync",
+            dryRun: true,
+            processedWorkers: 4,
+            totalWorkers: 9,
+            currentWorkerId: "10004",
+            errorMessage: "Directory write failed.",
+            tally: new RunTally(0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 2),
+            report: ParseJson("""{"kind":"bulkRun","status":"failed"}"""),
+            startedAt: startedAt,
+            cancellationToken: CancellationToken.None);
+
+        var savedRun = Assert.Single(runRepository.SavedRuns);
+        Assert.Equal("Failed", savedRun.Status);
+        Assert.Equal("ManualRetry", savedRun.RunTrigger);
+        Assert.Equal("operator", savedRun.RequestedBy);
+        Assert.Equal(1, savedRun.Updates);
+        Assert.Equal(1, savedRun.Conflicts);
+
+        var savedRuntime = Assert.Single(runtimeStatusStore.SavedStatuses);
+        Assert.Equal("Failed", savedRuntime.Status);
+        Assert.Equal("BulkSync", savedRuntime.Stage);
+        Assert.Equal("Directory write failed.", savedRuntime.ErrorMessage);
+        Assert.Equal("10004", savedRuntime.CurrentWorkerId);
+    }
+
+    [Fact]
+    public async Task CancelRunAsync_UsesDefaultMessage_WhenReasonIsBlank()
+    {
+        var runtimeStatusStore = new CapturingRuntimeStatusStore();
+        var runRepository = new CapturingRunRepository(runDetail: null);
+        var service = new RunLifecycleService(
+            runtimeStatusStore,
+            runRepository,
+            new RunHistoryRetentionSettings(RetentionDays: 0));
+
+        await service.CancelRunAsync(
+            runId: "run-1",
+            mode: "BulkSync",
+            dryRun: true,
+            processedWorkers: 1,
+            totalWorkers: 2,
+            currentWorkerId: "10001",
+            reason: " ",
+            tally: new RunTally(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1),
+            report: ParseJson("""{"kind":"bulkRun","status":"canceled"}"""),
+            startedAt: DateTimeOffset.Parse("2026-04-30T15:00:00Z"),
+            cancellationToken: CancellationToken.None);
+
+        var savedRun = Assert.Single(runRepository.SavedRuns);
+        Assert.Equal("Canceled", savedRun.Status);
+        Assert.Equal("AdHoc", savedRun.RunTrigger);
+
+        var savedRuntime = Assert.Single(runtimeStatusStore.SavedStatuses);
+        Assert.Equal("Run canceled.", savedRuntime.LastAction);
+        Assert.Equal(0, savedRuntime.ProcessedWorkers);
+        Assert.Equal(0, savedRuntime.TotalWorkers);
+    }
+
+    [Fact]
+    public async Task AppendRunEntryAsync_ForwardsEntryToRepository()
+    {
+        var entry = new RunEntryRecord(
+            EntryId: "entry-1",
+            RunId: "run-1",
+            Bucket: "updates",
+            BucketIndex: 0,
+            WorkerId: "10001",
+            SamAccountName: "lab10001",
+            Reason: null,
+            ReviewCategory: null,
+            ReviewCaseType: null,
+            StartedAt: DateTimeOffset.Parse("2026-04-30T15:00:00Z"),
+            Item: ParseJson("""{"workerId":"10001"}"""));
+        var runRepository = new CapturingRunRepository(runDetail: null);
+        var service = new RunLifecycleService(new CapturingRuntimeStatusStore(), runRepository);
+
+        await service.AppendRunEntryAsync("run-1", entry, CancellationToken.None);
+
+        Assert.Same(entry, Assert.Single(runRepository.AppendedEntries));
+    }
+
     private static JsonElement ParseJson(string json)
     {
         using var document = JsonDocument.Parse(json);
         return document.RootElement.Clone();
+    }
+
+    private static RunDetail CreateRunDetail(
+        string runId,
+        string artifactType,
+        string runTrigger,
+        string? requestedBy)
+    {
+        return new RunDetail(
+            new RunSummary(
+                RunId: runId,
+                Path: null,
+                ArtifactType: artifactType,
+                ConfigPath: "sync-config.json",
+                MappingConfigPath: "mapping.json",
+                Mode: "BulkSync",
+                DryRun: true,
+                Status: "InProgress",
+                StartedAt: DateTimeOffset.Parse("2026-04-30T15:00:00Z"),
+                CompletedAt: null,
+                DurationSeconds: null,
+                ProcessedWorkers: 0,
+                TotalWorkers: 0,
+                Creates: 0,
+                Updates: 0,
+                Enables: 0,
+                Disables: 0,
+                GraveyardMoves: 0,
+                Deletions: 0,
+                Quarantined: 0,
+                Conflicts: 0,
+                GuardrailFailures: 0,
+                ManualReview: 0,
+                Unchanged: 0,
+                RunTrigger: runTrigger,
+                RequestedBy: requestedBy),
+            ParseJson("""{"kind":"bulkRun","existing":true}"""),
+            BucketCounts: new Dictionary<string, int>());
     }
 
     private sealed class CapturingRuntimeStatusStore : IRuntimeStatusStore
@@ -160,6 +363,9 @@ public sealed class RunLifecycleServiceTests
         public long? LastVacuumMinimumFreeBytes { get; private set; }
         public TimeSpan? LastVacuumMinimumInterval { get; private set; }
         public int PrunedRunCount { get; set; }
+        public List<RunRecord> SavedRuns { get; } = [];
+        public IReadOnlyList<RunEntryRecord>? ReplacedEntries { get; private set; }
+        public List<RunEntryRecord> AppendedEntries { get; } = [];
 
         public Task<IReadOnlyList<RunSummary>> ListRunsAsync(CancellationToken cancellationToken)
         {
@@ -193,24 +399,24 @@ public sealed class RunLifecycleServiceTests
 
         public Task SaveRunAsync(RunRecord run, CancellationToken cancellationToken)
         {
-            _ = run;
             _ = cancellationToken;
+            SavedRuns.Add(run);
             return Task.CompletedTask;
         }
 
         public Task ReplaceRunEntriesAsync(string runId, IReadOnlyList<RunEntryRecord> entries, CancellationToken cancellationToken)
         {
             _ = runId;
-            _ = entries;
             _ = cancellationToken;
-            throw new NotSupportedException();
+            ReplacedEntries = entries;
+            return Task.CompletedTask;
         }
 
         public Task AppendRunEntryAsync(RunEntryRecord entry, CancellationToken cancellationToken)
         {
-            _ = entry;
             _ = cancellationToken;
-            throw new NotSupportedException();
+            AppendedEntries.Add(entry);
+            return Task.CompletedTask;
         }
 
         public Task<int> PruneTerminalRunsStartedBeforeAsync(DateTimeOffset cutoffUtc, CancellationToken cancellationToken)
