@@ -42,6 +42,7 @@ skills-lock.json
 !.codex/hooks.json
 !.codex/hooks/
 !.codex/hooks/caveman_context.py
+.codex/tmp/
 !.agents/
 !.agents/skills/
 .agents/skills/*
@@ -61,6 +62,8 @@ config/local*.json
 config/backup/
 config/local.variables
 config/Untitled-*.ps1
+/output/
+/outputs/
 reports/
 logs/
 state/

@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http.HttpResults;
 using SyncFactors.Contracts;
 using SyncFactors.Domain;
@@ -6,10 +7,10 @@ namespace SyncFactors.Api;
 
 public static class HealthEndpointMappings
 {
-    public static IEndpointRouteBuilder MapPublicHealthEndpoints(this IEndpointRouteBuilder endpoints)
+    public static IEndpointRouteBuilder MapPublicHealthEndpoints(this IEndpointRouteBuilder endpoints, string detailedHealthPolicy)
     {
         var api = endpoints.MapGroup("/api");
-        api.MapGet("/health", GetApiHealthAsync).AllowAnonymous();
+        api.MapGet("/health", GetApiHealthAsync).RequireAuthorization(detailedHealthPolicy);
         endpoints.MapGet("/healthz", GetHealthz).AllowAnonymous();
         return endpoints;
     }
