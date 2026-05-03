@@ -28,6 +28,9 @@
   <a href="https://github.com/0Downtime/syncfactors/actions/workflows/codeql.yml">
     <img src="https://github.com/0Downtime/syncfactors/actions/workflows/codeql.yml/badge.svg?branch=main" alt="CodeQL" />
   </a>
+  <a href="https://sonarcloud.io/summary/new_code?id=0Downtime_sf-ad-sync">
+    <img src="https://sonarcloud.io/api/project_badges/measure?project=0Downtime_sf-ad-sync&amp;metric=alert_status" alt="Quality Gate Status" />
+  </a>
   <a href="https://github.com/0Downtime/syncfactors/blob/main/LICENSE">
     <img src="https://img.shields.io/github/license/0Downtime/syncfactors" alt="License" />
   </a>
