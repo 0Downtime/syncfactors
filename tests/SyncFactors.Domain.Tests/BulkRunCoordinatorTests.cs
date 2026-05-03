@@ -518,6 +518,53 @@ public sealed class BulkRunCoordinatorTests
     }
 
     [Fact]
+    public async Task ExecuteAsync_ManualReviewDisables_RebucketsDisableWithoutExecutingDirectoryMutation()
+    {
+        CapturingRunLifecycleService.Entries.Clear();
+        CapturingRunLifecycleService.Reset();
+        var commandGateway = new CapturingDirectoryCommandGateway();
+        var coordinator = new BulkRunCoordinator(
+            new StubWorkerSource([CreateWorker("10004", "64308")]),
+            new CapturingDeltaSyncService(),
+            new StubRunQueueStore(),
+            new StubGraveyardRetentionStore(),
+            new GraveyardWorkerPlanningService(),
+            new StubDirectoryMutationCommandBuilder(),
+            commandGateway,
+            new StubDirectoryGateway(),
+            new CapturingRunLifecycleService(),
+            new RealSyncSettings(),
+            new WorkerRunSettings(MaxCreatesPerRun: 10, ManualReviewDisables: true),
+            CreateLifecycleSettings(),
+            NullLogger<BulkRunCoordinator>.Instance,
+            TimeProvider.System);
+
+        await coordinator.ExecuteAsync(
+            new RunQueueRequest(
+                RequestId: "req-manual-disable",
+                Mode: "BulkSync",
+                DryRun: false,
+                RunTrigger: "AdHoc",
+                RequestedBy: "test",
+                Status: "Pending",
+                RequestedAt: DateTimeOffset.UtcNow,
+                StartedAt: null,
+                CompletedAt: null,
+                RunId: null,
+                ErrorMessage: null),
+            maxDegreeOfParallelism: 1,
+            CancellationToken.None);
+
+        Assert.Empty(commandGateway.Commands);
+        var entry = Assert.Single(CapturingRunLifecycleService.Entries);
+        Assert.Equal("manualReview", entry.Bucket);
+        Assert.Equal("SafetyPolicy", entry.ReviewCategory);
+        Assert.Equal("DisableRequiresManualReview", entry.ReviewCaseType);
+        Assert.Equal(JsonValueKind.Null, entry.Item.GetProperty("plannedCommand").ValueKind);
+        Assert.Equal(JsonValueKind.Null, entry.Item.GetProperty("liveResult").ValueKind);
+    }
+
+    [Fact]
     public async Task ExecuteAsync_PersistsPopulationTotalsInRunReport()
     {
         CapturingRunLifecycleService.Entries.Clear();

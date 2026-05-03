@@ -93,7 +93,8 @@ internal sealed class LifecycleSimulationHarness(
                 new LifecyclePolicy(lifecycleSettings),
                 new AttributeDiffService(mappingProvider, new NoopWorkerPreviewLogWriter(), NullLogger<AttributeDiffService>.Instance),
                 mappingProvider,
-                NullLogger<WorkerPlanningService>.Instance);
+                NullLogger<WorkerPlanningService>.Instance,
+                runSettings);
             var runService = new FullSyncRunService(
                 workerSource,
                 planningService,

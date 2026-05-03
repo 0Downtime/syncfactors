@@ -120,9 +120,26 @@ public sealed class SyncFactorsConfigurationLoader
                 MaxCreatesPerRun: document.GetRequiredObject("safety").GetRequiredInt32("maxCreatesPerRun"),
                 MaxDisablesPerRun: document.GetRequiredObject("safety").GetRequiredInt32("maxDisablesPerRun"),
                 MaxDeletionsPerRun: document.GetRequiredObject("safety").GetRequiredInt32("maxDeletionsPerRun")),
+            Approval: LoadApproval(document),
             Alerts: LoadAlerts(document),
             Reporting: new ReportingConfig(
                 OutputDirectory: document.GetRequiredObject("reporting").GetRequiredString("outputDirectory")));
+    }
+
+    private static ApprovalConfig LoadApproval(JsonElement document)
+    {
+        if (!document.TryGetProperty("approval", out var approval) ||
+            approval.ValueKind != JsonValueKind.Object)
+        {
+            return new ApprovalConfig(false, []);
+        }
+
+        return new ApprovalConfig(
+            Enabled: approval.TryGetBoolean("enabled") ?? false,
+            RequireFor: approval.TryGetStringArray("requireFor")?
+                .Select(item => NormalizeRequiredValue(item, "approval.requireFor[]"))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray() ?? []);
     }
 
     private MappingConfigDocument LoadMappingConfig()
