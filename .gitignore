@@ -70,9 +70,13 @@ state/
 installed/
 src/SyncFactors.Api/.\\reports\\mock-output/
 .env.worktree
-/syncfactors.db
-/syncfactors.db-shm
-/syncfactors.db-wal
+**/syncfactors.db
+**/syncfactors.db-shm
+**/syncfactors.db-wal
+**/*.sqlite
+**/*.sqlite3
+**/*.db-shm
+**/*.db-wal
 
 # Root-level export and debug files produced during local exploration
 /sf-*.json

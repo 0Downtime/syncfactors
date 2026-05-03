@@ -28,7 +28,7 @@ $certificate = New-Object System.Security.Cryptography.X509Certificates.X509Cert
 $certificate.Import($resolvedPfxPath, $PfxPassword, [System.Security.Cryptography.X509Certificates.X509KeyStorageFlags]::Exportable)
 
 Copy-Item -Path $resolvedPfxPath -Destination $paths.CertificatePath -Force
-Set-Content -Path $paths.PasswordPath -Value $PfxPassword -NoNewline
+Set-SyncFactorsSecretFile -Path $paths.PasswordPath -Value $PfxPassword
 
 if (-not $SkipStoreImport) {
     if (-not [OperatingSystem]::IsWindows()) {

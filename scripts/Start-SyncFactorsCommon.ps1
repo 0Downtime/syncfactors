@@ -133,6 +133,31 @@ function Get-SyncFactorsTlsPassword {
     return (Get-Content -Path $PasswordPath -Raw).Trim()
 }
 
+function Set-SyncFactorsSecretFile {
+    param(
+        [Parameter(Mandatory)]
+        [string]$Path,
+        [Parameter(Mandatory)]
+        [string]$Value
+    )
+
+    Set-Content -Path $Path -Value $Value -NoNewline
+
+    if ([OperatingSystem]::IsWindows()) {
+        return
+    }
+
+    try {
+        [System.IO.File]::SetUnixFileMode(
+            $Path,
+            [System.IO.UnixFileMode]::UserRead -bor [System.IO.UnixFileMode]::UserWrite
+        )
+    }
+    catch {
+        Write-Warning "Could not restrict permissions for secret file '$Path': $($_.Exception.Message)"
+    }
+}
+
 function Initialize-SyncFactorsHttpsEnvironment {
     param(
         [Parameter(Mandatory)]
