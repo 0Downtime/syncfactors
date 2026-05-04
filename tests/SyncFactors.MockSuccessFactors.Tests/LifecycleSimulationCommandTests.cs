@@ -473,6 +473,156 @@ public sealed class LifecycleSimulationCommandTests
     }
 
     [Fact]
+    public async Task RunAsync_MutationCanUpdateAllSupportedWorkerFields()
+    {
+        using var temp = new TempSimulationWorkspace();
+        var scenarioPath = temp.WriteScenario(new LifecycleSimulationScenario(
+            Name: "all-supported-fields",
+            RunSettings: new LifecycleSimulationRunSettings(5, 5, 5),
+            InitialDirectoryUsers: [],
+            Iterations:
+            [
+                new LifecycleSimulationIteration(
+                    Order: 1,
+                    Name: "mutate-source",
+                    Mutations:
+                    [
+                        new WorkerMutation("10003", false, null, new Dictionary<string, string?>
+                        {
+                            ["userName"] = "10003",
+                            ["userId"] = "10003",
+                            ["email"] = "updated.casey@example.test",
+                            ["emailType"] = "B",
+                            ["firstName"] = "Casey",
+                            ["lastName"] = "Updated",
+                            ["preferredName"] = "Case",
+                            ["displayName"] = "Case Updated",
+                            ["startDate"] = "2026-03-15T00:00:00Z",
+                            ["department"] = "IT",
+                            ["company"] = "CORP",
+                            ["jobTitle"] = "Engineer",
+                            ["businessUnit"] = "Technology",
+                            ["division"] = "Platform",
+                            ["costCenter"] = "CC100",
+                            ["employeeClass"] = "Regular",
+                            ["employeeType"] = "Full-Time",
+                            ["managerId"] = null,
+                            ["peopleGroup"] = "Engineering",
+                            ["leadershipLevel"] = "IC",
+                            ["region"] = "NA",
+                            ["geozone"] = "East",
+                            ["bargainingUnit"] = null,
+                            ["unionJobCode"] = null,
+                            ["employmentStatus"] = "64300",
+                            ["emplStatus"] = "64300",
+                            ["lifecycleState"] = "active",
+                            ["endDate"] = null,
+                            ["firstDateWorked"] = "2026-03-15T00:00:00Z",
+                            ["lastDateWorked"] = null,
+                            ["isContingentWorker"] = "false",
+                            ["lastModifiedDateTime"] = "2026-03-16T00:00:00Z",
+                            ["locationName"] = "HQ",
+                            ["locationAddress"] = "300 Example Way",
+                            ["locationCity"] = "Exampleville",
+                            ["locationZipCode"] = "12345",
+                            ["locationCustomString4"] = "Floor 4"
+                        })
+                    ],
+                    Expectation: new IterationExpectation("Succeeded", new Dictionary<string, int>(), []))
+            ],
+            FinalExpectation: new FinalDirectoryExpectation(false, [])));
+        var fixturePath = temp.WriteFixtures(GetFixtureWorker("10003"));
+        var output = new StringWriter();
+
+        var exitCode = await LifecycleSimulationCommand.RunAsync(
+            new LifecycleSimulationRequest(scenarioPath, fixturePath, null, null),
+            output,
+            CancellationToken.None);
+
+        Assert.Equal(0, exitCode);
+        Assert.Contains("Result: PASSED", output.ToString(), StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Theory]
+    [InlineData("personIdExternal")]
+    [InlineData("userName")]
+    [InlineData("userId")]
+    [InlineData("email")]
+    [InlineData("firstName")]
+    [InlineData("lastName")]
+    [InlineData("startDate")]
+    public async Task RunAsync_ReturnsNonZero_WhenRequiredMutationFieldIsBlank(string fieldName)
+    {
+        using var temp = new TempSimulationWorkspace();
+        var scenarioPath = temp.WriteScenario(new LifecycleSimulationScenario(
+            Name: $"blank-{fieldName}",
+            RunSettings: null,
+            InitialDirectoryUsers: [],
+            Iterations:
+            [
+                new LifecycleSimulationIteration(
+                    Order: 1,
+                    Name: "bad-required-field",
+                    Mutations:
+                    [
+                        new WorkerMutation("10003", false, null, new Dictionary<string, string?> { [fieldName] = " " })
+                    ],
+                    Expectation: new IterationExpectation("Succeeded", new Dictionary<string, int>(), []))
+            ],
+            FinalExpectation: new FinalDirectoryExpectation(false, [])));
+        var fixturePath = temp.WriteFixtures(GetFixtureWorker("10003"));
+
+        var exitCode = await LifecycleSimulationCommand.RunAsync(
+            new LifecycleSimulationRequest(scenarioPath, fixturePath, null, null),
+            new StringWriter(),
+            CancellationToken.None);
+
+        Assert.Equal(1, exitCode);
+    }
+
+    [Fact]
+    public async Task RunAsync_ReturnsNonZero_ForInvalidScenarioShapes()
+    {
+        using var temp = new TempSimulationWorkspace();
+        var cases = new[]
+        {
+            new InvalidSimulationCase(
+                "missing-iterations",
+                new LifecycleSimulationScenario("missing-iterations", null, [], [], new FinalDirectoryExpectation(false, []))),
+            new InvalidSimulationCase(
+                "missing-final",
+                new LifecycleSimulationScenario("missing-final", null, [], [new LifecycleSimulationIteration(1, "one", [], new IterationExpectation("Succeeded", new Dictionary<string, int>(), []))], null)),
+            new InvalidSimulationCase(
+                "negative-run-setting",
+                new LifecycleSimulationScenario("negative-run-setting", new LifecycleSimulationRunSettings(-1, null, null), [], [new LifecycleSimulationIteration(1, "one", [], new IterationExpectation("Succeeded", new Dictionary<string, int>(), []))], new FinalDirectoryExpectation(false, []))),
+            new InvalidSimulationCase(
+                "missing-expectation",
+                new LifecycleSimulationScenario("missing-expectation", null, [], [new LifecycleSimulationIteration(1, "one", [], null)], new FinalDirectoryExpectation(false, []))),
+            new InvalidSimulationCase(
+                "remove-combined-with-set",
+                new LifecycleSimulationScenario("remove-combined-with-set", null, [], [new LifecycleSimulationIteration(1, "one", [new WorkerMutation("10003", true, null, new Dictionary<string, string?> { ["company"] = "CORP" })], new IterationExpectation("Succeeded", new Dictionary<string, int>(), []))], new FinalDirectoryExpectation(false, []))),
+            new InvalidSimulationCase(
+                "missing-mutation-payload",
+                new LifecycleSimulationScenario("missing-mutation-payload", null, [], [new LifecycleSimulationIteration(1, "one", [new WorkerMutation("10003", false, null, new Dictionary<string, string?>())], new IterationExpectation("Succeeded", new Dictionary<string, int>(), []))], new FinalDirectoryExpectation(false, []))),
+            new InvalidSimulationCase(
+                "mismatched-worker-id",
+                new LifecycleSimulationScenario("mismatched-worker-id", null, [], [new LifecycleSimulationIteration(1, "one", [new WorkerMutation("10003", false, GetFixtureWorker("10003") with { PersonIdExternal = "10004" }, null)], new IterationExpectation("Succeeded", new Dictionary<string, int>(), []))], new FinalDirectoryExpectation(false, [])))
+        };
+        var fixturePath = temp.WriteFixtures(GetFixtureWorker("10003"));
+
+        foreach (var testCase in cases)
+        {
+            var scenarioPath = temp.WriteScenario(testCase.Scenario);
+            var exitCode = await LifecycleSimulationCommand.RunAsync(
+                new LifecycleSimulationRequest(scenarioPath, fixturePath, null, null),
+                new StringWriter(),
+                CancellationToken.None);
+
+            Assert.True(exitCode != 0, $"{testCase.Name} should fail validation.");
+        }
+    }
+
+    [Fact]
     public async Task RunAsync_ReturnsNonZero_ForInvalidIterationOrder()
     {
         using var temp = new TempSimulationWorkspace();
@@ -558,4 +708,6 @@ public sealed class LifecycleSimulationCommandTests
         string ScenarioPath,
         string FixturePath,
         int ExpectedExitCode);
+
+    private sealed record InvalidSimulationCase(string Name, LifecycleSimulationScenario Scenario);
 }

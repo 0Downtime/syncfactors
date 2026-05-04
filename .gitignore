@@ -4,6 +4,7 @@ obj/
 TestResults/
 testResults.xml
 coverage.xml
+src/SyncFactors.Api/coverage/
 *.coverage
 *.trx
 artifacts/
@@ -56,6 +57,7 @@ skills-lock.json
 
 # Local generated artifacts and configuration
 package-lock.json
+!src/SyncFactors.Api/package-lock.json
 local/
 config/local*/
 config/local*.json

@@ -7,6 +7,34 @@ namespace SyncFactors.Api.Tests;
 
 public sealed class LocalSessionManagerTests
 {
+    [Theory]
+    [InlineData(null, true, "Admin")]
+    [InlineData(" ", false, "Operator")]
+    [InlineData(" BreakGlassAdmin ", false, "BreakGlassAdmin")]
+    public void CreateLocalUserRequest_ResolvesRoleFromExplicitRoleOrAdminFlag(
+        string? role,
+        bool isAdmin,
+        string expected)
+    {
+        var request = new CreateLocalUserRequest("user", "password", isAdmin, role);
+
+        Assert.Equal(expected, request.ResolvedRole);
+    }
+
+    [Theory]
+    [InlineData(null, true, "Admin")]
+    [InlineData("", false, "Operator")]
+    [InlineData(" Admin ", false, "Admin")]
+    public void SetLocalUserRoleRequest_ResolvesRoleFromExplicitRoleOrAdminFlag(
+        string? role,
+        bool isAdmin,
+        string expected)
+    {
+        var request = new SetLocalUserRoleRequest(isAdmin, role);
+
+        Assert.Equal(expected, request.ResolvedRole);
+    }
+
     [Fact]
     public async Task BuildSessionResponseAsync_ReturnsAnonymous_WhenUserIsNotAuthenticated()
     {
@@ -80,6 +108,29 @@ public sealed class LocalSessionManagerTests
         Assert.Equal("oidc-user", session.Username);
         Assert.Equal(SecurityRoles.Operator, session.Role);
         Assert.False(session.IsAdmin);
+    }
+
+    [Fact]
+    public async Task BuildSessionResponseAsync_TreatsBreakGlassOidcRoleAsAdmin()
+    {
+        var httpContext = new DefaultHttpContext
+        {
+            User = new ClaimsPrincipal(
+                new ClaimsIdentity(
+                [
+                    new Claim(ClaimTypes.NameIdentifier, "oidc-subject"),
+                    new Claim(ClaimTypes.Name, "breakglass-user"),
+                    new Claim(ClaimTypes.Role, SecurityRoles.BreakGlassAdmin),
+                    new Claim(SecurityClaimTypes.AuthSource, "oidc")
+                ],
+                "Cookies"))
+        };
+
+        var session = await LocalSessionManager.BuildSessionResponseAsync(httpContext, new StubLocalAuthService(null), CancellationToken.None);
+
+        Assert.True(session.IsAuthenticated);
+        Assert.True(session.IsAdmin);
+        Assert.Equal(SecurityRoles.BreakGlassAdmin, session.Role);
     }
 
     private sealed class StubLocalAuthService(LocalUserRecord? user) : ILocalAuthService

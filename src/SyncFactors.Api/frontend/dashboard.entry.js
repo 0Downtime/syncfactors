@@ -4,6 +4,7 @@ import { BarChart, PieChart } from "echarts/charts";
 import { GraphicComponent, GridComponent, LegendComponent, TooltipComponent } from "echarts/components";
 import { CanvasRenderer } from "echarts/renderers";
 import { animate, stagger } from "motion";
+import { buildRunMixAxis } from "./dashboard-axis.js";
 
 echarts.use([BarChart, PieChart, GraphicComponent, GridComponent, LegendComponent, TooltipComponent, CanvasRenderer]);
 
@@ -1735,39 +1736,6 @@ echarts.use([BarChart, PieChart, GraphicComponent, GridComponent, LegendComponen
                 }
             };
         });
-    }
-
-    function buildRunMixAxis(runs) {
-        const stackedDefinitions = bucketDefinitions.filter(function (definition) { return definition.runMix; });
-        const rawMax = runs.reduce(function (currentMax, run) {
-            const total = stackedDefinitions.reduce(function (sum, definition) {
-                return sum + (run[definition.key] || 0);
-            }, 0);
-            return Math.max(currentMax, total);
-        }, 0);
-
-        if (rawMax <= 5) {
-            return { max: 5, splitNumber: 5 };
-        }
-
-        if (rawMax <= 10) {
-            return { max: 10, splitNumber: 5 };
-        }
-
-        if (rawMax <= 20) {
-            return { max: 20, splitNumber: 4 };
-        }
-
-        if (rawMax <= 50) {
-            return { max: 50, splitNumber: 5 };
-        }
-
-        const paddedMax = rawMax * 1.12;
-        const max = paddedMax <= 100
-            ? 100
-            : Math.ceil(paddedMax / 100) * 100;
-
-        return { max, splitNumber: 5 };
     }
 
     function bindRunsChartEvents(displayRuns) {

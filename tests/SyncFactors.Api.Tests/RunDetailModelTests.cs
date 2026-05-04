@@ -966,6 +966,84 @@ public sealed class RunDetailModelTests
         Assert.Contains(status.Facts, fact => fact.Label == "Result" && fact.Value == "No AD write would be required");
     }
 
+    [Theory]
+    [InlineData("WorkerPreview", "Preview", false, "manualReview", "{}", 0, "Preview Review", "warn")]
+    [InlineData("WorkerPreview", "Preview", false, "guardrailFailures", "{}", 0, "Preview Blocked", "warn")]
+    [InlineData("WorkerPreview", "Preview", false, "conflicts", "{}", 0, "Preview Failed", "bad")]
+    [InlineData("WorkerPreview", "Preview", false, "updates", """{ "operations": [ { "kind": "UpdateUser" } ] }""", 1, "Preview Planned", "info")]
+    [InlineData("BulkRun", "BulkSync", true, "manualReview", "{}", 0, "Needs Review", "warn")]
+    [InlineData("BulkRun", "BulkSync", true, "guardrailFailures", "{}", 0, "Blocked", "warn")]
+    [InlineData("BulkRun", "BulkSync", true, "conflicts", "{}", 0, "Dry Run Failed", "bad")]
+    [InlineData("BulkRun", "BulkSync", true, "updates", "{}", 0, "No Action Needed", "neutral")]
+    [InlineData("BulkRun", "BulkSync", true, "updates", """{ "operations": [ { "kind": "MoveUser" } ] }""", 1, "Dry Run Planned", "info")]
+    [InlineData("BulkRun", "BulkSync", false, "manualReview", "{}", 0, "Needs Review", "warn")]
+    [InlineData("BulkRun", "BulkSync", false, "guardrailFailures", "{}", 0, "Blocked", "warn")]
+    [InlineData("BulkRun", "BulkSync", false, "conflicts", """{ "applied": true }""", 0, "Failed", "bad")]
+    [InlineData("BulkRun", "BulkSync", false, "conflicts", """{ "applied": false }""", 0, "Failed", "bad")]
+    [InlineData("BulkRun", "BulkSync", false, "updates", """{ "action": "DisableUser", "succeeded": false }""", 1, "Not Applied", "neutral")]
+    public async Task DescribeEntryExecution_DescribesPreviewDryRunAndRealSyncBranches(
+        string artifactType,
+        string mode,
+        bool dryRun,
+        string bucket,
+        string itemJson,
+        int changeCount,
+        string expectedLabel,
+        string expectedTone)
+    {
+        var model = new DetailModel(new RunEntriesQueryService(new StubRunRepository(CreateRunDetail(
+            artifactType: artifactType,
+            mode: mode,
+            dryRun: dryRun))))
+        {
+            RunId = "bulk-1"
+        };
+        await model.OnGetAsync(CancellationToken.None);
+
+        var status = model.DescribeEntryExecution(CreateRunEntry(bucket, itemJson, changeCount));
+
+        Assert.Equal(expectedLabel, status.Label);
+        Assert.Equal(expectedTone, status.ToneCssClass);
+        Assert.Contains(status.Facts, fact => fact.Label == "Planned Action");
+        Assert.Contains(status.Facts, fact => fact.Label == "Directory Ops");
+        Assert.Contains(status.Facts, fact => fact.Label == "Attribute Diffs");
+    }
+
+    [Theory]
+    [InlineData("creates", """{ "action": "CreateUser" }""", 0, "Create account")]
+    [InlineData("updates", """{ "action": "UpdateUser" }""", 1, "Update account")]
+    [InlineData("enables", """{ "action": "EnableUser" }""", 1, "Enable account")]
+    [InlineData("disables", """{ "action": "DisableUser" }""", 1, "Disable account")]
+    [InlineData("graveyardMoves", """{ "action": "MoveUser" }""", 1, "Move account")]
+    [InlineData("deletions", """{ "action": "DeleteUser" }""", 1, "Delete account")]
+    [InlineData("custom", """{ "action": "CustomAction" }""", 1, "CustomAction")]
+    [InlineData("updates", """{ "operations": [ {} ] }""", 1, "Update account")]
+    [InlineData("updates", "{}", 0, "Account already up to date")]
+    [InlineData("enables", "{}", 0, "Keep account enabled")]
+    [InlineData("graveyardMoves", "{}", 0, "Keep account in graveyard OU")]
+    [InlineData("deletions", "{}", 0, "Delete account")]
+    [InlineData("unchanged", "{}", 0, "No AD write required")]
+    [InlineData("manualReview", "{}", 0, "No automatic AD change")]
+    [InlineData("guardrailFailures", "{}", 0, "Blocked before AD change")]
+    [InlineData("conflicts", "{}", 0, "AD change failed")]
+    [InlineData("custom", "{}", 0, "No automatic AD change")]
+    public async Task DescribeEntryExecution_MapsPlannedActionLabels(
+        string bucket,
+        string itemJson,
+        int changeCount,
+        string expectedPlannedAction)
+    {
+        var model = new DetailModel(new RunEntriesQueryService(new StubRunRepository(CreateRunDetail(dryRun: true))))
+        {
+            RunId = "bulk-1"
+        };
+        await model.OnGetAsync(CancellationToken.None);
+
+        var status = model.DescribeEntryExecution(CreateRunEntry(bucket, itemJson, changeCount));
+
+        Assert.Contains(status.Facts, fact => fact.Label == "Planned Action" && fact.Value == expectedPlannedAction);
+    }
+
     private static RunEntry CreateConflictEntry(string reason, string? failureSummary, string? primarySummary, string? reviewCaseType = null)
     {
         return new RunEntry(
@@ -1026,6 +1104,30 @@ public sealed class RunDetailModelTests
                 SyncScope: "Delta"),
             report ?? JsonDocument.Parse("""{"kind":"bulkRun"}""").RootElement.Clone(),
             new Dictionary<string, int> { ["updates"] = 100, ["conflicts"] = 10, ["creates"] = 10 });
+    }
+
+    private static RunEntry CreateRunEntry(string bucket, string itemJson, int changeCount)
+    {
+        return new RunEntry(
+            EntryId: $"entry-{bucket}",
+            RunId: "bulk-1",
+            ArtifactType: "BulkRun",
+            Mode: "BulkSync",
+            Bucket: bucket,
+            BucketLabel: bucket,
+            WorkerId: "10000",
+            SamAccountName: "10000",
+            Reason: null,
+            ReviewCategory: null,
+            ReviewCaseType: null,
+            StartedAt: DateTimeOffset.UtcNow,
+            ChangeCount: changeCount,
+            OperationSummary: null,
+            FailureSummary: null,
+            PrimarySummary: null,
+            TopChangedAttributes: [],
+            DiffRows: [],
+            Item: JsonDocument.Parse(itemJson).RootElement.Clone());
     }
 
     private sealed class StubRunRepository(RunDetail? runDetail = null) : IRunRepository
