@@ -1222,10 +1222,6 @@ a:focus-visible {
   box-shadow: none;
 }
 
-.dashboard-timeline-card {
-  margin: 0 0 18px;
-}
-
 .dashboard-analytics-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1234,32 +1230,59 @@ a:focus-visible {
 }
 
 .analytics-card {
+  display: flex;
+  flex-direction: column;
   min-width: 0;
+  min-height: 476px;
   padding: 18px;
   border: 1px solid var(--line);
   border-radius: 14px;
+  overflow: hidden;
   background:
     radial-gradient(circle at top right, color-mix(in srgb, var(--accent-soft) 62%, transparent) 0, transparent 48%),
     linear-gradient(180deg, color-mix(in srgb, var(--panel-strong) 78%, var(--panel) 22%), var(--panel-alt));
 }
 
+.analytics-card.dashboard-timeline-card {
+  min-height: 0;
+  margin: 0 0 18px;
+}
+
+.analytics-card.dashboard-timeline-card .analytics-meta {
+  min-height: 0;
+  display: block;
+  -webkit-line-clamp: unset;
+}
+
 .analytics-chart {
+  flex: 1 1 auto;
   min-height: 250px;
+  contain: layout paint;
+  overflow: hidden;
 }
 
 .analytics-chart-compact {
   min-height: 230px;
 }
 
+.analytics-card .analytics-meta {
+  min-height: 2.5rem;
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
 .bucket-summary-strip {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
+  min-height: 102px;
   margin: 14px 0 8px;
 }
 
 .bucket-summary-strip:empty {
-  display: none;
+  visibility: hidden;
 }
 
 .bucket-summary-item {
