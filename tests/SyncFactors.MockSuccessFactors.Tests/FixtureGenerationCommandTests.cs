@@ -5,6 +5,122 @@ namespace SyncFactors.MockSuccessFactors.Tests;
 
 public sealed class FixtureGenerationCommandTests
 {
+    [Theory]
+    [InlineData(null, "active")]
+    [InlineData("", "active")]
+    [InlineData(" prehire ", "preboarding")]
+    [InlineData("preboarding", "preboarding")]
+    [InlineData("paid-leave", "paid-leave")]
+    [InlineData("unpaid-leave", "unpaid-leave")]
+    [InlineData("retired", "retired")]
+    [InlineData("terminated", "terminated")]
+    [InlineData("unexpected", "active")]
+    public void MockLifecycleState_Normalize_MapsSupportedAliases(string? rawState, string expected)
+    {
+        Assert.Equal(expected, MockLifecycleState.Normalize(rawState));
+    }
+
+    [Theory]
+    [InlineData("64304", null, "paid-leave")]
+    [InlineData("U", null, "paid-leave")]
+    [InlineData("64303", null, "unpaid-leave")]
+    [InlineData("64307", null, "retired")]
+    [InlineData("R", null, "retired")]
+    [InlineData("64308", null, "terminated")]
+    [InlineData("T", null, "terminated")]
+    [InlineData("I", null, "terminated")]
+    [InlineData(null, "2026-01-01", "terminated")]
+    [InlineData(null, null, "active")]
+    public void MockLifecycleState_Infer_MapsEmploymentStatusAndEndDates(
+        string? employmentStatus,
+        string? endDate,
+        string expected)
+    {
+        Assert.Equal(expected, MockLifecycleState.Infer("2020-01-01", employmentStatus, endDate));
+    }
+
+    [Fact]
+    public void MockLifecycleState_Infer_PrefersPrehireTagsAndActiveEndDateOverride()
+    {
+        Assert.Equal("preboarding", MockLifecycleState.Infer("2020-01-01", "64300", null, ["prehire"]));
+        Assert.Equal("preboarding", MockLifecycleState.Infer(DateTimeOffset.UtcNow.AddDays(5).ToString("O"), "64300", null));
+        Assert.Equal("active", MockLifecycleState.Infer("2020-01-01", null, "2026-01-01", ["active"]));
+        Assert.False(MockLifecycleState.IsFutureDate("not-a-date"));
+    }
+
+    [Fact]
+    public void MockFixtureSummaryReporter_DescribesAllProvisioningBucketsAndEmptySummary()
+    {
+        var labels = new Dictionary<string, string>
+        {
+            ["creates"] = "Create",
+            ["updates"] = "Update",
+            ["enables"] = "Enable",
+            ["disables"] = "Disable",
+            ["graveyardMoves"] = "Move To Graveyard",
+            ["deletions"] = "Delete",
+            ["manualReview"] = "Manual Review",
+            ["quarantined"] = "Quarantined",
+            ["conflicts"] = "Conflict",
+            ["guardrailFailures"] = "Guardrail Failure",
+            ["unchanged"] = "No Change",
+            ["custom"] = "custom"
+        };
+        var output = new StringWriter();
+
+        foreach (var pair in labels)
+        {
+            Assert.Equal(pair.Value, MockFixtureSummaryReporter.DescribeProvisioningBucket(pair.Key));
+        }
+
+        MockFixtureSummaryReporter.WriteSummary(output, new MockFixtureDocument([]), "empty");
+
+        var summary = output.ToString();
+        Assert.Contains("workers=0", summary);
+        Assert.Contains("lifecycleTypes none", summary);
+        Assert.Contains("provisioningBuckets none", summary);
+        Assert.Contains("scenarioTags none", summary);
+    }
+
+    [Fact]
+    public void MockFixtureSummaryReporter_InfersProvisioningBucketsFromWorkerState()
+    {
+        var active = MinimalWorker() with { ScenarioTags = ["create"] };
+        var update = MinimalWorker() with { ScenarioTags = [] };
+        var manual = MinimalWorker() with { ScenarioTags = ["missing-required-attribute"] };
+        var leave = MinimalWorker() with { EmploymentStatus = "64304" };
+        var terminated = MinimalWorker() with { EmploymentStatus = "64308" };
+
+        Assert.Equal("creates", MockFixtureSummaryReporter.InferProvisioningBucket(active));
+        Assert.Equal("updates", MockFixtureSummaryReporter.InferProvisioningBucket(update));
+        Assert.Equal("manualReview", MockFixtureSummaryReporter.InferProvisioningBucket(manual));
+        Assert.Equal("disables", MockFixtureSummaryReporter.InferProvisioningBucket(leave));
+        Assert.Equal("graveyardMoves", MockFixtureSummaryReporter.InferProvisioningBucket(terminated));
+    }
+
+    [Fact]
+    public void TryParse_RejectsNonCommandAndInvalidArguments()
+    {
+        Assert.Null(FixtureGenerationCommand.TryParse([]));
+        Assert.Null(FixtureGenerationCommand.TryParse(["serve"]));
+        Assert.Throws<InvalidOperationException>(() => FixtureGenerationCommand.TryParse(["generate-fixtures", "--input"]));
+        Assert.Throws<InvalidOperationException>(() => FixtureGenerationCommand.TryParse(["generate-fixtures", "--unsupported", "value"]));
+        Assert.Throws<InvalidOperationException>(() => FixtureGenerationCommand.TryParse(["generate-fixtures", "--input", "/tmp/input.json"]));
+
+        var parsed = FixtureGenerationCommand.TryParse(
+        [
+            "generate-fixtures",
+            "--input", "/tmp/input.json",
+            "--output", "/tmp/output.json",
+            "--manifest", "/tmp/manifest.json"
+        ]);
+
+        Assert.NotNull(parsed);
+        Assert.Equal(Path.GetFullPath("/tmp/input.json"), parsed!.InputPath);
+        Assert.Equal(Path.GetFullPath("/tmp/output.json"), parsed.OutputPath);
+        Assert.Equal(Path.GetFullPath("/tmp/manifest.json"), parsed.ManifestPath);
+    }
+
     [Fact]
     public async Task GenerateFixtures_ProducesDeterministicSanitizedOutput_AndManifest()
     {
@@ -54,6 +170,72 @@ public sealed class FixtureGenerationCommandTests
 
         using var manifestDocument = JsonDocument.Parse(await File.ReadAllTextAsync(manifestPath));
         Assert.Equal(1, manifestDocument.RootElement.GetProperty("workerCount").GetInt32());
+    }
+
+    [Fact]
+    public async Task GenerateFixtures_AcceptsValuePayloadAndFallbackFields()
+    {
+        var tempDirectory = Path.Combine(Path.GetTempPath(), "syncfactors-mock-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDirectory);
+        var inputPath = Path.Combine(tempDirectory, "input.json");
+        var outputPath = Path.Combine(tempDirectory, "fixtures.json");
+        var outputWriter = new StringWriter();
+        await File.WriteAllTextAsync(inputPath, """
+        {
+          "value": [
+            {
+              "personIdExternal": "source-worker-1",
+              "personId": "person-1",
+              "perPersonUuid": "uuid-source-1",
+              "username": "source-user",
+              "userId": "source-user-id",
+              "email": "source@example.test",
+              "firstName": "Source",
+              "lastName": "Worker",
+              "startDate": "2026-01-01T00:00:00Z",
+              "managerId": "source-manager",
+              "emplStatus": "64308",
+              "endDate": "2026-02-01T00:00:00Z",
+              "department": "Raw Department",
+              "company": "Raw Company",
+              "lastModifiedDateTime": "2026-02-02T00:00:00Z"
+            }
+          ]
+        }
+        """);
+
+        var exitCode = await FixtureGenerationCommand.RunAsync(
+            new FixtureGenerationRequest(inputPath, outputPath, ManifestPath: null),
+            outputWriter,
+            CancellationToken.None);
+
+        Assert.Equal(0, exitCode);
+        using var fixtureDocument = JsonDocument.Parse(await File.ReadAllTextAsync(outputPath));
+        var worker = fixtureDocument.RootElement.GetProperty("workers")[0];
+        Assert.Matches("^\\d{5}$", worker.GetProperty("personIdExternal").GetString()!);
+        Assert.Equal("active", worker.GetProperty("lifecycleState").GetString());
+        Assert.Null(worker.GetProperty("department").GetString());
+        Assert.Null(worker.GetProperty("company").GetString());
+        Assert.DoesNotContain("manifest", outputWriter.ToString(), StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task GenerateFixtures_UnsupportedPayloadWritesEmptyDocument()
+    {
+        var tempDirectory = Path.Combine(Path.GetTempPath(), "syncfactors-mock-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDirectory);
+        var inputPath = Path.Combine(tempDirectory, "input.json");
+        var outputPath = Path.Combine(tempDirectory, "fixtures.json");
+        await File.WriteAllTextAsync(inputPath, """{ "unexpected": [] }""");
+
+        var exitCode = await FixtureGenerationCommand.RunAsync(
+            new FixtureGenerationRequest(inputPath, outputPath, ManifestPath: null),
+            new StringWriter(),
+            CancellationToken.None);
+
+        Assert.Equal(0, exitCode);
+        using var fixtureDocument = JsonDocument.Parse(await File.ReadAllTextAsync(outputPath));
+        Assert.Empty(fixtureDocument.RootElement.GetProperty("workers").EnumerateArray());
     }
 
     [Fact]
@@ -114,5 +296,69 @@ public sealed class FixtureGenerationCommandTests
         Assert.Contains("workers=10", summary);
         Assert.Contains("lifecycleTypes active=4, preboarding=1, paid-leave=1, unpaid-leave=1, retired=1, terminated=2", summary);
         Assert.Contains("provisioningBuckets creates=2, updates=2, disables=2, graveyardMoves=3, manualReview=1", summary);
+    }
+
+    private static MockWorkerFixture MinimalWorker()
+    {
+        return new MockWorkerFixture(
+            PersonIdExternal: "10000",
+            UserName: "10000",
+            Email: "user@example.test",
+            FirstName: "Test",
+            LastName: "Worker",
+            StartDate: "2020-01-01",
+            Department: null,
+            Company: null,
+            Location: null,
+            JobTitle: null,
+            BusinessUnit: null,
+            Division: null,
+            CostCenter: null,
+            EmployeeClass: null,
+            EmployeeType: null,
+            ManagerId: null,
+            PeopleGroup: null,
+            LeadershipLevel: null,
+            Region: null,
+            Geozone: null,
+            BargainingUnit: null,
+            UnionJobCode: null,
+            CintasUniformCategory: null,
+            CintasUniformAllotment: null,
+            EmploymentStatus: "64300",
+            LifecycleState: null,
+            EndDate: null,
+            FirstDateWorked: null,
+            LastDateWorked: null,
+            IsContingentWorker: null,
+            LastModifiedDateTime: null,
+            ScenarioTags: [],
+            Response: null,
+            PersonId: "10000",
+            PerPersonUuid: "uuid-10000",
+            PreferredName: null,
+            DisplayName: null,
+            UserId: "10000",
+            EmailType: null,
+            DepartmentName: null,
+            DepartmentId: null,
+            DepartmentCostCenter: null,
+            CompanyId: null,
+            BusinessUnitId: null,
+            DivisionId: null,
+            CostCenterDescription: null,
+            CostCenterId: null,
+            TwoCharCountryCode: null,
+            Position: null,
+            PayGrade: null,
+            BusinessPhoneNumber: null,
+            BusinessPhoneAreaCode: null,
+            BusinessPhoneCountryCode: null,
+            BusinessPhoneExtension: null,
+            CellPhoneNumber: null,
+            CellPhoneAreaCode: null,
+            CellPhoneCountryCode: null,
+            ActiveEmploymentsCount: null,
+            LatestTerminationDate: null);
     }
 }
