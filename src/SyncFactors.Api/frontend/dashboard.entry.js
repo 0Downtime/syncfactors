@@ -1895,7 +1895,7 @@ echarts.use([BarChart, PieChart, GraphicComponent, GridComponent, LegendComponen
             snapshot.lastCompletedRun ||
             (allRuns.length ? allRuns[0] : null);
         if (!focusRun) {
-            toggleHidden(elements.bucketChart, true);
+            toggleHidden(elements.bucketChart, false);
             toggleHidden(elements.bucketChartEmpty, false);
             renderBucketSummary(null, 0, 0);
             if (elements.bucketChartMeta) {
@@ -1906,6 +1906,7 @@ echarts.use([BarChart, PieChart, GraphicComponent, GridComponent, LegendComponen
             }
             if (bucketChartInstance) {
                 bucketChartInstance.clear();
+                bucketChartInstance.resize();
             }
             return;
         }
@@ -1936,7 +1937,7 @@ echarts.use([BarChart, PieChart, GraphicComponent, GridComponent, LegendComponen
         renderBucketSummary(focusRun, changedTotal, runTotal);
 
         if (!entries.length) {
-            toggleHidden(elements.bucketChart, true);
+            toggleHidden(elements.bucketChart, false);
             toggleHidden(elements.bucketChartEmpty, false);
             if (elements.bucketChartMeta) {
                 elements.bucketChartMeta.textContent = runDisplayName(focusRun) + " has no changed buckets to chart.";
@@ -1944,10 +1945,11 @@ echarts.use([BarChart, PieChart, GraphicComponent, GridComponent, LegendComponen
             if (elements.bucketChartEmpty) {
                 elements.bucketChartEmpty.textContent = changedTotal > 0
                     ? "Changed buckets will appear here once bucket counts are available."
-                    : "No changed buckets in this run.";
+                    : "No changes found for this run.";
             }
             if (bucketChartInstance) {
                 bucketChartInstance.clear();
+                bucketChartInstance.resize();
             }
             return;
         }
