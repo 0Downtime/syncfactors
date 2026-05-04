@@ -1272,7 +1272,11 @@ echarts.use([BarChart, PieChart, GraphicComponent, GridComponent, LegendComponen
         row.addEventListener("mouseenter", function () {
             setHoveredRun(row.dataset.runId);
         });
-        row.addEventListener("mouseleave", function () {
+        row.addEventListener("mouseleave", function (event) {
+            if (event.relatedTarget && elements.runsBody?.contains(event.relatedTarget)) {
+                return;
+            }
+
             setHoveredRun(null);
         });
 
@@ -1286,7 +1290,7 @@ echarts.use([BarChart, PieChart, GraphicComponent, GridComponent, LegendComponen
 
         const isSelected = !!selectedRunId && selectedRunId === row.dataset.runId;
         const isHovered = !!hoveredRunId && hoveredRunId === row.dataset.runId;
-        const isDimmed = (!!selectedRunId && !isSelected) || (!!hoveredRunId && !isHovered && !isSelected);
+        const isDimmed = !!selectedRunId && !isSelected;
 
         row.classList.toggle("is-selected", isSelected);
         row.classList.toggle("is-hovered", isHovered);
@@ -1881,6 +1885,50 @@ echarts.use([BarChart, PieChart, GraphicComponent, GridComponent, LegendComponen
         });
     }
 
+    function setBucketChartMeta(message, title) {
+        if (!elements.bucketChartMeta) {
+            return;
+        }
+
+        elements.bucketChartMeta.textContent = message;
+        elements.bucketChartMeta.title = title || message;
+    }
+
+    function renderBucketChartEmpty(message) {
+        toggleHidden(elements.bucketChart, false);
+        toggleHidden(elements.bucketChartEmpty, true);
+
+        if (!bucketChartInstance) {
+            return;
+        }
+
+        bucketChartInstance.setOption({
+            animation: false,
+            backgroundColor: "transparent",
+            tooltip: { show: false },
+            legend: { show: false },
+            graphic: [
+                {
+                    type: "text",
+                    left: "center",
+                    top: "middle",
+                    style: {
+                        text: message,
+                        fill: getThemePalette().muted,
+                        fontSize: 14,
+                        fontWeight: 650,
+                        lineHeight: 20,
+                        textAlign: "center"
+                    },
+                    silent: true
+                }
+            ],
+            series: []
+        }, true);
+
+        bindBucketChartEvents();
+    }
+
     function renderBucketChart(snapshot) {
         if (!elements.bucketChart) {
             return;
@@ -1898,16 +1946,8 @@ echarts.use([BarChart, PieChart, GraphicComponent, GridComponent, LegendComponen
             toggleHidden(elements.bucketChart, false);
             toggleHidden(elements.bucketChartEmpty, false);
             renderBucketSummary(null, 0, 0);
-            if (elements.bucketChartMeta) {
-                elements.bucketChartMeta.textContent = "Change composition appears once a run summary is available.";
-            }
-            if (elements.bucketChartEmpty) {
-                elements.bucketChartEmpty.textContent = "Change composition appears once a run summary is available.";
-            }
-            if (bucketChartInstance) {
-                bucketChartInstance.clear();
-                bucketChartInstance.resize();
-            }
+            setBucketChartMeta("Waiting for a run summary.");
+            renderBucketChartEmpty("Change composition appears once a run summary is available.");
             return;
         }
 
@@ -1939,33 +1979,20 @@ echarts.use([BarChart, PieChart, GraphicComponent, GridComponent, LegendComponen
         if (!entries.length) {
             toggleHidden(elements.bucketChart, false);
             toggleHidden(elements.bucketChartEmpty, false);
-            if (elements.bucketChartMeta) {
-                elements.bucketChartMeta.textContent = runDisplayName(focusRun) + " has no changed buckets to chart.";
-            }
-            if (elements.bucketChartEmpty) {
-                elements.bucketChartEmpty.textContent = changedTotal > 0
-                    ? "Changed buckets will appear here once bucket counts are available."
-                    : "No changes found for this run.";
-            }
-            if (bucketChartInstance) {
-                bucketChartInstance.clear();
-                bucketChartInstance.resize();
-            }
+            setBucketChartMeta("No changed buckets in this run.", runDisplayName(focusRun));
+            renderBucketChartEmpty(changedTotal > 0
+                ? "Changed buckets will appear here once bucket counts are available."
+                : "No changed buckets in this run.");
             return;
         }
 
         toggleHidden(elements.bucketChart, false);
         toggleHidden(elements.bucketChartEmpty, true);
 
-        if (elements.bucketChartMeta) {
-            elements.bucketChartMeta.textContent = snapshot.activeRun
-                ? "Click a slice to filter changed buckets. Showing live change composition for " + runDisplayName(focusRun) + "."
-                : "Click a slice to filter changed buckets. Showing change composition for " + runDisplayName(focusRun) + ".";
-        }
+        setBucketChartMeta("Click a slice to filter changed buckets.", runDisplayName(focusRun));
 
         bucketChartInstance.setOption({
-            animationDuration: motionAllowed() ? 420 : 0,
-            animationDurationUpdate: motionAllowed() ? 360 : 0,
+            animation: false,
             backgroundColor: "transparent",
             tooltip: {
                 trigger: "item",
