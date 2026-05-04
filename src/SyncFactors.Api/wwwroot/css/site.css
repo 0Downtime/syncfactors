@@ -1243,12 +1243,42 @@ a:focus-visible {
     linear-gradient(180deg, color-mix(in srgb, var(--panel-strong) 78%, var(--panel) 22%), var(--panel-alt));
 }
 
+.bucket-focus-card {
+  display: flex;
+  flex-direction: column;
+}
+
 .analytics-chart {
   min-height: 250px;
 }
 
 .analytics-chart-compact {
   min-height: 230px;
+}
+
+.bucket-chart-frame {
+  position: relative;
+  display: grid;
+  min-height: 230px;
+  margin-top: 8px;
+}
+
+.bucket-chart-frame .analytics-chart {
+  grid-area: 1 / 1;
+  min-height: 230px;
+}
+
+.bucket-chart-frame .analytics-empty {
+  grid-area: 1 / 1;
+  align-self: center;
+  justify-self: center;
+  max-width: 34ch;
+  margin: 0;
+  padding: 14px 16px;
+  border: 1px dashed color-mix(in srgb, var(--line) 82%, transparent);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--panel-strong) 70%, transparent);
+  text-align: center;
 }
 
 .bucket-summary-strip {
