@@ -255,7 +255,7 @@ if (oidcEnabled)
         options.SignedOutCallbackPath = authSettings.Oidc.SignedOutCallbackPath;
         options.SignedOutRedirectUri = "/Login?LoggedOut=true";
         options.ResponseType = "code";
-        options.SaveTokens = true;
+        options.SaveTokens = false;
         options.GetClaimsFromUserInfoEndpoint = true;
         options.MapInboundClaims = false;
         options.Scope.Clear();
@@ -272,9 +272,11 @@ if (oidcEnabled)
                     ApplyOidcIdentity(identity, authSettings);
                     var accountStore = context.HttpContext.RequestServices.GetRequiredService<IOidcAccountStore>();
                     var timeProvider = context.HttpContext.RequestServices.GetRequiredService<TimeProvider>();
+                    var account = BuildOidcAccountRecord(identity, authSettings, timeProvider.GetUtcNow());
                     await accountStore.UpsertAsync(
-                        BuildOidcAccountRecord(identity, authSettings, timeProvider.GetUtcNow()),
+                        account,
                         context.HttpContext.RequestAborted);
+                    ReduceOidcCookieClaims(identity, account);
                 }
             },
             OnRedirectToIdentityProviderForSignOut = context =>
@@ -1040,6 +1042,30 @@ static OidcAccountRecord BuildOidcAccountRecord(
         Groups: groups,
         FirstSeenAt: observedAt,
         LastLoginAt: observedAt);
+}
+
+static void ReduceOidcCookieClaims(ClaimsIdentity identity, OidcAccountRecord account)
+{
+    var roles = identity.FindAll(ClaimTypes.Role)
+        .Select(claim => claim.Value)
+        .Where(value => !string.IsNullOrWhiteSpace(value))
+        .Distinct(StringComparer.OrdinalIgnoreCase)
+        .ToArray();
+
+    foreach (var claim in identity.Claims.ToArray())
+    {
+        identity.RemoveClaim(claim);
+    }
+
+    identity.AddClaim(new Claim(ClaimTypes.NameIdentifier, account.Subject));
+    identity.AddClaim(new Claim(ClaimTypes.Name, account.Username));
+    identity.AddClaim(new Claim(SecurityClaimTypes.AuthSource, "oidc"));
+    identity.AddClaim(new Claim(SecurityClaimTypes.SessionIssuedAt, DateTimeOffset.UtcNow.ToString("O")));
+
+    foreach (var role in roles)
+    {
+        identity.AddClaim(new Claim(ClaimTypes.Role, role));
+    }
 }
 
 static Task HandleAuthRedirectAsync(Microsoft.AspNetCore.Authentication.RedirectContext<CookieAuthenticationOptions> context, int statusCode)

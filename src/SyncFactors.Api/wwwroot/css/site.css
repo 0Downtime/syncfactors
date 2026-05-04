@@ -1222,10 +1222,6 @@ a:focus-visible {
   box-shadow: none;
 }
 
-.dashboard-timeline-card {
-  margin: 0 0 18px;
-}
-
 .dashboard-analytics-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1250,10 +1246,8 @@ a:focus-visible {
 
 .analytics-chart {
   min-height: 250px;
-}
-
-.analytics-chart-compact {
-  min-height: 230px;
+  contain: layout paint;
+  overflow: hidden;
 }
 
 .bucket-chart-frame {
@@ -1281,15 +1275,28 @@ a:focus-visible {
   text-align: center;
 }
 
+.analytics-chart-compact {
+  min-height: 230px;
+}
+
+.bucket-focus-card .analytics-meta {
+  min-height: 2.7em;
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
 .bucket-summary-strip {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
+  min-height: 102px;
   margin: 14px 0 8px;
 }
 
 .bucket-summary-strip:empty {
-  display: none;
+  visibility: hidden;
 }
 
 .bucket-summary-item {
