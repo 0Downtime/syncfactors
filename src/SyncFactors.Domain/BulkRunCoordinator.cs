@@ -466,7 +466,22 @@ public sealed class BulkRunCoordinator(
         while (!runCancellationSource.IsCancellationRequested &&
                await timer.WaitForNextTickAsync(cancellationToken))
         {
-            if (!await runQueueStore.IsCancellationRequestedAsync(requestId, cancellationToken))
+            bool cancellationRequested;
+            try
+            {
+                cancellationRequested = await runQueueStore.IsCancellationRequestedAsync(requestId, cancellationToken);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Failed to poll cancellation state for run queue item {RequestId}.", requestId);
+                continue;
+            }
+
+            if (!cancellationRequested)
             {
                 continue;
             }
