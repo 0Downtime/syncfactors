@@ -4,6 +4,7 @@ obj/
 TestResults/
 testResults.xml
 coverage.xml
+src/SyncFactors.Api/coverage/
 *.coverage
 *.trx
 artifacts/
