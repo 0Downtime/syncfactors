@@ -875,6 +875,126 @@ public sealed class SqliteRunRepositoryTests
         }
     }
 
+    [Fact]
+    public async Task GetRunEntriesAsync_AppliesEntryIdWorkerReasonAndTextFilters()
+    {
+        var databasePath = Path.Combine(Path.GetTempPath(), $"syncfactors-run-entry-filter-{Guid.NewGuid():N}.db");
+
+        try
+        {
+            var repository = await CreateRepositoryAsync(databasePath);
+            var runId = "bulk-entry-filter-1";
+            var startedAt = DateTimeOffset.Parse("2026-04-06T12:00:00Z");
+
+            await repository.SaveRunAsync(CreateRunRecord(runId, startedAt), CancellationToken.None);
+            await repository.AppendRunEntryAsync(CreateEntry(runId, "updates", 0, "10001", item: new
+            {
+                workerId = "10001",
+                note = "review me"
+            }) with
+            {
+                EntryId = "entry-target",
+                SamAccountName = "target.user",
+                Reason = "Needs review",
+                ReviewCaseType = "ManagerMismatch"
+            }, CancellationToken.None);
+            await repository.AppendRunEntryAsync(CreateEntry(runId, "updates", 1, "10002", item: new
+            {
+                workerId = "10002",
+                note = "ordinary"
+            }) with
+            {
+                EntryId = "entry-other",
+                SamAccountName = "other.user",
+                Reason = "No review",
+                ReviewCaseType = "None"
+            }, CancellationToken.None);
+
+            var entries = await repository.GetRunEntriesAsync(
+                runId,
+                bucket: "updates",
+                workerId: "target",
+                reason: "needs review",
+                filter: "manager",
+                employmentStatus: null,
+                entryId: "entry-target",
+                skip: 0,
+                take: 10,
+                CancellationToken.None);
+            var total = await repository.CountRunEntriesAsync(
+                runId,
+                bucket: "updates",
+                workerId: "target",
+                reason: "needs review",
+                filter: "manager",
+                employmentStatus: null,
+                entryId: "entry-target",
+                CancellationToken.None);
+
+            var entry = Assert.Single(entries);
+            Assert.Equal("entry-target", entry.EntryId);
+            Assert.Equal("target.user", entry.SamAccountName);
+            Assert.Equal("ManagerMismatch", entry.ReviewCaseType);
+            Assert.Equal(1, total);
+        }
+        finally
+        {
+            File.Delete(databasePath);
+        }
+    }
+
+    [Fact]
+    public async Task GetRunEntriesAsync_BuildsSemanticEnableDiffAndFailureSummary()
+    {
+        var databasePath = Path.Combine(Path.GetTempPath(), $"syncfactors-run-semantic-diff-{Guid.NewGuid():N}.db");
+
+        try
+        {
+            var repository = await CreateRepositoryAsync(databasePath);
+            var runId = "bulk-semantic-diff-1";
+
+            await repository.SaveRunAsync(
+                CreateRunRecord(runId, DateTimeOffset.Parse("2026-04-06T12:30:00Z")),
+                CancellationToken.None);
+            await repository.AppendRunEntryAsync(CreateEntry(runId, "enables", 0, "10001", item: new
+            {
+                workerId = "10001",
+                samAccountName = "user10001",
+                currentEnabled = false,
+                succeeded = false,
+                message = "Enable failed."
+            }) with
+            {
+                Reason = null
+            }, CancellationToken.None);
+
+            var entry = Assert.Single(await repository.GetRunEntriesAsync(
+                runId,
+                bucket: "enables",
+                workerId: null,
+                reason: null,
+                filter: null,
+                employmentStatus: null,
+                entryId: null,
+                skip: 0,
+                take: 10,
+                CancellationToken.None));
+
+            var diff = Assert.Single(entry.DiffRows);
+            Assert.Equal("enabled", diff.Attribute);
+            Assert.Equal("false", diff.Before);
+            Assert.Equal("true", diff.After);
+            Assert.True(diff.Changed);
+            Assert.Equal(1, entry.ChangeCount);
+            Assert.Equal("1 changed attributes.", entry.PrimarySummary);
+            Assert.Equal("Enable failed.", entry.FailureSummary);
+        }
+        finally
+        {
+            File.Delete(databasePath);
+        }
+    }
+
     private static async Task<SqliteRunRepository> CreateRepositoryAsync(string databasePath)
     {
         var pathResolver = new SqlitePathResolver(databasePath);
