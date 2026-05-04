@@ -63,7 +63,7 @@ jobs:
             /d:sonar.host.url="${SONAR_HOST_URL}" \
             /d:sonar.token="${SONAR_TOKEN}" \
             /d:sonar.cs.opencover.reportsPaths="artifacts/coverage/**/coverage.opencover.xml" \
-            /d:sonar.javascript.lcov.reportPaths="src/SyncFactors.Api/coverage/lcov.info" \
+            /d:sonar.javascript.lcov.reportPaths="**/coverage/lcov.info" \
             /d:sonar.coverage.exclusions="src/SyncFactors.Api/Program.cs,src/SyncFactors.Worker/Program.cs,src/SyncFactors.Contracts/**,src/SyncFactors.Domain/Abstractions.cs,src/SyncFactors.Api/esbuild.config.mjs,src/SyncFactors.Api/vitest.config.mjs,src/SyncFactors.Api/frontend/*.entry.js,src/SyncFactors.Api/frontend/*.test.js,src/SyncFactors.Api/wwwroot/js/**,src/SyncFactors.MockSuccessFactors/wwwroot/js/**,src/SyncFactors.Automation/**,src/SyncFactors.Infrastructure/ActiveDirectory*.cs,src/SyncFactors.Infrastructure/PowerShellWorkerPreviewService.cs,src/SyncFactors.Infrastructure/SmtpEmailSender.cs" \
             /d:sonar.qualitygate.wait=true \
             /d:sonar.qualitygate.timeout=300
@@ -73,7 +73,7 @@ jobs:
 
       - name: Install frontend dependencies
         working-directory: ./src/SyncFactors.Api
-        run: npm install
+        run: npm ci --ignore-scripts
 
       - name: Run frontend tests with coverage
         working-directory: ./src/SyncFactors.Api

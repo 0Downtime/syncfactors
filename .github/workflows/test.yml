@@ -67,7 +67,7 @@ jobs:
 
       - name: Install frontend dependencies
         working-directory: ./src/SyncFactors.Api
-        run: npm install
+        run: npm ci --ignore-scripts
 
       - name: Run frontend tests
         working-directory: ./src/SyncFactors.Api

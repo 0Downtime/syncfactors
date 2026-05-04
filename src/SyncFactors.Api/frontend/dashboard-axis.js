@@ -15,7 +15,7 @@ export function buildRunMixAxis(runs) {
     const safeRuns = Array.isArray(runs) ? runs : [];
     const rawMax = safeRuns.reduce(function (currentMax, run) {
         const total = runMixBuckets.reduce(function (sum, bucket) {
-            return sum + (run && run[bucket] ? run[bucket] : 0);
+            return sum + (run?.[bucket] ?? 0);
         }, 0);
         return Math.max(currentMax, total);
     }, 0);
