@@ -1,7 +1,7 @@
 (function () {
     const storageKey = "syncfactors-next-theme";
     const root = document.documentElement;
-    const toggle = document.getElementById("theme-toggle");
+    const toggle = document.querySelector("[data-theme-toggle]");
     const themeOptions = Array.prototype.slice.call(document.querySelectorAll("[data-theme-option]"));
     const topbar = document.querySelector("[data-topbar]");
     const toastRegion = document.querySelector("[data-toast-region]");

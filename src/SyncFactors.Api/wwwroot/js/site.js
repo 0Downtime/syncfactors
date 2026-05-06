@@ -1,7 +1,7 @@
 (function () {
     var key = "syncfactors-next-theme";
     var root = document.documentElement;
-    var toggle = document.getElementById("theme-toggle");
+    var toggle = document.querySelector("[data-theme-toggle]");
 
     if (!toggle) {
         return;
