@@ -705,9 +705,9 @@ The lower-level start scripts remain available if you need to launch individual 
 
 ## Codex Worktrees On macOS
 
-Codex app worktrees can bootstrap this repository through the checked-in local environment at `.codex/environments/environment.toml`. Open the project in the Codex app, choose the local environment when starting a worktree thread, and Codex will run `scripts/codex/setup-worktree-macos.sh` on worktree creation. That macOS wrapper delegates to the shared PowerShell bootstrap script so the setup behavior matches Windows.
+Codex workspace settings are local-only for this repository. To prepare a Codex worktree on macOS, run `scripts/codex/setup-worktree-macos.sh` from the checkout. That macOS wrapper delegates to the shared PowerShell bootstrap script so the setup behavior matches Windows.
 
-This setup is intentionally scoped to the core local dev loop:
+The setup is intentionally scoped to the core local dev loop:
 
 - prepare local config files for the current .NET runtime when missing
 - copy ignored local runtime files from the primary checkout when missing
@@ -715,8 +715,6 @@ This setup is intentionally scoped to the core local dev loop:
 - create `config/local.codex-run.json` from the tracked launcher defaults when missing
 - create runtime/report directories used by the API and worker
 - fall back to `.env.worktree.example` when `.env.worktree` is still missing
-
-For project-scoped `.codex` settings to load, this repo or one of its parent paths must be marked trusted in `~/.codex/config.toml`. Codex skips project-scoped `.codex` layers for untrusted projects.
 
 ## Mock SuccessFactors
 

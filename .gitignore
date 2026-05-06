@@ -38,17 +38,6 @@ web/.vite/
 .npm-cache/
 .dotnet-home/
 skills-lock.json
-!.codex/
-!.codex/config.toml
-!.codex/hooks.json
-!.codex/hooks/
-!.codex/hooks/caveman_context.py
-.codex/tmp/
-!.agents/
-!.agents/skills/
-.agents/skills/*
-!.agents/skills/caveman/
-!.agents/skills/caveman/SKILL.md
 
 *.log
 *.tmp
