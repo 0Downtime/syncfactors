@@ -216,7 +216,7 @@ public sealed class AdminConfigurationSnapshotBuilder(
             ]);
     }
 
-    private AdminConfigurationSectionViewModel BuildSuccessFactorsSection(SyncFactorsConfigDocument sync)
+    private static AdminConfigurationSectionViewModel BuildSuccessFactorsSection(SyncFactorsConfigDocument sync)
     {
         var authMode = sync.SuccessFactors.Auth.Mode?.Trim().ToLowerInvariant();
         var groups = new List<AdminConfigurationGroupViewModel>
@@ -293,7 +293,7 @@ public sealed class AdminConfigurationSnapshotBuilder(
             Groups: groups);
     }
 
-    private AdminConfigurationSectionViewModel BuildActiveDirectorySection(SyncFactorsConfigDocument sync)
+    private static AdminConfigurationSectionViewModel BuildActiveDirectorySection(SyncFactorsConfigDocument sync)
     {
         return new AdminConfigurationSectionViewModel(
             Id: "active-directory",

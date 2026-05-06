@@ -626,7 +626,7 @@ public sealed class RunDetailModelTests
         Assert.Null(model.GetPrimarySummaryDisplay(entry));
         Assert.Equal(
             "Active Directory command 'CreateUser' failed against LDAP server '192.0.2.35'. A value in the request is invalid. 000021C8: AtrErr: DSID-03200E96, #1: 0: 000021C8: DSID-03200E96, problem 1005 (CONSTRAINT_ATT_TYPE), data 0, Att 90290 (userPrincipalName)",
-            model.GetFailureSummaryDisplay(entry));
+            DetailModel.GetFailureSummaryDisplay(entry));
     }
 
     [Fact]

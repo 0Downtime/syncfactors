@@ -31,7 +31,6 @@ builder.Services.Configure<MockSuccessFactorsOptions>(builder.Configuration.GetS
 builder.Services.AddSingleton<IConfigureOptions<MockSuccessFactorsOptions>, MockSuccessFactorsOptionsSetup>();
 builder.Services.AddSingleton<MockFixtureStore>();
 builder.Services.AddSingleton<ODataResponseBuilder>();
-builder.Services.AddSingleton<MockTokenService>();
 builder.Services.AddSingleton(new SyncFactorsConfigPathResolver(
     builder.Configuration["SyncFactors:ConfigPath"],
     builder.Configuration["SyncFactors:MappingConfigPath"]));
@@ -129,7 +128,6 @@ app.MapGet("/", () => options.Admin.Enabled
 app.MapPost("/oauth/token", async Task<Results<Ok<TokenResponse>, UnauthorizedHttpResult>> (
     HttpContext httpContext,
     IOptions<MockSuccessFactorsOptions> configuredOptions,
-    MockTokenService tokenService,
     CancellationToken cancellationToken) =>
 {
     var form = await httpContext.Request.ReadFormAsync(cancellationToken);

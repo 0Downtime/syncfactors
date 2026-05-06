@@ -195,7 +195,7 @@
             var employmentStatus = DetailModel.GetEmploymentStatus(entry);
             var endDateDisplay = DetailModel.GetEndDateDisplay(entry);
             var primarySummary = Model.GetPrimarySummaryDisplay(entry);
-            var failureSummary = Model.GetFailureSummaryDisplay(entry);
+            var failureSummary = DetailModel.GetFailureSummaryDisplay(entry);
             var showReason = Model.ShouldShowReason(entry);
             var showReviewCase = !string.IsNullOrWhiteSpace(entry.ReviewCaseType);
             var execution = Model.DescribeEntryExecution(entry);

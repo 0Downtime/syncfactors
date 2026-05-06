@@ -31,14 +31,17 @@ Examples:
   sudo ./scripts/install-azure-devops-sonarqube-agent-deps.sh --sonarqube-url https://sonarqube.example.com
   sudo ./scripts/install-azure-devops-sonarqube-agent-deps.sh --agent-service vsts.agent.org.pool.agent.service
 USAGE
+  return 0
 }
 
 log() {
   printf '[ado-sonar-deps] %s\n' "$*"
+  return 0
 }
 
 warn() {
   printf '[ado-sonar-deps] warning: %s\n' "$*" >&2
+  return 0
 }
 
 fail() {
@@ -48,6 +51,7 @@ fail() {
 
 curl_https() {
   curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 "$@"
+  return $?
 }
 
 while [[ $# -gt 0 ]]; do
@@ -99,6 +103,7 @@ version_ge() {
   local current="$1"
   local required="$2"
   [[ "$(printf '%s\n%s\n' "$required" "$current" | sort -V | head -n 1)" == "$required" ]]
+  return $?
 }
 
 detect_package_manager() {
@@ -113,6 +118,7 @@ detect_package_manager() {
   else
     echo unknown
   fi
+  return 0
 }
 
 install_os_packages() {
@@ -121,7 +127,7 @@ install_os_packages() {
 
   if [[ "$verify_only" == "true" ]]; then
     log "verify-only: skipping OS package install."
-    return
+    return 0
   fi
 
   case "$package_manager" in
@@ -150,6 +156,7 @@ install_os_packages() {
       fail "Unsupported package manager. Install Git, curl, CA certs, unzip, jq, and OpenJDK 17 manually."
       ;;
   esac
+  return 0
 }
 
 find_java_home_17() {
@@ -191,12 +198,12 @@ find_java_home_17() {
 has_dotnet_10() {
   if [[ -x "$dotnet_install_dir/dotnet" ]]; then
     "$dotnet_install_dir/dotnet" --list-sdks 2>/dev/null | awk '{print $1}' | grep -Eq '^10\.'
-    return
+    return $?
   fi
 
   if command -v dotnet >/dev/null 2>&1; then
     dotnet --list-sdks 2>/dev/null | awk '{print $1}' | grep -Eq '^10\.'
-    return
+    return $?
   fi
 
   return 1
@@ -205,12 +212,12 @@ has_dotnet_10() {
 install_dotnet_10() {
   if has_dotnet_10; then
     log ".NET SDK 10.0.x already installed."
-    return
+    return 0
   fi
 
   if [[ "$verify_only" == "true" ]]; then
     warn ".NET SDK 10.0.x missing."
-    return
+    return 0
   fi
 
   log "installing .NET SDK 10.0.x to $dotnet_install_dir."
@@ -221,18 +228,21 @@ install_dotnet_10() {
   "${sudo_cmd[@]}" bash "$installer" --channel 10.0 --install-dir "$dotnet_install_dir"
   rm -f "$installer"
   "${sudo_cmd[@]}" ln -sf "$dotnet_install_dir/dotnet" /usr/local/bin/dotnet
+  return 0
 }
 
 has_powershell_7() {
   # shellcheck disable=SC2016
   command -v pwsh >/dev/null 2>&1 \
     && pwsh -NoProfile -Command 'exit ([int]($PSVersionTable.PSVersion.Major -lt 7))' >/dev/null 2>&1
+  return $?
 }
 
 source_os_release() {
   [[ -r /etc/os-release ]] || fail "/etc/os-release missing; cannot configure Microsoft package repository."
   # shellcheck disable=SC1091
   . /etc/os-release
+  return 0
 }
 
 install_powershell_apt() {
@@ -257,6 +267,7 @@ install_powershell_apt() {
 
   "${sudo_cmd[@]}" apt-get update
   "${sudo_cmd[@]}" env DEBIAN_FRONTEND=noninteractive apt-get install -y powershell
+  return 0
 }
 
 install_powershell_rpm() {
@@ -269,18 +280,19 @@ install_powershell_rpm() {
   "${sudo_cmd[@]}" rpm --import https://packages.microsoft.com/keys/microsoft.asc
   curl_https "https://packages.microsoft.com/config/rhel/${rhel_major}/prod.repo" \
     | "${sudo_cmd[@]}" tee /etc/yum.repos.d/microsoft.repo >/dev/null
+  return 0
 }
 
 install_powershell_7() {
   if has_powershell_7; then
     # shellcheck disable=SC2016
     log "PowerShell 7 already installed: $(pwsh -NoProfile -Command '$PSVersionTable.PSVersion.ToString()')."
-    return
+    return 0
   fi
 
   if [[ "$verify_only" == "true" ]]; then
     warn "PowerShell 7 missing."
-    return
+    return 0
   fi
 
   local package_manager
@@ -310,6 +322,7 @@ install_powershell_7() {
   esac
 
   has_powershell_7 || fail "PowerShell 7 install completed but 'pwsh' is unavailable on PATH."
+  return 0
 }
 
 write_environment_exports() {
@@ -318,12 +331,12 @@ write_environment_exports() {
 
   if [[ "$write_system_env" != "true" ]]; then
     log "system environment export disabled."
-    return
+    return 0
   fi
 
   if [[ "$verify_only" == "true" ]]; then
     log "verify-only: skipping $profile_path write."
-    return
+    return 0
   fi
 
   log "writing $profile_path."
@@ -334,6 +347,7 @@ export DOTNET_ROOT="$dotnet_install_dir"
 export PATH="$dotnet_install_dir:\$PATH"
 EOF
   "${sudo_cmd[@]}" chmod 0644 "$profile_path"
+  return 0
 }
 
 write_systemd_override() {
@@ -366,13 +380,14 @@ Environment="PATH=$service_path"
 EOF
   "${sudo_cmd[@]}" systemctl daemon-reload
   warn "restart agent service to pick up environment: sudo systemctl restart $agent_service_name"
+  return 0
 }
 
 verify_agent_version() {
   if [[ -z "${AGENT_VERSION:-}" ]]; then
     warn "AGENT_VERSION not set. Run inside an Azure Pipelines job to verify agent version automatically."
     warn "SonarQube@8 tasks require Azure Pipelines agent 3.218.0 or newer."
-    return
+    return 0
   fi
 
   if version_ge "$AGENT_VERSION" "3.218.0"; then
@@ -380,6 +395,7 @@ verify_agent_version() {
   else
     fail "Azure Pipelines agent $AGENT_VERSION is too old. Install 3.218.0 or newer."
   fi
+  return 0
 }
 
 verify_sonarqube_url() {
@@ -388,6 +404,7 @@ verify_sonarqube_url() {
   log "checking SonarQube reachability: $sonarqube_url"
   curl -fsSIL --connect-timeout 10 --max-time 30 "$sonarqube_url" >/dev/null \
     || fail "Cannot reach SonarQube URL: $sonarqube_url"
+  return 0
 }
 
 verify_final_state() {
@@ -418,6 +435,7 @@ verify_final_state() {
   else
     log "dotnet: $(dotnet --version)"
   fi
+  return 0
 }
 
 install_os_packages

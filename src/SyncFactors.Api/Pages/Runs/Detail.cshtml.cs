@@ -129,7 +129,7 @@ public sealed class DetailModel(RunEntriesQueryService queryService) : PageModel
     public static FailureDiagnostics? GetFailureDiagnostics(RunEntry entry)
         => ActiveDirectoryFailureDiagnostics.Parse(entry.Reason ?? entry.FailureSummary);
 
-    public string? GetFailureSummaryDisplay(RunEntry entry)
+    public static string? GetFailureSummaryDisplay(RunEntry entry)
         => GetFailureDiagnostics(entry)?.Summary ?? entry.FailureSummary;
 
     public static IReadOnlyList<FailureDiagnosticSection> GetFailureDiagnosticSections(FailureDiagnostics diagnostics)
@@ -394,7 +394,12 @@ public sealed class DetailModel(RunEntriesQueryService queryService) : PageModel
             ActiveDirectoryEnabled: activeDirectoryEnabled.Value,
             Difference: difference,
             ActiveOu: activeOu,
-            StatusLabel: difference == 0 ? "Aligned" : difference > 0 ? "SF ahead" : "AD ahead",
+            StatusLabel: difference switch
+            {
+                0 => "Aligned",
+                > 0 => "SF ahead",
+                _ => "AD ahead"
+            },
             ToneCssClass: difference == 0 ? "good" : "warn",
             Summary: summary);
     }
