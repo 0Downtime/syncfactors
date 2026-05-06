@@ -19,18 +19,10 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/0Downtime/syncfactors/actions/workflows/test.yml">
-    <img src="https://github.com/0Downtime/syncfactors/actions/workflows/test.yml/badge.svg?branch=main" alt="Tests" />
-  </a>
-  <a href="https://github.com/0Downtime/syncfactors/actions/workflows/security.yml">
-    <img src="https://github.com/0Downtime/syncfactors/actions/workflows/security.yml/badge.svg?branch=main" alt="Security Scans" />
-  </a>
-  <a href="https://github.com/0Downtime/syncfactors/actions/workflows/codeql.yml">
-    <img src="https://github.com/0Downtime/syncfactors/actions/workflows/codeql.yml/badge.svg?branch=main" alt="CodeQL" />
-  </a>
-  <a href="https://sonarcloud.io/summary/new_code?id=0Downtime_sf-ad-sync">
-    <img src="https://sonarcloud.io/api/project_badges/measure?project=0Downtime_sf-ad-sync&amp;metric=alert_status" alt="Quality Gate Status" />
-  </a>
+  <img src="https://img.shields.io/badge/Azure%20DevOps-main%20CI-2560e0" alt="Azure DevOps main CI" />
+  <img src="https://img.shields.io/badge/.NET%20tests-SyncFactors.Next.sln-2ea043" alt=".NET tests run in Azure DevOps" />
+  <img src="https://img.shields.io/badge/UI%20tests-Vitest%20coverage-2ea043" alt="UI tests run in Azure DevOps" />
+  <img src="https://img.shields.io/badge/SonarQube-quality%20gate-2ea043" alt="SonarQube quality gate runs in Azure DevOps" />
   <a href="https://github.com/0Downtime/syncfactors/blob/main/LICENSE">
     <img src="https://img.shields.io/github/license/0Downtime/syncfactors" alt="License" />
   </a>
