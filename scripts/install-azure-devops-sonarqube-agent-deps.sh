@@ -46,6 +46,10 @@ fail() {
   exit 1
 }
 
+curl_https() {
+  curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 "$@"
+}
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --verify-only)
@@ -212,7 +216,7 @@ install_dotnet_10() {
   log "installing .NET SDK 10.0.x to $dotnet_install_dir."
   local installer
   installer="$(mktemp)"
-  curl -fsSL https://dot.net/v1/dotnet-install.sh -o "$installer"
+  curl_https --output "$installer" https://dot.net/v1/dotnet-install.sh
   "${sudo_cmd[@]}" mkdir -p "$dotnet_install_dir"
   "${sudo_cmd[@]}" bash "$installer" --channel 10.0 --install-dir "$dotnet_install_dir"
   rm -f "$installer"
@@ -247,7 +251,7 @@ install_powershell_apt() {
   local repository_deb
   repository_deb="$(mktemp --suffix=.deb)"
   log "configuring Microsoft package repository for ${ID} ${VERSION_ID}."
-  curl -fsSL "https://packages.microsoft.com/config/${ID}/${VERSION_ID}/packages-microsoft-prod.deb" -o "$repository_deb"
+  curl_https --output "$repository_deb" "https://packages.microsoft.com/config/${ID}/${VERSION_ID}/packages-microsoft-prod.deb"
   "${sudo_cmd[@]}" dpkg -i "$repository_deb"
   rm -f "$repository_deb"
 
@@ -263,7 +267,7 @@ install_powershell_rpm() {
 
   log "configuring Microsoft package repository for RHEL-compatible ${rhel_major}."
   "${sudo_cmd[@]}" rpm --import https://packages.microsoft.com/keys/microsoft.asc
-  curl -fsSL "https://packages.microsoft.com/config/rhel/${rhel_major}/prod.repo" \
+  curl_https "https://packages.microsoft.com/config/rhel/${rhel_major}/prod.repo" \
     | "${sudo_cmd[@]}" tee /etc/yum.repos.d/microsoft.repo >/dev/null
 }
 
