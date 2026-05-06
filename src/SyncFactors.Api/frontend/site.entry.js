@@ -5,8 +5,8 @@
     const themeOptions = Array.prototype.slice.call(document.querySelectorAll("[data-theme-option]"));
     const topbar = document.querySelector("[data-topbar]");
     const toastRegion = document.querySelector("[data-toast-region]");
-    const reduceMotionQuery = window.matchMedia ? window.matchMedia("(prefers-reduced-motion: reduce)") : null;
-    const colorSchemeQuery = window.matchMedia ? window.matchMedia("(prefers-color-scheme: dark)") : null;
+    const reduceMotionQuery = globalThis.matchMedia ? globalThis.matchMedia("(prefers-reduced-motion: reduce)") : null;
+    const colorSchemeQuery = globalThis.matchMedia ? globalThis.matchMedia("(prefers-color-scheme: dark)") : null;
 
     function motionAllowed() {
         return !reduceMotionQuery || !reduceMotionQuery.matches;
@@ -29,7 +29,7 @@
     }
 
     function announceTheme(theme, preference) {
-        window.dispatchEvent(new CustomEvent("syncfactors:themechange", {
+        globalThis.dispatchEvent(new CustomEvent("syncfactors:themechange", {
             detail: { theme, preference }
         }));
     }
@@ -58,9 +58,9 @@
 
         if (shouldPersist) {
             try {
-                window.localStorage.setItem(storageKey, preference);
+                globalThis.localStorage.setItem(storageKey, preference);
             } catch (error) {
-                // Ignore storage failures in restricted contexts.
+                globalThis.console.debug("Theme preference could not be persisted.", error);
             }
         }
 
@@ -82,7 +82,7 @@
             return;
         }
 
-        topbar.classList.toggle("is-condensed", window.scrollY > 18);
+        topbar.classList.toggle("is-condensed", globalThis.scrollY > 18);
     }
 
     function initializeNavMenus() {
@@ -136,7 +136,7 @@
 
         surfaces.forEach(decorateSurface);
 
-        if (!motionAllowed() || !("IntersectionObserver" in window)) {
+        if (!motionAllowed() || !("IntersectionObserver" in globalThis)) {
             surfaces.forEach(function (surface) {
                 surface.classList.add("is-visible");
             });
@@ -223,7 +223,7 @@
                 });
         }
 
-        window.setTimeout(function () {
+        globalThis.setTimeout(function () {
             removeTransientNode(toast);
         }, typeof detail.duration === "number" ? detail.duration : 3800);
     }
@@ -237,7 +237,7 @@
                 return;
             }
 
-            window.setTimeout(function () {
+            globalThis.setTimeout(function () {
                 removeTransientNode(callout);
             }, dismissAfterMs);
         });
@@ -265,6 +265,7 @@
                         duration: 2400
                     });
                 } catch (error) {
+                    globalThis.console.debug("Version copy failed.", error);
                     showToast({
                         title: "Copy Failed",
                         tone: "warn",
@@ -310,7 +311,7 @@
         }
 
         applyFit();
-        window.addEventListener("resize", applyFit, { passive: true });
+        globalThis.addEventListener("resize", applyFit, { passive: true });
 
         if (document.fonts && typeof document.fonts.ready?.then === "function") {
             document.fonts.ready.then(applyFit);
@@ -347,15 +348,11 @@
     }
 
     if (colorSchemeQuery) {
-        if (typeof colorSchemeQuery.addEventListener === "function") {
-            colorSchemeQuery.addEventListener("change", handleSystemThemeChange);
-        } else if (typeof colorSchemeQuery.addListener === "function") {
-            colorSchemeQuery.addListener(handleSystemThemeChange);
-        }
+        colorSchemeQuery.addEventListener?.("change", handleSystemThemeChange);
     }
 
     syncTopbar();
-    window.addEventListener("scroll", syncTopbar, { passive: true });
+    globalThis.addEventListener("scroll", syncTopbar, { passive: true });
     initializeNavMenus();
     initializeSurfaceReveals();
     bootstrapCalloutToasts();
@@ -363,7 +360,7 @@
     initializeVersionCopy();
     initializeEnvironmentBannerFit();
 
-    window.addEventListener("syncfactors:toast", function (event) {
+    globalThis.addEventListener("syncfactors:toast", function (event) {
         showToast(event.detail || {});
     });
 })();

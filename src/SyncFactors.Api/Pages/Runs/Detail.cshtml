@@ -158,7 +158,7 @@
             </a>
             @foreach (var total in Model.EmploymentStatusTotals)
             {
-                var status = Model.DescribeEmploymentStatus(total.Code);
+                var status = DetailModel.DescribeEmploymentStatus(total.Code);
                 if (status is null)
                 {
                     continue;
@@ -191,18 +191,18 @@
         <div class="entry-list">
         @foreach (var entry in Model.Entries)
         {
-            var diagnostics = Model.GetFailureDiagnostics(entry);
-            var employmentStatus = Model.GetEmploymentStatus(entry);
-            var endDateDisplay = Model.GetEndDateDisplay(entry);
+            var diagnostics = DetailModel.GetFailureDiagnostics(entry);
+            var employmentStatus = DetailModel.GetEmploymentStatus(entry);
+            var endDateDisplay = DetailModel.GetEndDateDisplay(entry);
             var primarySummary = Model.GetPrimarySummaryDisplay(entry);
             var failureSummary = Model.GetFailureSummaryDisplay(entry);
             var showReason = Model.ShouldShowReason(entry);
             var showReviewCase = !string.IsNullOrWhiteSpace(entry.ReviewCaseType);
             var execution = Model.DescribeEntryExecution(entry);
-            var diagnosticSections = diagnostics is null ? [] : Model.GetFailureDiagnosticSections(diagnostics);
+            var diagnosticSections = diagnostics is null ? [] : DetailModel.GetFailureDiagnosticSections(diagnostics);
             var manualReviewSections = entry.Bucket == "manualReview" ? Model.GetManualReviewDiagnosticSections(entry) : [];
             var groupedDiagnosticSections = diagnosticSections.Count > 0 ? diagnosticSections : manualReviewSections;
-            var decisionSteps = Model.GetProvisioningDecisionSteps(entry);
+            var decisionSteps = DetailModel.GetProvisioningDecisionSteps(entry);
             <article class="entry-card">
                 <header class="entry-head">
                     <div class="entry-identity">

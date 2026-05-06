@@ -3,7 +3,7 @@
 
     const themeStorageKey = "syncfactors-next-theme";
     const root = document.documentElement;
-    const colorSchemeQuery = window.matchMedia ? window.matchMedia("(prefers-color-scheme: dark)") : null;
+    const colorSchemeQuery = globalThis.matchMedia ? globalThis.matchMedia("(prefers-color-scheme: dark)") : null;
 
     const state = {
         workers: [],
@@ -86,9 +86,9 @@
 
     function persistTheme(themePreference) {
         try {
-            window.localStorage.setItem(themeStorageKey, themePreference);
+            globalThis.localStorage.setItem(themeStorageKey, themePreference);
         } catch (error) {
-            return;
+            globalThis.console.debug("Theme preference could not be persisted.", error);
         }
     }
 
@@ -119,19 +119,15 @@
             return;
         }
 
-        if (typeof colorSchemeQuery.addEventListener === "function") {
-            colorSchemeQuery.addEventListener("change", handleSystemThemeChange);
-        } else if (typeof colorSchemeQuery.addListener === "function") {
-            colorSchemeQuery.addListener(handleSystemThemeChange);
-        }
+        colorSchemeQuery.addEventListener?.("change", handleSystemThemeChange);
     }
 
     function escapeHtml(value) {
         return String(value || "")
-            .replace(/&/g, "&amp;")
-            .replace(/</g, "&lt;")
-            .replace(/>/g, "&gt;")
-            .replace(/"/g, "&quot;");
+            .replaceAll(/&/g, "&amp;")
+            .replaceAll(/</g, "&lt;")
+            .replaceAll(/>/g, "&gt;")
+            .replaceAll(/"/g, "&quot;");
     }
 
     function todayValue() {
@@ -239,8 +235,8 @@
         elements.toast.hidden = false;
         elements.toast.className = "toast toast-" + (tone || "info");
         elements.toast.textContent = message;
-        window.clearTimeout(elements.toast._timer);
-        elements.toast._timer = window.setTimeout(function () {
+        globalThis.clearTimeout(elements.toast._timer);
+        elements.toast._timer = globalThis.setTimeout(function () {
             elements.toast.hidden = true;
         }, 3200);
     }
@@ -485,7 +481,7 @@
         }
 
         return path.split(".").reduce(function (current, segment) {
-            return current && Object.prototype.hasOwnProperty.call(current, segment) ? current[segment] : null;
+            return current && Object.hasOwn(current, segment) ? current[segment] : null;
         }, worker);
     }
 
@@ -566,7 +562,7 @@
     }
 
     function isSafeTopLevelField(path) {
-        return path.indexOf(".") === -1 &&
+        return !path.includes(".") &&
             path !== "__proto__" &&
             path !== "prototype" &&
             path !== "constructor";
@@ -631,7 +627,7 @@
         }
 
         if (action === "reset") {
-            if (!window.confirm("Reset the runtime worker state back to the seeded population?")) {
+            if (!globalThis.confirm("Reset the runtime worker state back to the seeded population?")) {
                 return;
             }
 
@@ -652,7 +648,7 @@
             return;
         }
 
-        if (action === "delete" && !window.confirm("Delete the selected worker from the runtime population?")) {
+        if (action === "delete" && !globalThis.confirm("Delete the selected worker from the runtime population?")) {
             return;
         }
 
@@ -677,8 +673,8 @@
 
     function bindEvents() {
         elements.filterInput.addEventListener("input", function () {
-            window.clearTimeout(filterTimer);
-            filterTimer = window.setTimeout(async function () {
+            globalThis.clearTimeout(filterTimer);
+            filterTimer = globalThis.setTimeout(async function () {
                 state.filter = elements.filterInput.value.trim();
                 await loadWorkers(true);
             }, 180);

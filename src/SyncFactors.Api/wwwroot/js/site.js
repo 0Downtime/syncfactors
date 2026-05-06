@@ -16,9 +16,9 @@
 
     function persistTheme(theme) {
         try {
-            window.localStorage.setItem(key, theme);
+            globalThis.localStorage.setItem(key, theme);
         } catch (error) {
-            return;
+            globalThis.console.debug("Theme preference could not be persisted.", error);
         }
     }
 

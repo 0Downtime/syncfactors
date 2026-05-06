@@ -123,12 +123,12 @@ public sealed class DeletionQueueModel(
         return RedirectToCurrentPage();
     }
 
-    public string FormatCountdown(GraveyardDeletionQueueItem item) =>
+    public static string FormatCountdown(GraveyardDeletionQueueItem item) =>
         item.OverdueDays > 0
             ? $"Overdue by {item.OverdueDays} day{(item.OverdueDays == 1 ? string.Empty : "s")}"
             : $"{item.DaysLeft} day{(item.DaysLeft == 1 ? string.Empty : "s")} left";
 
-    public string FormatStatus(GraveyardDeletionQueueItem item)
+    public static string FormatStatus(GraveyardDeletionQueueItem item)
     {
         var status = EmploymentStatusDisplay.Describe(item.Status);
         if (status is null)

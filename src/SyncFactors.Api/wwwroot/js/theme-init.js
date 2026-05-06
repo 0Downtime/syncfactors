@@ -2,8 +2,9 @@
     var key = "syncfactors-next-theme";
     var storedTheme = null;
     try {
-        storedTheme = window.localStorage.getItem(key);
+        storedTheme = globalThis.localStorage.getItem(key);
     } catch (error) {
+        globalThis.console.debug("Theme preference could not be read.", error);
         storedTheme = null;
     }
 
@@ -14,7 +15,7 @@
         ? "dark"
         : themePreference === "light"
             ? "light"
-            : (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+            : (globalThis.matchMedia && globalThis.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
 
     document.documentElement.dataset.themePreference = themePreference;
     document.documentElement.dataset.theme = theme;

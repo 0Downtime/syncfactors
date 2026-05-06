@@ -54,7 +54,7 @@
                 {
                     <tr>
                         <td>@group.GroupName</td>
-                        <td><span class="badge @Model.AccessBadgeClass(group.AccessLevel)">@group.AccessLevel</span></td>
+                        <td><span class="badge @UsersModel.AccessBadgeClass(group.AccessLevel)">@group.AccessLevel</span></td>
                         <td>
                             @if (group.Members.Count == 0)
                             {
@@ -73,7 +73,7 @@
                                                 <span class="muted">@member.DisplayName</span>
                                             }
                                         </div>
-                                        <span class="badge @Model.AccessBadgeClass(member.AccessLevel)">@member.AccessLevel</span>
+                                        <span class="badge @UsersModel.AccessBadgeClass(member.AccessLevel)">@member.AccessLevel</span>
                                         <span class="muted">@SyncFactors.Api.UiDateTimeFormatter.FormatDateTime(member.LastLoginAt)</span>
                                     </div>
                                 }
@@ -185,7 +185,7 @@
                         <td>
                             <form method="post" asp-page-handler="ChangeRole" class="admin-user-role-form">
                                 <input type="hidden" name="userId" value="@user.UserId" />
-                                <span class="badge @Model.AccessBadgeClass(user.Role)">@user.Role</span>
+                                <span class="badge @UsersModel.AccessBadgeClass(user.Role)">@user.Role</span>
                                 <select name="role" aria-label="Role for @user.Username">
                                     <option value="@SecurityRoles.Viewer" selected="@(string.Equals(user.Role, SecurityRoles.Viewer, StringComparison.OrdinalIgnoreCase))">Viewer</option>
                                     <option value="@SecurityRoles.Operator" selected="@(string.Equals(user.Role, SecurityRoles.Operator, StringComparison.OrdinalIgnoreCase))">Operator</option>

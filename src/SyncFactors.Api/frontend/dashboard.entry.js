@@ -12,7 +12,7 @@ echarts.use([BarChart, PieChart, GraphicComponent, GridComponent, LegendComponen
     const dashboardPollIntervalMs = 15000;
     const progressAnimationDurationMs = 700;
     const runsPageSize = 25;
-    const reduceMotionQuery = window.matchMedia ? window.matchMedia("(prefers-reduced-motion: reduce)") : null;
+    const reduceMotionQuery = globalThis.matchMedia ? globalThis.matchMedia("(prefers-reduced-motion: reduce)") : null;
     const supportsViewTransitions = typeof document.startViewTransition === "function";
     const usDateTimeFormatter = new Intl.DateTimeFormat("en-US", {
         year: "numeric",
@@ -179,7 +179,7 @@ echarts.use([BarChart, PieChart, GraphicComponent, GridComponent, LegendComponen
         });
     }
 
-    window.addEventListener("syncfactors:themechange", function () {
+    globalThis.addEventListener("syncfactors:themechange", function () {
         refreshCharts();
     });
 
@@ -191,7 +191,7 @@ echarts.use([BarChart, PieChart, GraphicComponent, GridComponent, LegendComponen
         healthMenu.open = false;
     });
 
-    window.addEventListener("resize", function () {
+    globalThis.addEventListener("resize", function () {
         if (runsChartInstance) {
             runsChartInstance.resize();
         }
@@ -281,8 +281,8 @@ echarts.use([BarChart, PieChart, GraphicComponent, GridComponent, LegendComponen
 
         return String(value)
             .trim()
-            .replace(/[-_]+/g, " ")
-            .replace(/(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])/g, " ");
+            .replaceAll(/[-_]+/g, " ")
+            .replaceAll(/(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])/g, " ");
     }
 
     function runKindLabel(run) {
@@ -346,7 +346,7 @@ echarts.use([BarChart, PieChart, GraphicComponent, GridComponent, LegendComponen
     }
 
     function textOrFallback(value, fallback) {
-        return value ? value : fallback;
+        return value || fallback;
     }
 
     function displayStage(stage) {
@@ -354,7 +354,7 @@ echarts.use([BarChart, PieChart, GraphicComponent, GridComponent, LegendComponen
             return "standby";
         }
 
-        return stage.replace(/inprogress/ig, "in progress").toLowerCase();
+        return stage.replaceAll(/inprogress/ig, "in progress").toLowerCase();
     }
 
     function workerProgressPercent(status) {
@@ -1011,7 +1011,7 @@ echarts.use([BarChart, PieChart, GraphicComponent, GridComponent, LegendComponen
             return;
         }
 
-        scheduleTimerId = window.setInterval(function () {
+        scheduleTimerId = globalThis.setInterval(function () {
             if (latestScheduleSnapshot) {
                 renderSchedule(latestScheduleSnapshot);
             }
@@ -1456,7 +1456,7 @@ echarts.use([BarChart, PieChart, GraphicComponent, GridComponent, LegendComponen
     }
 
     function timelineProcessedDetail(processedWorkers, totalWorkers) {
-        if (!(totalWorkers > 0)) {
+        if (totalWorkers <= 0) {
             return null;
         }
 
@@ -2233,6 +2233,7 @@ echarts.use([BarChart, PieChart, GraphicComponent, GridComponent, LegendComponen
             const payload = await response.json();
             renderSchedule(payload && payload.schedule ? payload.schedule : null);
         } catch (error) {
+            globalThis.console.debug("Schedule request failed.", error);
             if (!latestScheduleSnapshot) {
                 renderSchedule(null);
             }
@@ -2275,22 +2276,22 @@ echarts.use([BarChart, PieChart, GraphicComponent, GridComponent, LegendComponen
         }
 
         if (!dashboardTimerId) {
-            dashboardTimerId = window.setInterval(loadDashboard, dashboardPollIntervalMs);
+            dashboardTimerId = globalThis.setInterval(loadDashboard, dashboardPollIntervalMs);
         }
 
         if (!healthTimerId) {
-            healthTimerId = window.setInterval(loadHealth, healthPollIntervalMs);
+            healthTimerId = globalThis.setInterval(loadHealth, healthPollIntervalMs);
         }
     }
 
     function stopFallbackPolling() {
         if (dashboardTimerId) {
-            window.clearInterval(dashboardTimerId);
+            globalThis.clearInterval(dashboardTimerId);
             dashboardTimerId = null;
         }
 
         if (healthTimerId) {
-            window.clearInterval(healthTimerId);
+            globalThis.clearInterval(healthTimerId);
             healthTimerId = null;
         }
     }
@@ -2300,7 +2301,7 @@ echarts.use([BarChart, PieChart, GraphicComponent, GridComponent, LegendComponen
             return;
         }
 
-        reconnectTimerId = window.setTimeout(function () {
+        reconnectTimerId = globalThis.setTimeout(function () {
             reconnectTimerId = null;
             void startRealtimeConnection();
         }, 5000);
@@ -2401,21 +2402,21 @@ echarts.use([BarChart, PieChart, GraphicComponent, GridComponent, LegendComponen
         void startRealtimeConnection();
     }
 
-    if ("requestIdleCallback" in window) {
-        window.requestIdleCallback(startDashboard, { timeout: 2000 });
+    if ("requestIdleCallback" in globalThis) {
+        globalThis.requestIdleCallback(startDashboard, { timeout: 2000 });
     } else {
-        window.setTimeout(startDashboard, 0);
+        globalThis.setTimeout(startDashboard, 0);
     }
 
-    window.addEventListener("beforeunload", function () {
+    globalThis.addEventListener("beforeunload", function () {
         stopFallbackPolling();
 
         if (reconnectTimerId) {
-            window.clearTimeout(reconnectTimerId);
+            globalThis.clearTimeout(reconnectTimerId);
         }
 
         if (scheduleTimerId) {
-            window.clearInterval(scheduleTimerId);
+            globalThis.clearInterval(scheduleTimerId);
         }
 
         clearProgressDoneTimer();

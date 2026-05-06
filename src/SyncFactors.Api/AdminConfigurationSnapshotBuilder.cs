@@ -392,7 +392,7 @@ public sealed class AdminConfigurationSnapshotBuilder(
             ]);
     }
 
-    private AdminConfigurationSectionViewModel BuildOperationsSection(SyncFactorsConfigDocument sync)
+    private static AdminConfigurationSectionViewModel BuildOperationsSection(SyncFactorsConfigDocument sync)
     {
         var smtpEntries = sync.Alerts.Smtp is null
             ? new[]
@@ -453,7 +453,7 @@ public sealed class AdminConfigurationSnapshotBuilder(
             ]);
     }
 
-    private AdminConfigurationSectionViewModel BuildMappingsSection(MappingConfigDocument mapping)
+    private static AdminConfigurationSectionViewModel BuildMappingsSection(MappingConfigDocument mapping)
     {
         var rows = mapping.Mappings
             .Select(item => new AdminConfigurationMappingRowViewModel(
@@ -580,7 +580,7 @@ public sealed class AdminConfigurationSnapshotBuilder(
             || options.LocalBreakGlass.Enabled;
     }
 
-    private string ResolveSecretSource(string? environmentVariableName, string fallbackSource) =>
+    private static string ResolveSecretSource(string? environmentVariableName, string fallbackSource) =>
         HasEnvironmentValue(environmentVariableName)
             ? environmentVariableName!
             : fallbackSource;

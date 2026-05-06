@@ -134,7 +134,7 @@ app.MapPost("/oauth/token", async Task<Results<Ok<TokenResponse>, UnauthorizedHt
 {
     var form = await httpContext.Request.ReadFormAsync(cancellationToken);
     var configured = configuredOptions.Value.Authentication;
-    var token = tokenService.IssueToken(
+    var token = MockTokenService.IssueToken(
         grantType: form["grant_type"].ToString(),
         clientId: form["client_id"].ToString(),
         clientSecret: form["client_secret"].ToString(),

@@ -220,7 +220,7 @@ public sealed class RunDetailModelTests
 
         await model.OnGetAsync(CancellationToken.None);
 
-        var diagnostics = model.GetFailureDiagnostics(new RunEntry(
+        var diagnostics = DetailModel.GetFailureDiagnostics(new RunEntry(
             EntryId: "entry-conflict",
             RunId: "bulk-1",
             ArtifactType: "BulkRun",
@@ -249,9 +249,7 @@ public sealed class RunDetailModelTests
     [Fact]
     public void GetFailureDiagnostics_ParsesExistingCreateConflictDetails()
     {
-        var model = new DetailModel(new RunEntriesQueryService(new StubRunRepository()));
-
-        var diagnostics = model.GetFailureDiagnostics(new RunEntry(
+        var diagnostics = DetailModel.GetFailureDiagnostics(new RunEntry(
             EntryId: "entry-existing-create-conflict",
             RunId: "bulk-1",
             ArtifactType: "BulkRun",
@@ -283,8 +281,7 @@ public sealed class RunDetailModelTests
     [Fact]
     public void GetFailureDiagnosticSections_GroupsRequestedExistingAndContextDetails()
     {
-        var model = new DetailModel(new RunEntriesQueryService(new StubRunRepository()));
-        var diagnostics = model.GetFailureDiagnostics(new RunEntry(
+        var diagnostics = DetailModel.GetFailureDiagnostics(new RunEntry(
             EntryId: "entry-existing-create-conflict",
             RunId: "bulk-1",
             ArtifactType: "BulkRun",
@@ -307,7 +304,7 @@ public sealed class RunDetailModelTests
 
         Assert.NotNull(diagnostics);
 
-        var sections = model.GetFailureDiagnosticSections(diagnostics!);
+        var sections = DetailModel.GetFailureDiagnosticSections(diagnostics!);
 
         Assert.Equal(3, sections.Count);
         Assert.Equal("Requested Directory State", sections[0].Title);
@@ -479,7 +476,7 @@ public sealed class RunDetailModelTests
                 }
                 """).RootElement.Clone());
 
-        var steps = model.GetProvisioningDecisionSteps(entry);
+        var steps = DetailModel.GetProvisioningDecisionSteps(entry);
 
         Assert.Equal(2, steps.Count);
         Assert.Equal("Directory Identity", steps[0].Step);
@@ -669,13 +666,12 @@ public sealed class RunDetailModelTests
             DiffRows: [],
             Item: JsonDocument.Parse("""{"emplStatus":"64304"}""").RootElement.Clone());
 
-        Assert.Equal("64304 - Paid Leave", model.GetEmploymentStatusDisplay(entry));
+        Assert.Equal("64304 - Paid Leave", DetailModel.GetEmploymentStatusDisplay(entry));
     }
 
     [Fact]
     public void GetEmploymentStatus_ReturnsToneAndPillCopy()
     {
-        var model = new DetailModel(new RunEntriesQueryService(new StubRunRepository()));
         var entry = new RunEntry(
             EntryId: "entry-status",
             RunId: "bulk-1",
@@ -697,7 +693,7 @@ public sealed class RunDetailModelTests
             DiffRows: [],
             Item: JsonDocument.Parse("""{"emplStatus":"64308"}""").RootElement.Clone());
 
-        var status = model.GetEmploymentStatus(entry);
+        var status = DetailModel.GetEmploymentStatus(entry);
 
         Assert.NotNull(status);
         Assert.Equal("Terminated", status!.Label);
@@ -744,7 +740,6 @@ public sealed class RunDetailModelTests
     [Fact]
     public void GetEndDateDisplay_FormatsParseableDate()
     {
-        var model = new DetailModel(new RunEntriesQueryService(new StubRunRepository()));
         var localOffset = TimeZoneInfo.Local.GetUtcOffset(new DateTime(2026, 4, 14, 12, 0, 0, DateTimeKind.Unspecified));
         var entry = new RunEntry(
             EntryId: "entry-status",
@@ -767,13 +762,12 @@ public sealed class RunDetailModelTests
             DiffRows: [],
             Item: JsonDocument.Parse($$"""{"endDate":"{{new DateTimeOffset(2026, 4, 14, 12, 0, 0, localOffset):O}}"}""").RootElement.Clone());
 
-        Assert.Equal("04/14/2026", model.GetEndDateDisplay(entry));
+        Assert.Equal("04/14/2026", DetailModel.GetEndDateDisplay(entry));
     }
 
     [Fact]
     public void GetEndDateDisplay_ReturnsNullForMissingOrNullLikeValue()
     {
-        var model = new DetailModel(new RunEntriesQueryService(new StubRunRepository()));
         var missingEntry = new RunEntry(
             EntryId: "entry-missing-end-date",
             RunId: "bulk-1",
@@ -800,8 +794,8 @@ public sealed class RunDetailModelTests
             Item = JsonDocument.Parse("""{"endDate":"null"}""").RootElement.Clone()
         };
 
-        Assert.Null(model.GetEndDateDisplay(missingEntry));
-        Assert.Null(model.GetEndDateDisplay(nullStringEntry));
+        Assert.Null(DetailModel.GetEndDateDisplay(missingEntry));
+        Assert.Null(DetailModel.GetEndDateDisplay(nullStringEntry));
     }
 
     [Fact]

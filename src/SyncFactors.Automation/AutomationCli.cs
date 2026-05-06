@@ -1047,7 +1047,7 @@ public sealed class AutomationRunner(AutomationOptions options, TextWriter outpu
         string.Equals(status, "Failed", StringComparison.OrdinalIgnoreCase) ||
         string.Equals(status, "Canceled", StringComparison.OrdinalIgnoreCase);
 
-    private async Task<RunQueueRequest> ReadRunQueueRequestAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+    private static async Task<RunQueueRequest> ReadRunQueueRequestAsync(HttpResponseMessage response, CancellationToken cancellationToken)
     {
         await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
         return await JsonSerializer.DeserializeAsync<RunQueueRequest>(stream, AutomationCliJson.Options, cancellationToken)
