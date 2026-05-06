@@ -139,7 +139,7 @@ host.Services.GetRequiredService<SyncFactorsConfigurationValidator>().Validate()
 await host.Services.GetRequiredService<RunQueueRecoveryService>().RecoverIfNeededAsync("worker startup", CancellationToken.None);
 LogRuntimeVersion(host);
 LogConfiguredEndpoints(host);
-host.Run();
+await host.RunAsync();
 
 static void LogRuntimeVersion(IHost host)
 {

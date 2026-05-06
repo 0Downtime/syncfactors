@@ -110,7 +110,7 @@ echarts.use([BarChart, PieChart, GraphicComponent, GridComponent, LegendComponen
     const initialHealthProbesEnabled = (elements.root.getAttribute("data-health-probes-enabled") || "true").toLowerCase() !== "false";
     const healthPollIntervalMs = Math.max(
         1000,
-        parseInt(elements.root.getAttribute("data-health-probe-interval-ms") || "45000", 10) || 45000);
+        Number.parseInt(elements.root.getAttribute("data-health-probe-interval-ms") || "45000", 10) || 45000);
     const valueNodes = {
         status: elements.statusRoot.querySelector("[data-status-value]"),
         stage: elements.statusRoot.querySelector("[data-stage-value]"),

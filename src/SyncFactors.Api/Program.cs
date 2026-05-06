@@ -34,7 +34,7 @@ if (!string.IsNullOrWhiteSpace(launcherProbeAction))
 
     await databaseInitializer.InitializeAsync(CancellationToken.None);
     var bootstrapRequired = await LauncherProbe.IsBootstrapRequiredAsync(authOptions, userStore, CancellationToken.None);
-    Console.Out.WriteLine(bootstrapRequired ? "true" : "false");
+    await Console.Out.WriteLineAsync(bootstrapRequired ? "true" : "false");
     return;
 }
 
@@ -791,7 +791,7 @@ app.MapHub<DashboardHub>("/hubs/dashboard")
 
 app.MapRazorPages();
 
-app.Run();
+await app.RunAsync();
 
 static void ValidateAuthConfiguration(WebApplication app)
 {

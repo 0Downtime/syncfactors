@@ -156,8 +156,8 @@
                     @foreach (var row in configSection.MappingRows)
                     {
                         <tr>
-                            <td><span class="source-path" title="@row.Source" tabindex="0">@row.Source</span></td>
-                            <td><span class="source-value" title="@row.Target" tabindex="0">@row.Target</span></td>
+                            <td><span class="source-path" title="@row.Source">@row.Source</span></td>
+                            <td><span class="source-value" title="@row.Target">@row.Target</span></td>
                             <td><span class="badge @(row.Enabled ? "good" : "dim")">@(row.Enabled ? "Enabled" : "Disabled")</span></td>
                             <td><span class="badge @(row.Required ? "warn" : "neutral")">@(row.Required ? "Required" : "Optional")</span></td>
                             <td>@row.Transform</td>

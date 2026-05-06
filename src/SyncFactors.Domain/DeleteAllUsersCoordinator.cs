@@ -182,7 +182,7 @@ public sealed class DeleteAllUsersCoordinator(
         }
         finally
         {
-            runCancellationSource.Cancel();
+            await runCancellationSource.CancelAsync();
             try
             {
                 await cancellationMonitor;
@@ -364,7 +364,7 @@ public sealed class DeleteAllUsersCoordinator(
             }
 
             logger.LogInformation("Cancellation requested for delete-all queue item {RequestId}.", requestId);
-            runCancellationSource.Cancel();
+            await runCancellationSource.CancelAsync();
             return;
         }
     }

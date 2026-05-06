@@ -65,7 +65,7 @@ public sealed class Worker(
                 }
                 finally
                 {
-                    heartbeatCts.Cancel();
+                    await heartbeatCts.CancelAsync();
                     await AwaitHeartbeatPumpAsync(heartbeatTask, stoppingToken);
                 }
             }

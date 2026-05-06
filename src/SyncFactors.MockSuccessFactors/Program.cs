@@ -330,7 +330,7 @@ adminApi.MapPost("/reset", (MockFixtureStore store) =>
     }));
 
 app.MapRazorPages();
-app.Run();
+await app.RunAsync();
 
 static IResult RunAdminMutation(Func<IResult> action)
 {

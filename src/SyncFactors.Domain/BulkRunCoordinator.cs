@@ -228,7 +228,7 @@ public sealed class BulkRunCoordinator(
                                         Item: guardrailItem),
                                     ct);
                                 Interlocked.CompareExchange(ref guardrailFailure, new GuardrailExceededException(runId, reason), null);
-                                runCancellationSource.Cancel();
+                                await runCancellationSource.CancelAsync();
                                 return;
                             }
                         }
@@ -268,7 +268,7 @@ public sealed class BulkRunCoordinator(
                                             Item: guardrailItem),
                                         ct);
                                     Interlocked.CompareExchange(ref guardrailFailure, new GuardrailExceededException(runId, reason), null);
-                                    runCancellationSource.Cancel();
+                                    await runCancellationSource.CancelAsync();
                                     return;
                                 }
                             }
@@ -449,7 +449,7 @@ public sealed class BulkRunCoordinator(
         }
         finally
         {
-            runCancellationSource.Cancel();
+            await runCancellationSource.CancelAsync();
             try
             {
                 await cancellationMonitor;
@@ -487,7 +487,7 @@ public sealed class BulkRunCoordinator(
             }
 
             logger.LogInformation("Cancellation requested for run queue item {RequestId}.", requestId);
-            runCancellationSource.Cancel();
+            await runCancellationSource.CancelAsync();
             return;
         }
     }

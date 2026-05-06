@@ -77,7 +77,7 @@
         }
 
         var parsed = new Date(value);
-        return isNaN(parsed.getTime())
+        return Number.isNaN(parsed.getTime())
             ? "Unknown"
             : parsed.toLocaleString([], {
                 year: "numeric",
