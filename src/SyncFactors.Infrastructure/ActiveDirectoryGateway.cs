@@ -592,7 +592,12 @@ public sealed class ActiveDirectoryGateway(
         var entry = FindFirstEntryMatchingAny(
             connection,
             searchBases,
-            [("userPrincipalName", userPrincipalName), ("mail", userPrincipalName)],
+            [
+                ("userPrincipalName", userPrincipalName),
+                ("mail", userPrincipalName),
+                ("proxyAddresses", $"SMTP:{userPrincipalName}"),
+                ("proxyAddresses", $"smtp:{userPrincipalName}")
+            ],
             "mail",
             logger,
             "email local-part search");
@@ -899,6 +904,7 @@ public sealed class ActiveDirectoryGateway(
             "sn",
             "userPrincipalName",
             "mail",
+            "proxyAddresses",
             "department",
             "company",
             "physicalDeliveryOfficeName",
@@ -983,6 +989,29 @@ public sealed class ActiveDirectoryGateway(
         return attribute.Count == 0 ? null : attribute[0]?.ToString();
     }
 
+    private static string? GetAttributeValues(SearchResultEntry entry, string attributeName)
+    {
+        var resolvedAttributeName = ResolveAttributeName(entry, attributeName);
+        if (resolvedAttributeName is null)
+        {
+            return null;
+        }
+
+        var values = entry.Attributes[resolvedAttributeName].GetValues(typeof(string));
+        if (values is null)
+        {
+            return null;
+        }
+
+        var normalized = values
+            .Cast<object?>()
+            .Select(value => value?.ToString())
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Cast<string>()
+            .ToArray();
+        return normalized.Length == 0 ? null : string.Join('\n', normalized);
+    }
+
     private static string? GetObjectGuidAttribute(SearchResultEntry entry)
     {
         var resolvedAttributeName = ResolveAttributeName(entry, "objectGUID");
@@ -1046,6 +1075,7 @@ public sealed class ActiveDirectoryGateway(
             ["Surname"] = GetAttribute(entry, "sn"),
             ["UserPrincipalName"] = GetAttribute(entry, "userPrincipalName"),
             ["mail"] = GetAttribute(entry, "mail"),
+            ["proxyAddresses"] = GetAttributeValues(entry, "proxyAddresses"),
             ["department"] = GetAttribute(entry, "department"),
             ["company"] = GetAttribute(entry, "company"),
             ["physicalDeliveryOfficeName"] = GetAttribute(entry, "physicalDeliveryOfficeName"),

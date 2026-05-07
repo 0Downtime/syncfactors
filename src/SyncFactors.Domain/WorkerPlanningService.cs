@@ -81,15 +81,12 @@ public sealed class WorkerPlanningService(
 
         if (!suppressDiffGeneration && !hasAmbiguousWorkerIdentity && !hasSourceReviewBlock && !hasIdentityCorrelationReviewBlock)
         {
-            proposedEmailAddress = identity.MatchedExistingUser
-                ? directoryUser.Attributes.TryGetValue("UserPrincipalName", out var existingUserPrincipalName) && !string.IsNullOrWhiteSpace(existingUserPrincipalName)
-                    ? existingUserPrincipalName
-                    : directoryUser.Attributes.TryGetValue("mail", out var existingMail) && !string.IsNullOrWhiteSpace(existingMail)
-                        ? existingMail
-                        : _emailAddressPolicy.BuildEmailAddress(
-                            await directoryGateway.ResolveAvailableEmailLocalPartAsync(worker, isCreate: false, directoryUser, cancellationToken))
-                : _emailAddressPolicy.BuildEmailAddress(
-                    await directoryGateway.ResolveAvailableEmailLocalPartAsync(worker, isCreate: true, directoryUser, cancellationToken));
+            proposedEmailAddress = _emailAddressPolicy.BuildEmailAddress(
+                await directoryGateway.ResolveAvailableEmailLocalPartAsync(
+                    worker,
+                    isCreate: !identity.MatchedExistingUser,
+                    directoryUser,
+                    cancellationToken));
             attributeChanges = NormalizeAttributeChanges(
                 await attributeDiffService.BuildDiffAsync(worker, directoryUser, proposedEmailAddress, logPath, cancellationToken))
                 .ToList();

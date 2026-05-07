@@ -891,6 +891,7 @@ public sealed class AttributeDiffServiceTests
                 ["displayName"] = "Old Display",
                 ["UserPrincipalName"] = "old.email@example.test",
                 ["mail"] = "old.email@example.test",
+                ["proxyAddresses"] = "SMTP:old.email@example.test",
                 ["department"] = "Old Department"
             });
 
@@ -902,7 +903,7 @@ public sealed class AttributeDiffServiceTests
             CancellationToken.None);
 
         Assert.Collection(
-            changes.Where(change => change.Attribute is "displayName" or "department" or "UserPrincipalName" or "mail")
+            changes.Where(change => change.Attribute is "displayName" or "department" or "UserPrincipalName" or "mail" or "proxyAddresses")
                 .OrderBy(change => change.Attribute, StringComparer.Ordinal),
             change =>
             {
@@ -929,8 +930,15 @@ public sealed class AttributeDiffServiceTests
             {
                 Assert.Equal("mail", change.Attribute);
                 Assert.Equal("old.email@example.test", change.Before);
-                Assert.Equal("old.email@example.test", change.After);
-                Assert.False(change.Changed);
+                Assert.Equal("preview.email@example.test", change.After);
+                Assert.True(change.Changed);
+            },
+            change =>
+            {
+                Assert.Equal("proxyAddresses", change.Attribute);
+                Assert.Equal("SMTP:old.email@example.test", change.Before);
+                Assert.Equal("SMTP:preview.email@example.test\nsmtp:old.email@example.test", change.After);
+                Assert.True(change.Changed);
             });
     }
 
