@@ -122,14 +122,6 @@
         colorSchemeQuery.addEventListener?.("change", handleSystemThemeChange);
     }
 
-    function escapeHtml(value) {
-        return String(value || "")
-            .replaceAll("&", "&amp;")
-            .replaceAll("<", "&lt;")
-            .replaceAll(">", "&gt;")
-            .replaceAll("\"", "&quot;");
-    }
-
     function todayValue() {
         return new Date().toISOString().slice(0, 10);
     }
@@ -285,47 +277,82 @@
         return normalized.join("") || "unknown";
     }
 
+    function appendTextElement(parent, tagName, className, text) {
+        const element = document.createElement(tagName);
+        if (className) {
+            element.className = className;
+        }
+
+        element.textContent = text == null ? "" : String(text);
+        parent.appendChild(element);
+        return element;
+    }
+
+    function renderEmptyState(parent, message) {
+        parent.replaceChildren();
+        appendTextElement(parent, "p", "empty-state", message);
+    }
+
     function renderBucketSummary() {
         if (!elements.bucketSummary) {
             return;
         }
 
         if (!state.provisioningBuckets.length) {
-            elements.bucketSummary.innerHTML = '<p class="empty-state">No bucket data available.</p>';
+            renderEmptyState(elements.bucketSummary, "No bucket data available.");
             return;
         }
 
-        elements.bucketSummary.innerHTML = state.provisioningBuckets.map(function (bucket) {
+        const bucketCards = state.provisioningBuckets.map(function (bucket) {
             const bucketLabel = bucket.label || bucket.bucket || "Unknown";
             const bucketValue = bucket.bucket || "unknown";
-            return [
-                '<article class="bucket-card">',
-                '<span class="bucket-chip bucket-chip-' + escapeHtml(bucketClassName(bucketValue)) + '">' + escapeHtml(bucketLabel) + "</span>",
-                '<strong>' + escapeHtml(String(bucket.count || 0)) + "</strong>",
-                '<span class="worker-meta">' + escapeHtml(bucketValue) + "</span>",
-                "</article>"
-            ].join("");
-        }).join("");
+            const card = document.createElement("article");
+            card.className = "bucket-card";
+
+            appendTextElement(card, "span", "bucket-chip bucket-chip-" + bucketClassName(bucketValue), bucketLabel);
+            appendTextElement(card, "strong", "", String(bucket.count || 0));
+            appendTextElement(card, "span", "worker-meta", bucketValue);
+            return card;
+        });
+
+        elements.bucketSummary.replaceChildren(...bucketCards);
     }
 
     function renderWorkerList() {
-        const html = state.workers.map(function (worker) {
-            const selected = worker.personIdExternal === state.selectedWorkerId ? " is-selected" : "";
+        if (!elements.workerList) {
+            return;
+        }
+
+        if (!state.workers.length) {
+            renderEmptyState(elements.workerList, "No workers matched the current filter.");
+            return;
+        }
+
+        const workerItems = state.workers.map(function (worker) {
             const tags = Array.isArray(worker.scenarioTags) ? worker.scenarioTags.join(", ") : "";
             const provisioningBucket = worker.provisioningBucket || "unknown";
             const provisioningBucketLabel = worker.provisioningBucketLabel || provisioningBucket;
-            return [
-                '<button type="button" class="worker-list-item' + selected + '" data-worker-id="' + escapeHtml(worker.personIdExternal) + '">',
-                '<span class="worker-name">' + escapeHtml(worker.displayName || worker.userId || worker.personIdExternal) + "</span>",
-                '<span class="worker-meta">' + escapeHtml(worker.personIdExternal + " • " + (worker.userId || "")) + "</span>",
-                '<span class="worker-meta">' + escapeHtml((worker.employmentStatus || "") + " • " + (worker.lifecycleState || "")) + "</span>",
-                '<div class="worker-chip-row"><span class="bucket-chip bucket-chip-' + escapeHtml(bucketClassName(provisioningBucket)) + '">' + escapeHtml(provisioningBucketLabel) + '</span><span class="worker-meta">' + escapeHtml(provisioningBucket) + "</span></div>",
-                '<span class="worker-meta">' + escapeHtml([worker.company, worker.department, tags].filter(Boolean).join(" • ")) + "</span>",
-                "</button>"
-            ].join("");
-        }).join("");
 
-        elements.workerList.innerHTML = html || '<p class="empty-state">No workers matched the current filter.</p>';
+            const item = document.createElement("button");
+            item.type = "button";
+            item.className = "worker-list-item" + (worker.personIdExternal === state.selectedWorkerId ? " is-selected" : "");
+            item.dataset.workerId = worker.personIdExternal || "";
+
+            appendTextElement(item, "span", "worker-name", worker.displayName || worker.userId || worker.personIdExternal);
+            appendTextElement(item, "span", "worker-meta", worker.personIdExternal + " • " + (worker.userId || ""));
+            appendTextElement(item, "span", "worker-meta", (worker.employmentStatus || "") + " • " + (worker.lifecycleState || ""));
+
+            const chipRow = document.createElement("div");
+            chipRow.className = "worker-chip-row";
+            appendTextElement(chipRow, "span", "bucket-chip bucket-chip-" + bucketClassName(provisioningBucket), provisioningBucketLabel);
+            appendTextElement(chipRow, "span", "worker-meta", provisioningBucket);
+            item.appendChild(chipRow);
+
+            appendTextElement(item, "span", "worker-meta", [worker.company, worker.department, tags].filter(Boolean).join(" • "));
+            return item;
+        });
+
+        elements.workerList.replaceChildren(...workerItems);
     }
 
     function setBucketChip(element, bucket, label) {
