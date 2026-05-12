@@ -300,18 +300,22 @@ public sealed class ActiveDirectoryCommandGateway(
         var matchedSamAccountName = GetAttribute(entry, "sAMAccountName");
         var matchedUserPrincipalName = GetAttribute(entry, "userPrincipalName");
         var matchedMail = GetAttribute(entry, "mail");
+        var matchedProxyAddresses = GetAttributeValues(entry, "proxyAddresses");
         var conflictingAttribute = string.Equals(matchedSamAccountName, command.SamAccountName, StringComparison.OrdinalIgnoreCase)
             ? "sAMAccountName"
             : string.Equals(matchedUserPrincipalName, command.UserPrincipalName, StringComparison.OrdinalIgnoreCase)
             ? "userPrincipalName"
             : string.Equals(matchedMail, command.Mail, StringComparison.OrdinalIgnoreCase)
                 ? "mail"
-                : "identity";
+                : ProxyAddressesContains(matchedProxyAddresses, command.Mail)
+                    ? "proxyAddresses"
+                    : "identity";
         var conflictingValue = conflictingAttribute switch
         {
             "sAMAccountName" => matchedSamAccountName ?? command.SamAccountName,
             "userPrincipalName" => matchedUserPrincipalName ?? command.UserPrincipalName,
             "mail" => matchedMail ?? command.Mail,
+            "proxyAddresses" => command.Mail,
             _ => command.SamAccountName ?? command.UserPrincipalName ?? command.Mail
         };
 
@@ -325,6 +329,18 @@ public sealed class ActiveDirectoryCommandGateway(
             ExistingMail: matchedMail);
     }
 
+    private static bool ProxyAddressesContains(IReadOnlyList<string> proxyAddresses, string? emailAddress)
+    {
+        if (string.IsNullOrWhiteSpace(emailAddress))
+        {
+            return false;
+        }
+
+        return proxyAddresses.Any(value =>
+            value.StartsWith("SMTP:", StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(value[5..], emailAddress, StringComparison.OrdinalIgnoreCase));
+    }
+
     private static IReadOnlyList<(string Attribute, string Value)> BuildIdentityConflictSearchClauses(DirectoryMutationCommand command)
     {
         var clauses = new List<(string Attribute, string Value)>();
@@ -333,6 +349,11 @@ public sealed class ActiveDirectoryCommandGateway(
         AddIdentityConflictSearchClause(clauses, seen, "sAMAccountName", command.SamAccountName);
         AddIdentityConflictSearchClause(clauses, seen, "userPrincipalName", command.UserPrincipalName);
         AddIdentityConflictSearchClause(clauses, seen, "mail", command.Mail);
+        if (!string.IsNullOrWhiteSpace(command.Mail))
+        {
+            AddIdentityConflictSearchClause(clauses, seen, "proxyAddresses", $"SMTP:{command.Mail}");
+            AddIdentityConflictSearchClause(clauses, seen, "proxyAddresses", $"smtp:{command.Mail}");
+        }
 
         return clauses;
     }
@@ -540,7 +561,8 @@ public sealed class ActiveDirectoryCommandGateway(
                 ["displayName"] = GetAttribute(entry, "displayName"),
                 ["userAccountControl"] = GetAttribute(entry, "userAccountControl"),
                 ["userPrincipalName"] = GetAttribute(entry, "userPrincipalName"),
-                ["mail"] = GetAttribute(entry, "mail")
+                ["mail"] = GetAttribute(entry, "mail"),
+                ["proxyAddresses"] = FormatProxyAddresses(GetAttributeValues(entry, "proxyAddresses"))
             });
     }
 
@@ -979,6 +1001,11 @@ public sealed class ActiveDirectoryCommandGateway(
             .ToArray();
     }
 
+    private static string? FormatProxyAddresses(IReadOnlyList<string> values)
+    {
+        return values.Count == 0 ? null : string.Join('\n', values);
+    }
+
     private static string? ResolveAttributeName(SearchResultEntry entry, string attributeName)
     {
         if (entry.Attributes.Contains(attributeName))
@@ -1036,6 +1063,21 @@ public sealed class ActiveDirectoryCommandGateway(
             Operation = DirectoryAttributeOperation.Replace
         };
         modification.Add(value);
+        return modification;
+    }
+
+    private static DirectoryAttributeModification BuildReplaceModification(string attributeName, IEnumerable<string> values)
+    {
+        var modification = new DirectoryAttributeModification
+        {
+            Name = attributeName,
+            Operation = DirectoryAttributeOperation.Replace
+        };
+        foreach (var value in values)
+        {
+            modification.Add(value);
+        }
+
         return modification;
     }
 
@@ -1123,6 +1165,10 @@ public sealed class ActiveDirectoryCommandGateway(
             new("mail", command.Mail),
             new("userAccountControl", DisabledNormalAccountControl.ToString())
         };
+        if (command.ProxyAddresses is { Count: > 0 })
+        {
+            attributes.Add(new DirectoryAttribute("proxyAddresses", [.. command.ProxyAddresses]));
+        }
 
         if (TryResolveCreateIdentityValue(command, config, out var identityValue))
         {
@@ -1156,6 +1202,10 @@ public sealed class ActiveDirectoryCommandGateway(
             BuildReplaceModification("userPrincipalName", command.UserPrincipalName),
             BuildReplaceModification("mail", command.Mail)
         };
+        if (command.ProxyAddresses is { Count: > 0 })
+        {
+            modifications.Add(BuildReplaceModification("proxyAddresses", command.ProxyAddresses));
+        }
 
         if (TryGetConfiguredIdentityAttributeValue(command, config, out var identityValue))
         {
@@ -1300,6 +1350,7 @@ public sealed class ActiveDirectoryCommandGateway(
             || string.Equals(attributeName, "sAMAccountName", StringComparison.OrdinalIgnoreCase)
             || string.Equals(attributeName, "userPrincipalName", StringComparison.OrdinalIgnoreCase)
             || string.Equals(attributeName, "mail", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(attributeName, "proxyAddresses", StringComparison.OrdinalIgnoreCase)
             || string.Equals(attributeName, "manager", StringComparison.OrdinalIgnoreCase);
     }
 
@@ -1468,7 +1519,8 @@ public sealed class ActiveDirectoryCommandGateway(
                 "displayName",
                 "userAccountControl",
                 "userPrincipalName",
-                "mail");
+                "mail",
+                "proxyAddresses");
             SearchResponse response;
             try
             {
@@ -1532,7 +1584,8 @@ public sealed class ActiveDirectoryCommandGateway(
                 "displayName",
                 "userAccountControl",
                 "userPrincipalName",
-                "mail");
+                "mail",
+                "proxyAddresses");
             SearchResponse response;
             try
             {
@@ -1580,7 +1633,8 @@ public sealed class ActiveDirectoryCommandGateway(
                 "displayName",
                 "userAccountControl",
                 "userPrincipalName",
-                "mail");
+                "mail",
+                "proxyAddresses");
             SearchResponse response;
             try
             {
@@ -2109,6 +2163,7 @@ public sealed class ActiveDirectoryCommandGateway(
                 "sAMAccountName" => $"A different AD account already uses sAMAccountName '{conflict.ConflictingValue}' for create worker {command.WorkerId}.",
                 "userPrincipalName" => $"A different AD account already uses userPrincipalName '{conflict.ConflictingValue}' for create worker {command.WorkerId}.",
                 "mail" => $"A different AD account already uses mail '{conflict.ConflictingValue}' for create worker {command.WorkerId}.",
+                "proxyAddresses" => $"A different AD account already uses proxyAddresses '{conflict.ConflictingValue}' for create worker {command.WorkerId}.",
                 _ => $"A different AD account already uses the planned create identity value '{conflict.ConflictingValue}' for worker {command.WorkerId}."
             };
         }
@@ -2118,6 +2173,7 @@ public sealed class ActiveDirectoryCommandGateway(
             "sAMAccountName" => $"A different AD account already uses sAMAccountName '{conflict.ConflictingValue}' for worker {command.WorkerId}.",
             "userPrincipalName" => $"A different AD account already uses userPrincipalName '{conflict.ConflictingValue}' for worker {command.WorkerId}.",
             "mail" => $"A different AD account already uses mail '{conflict.ConflictingValue}' for worker {command.WorkerId}.",
+            "proxyAddresses" => $"A different AD account already uses proxyAddresses '{conflict.ConflictingValue}' for worker {command.WorkerId}.",
             _ => $"A different AD account already uses the planned identity value '{conflict.ConflictingValue}' for worker {command.WorkerId}."
         };
     }

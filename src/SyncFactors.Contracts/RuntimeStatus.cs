@@ -337,7 +337,8 @@ public sealed record DirectoryMutationCommand(
     string? CurrentDistinguishedName,
     bool EnableAccount,
     IReadOnlyList<DirectoryOperation> Operations,
-    IReadOnlyDictionary<string, string?> Attributes);
+    IReadOnlyDictionary<string, string?> Attributes,
+    IReadOnlyList<string>? ProxyAddresses = null);
 
 public sealed record DirectoryCommandResult(
     bool Succeeded,

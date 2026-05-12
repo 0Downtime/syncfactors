@@ -52,8 +52,13 @@ public sealed class AttributeDiffService : IAttributeDiffService
         string? logPath,
         CancellationToken cancellationToken)
     {
-        var currentAttributes = directoryUser?.Attributes
-            ?? new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
+        var currentAttributes = directoryUser?.Attributes is null
+            ? new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+            : new Dictionary<string, string?>(directoryUser.Attributes, StringComparer.OrdinalIgnoreCase);
+        if (!currentAttributes.ContainsKey("displayName") && !string.IsNullOrWhiteSpace(directoryUser?.DisplayName))
+        {
+            currentAttributes["displayName"] = directoryUser.DisplayName;
+        }
 
         var enabledMappings = _mappingProvider.GetEnabledMappings();
         if (!string.IsNullOrWhiteSpace(logPath))
@@ -140,8 +145,10 @@ public sealed class AttributeDiffService : IAttributeDiffService
             after: proposedDisplayName,
             changed: !string.Equals(GetDirectoryValue(currentAttributes, "displayName"), proposedDisplayName, StringComparison.Ordinal));
         var isCreate = string.IsNullOrWhiteSpace(directoryUser?.SamAccountName);
+        var isNameChange = HasNameChange(changes);
         var currentUserPrincipalName = GetDirectoryValue(currentAttributes, "UserPrincipalName");
         var currentMail = GetDirectoryValue(currentAttributes, "mail");
+        var proposedMail = ResolveProposedMailValue(isCreate, isNameChange, proposedEmailAddress, currentMail);
         UpsertSystemAttributeChange(
             changes,
             attribute: "UserPrincipalName",
@@ -159,12 +166,17 @@ public sealed class AttributeDiffService : IAttributeDiffService
             attribute: "mail",
             source: "resolved email local-part",
             before: FormatValue(currentMail),
-            after: FormatValue(isCreate
-                ? ActiveDirectoryAttributeConstraints.NormalizeValue("mail", proposedEmailAddress)
-                : currentMail),
-            changed: isCreate && !string.Equals(
-                currentMail,
-                ActiveDirectoryAttributeConstraints.NormalizeValue("mail", proposedEmailAddress),
+            after: FormatValue(proposedMail),
+            changed: !string.Equals(currentMail, proposedMail, StringComparison.Ordinal));
+        UpsertSystemAttributeChange(
+            changes,
+            attribute: "proxyAddresses",
+            source: "resolved email local-part",
+            before: FormatValue(GetDirectoryValue(currentAttributes, "proxyAddresses")),
+            after: FormatValue(BuildProxyAddressesValue(currentAttributes, proposedMail, isCreate || isNameChange)),
+            changed: !string.Equals(
+                GetDirectoryValue(currentAttributes, "proxyAddresses"),
+                BuildProxyAddressesValue(currentAttributes, proposedMail, isCreate || isNameChange),
                 StringComparison.Ordinal));
 
         _logger.LogDebug(
@@ -277,4 +289,95 @@ public sealed class AttributeDiffService : IAttributeDiffService
     }
 
     private static string FormatValue(string? value) => string.IsNullOrWhiteSpace(value) ? "(unset)" : value!;
+
+    private static bool HasNameChange(IEnumerable<AttributeChange> changes)
+    {
+        return changes.Any(change =>
+            change.Changed &&
+            (string.Equals(change.Attribute, "GivenName", StringComparison.OrdinalIgnoreCase) ||
+             string.Equals(change.Attribute, "givenName", StringComparison.OrdinalIgnoreCase) ||
+             string.Equals(change.Attribute, "Surname", StringComparison.OrdinalIgnoreCase) ||
+             string.Equals(change.Attribute, "sn", StringComparison.OrdinalIgnoreCase) ||
+             string.Equals(change.Attribute, "displayName", StringComparison.OrdinalIgnoreCase)));
+    }
+
+    private static string? ResolveProposedMailValue(
+        bool isCreate,
+        bool isNameChange,
+        string? proposedEmailAddress,
+        string? currentMail)
+    {
+        if (isCreate || isNameChange)
+        {
+            return ActiveDirectoryAttributeConstraints.NormalizeValue("mail", proposedEmailAddress);
+        }
+
+        return currentMail;
+    }
+
+    private static string? BuildProxyAddressesValue(
+        IReadOnlyDictionary<string, string?> currentAttributes,
+        string? proposedMail,
+        bool shouldSetPrimary)
+    {
+        if (!shouldSetPrimary || string.IsNullOrWhiteSpace(proposedMail))
+        {
+            return GetDirectoryValue(currentAttributes, "proxyAddresses");
+        }
+
+        var normalizedPrimary = ActiveDirectoryAttributeConstraints.NormalizeValue("mail", proposedMail);
+        if (string.IsNullOrWhiteSpace(normalizedPrimary))
+        {
+            return GetDirectoryValue(currentAttributes, "proxyAddresses");
+        }
+
+        var currentProxyAddresses = ParseProxyAddresses(GetDirectoryValue(currentAttributes, "proxyAddresses"));
+        var currentMail = ActiveDirectoryAttributeConstraints.NormalizeValue("mail", GetDirectoryValue(currentAttributes, "mail"));
+        var values = new List<string> { $"SMTP:{normalizedPrimary}" };
+        var seenAddresses = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { normalizedPrimary };
+
+        foreach (var address in currentProxyAddresses)
+        {
+            var normalizedAddress = NormalizeProxyAddress(address);
+            if (normalizedAddress is null || !seenAddresses.Add(normalizedAddress.Value.Address))
+            {
+                continue;
+            }
+
+            values.Add(normalizedAddress.Value.IsSmtp
+                ? $"smtp:{normalizedAddress.Value.Address}"
+                : address);
+        }
+
+        if (!string.IsNullOrWhiteSpace(currentMail) && seenAddresses.Add(currentMail))
+        {
+            values.Add($"smtp:{currentMail}");
+        }
+
+        return string.Join('\n', values);
+    }
+
+    private static IReadOnlyList<string> ParseProxyAddresses(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value) || string.Equals(value, "(unset)", StringComparison.Ordinal))
+        {
+            return [];
+        }
+
+        return value
+            .Split(['\n', ';'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(address => !string.IsNullOrWhiteSpace(address))
+            .ToArray();
+    }
+
+    private static (bool IsSmtp, string Address)? NormalizeProxyAddress(string value)
+    {
+        if (value.StartsWith("SMTP:", StringComparison.OrdinalIgnoreCase))
+        {
+            var address = ActiveDirectoryAttributeConstraints.NormalizeValue("mail", value[5..]);
+            return string.IsNullOrWhiteSpace(address) ? null : (true, address);
+        }
+
+        return (false, value);
+    }
 }
