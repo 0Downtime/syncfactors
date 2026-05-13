@@ -75,8 +75,33 @@ public sealed class SyncModelTests
 
         Assert.IsType<RedirectToPageResult>(result);
         Assert.Null(queueStore.LastRequest);
-        Assert.Equal("Live provisioning is disabled for this environment. Queue a dry run instead.", model.ErrorMessage);
+        Assert.Equal("Real AD sync is disabled for this environment. Queue a dry run instead.", model.ErrorMessage);
         Assert.Null(model.SuccessMessage);
+    }
+
+    [Fact]
+    public async Task OnPostStartRunAsync_RejectsLiveRunWhenDryRunOnlyIsEnabled()
+    {
+        var queueStore = new CapturingRunQueueStore();
+        var model = CreateModel(queueStore: queueStore, realSyncSettings: new RealSyncSettings(Enabled: true, DryRunOnly: true));
+        model.RunMode = "LiveRun";
+
+        var result = await model.OnPostStartRunAsync(CancellationToken.None);
+
+        Assert.IsType<RedirectToPageResult>(result);
+        Assert.Null(queueStore.LastRequest);
+        Assert.Equal("Dry-run-only mode is enabled. Live AD writes are disabled for this environment. Queue a dry run instead.", model.ErrorMessage);
+        Assert.Null(model.SuccessMessage);
+    }
+
+    [Fact]
+    public void RealSyncEnabled_IsFalseWhenDryRunOnlyIsEnabled()
+    {
+        var model = CreateModel(realSyncSettings: new RealSyncSettings(Enabled: true, DryRunOnly: true));
+
+        Assert.False(model.RealSyncEnabled);
+        Assert.True(model.ScheduledRunsAreDryRunOnly);
+        Assert.True(model.DryRunOnlyMode);
     }
 
     [Fact]
@@ -100,6 +125,15 @@ public sealed class SyncModelTests
         AttachAuthenticatedUser(model, "admin@example.com", role);
 
         Assert.True(model.CanQueueDeleteAllUsers);
+    }
+
+    [Fact]
+    public void CanQueueDeleteAllUsers_IsFalseWhenDryRunOnlyIsEnabled()
+    {
+        var model = CreateModel(realSyncSettings: new RealSyncSettings(Enabled: true, DryRunOnly: true));
+        AttachAuthenticatedUser(model, "admin@example.com", "Admin");
+
+        Assert.False(model.CanQueueDeleteAllUsers);
     }
 
     [Theory]

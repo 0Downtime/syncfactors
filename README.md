@@ -400,6 +400,14 @@ By default, the import helpers skip secure-store variables that are missing or b
 
 Set `SYNCFACTORS_RUN_PROFILE=mock` or `real` to switch the active SuccessFactors config. Leave `SYNCFACTORS_CONFIG_PATH` empty for profile-based resolution, or set it only when you want an explicit one-off override.
 
+For a production monitoring deployment that must not expose AD write actions, set:
+
+```bash
+SyncFactors__Runtime__DryRunOnly=true
+```
+
+This deployment-level override is stronger than `sync.realSyncEnabled` in the sync JSON. When it is enabled, the API and worker reject live AD writes, scheduled runs queue as dry runs, live-write controls are removed from the UI, and the shared UI shell shows a persistent `DRY RUN MODE` banner.
+
 To enable local rolling file logs for the SyncFactors API and worker, add these worktree env vars:
 
 ```bash

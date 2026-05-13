@@ -227,7 +227,17 @@ public sealed record UpdateSyncScheduleRequest(
     int IntervalMinutes);
 
 public sealed record RealSyncSettings(
-    bool Enabled = true);
+    bool Enabled = true,
+    bool DryRunOnly = false)
+{
+    public bool EffectiveWriteEnabled => Enabled && !DryRunOnly;
+
+    public bool RequiresDryRun => !EffectiveWriteEnabled;
+
+    public string LiveWriteDisabledMessage => DryRunOnly
+        ? "Dry-run-only mode is enabled. Live AD writes are disabled for this environment."
+        : "Real AD sync is disabled for this environment.";
+}
 
 public sealed record WorkerRunSettings(
     int MaxCreatesPerRun,

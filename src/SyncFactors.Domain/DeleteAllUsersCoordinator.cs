@@ -17,9 +17,9 @@ public sealed class DeleteAllUsersCoordinator(
 {
     public async Task<string> ExecuteAsync(RunQueueRequest request, CancellationToken cancellationToken)
     {
-        if (!request.DryRun && !realSyncSettings.Enabled)
+        if (!request.DryRun && !realSyncSettings.EffectiveWriteEnabled)
         {
-            throw new InvalidOperationException("Real AD sync is disabled for this environment.");
+            throw new InvalidOperationException(realSyncSettings.LiveWriteDisabledMessage);
         }
 
         using var runCancellationSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);

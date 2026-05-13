@@ -117,6 +117,25 @@ public sealed class FullSyncRunServiceTests
     }
 
     [Fact]
+    public async Task LaunchAsync_LiveRun_RejectsWhenDryRunOnlyIsEnabled()
+    {
+        var worker = CreateWorker("10001", managerId: "90001");
+        var service = CreateService(
+            workers: [worker],
+            directoryGateway: new StubDirectoryGateway(managerDistinguishedName: "CN=Manager,OU=LabUsers,DC=example,DC=com"),
+            directoryCommandGateway: new CapturingDirectoryCommandGateway(),
+            realSyncSettings: new RealSyncSettings(Enabled: true, DryRunOnly: true),
+            runRepository: out _,
+            runtimeStatusStore: out _);
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => service.LaunchAsync(
+            new LaunchFullRunRequest(DryRun: false, AcknowledgeRealSync: true),
+            CancellationToken.None));
+
+        Assert.Equal("Dry-run-only mode is enabled. Live AD writes are disabled for this environment.", exception.Message);
+    }
+
+    [Fact]
     public async Task LaunchAsync_CreateGuardrailExceeded_RebucketsAdditionalCreates()
     {
         var workers = new[]

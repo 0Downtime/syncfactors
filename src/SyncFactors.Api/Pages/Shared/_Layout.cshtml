@@ -1,5 +1,6 @@
 @using System.Reflection
 @inject Microsoft.AspNetCore.Hosting.IWebHostEnvironment HostEnvironment
+@inject SyncFactors.Contracts.RealSyncSettings RealSyncSettings
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -39,7 +40,8 @@
     }
 
     var appEnvironment = HostEnvironment.EnvironmentName;
-    var showDevelopmentBanner = string.Equals(appEnvironment, "Development", StringComparison.OrdinalIgnoreCase);
+    var showDryRunBanner = RealSyncSettings.DryRunOnly;
+    var showDevelopmentBanner = !showDryRunBanner && string.Equals(appEnvironment, "Development", StringComparison.OrdinalIgnoreCase);
 }
 <body data-page="@currentPageToken">
     <div class="shell">
@@ -123,7 +125,14 @@
             </button>
         </footer>
     </div>
-    @if (showDevelopmentBanner)
+    @if (showDryRunBanner)
+    {
+        <div class="environment-corner-banner environment-corner-banner--dryrun" role="status" aria-label="Dry-run mode and version">
+            <strong>Dry Run Mode</strong>
+            <span>v@(appVersion)</span>
+        </div>
+    }
+    else if (showDevelopmentBanner)
     {
         <div class="environment-corner-banner" role="status" aria-label="Environment and version">
             <strong>@appEnvironment</strong>
