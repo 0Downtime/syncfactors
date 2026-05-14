@@ -9,8 +9,11 @@ namespace SyncFactors.Api.Pages;
 public sealed class Worker360Model(
     IWorkerPreviewPlanner previewPlanner,
     IApplyPreviewService applyPreviewService,
-    IRunRepository runRepository) : PageModel
+    IRunRepository runRepository,
+    RealSyncSettings? realSyncSettings = null) : PageModel
 {
+    private readonly RealSyncSettings _realSyncSettings = realSyncSettings ?? new RealSyncSettings();
+
     [BindProperty(SupportsGet = true, Name = "runId")]
     public string SavedRunId { get; set; } = string.Empty;
 
@@ -38,6 +41,10 @@ public sealed class Worker360Model(
     public FailureDiagnostics? ErrorDiagnostics => ActiveDirectoryFailureDiagnostics.Parse(ErrorMessage);
 
     public FailureDiagnostics? ApplyDiagnostics => ActiveDirectoryFailureDiagnostics.Parse(ApplyResult?.Message);
+
+    public bool CanApplyPreview => _realSyncSettings.EffectiveWriteEnabled;
+
+    public string LiveWriteDisabledMessage => _realSyncSettings.LiveWriteDisabledMessage;
 
     public WorkerPreviewResult? PreviousPreview { get; private set; }
 
@@ -116,6 +123,13 @@ public sealed class Worker360Model(
         if (string.IsNullOrWhiteSpace(PreviewRunId) || string.IsNullOrWhiteSpace(PreviewFingerprint))
         {
             ErrorMessage = "Refresh preview before applying.";
+            await LoadPreviewAsync(cancellationToken);
+            return Page();
+        }
+
+        if (!CanApplyPreview)
+        {
+            ErrorMessage = LiveWriteDisabledMessage;
             await LoadPreviewAsync(cancellationToken);
             return Page();
         }

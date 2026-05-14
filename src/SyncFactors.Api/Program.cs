@@ -105,7 +105,9 @@ builder.Services.AddSingleton(serviceProvider =>
 builder.Services.AddSingleton(serviceProvider =>
 {
     var config = serviceProvider.GetRequiredService<SyncFactorsConfigurationLoader>().GetSyncConfig();
-    return new RealSyncSettings(config.Sync.RealSyncEnabled);
+    var dryRunOnly = serviceProvider.GetRequiredService<IConfiguration>()
+        .GetValue<bool?>("SyncFactors:Runtime:DryRunOnly") ?? false;
+    return new RealSyncSettings(config.Sync.RealSyncEnabled, dryRunOnly);
 });
 builder.Services.AddSingleton(serviceProvider =>
 {
@@ -470,8 +472,13 @@ readApi.MapGet("/runs/queue/{requestId}", async (string requestId, IRunQueueStor
         : Results.Ok(new { request });
 });
 
-operatorApi.MapPost("/runs", async (StartRunRequest request, ClaimsPrincipal user, IRunQueueStore queueStore, ISecurityAuditService audit, CancellationToken cancellationToken) =>
+operatorApi.MapPost("/runs", async (StartRunRequest request, ClaimsPrincipal user, IRunQueueStore queueStore, RealSyncSettings realSyncSettings, ISecurityAuditService audit, CancellationToken cancellationToken) =>
 {
+    if (!request.DryRun && !realSyncSettings.EffectiveWriteEnabled)
+    {
+        return Results.BadRequest(new { error = realSyncSettings.LiveWriteDisabledMessage });
+    }
+
     if (await queueStore.HasPendingOrActiveRunAsync(cancellationToken))
     {
         return Results.Conflict(new { error = "A run is already pending or in progress." });
@@ -591,6 +598,7 @@ operatorApi.MapPost("/preview/{workerId}/apply", async (
     string workerId,
     ApplyPreviewRequest request,
     ClaimsPrincipal user,
+    RealSyncSettings realSyncSettings,
     IApplyPreviewService applyPreviewService,
     ISecurityAuditService audit,
     CancellationToken cancellationToken) =>
@@ -598,6 +606,11 @@ operatorApi.MapPost("/preview/{workerId}/apply", async (
     if (!string.Equals(workerId, request.WorkerId, StringComparison.Ordinal))
     {
         return Results.BadRequest(new { error = "Route worker id does not match the apply request." });
+    }
+
+    if (!realSyncSettings.EffectiveWriteEnabled)
+    {
+        return Results.BadRequest(new { error = realSyncSettings.LiveWriteDisabledMessage });
     }
 
     var result = await applyPreviewService.ApplyAsync(request, cancellationToken);
@@ -610,10 +623,16 @@ operatorApi.MapPost("/preview/{workerId}/apply", async (
 operatorApi.MapPost("/runs/full", async (
     LaunchFullRunRequest request,
     ClaimsPrincipal user,
+    RealSyncSettings realSyncSettings,
     IFullSyncRunService fullSyncRunService,
     ISecurityAuditService audit,
     CancellationToken cancellationToken) =>
 {
+    if (!request.DryRun && !realSyncSettings.EffectiveWriteEnabled)
+    {
+        return Results.BadRequest(new { error = realSyncSettings.LiveWriteDisabledMessage });
+    }
+
     var result = await fullSyncRunService.LaunchAsync(request, cancellationToken);
     audit.Write("FullRunLaunched", string.Equals(result.Status, "Succeeded", StringComparison.OrdinalIgnoreCase) ? "Success" : "Failure", ("RequestedBy", ResolveRequestedBy(user, "API")), ("DryRun", request.DryRun), ("RunId", result.RunId));
     return string.Equals(result.Status, "Succeeded", StringComparison.OrdinalIgnoreCase)
@@ -635,9 +654,9 @@ adminApi.MapPost("/runs/delete-all", async (
         return Results.NotFound();
     }
 
-    if (!realSyncSettings.Enabled)
+    if (!realSyncSettings.EffectiveWriteEnabled)
     {
-        return Results.BadRequest(new { error = "Real AD sync is disabled for this environment." });
+        return Results.BadRequest(new { error = realSyncSettings.LiveWriteDisabledMessage });
     }
 
     if (await queueStore.HasPendingOrActiveRunAsync(cancellationToken))

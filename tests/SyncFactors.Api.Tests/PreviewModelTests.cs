@@ -146,6 +146,33 @@ public sealed class PreviewModelTests
     }
 
     [Fact]
+    public async Task OnPostApplyAsync_DoesNotCallApplyServiceWhenDryRunOnlyIsEnabled()
+    {
+        var preview = CreatePreview(workerId: "10001");
+        var planner = new CapturingWorkerPreviewPlanner(preview);
+        var applyService = new StubApplyPreviewService();
+        var model = new Worker360Model(
+            planner,
+            applyService,
+            new StubRunRepository(preview),
+            new RealSyncSettings(Enabled: true, DryRunOnly: true))
+        {
+            WorkerId = "10001",
+            PreviewRunId = preview.RunId!,
+            PreviewFingerprint = preview.Fingerprint,
+            AcknowledgeRealSync = true
+        };
+
+        var result = await model.OnPostApplyAsync(CancellationToken.None);
+
+        Assert.IsType<PageResult>(result);
+        Assert.False(model.CanApplyPreview);
+        Assert.Equal("Dry-run-only mode is enabled. Live AD writes are disabled for this environment.", model.ErrorMessage);
+        Assert.Same(preview, model.Preview);
+        Assert.Null(model.ApplyResult);
+    }
+
+    [Fact]
     public async Task OnGetAsync_LoadsSavedPreviewWhenRunIdIsProvided()
     {
         var preview = CreatePreview(workerId: "10001");

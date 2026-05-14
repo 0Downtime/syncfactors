@@ -62,6 +62,32 @@ public sealed class SyncScheduleCoordinatorTests
     }
 
     [Fact]
+    public async Task TryEnqueueDueRunAsync_QueuesDryRun_WhenDryRunOnlyIsEnabled()
+    {
+        var queueStore = new CapturingRunQueueStore();
+        var scheduleStore = new StubSyncScheduleStore(
+            new SyncScheduleStatus(
+                Enabled: true,
+                IntervalMinutes: 30,
+                NextRunAt: DateTimeOffset.Parse("2026-03-30T11:30:00Z"),
+                LastScheduledRunAt: null,
+                LastEnqueueAttemptAt: null,
+                LastEnqueueError: null));
+        var coordinator = new SyncScheduleCoordinator(
+            scheduleStore,
+            queueStore,
+            new RealSyncSettings(Enabled: true, DryRunOnly: true),
+            new FakeTimeProvider(DateTimeOffset.Parse("2026-03-30T12:00:00Z")),
+            NullLogger<SyncScheduleCoordinator>.Instance);
+
+        var queued = await coordinator.TryEnqueueDueRunAsync(CancellationToken.None);
+
+        Assert.True(queued);
+        Assert.NotNull(queueStore.LastRequest);
+        Assert.True(queueStore.LastRequest!.DryRun);
+    }
+
+    [Fact]
     public async Task TryEnqueueDueRunAsync_DoesNotQueue_WhenAnotherRunIsPending()
     {
         var queueStore = new CapturingRunQueueStore { HasPendingOrActiveRun = true };

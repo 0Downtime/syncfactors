@@ -107,7 +107,7 @@
         <p class="muted">Full-source sync only. Dry-run is the default and safest option.</p>
         @if (!Model.RealSyncEnabled)
         {
-            <p class="callout warn">Live provisioning is disabled in this environment. Ad hoc runs are limited to dry run.</p>
+            <p class="callout warn">@Model.LiveWriteDisabledMessage Ad hoc runs are limited to dry run.</p>
         }
         @if (Model.HasPendingOrActiveRun)
         {
@@ -118,7 +118,10 @@
                 <span>Run type</span>
                 <select asp-for="RunMode" disabled="@Model.HasPendingOrActiveRun">
                     <option value="DryRun">Dry run</option>
-                    <option value="LiveRun" disabled="@(!Model.RealSyncEnabled)">Live provisioning</option>
+                    @if (Model.RealSyncEnabled)
+                    {
+                        <option value="LiveRun">Live provisioning</option>
+                    }
                 </select>
             </label>
             <div class="filter-actions">

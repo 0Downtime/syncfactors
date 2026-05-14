@@ -20,9 +20,9 @@ public sealed class FullSyncRunService(
 {
     public async Task<RunLaunchResult> LaunchAsync(LaunchFullRunRequest request, CancellationToken cancellationToken)
     {
-        if (!request.DryRun && !realSyncSettings.Enabled)
+        if (!request.DryRun && !realSyncSettings.EffectiveWriteEnabled)
         {
-            throw new InvalidOperationException("Real AD sync is disabled for this environment.");
+            throw new InvalidOperationException(realSyncSettings.LiveWriteDisabledMessage);
         }
 
         if (!request.DryRun && !request.AcknowledgeRealSync)

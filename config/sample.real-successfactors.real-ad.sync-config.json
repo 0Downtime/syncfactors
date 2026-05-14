@@ -3,8 +3,8 @@
     "successFactorsUsernameEnv": "SF_AD_SYNC_SF_USERNAME",
     "successFactorsPasswordEnv": "SF_AD_SYNC_SF_PASSWORD",
     "adServerEnv": "SF_AD_SYNC_AD_SERVER",
-    "adUsernameEnv": "SF_AD_SYNC_AD_USERNAME",
-    "adBindPasswordEnv": "SF_AD_SYNC_AD_BIND_PASSWORD",
+    "adUsernameEnv": null,
+    "adBindPasswordEnv": null,
     "defaultAdPasswordEnv": "SF_AD_SYNC_AD_DEFAULT_PASSWORD"
   },
   "successFactors": {

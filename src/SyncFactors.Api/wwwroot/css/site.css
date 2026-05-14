@@ -566,6 +566,11 @@ a:focus-visible {
   font-weight: 700;
 }
 
+.environment-corner-banner--dryrun {
+  background: #8a4b00;
+  box-shadow: 0 14px 30px rgba(77, 42, 0, 0.3);
+}
+
 .toast-region {
   position: fixed;
   right: 18px;

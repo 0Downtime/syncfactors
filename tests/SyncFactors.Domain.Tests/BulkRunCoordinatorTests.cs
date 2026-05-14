@@ -234,6 +234,46 @@ public sealed class BulkRunCoordinatorTests
     }
 
     [Fact]
+    public async Task ExecuteAsync_LiveRun_RejectsWhenDryRunOnlyIsEnabled()
+    {
+        CapturingRunLifecycleService.Entries.Clear();
+        CapturingRunLifecycleService.Reset();
+        var coordinator = new BulkRunCoordinator(
+            new StubWorkerSource([CreateWorker("10001")]),
+            new CapturingDeltaSyncService(),
+            new StubRunQueueStore(),
+            new StubGraveyardRetentionStore(),
+            new StubWorkerPlanningService(),
+            new StubDirectoryMutationCommandBuilder(),
+            new SuccessfulDirectoryCommandGateway(),
+            new StubDirectoryGateway(),
+            new CapturingRunLifecycleService(),
+            new RealSyncSettings(Enabled: true, DryRunOnly: true),
+            new WorkerRunSettings(MaxCreatesPerRun: 10),
+            CreateLifecycleSettings(),
+            NullLogger<BulkRunCoordinator>.Instance,
+            TimeProvider.System);
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => coordinator.ExecuteAsync(
+            new RunQueueRequest(
+                RequestId: "req-live-dry-run-only",
+                Mode: "BulkSync",
+                DryRun: false,
+                RunTrigger: "AdHoc",
+                RequestedBy: "test",
+                Status: "Pending",
+                RequestedAt: DateTimeOffset.UtcNow,
+                StartedAt: null,
+                CompletedAt: null,
+                RunId: null,
+                ErrorMessage: null),
+            maxDegreeOfParallelism: 1,
+            CancellationToken.None));
+
+        Assert.Equal("Dry-run-only mode is enabled. Live AD writes are disabled for this environment.", exception.Message);
+    }
+
+    [Fact]
     public async Task ExecuteAsync_LiveRun_DoesNotAdvanceDeltaCheckpointWhenRunHasConflicts()
     {
         CapturingRunLifecycleService.Entries.Clear();

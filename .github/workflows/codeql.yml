@@ -40,7 +40,7 @@ jobs:
           if [[ -n "$runner_json" ]] && jq -e '.runners[]? | select(.name == "Mac" and .status == "online" and .busy == false)' >/dev/null 2>&1 <<< "$runner_json"; then
             echo 'runs-on=["self-hosted","macOS","X64"]' >> "$GITHUB_OUTPUT"
           else
-            echo 'runs-on="macos-latest"' >> "$GITHUB_OUTPUT"
+            echo 'runs-on="ubuntu-latest"' >> "$GITHUB_OUTPUT"
           fi
 
   analyze:

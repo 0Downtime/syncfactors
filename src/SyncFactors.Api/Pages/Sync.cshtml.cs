@@ -79,9 +79,13 @@ public sealed class SyncModel(
 
     public bool CanLaunchSync => !string.Equals(Status.Status, "InProgress", StringComparison.OrdinalIgnoreCase);
 
-    public bool RealSyncEnabled => realSyncSettings.Enabled;
+    public bool RealSyncEnabled => realSyncSettings.EffectiveWriteEnabled;
 
-    public bool ScheduledRunsAreDryRunOnly => !realSyncSettings.Enabled;
+    public bool DryRunOnlyMode => realSyncSettings.DryRunOnly;
+
+    public string LiveWriteDisabledMessage => realSyncSettings.LiveWriteDisabledMessage;
+
+    public bool ScheduledRunsAreDryRunOnly => realSyncSettings.RequiresDryRun;
 
     public bool CanManageSchedule =>
         User.IsInRole(SecurityRoles.Admin) ||
@@ -89,6 +93,7 @@ public sealed class SyncModel(
 
     public bool CanQueueDeleteAllUsers =>
         hostEnvironment.IsDevelopment() &&
+        realSyncSettings.EffectiveWriteEnabled &&
         (User.IsInRole(SecurityRoles.Admin) || User.IsInRole(SecurityRoles.BreakGlassAdmin));
 
     [TempData]
@@ -111,9 +116,9 @@ public sealed class SyncModel(
             return RedirectToPage(new { PageNumber });
         }
 
-        if (string.Equals(RunMode, LiveRunMode, StringComparison.Ordinal) && !realSyncSettings.Enabled)
+        if (string.Equals(RunMode, LiveRunMode, StringComparison.Ordinal) && !realSyncSettings.EffectiveWriteEnabled)
         {
-            ErrorMessage = "Live provisioning is disabled for this environment. Queue a dry run instead.";
+            ErrorMessage = $"{realSyncSettings.LiveWriteDisabledMessage} Queue a dry run instead.";
             SuccessMessage = null;
             return RedirectToPage(new { PageNumber });
         }
@@ -148,9 +153,9 @@ public sealed class SyncModel(
             return RedirectToPage(new { PageNumber });
         }
 
-        if (!realSyncSettings.Enabled)
+        if (!realSyncSettings.EffectiveWriteEnabled)
         {
-            ErrorMessage = "Real AD sync is disabled for this environment.";
+            ErrorMessage = realSyncSettings.LiveWriteDisabledMessage;
             SuccessMessage = null;
             return RedirectToPage(new { PageNumber });
         }
