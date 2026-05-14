@@ -7,7 +7,7 @@
 
 <p align="center">
   <strong>Local-first synchronization from SuccessFactors HR data to Microsoft Active Directory.</strong><br />
-  ASP.NET Core UI, background worker execution, SQLite runtime state, and review-first directory sync workflows.
+  ASP.NET Core operator portal, background worker execution, SQLite runtime state, and review-first directory sync workflows.
 </p>
 
 <p align="center">
@@ -50,8 +50,10 @@
 
 ## Current State
 
-- The active implementation is a local-first .NET 10 solution built around ASP.NET Core, a background worker, and SQLite-backed runtime state.
-- The repository already contains operator-facing UI flows, run history, scheduling, dependency health probes, worker preview/apply flows, and authentication modes for local break-glass or OIDC-backed deployments.
+- The active implementation is a local-first .NET 10 solution built around an ASP.NET Core operator portal/API, a background worker, SQLite-backed runtime state, and a local mock SuccessFactors service.
+- The repository already contains operator-facing dashboard, sync, exception, Worker 360, lookup, user access, deletion queue, and configuration pages.
+- Runtime workflows include run queueing, cancellation, recurring full-sync scheduling, dependency health probes, saved worker preview/apply, graveyard deletion handling, lifecycle simulation, and production dry-run enforcement.
+- Authentication supports local break-glass, OIDC-only, and hybrid OIDC plus break-glass modes.
 - Production readiness is not implied by the current feature set, repository layout, sample config, or helper scripts.
 
 Current dashboard snapshot:
@@ -77,30 +79,36 @@ Current dashboard snapshot:
 - Background execution: .NET hosted worker service
 - Runtime state: SQLite
 - Directory integration: .NET plus PowerShell seams where needed
-- Tests: xUnit across API, domain, infrastructure, and mock SuccessFactors projects
+- Tests: xUnit across API, automation, domain, infrastructure, and mock SuccessFactors projects, plus Vitest coverage for the browser bundle
 
 ## Solution Shape
 
 - `src/SyncFactors.Api`: local operator UI plus authenticated JSON endpoints for status, dashboard, health, runs, schedule management, and a realtime SignalR dashboard hub
 - `src/SyncFactors.Worker`: background host that claims queued runs, executes sync work, records heartbeats, and processes recurring schedules
 - `src/SyncFactors.MockSuccessFactors`: local SuccessFactors-like API plus fixture generation tooling for development and testing
+- `src/SyncFactors.Automation`: scenario runner and local automation-user bootstrap CLI used by E2E and readiness scripts
 - `src/SyncFactors.Domain`: run orchestration, preview/apply behavior, lifecycle rules, scheduling, and sync coordination
 - `src/SyncFactors.Infrastructure`: SQLite persistence, Active Directory access, SuccessFactors client logic, authentication and local user storage, filesystem helpers, and config loading
 - `src/SyncFactors.Contracts`: shared runtime DTOs and status models
 - `tests/*`: unit and integration test projects aligned to the runtime components above
 - `config/*`: tracked sample config, mock fixture data, and scaffold data
-- `docs/architecture.md`: architecture direction and system boundaries
+- `docs/architecture.md`: current implementation architecture and system boundaries
 - `docs/empjob-ad-mapping.md`: current field mapping notes for the `EmpJob` flow
 
 ## What Works Today
 
 - Operator dashboard with current runtime status, recent runs, active run summary, dependency health, and realtime updates over SignalR
 - Live dashboard visuals including run mix and bucket composition charts, a sticky live status rail, and a run timeline card
-- Ad hoc run queueing for dry-run and live syncs
+- Ad hoc run queueing for dry-run and live syncs, plus cancellation for queued or active runs
 - Recurring full-sync schedule configuration backed by SQLite
 - Run history and run detail pages
 - Worker preview flow that stages one worker, persists the preview, and supports explicit apply from the saved fingerprint
+- Worker 360 view with source summary, directory match, provisioning decision tree, preview history, previous-preview comparison, apply readiness, attribute diff, source confidence, run history, and preview entries
+- Exceptions queue for failed runs, manual review items, conflicts, and guardrail failures
+- Admin deletion queue for graveyard users with pending and on-hold states
+- Admin configuration snapshot for deployment, auth, SuccessFactors, Active Directory, operations, safety, alerts, and mappings
 - Authentication modes for local break-glass, OIDC-only, or hybrid SSO plus break-glass access, with local user management when break-glass is enabled
+- Deployment-level dry-run-only mode that blocks live writes in the API and worker, queues scheduled runs as dry runs, removes live-write controls, and displays a persistent UI banner
 - Mock SuccessFactors API for local development, fixture playback, and synthetic worker population
 - Lifecycle simulator for deterministic employee-state progression without a live SuccessFactors endpoint
 - Development-only delete-all testing reset flow from the Sync page that clears configured AD test OUs
@@ -132,6 +140,15 @@ pwsh ./scripts/Validate-SyncFactors.ps1
 ```
 
 That command builds the solution, runs the solution test suite, and then runs the lifecycle simulation master suite as an explicit final gate.
+
+When changing the operator browser bundle, also run the frontend checks from `src/SyncFactors.Api`:
+
+```powershell
+cd ./src/SyncFactors.Api
+npm ci --ignore-scripts
+npm run test:ui
+npm run build:ui
+```
 
 ## Windows Release Bundle
 
@@ -392,7 +409,7 @@ The current runtime keeps tracked samples and ignored local config under `config
 
 - `config/sample.mock-successfactors.real-ad.sync-config.json`: sample config for mock SuccessFactors plus real Active Directory
 - `config/sample.real-successfactors.real-ad.sync-config.json`: sample config for real SuccessFactors plus real Active Directory
-- `config/sample.empjob-confirmed.mapping-config.json`: sample mapping config for the current `EmpJob`-driven flow
+- `config/sample.empjob-confirmed.mapping-config.json`: source sample for the current `EmpJob`-driven mapping flow
 - `config/local*.json`: local editable copies created by the worktree bootstrap script when missing
 
 `pwsh ./scripts/Update-LocalSyncFactorsConfig.ps1` re-normalizes every tracked local JSON config and `.env.worktree` against the checked-in samples. Existing local values stay in place for matching keys, sample defaults are added when new keys appear, obsolete local-only keys are removed, and the local files are rewritten into the sample key order and layout.
@@ -403,6 +420,8 @@ Sync config resolution currently works like this:
 2. If `SYNCFACTORS_CONFIG_PATH` is set, that explicit path wins
 3. Otherwise the active profile resolves to `config/local.mock-successfactors.real-ad.sync-config.json` or `config/local.real-successfactors.real-ad.sync-config.json`
 4. Mapping config resolves from `SYNCFACTORS_MAPPING_CONFIG_PATH`, or defaults to `config/local.syncfactors.mapping-config.json`
+
+`config/local.syncfactors.mapping-config.json` is created from `config/sample.empjob-confirmed.mapping-config.json` by the setup and config-sync scripts. `config/local.empjob-confirmed.mapping-config.json` is kept as a named local copy for comparison and tenant-confirmed mapping work.
 
 `.env.worktree` is the main per-worktree environment contract. Keep auth, profile selection, ports, and local overrides there rather than in tracked JSON or tracked `.codex` files.
 
@@ -707,6 +726,8 @@ pwsh ./scripts/Configure-EntraOidcAppRegistration.ps1 `
 
 For Active Directory binds on Windows, the default production deployment leaves `ad.username` and `ad.bindPassword` blank so the LDAP connection uses the Windows service identity. Delegate the approved SyncFactors AD permissions to the runtime account, for example `svc-syncfactors-runtime`, and do not configure separate AD bind credentials unless IAM requires a third account. If you do configure explicit AD bind credentials, set `SF_AD_SYNC_AD_USERNAME` to a UPN such as `svc_syncfactors_adbind@example.local`, not a down-level logon name such as `EXAMPLE\svc_syncfactors_adbind`, or AD may reject the credentials even when the password is correct.
 
+The current AD transport model supports `ldaps`, `starttls`, and `ldap` modes with certificate-validation and signing controls. Keep secure transport as the default for write-capable deployments.
+
 If your primary AD transport is `ldaps` or `starttls` and you need an explicit downgrade path for troubleshooting, set `ad.transport.allowLdapFallback` to `true`. SyncFactors will try the configured secure transport first and only retry plain LDAP on port `389` when the configured port was the secure default. Leave this disabled unless you intentionally want that behavior.
 
 If you intentionally need create-time account enablement even when the effective transport is plain `ldap`, set `ad.transport.allowCreateEnableWithoutPasswordProvisioning` to `true`. This lets SyncFactors enable the newly created account during the same create operation even though it still cannot set `unicodePwd` without `ldaps` or `starttls`.
@@ -874,3 +895,15 @@ If you want to probe the broader employee header set for one worker without sani
 If you want to discover likely field mappings from tenant metadata before querying a worker, use `scripts/Get-SfMetadataFieldCandidates.ps1`. It downloads `/$metadata`, searches for the employee headers we discussed, and writes candidate entities and OData paths to JSON.
 
 If you want to query one worker using the tighter, metadata-derived employee field set, use `scripts/Export-SfEmployeeMetadataProfile.ps1`. It targets the strongest candidate paths from the metadata analysis, skips sanitization, and keeps the same auto-retry behavior for unsupported tenant fields.
+
+## CI And Security Gates
+
+GitHub Actions currently provides:
+
+- `test.yml`: .NET restore/build/test, frontend dependency install, frontend tests, frontend bundle build, lifecycle simulation master coverage, SBOM generation, and SBOM provenance attestation when permitted
+- `security.yml`: SonarCloud quality gate, Semgrep SAST, private-value denylist scan, Gitleaks, and Trivy repository scan
+- `codeql.yml`: CodeQL analysis for C# and JavaScript/TypeScript
+- `dependency-review.yml`: pull-request dependency review
+- `release.yml`: Windows x64 self-contained release bundle publishing
+
+The Azure DevOps deployment pipeline is separate from GitHub Actions. `azure-pipelines.deploy.yml` builds and tests the same solution, creates the Windows bundle, and deploys only when deployment variables are configured.

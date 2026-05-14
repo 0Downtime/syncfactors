@@ -1,48 +1,55 @@
-# Production UI Do List
+# Production UI Status
 
 Last updated: 2026-05-14
 
-This tracker is for operator-facing production UI gaps. It should reflect what is
-actually available in the Razor dashboard today, not long-range product ideas.
+This tracks the operator-facing UI against the current implementation. It is not
+a production-readiness claim; the project remains alpha until deployment, access,
+data-retention, monitoring, and recovery expectations are validated in the
+target environment.
 
 ## Current Production Surfaces
 
-- **Dashboard**: live runtime status, schedule countdown, cancel action, dependency
-  health dropdown, recent run table, run timeline, run mix chart, and bucket
-  composition chart.
-- **Sync**: operator run controls, dry-run/live-mode affordances, and recent run
-  summaries.
+- **Dashboard**: live runtime status, active run summary, schedule countdown,
+  cancel action, dependency health dropdown, realtime SignalR updates, recent
+  runs, run timeline, run mix chart, and bucket composition chart.
+- **Sync**: ad hoc dry-run/live run queueing, cancellation, recurring schedule
+  management, run history, dry-run/live-mode affordances, and development
+  delete-all reset controls.
 - **Exceptions**: unified triage queue for failed runs, manual review cases,
   conflicts, and guardrail failures, with search, paging, run links, decision
   links, and Worker 360 preview links.
 - **Worker 360**: single-worker SuccessFactors lookup, directory match summary,
-  decision tree, apply readiness, saved-preview fingerprint guardrail, preview
-  comparison, preview history, grouped attribute diffs, source confidence, and
-  worker run history.
+  decision tree, saved-preview fingerprint guardrail, preview comparison,
+  preview history, apply readiness, grouped attribute diffs, source confidence,
+  worker run history, and preview entries.
 - **Run Detail**: run context, bucket counts, population comparison, filtered run
   entries, employment-status totals, changed-attribute totals, entry detail,
   decision tree, failure/manual-review diagnostics, JSON/JSONL/CSV export, and
   saved-preview links.
 - **Lookup**: raw source lookup for operator/debug inspection.
-- **Admin Users**: local user administration.
-- **Admin Deletions**: graveyard deletion queue with pending, held, approve delete,
-  place hold, remove hold, search, and paging.
-- **Admin Config**: effective non-secret configuration review, source badges,
-  mapping coverage, anchors, and copy helpers.
+- **Admin Users**: local break-glass user administration or SSO group visibility.
+- **Admin Deletions**: graveyard deletion queue with pending, held, approve
+  delete, place hold, remove hold, search, and paging.
+- **Admin Config**: effective non-secret configuration review for deployment,
+  auth, SuccessFactors, AD, operations, safety, alerts, mappings, source badges,
+  anchors, and copy helpers.
 
 ## Status
 
 - [x] Exception queue for failed runs, manual review, conflicts, and guardrail failures.
-- [x] Worker 360 view with source, directory match, preview, apply guardrail, preview history, and run history.
+- [x] Worker 360 view with source, directory match, decision tree, preview, apply guardrail, preview history, preview comparison, and run history.
+- [x] Saved worker preview/apply flow backed by preview fingerprints and server-side live-write gates.
 - [x] Graveyard and deletion workbench.
-- [x] Run detail analytics for bucket mix, changed attributes, failure reasons, diagnostics, and exports.
+- [x] Run detail analytics for bucket mix, population comparison, changed attributes, failure reasons, diagnostics, and exports.
 - [x] Diff grouping by identity, organization, lifecycle, routing, and access in Worker 360.
 - [x] Production configuration review in Admin configuration.
+- [x] Health probe controls backed by SQLite dashboard settings.
 - [x] Live-write safety UI: hide live apply when dry-run-only is active and require acknowledgement plus saved preview fingerprint for Worker 360 apply.
 - [ ] Health detail page with probe history and dependency latency. Partial: dashboard health dropdown exists.
 - [ ] Saved operator filter presets. Partial: core navigation, themes, version banner, dry-run banner, pagination, and denser tables exist.
-- [ ] Audit UI for security and operator actions.
+- [ ] Audit UI for security and operator actions. Partial: audit events write to the security audit log.
 - [ ] Production readiness checklist that converts Admin config into pass/warn/fail deployment checks.
+- [ ] More complete approval workflows for high-risk live Active Directory changes beyond manual-review buckets and graveyard deletion approval.
 
 ## Next Backlog
 
