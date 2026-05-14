@@ -394,6 +394,7 @@ function Normalize-ConfigArray {
 function Normalize-ConfigNode {
     param(
         [Parameter(Mandatory)]
+        [AllowNull()]
         $SampleValue,
         [Parameter(Mandatory)]
         [bool]$HasLocalValue,

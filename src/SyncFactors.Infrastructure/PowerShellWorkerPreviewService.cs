@@ -6,6 +6,14 @@ namespace SyncFactors.Infrastructure;
 
 public sealed class PowerShellWorkerPreviewService(SyncFactorsConfigPathResolver configResolver)
 {
+    private static readonly string[] PowerShellExecutablePaths =
+    [
+        Path.Join(Path.DirectorySeparatorChar.ToString(), "usr", "bin", "pwsh"),
+        Path.Join(Path.DirectorySeparatorChar.ToString(), "usr", "local", "bin", "pwsh"),
+        Path.Join(Path.DirectorySeparatorChar.ToString(), "opt", "homebrew", "bin", "pwsh"),
+        Path.Join(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "PowerShell", "7", "pwsh.exe")
+    ];
+
     public async Task<WorkerPreviewResult> PreviewAsync(string workerId, CancellationToken cancellationToken)
     {
         var configPath = configResolver.ResolveConfigPath();
@@ -17,7 +25,7 @@ public sealed class PowerShellWorkerPreviewService(SyncFactorsConfigPathResolver
 
         var startInfo = new ProcessStartInfo
         {
-            FileName = "pwsh",
+            FileName = ResolvePowerShellExecutable(),
             RedirectStandardOutput = true,
             RedirectStandardError = true,
         };
@@ -60,6 +68,12 @@ public sealed class PowerShellWorkerPreviewService(SyncFactorsConfigPathResolver
 
         using var document = JsonDocument.Parse(stdout);
         return Normalize(document.RootElement);
+    }
+
+    private static string ResolvePowerShellExecutable()
+    {
+        return PowerShellExecutablePaths.FirstOrDefault(File.Exists)
+            ?? throw new InvalidOperationException("PowerShell 7 executable could not be found in a trusted system install path.");
     }
 
     private static WorkerPreviewResult Normalize(JsonElement parsed)

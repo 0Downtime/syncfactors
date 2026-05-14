@@ -18,6 +18,7 @@ public sealed class AdminConfigurationSnapshotBuilder(
     private const string DefaultSource = "Default";
     private const string HiddenValue = "Hidden";
     private const string NotConfiguredValue = "Not configured";
+    private static readonly ISyncFactorsSecretResolver SecretResolver = new SyncFactorsSecretResolver();
 
     internal AdminConfigurationPageSnapshot Build()
     {
@@ -216,7 +217,7 @@ public sealed class AdminConfigurationSnapshotBuilder(
             ]);
     }
 
-    private AdminConfigurationSectionViewModel BuildSuccessFactorsSection(SyncFactorsConfigDocument sync)
+    private static AdminConfigurationSectionViewModel BuildSuccessFactorsSection(SyncFactorsConfigDocument sync)
     {
         var authMode = sync.SuccessFactors.Auth.Mode?.Trim().ToLowerInvariant();
         var groups = new List<AdminConfigurationGroupViewModel>
@@ -293,7 +294,7 @@ public sealed class AdminConfigurationSnapshotBuilder(
             Groups: groups);
     }
 
-    private AdminConfigurationSectionViewModel BuildActiveDirectorySection(SyncFactorsConfigDocument sync)
+    private static AdminConfigurationSectionViewModel BuildActiveDirectorySection(SyncFactorsConfigDocument sync)
     {
         return new AdminConfigurationSectionViewModel(
             Id: "active-directory",
@@ -392,7 +393,7 @@ public sealed class AdminConfigurationSnapshotBuilder(
             ]);
     }
 
-    private AdminConfigurationSectionViewModel BuildOperationsSection(SyncFactorsConfigDocument sync)
+    private static AdminConfigurationSectionViewModel BuildOperationsSection(SyncFactorsConfigDocument sync)
     {
         var smtpEntries = sync.Alerts.Smtp is null
             ? new[]
@@ -453,7 +454,7 @@ public sealed class AdminConfigurationSnapshotBuilder(
             ]);
     }
 
-    private AdminConfigurationSectionViewModel BuildMappingsSection(MappingConfigDocument mapping)
+    private static AdminConfigurationSectionViewModel BuildMappingsSection(MappingConfigDocument mapping)
     {
         var rows = mapping.Mappings
             .Select(item => new AdminConfigurationMappingRowViewModel(
@@ -580,10 +581,8 @@ public sealed class AdminConfigurationSnapshotBuilder(
             || options.LocalBreakGlass.Enabled;
     }
 
-    private string ResolveSecretSource(string? environmentVariableName, string fallbackSource) =>
-        HasEnvironmentValue(environmentVariableName)
-            ? environmentVariableName!
-            : fallbackSource;
+    private static string ResolveSecretSource(string? environmentVariableName, string fallbackSource) =>
+        SecretResolver.ResolveSourceLabel(environmentVariableName, fallbackSource);
 
     private static bool HasEnvironmentValue(string? environmentVariableName)
     {
@@ -592,7 +591,7 @@ public sealed class AdminConfigurationSnapshotBuilder(
             return false;
         }
 
-        return !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(environmentVariableName));
+        return !string.IsNullOrWhiteSpace(SecretResolver.GetSecretValue(environmentVariableName));
     }
 
     private string GetHostSource(params string[] keys) =>

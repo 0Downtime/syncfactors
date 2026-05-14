@@ -19,9 +19,9 @@ public sealed class ApplyPreviewService(
 {
     public async Task<DirectoryCommandResult> ApplyAsync(ApplyPreviewRequest request, CancellationToken cancellationToken)
     {
-        if (!realSyncSettings.Enabled)
+        if (!realSyncSettings.EffectiveWriteEnabled)
         {
-            throw new InvalidOperationException("Real AD sync is disabled for this environment.");
+            throw new InvalidOperationException(realSyncSettings.LiveWriteDisabledMessage);
         }
 
         var startedAt = DateTimeOffset.UtcNow;

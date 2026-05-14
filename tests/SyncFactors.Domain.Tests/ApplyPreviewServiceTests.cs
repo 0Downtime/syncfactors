@@ -511,6 +511,70 @@ public sealed class ApplyPreviewServiceTests
     }
 
     [Fact]
+    public async Task ApplyAsync_RejectsWhenDryRunOnlyIsEnabled()
+    {
+        var worker = new WorkerSnapshot(
+            WorkerId: "10001",
+            PreferredName: "Winnie",
+            LastName: "Sample101",
+            Department: "IT",
+            TargetOu: "OU=LabUsers,DC=example,DC=com",
+            IsPrehire: false,
+            Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase));
+        var preview = new WorkerPreviewResult(
+            ReportPath: null,
+            RunId: "preview-10001-dry-run-only",
+            PreviousRunId: null,
+            WorkerId: worker.WorkerId,
+            Fingerprint: "fingerprint-dry-run-only",
+            Mode: "Preview",
+            Status: "Planned",
+            ErrorMessage: null,
+            ArtifactType: "WorkerPreview",
+            SuccessFactorsAuth: "NativeScaffold",
+            Buckets: ["updates"],
+            MatchedExistingUser: true,
+            ReviewCategory: null,
+            ReviewCaseType: null,
+            Reason: null,
+            OperatorActionSummary: null,
+            SamAccountName: "10001",
+            ManagerDistinguishedName: null,
+            TargetOu: worker.TargetOu,
+            CurrentDistinguishedName: "CN=Sample101\\, Winnie,OU=LabUsers,DC=example,DC=com",
+            CurrentEnabled: true,
+            ProposedEnable: true,
+            OperationSummary: null,
+            DiffRows:
+            [
+                new DiffRow("UserPrincipalName", "resolved email local-part", "(unset)", "preview.email@example.test", true)
+            ],
+            SourceAttributes: [],
+            UsedSourceAttributes: [],
+            UnusedSourceAttributes: [],
+            MissingSourceAttributes: [],
+            Entries: []);
+
+        var service = new ApplyPreviewService(
+            new DirectoryMutationCommandBuilder(),
+            new CapturingDirectoryCommandGateway(),
+            new StubRunRepository(preview),
+            new StubRuntimeStatusStore(),
+            new RealSyncSettings(Enabled: true, DryRunOnly: true),
+            NullLogger<ApplyPreviewService>.Instance);
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => service.ApplyAsync(
+            new ApplyPreviewRequest(
+                WorkerId: worker.WorkerId,
+                PreviewRunId: preview.RunId!,
+                PreviewFingerprint: preview.Fingerprint,
+                AcknowledgeRealSync: true),
+            CancellationToken.None));
+
+        Assert.Equal("Dry-run-only mode is enabled. Live AD writes are disabled for this environment.", exception.Message);
+    }
+
+    [Fact]
     public async Task ApplyAsync_DoesNotBlockWhenManagerCannotBeResolved()
     {
         var worker = new WorkerSnapshot(

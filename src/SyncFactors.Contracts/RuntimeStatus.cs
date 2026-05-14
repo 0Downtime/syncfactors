@@ -99,6 +99,26 @@ public sealed record WorkerPreviewHistoryItem(
     string? Reason,
     string Fingerprint);
 
+public sealed record WorkerRunHistoryItem(
+    string RunId,
+    string EntryId,
+    string ArtifactType,
+    string Mode,
+    bool DryRun,
+    string RunStatus,
+    string RunTrigger,
+    DateTimeOffset StartedAt,
+    DateTimeOffset? CompletedAt,
+    string Bucket,
+    string BucketLabel,
+    string? WorkerId,
+    string? SamAccountName,
+    string? Reason,
+    string? ReviewCaseType,
+    int ChangeCount,
+    IReadOnlyList<string> TopChangedAttributes,
+    OperationSummary? OperationSummary);
+
 public sealed record RunEntry(
     string EntryId,
     string RunId,
@@ -207,12 +227,24 @@ public sealed record UpdateSyncScheduleRequest(
     int IntervalMinutes);
 
 public sealed record RealSyncSettings(
-    bool Enabled = true);
+    bool Enabled = true,
+    bool DryRunOnly = false)
+{
+    public bool EffectiveWriteEnabled => Enabled && !DryRunOnly;
+
+    public bool RequiresDryRun => !EffectiveWriteEnabled;
+
+    public string LiveWriteDisabledMessage => DryRunOnly
+        ? "Dry-run-only mode is enabled. Live AD writes are disabled for this environment."
+        : "Real AD sync is disabled for this environment.";
+}
 
 public sealed record WorkerRunSettings(
     int MaxCreatesPerRun,
     int MaxDisablesPerRun = int.MaxValue,
-    int MaxDeletionsPerRun = int.MaxValue);
+    int MaxDeletionsPerRun = int.MaxValue,
+    bool ManualReviewDisables = false,
+    bool ManualReviewDeletions = false);
 
 public sealed record RunHistoryRetentionSettings(
     int RetentionDays = 3,
@@ -315,7 +347,8 @@ public sealed record DirectoryMutationCommand(
     string? CurrentDistinguishedName,
     bool EnableAccount,
     IReadOnlyList<DirectoryOperation> Operations,
-    IReadOnlyDictionary<string, string?> Attributes);
+    IReadOnlyDictionary<string, string?> Attributes,
+    IReadOnlyList<string>? ProxyAddresses = null);
 
 public sealed record DirectoryCommandResult(
     bool Succeeded,

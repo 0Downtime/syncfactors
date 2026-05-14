@@ -8,6 +8,7 @@ public sealed record SyncFactorsConfigDocument(
     ActiveDirectoryConfig Ad,
     SyncPolicyConfig Sync,
     SafetyConfig Safety,
+    ApprovalConfig Approval,
     AlertingConfig Alerts,
     ReportingConfig Reporting);
 
@@ -106,6 +107,10 @@ public sealed record SafetyConfig(
     int MaxCreatesPerRun,
     int MaxDisablesPerRun,
     int MaxDeletionsPerRun);
+
+public sealed record ApprovalConfig(
+    bool Enabled,
+    IReadOnlyList<string> RequireFor);
 
 public sealed record AlertingConfig(
     bool Enabled,

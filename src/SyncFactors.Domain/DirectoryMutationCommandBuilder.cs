@@ -18,10 +18,12 @@ public sealed class DirectoryMutationCommandBuilder(IEmailAddressPolicy? emailAd
                 : plan.ProposedEmailAddress
             : plan.ProposedEmailAddress;
         var mail = plan.Identity.MatchedExistingUser
-            ? plan.DirectoryUser.Attributes.TryGetValue("mail", out var existingMail) && !string.IsNullOrWhiteSpace(existingMail)
+            ? GetChangedAttributeValue(plan.AttributeChanges, "mail")
+              ?? (plan.DirectoryUser.Attributes.TryGetValue("mail", out var existingMail) && !string.IsNullOrWhiteSpace(existingMail)
                 ? existingMail
-                : plan.ProposedEmailAddress
+                : plan.ProposedEmailAddress)
             : plan.ProposedEmailAddress;
+        var proxyAddresses = GetProxyAddresses(plan.AttributeChanges);
 
         return new DirectoryMutationCommand(
             Action: action,
@@ -37,7 +39,8 @@ public sealed class DirectoryMutationCommandBuilder(IEmailAddressPolicy? emailAd
             CurrentDistinguishedName: plan.DirectoryUser.DistinguishedName,
             EnableAccount: plan.TargetEnabled,
             Operations: plan.Operations,
-            Attributes: BuildAttributes(plan.AttributeChanges));
+            Attributes: BuildAttributes(plan.AttributeChanges),
+            ProxyAddresses: proxyAddresses);
     }
 
     public DirectoryMutationCommand Build(WorkerSnapshot worker, WorkerPreviewResult preview)
@@ -53,6 +56,7 @@ public sealed class DirectoryMutationCommandBuilder(IEmailAddressPolicy? emailAd
             ?? _emailAddressPolicy.BuildEmailAddress(
                 DirectoryIdentityFormatter.BuildPreferredEmailLocalPart(worker.PreferredName, worker.LastName, worker.WorkerId));
         var mailAddress = GetPreviewAttributeValue(preview, "mail") ?? emailAddress;
+        var proxyAddresses = GetProxyAddresses(preview.DiffRows.Select(row => new AttributeChange(row.Attribute, row.Source, row.Before, row.After, row.Changed)).ToArray());
 
         return new DirectoryMutationCommand(
             Action: action,
@@ -71,7 +75,8 @@ public sealed class DirectoryMutationCommandBuilder(IEmailAddressPolicy? emailAd
                 .SelectMany(entry => GetPreviewOperations(entry.Item))
                 .Distinct()
                 .ToArray(),
-            Attributes: BuildAttributes(preview.DiffRows.Select(row => new AttributeChange(row.Attribute, row.Source, row.Before, row.After, row.Changed)).ToArray()));
+            Attributes: BuildAttributes(preview.DiffRows.Select(row => new AttributeChange(row.Attribute, row.Source, row.Before, row.After, row.Changed)).ToArray()),
+            ProxyAddresses: proxyAddresses);
     }
 
     private static string ResolvePrimaryAction(WorkerPreviewResult preview)
@@ -121,6 +126,37 @@ public sealed class DirectoryMutationCommandBuilder(IEmailAddressPolicy? emailAd
         }
 
         return attributes;
+    }
+
+    private static string? GetChangedAttributeValue(IReadOnlyList<AttributeChange> changes, string attributeName)
+    {
+        var row = changes.FirstOrDefault(change =>
+            change.Changed &&
+            string.Equals(change.Attribute, attributeName, StringComparison.OrdinalIgnoreCase));
+        if (row is null || string.Equals(row.After, "(unset)", StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        return NormalizeValue(attributeName, row.After);
+    }
+
+    private static IReadOnlyList<string>? GetProxyAddresses(IReadOnlyList<AttributeChange> changes)
+    {
+        var row = changes.FirstOrDefault(change =>
+            change.Changed &&
+            string.Equals(change.Attribute, "proxyAddresses", StringComparison.OrdinalIgnoreCase));
+        if (row is null || string.Equals(row.After, "(unset)", StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        var values = row.After
+            .Split(['\n', ';'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .ToArray();
+
+        return values.Length == 0 ? null : values;
     }
 
     private static string? GetPreviewAttributeValue(WorkerPreviewResult preview, string attributeName)

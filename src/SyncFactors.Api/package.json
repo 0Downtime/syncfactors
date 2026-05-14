@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "build:ui": "node esbuild.config.mjs",
+    "test:ui": "vitest run --coverage",
     "watch:ui": "node esbuild.config.mjs --watch"
   },
   "dependencies": {
@@ -12,6 +13,8 @@
     "motion": "12.38.0"
   },
   "devDependencies": {
-    "esbuild": "0.28.0"
+    "@vitest/coverage-v8": "4.1.5",
+    "esbuild": "0.28.0",
+    "vitest": "4.1.5"
   }
 }

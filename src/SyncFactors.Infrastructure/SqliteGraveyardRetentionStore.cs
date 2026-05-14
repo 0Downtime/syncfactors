@@ -114,16 +114,16 @@ public sealed class SqliteGraveyardRetentionStore(SqlitePathResolver pathResolve
         {
             records.Add(new GraveyardRetentionRecord(
                 WorkerId: reader.GetString(0),
-                SamAccountName: reader.IsDBNull(1) ? null : reader.GetString(1),
-                DisplayName: reader.IsDBNull(2) ? null : reader.GetString(2),
-                DistinguishedName: reader.IsDBNull(3) ? null : reader.GetString(3),
+                SamAccountName: await reader.IsDBNullAsync(1, cancellationToken) ? null : reader.GetString(1),
+                DisplayName: await reader.IsDBNullAsync(2, cancellationToken) ? null : reader.GetString(2),
+                DistinguishedName: await reader.IsDBNullAsync(3, cancellationToken) ? null : reader.GetString(3),
                 Status: reader.GetString(4),
-                EndDateUtc: ParseDate(reader.IsDBNull(5) ? null : reader.GetString(5)),
+                EndDateUtc: ParseDate(await reader.IsDBNullAsync(5, cancellationToken) ? null : reader.GetString(5)),
                 LastObservedAtUtc: ParseDate(reader.GetString(6)) ?? DateTimeOffset.MinValue,
                 Active: reader.GetInt32(7) != 0,
                 IsOnHold: reader.GetInt32(8) != 0,
-                HoldPlacedAtUtc: ParseDate(reader.IsDBNull(9) ? null : reader.GetString(9)),
-                HoldPlacedBy: reader.IsDBNull(10) ? null : reader.GetString(10)));
+                HoldPlacedAtUtc: ParseDate(await reader.IsDBNullAsync(9, cancellationToken) ? null : reader.GetString(9)),
+                HoldPlacedBy: await reader.IsDBNullAsync(10, cancellationToken) ? null : reader.GetString(10)));
         }
 
         return records;
@@ -181,9 +181,9 @@ public sealed class SqliteGraveyardRetentionStore(SqlitePathResolver pathResolve
         }
 
         return new GraveyardRetentionReportStatus(
-            LastSentAtUtc: ParseDate(reader.IsDBNull(0) ? null : reader.GetString(0)),
-            LastAttemptedAtUtc: ParseDate(reader.IsDBNull(1) ? null : reader.GetString(1)),
-            LastError: reader.IsDBNull(2) ? null : reader.GetString(2));
+            LastSentAtUtc: ParseDate(await reader.IsDBNullAsync(0, cancellationToken) ? null : reader.GetString(0)),
+            LastAttemptedAtUtc: ParseDate(await reader.IsDBNullAsync(1, cancellationToken) ? null : reader.GetString(1)),
+            LastError: await reader.IsDBNullAsync(2, cancellationToken) ? null : reader.GetString(2));
     }
 
     public async Task RecordReportAttemptAsync(DateTimeOffset attemptedAt, string? error, DateTimeOffset? sentAtUtc, CancellationToken cancellationToken)

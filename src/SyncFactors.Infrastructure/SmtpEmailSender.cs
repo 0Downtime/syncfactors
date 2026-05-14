@@ -10,10 +10,14 @@ public sealed class SmtpEmailSender(SyncFactorsConfigurationLoader configLoader)
         _ = cancellationToken;
         var smtpConfig = configLoader.GetSyncConfig().Alerts.Smtp
             ?? throw new InvalidOperationException("SMTP settings are not configured.");
+        if (!smtpConfig.UseSsl)
+        {
+            throw new InvalidOperationException("SMTP SSL must be enabled before sending alert email.");
+        }
 
         using var client = new SmtpClient(smtpConfig.Host, smtpConfig.Port)
         {
-            EnableSsl = smtpConfig.UseSsl
+            EnableSsl = true
         };
         using var message = new MailMessage
         {

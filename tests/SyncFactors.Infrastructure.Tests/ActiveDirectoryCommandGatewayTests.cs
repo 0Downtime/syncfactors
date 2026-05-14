@@ -415,6 +415,32 @@ public sealed class ActiveDirectoryCommandGatewayTests
     }
 
     [Fact]
+    public void IsExistingGroupMembershipException_TreatsEntryExistsAsDuplicateMembership()
+    {
+        var method = typeof(ActiveDirectoryCommandGateway).GetMethod("IsExistingGroupMembershipException", BindingFlags.NonPublic | BindingFlags.Static);
+        Assert.NotNull(method);
+        var exception = new DirectoryOperationException(
+            "The object exists. 00000562: UpdErr: DSID-031A11FA, problem 6005 (ENTRY_EXISTS), data 0");
+
+        var isDuplicateMembership = Assert.IsType<bool>(method!.Invoke(null, [exception]));
+
+        Assert.True(isDuplicateMembership);
+    }
+
+    [Fact]
+    public void IsExistingGroupMembershipException_ReturnsFalseForUnrelatedDirectoryErrors()
+    {
+        var method = typeof(ActiveDirectoryCommandGateway).GetMethod("IsExistingGroupMembershipException", BindingFlags.NonPublic | BindingFlags.Static);
+        Assert.NotNull(method);
+        var exception = new DirectoryOperationException(
+            "The object does not exist. 0000208D: NameErr: DSID-0310028D, problem 2001 (NO_OBJECT), data 0");
+
+        var isDuplicateMembership = Assert.IsType<bool>(method!.Invoke(null, [exception]));
+
+        Assert.False(isDuplicateMembership);
+    }
+
+    [Fact]
     public void ShouldRemoveProvisioningGroups_ReturnsFalseForDisabledGraveyardUsers()
     {
         var method = typeof(ActiveDirectoryCommandGateway).GetMethod("ShouldRemoveProvisioningGroups", BindingFlags.NonPublic | BindingFlags.Static);

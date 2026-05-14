@@ -69,6 +69,35 @@ public sealed class FullSyncRunServiceTests
     }
 
     [Fact]
+    public async Task LaunchAsync_ManualReviewDisables_RebucketsDisableWithoutExecutingDirectoryMutation()
+    {
+        var worker = CreateWorker("10001", managerId: "90001");
+        var directoryCommandGateway = new CapturingDirectoryCommandGateway();
+        var service = CreateService(
+            workers: [worker],
+            directoryGateway: new StubDirectoryGateway(managerDistinguishedName: "CN=Manager,OU=LabUsers,DC=example,DC=com"),
+            directoryCommandGateway: directoryCommandGateway,
+            settings: new WorkerRunSettings(MaxCreatesPerRun: 10, MaxDisablesPerRun: 10, ManualReviewDisables: true),
+            planningService: new DisableWorkerPlanningService(),
+            runRepository: out var runRepository,
+            runtimeStatusStore: out _);
+
+        var result = await service.LaunchAsync(
+            new LaunchFullRunRequest(DryRun: false, AcknowledgeRealSync: true),
+            CancellationToken.None);
+
+        Assert.Equal("Succeeded", result.Status);
+        Assert.Equal(0, directoryCommandGateway.ExecuteCount);
+        Assert.Equal(1, runRepository.SavedRuns[^1].ManualReview);
+        var entry = runRepository.ReplacedEntries.Single().entries.Single();
+        Assert.Equal("manualReview", entry.Bucket);
+        Assert.Equal("SafetyPolicy", entry.ReviewCategory);
+        Assert.Equal("DisableRequiresManualReview", entry.ReviewCaseType);
+        Assert.Equal(JsonValueKind.Null, entry.Item.GetProperty("plannedCommand").ValueKind);
+        Assert.Equal(JsonValueKind.Null, entry.Item.GetProperty("liveResult").ValueKind);
+    }
+
+    [Fact]
     public async Task LaunchAsync_LiveRun_RejectsWhenRealSyncIsDisabled()
     {
         var worker = CreateWorker("10001", managerId: "90001");
@@ -85,6 +114,25 @@ public sealed class FullSyncRunServiceTests
             CancellationToken.None));
 
         Assert.Equal("Real AD sync is disabled for this environment.", exception.Message);
+    }
+
+    [Fact]
+    public async Task LaunchAsync_LiveRun_RejectsWhenDryRunOnlyIsEnabled()
+    {
+        var worker = CreateWorker("10001", managerId: "90001");
+        var service = CreateService(
+            workers: [worker],
+            directoryGateway: new StubDirectoryGateway(managerDistinguishedName: "CN=Manager,OU=LabUsers,DC=example,DC=com"),
+            directoryCommandGateway: new CapturingDirectoryCommandGateway(),
+            realSyncSettings: new RealSyncSettings(Enabled: true, DryRunOnly: true),
+            runRepository: out _,
+            runtimeStatusStore: out _);
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => service.LaunchAsync(
+            new LaunchFullRunRequest(DryRun: false, AcknowledgeRealSync: true),
+            CancellationToken.None));
+
+        Assert.Equal("Dry-run-only mode is enabled. Live AD writes are disabled for this environment.", exception.Message);
     }
 
     [Fact]
@@ -1026,6 +1074,40 @@ public sealed class FullSyncRunServiceTests
             _ = logPath;
             _ = cancellationToken;
             return Task.FromException<PlannedWorkerAction>(exception);
+        }
+    }
+
+    private sealed class DisableWorkerPlanningService : IWorkerPlanningService
+    {
+        public Task<PlannedWorkerAction> PlanAsync(WorkerSnapshot worker, string? logPath, CancellationToken cancellationToken)
+        {
+            _ = logPath;
+            _ = cancellationToken;
+
+            return Task.FromResult(new PlannedWorkerAction(
+                Worker: worker,
+                DirectoryUser: new DirectoryUserSnapshot(
+                    SamAccountName: worker.WorkerId,
+                    DistinguishedName: $"CN={worker.WorkerId},OU=LabUsers,DC=example,DC=com",
+                    Enabled: true,
+                    DisplayName: $"Worker {worker.WorkerId}",
+                    Attributes: new Dictionary<string, string?>()),
+                Identity: new IdentityMatchResult("disables", true, worker.WorkerId, null, null),
+                ManagerDistinguishedName: null,
+                ProposedEmailAddress: $"{worker.WorkerId}@example.com",
+                AttributeChanges: [],
+                MissingSourceAttributes: [],
+                Bucket: "disables",
+                CurrentOu: "OU=LabUsers,DC=example,DC=com",
+                TargetOu: "OU=LabUsers,DC=example,DC=com",
+                CurrentEnabled: true,
+                TargetEnabled: false,
+                PrimaryAction: "DisableUser",
+                Operations: [new DirectoryOperation("DisableUser")],
+                ReviewCategory: null,
+                ReviewCaseType: null,
+                Reason: "Worker should be disabled.",
+                CanAutoApply: true));
         }
     }
 

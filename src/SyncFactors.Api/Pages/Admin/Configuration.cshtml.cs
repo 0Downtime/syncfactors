@@ -13,7 +13,7 @@ public sealed class ConfigurationModel(AdminConfigurationSnapshotBuilder snapsho
         Snapshot = snapshotBuilder.Build();
     }
 
-    public string GetSourceBadgeClass(string sourceLabel)
+    public static string GetSourceBadgeClass(string sourceLabel)
     {
         if (string.Equals(sourceLabel, "Default", StringComparison.OrdinalIgnoreCase))
         {

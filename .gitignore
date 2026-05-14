@@ -4,6 +4,7 @@ obj/
 TestResults/
 testResults.xml
 coverage.xml
+src/SyncFactors.Api/coverage/
 *.coverage
 *.trx
 artifacts/
@@ -37,17 +38,6 @@ web/.vite/
 .npm-cache/
 .dotnet-home/
 skills-lock.json
-!.codex/
-!.codex/config.toml
-!.codex/hooks.json
-!.codex/hooks/
-!.codex/hooks/caveman_context.py
-.codex/tmp/
-!.agents/
-!.agents/skills/
-.agents/skills/*
-!.agents/skills/caveman/
-!.agents/skills/caveman/SKILL.md
 
 *.log
 *.tmp
@@ -55,7 +45,9 @@ skills-lock.json
 *.swp
 
 # Local generated artifacts and configuration
+/azure-pipelines.yml
 package-lock.json
+!src/SyncFactors.Api/package-lock.json
 local/
 config/local*/
 config/local*.json
@@ -83,3 +75,12 @@ src/SyncFactors.Api/.\\reports\\mock-output/
 /sf-*.xml
 /perperson-*.json
 /config/live*
+
+# Generated SyncFactors IT review artifacts
+/docs/syncfactors-it-review-enterprise.docx
+/docs/syncfactors-it-review-enterprise.pdf
+/docs/syncfactors-it-review.md
+/docs/syncfactors-it-review.pdf
+/scripts/build-syncfactors-it-review-docx.py
+/scripts/generate-syncfactors-it-review-pdf.py
+/scripts/render-pdf-pages.swift

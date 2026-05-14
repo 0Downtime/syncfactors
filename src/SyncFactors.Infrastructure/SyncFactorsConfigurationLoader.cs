@@ -6,12 +6,16 @@ namespace SyncFactors.Infrastructure;
 public sealed class SyncFactorsConfigurationLoader
 {
     private readonly SyncFactorsConfigPathResolver _pathResolver;
+    private readonly ISyncFactorsSecretResolver _secretResolver;
     private readonly Lazy<SyncFactorsConfigDocument> _syncConfig;
     private readonly Lazy<MappingConfigDocument> _mappingConfig;
 
-    public SyncFactorsConfigurationLoader(SyncFactorsConfigPathResolver pathResolver)
+    public SyncFactorsConfigurationLoader(
+        SyncFactorsConfigPathResolver pathResolver,
+        ISyncFactorsSecretResolver? secretResolver = null)
     {
         _pathResolver = pathResolver;
+        _secretResolver = secretResolver ?? new SyncFactorsSecretResolver();
         _syncConfig = new Lazy<SyncFactorsConfigDocument>(LoadSyncConfig);
         _mappingConfig = new Lazy<MappingConfigDocument>(LoadMappingConfig);
     }
@@ -120,9 +124,26 @@ public sealed class SyncFactorsConfigurationLoader
                 MaxCreatesPerRun: document.GetRequiredObject("safety").GetRequiredInt32("maxCreatesPerRun"),
                 MaxDisablesPerRun: document.GetRequiredObject("safety").GetRequiredInt32("maxDisablesPerRun"),
                 MaxDeletionsPerRun: document.GetRequiredObject("safety").GetRequiredInt32("maxDeletionsPerRun")),
+            Approval: LoadApproval(document),
             Alerts: LoadAlerts(document),
             Reporting: new ReportingConfig(
                 OutputDirectory: document.GetRequiredObject("reporting").GetRequiredString("outputDirectory")));
+    }
+
+    private static ApprovalConfig LoadApproval(JsonElement document)
+    {
+        if (!document.TryGetProperty("approval", out var approval) ||
+            approval.ValueKind != JsonValueKind.Object)
+        {
+            return new ApprovalConfig(false, []);
+        }
+
+        return new ApprovalConfig(
+            Enabled: approval.TryGetBoolean("enabled") ?? false,
+            RequireFor: approval.TryGetStringArray("requireFor")?
+                .Select(item => NormalizeRequiredValue(item, "approval.requireFor[]"))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray() ?? []);
     }
 
     private MappingConfigDocument LoadMappingConfig()
@@ -160,13 +181,13 @@ public sealed class SyncFactorsConfigurationLoader
             AdBindPasswordEnv: secrets.TryGetString("adBindPasswordEnv"));
     }
 
-    private static SuccessFactorsAuthConfig LoadSuccessFactorsAuth(JsonElement auth, SecretsConfig secrets)
+    private SuccessFactorsAuthConfig LoadSuccessFactorsAuth(JsonElement auth, SecretsConfig secrets)
     {
         var mode = auth.GetRequiredString("mode");
         return new SuccessFactorsAuthConfig(
             Mode: mode,
             Basic: auth.TryGetObject("basic", out var basic) && string.Equals(mode, "basic", StringComparison.OrdinalIgnoreCase)
-                ? new SuccessFactorsBasicAuthConfig(
+                    ? new SuccessFactorsBasicAuthConfig(
                     Username: GetRequiredSecretValue(
                         environmentVariableName: secrets.SuccessFactorsUsernameEnv,
                         fallbackJsonValue: basic.TryGetString("username"),
@@ -195,7 +216,7 @@ public sealed class SyncFactorsConfigurationLoader
                 : null);
     }
 
-    private static string GetRequiredSecretValue(
+    private string GetRequiredSecretValue(
         string? environmentVariableName,
         string? fallbackJsonValue,
         string configPath,
@@ -220,21 +241,15 @@ public sealed class SyncFactorsConfigurationLoader
         throw new InvalidOperationException($"Required secret '{secretLabel}' was not configured in '{configPath}' or as a literal JSON value.");
     }
 
-    private static string? GetOptionalSecretValue(string? environmentVariableName, string? fallbackJsonValue)
+    private string? GetOptionalSecretValue(string? environmentVariableName, string? fallbackJsonValue)
     {
         var environmentValue = GetOptionalEnvironmentValue(environmentVariableName);
         return !string.IsNullOrWhiteSpace(environmentValue) ? environmentValue : fallbackJsonValue;
     }
 
-    private static string? GetOptionalEnvironmentValue(string? environmentVariableName)
+    private string? GetOptionalEnvironmentValue(string? environmentVariableName)
     {
-        if (string.IsNullOrWhiteSpace(environmentVariableName))
-        {
-            return null;
-        }
-
-        var value = Environment.GetEnvironmentVariable(environmentVariableName);
-        return string.IsNullOrWhiteSpace(value) ? null : value;
+        return _secretResolver.GetSecretValue(environmentVariableName);
     }
 
     private static string NormalizeRequiredValue(string value, string configPath)

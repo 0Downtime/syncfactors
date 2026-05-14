@@ -126,13 +126,13 @@ public sealed class DetailModel(RunEntriesQueryService queryService) : PageModel
             "This run executed real sync work where needed. Use each entry status to see whether AD was updated, skipped, or failed.");
     }
 
-    public FailureDiagnostics? GetFailureDiagnostics(RunEntry entry)
+    public static FailureDiagnostics? GetFailureDiagnostics(RunEntry entry)
         => ActiveDirectoryFailureDiagnostics.Parse(entry.Reason ?? entry.FailureSummary);
 
-    public string? GetFailureSummaryDisplay(RunEntry entry)
+    public static string? GetFailureSummaryDisplay(RunEntry entry)
         => GetFailureDiagnostics(entry)?.Summary ?? entry.FailureSummary;
 
-    public IReadOnlyList<FailureDiagnosticSection> GetFailureDiagnosticSections(FailureDiagnostics diagnostics)
+    public static IReadOnlyList<FailureDiagnosticSection> GetFailureDiagnosticSections(FailureDiagnostics diagnostics)
     {
         var requested = diagnostics.Details
             .Where(item => RequestedDirectoryStateLabels.Contains(item.Label))
@@ -273,7 +273,7 @@ public sealed class DetailModel(RunEntriesQueryService queryService) : PageModel
         return sections;
     }
 
-    public IReadOnlyList<ProvisioningDecisionStep> GetProvisioningDecisionSteps(RunEntry entry)
+    public static IReadOnlyList<ProvisioningDecisionStep> GetProvisioningDecisionSteps(RunEntry entry)
     {
         return GetItemArray(entry.Item, "decisionTree")
             .Select(item => new ProvisioningDecisionStep(
@@ -339,16 +339,16 @@ public sealed class DetailModel(RunEntriesQueryService queryService) : PageModel
         return !StringEquals(reason, primarySummary) && !StringEquals(reason, failureSummary);
     }
 
-    public EmploymentStatusInfo? GetEmploymentStatus(RunEntry entry)
+    public static EmploymentStatusInfo? GetEmploymentStatus(RunEntry entry)
         => EmploymentStatusDisplay.Describe(GetItemString(entry.Item, "emplStatus"));
 
-    public EmploymentStatusInfo? DescribeEmploymentStatus(string? code)
+    public static EmploymentStatusInfo? DescribeEmploymentStatus(string? code)
         => EmploymentStatusDisplay.Describe(code);
 
-    public string? GetEmploymentStatusDisplay(RunEntry entry)
+    public static string? GetEmploymentStatusDisplay(RunEntry entry)
         => GetEmploymentStatus(entry)?.Display;
 
-    public string? GetEndDateDisplay(RunEntry entry)
+    public static string? GetEndDateDisplay(RunEntry entry)
     {
         var rawValue = GetItemString(entry.Item, "endDate")?.Trim();
         if (string.IsNullOrWhiteSpace(rawValue) || string.Equals(rawValue, "null", StringComparison.OrdinalIgnoreCase))
@@ -394,7 +394,12 @@ public sealed class DetailModel(RunEntriesQueryService queryService) : PageModel
             ActiveDirectoryEnabled: activeDirectoryEnabled.Value,
             Difference: difference,
             ActiveOu: activeOu,
-            StatusLabel: difference == 0 ? "Aligned" : difference > 0 ? "SF ahead" : "AD ahead",
+            StatusLabel: difference switch
+            {
+                0 => "Aligned",
+                > 0 => "SF ahead",
+                _ => "AD ahead"
+            },
             ToneCssClass: difference == 0 ? "good" : "warn",
             Summary: summary);
     }
@@ -956,7 +961,8 @@ public sealed class DetailModel(RunEntriesQueryService queryService) : PageModel
         var match = Regex.Match(
             reason,
             "^Ambiguous AD (?<lookupKind>.+?) lookup for '(?<lookupValue>.*?)' via (?<identityAttribute>.+?)\\. Matched entries: (?<matchedEntries>.+?)\\.$",
-            RegexOptions.CultureInvariant);
+            RegexOptions.CultureInvariant,
+            TimeSpan.FromMilliseconds(250));
         if (!match.Success)
         {
             return null;

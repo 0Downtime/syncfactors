@@ -67,7 +67,7 @@
                 <span class="badge @(Model.Schedule.Enabled ? "good" : "dim")" data-dashboard-schedule-badge>@(Model.Schedule.Enabled ? "Enabled" : "Paused")</span>
             </div>
             <div class="dashboard-schedule-body">
-                <div class="dashboard-schedule-countdown" data-dashboard-schedule-countdown style="--ring-progress: @(Model.Schedule.NextRunAt.HasValue ? "0.82turn" : "0turn");">
+                <div class="dashboard-schedule-countdown" data-dashboard-schedule-countdown>
                     <div class="dashboard-schedule-countdown-copy">
                         <strong data-dashboard-schedule-countdown-value>@(Model.Schedule.NextRunAt.HasValue ? "Pending" : "Idle")</strong>
                     </div>
@@ -113,7 +113,7 @@
                 </div>
             </div>
             <div class="dashboard-progress-track" aria-hidden="true">
-                <span class="dashboard-progress-fill" data-progress-fill style="width: @(ProgressFillWidth(Model.Status))%;"></span>
+                <span class="dashboard-progress-fill" data-progress-fill></span>
             </div>
             <p class="muted dashboard-progress-copy" data-progress-copy>@ProgressCopy(Model.Status)</p>
         </section>
@@ -203,7 +203,7 @@
                 <div class="analytics-chart" data-runs-chart role="img" aria-label="Recent run mix chart"></div>
                 <p class="muted analytics-empty is-hidden" data-runs-chart-empty>Recent runs will appear here once the dashboard has data to chart.</p>
             </article>
-            <article class="analytics-card">
+            <article class="analytics-card bucket-focus-card">
                 <div class="section-heading">
                     <div>
                         <p class="eyebrow">Bucket Focus</p>
@@ -212,8 +212,10 @@
                 </div>
                 <p class="muted analytics-meta" data-buckets-chart-meta>Change composition appears once a run summary is available.</p>
                 <div class="bucket-summary-strip" data-buckets-summary aria-label="Run bucket summary"></div>
-                <div class="analytics-chart analytics-chart-compact" data-buckets-chart role="img" aria-label="Change composition chart"></div>
-                <p class="muted analytics-empty is-hidden" data-buckets-chart-empty>Change composition appears once a run summary is available.</p>
+                <div class="bucket-chart-frame">
+                    <div class="analytics-chart analytics-chart-compact" data-buckets-chart role="img" aria-label="Change composition chart"></div>
+                    <p class="muted analytics-empty is-hidden" data-buckets-chart-empty>Change composition appears once a run summary is available.</p>
+                </div>
             </article>
         </section>
         <div data-runs-empty class="@(Model.Runs.Count == 0 ? null : "is-hidden")">
@@ -435,25 +437,6 @@
         }
 
         return "idle";
-    }
-
-    private static int ProgressFillWidth(SyncFactors.Contracts.RuntimeStatus status)
-    {
-        var actualPercent = WorkerProgressPercent(status);
-
-        return ProgressVisualState(status) switch
-        {
-            "starting" => 18,
-            "queued" => 16,
-            "canceling" => 32,
-            "planning" => Math.Max(actualPercent, 18),
-            "applypreview" => Math.Max(actualPercent, 38),
-            "syncing" => status.TotalWorkers > 0 ? Math.Max(actualPercent, 12) : 26,
-            "complete" => 100,
-            "failed" => status.TotalWorkers > 0 ? Math.Max(actualPercent, 18) : 100,
-            "canceled" => 18,
-            _ => 8,
-        };
     }
 
     private static string ProgressLabel(SyncFactors.Contracts.RuntimeStatus status)

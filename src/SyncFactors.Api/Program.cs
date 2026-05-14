@@ -34,7 +34,7 @@ if (!string.IsNullOrWhiteSpace(launcherProbeAction))
 
     await databaseInitializer.InitializeAsync(CancellationToken.None);
     var bootstrapRequired = await LauncherProbe.IsBootstrapRequiredAsync(authOptions, userStore, CancellationToken.None);
-    Console.Out.WriteLine(bootstrapRequired ? "true" : "false");
+    await Console.Out.WriteLineAsync(bootstrapRequired ? "true" : "false");
     return;
 }
 
@@ -86,7 +86,12 @@ builder.Services.AddSingleton<ScaffoldWorkerSource>();
 builder.Services.AddSingleton(serviceProvider =>
 {
     var config = serviceProvider.GetRequiredService<SyncFactorsConfigurationLoader>().GetSyncConfig();
-    return new WorkerRunSettings(config.Safety.MaxCreatesPerRun, config.Safety.MaxDisablesPerRun, config.Safety.MaxDeletionsPerRun);
+    return new WorkerRunSettings(
+        config.Safety.MaxCreatesPerRun,
+        config.Safety.MaxDisablesPerRun,
+        config.Safety.MaxDeletionsPerRun,
+        ManualReviewRequired(config, "DisableUser", "MoveToGraveyardOu"),
+        ManualReviewRequired(config, "DeleteUser"));
 });
 builder.Services.AddSingleton(serviceProvider =>
 {
@@ -100,7 +105,9 @@ builder.Services.AddSingleton(serviceProvider =>
 builder.Services.AddSingleton(serviceProvider =>
 {
     var config = serviceProvider.GetRequiredService<SyncFactorsConfigurationLoader>().GetSyncConfig();
-    return new RealSyncSettings(config.Sync.RealSyncEnabled);
+    var dryRunOnly = serviceProvider.GetRequiredService<IConfiguration>()
+        .GetValue<bool?>("SyncFactors:Runtime:DryRunOnly") ?? false;
+    return new RealSyncSettings(config.Sync.RealSyncEnabled, dryRunOnly);
 });
 builder.Services.AddSingleton(serviceProvider =>
 {
@@ -250,7 +257,7 @@ if (oidcEnabled)
         options.SignedOutCallbackPath = authSettings.Oidc.SignedOutCallbackPath;
         options.SignedOutRedirectUri = "/Login?LoggedOut=true";
         options.ResponseType = "code";
-        options.SaveTokens = true;
+        options.SaveTokens = false;
         options.GetClaimsFromUserInfoEndpoint = true;
         options.MapInboundClaims = false;
         options.Scope.Clear();
@@ -267,9 +274,11 @@ if (oidcEnabled)
                     ApplyOidcIdentity(identity, authSettings);
                     var accountStore = context.HttpContext.RequestServices.GetRequiredService<IOidcAccountStore>();
                     var timeProvider = context.HttpContext.RequestServices.GetRequiredService<TimeProvider>();
+                    var account = BuildOidcAccountRecord(identity, authSettings, timeProvider.GetUtcNow());
                     await accountStore.UpsertAsync(
-                        BuildOidcAccountRecord(identity, authSettings, timeProvider.GetUtcNow()),
+                        account,
                         context.HttpContext.RequestAborted);
+                    ReduceOidcCookieClaims(identity, account);
                 }
             },
             OnRedirectToIdentityProviderForSignOut = context =>
@@ -307,6 +316,7 @@ builder.Services.AddRazorPages(options =>
     options.Conventions.AuthorizeFolder("/", ViewerPolicy);
     options.Conventions.AuthorizePage("/Sync", OperatorPolicy);
     options.Conventions.AuthorizePage("/Preview", OperatorPolicy);
+    options.Conventions.AuthorizePage("/Workers", OperatorPolicy);
     options.Conventions.AuthorizePage("/Lookup", OperatorPolicy);
     options.Conventions.AuthorizeFolder("/Admin", AdminPolicy);
     options.Conventions.AllowAnonymousToPage("/AccessDenied");
@@ -334,8 +344,8 @@ app.Use(async (context, next) =>
     if (cspEnabled)
     {
         context.Response.Headers["Content-Security-Policy"] =
-            "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; script-src 'self'; connect-src 'self' ws: wss:; frame-ancestors 'none'; base-uri 'self'";
-        context.Response.Headers["X-SyncFactors-Csp-Version"] = "2";
+            "default-src 'self'; style-src 'self'; img-src 'self' data:; script-src 'self'; connect-src 'self' ws: wss:; frame-ancestors 'none'; base-uri 'self'; object-src 'none'; form-action 'self'";
+        context.Response.Headers["X-SyncFactors-Csp-Version"] = "3";
     }
 
     context.Response.Headers["X-Frame-Options"] = "DENY";
@@ -462,8 +472,13 @@ readApi.MapGet("/runs/queue/{requestId}", async (string requestId, IRunQueueStor
         : Results.Ok(new { request });
 });
 
-operatorApi.MapPost("/runs", async (StartRunRequest request, ClaimsPrincipal user, IRunQueueStore queueStore, ISecurityAuditService audit, CancellationToken cancellationToken) =>
+operatorApi.MapPost("/runs", async (StartRunRequest request, ClaimsPrincipal user, IRunQueueStore queueStore, RealSyncSettings realSyncSettings, ISecurityAuditService audit, CancellationToken cancellationToken) =>
 {
+    if (!request.DryRun && !realSyncSettings.EffectiveWriteEnabled)
+    {
+        return Results.BadRequest(new { error = realSyncSettings.LiveWriteDisabledMessage });
+    }
+
     if (await queueStore.HasPendingOrActiveRunAsync(cancellationToken))
     {
         return Results.Conflict(new { error = "A run is already pending or in progress." });
@@ -583,6 +598,7 @@ operatorApi.MapPost("/preview/{workerId}/apply", async (
     string workerId,
     ApplyPreviewRequest request,
     ClaimsPrincipal user,
+    RealSyncSettings realSyncSettings,
     IApplyPreviewService applyPreviewService,
     ISecurityAuditService audit,
     CancellationToken cancellationToken) =>
@@ -590,6 +606,11 @@ operatorApi.MapPost("/preview/{workerId}/apply", async (
     if (!string.Equals(workerId, request.WorkerId, StringComparison.Ordinal))
     {
         return Results.BadRequest(new { error = "Route worker id does not match the apply request." });
+    }
+
+    if (!realSyncSettings.EffectiveWriteEnabled)
+    {
+        return Results.BadRequest(new { error = realSyncSettings.LiveWriteDisabledMessage });
     }
 
     var result = await applyPreviewService.ApplyAsync(request, cancellationToken);
@@ -602,10 +623,16 @@ operatorApi.MapPost("/preview/{workerId}/apply", async (
 operatorApi.MapPost("/runs/full", async (
     LaunchFullRunRequest request,
     ClaimsPrincipal user,
+    RealSyncSettings realSyncSettings,
     IFullSyncRunService fullSyncRunService,
     ISecurityAuditService audit,
     CancellationToken cancellationToken) =>
 {
+    if (!request.DryRun && !realSyncSettings.EffectiveWriteEnabled)
+    {
+        return Results.BadRequest(new { error = realSyncSettings.LiveWriteDisabledMessage });
+    }
+
     var result = await fullSyncRunService.LaunchAsync(request, cancellationToken);
     audit.Write("FullRunLaunched", string.Equals(result.Status, "Succeeded", StringComparison.OrdinalIgnoreCase) ? "Success" : "Failure", ("RequestedBy", ResolveRequestedBy(user, "API")), ("DryRun", request.DryRun), ("RunId", result.RunId));
     return string.Equals(result.Status, "Succeeded", StringComparison.OrdinalIgnoreCase)
@@ -627,9 +654,9 @@ adminApi.MapPost("/runs/delete-all", async (
         return Results.NotFound();
     }
 
-    if (!realSyncSettings.Enabled)
+    if (!realSyncSettings.EffectiveWriteEnabled)
     {
-        return Results.BadRequest(new { error = "Real AD sync is disabled for this environment." });
+        return Results.BadRequest(new { error = realSyncSettings.LiveWriteDisabledMessage });
     }
 
     if (await queueStore.HasPendingOrActiveRunAsync(cancellationToken))
@@ -783,7 +810,7 @@ app.MapHub<DashboardHub>("/hubs/dashboard")
 
 app.MapRazorPages();
 
-app.Run();
+await app.RunAsync();
 
 static void ValidateAuthConfiguration(WebApplication app)
 {
@@ -1036,6 +1063,30 @@ static OidcAccountRecord BuildOidcAccountRecord(
         LastLoginAt: observedAt);
 }
 
+static void ReduceOidcCookieClaims(ClaimsIdentity identity, OidcAccountRecord account)
+{
+    var roles = identity.FindAll(ClaimTypes.Role)
+        .Select(claim => claim.Value)
+        .Where(value => !string.IsNullOrWhiteSpace(value))
+        .Distinct(StringComparer.OrdinalIgnoreCase)
+        .ToArray();
+
+    foreach (var claim in identity.Claims.ToArray())
+    {
+        identity.RemoveClaim(claim);
+    }
+
+    identity.AddClaim(new Claim(ClaimTypes.NameIdentifier, account.Subject));
+    identity.AddClaim(new Claim(ClaimTypes.Name, account.Username));
+    identity.AddClaim(new Claim(SecurityClaimTypes.AuthSource, "oidc"));
+    identity.AddClaim(new Claim(SecurityClaimTypes.SessionIssuedAt, DateTimeOffset.UtcNow.ToString("O")));
+
+    foreach (var role in roles)
+    {
+        identity.AddClaim(new Claim(ClaimTypes.Role, role));
+    }
+}
+
 static Task HandleAuthRedirectAsync(Microsoft.AspNetCore.Authentication.RedirectContext<CookieAuthenticationOptions> context, int statusCode)
 {
     if (context.Request.Path.StartsWithSegments("/api", StringComparison.OrdinalIgnoreCase))
@@ -1150,6 +1201,14 @@ static void ConfigureWindowsEventLog(IServiceCollection services, string service
         options.SourceName = serviceName;
 #pragma warning restore CA1416
     });
+}
+
+static bool ManualReviewRequired(SyncFactorsConfigDocument config, params string[] operationKinds)
+{
+    return config.Approval.Enabled &&
+           operationKinds.Any(operationKind =>
+               config.Approval.RequireFor.Any(required =>
+                   string.Equals(required, operationKind, StringComparison.OrdinalIgnoreCase)));
 }
 
 static void ConfigureApplicationInsights(WebApplicationBuilder builder)

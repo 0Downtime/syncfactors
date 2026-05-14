@@ -219,7 +219,9 @@ public sealed class AutomationScenarioLoaderTests
             "--include-destructive"
         ]);
 
-        AutomationRiskPolicy.EnsureAllowed(scenario, options);
+        var exception = Record.Exception(() => AutomationRiskPolicy.EnsureAllowed(scenario, options));
+
+        Assert.Null(exception);
     }
 
     [Fact]

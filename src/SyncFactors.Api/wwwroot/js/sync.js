@@ -11,7 +11,7 @@
     var forms = Array.prototype.slice.call(document.querySelectorAll("[data-sync-form]"));
 
     function emitToast(detail) {
-        window.dispatchEvent(new CustomEvent("syncfactors:toast", { detail: detail }));
+        globalThis.dispatchEvent(new CustomEvent("syncfactors:toast", { detail: detail }));
     }
 
     forms.forEach(function (form) {
@@ -78,7 +78,7 @@
 
     if (countdownValue) {
         updateCountdown();
-        window.setInterval(updateCountdown, 30000);
+        globalThis.setInterval(updateCountdown, 30000);
     }
 
     if (!dialog || !openButton || !input || !hidden || !submit) {
@@ -97,7 +97,7 @@
         dialog.classList.remove("is-shaking");
         void dialog.offsetWidth;
         dialog.classList.add("is-shaking");
-        window.setTimeout(function () {
+        globalThis.setTimeout(function () {
             dialog.classList.remove("is-shaking");
         }, 450);
     }

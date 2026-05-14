@@ -20,9 +20,9 @@ public sealed class FullSyncRunService(
 {
     public async Task<RunLaunchResult> LaunchAsync(LaunchFullRunRequest request, CancellationToken cancellationToken)
     {
-        if (!request.DryRun && !realSyncSettings.Enabled)
+        if (!request.DryRun && !realSyncSettings.EffectiveWriteEnabled)
         {
-            throw new InvalidOperationException("Real AD sync is disabled for this environment.");
+            throw new InvalidOperationException(realSyncSettings.LiveWriteDisabledMessage);
         }
 
         if (!request.DryRun && !request.AcknowledgeRealSync)
@@ -321,6 +321,12 @@ public sealed class FullSyncRunService(
                 bucket = "guardrailFailures";
                 message = $"Create guardrail exceeded. MaxCreatesPerRun={settings.MaxCreatesPerRun}.";
             }
+            else if (ManualReviewSafetyPolicy.RequiresDisableReview(settings, bucket, plan.Operations))
+            {
+                plan = ManualReviewSafetyPolicy.ToDisableManualReview(plan);
+                bucket = plan.Bucket;
+                message = plan.Reason;
+            }
             else if ((string.Equals(bucket, "disables", StringComparison.OrdinalIgnoreCase) ||
                       string.Equals(bucket, "graveyardMoves", StringComparison.OrdinalIgnoreCase)) &&
                      plan.Operations.Any(operation => string.Equals(operation.Kind, "DisableUser", StringComparison.OrdinalIgnoreCase)) &&
@@ -367,6 +373,8 @@ public sealed class FullSyncRunService(
             {
                 plannedCommand = mutationCommandBuilder.Build(plan);
             }
+
+            message ??= plan.Reason ?? $"No synced attributes changed for {worker.WorkerId}.";
 
             var item = RunEntrySnapshotBuilder.Build(
                 runId,

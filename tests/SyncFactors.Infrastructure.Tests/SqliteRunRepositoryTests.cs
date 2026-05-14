@@ -638,6 +638,363 @@ public sealed class SqliteRunRepositoryTests
         }
     }
 
+    [Fact]
+    public async Task ListWorkerRunHistoryAsync_IncludesAllRunTypesAndOrdersNewestFirst()
+    {
+        var databasePath = Path.Combine(Path.GetTempPath(), $"syncfactors-worker-history-{Guid.NewGuid():N}.db");
+
+        try
+        {
+            var repository = await CreateRepositoryAsync(databasePath);
+
+            await repository.SaveRunAsync(
+                CreateRunRecord("bulk-old", DateTimeOffset.Parse("2026-04-01T12:00:00Z")) with
+                {
+                    Mode = "DryRun",
+                    DryRun = true,
+                    Status = "Succeeded"
+                },
+                CancellationToken.None);
+            await repository.AppendRunEntryAsync(CreateEntry(
+                "bulk-old",
+                "updates",
+                0,
+                "10001",
+                new
+                {
+                    workerId = "10001",
+                    changedAttributeDetails = new[]
+                    {
+                        new { targetAttribute = "department", sourceField = "department", currentAdValue = "Old", proposedValue = "New" }
+                    }
+                }),
+                CancellationToken.None);
+
+            await repository.SaveRunAsync(
+                CreateRunRecord(
+                    "preview-mid",
+                    DateTimeOffset.Parse("2026-04-02T12:00:00Z"),
+                    artifactType: "WorkerPreview",
+                    mode: "Preview") with
+                {
+                    Status = "Planned"
+                },
+                CancellationToken.None);
+            await repository.AppendRunEntryAsync(CreateEntry("preview-mid", "manualReview", 0, "10001"), CancellationToken.None);
+
+            await repository.SaveRunAsync(
+                CreateRunRecord("bulk-new", DateTimeOffset.Parse("2026-04-03T12:00:00Z")) with
+                {
+                    Mode = "LiveRun",
+                    DryRun = false,
+                    Status = "Failed"
+                },
+                CancellationToken.None);
+            await repository.AppendRunEntryAsync(CreateEntry("bulk-new", "conflicts", 0, "20002") with
+            {
+                SamAccountName = "user10001"
+            }, CancellationToken.None);
+
+            var total = await repository.CountWorkerRunHistoryAsync("10001", CancellationToken.None);
+            var history = await repository.ListWorkerRunHistoryAsync("10001", 0, 10, CancellationToken.None);
+
+            Assert.Equal(3, total);
+            Assert.Equal(["bulk-new", "preview-mid", "bulk-old"], history.Select(item => item.RunId).ToArray());
+            Assert.Contains(history, item => item.ArtifactType == "WorkerPreview" && item.Bucket == "manualReview");
+            Assert.Contains(history, item => item.RunId == "bulk-new" && item.SamAccountName == "user10001");
+            Assert.Contains(history, item => item.RunId == "bulk-old" && item.TopChangedAttributes.Contains("department"));
+        }
+        finally
+        {
+            File.Delete(databasePath);
+        }
+    }
+
+    [Fact]
+    public async Task GetWorkerPreviewAsync_ReturnsSavedPreviewArtifact()
+    {
+        var databasePath = Path.Combine(Path.GetTempPath(), $"syncfactors-worker-preview-{Guid.NewGuid():N}.db");
+
+        try
+        {
+            var repository = await CreateRepositoryAsync(databasePath);
+            var preview = CreateWorkerPreview("10001", "preview-fingerprint-1", "Update attributes");
+            var runId = "preview-run-1";
+
+            await repository.SaveRunAsync(
+                CreateRunRecord(
+                    runId,
+                    DateTimeOffset.Parse("2026-04-04T12:00:00Z"),
+                    artifactType: "WorkerPreview",
+                    mode: "Preview",
+                    report: JsonSerializer.SerializeToElement(new { preview })),
+                CancellationToken.None);
+
+            var result = await repository.GetWorkerPreviewAsync(runId, CancellationToken.None);
+
+            Assert.NotNull(result);
+            Assert.Equal("10001", result!.WorkerId);
+            Assert.Equal("preview-fingerprint-1", result.Fingerprint);
+            Assert.Equal("Update attributes", result.OperationSummary!.Action);
+        }
+        finally
+        {
+            File.Delete(databasePath);
+        }
+    }
+
+    [Fact]
+    public async Task ListWorkerPreviewHistoryAsync_MapsPreviewActionFingerprintAndChangeCount()
+    {
+        var databasePath = Path.Combine(Path.GetTempPath(), $"syncfactors-worker-preview-history-{Guid.NewGuid():N}.db");
+
+        try
+        {
+            var repository = await CreateRepositoryAsync(databasePath);
+            var workerId = "10001";
+
+            await repository.SaveRunAsync(
+                CreateRunRecord(
+                    "preview-old",
+                    DateTimeOffset.Parse("2026-04-03T12:00:00Z"),
+                    artifactType: "WorkerPreview",
+                    mode: "Preview",
+                    report: JsonSerializer.SerializeToElement(new { preview = CreateWorkerPreview(workerId, "old-fingerprint", "Old action") })),
+                CancellationToken.None);
+            await repository.AppendRunEntryAsync(CreateEntry(
+                "preview-old",
+                "updates",
+                0,
+                workerId,
+                item: new
+                {
+                    workerId,
+                    attributeRows = new[]
+                    {
+                        new { targetAttribute = "mail", sourceField = "email", currentAdValue = "old@example.com", proposedValue = "new@example.com", changed = true }
+                    }
+                }),
+                CancellationToken.None);
+
+            await repository.SaveRunAsync(
+                CreateRunRecord(
+                    "preview-new",
+                    DateTimeOffset.Parse("2026-04-04T12:00:00Z"),
+                    artifactType: "WorkerPreview",
+                    mode: "Preview",
+                    report: JsonSerializer.SerializeToElement(new { preview = CreateWorkerPreview(workerId, "new-fingerprint", "New action") })),
+                CancellationToken.None);
+            await repository.AppendRunEntryAsync(CreateEntry(
+                "preview-new",
+                "updates",
+                0,
+                workerId,
+                item: new
+                {
+                    workerId,
+                    attributeRows = new[]
+                    {
+                        new { targetAttribute = "mail", sourceField = "email", currentAdValue = "old@example.com", proposedValue = "new@example.com", changed = true },
+                        new { targetAttribute = "department", sourceField = "department", currentAdValue = "IT", proposedValue = "IT", changed = false }
+                    }
+                }),
+                CancellationToken.None);
+
+            var history = await repository.ListWorkerPreviewHistoryAsync(workerId, 1, CancellationToken.None);
+
+            var item = Assert.Single(history);
+            Assert.Equal("preview-new", item.RunId);
+            Assert.Equal("new-fingerprint", item.Fingerprint);
+            Assert.Equal("New action", item.Action);
+            Assert.Equal(1, item.ChangeCount);
+        }
+        finally
+        {
+            File.Delete(databasePath);
+        }
+    }
+
+    [Fact]
+    public async Task GetRunEntriesAsync_UsesOperationReportDiffsWhenEntryHasNoAttributeRows()
+    {
+        var databasePath = Path.Combine(Path.GetTempPath(), $"syncfactors-run-operation-diffs-{Guid.NewGuid():N}.db");
+
+        try
+        {
+            var repository = await CreateRepositoryAsync(databasePath);
+            var runId = "bulk-operation-diff-1";
+            var workerId = "10001";
+
+            await repository.SaveRunAsync(
+                CreateRunRecord(
+                    runId,
+                    DateTimeOffset.Parse("2026-04-05T12:00:00Z"),
+                    report: JsonSerializer.SerializeToElement(new
+                    {
+                        operations = new[]
+                        {
+                            new
+                            {
+                                workerId,
+                                bucket = "updates",
+                                operationType = "UpdateAttributes",
+                                target = new { samAccountName = "user10001" },
+                                before = new { mail = "old@example.com", department = "IT" },
+                                after = new { mail = "new@example.com", department = "IT" }
+                            }
+                        }
+                    })),
+                CancellationToken.None);
+            await repository.AppendRunEntryAsync(CreateEntry(
+                runId,
+                "updates",
+                0,
+                workerId,
+                item: new
+                {
+                    workerId,
+                    samAccountName = "user10001"
+                }) with
+                {
+                    Reason = null
+                },
+                CancellationToken.None);
+
+            var entries = await repository.GetRunEntriesAsync(runId, null, null, null, null, null, null, 0, 10, CancellationToken.None);
+
+            var entry = Assert.Single(entries);
+            Assert.Equal(1, entry.ChangeCount);
+            Assert.Equal(["mail"], entry.TopChangedAttributes);
+            Assert.Equal("Update attributes for user10001", entry.OperationSummary!.Action);
+            Assert.Equal("1 attribute changes.", entry.PrimarySummary);
+            Assert.Contains(entry.DiffRows, row => row.Attribute == "department" && !row.Changed);
+        }
+        finally
+        {
+            File.Delete(databasePath);
+        }
+    }
+
+    [Fact]
+    public async Task GetRunEntriesAsync_AppliesEntryIdWorkerReasonAndTextFilters()
+    {
+        var databasePath = Path.Combine(Path.GetTempPath(), $"syncfactors-run-entry-filter-{Guid.NewGuid():N}.db");
+
+        try
+        {
+            var repository = await CreateRepositoryAsync(databasePath);
+            var runId = "bulk-entry-filter-1";
+            var startedAt = DateTimeOffset.Parse("2026-04-06T12:00:00Z");
+
+            await repository.SaveRunAsync(CreateRunRecord(runId, startedAt), CancellationToken.None);
+            await repository.AppendRunEntryAsync(CreateEntry(runId, "updates", 0, "10001", item: new
+            {
+                workerId = "10001",
+                note = "review me"
+            }) with
+            {
+                EntryId = "entry-target",
+                SamAccountName = "target.user",
+                Reason = "Needs review",
+                ReviewCaseType = "ManagerMismatch"
+            }, CancellationToken.None);
+            await repository.AppendRunEntryAsync(CreateEntry(runId, "updates", 1, "10002", item: new
+            {
+                workerId = "10002",
+                note = "ordinary"
+            }) with
+            {
+                EntryId = "entry-other",
+                SamAccountName = "other.user",
+                Reason = "No review",
+                ReviewCaseType = "None"
+            }, CancellationToken.None);
+
+            var entries = await repository.GetRunEntriesAsync(
+                runId,
+                bucket: "updates",
+                workerId: "target",
+                reason: "needs review",
+                filter: "manager",
+                employmentStatus: null,
+                entryId: "entry-target",
+                skip: 0,
+                take: 10,
+                CancellationToken.None);
+            var total = await repository.CountRunEntriesAsync(
+                runId,
+                bucket: "updates",
+                workerId: "target",
+                reason: "needs review",
+                filter: "manager",
+                employmentStatus: null,
+                entryId: "entry-target",
+                CancellationToken.None);
+
+            var entry = Assert.Single(entries);
+            Assert.Equal("entry-target", entry.EntryId);
+            Assert.Equal("target.user", entry.SamAccountName);
+            Assert.Equal("ManagerMismatch", entry.ReviewCaseType);
+            Assert.Equal(1, total);
+        }
+        finally
+        {
+            File.Delete(databasePath);
+        }
+    }
+
+    [Fact]
+    public async Task GetRunEntriesAsync_BuildsSemanticEnableDiffAndFailureSummary()
+    {
+        var databasePath = Path.Combine(Path.GetTempPath(), $"syncfactors-run-semantic-diff-{Guid.NewGuid():N}.db");
+
+        try
+        {
+            var repository = await CreateRepositoryAsync(databasePath);
+            var runId = "bulk-semantic-diff-1";
+
+            await repository.SaveRunAsync(
+                CreateRunRecord(runId, DateTimeOffset.Parse("2026-04-06T12:30:00Z")),
+                CancellationToken.None);
+            await repository.AppendRunEntryAsync(CreateEntry(runId, "enables", 0, "10001", item: new
+            {
+                workerId = "10001",
+                samAccountName = "user10001",
+                currentEnabled = false,
+                succeeded = false,
+                message = "Enable failed."
+            }) with
+            {
+                Reason = null
+            }, CancellationToken.None);
+
+            var entry = Assert.Single(await repository.GetRunEntriesAsync(
+                runId,
+                bucket: "enables",
+                workerId: null,
+                reason: null,
+                filter: null,
+                employmentStatus: null,
+                entryId: null,
+                skip: 0,
+                take: 10,
+                CancellationToken.None));
+
+            var diff = Assert.Single(entry.DiffRows);
+            Assert.Equal("enabled", diff.Attribute);
+            Assert.Equal("false", diff.Before);
+            Assert.Equal("true", diff.After);
+            Assert.True(diff.Changed);
+            Assert.Equal(1, entry.ChangeCount);
+            Assert.Equal("1 changed attributes.", entry.PrimarySummary);
+            Assert.Equal("Enable failed.", entry.FailureSummary);
+        }
+        finally
+        {
+            File.Delete(databasePath);
+        }
+    }
+
     private static async Task<SqliteRunRepository> CreateRepositoryAsync(string databasePath)
     {
         var pathResolver = new SqlitePathResolver(databasePath);
@@ -650,7 +1007,8 @@ public sealed class SqliteRunRepositoryTests
         string runId,
         DateTimeOffset startedAt,
         string artifactType = "BulkRun",
-        string mode = "BulkSync")
+        string mode = "BulkSync",
+        JsonElement? report = null)
     {
         return new RunRecord(
             RunId: runId,
@@ -675,9 +1033,43 @@ public sealed class SqliteRunRepositoryTests
             GuardrailFailures: 0,
             ManualReview: 0,
             Unchanged: 0,
-            Report: JsonSerializer.SerializeToElement(new { kind = "bulkRun", runId }),
+            Report: report ?? JsonSerializer.SerializeToElement(new { kind = "bulkRun", runId }),
             RunTrigger: "AdHoc",
             RequestedBy: "test");
+    }
+
+    private static WorkerPreviewResult CreateWorkerPreview(string workerId, string fingerprint, string action)
+    {
+        return new WorkerPreviewResult(
+            ReportPath: null,
+            RunId: null,
+            PreviousRunId: null,
+            Fingerprint: fingerprint,
+            Mode: "Preview",
+            Status: "Planned",
+            ErrorMessage: null,
+            ArtifactType: "WorkerPreview",
+            SuccessFactorsAuth: "Mock",
+            WorkerId: workerId,
+            Buckets: ["updates"],
+            MatchedExistingUser: true,
+            ReviewCategory: null,
+            ReviewCaseType: null,
+            Reason: null,
+            OperatorActionSummary: action,
+            SamAccountName: $"user{workerId}",
+            ManagerDistinguishedName: null,
+            TargetOu: null,
+            CurrentDistinguishedName: null,
+            CurrentEnabled: true,
+            ProposedEnable: true,
+            OperationSummary: new OperationSummary(action, "1 attribute changes.", null, null, null),
+            DiffRows: [new DiffRow("mail", "email", "old@example.com", "new@example.com", true)],
+            SourceAttributes: [],
+            UsedSourceAttributes: [],
+            UnusedSourceAttributes: [],
+            MissingSourceAttributes: [],
+            Entries: []);
     }
 
     private static RunEntryRecord CreateEntry(string runId, string bucket, int bucketIndex, string workerId, object? item = null)

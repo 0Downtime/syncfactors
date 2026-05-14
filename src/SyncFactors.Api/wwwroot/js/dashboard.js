@@ -34,7 +34,7 @@
 
     if (refreshButton) {
         refreshButton.addEventListener("click", function () {
-            window.location.reload();
+            globalThis.location.reload();
         });
     }
 
@@ -77,7 +77,7 @@
         }
 
         var parsed = new Date(value);
-        return isNaN(parsed.getTime())
+        return Number.isNaN(parsed.getTime())
             ? "Unknown"
             : parsed.toLocaleString([], {
                 year: "numeric",
@@ -98,7 +98,7 @@
     }
 
     function textOrFallback(value, fallback) {
-        return value ? value : fallback;
+        return value || fallback;
     }
 
     function displayStage(stage) {
@@ -106,7 +106,7 @@
             return "standby";
         }
 
-        return stage.replace(/inprogress/ig, "in progress").toLowerCase();
+        return stage.replaceAll(/inprogress/ig, "in progress").toLowerCase();
     }
 
     function visualState(status) {
@@ -390,8 +390,9 @@
             detailParts.push(probe.details);
         }
 
-        detailParts.push("Checked " + formatTimestamp(probe.checkedAt));
-        detailParts.push("Latency " + probe.durationMilliseconds + " ms");
+        detailParts.push(
+            "Checked " + formatTimestamp(probe.checkedAt),
+            "Latency " + probe.durationMilliseconds + " ms");
 
         if (probe.observedAt) {
             detailParts.push("Observed " + formatTimestamp(probe.observedAt));
@@ -480,23 +481,23 @@
     function startPolling() {
         loadDashboard();
         loadHealth();
-        timerId = window.setInterval(loadHealth, pollIntervalMs);
-        dashboardTimerId = window.setInterval(loadDashboard, dashboardPollIntervalMs);
+        timerId = globalThis.setInterval(loadHealth, pollIntervalMs);
+        dashboardTimerId = globalThis.setInterval(loadDashboard, dashboardPollIntervalMs);
     }
 
-    if ("requestIdleCallback" in window) {
-        window.requestIdleCallback(startPolling, { timeout: 2000 });
+    if ("requestIdleCallback" in globalThis) {
+        globalThis.requestIdleCallback(startPolling, { timeout: 2000 });
     } else {
-        window.setTimeout(startPolling, 0);
+        globalThis.setTimeout(startPolling, 0);
     }
 
-    window.addEventListener("beforeunload", function () {
+    globalThis.addEventListener("beforeunload", function () {
         if (timerId) {
-            window.clearInterval(timerId);
+            globalThis.clearInterval(timerId);
         }
 
         if (dashboardTimerId) {
-            window.clearInterval(dashboardTimerId);
+            globalThis.clearInterval(dashboardTimerId);
         }
     });
 })();

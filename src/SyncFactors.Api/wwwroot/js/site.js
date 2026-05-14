@@ -1,7 +1,7 @@
 (function () {
     var key = "syncfactors-next-theme";
     var root = document.documentElement;
-    var toggle = document.getElementById("theme-toggle");
+    var toggle = document.querySelector("[data-theme-toggle]");
 
     if (!toggle) {
         return;
@@ -16,9 +16,9 @@
 
     function persistTheme(theme) {
         try {
-            window.localStorage.setItem(key, theme);
+            globalThis.localStorage.setItem(key, theme);
         } catch (error) {
-            return;
+            globalThis.console.debug("Theme preference could not be persisted.", error);
         }
     }
 

@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using Serilog;
 using SyncFactors.Domain;
 using SyncFactors.Infrastructure;
+using SyncFactors.Worker;
 using System.Net;
 
 const string WindowsServiceName = "SyncFactors.Worker";
@@ -30,7 +31,12 @@ builder.Services.AddSingleton<ScaffoldWorkerSource>();
 builder.Services.AddSingleton(serviceProvider =>
 {
     var config = serviceProvider.GetRequiredService<SyncFactorsConfigurationLoader>().GetSyncConfig();
-    return new SyncFactors.Contracts.WorkerRunSettings(config.Safety.MaxCreatesPerRun, config.Safety.MaxDisablesPerRun, config.Safety.MaxDeletionsPerRun);
+    return new SyncFactors.Contracts.WorkerRunSettings(
+        config.Safety.MaxCreatesPerRun,
+        config.Safety.MaxDisablesPerRun,
+        config.Safety.MaxDeletionsPerRun,
+        ManualReviewRequired(config, "DisableUser", "MoveToGraveyardOu"),
+        ManualReviewRequired(config, "DeleteUser"));
 });
 builder.Services.AddSingleton(serviceProvider =>
 {
@@ -44,7 +50,9 @@ builder.Services.AddSingleton(serviceProvider =>
 builder.Services.AddSingleton(serviceProvider =>
 {
     var config = serviceProvider.GetRequiredService<SyncFactorsConfigurationLoader>().GetSyncConfig();
-    return new SyncFactors.Contracts.RealSyncSettings(config.Sync.RealSyncEnabled);
+    var dryRunOnly = serviceProvider.GetRequiredService<IConfiguration>()
+        .GetValue<bool?>("SyncFactors:Runtime:DryRunOnly") ?? false;
+    return new SyncFactors.Contracts.RealSyncSettings(config.Sync.RealSyncEnabled, dryRunOnly);
 });
 builder.Services.AddSingleton(serviceProvider =>
 {
@@ -133,7 +141,7 @@ host.Services.GetRequiredService<SyncFactorsConfigurationValidator>().Validate()
 await host.Services.GetRequiredService<RunQueueRecoveryService>().RecoverIfNeededAsync("worker startup", CancellationToken.None);
 LogRuntimeVersion(host);
 LogConfiguredEndpoints(host);
-host.Run();
+await host.RunAsync();
 
 static void LogRuntimeVersion(IHost host)
 {
@@ -287,6 +295,14 @@ static void ConfigureWindowsEventLog(IServiceCollection services, string service
         options.SourceName = serviceName;
 #pragma warning restore CA1416
     });
+}
+
+static bool ManualReviewRequired(SyncFactorsConfigDocument config, params string[] operationKinds)
+{
+    return config.Approval.Enabled &&
+           operationKinds.Any(operationKind =>
+               config.Approval.RequireFor.Any(required =>
+                   string.Equals(required, operationKind, StringComparison.OrdinalIgnoreCase)));
 }
 
 static void ConfigureApplicationInsights(HostApplicationBuilder builder)

@@ -320,6 +320,31 @@ public sealed class GraveyardAutoDeleteCoordinator(
         int deletionCount,
         CancellationToken cancellationToken)
     {
+        if (workerRunSettings.ManualReviewDeletions)
+        {
+            return new WorkerRunResult(
+                WorkerId: item.WorkerId,
+                Bucket: "manualReview",
+                SamAccountName: item.SamAccountName,
+                Reason: ManualReviewSafetyPolicy.DeletionReviewReason,
+                ReviewCategory: ManualReviewSafetyPolicy.ReviewCategory,
+                ReviewCaseType: ManualReviewSafetyPolicy.DeletionReviewCaseType,
+                Action: null,
+                Applied: false,
+                Succeeded: true,
+                OperationSummary: new OperationSummary("DeleteUser", "Deletion requires manual review.", null, DirectoryDistinguishedName.GetParentOu(item.DistinguishedName), null),
+                DiffRows: [],
+                Item: BuildEntryItem(
+                    item,
+                    "manualReview",
+                    action: null,
+                    applied: false,
+                    succeeded: true,
+                    ManualReviewSafetyPolicy.DeletionReviewReason,
+                    ManualReviewSafetyPolicy.ReviewCategory,
+                    ManualReviewSafetyPolicy.DeletionReviewCaseType));
+        }
+
         if (deletionCount + 1 > workerRunSettings.MaxDeletionsPerRun)
         {
             var reason = $"Deletion guardrail exceeded. MaxDeletionsPerRun={workerRunSettings.MaxDeletionsPerRun}.";
@@ -425,6 +450,7 @@ public sealed class GraveyardAutoDeleteCoordinator(
         return bucket switch
         {
             "deletions" => tally with { Deletions = tally.Deletions + 1 },
+            "manualReview" => tally with { ManualReview = tally.ManualReview + 1 },
             "guardrailFailures" => tally with { GuardrailFailures = tally.GuardrailFailures + 1 },
             "conflicts" => tally with { Conflicts = tally.Conflicts + 1 },
             _ => tally with { Unchanged = tally.Unchanged + 1 }
@@ -437,8 +463,13 @@ public sealed class GraveyardAutoDeleteCoordinator(
         string? action,
         bool applied,
         bool succeeded,
-        string? reason)
+        string? reason,
+        string? reviewCategory = null,
+        string? reviewCaseType = null)
     {
+        reviewCategory ??= bucket == "conflicts" ? "ExternalSystem" : null;
+        reviewCaseType ??= bucket == "conflicts" ? "DeleteFailed" : null;
+
         return ParseJson(
             $$"""
             {
@@ -448,8 +479,8 @@ public sealed class GraveyardAutoDeleteCoordinator(
               "emplStatus": {{ToJsonString(item.Status)}},
               "currentOu": {{ToJsonString(DirectoryDistinguishedName.GetParentOu(item.DistinguishedName))}},
               "managerDistinguishedName": null,
-              "reviewCategory": {{ToJsonString(bucket == "conflicts" ? "ExternalSystem" : null)}},
-              "reviewCaseType": {{ToJsonString(bucket == "conflicts" ? "DeleteFailed" : null)}},
+              "reviewCategory": {{ToJsonString(reviewCategory)}},
+              "reviewCaseType": {{ToJsonString(reviewCaseType)}},
               "reason": {{ToJsonString(reason)}},
               "bucket": "{{Escape(bucket)}}",
               "action": {{ToJsonString(action)}},
@@ -499,6 +530,7 @@ public sealed class GraveyardAutoDeleteCoordinator(
                 "deletions": {{tally.Deletions}},
                 "guardrailFailures": {{tally.GuardrailFailures}},
                 "conflicts": {{tally.Conflicts}},
+                "manualReview": {{tally.ManualReview}},
                 "unchanged": {{tally.Unchanged}}
               },
               "operations": []

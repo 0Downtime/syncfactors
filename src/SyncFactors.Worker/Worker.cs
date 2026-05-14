@@ -4,6 +4,8 @@ using SyncFactors.Contracts;
 using SyncFactors.Domain;
 using SyncFactors.Infrastructure;
 
+namespace SyncFactors.Worker;
+
 public sealed class Worker(
     ILogger<Worker> logger,
     IRunQueueStore runQueueStore,
@@ -70,7 +72,7 @@ public sealed class Worker(
                 }
                 finally
                 {
-                    heartbeatCts.Cancel();
+                    await heartbeatCts.CancelAsync();
                     await AwaitHeartbeatPumpAsync(heartbeatTask);
                 }
             }

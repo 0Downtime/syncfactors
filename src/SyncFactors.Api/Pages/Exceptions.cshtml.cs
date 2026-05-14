@@ -24,7 +24,7 @@ public sealed class ExceptionsModel(ExceptionQueueQueryService queryService) : P
         PageSize: ExceptionQueueQueryService.DefaultPageSize,
         TotalPages: 1);
 
-    public IReadOnlyList<ExceptionQueueType> QueueTypes => ExceptionQueueQueryService.QueueTypes;
+    public static IReadOnlyList<ExceptionQueueType> QueueTypes => ExceptionQueueQueryService.QueueTypes;
 
     public bool HasPreviousPage => Queue.Page > 1;
 

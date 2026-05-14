@@ -18,6 +18,7 @@ param(
     [string]$LogDirectory,
     [string]$TlsCertificatePath,
     [string]$TlsCertificatePassword,
+    [string]$WindowsCredentialPrefix,
     [pscredential]$Credential
 )
 
@@ -274,6 +275,9 @@ $commonEnvironment = @(
     "Logging__EventLog__LogLevel__Microsoft.Hosting.Lifetime=Information",
     "Logging__EventLog__LogLevel__SyncFactors=Information"
 )
+if (-not [string]::IsNullOrWhiteSpace($WindowsCredentialPrefix)) {
+    $commonEnvironment += "SYNCFACTORS_WINDOWS_CREDENTIAL_PREFIX=$WindowsCredentialPrefix"
+}
 
 $apiEnvironment = @($commonEnvironment + @(
     "ASPNETCORE_ENVIRONMENT=Production",
