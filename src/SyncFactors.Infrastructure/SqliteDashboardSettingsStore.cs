@@ -97,12 +97,5 @@ public sealed class SqliteDashboardSettingsStore(SqlitePathResolver pathResolver
     }
 
     private static SqliteConnection OpenConnection(string databasePath)
-    {
-        var connectionString = new SqliteConnectionStringBuilder
-        {
-            DataSource = databasePath,
-            Mode = SqliteOpenMode.ReadWriteCreate
-        }.ToString();
-        return new SqliteConnection(connectionString);
-    }
+        => SqliteConnections.Open(databasePath);
 }

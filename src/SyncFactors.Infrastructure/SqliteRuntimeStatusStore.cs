@@ -227,24 +227,10 @@ public sealed class SqliteRuntimeStatusStore(SqlitePathResolver pathResolver) : 
     }
 
     private static SqliteConnection OpenConnection(string databasePath)
-    {
-        var connectionString = new SqliteConnectionStringBuilder
-        {
-            DataSource = databasePath,
-            Mode = SqliteOpenMode.ReadWriteCreate,
-        }.ToString();
-        return new SqliteConnection(connectionString);
-    }
+        => SqliteConnections.Open(databasePath);
 
     private static SqliteConnection OpenWriteConnection(string databasePath)
-    {
-        var connectionString = new SqliteConnectionStringBuilder
-        {
-            DataSource = databasePath,
-            Mode = SqliteOpenMode.ReadWriteCreate,
-        }.ToString();
-        return new SqliteConnection(connectionString);
-    }
+        => SqliteConnections.Open(databasePath);
 
     private static object ToDbValue(DateTimeOffset? value) => value?.ToString("O") ?? (object)DBNull.Value;
 }

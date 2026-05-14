@@ -81,6 +81,8 @@ src/SyncFactors.Api/.\\reports\\mock-output/
 /docs/syncfactors-it-review-enterprise.pdf
 /docs/syncfactors-it-review.md
 /docs/syncfactors-it-review.pdf
+/docs/syncfactors-security-summary.docx
+/docs/syncfactors-security-summary.pdf
 /scripts/build-syncfactors-it-review-docx.py
 /scripts/generate-syncfactors-it-review-pdf.py
 /scripts/render-pdf-pages.swift

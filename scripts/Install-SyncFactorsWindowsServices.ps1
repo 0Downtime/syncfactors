@@ -15,6 +15,7 @@ param(
     [string]$ConfigPath,
     [string]$MappingConfigPath,
     [string]$SqlitePath,
+    [string]$SqlitePassword,
     [string]$LogDirectory,
     [string]$TlsCertificatePath,
     [string]$TlsCertificatePassword,
@@ -251,6 +252,9 @@ if ([string]::IsNullOrWhiteSpace($ConfigPath)) {
 if ([string]::IsNullOrWhiteSpace($MappingConfigPath)) {
     $MappingConfigPath = Join-Path (Join-Path $resolvedBundleRoot 'config') 'local.syncfactors.mapping-config.json'
 }
+if ([string]::IsNullOrWhiteSpace($SqlitePassword)) {
+    $SqlitePassword = $env:SYNCFACTORS_SQLITE_PASSWORD
+}
 
 $ConfigPath = [System.IO.Path]::GetFullPath($ConfigPath)
 $MappingConfigPath = [System.IO.Path]::GetFullPath($MappingConfigPath)
@@ -279,6 +283,9 @@ $commonEnvironment = @(
 )
 if (-not [string]::IsNullOrWhiteSpace($WindowsCredentialPrefix)) {
     $commonEnvironment += "SYNCFACTORS_WINDOWS_CREDENTIAL_PREFIX=$WindowsCredentialPrefix"
+}
+if (-not [string]::IsNullOrWhiteSpace($SqlitePassword)) {
+    $commonEnvironment += "SYNCFACTORS_SQLITE_PASSWORD=$SqlitePassword"
 }
 
 $apiEnvironment = @($commonEnvironment + @(
@@ -334,6 +341,7 @@ if ($Service -in @('All', 'Worker')) {
     configPath = $ConfigPath
     mappingConfigPath = $MappingConfigPath
     sqlitePath = $SqlitePath
+    sqliteEncryption = if ([string]::IsNullOrWhiteSpace($SqlitePassword)) { 'disabled' } else { 'enabled' }
     logDirectory = $LogDirectory
     eventLog = 'Application'
 }

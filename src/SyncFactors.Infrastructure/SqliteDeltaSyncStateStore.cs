@@ -68,14 +68,7 @@ public sealed class SqliteDeltaSyncStateStore(SqlitePathResolver pathResolver) :
     }
 
     private static SqliteConnection OpenConnection(string databasePath, SqliteOpenMode mode)
-    {
-        var connectionString = new SqliteConnectionStringBuilder
-        {
-            DataSource = databasePath,
-            Mode = mode
-        }.ToString();
-        return new SqliteConnection(connectionString);
-    }
+        => SqliteConnections.Open(databasePath, mode);
 
     private static DateTimeOffset? ParseDate(string? value)
     {

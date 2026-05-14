@@ -70,6 +70,7 @@ function Get-WorktreeEnvLauncherFallbackValues {
         'SYNCFACTORS_CONFIG_PATH' = ''
         'SYNCFACTORS_MAPPING_CONFIG_PATH' = './config/local.syncfactors.mapping-config.json'
         'SYNCFACTORS_SQLITE_PATH' = './state/runtime/syncfactors.db'
+        'SYNCFACTORS_SQLITE_PASSWORD' = ''
         'SYNCFACTORS_API_BIND_HOST' = '127.0.0.1'
         'SYNCFACTORS_API_PUBLIC_HOST' = '127.0.0.1'
         'SYNCFACTORS_API_PORT' = '5087'
@@ -446,6 +447,7 @@ function Get-SyncFactorsSecureStoreVariableNames {
         'SYNCFACTORS__AUTH__BOOTSTRAPADMIN__PASSWORD',
         'SYNCFACTORS_AUTOMATION_USERNAME',
         'SYNCFACTORS_AUTOMATION_PASSWORD',
+        'SYNCFACTORS_SQLITE_PASSWORD',
         'SF_AD_SYNC_SF_USERNAME',
         'SF_AD_SYNC_SF_PASSWORD',
         'SF_AD_SYNC_SF_CLIENT_ID',

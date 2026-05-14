@@ -280,7 +280,7 @@ public sealed class SqliteLocalUserStore(SqlitePathResolver pathResolver) : ILoc
 
     private static async Task<SqliteConnection> OpenConnectionAsync(string databasePath, CancellationToken cancellationToken)
     {
-        var connection = new SqliteConnection($"Data Source={databasePath}");
+        var connection = SqliteConnections.Open(databasePath);
         await connection.OpenAsync(cancellationToken);
         return connection;
     }

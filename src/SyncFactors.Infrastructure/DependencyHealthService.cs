@@ -359,11 +359,7 @@ public sealed class DependencyHealthService(
                 return BuildProbe("SQLite", DependencyHealthStates.Unhealthy, "SQLite path is not configured.", checkedAt, stopwatch.ElapsedMilliseconds);
             }
 
-            await using var connection = new SqliteConnection(new SqliteConnectionStringBuilder
-            {
-                DataSource = databasePath,
-                Mode = SqliteOpenMode.ReadWriteCreate,
-            }.ToString());
+            await using var connection = SqliteConnections.Open(databasePath);
 
             await connection.OpenAsync(cancellationToken);
             await using var command = connection.CreateCommand();

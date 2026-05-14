@@ -186,6 +186,7 @@ Configure these Azure DevOps variables before enabling deployment:
 | `createLocalServiceAccount` | Set to `true` to create `serviceUserName` as a local Windows runtime account before installing services. Leave `false` for a pre-created domain account. |
 | `windowsCredentialPrefix` | Windows Credential Manager target prefix used by the services. Defaults to `SyncFactors`. |
 | `serviceUserName` / `serviceUserPassword` | Runtime Windows service credential for `SyncFactors.Api` and `SyncFactors.Worker`. Mark the password secret. |
+| `sqlitePassword` | Optional SQLCipher password for the runtime SQLite database. Mark it secret and keep the same value for API, worker, and automation. |
 
 The deployment uses two accounts: a deploy account for Azure DevOps WinRM/file-copy/install actions and a runtime account for the API and worker Windows Services. The runtime account is also the default Active Directory identity: keep `ad.username` and `ad.bindPassword` blank, and SyncFactors binds to AD as the Windows service identity on Windows. The deployment runs [`scripts/Install-SyncFactorsWindowsPrerequisites.ps1`](scripts/Install-SyncFactorsWindowsPrerequisites.ps1) on the server before service installation. That script creates the install/runtime/log directories, installs or verifies PowerShell 7, creates an optional local runtime account, grants `Log on as a service`, grants runtime-account access to the deployment paths, and can open the API firewall port. The app bundle is self-contained, so no separate .NET runtime installation is required on the server.
 
@@ -416,6 +417,7 @@ SYNCFACTORS_RUN_PROFILE=mock
 SYNCFACTORS_CONFIG_PATH=
 SYNCFACTORS_MAPPING_CONFIG_PATH=./config/local.syncfactors.mapping-config.json
 SYNCFACTORS_SQLITE_PATH=./state/runtime/syncfactors.db
+SYNCFACTORS_SQLITE_PASSWORD=
 SYNCFACTORS_API_BIND_HOST=127.0.0.1
 SYNCFACTORS_API_PUBLIC_HOST=127.0.0.1
 SYNCFACTORS_API_PORT=5087
@@ -438,6 +440,12 @@ SF_AD_SYNC_AD_USERNAME=
 SF_AD_SYNC_AD_BIND_PASSWORD=
 SF_AD_SYNC_AD_DEFAULT_PASSWORD=
 ```
+
+### SQLite Encryption
+
+Set `SYNCFACTORS_SQLITE_PASSWORD` to enable SQLCipher encryption for the runtime SQLite database. The same value must be present for the API, worker, and automation commands that open the runtime database. The app also recognizes `SyncFactors__SqlitePassword`, but `SYNCFACTORS_SQLITE_PASSWORD` is preferred because it is clearly secret material and should come from the OS secret store or service environment rather than tracked JSON.
+
+When the password is configured and the existing database is still plaintext, startup exports the plaintext database to an encrypted SQLCipher copy, replaces the active database file, and leaves an owner-only `*.plaintext-<timestamp>.bak` rollback copy beside it. Validate startup, then move or securely delete that plaintext backup according to your retention policy. If the password is changed later, the app will not silently rekey an encrypted database; keep the original key available until a deliberate rekey workflow is added.
 
 `.env.worktree.example` also carries the Entra/OIDC keys and optional auth session tuning values as commented placeholders until you intentionally enable SSO for that worktree.
 
