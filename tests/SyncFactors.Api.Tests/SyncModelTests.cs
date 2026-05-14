@@ -295,6 +295,20 @@ public sealed class SyncModelTests
     }
 
     [Fact]
+    public async Task OnPostSaveScheduleAsync_UsesDryRunLabelWhenDryRunOnlyIsEnabled()
+    {
+        var scheduleStore = new StubSyncScheduleStore();
+        var model = CreateModel(realSyncSettings: new RealSyncSettings(Enabled: true, DryRunOnly: true), scheduleStore: scheduleStore);
+        model.ScheduleEnabled = true;
+        model.IntervalMinutes = 45;
+        AttachAuthenticatedUser(model, "admin@example.com", SecurityRoles.Admin);
+
+        await model.OnPostSaveScheduleAsync(CancellationToken.None);
+
+        Assert.Equal("Recurring dry-run sync enabled every 45 minutes.", model.SuccessMessage);
+    }
+
+    [Fact]
     public async Task OnPostSaveScheduleAsync_ForbidsOperators()
     {
         var scheduleStore = new StubSyncScheduleStore();

@@ -56,7 +56,7 @@ internal static class ActiveDirectoryConnectionFactory
         WarnIfSimpleBindUsernameLooksSuspicious(config, logger, mode, port);
         var connection = new LdapConnection(identifier)
         {
-            AuthType = string.IsNullOrWhiteSpace(config.Username) ? AuthType.Anonymous : AuthType.Basic,
+            AuthType = ResolveAuthType(config),
             Timeout = timeout
         };
 
@@ -126,6 +126,18 @@ internal static class ActiveDirectoryConnectionFactory
             config.Username,
             port,
             mode);
+    }
+
+    internal static AuthType ResolveAuthType(ActiveDirectoryConfig config)
+    {
+        if (!string.IsNullOrWhiteSpace(config.Username))
+        {
+            return AuthType.Basic;
+        }
+
+        return OperatingSystem.IsWindows()
+            ? AuthType.Negotiate
+            : AuthType.Anonymous;
     }
 
     internal static void ConfigureSessionOptions(
