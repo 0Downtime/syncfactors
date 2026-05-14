@@ -18,12 +18,14 @@ param(
     [string]$LogDirectory,
     [string]$TlsCertificatePath,
     [string]$TlsCertificatePassword,
+    [string]$TlsCertificateThumbprint,
     [string]$WindowsCredentialPrefix,
     [pscredential]$Credential
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'Start-SyncFactorsCommon.ps1')
 
 function Test-IsWindowsAdministrator {
     if (-not [System.OperatingSystem]::IsWindows()) {
@@ -288,6 +290,14 @@ if (-not [string]::IsNullOrWhiteSpace($TlsCertificatePath)) {
 }
 if (-not [string]::IsNullOrWhiteSpace($TlsCertificatePassword)) {
     $apiEnvironment += "ASPNETCORE_Kestrel__Certificates__Default__Password=$TlsCertificatePassword"
+}
+if ([string]::IsNullOrWhiteSpace($TlsCertificatePath) -and
+    [string]::IsNullOrWhiteSpace($TlsCertificatePassword)) {
+    $machineCertificate = Find-SyncFactorsMachineCertificate -Urls $ApiUrls -Thumbprint $TlsCertificateThumbprint
+    if ($null -ne $machineCertificate) {
+        $apiEnvironment += "SyncFactors__Tls__MachineCertificateThumbprint=$($machineCertificate.Thumbprint)"
+        $apiEnvironment += "SYNCFACTORS_TLS_CERT_THUMBPRINT=$($machineCertificate.Thumbprint)"
+    }
 }
 
 $workerEnvironment = @($commonEnvironment)

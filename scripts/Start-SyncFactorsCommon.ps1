@@ -158,6 +158,207 @@ function Set-SyncFactorsSecretFile {
     }
 }
 
+function Normalize-SyncFactorsCertificateThumbprint {
+    param(
+        [string]$Thumbprint
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Thumbprint)) {
+        return ''
+    }
+
+    return ($Thumbprint -replace '[^0-9A-Fa-f]', '').ToUpperInvariant()
+}
+
+function Add-SyncFactorsCertificateHostCandidate {
+    param(
+        [Parameter(Mandatory)]
+        [System.Collections.Generic.List[string]]$Candidates,
+        [string]$HostName
+    )
+
+    if ([string]::IsNullOrWhiteSpace($HostName)) {
+        return $false
+    }
+
+    $normalized = $HostName.Trim().Trim('[', ']').TrimEnd('.')
+    if ([string]::IsNullOrWhiteSpace($normalized) -or (Test-SyncFactorsWildcardHost -HostName $normalized)) {
+        return $false
+    }
+
+    if (-not $Candidates.Contains($normalized)) {
+        $Candidates.Add($normalized)
+    }
+
+    return $true
+}
+
+function Test-SyncFactorsWildcardHost {
+    param(
+        [string]$HostName
+    )
+
+    return $HostName -eq '*' -or
+        $HostName -eq '+' -or
+        $HostName -eq '0.0.0.0' -or
+        $HostName -eq '::'
+}
+
+function Get-SyncFactorsCertificateHostCandidates {
+    param(
+        [string]$Urls
+    )
+
+    $candidates = [System.Collections.Generic.List[string]]::new()
+    $hadPublicHost = Add-SyncFactorsCertificateHostCandidate -Candidates $candidates -HostName $env:SYNCFACTORS_API_PUBLIC_HOST
+    $hasWildcardBinding = $false
+
+    if (-not [string]::IsNullOrWhiteSpace($Urls)) {
+        foreach ($rawUrl in ($Urls -split ';' | ForEach-Object { $_.Trim() } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })) {
+            try {
+                $uri = [System.Uri]::new($rawUrl)
+                $hasWildcardBinding = (Test-SyncFactorsWildcardHost -HostName $uri.Host) -or $hasWildcardBinding
+                $null = Add-SyncFactorsCertificateHostCandidate -Candidates $candidates -HostName $uri.Host
+            }
+            catch {
+            }
+        }
+    }
+
+    if ($hadPublicHost -or $hasWildcardBinding -or $candidates.Count -eq 0) {
+        $null = Add-SyncFactorsCertificateHostCandidate -Candidates $candidates -HostName ([Environment]::MachineName)
+        try {
+            $null = Add-SyncFactorsCertificateHostCandidate -Candidates $candidates -HostName ([System.Net.Dns]::GetHostEntry('').HostName)
+        }
+        catch {
+        }
+    }
+
+    return $candidates.ToArray()
+}
+
+function Test-SyncFactorsCertificateHostMatch {
+    param(
+        [Parameter(Mandatory)]
+        [string]$HostName,
+        [Parameter(Mandatory)]
+        [string]$CertificateName
+    )
+
+    $hostValue = $HostName.Trim().TrimEnd('.').ToLowerInvariant()
+    $certValue = $CertificateName.Trim().TrimEnd('.').ToLowerInvariant()
+    if ($hostValue -eq $certValue) {
+        return $true
+    }
+
+    if (-not $certValue.StartsWith('*.')) {
+        return $false
+    }
+
+    $suffix = $certValue.Substring(1)
+    if (-not $hostValue.EndsWith($suffix)) {
+        return $false
+    }
+
+    $prefix = $hostValue.Substring(0, $hostValue.Length - $suffix.Length)
+    return $prefix.Length -gt 0 -and -not $prefix.Contains('.')
+}
+
+function Get-SyncFactorsCertificateDnsNames {
+    param(
+        [Parameter(Mandatory)]
+        [System.Security.Cryptography.X509Certificates.X509Certificate2]$Certificate
+    )
+
+    $names = [System.Collections.Generic.List[string]]::new()
+    $dnsNameListProperty = $Certificate.PSObject.Properties['DnsNameList']
+    if ($null -ne $dnsNameListProperty) {
+        foreach ($dnsName in @($dnsNameListProperty.Value | ForEach-Object { $_.Unicode })) {
+            $null = Add-SyncFactorsCertificateHostCandidate -Candidates $names -HostName $dnsName
+        }
+    }
+
+    $simpleName = $Certificate.GetNameInfo([System.Security.Cryptography.X509Certificates.X509NameType]::DnsName, $false)
+    $null = Add-SyncFactorsCertificateHostCandidate -Candidates $names -HostName $simpleName
+    return $names.ToArray()
+}
+
+function Test-SyncFactorsUsableServerCertificate {
+    param(
+        [Parameter(Mandatory)]
+        [System.Security.Cryptography.X509Certificates.X509Certificate2]$Certificate
+    )
+
+    if (-not $Certificate.HasPrivateKey -or $Certificate.NotAfter -le (Get-Date) -or $Certificate.NotBefore -gt (Get-Date)) {
+        return $false
+    }
+
+    $eku = @($Certificate.Extensions | Where-Object { $_ -is [System.Security.Cryptography.X509Certificates.X509EnhancedKeyUsageExtension] } | Select-Object -First 1)
+    if ($eku.Count -eq 0) {
+        return $true
+    }
+
+    return @($eku[0].EnhancedKeyUsages | Where-Object { $_.Value -eq '1.3.6.1.5.5.7.3.1' }).Count -gt 0
+}
+
+function Find-SyncFactorsMachineCertificate {
+    param(
+        [string]$Urls,
+        [string]$Thumbprint
+    )
+
+    if (-not [OperatingSystem]::IsWindows()) {
+        return $null
+    }
+
+    $normalizedThumbprint = Normalize-SyncFactorsCertificateThumbprint -Thumbprint $Thumbprint
+    $store = [System.Security.Cryptography.X509Certificates.X509Store]::new(
+        [System.Security.Cryptography.X509Certificates.StoreName]::My,
+        [System.Security.Cryptography.X509Certificates.StoreLocation]::LocalMachine)
+
+    try {
+        $store.Open([System.Security.Cryptography.X509Certificates.OpenFlags]::ReadOnly)
+        $certificates = @($store.Certificates | Where-Object { Test-SyncFactorsUsableServerCertificate -Certificate $_ })
+
+        if (-not [string]::IsNullOrWhiteSpace($normalizedThumbprint)) {
+            return $certificates |
+                Where-Object { (Normalize-SyncFactorsCertificateThumbprint -Thumbprint $_.Thumbprint) -eq $normalizedThumbprint } |
+                Sort-Object -Property NotAfter -Descending |
+                Select-Object -First 1
+        }
+
+        $hostCandidates = @(Get-SyncFactorsCertificateHostCandidates -Urls $Urls)
+        if ($hostCandidates.Count -eq 0) {
+            return $null
+        }
+
+        return $certificates |
+            Where-Object {
+                $matched = $false
+                $certificateNames = @(Get-SyncFactorsCertificateDnsNames -Certificate $_)
+                foreach ($candidate in $hostCandidates) {
+                    foreach ($certificateName in $certificateNames) {
+                        if (Test-SyncFactorsCertificateHostMatch -HostName $candidate -CertificateName $certificateName) {
+                            $matched = $true
+                            break
+                        }
+                    }
+
+                    if ($matched) {
+                        break
+                    }
+                }
+
+                $matched
+            } |
+            Sort-Object -Property NotAfter -Descending |
+            Select-Object -First 1
+    }
+    finally {
+        $store.Close()
+    }
+}
+
 function Initialize-SyncFactorsHttpsEnvironment {
     param(
         [Parameter(Mandatory)]
@@ -170,15 +371,26 @@ function Initialize-SyncFactorsHttpsEnvironment {
         throw "SyncFactors launch scripts enforce HTTPS-only bindings. Use https:// URLs only."
     }
 
+    $explicitCertificatePath = -not [string]::IsNullOrWhiteSpace($env:SYNCFACTORS_TLS_CERT_PATH)
+    $explicitCertificatePassword = -not [string]::IsNullOrWhiteSpace($env:SYNCFACTORS_TLS_CERT_PASSWORD)
+    if (-not $explicitCertificatePath -and -not $explicitCertificatePassword) {
+        $machineCertificate = Find-SyncFactorsMachineCertificate -Urls $Urls -Thumbprint $env:SYNCFACTORS_TLS_CERT_THUMBPRINT
+        if ($null -ne $machineCertificate) {
+            $env:SYNCFACTORS_TLS_CERT_THUMBPRINT = $machineCertificate.Thumbprint
+            $env:SyncFactors__Tls__MachineCertificateThumbprint = $machineCertificate.Thumbprint
+            return
+        }
+    }
+
     $tlsAssets = Get-SyncFactorsTlsAssetPaths -ProjectRoot $ProjectRoot
-    $certificatePath = if ([string]::IsNullOrWhiteSpace($env:SYNCFACTORS_TLS_CERT_PATH)) {
+    $certificatePath = if (-not $explicitCertificatePath) {
         $tlsAssets.CertificatePath
     }
     else {
         $env:SYNCFACTORS_TLS_CERT_PATH
     }
 
-    $certificatePassword = if ([string]::IsNullOrWhiteSpace($env:SYNCFACTORS_TLS_CERT_PASSWORD)) {
+    $certificatePassword = if (-not $explicitCertificatePassword) {
         Get-SyncFactorsTlsPassword -PasswordPath $tlsAssets.PasswordPath
     }
     else {

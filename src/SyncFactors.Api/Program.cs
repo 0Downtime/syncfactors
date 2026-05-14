@@ -39,6 +39,7 @@ if (!string.IsNullOrWhiteSpace(launcherProbeAction))
 }
 
 var builder = WebApplication.CreateBuilder(args);
+ConfigureDefaultHttpsCertificate(builder);
 ConfigureWindowsService(builder.Services, WindowsServiceName);
 ConfigureLocalFileLogging(
     builder.Logging,
@@ -867,6 +868,22 @@ static void ValidateHttpsOnlyBindings(ConfigurationManager configuration)
     {
         throw new InvalidOperationException("SyncFactors.Api is configured for HTTPS-only operation and will not bind HTTP endpoints.");
     }
+}
+
+static void ConfigureDefaultHttpsCertificate(WebApplicationBuilder builder)
+{
+    if (!TlsCertificateLoader.TryLoadDefaultMachineCertificate(builder.Configuration, out var certificate, out _))
+    {
+        return;
+    }
+
+    builder.WebHost.ConfigureKestrel(options =>
+    {
+        options.ConfigureHttpsDefaults(httpsOptions =>
+        {
+            httpsOptions.ServerCertificate = certificate;
+        });
+    });
 }
 
 static void LogConfiguredEndpoints(WebApplication app)
