@@ -39,10 +39,19 @@ public sealed class SuccessFactorsWorkerSource(
         }
 
         var config = configLoader.GetSyncConfig();
-        var previewQuery = config.SuccessFactors.PreviewQuery;
         var primaryQuery = config.SuccessFactors.Query;
-        WorkerSnapshot? previewWorker = null;
+        var previewQuery = config.SuccessFactors.PreviewQuery;
 
+        var canonicalWorker = await TryResolveWorkerAsync(config, primaryQuery, workerId, cancellationToken);
+        if (canonicalWorker is not null)
+        {
+            var worker = await EnrichWorkerAsync(config, canonicalWorker, previewLookup: null, cancellationToken);
+            worker = NormalizeWorkerIdentity(worker, primaryQuery.IdentityField);
+            logger.LogInformation("Resolved worker from SuccessFactors.");
+            return worker;
+        }
+
+        WorkerSnapshot? previewWorker = null;
         if (previewQuery is not null)
         {
             previewWorker = await TryResolveWorkerAsync(config, previewQuery, workerId, cancellationToken);
@@ -52,8 +61,7 @@ public sealed class SuccessFactorsWorkerSource(
             }
         }
 
-        var canonicalWorker = await TryResolveWorkerAsync(config, primaryQuery, workerId, cancellationToken);
-        if (canonicalWorker is null && previewWorker is not null)
+        if (previewWorker is not null)
         {
             var canonicalIdentity = ResolveIdentityValue(primaryQuery.IdentityField, previewWorker);
             if (!string.IsNullOrWhiteSpace(canonicalIdentity) &&
@@ -68,17 +76,10 @@ public sealed class SuccessFactorsWorkerSource(
             }
         }
 
-        var worker = canonicalWorker is null
-            ? null
-            : previewWorker is null
-                ? await EnrichWorkerAsync(config, canonicalWorker, previewLookup: null, cancellationToken)
-                : MergeWorkerSnapshots(canonicalWorker, previewWorker);
-
-        if (worker is not null)
+        if (canonicalWorker is not null && previewWorker is not null)
         {
-            worker = previewWorker is null
-                ? NormalizeWorkerIdentity(worker, primaryQuery.IdentityField)
-                : NormalizeWorkerIdentity(worker, previewQuery?.IdentityField ?? primaryQuery.IdentityField);
+            var worker = MergeWorkerSnapshots(canonicalWorker, previewWorker);
+            worker = NormalizeWorkerIdentity(worker, previewQuery!.IdentityField);
             logger.LogInformation("Resolved worker from SuccessFactors.");
             return worker;
         }
@@ -428,22 +429,20 @@ public sealed class SuccessFactorsWorkerSource(
                 : MergeWorkerSnapshots(canonicalWorker, matchedPreview);
         }
 
-        var previewIdentity = ResolveIdentityValue(previewQuery.IdentityField, canonicalWorker) ?? canonicalWorker.WorkerId;
-        if (string.IsNullOrWhiteSpace(previewIdentity))
+        var previewIdentity = ResolveIdentityValue(previewQuery.IdentityField, canonicalWorker);
+        if (!string.IsNullOrWhiteSpace(previewIdentity))
         {
-            return canonicalWorker;
-        }
+            var previewWorker = await TryResolveWorkerAsync(
+                config,
+                previewQuery,
+                previewIdentity,
+                cancellationToken,
+                canonicalWorker.WorkerId);
 
-        var previewWorker = await TryResolveWorkerAsync(
-            config,
-            previewQuery,
-            previewIdentity,
-            cancellationToken,
-            canonicalWorker.WorkerId);
-
-        if (previewWorker is not null)
-        {
-            return MergeWorkerSnapshots(canonicalWorker, previewWorker);
+            if (previewWorker is not null)
+            {
+                return MergeWorkerSnapshots(canonicalWorker, previewWorker);
+            }
         }
 
         var bridgedPreviewWorker = await TryResolvePreviewWorkerByAlternateIdentityAsync(
@@ -456,6 +455,11 @@ public sealed class SuccessFactorsWorkerSource(
         {
             return MergeWorkerSnapshots(canonicalWorker, bridgedPreviewWorker);
         }
+
+        logger.LogInformation(
+            "Targeted preview lookup did not resolve worker. Loading preview population to match locally. WorkerId={WorkerId} EntitySet={EntitySet}",
+            canonicalWorker.WorkerId,
+            previewQuery.EntitySet);
 
         var fallbackPreviewLookup = await BuildPreviewLookupAsync(config, cancellationToken);
         var fallbackPreview = TryMatchPreviewWorker(canonicalWorker, fallbackPreviewLookup, previewQuery.IdentityField);
@@ -475,14 +479,15 @@ public sealed class SuccessFactorsWorkerSource(
         SyncFactorsConfigDocument config,
         SuccessFactorsQueryConfig previewQuery,
         WorkerSnapshot canonicalWorker,
-        string attemptedIdentity,
+        string? attemptedIdentity,
         CancellationToken cancellationToken)
     {
         foreach (var candidate in ResolvePreviewBridgeLookupCandidates(canonicalWorker))
         {
             foreach (var identityField in ResolvePreviewBridgeIdentityFields(previewQuery))
             {
-                if (string.Equals(identityField, previewQuery.IdentityField, StringComparison.OrdinalIgnoreCase) &&
+                if (!string.IsNullOrWhiteSpace(attemptedIdentity) &&
+                    string.Equals(identityField, previewQuery.IdentityField, StringComparison.OrdinalIgnoreCase) &&
                     string.Equals(candidate, attemptedIdentity, StringComparison.OrdinalIgnoreCase))
                 {
                     continue;

@@ -1064,6 +1064,15 @@ public sealed class SuccessFactorsWorkerSourceIntegrationTests
         Assert.Equal("u10001", worker.Attributes["userId"]);
         Assert.Equal("Pat", worker.PreferredName);
         Assert.False(handler.SawFullPreviewLookup);
+        Assert.Equal(
+            2,
+            handler.RequestUris.Count(uri => uri.AbsolutePath.StartsWith("/odata/v2/", StringComparison.OrdinalIgnoreCase)));
+        Assert.DoesNotContain(
+            handler.RequestUris,
+            uri => uri.AbsolutePath.Equals("/odata/v2/PerPerson", StringComparison.OrdinalIgnoreCase) &&
+                   Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(uri.Query)
+                       .TryGetValue("$filter", out var filter) &&
+                   filter.ToString().Contains("personIdExternal eq 'u10001'", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -2814,9 +2823,12 @@ public sealed class SuccessFactorsWorkerSourceIntegrationTests
     {
         public bool SawFullPreviewLookup { get; private set; }
 
+        public List<Uri> RequestUris { get; } = [];
+
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             _ = cancellationToken;
+            RequestUris.Add(request.RequestUri!);
 
             if (request.RequestUri!.AbsolutePath.Equals("/oauth/token", StringComparison.OrdinalIgnoreCase))
             {
