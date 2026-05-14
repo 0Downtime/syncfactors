@@ -5,6 +5,42 @@ namespace SyncFactors.Infrastructure.Tests;
 public sealed class SyncFactorsConfigurationLoaderTests
 {
     [Fact]
+    public void SecretResolver_BuildsDefaultWindowsCredentialTargetName()
+    {
+        var originalPrefix = Environment.GetEnvironmentVariable(SyncFactorsSecretResolver.WindowsCredentialPrefixEnvironmentVariable);
+        try
+        {
+            Environment.SetEnvironmentVariable(SyncFactorsSecretResolver.WindowsCredentialPrefixEnvironmentVariable, null);
+
+            var targetName = SyncFactorsSecretResolver.GetWindowsCredentialTargetName("SF_AD_SYNC_AD_BIND_PASSWORD");
+
+            Assert.Equal("SyncFactors/SF_AD_SYNC_AD_BIND_PASSWORD", targetName);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(SyncFactorsSecretResolver.WindowsCredentialPrefixEnvironmentVariable, originalPrefix);
+        }
+    }
+
+    [Fact]
+    public void SecretResolver_BuildsConfiguredWindowsCredentialTargetName()
+    {
+        var originalPrefix = Environment.GetEnvironmentVariable(SyncFactorsSecretResolver.WindowsCredentialPrefixEnvironmentVariable);
+        try
+        {
+            Environment.SetEnvironmentVariable(SyncFactorsSecretResolver.WindowsCredentialPrefixEnvironmentVariable, "SyncFactors/Production/");
+
+            var targetName = SyncFactorsSecretResolver.GetWindowsCredentialTargetName("SF_AD_SYNC_AD_BIND_PASSWORD");
+
+            Assert.Equal("SyncFactors/Production/SF_AD_SYNC_AD_BIND_PASSWORD", targetName);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(SyncFactorsSecretResolver.WindowsCredentialPrefixEnvironmentVariable, originalPrefix);
+        }
+    }
+
+    [Fact]
     public async Task GetSyncConfig_DefaultsIdentityPolicyToggleToTrue_WhenOmitted()
     {
         var config = await LoadConfigAsync(adJson: null);
@@ -293,6 +329,101 @@ public sealed class SyncFactorsConfigurationLoaderTests
         Assert.Equal("Trim", attributeMapping.Transform);
     }
 
+    [Fact]
+    public async Task GetSyncConfig_LoadsSecretsFromResolver_WhenEnvironmentValuesAreAbsent()
+    {
+        var tempRoot = Path.Combine(Path.GetTempPath(), "syncfactors-config-loader", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempRoot);
+
+        var configPath = Path.Combine(tempRoot, "sync-config.json");
+        var mappingConfigPath = Path.Combine(tempRoot, "mapping-config.json");
+
+        await File.WriteAllTextAsync(configPath, """
+        {
+          "secrets": {
+            "successFactorsUsernameEnv": "SYNCFACTORS_TEST_SF_USERNAME",
+            "successFactorsPasswordEnv": "SYNCFACTORS_TEST_SF_PASSWORD",
+            "adServerEnv": "SYNCFACTORS_TEST_AD_SERVER",
+            "adUsernameEnv": "SYNCFACTORS_TEST_AD_USERNAME",
+            "adBindPasswordEnv": "SYNCFACTORS_TEST_AD_BIND_PASSWORD"
+          },
+          "successFactors": {
+            "baseUrl": "http://example.test/odata/v2",
+            "auth": {
+              "mode": "basic",
+              "basic": {
+                "username": "",
+                "password": ""
+              }
+            },
+            "query": {
+              "entitySet": "PerPerson",
+              "identityField": "personIdExternal",
+              "deltaField": "lastModifiedDateTime",
+              "select": ["personIdExternal"],
+              "expand": []
+            }
+          },
+          "ad": {
+            "server": "",
+            "username": "",
+            "bindPassword": "",
+            "identityAttribute": "employeeID",
+            "defaultActiveOu": "OU=LabUsers,DC=example,DC=com",
+            "prehireOu": "OU=Prehire,DC=example,DC=com",
+            "graveyardOu": "OU=LabGraveyard,DC=example,DC=com"
+          },
+          "sync": {
+            "enableBeforeStartDays": 7,
+            "deletionRetentionDays": 90
+          },
+          "safety": {
+            "maxCreatesPerRun": 10,
+            "maxDisablesPerRun": 10,
+            "maxDeletionsPerRun": 10
+          },
+          "reporting": {
+            "outputDirectory": "/tmp"
+          }
+        }
+        """);
+
+        await File.WriteAllTextAsync(mappingConfigPath, """
+        {
+          "mappings": [
+            {
+              "source": "personIdExternal",
+              "target": "employeeID",
+              "enabled": true,
+              "required": true,
+              "transform": "Trim"
+            }
+          ]
+        }
+        """);
+
+        var secretResolver = new DictionarySecretResolver(new Dictionary<string, string>
+        {
+            ["SYNCFACTORS_TEST_SF_USERNAME"] = "sf-user",
+            ["SYNCFACTORS_TEST_SF_PASSWORD"] = "sf-password",
+            ["SYNCFACTORS_TEST_AD_SERVER"] = "dc01.example.test",
+            ["SYNCFACTORS_TEST_AD_USERNAME"] = "svc-syncfactors-adbind@example.test",
+            ["SYNCFACTORS_TEST_AD_BIND_PASSWORD"] = "ad-password"
+        });
+
+        var loader = new SyncFactorsConfigurationLoader(
+            new SyncFactorsConfigPathResolver(configPath, mappingConfigPath),
+            secretResolver);
+
+        var config = loader.GetSyncConfig();
+
+        Assert.Equal("sf-user", config.SuccessFactors.Auth.Basic!.Username);
+        Assert.Equal("sf-password", config.SuccessFactors.Auth.Basic.Password);
+        Assert.Equal("dc01.example.test", config.Ad.Server);
+        Assert.Equal("svc-syncfactors-adbind@example.test", config.Ad.Username);
+        Assert.Equal("ad-password", config.Ad.BindPassword);
+    }
+
     private static async Task<SyncFactorsConfigDocument> LoadConfigAsync(string? adJson, string? syncJson = null, string? approvalJson = null)
     {
         var tempRoot = Path.Combine(Path.GetTempPath(), "syncfactors-config-loader", Guid.NewGuid().ToString("N"));
@@ -376,5 +507,18 @@ public sealed class SyncFactorsConfigurationLoaderTests
 
         var loader = new SyncFactorsConfigurationLoader(new SyncFactorsConfigPathResolver(configPath, mappingConfigPath));
         return loader.GetSyncConfig();
+    }
+
+    private sealed class DictionarySecretResolver(IReadOnlyDictionary<string, string> secrets) : ISyncFactorsSecretResolver
+    {
+        public string? GetSecretValue(string? variableName) =>
+            !string.IsNullOrWhiteSpace(variableName) && secrets.TryGetValue(variableName, out var value)
+                ? value
+                : null;
+
+        public string ResolveSourceLabel(string? variableName, string fallbackSource) =>
+            !string.IsNullOrWhiteSpace(variableName) && secrets.ContainsKey(variableName)
+                ? $"test secret ({variableName})"
+                : fallbackSource;
     }
 }

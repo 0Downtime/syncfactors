@@ -25,6 +25,7 @@ variables:
   apiServiceName: SyncFactors.Api
   workerServiceName: SyncFactors.Worker
   createLocalServiceAccount: false
+  windowsCredentialPrefix: SyncFactors
   serviceUserName: ''
   serviceUserPassword: ''
 
@@ -225,6 +226,7 @@ stages:
                       $apiServiceName = '$(apiServiceName)'
                       $workerServiceName = '$(workerServiceName)'
                       $createLocalServiceAccount = Convert-ToBool '$(createLocalServiceAccount)'
+                      $windowsCredentialPrefix = '$(windowsCredentialPrefix)'
                       $serviceUserName = '$(serviceUserName)'
                       $serviceUserPassword = '$(serviceUserPassword)'
 
@@ -275,6 +277,7 @@ stages:
                           '-ApiUrls', $apiUrls,
                           '-ApiServiceName', $apiServiceName,
                           '-WorkerServiceName', $workerServiceName,
+                          '-WindowsCredentialPrefix', $windowsCredentialPrefix,
                           '-Force'
                       )
                       if (-not [string]::IsNullOrWhiteSpace($serviceUserName)) {

@@ -18,6 +18,7 @@ public sealed class AdminConfigurationSnapshotBuilder(
     private const string DefaultSource = "Default";
     private const string HiddenValue = "Hidden";
     private const string NotConfiguredValue = "Not configured";
+    private static readonly ISyncFactorsSecretResolver SecretResolver = new SyncFactorsSecretResolver();
 
     internal AdminConfigurationPageSnapshot Build()
     {
@@ -581,9 +582,7 @@ public sealed class AdminConfigurationSnapshotBuilder(
     }
 
     private static string ResolveSecretSource(string? environmentVariableName, string fallbackSource) =>
-        HasEnvironmentValue(environmentVariableName)
-            ? environmentVariableName!
-            : fallbackSource;
+        SecretResolver.ResolveSourceLabel(environmentVariableName, fallbackSource);
 
     private static bool HasEnvironmentValue(string? environmentVariableName)
     {
@@ -592,7 +591,7 @@ public sealed class AdminConfigurationSnapshotBuilder(
             return false;
         }
 
-        return !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(environmentVariableName));
+        return !string.IsNullOrWhiteSpace(SecretResolver.GetSecretValue(environmentVariableName));
     }
 
     private string GetHostSource(params string[] keys) =>

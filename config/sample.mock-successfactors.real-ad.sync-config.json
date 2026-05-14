@@ -5,8 +5,8 @@
     "successFactorsClientIdEnv": "SF_AD_SYNC_SF_CLIENT_ID",
     "successFactorsClientSecretEnv": "SF_AD_SYNC_SF_CLIENT_SECRET",
     "adServerEnv": "SF_AD_SYNC_AD_SERVER",
-    "adUsernameEnv": "SF_AD_SYNC_AD_USERNAME",
-    "adBindPasswordEnv": "SF_AD_SYNC_AD_BIND_PASSWORD",
+    "adUsernameEnv": null,
+    "adBindPasswordEnv": null,
     "defaultAdPasswordEnv": "SF_AD_SYNC_AD_DEFAULT_PASSWORD"
   },
   "successFactors": {
