@@ -69,6 +69,32 @@ public sealed class FullSyncRunServiceTests
     }
 
     [Fact]
+    public async Task LaunchAsync_DuplicateCreateEmails_RewritesProxyAddressesForReservedEmail()
+    {
+        var service = CreateService(
+            workers: [CreateWorker("10001", managerId: null), CreateWorker("10002", managerId: null)],
+            directoryGateway: new StubDirectoryGateway(managerDistinguishedName: null),
+            directoryCommandGateway: new CapturingDirectoryCommandGateway(),
+            settings: new WorkerRunSettings(MaxCreatesPerRun: 10),
+            planningService: new DuplicateCreateEmailPlanningService(),
+            runRepository: out var runRepository,
+            runtimeStatusStore: out _);
+
+        var result = await service.LaunchAsync(
+            new LaunchFullRunRequest(DryRun: true, AcknowledgeRealSync: false),
+            CancellationToken.None);
+
+        Assert.Equal("Succeeded", result.Status);
+        var entries = runRepository.ReplacedEntries.Single().entries;
+        var reservedEntry = Assert.Single(entries, entry => entry.WorkerId == "10002");
+        Assert.Equal("casey.sample2@example.test", reservedEntry.Item.GetProperty("proposedEmailAddress").GetString());
+        Assert.Equal("casey.sample2@example.test", reservedEntry.Item.GetProperty("plannedCommand").GetProperty("mail").GetString());
+        Assert.Equal("casey.sample2@example.test", GetPlannedCommandAttribute(reservedEntry.Item, "mail"));
+        Assert.Equal("casey.sample2@example.test", GetPlannedCommandAttribute(reservedEntry.Item, "UserPrincipalName"));
+        Assert.Equal("SMTP:casey.sample2@example.test", GetPlannedCommandAttribute(reservedEntry.Item, "proxyAddresses"));
+    }
+
+    [Fact]
     public async Task LaunchAsync_ManualReviewDisables_RebucketsDisableWithoutExecutingDirectoryMutation()
     {
         var worker = CreateWorker("10001", managerId: "90001");
@@ -914,6 +940,53 @@ public sealed class FullSyncRunServiceTests
                 new AttributeChange("mail", "resolved email local-part", "(unset)", proposedEmailAddress ?? "(unset)", true)
             ]);
         }
+    }
+
+    private sealed class DuplicateCreateEmailPlanningService : IWorkerPlanningService
+    {
+        public Task<PlannedWorkerAction> PlanAsync(WorkerSnapshot worker, string? logPath, CancellationToken cancellationToken)
+        {
+            _ = logPath;
+            _ = cancellationToken;
+
+            const string emailAddress = "casey.sample@example.test";
+            return Task.FromResult(
+                new PlannedWorkerAction(
+                    Worker: worker,
+                    DirectoryUser: new DirectoryUserSnapshot(null, null, null, null, new Dictionary<string, string?>()),
+                    Identity: new IdentityMatchResult("creates", false, worker.WorkerId, null, null),
+                    ManagerDistinguishedName: null,
+                    ProposedEmailAddress: emailAddress,
+                    AttributeChanges:
+                    [
+                        new AttributeChange("UserPrincipalName", "resolved email local-part", "(unset)", emailAddress, true),
+                        new AttributeChange("mail", "resolved email local-part", "(unset)", emailAddress, true),
+                        new AttributeChange("proxyAddresses", "resolved email local-part", "(unset)", $"SMTP:{emailAddress}", true)
+                    ],
+                    MissingSourceAttributes: [],
+                    Bucket: "creates",
+                    CurrentOu: string.Empty,
+                    TargetOu: worker.TargetOu,
+                    CurrentEnabled: null,
+                    TargetEnabled: true,
+                    PrimaryAction: "CreateUser",
+                    Operations: [new DirectoryOperation("CreateUser", worker.TargetOu)],
+                    ReviewCategory: null,
+                    ReviewCaseType: null,
+                    Reason: null,
+                    CanAutoApply: true));
+        }
+    }
+
+    private static string? GetPlannedCommandAttribute(JsonElement item, string attributeName)
+    {
+        return item
+            .GetProperty("plannedCommand")
+            .GetProperty("attributes")
+            .EnumerateArray()
+            .Single(attribute => string.Equals(attribute.GetProperty("attribute").GetString(), attributeName, StringComparison.OrdinalIgnoreCase))
+            .GetProperty("value")
+            .GetString();
     }
 
     private sealed class CapturingDirectoryCommandGateway : IDirectoryCommandGateway

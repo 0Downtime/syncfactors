@@ -588,6 +588,8 @@ public sealed class FullSyncRunService(
                 string.Equals(change.Attribute, "UserPrincipalName", StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(change.Attribute, "mail", StringComparison.OrdinalIgnoreCase)
                     ? change with { After = emailAddress, Changed = !string.Equals(change.Before, emailAddress, StringComparison.Ordinal) }
+                    : string.Equals(change.Attribute, "proxyAddresses", StringComparison.OrdinalIgnoreCase)
+                        ? change with { After = $"SMTP:{emailAddress}", Changed = !string.Equals(change.Before, $"SMTP:{emailAddress}", StringComparison.Ordinal) }
                     : change)
             .ToArray();
     }

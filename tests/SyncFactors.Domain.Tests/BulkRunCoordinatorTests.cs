@@ -360,6 +360,51 @@ public sealed class BulkRunCoordinatorTests
     }
 
     [Fact]
+    public async Task ExecuteAsync_DuplicateCreateEmails_RewritesProxyAddressesForReservedEmail()
+    {
+        CapturingRunLifecycleService.Entries.Clear();
+        CapturingRunLifecycleService.Reset();
+        var coordinator = new BulkRunCoordinator(
+            new StubWorkerSource([CreateWorker("10001"), CreateWorker("10002")]),
+            new CapturingDeltaSyncService(),
+            new StubRunQueueStore(),
+            new StubGraveyardRetentionStore(),
+            new DuplicateCreateEmailPlanningService(),
+            new DirectoryMutationCommandBuilder(),
+            new SuccessfulDirectoryCommandGateway(),
+            new StubDirectoryGateway(),
+            new CapturingRunLifecycleService(),
+            new RealSyncSettings(),
+            new WorkerRunSettings(MaxCreatesPerRun: 10),
+            CreateLifecycleSettings(),
+            NullLogger<BulkRunCoordinator>.Instance,
+            TimeProvider.System);
+
+        await coordinator.ExecuteAsync(
+            new RunQueueRequest(
+                RequestId: "req-duplicate-email",
+                Mode: "BulkSync",
+                DryRun: true,
+                RunTrigger: "AdHoc",
+                RequestedBy: "test",
+                Status: "Pending",
+                RequestedAt: DateTimeOffset.UtcNow,
+                StartedAt: null,
+                CompletedAt: null,
+                RunId: null,
+                ErrorMessage: null),
+            maxDegreeOfParallelism: 1,
+            CancellationToken.None);
+
+        var reservedEntry = Assert.Single(CapturingRunLifecycleService.Entries, entry => entry.WorkerId == "10002");
+        Assert.Equal("casey.sample2@example.test", reservedEntry.Item.GetProperty("proposedEmailAddress").GetString());
+        Assert.Equal("casey.sample2@example.test", reservedEntry.Item.GetProperty("plannedCommand").GetProperty("mail").GetString());
+        Assert.Equal("casey.sample2@example.test", GetPlannedCommandAttribute(reservedEntry.Item, "mail"));
+        Assert.Equal("casey.sample2@example.test", GetPlannedCommandAttribute(reservedEntry.Item, "UserPrincipalName"));
+        Assert.Equal("SMTP:casey.sample2@example.test", GetPlannedCommandAttribute(reservedEntry.Item, "proxyAddresses"));
+    }
+
+    [Fact]
     public async Task ExecuteAsync_LiveRun_TracksObservedGraveyardUsers()
     {
         CapturingRunLifecycleService.Entries.Clear();
@@ -935,6 +980,42 @@ public sealed class BulkRunCoordinatorTests
         }
     }
 
+    private sealed class DuplicateCreateEmailPlanningService : IWorkerPlanningService
+    {
+        public Task<PlannedWorkerAction> PlanAsync(WorkerSnapshot worker, string? logPath, CancellationToken cancellationToken)
+        {
+            _ = logPath;
+            _ = cancellationToken;
+
+            const string emailAddress = "casey.sample@example.test";
+            return Task.FromResult(
+                new PlannedWorkerAction(
+                    Worker: worker,
+                    DirectoryUser: new DirectoryUserSnapshot(null, null, null, null, new Dictionary<string, string?>()),
+                    Identity: new IdentityMatchResult("creates", false, worker.WorkerId, null, null),
+                    ManagerDistinguishedName: null,
+                    ProposedEmailAddress: emailAddress,
+                    AttributeChanges:
+                    [
+                        new AttributeChange("UserPrincipalName", "resolved email local-part", "(unset)", emailAddress, true),
+                        new AttributeChange("mail", "resolved email local-part", "(unset)", emailAddress, true),
+                        new AttributeChange("proxyAddresses", "resolved email local-part", "(unset)", $"SMTP:{emailAddress}", true)
+                    ],
+                    MissingSourceAttributes: [],
+                    Bucket: "creates",
+                    CurrentOu: string.Empty,
+                    TargetOu: worker.TargetOu,
+                    CurrentEnabled: null,
+                    TargetEnabled: true,
+                    PrimaryAction: "CreateUser",
+                    Operations: [new DirectoryOperation("CreateUser", worker.TargetOu)],
+                    ReviewCategory: null,
+                    ReviewCaseType: null,
+                    Reason: null,
+                    CanAutoApply: true));
+        }
+    }
+
     private sealed class StubDirectoryMutationCommandBuilder : IDirectoryMutationCommandBuilder
     {
         public DirectoryMutationCommand Build(PlannedWorkerAction plan)
@@ -947,6 +1028,17 @@ public sealed class BulkRunCoordinatorTests
             _ = preview;
             return new DirectoryMutationCommand("UpdateUser", worker.WorkerId, null, null, worker.WorkerId, worker.WorkerId, $"{worker.WorkerId}@example.com", $"{worker.WorkerId}@example.com", worker.TargetOu, worker.WorkerId, null, true, [new DirectoryOperation("UpdateUser")], new Dictionary<string, string?>());
         }
+    }
+
+    private static string? GetPlannedCommandAttribute(JsonElement item, string attributeName)
+    {
+        return item
+            .GetProperty("plannedCommand")
+            .GetProperty("attributes")
+            .EnumerateArray()
+            .Single(attribute => string.Equals(attribute.GetProperty("attribute").GetString(), attributeName, StringComparison.OrdinalIgnoreCase))
+            .GetProperty("value")
+            .GetString();
     }
 
     private sealed class StubDirectoryCommandGateway : IDirectoryCommandGateway
