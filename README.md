@@ -181,6 +181,7 @@ Configure these Azure DevOps variables before enabling deployment:
 | `remoteStagingPath` | Temporary bundle copy path. Defaults to `C:\SyncFactors\_staging`. |
 | `runProfile` | Service profile passed to the installer. Defaults to `real`. |
 | `apiUrls` | Kestrel bind URL for the API Windows Service. Defaults to `https://127.0.0.1:5087`. |
+| `tlsCertificateThumbprint` | Optional `LocalMachine\My` certificate thumbprint for the API HTTPS binding. If omitted and no PFX path/password is supplied, the installer tries to use a usable machine certificate matching `apiUrls`, `SYNCFACTORS_API_PUBLIC_HOST`, or the machine name. |
 | `configureFirewall` | Set to `true` to create or update an inbound Domain/Private firewall rule for `apiPort`. |
 | `createLocalServiceAccount` | Set to `true` to create `serviceUserName` as a local Windows runtime account before installing services. Leave `false` for a pre-created domain account. |
 | `windowsCredentialPrefix` | Windows Credential Manager target prefix used by the services. Defaults to `SyncFactors`. |
@@ -423,6 +424,7 @@ NUGET_PACKAGES=./state/nuget/packages
 NUGET_PLUGINS_CACHE_PATH=./state/nuget/plugin-cache
 SYNCFACTORS_TLS_CERT_PATH=
 SYNCFACTORS_TLS_CERT_PASSWORD=
+SYNCFACTORS_TLS_CERT_THUMBPRINT=
 MOCK_SF_PORT=18080
 MOCK_SF_SYNTHETIC_POPULATION_ENABLED=true
 MOCK_SF_TARGET_WORKER_COUNT=1000
@@ -473,7 +475,7 @@ Before starting the API on a new admin workstation, run:
 pwsh ./scripts/Install-SyncFactorsHttpsCertificate.ps1
 ```
 
-That script generates, trusts, and exports the local HTTPS certificate used by the API launcher. By default the launcher binds `https://127.0.0.1:<port>` and refuses `http://` URLs. If `SYNCFACTORS_TLS_CERT_PATH` and `SYNCFACTORS_TLS_CERT_PASSWORD` are not set explicitly, the launcher uses the exported certificate from that install step.
+That script generates, trusts, and exports the local HTTPS certificate used by the API launcher. By default the launcher binds `https://127.0.0.1:<port>` and refuses `http://` URLs. If `SYNCFACTORS_TLS_CERT_PATH` and `SYNCFACTORS_TLS_CERT_PASSWORD` are not set explicitly, the launcher first tries to use a usable certificate from `LocalMachine\My` that matches `SYNCFACTORS_API_PUBLIC_HOST`, the configured URL host, or the machine name; when no matching machine certificate is found, it uses the exported certificate from that install step. Set `SYNCFACTORS_TLS_CERT_THUMBPRINT` to force a specific machine certificate.
 
 If you already have a CA-issued `.pfx`, use:
 
@@ -481,7 +483,7 @@ If you already have a CA-issued `.pfx`, use:
 pwsh ./scripts/Install-SyncFactorsHttpsCertificateFromPfx.ps1 -PfxPath C:\path\to\syncfactors-api.pfx -PfxPassword '<password>'
 ```
 
-That script copies your PFX into the same runtime certificate location used by the launcher, writes the matching password file, and on Windows imports the certificate into the `My` store. Add `-StoreLocation LocalMachine` to target the machine store instead of the current user store, or `-SkipStoreImport` if you only want to configure the app runtime files.
+That script copies your PFX into the same runtime certificate location used by the launcher, writes the matching password file, and on Windows imports the certificate into the `My` store. Add `-StoreLocation LocalMachine` to target the machine store instead of the current user store, or `-SkipStoreImport` if you only want to configure the app runtime files. When the certificate is in `LocalMachine\My` and the service account can read its private key, the API can use it by thumbprint without storing the PFX password in the service environment.
 
 For remote UI access from another machine, set these env values in `.env.worktree`:
 
