@@ -56,7 +56,7 @@ jobs:
       matrix:
         include:
           - language: csharp
-            build-mode: manual
+            build-mode: none
           - language: javascript-typescript
             build-mode: none
     steps:
