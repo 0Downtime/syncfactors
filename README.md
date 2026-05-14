@@ -167,6 +167,60 @@ pwsh .\scripts\Uninstall-SyncFactorsWindowsServices.ps1
 
 Use `Event Viewer > Windows Logs > Application` with sources `SyncFactors.Api` and `SyncFactors.Worker` for service startup, shutdown, warning, and error events. Local rolling logs are also enabled by default under `state\logs` inside the bundle root.
 
+### Azure DevOps Windows Deployment
+
+[`azure-pipelines.deploy.yml`](azure-pipelines.deploy.yml) builds, tests, packages, and deploys the self-contained Windows bundle to one or more Windows servers over WinRM. The deploy stage is skipped until `deployTargetMachines` is set in the Azure DevOps pipeline variables.
+
+Configure these Azure DevOps variables before enabling deployment:
+
+| Variable | Purpose |
+| --- | --- |
+| `deployTargetMachines` | Comma-separated Windows server DNS names or IP addresses reachable over WinRM. |
+| `deployAdminUserName` / `deployAdminPassword` | Local or domain administrator credential used by Azure DevOps for copy/install tasks. Mark the password secret. |
+| `installRoot` | Target install directory. Defaults to `C:\SyncFactors`. |
+| `remoteStagingPath` | Temporary bundle copy path. Defaults to `C:\SyncFactors\_staging`. |
+| `runProfile` | Service profile passed to the installer. Defaults to `real`. |
+| `apiUrls` | Kestrel bind URL for the API Windows Service. Defaults to `https://127.0.0.1:5087`. |
+| `configureFirewall` | Set to `true` to create or update an inbound Domain/Private firewall rule for `apiPort`. |
+| `createLocalServiceAccount` | Set to `true` to create `serviceUserName` as a local Windows account before installing services. Leave `false` for a pre-created domain account. |
+| `serviceUserName` / `serviceUserPassword` | Optional Windows service credential. Leave blank to use the default service account behavior. Mark the password secret. |
+
+The deployment runs [`scripts/Install-SyncFactorsWindowsPrerequisites.ps1`](scripts/Install-SyncFactorsWindowsPrerequisites.ps1) on the server before service installation. That script creates the install/runtime/log directories, installs or verifies PowerShell 7, creates an optional local service account, grants `Log on as a service`, grants optional service-account access to the deployment paths, and can open the API firewall port. The app bundle is self-contained, so no separate .NET runtime installation is required on the server.
+
+For a manual service-account setup, grant the account:
+
+| Permission | Reason |
+| --- | --- |
+| `Log on as a service` on the Windows server | Required by Windows Service Control Manager when the API and worker run under a named account. |
+| Modify on `C:\SyncFactors` and `C:\SyncFactors\state` | Allows the service to read the app/config files and write SQLite runtime state and local logs. |
+| Read access to the HTTPS certificate private key or configured PFX path, when using a service-bound TLS certificate | Allows Kestrel to load the HTTPS certificate. |
+| The AD and SuccessFactors rights configured in SyncFactors config/secrets | Allows the application itself to bind to AD and call SuccessFactors with least privilege. |
+
+To create and prepare a local account from an elevated PowerShell session:
+
+```powershell
+Set-ExecutionPolicy -Scope Process Bypass
+$password = Read-Host 'SyncFactors service password' -AsSecureString
+
+& .\scripts\Install-SyncFactorsWindowsPrerequisites.ps1 `
+  -InstallRoot C:\SyncFactors `
+  -ServiceAccount sfsvc `
+  -ServiceAccountPassword $password `
+  -CreateLocalServiceAccount `
+  -InstallPowerShell
+```
+
+For a pre-created domain account, omit `-CreateLocalServiceAccount` and pass the domain identity:
+
+```powershell
+Set-ExecutionPolicy -Scope Process Bypass
+
+& .\scripts\Install-SyncFactorsWindowsPrerequisites.ps1 `
+  -InstallRoot C:\SyncFactors `
+  -ServiceAccount 'CONTOSO\svc-syncfactors' `
+  -InstallPowerShell
+```
+
 To validate a sanitized SuccessFactors export or fixture-style worker document against the expected source contract:
 
 ```powershell
