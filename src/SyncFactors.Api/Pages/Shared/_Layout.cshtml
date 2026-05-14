@@ -127,10 +127,10 @@
     </div>
     @if (showDryRunBanner)
     {
-        <div class="environment-corner-banner environment-corner-banner--dryrun" role="status" aria-label="Dry-run mode and version">
+        <output class="environment-corner-banner environment-corner-banner--dryrun" aria-label="Dry-run mode and version">
             <strong>Dry Run Mode</strong>
             <span>v@(appVersion)</span>
-        </div>
+        </output>
     }
     else if (showDevelopmentBanner)
     {
