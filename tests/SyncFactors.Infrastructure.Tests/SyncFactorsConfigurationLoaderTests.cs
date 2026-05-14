@@ -41,6 +41,56 @@ public sealed class SyncFactorsConfigurationLoaderTests
     }
 
     [Fact]
+    public void SecretResolver_ReturnsNullForBlankSecretName()
+    {
+        var resolver = new SyncFactorsSecretResolver();
+
+        Assert.Null(resolver.GetSecretValue(null));
+        Assert.Null(resolver.GetSecretValue(""));
+        Assert.Null(resolver.GetSecretValue("   "));
+    }
+
+    [Fact]
+    public void SecretResolver_ReadsEnvironmentBeforeCredentialStore()
+    {
+        const string variableName = "SYNCFACTORS_TEST_SECRET";
+        var originalValue = Environment.GetEnvironmentVariable(variableName);
+        try
+        {
+            Environment.SetEnvironmentVariable(variableName, "from-env");
+            var resolver = new SyncFactorsSecretResolver();
+
+            Assert.Equal("from-env", resolver.GetSecretValue(variableName));
+            Assert.Equal(variableName, resolver.ResolveSourceLabel(variableName, "config"));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(variableName, originalValue);
+        }
+    }
+
+    [Fact]
+    public void SecretResolver_FallsBackWhenSecretNameIsBlankOrMissing()
+    {
+        const string variableName = "SYNCFACTORS_TEST_MISSING_SECRET";
+        var originalValue = Environment.GetEnvironmentVariable(variableName);
+        try
+        {
+            Environment.SetEnvironmentVariable(variableName, null);
+            var resolver = new SyncFactorsSecretResolver();
+
+            Assert.Equal("config", resolver.ResolveSourceLabel(null, "config"));
+            Assert.Equal("config", resolver.ResolveSourceLabel("", "config"));
+            Assert.Equal("config", resolver.ResolveSourceLabel("   ", "config"));
+            Assert.Equal("config", resolver.ResolveSourceLabel(variableName, "config"));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(variableName, originalValue);
+        }
+    }
+
+    [Fact]
     public async Task GetSyncConfig_DefaultsIdentityPolicyToggleToTrue_WhenOmitted()
     {
         var config = await LoadConfigAsync(adJson: null);

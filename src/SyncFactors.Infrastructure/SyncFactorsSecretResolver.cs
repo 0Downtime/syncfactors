@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Runtime.InteropServices;
 
 namespace SyncFactors.Infrastructure;
@@ -55,6 +56,7 @@ public sealed class SyncFactorsSecretResolver : ISyncFactorsSecretResolver
         return $"{prefix.Trim().TrimEnd('/', '\\')}/{variableName.Trim()}";
     }
 
+    [ExcludeFromCodeCoverage(Justification = "Windows Credential Manager P/Invoke is exercised only on Windows hosts.")]
     private static class WindowsCredentialManager
     {
         private const uint CredentialTypeGeneric = 1;
