@@ -251,6 +251,132 @@ public sealed class RunQueueRecoveryServiceTests
         Assert.Empty(runtimeStatusStore.SavedStatuses);
     }
 
+    [Fact]
+    public async Task RecoverIfNeededAsync_ReturnsZero_WhenNoRecoverableQueueOrRuntimeExists()
+    {
+        var now = DateTimeOffset.Parse("2026-04-09T14:00:00Z");
+        var queueStore = new StubRunQueueStore(null, recoverResult: 0);
+        var runtimeStatusStore = new StubRuntimeStatusStore(null);
+        var runRepository = new StubRunRepository(null);
+        var heartbeatStore = new StubWorkerHeartbeatStore(null);
+        var service = new RunQueueRecoveryService(
+            queueStore,
+            runtimeStatusStore,
+            runRepository,
+            heartbeatStore,
+            new FixedTimeProvider(now),
+            NullLogger<RunQueueRecoveryService>.Instance);
+
+        var recovered = await service.RecoverIfNeededAsync("api startup", CancellationToken.None);
+
+        Assert.Equal(0, recovered);
+        Assert.Equal(0, queueStore.RecoverCalls);
+        Assert.Empty(runRepository.SavedRuns);
+        Assert.Empty(runtimeStatusStore.SavedStatuses);
+    }
+
+    [Fact]
+    public async Task RecoverIfNeededAsync_MarksOrphanedRuntimeAsFailed_WhenQueueRowIsMissing()
+    {
+        var now = DateTimeOffset.Parse("2026-04-09T14:00:00Z");
+        var queueStore = new StubRunQueueStore(null, recoverResult: 0);
+        var runtimeStatusStore = new StubRuntimeStatusStore(
+            new RuntimeStatus(
+                Status: "InProgress",
+                Stage: "BulkSync",
+                RunId: "run-5",
+                Mode: "BulkSync",
+                DryRun: false,
+                ProcessedWorkers: 7,
+                TotalWorkers: 25,
+                CurrentWorkerId: "10005",
+                LastAction: "Processing",
+                StartedAt: now.AddMinutes(-12),
+                LastUpdatedAt: now.AddMinutes(-10),
+                CompletedAt: null,
+                ErrorMessage: null));
+        var runRepository = new StubRunRepository(CreateRunDetail("run-5", "InProgress", now.AddMinutes(-12)));
+        var heartbeatStore = new StubWorkerHeartbeatStore(null);
+        var service = new RunQueueRecoveryService(
+            queueStore,
+            runtimeStatusStore,
+            runRepository,
+            heartbeatStore,
+            new FixedTimeProvider(now),
+            NullLogger<RunQueueRecoveryService>.Instance);
+
+        var recovered = await service.RecoverIfNeededAsync("worker startup", CancellationToken.None);
+
+        Assert.Equal(0, recovered);
+        Assert.Equal(0, queueStore.RecoverCalls);
+
+        var savedRun = Assert.Single(runRepository.SavedRuns);
+        Assert.Equal("run-5", savedRun.RunId);
+        Assert.Equal("Failed", savedRun.Status);
+        Assert.Equal(now, savedRun.CompletedAt);
+
+        var savedRuntime = Assert.Single(runtimeStatusStore.SavedStatuses);
+        Assert.Equal("Failed", savedRuntime.Status);
+        Assert.Equal("BulkSync", savedRuntime.Stage);
+        Assert.Equal("run-5", savedRuntime.RunId);
+        Assert.Equal(7, savedRuntime.ProcessedWorkers);
+        Assert.Equal(25, savedRuntime.TotalWorkers);
+        Assert.Null(savedRuntime.CurrentWorkerId);
+    }
+
+    [Fact]
+    public async Task RecoverIfNeededAsync_CancelsQueue_WhenRuntimeAlreadyCanceled()
+    {
+        var now = DateTimeOffset.Parse("2026-04-09T14:00:00Z");
+        var queueStore = new StubRunQueueStore(
+            new RunQueueRequest(
+                RequestId: "req-6",
+                Mode: "BulkSync",
+                DryRun: false,
+                RunTrigger: "AdHoc",
+                RequestedBy: "test",
+                Status: "InProgress",
+                RequestedAt: now.AddMinutes(-8),
+                StartedAt: now.AddMinutes(-7),
+                CompletedAt: null,
+                RunId: null,
+                ErrorMessage: null),
+            recoverResult: 1);
+        var runtimeStatusStore = new StubRuntimeStatusStore(
+            new RuntimeStatus(
+                Status: "Canceled",
+                Stage: "Canceled",
+                RunId: "run-6",
+                Mode: "BulkSync",
+                DryRun: false,
+                ProcessedWorkers: 4,
+                TotalWorkers: 10,
+                CurrentWorkerId: null,
+                LastAction: "Operator canceled run.",
+                StartedAt: now.AddMinutes(-7),
+                LastUpdatedAt: now.AddMinutes(-1),
+                CompletedAt: now.AddMinutes(-1),
+                ErrorMessage: null));
+        var runRepository = new StubRunRepository(CreateRunDetail("run-6", "Canceled", now.AddMinutes(-7)));
+        var heartbeatStore = new StubWorkerHeartbeatStore(null);
+        var service = new RunQueueRecoveryService(
+            queueStore,
+            runtimeStatusStore,
+            runRepository,
+            heartbeatStore,
+            new FixedTimeProvider(now),
+            NullLogger<RunQueueRecoveryService>.Instance);
+
+        var recovered = await service.RecoverIfNeededAsync("worker startup", CancellationToken.None);
+
+        Assert.Equal(1, recovered);
+        Assert.Equal(0, queueStore.RecoverCalls);
+        Assert.Equal("req-6", queueStore.CanceledRequestId);
+        Assert.Equal("run-6", queueStore.CanceledRunId);
+        Assert.Empty(runRepository.SavedRuns);
+        Assert.Empty(runtimeStatusStore.SavedStatuses);
+    }
+
     private static RunDetail CreateRunDetail(string runId, string status, DateTimeOffset startedAt, bool dryRun = false)
     {
         return new RunDetail(

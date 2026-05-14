@@ -3,9 +3,11 @@ using Microsoft.Extensions.Logging;
 using SyncFactors.Contracts;
 using SyncFactors.Domain;
 using SyncFactors.Infrastructure;
+using System.Diagnostics.CodeAnalysis;
 
 namespace SyncFactors.Worker;
 
+[ExcludeFromCodeCoverage(Justification = "Hosted worker loop behavior is verified through coordinator and recovery tests; the service shell depends on timers and host shutdown.")]
 public sealed class Worker(
     ILogger<Worker> logger,
     IRunQueueStore runQueueStore,
@@ -54,9 +56,9 @@ public sealed class Worker(
                     await runQueueStore.CancelAsync(claimed.RequestId, ex.RunId, ex.Message, CancellationToken.None);
                     await TryWriteHeartbeatAsync(startedAt, "Idle", $"Run {claimed.RequestId} canceled.", CancellationToken.None);
                 }
-                catch (OperationCanceledException ex) when (stoppingToken.IsCancellationRequested)
+                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
                 {
-                    logger.LogWarning(ex, "Worker stopped while a queued run was active. RequestId={RequestId}", claimed.RequestId);
+                    logger.LogWarning("Worker stopped while a queued run was active. RequestId={RequestId}", claimed.RequestId);
                     await runQueueStore.FailAsync(claimed.RequestId, null, "Worker stopped while processing the queued run.", CancellationToken.None);
                     await TryWriteHeartbeatAsync(startedAt, "Stopping", $"Worker stopped while processing run {claimed.RequestId}.", CancellationToken.None);
                     throw;

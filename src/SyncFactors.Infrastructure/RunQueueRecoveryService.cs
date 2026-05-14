@@ -12,6 +12,18 @@ public sealed class RunQueueRecoveryService(
     TimeProvider timeProvider,
     ILogger<RunQueueRecoveryService> logger)
 {
+    private const string QueueStatusCancelRequested = "CancelRequested";
+    private const string QueueStatusInProgress = "InProgress";
+    private const string RuntimeStageCanceled = "Canceled";
+    private const string RuntimeStageCompleted = "Completed";
+    private const string RuntimeStageRecovered = "Recovered";
+    private const string RuntimeStatusCanceled = "Canceled";
+    private const string RuntimeStatusFailed = "Failed";
+    private const string RuntimeStatusIdle = "Idle";
+    private const string RuntimeStatusInProgress = "InProgress";
+    private const string RuntimeStatusSucceeded = "Succeeded";
+    private const string WorkerHeartbeatRunningState = "Running";
+
     private static readonly TimeSpan FreshRunningHeartbeatAge = TimeSpan.FromMinutes(2);
 
     public async Task<int> RecoverIfNeededAsync(string trigger, CancellationToken cancellationToken, bool ignoreFreshHeartbeat = false)
@@ -20,10 +32,10 @@ public sealed class RunQueueRecoveryService(
         var runtime = await runtimeStatusStore.GetCurrentAsync(cancellationToken);
 
         var hasRecoverableQueue = current is not null &&
-            (string.Equals(current.Status, "InProgress", StringComparison.OrdinalIgnoreCase) ||
-             string.Equals(current.Status, "CancelRequested", StringComparison.OrdinalIgnoreCase));
+            (string.Equals(current.Status, QueueStatusInProgress, StringComparison.OrdinalIgnoreCase) ||
+             string.Equals(current.Status, QueueStatusCancelRequested, StringComparison.OrdinalIgnoreCase));
         var hasRecoverableRuntime = runtime is not null &&
-            string.Equals(runtime.Status, "InProgress", StringComparison.OrdinalIgnoreCase);
+            string.Equals(runtime.Status, RuntimeStatusInProgress, StringComparison.OrdinalIgnoreCase);
 
         if (!hasRecoverableQueue && !hasRecoverableRuntime)
         {
@@ -42,7 +54,7 @@ public sealed class RunQueueRecoveryService(
         {
             var age = now - heartbeat.LastSeenAt;
             if (age <= FreshRunningHeartbeatAge &&
-                string.Equals(heartbeat.State, "Running", StringComparison.OrdinalIgnoreCase))
+                string.Equals(heartbeat.State, WorkerHeartbeatRunningState, StringComparison.OrdinalIgnoreCase))
             {
                 logger.LogInformation(
                     "Skipping orphaned run recovery because a worker heartbeat is still active. RequestId={RequestId} Trigger={Trigger}",
@@ -59,9 +71,9 @@ public sealed class RunQueueRecoveryService(
             ? await runQueueStore.RecoverOrphanedActiveRunsAsync(errorMessage, cancellationToken)
             : 0;
 
-        var terminalStatus = string.Equals(current?.Status, "CancelRequested", StringComparison.OrdinalIgnoreCase)
-            ? "Canceled"
-            : "Failed";
+        var terminalStatus = string.Equals(current?.Status, QueueStatusCancelRequested, StringComparison.OrdinalIgnoreCase)
+            ? RuntimeStatusCanceled
+            : RuntimeStatusFailed;
         var completedAt = now;
         var recoveredRunId = current?.RunId ?? runtime?.RunId;
         if (!string.IsNullOrWhiteSpace(recoveredRunId))
@@ -132,8 +144,8 @@ public sealed class RunQueueRecoveryService(
     }
 
     private static bool IsRecoverableQueueStatus(string status) =>
-        string.Equals(status, "InProgress", StringComparison.OrdinalIgnoreCase) ||
-        string.Equals(status, "CancelRequested", StringComparison.OrdinalIgnoreCase);
+        string.Equals(status, QueueStatusInProgress, StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(status, QueueStatusCancelRequested, StringComparison.OrdinalIgnoreCase);
 
     private static bool RuntimeBelongsToQueue(RunQueueRequest current, RuntimeStatus runtime)
     {
@@ -156,16 +168,16 @@ public sealed class RunQueueRecoveryService(
     private static bool IsCompletedRuntime(RuntimeStatus runtime) =>
         runtime.CompletedAt is not null &&
         !string.IsNullOrWhiteSpace(runtime.RunId) &&
-        string.Equals(runtime.Stage, "Completed", StringComparison.OrdinalIgnoreCase) &&
-        (string.Equals(runtime.Status, "Idle", StringComparison.OrdinalIgnoreCase) ||
-         string.Equals(runtime.Status, "Succeeded", StringComparison.OrdinalIgnoreCase));
+        string.Equals(runtime.Stage, RuntimeStageCompleted, StringComparison.OrdinalIgnoreCase) &&
+        (string.Equals(runtime.Status, RuntimeStatusIdle, StringComparison.OrdinalIgnoreCase) ||
+         string.Equals(runtime.Status, RuntimeStatusSucceeded, StringComparison.OrdinalIgnoreCase));
 
     private static bool IsCanceledRuntime(RuntimeStatus runtime) =>
         runtime.CompletedAt is not null &&
         !string.IsNullOrWhiteSpace(runtime.RunId) &&
-        string.Equals(runtime.Stage, "Canceled", StringComparison.OrdinalIgnoreCase) &&
-        (string.Equals(runtime.Status, "Idle", StringComparison.OrdinalIgnoreCase) ||
-         string.Equals(runtime.Status, "Canceled", StringComparison.OrdinalIgnoreCase));
+        string.Equals(runtime.Stage, RuntimeStageCanceled, StringComparison.OrdinalIgnoreCase) &&
+        (string.Equals(runtime.Status, RuntimeStatusIdle, StringComparison.OrdinalIgnoreCase) ||
+         string.Equals(runtime.Status, RuntimeStatusCanceled, StringComparison.OrdinalIgnoreCase));
 
     private async Task RecoverRunAsync(
         string runId,
@@ -175,7 +187,7 @@ public sealed class RunQueueRecoveryService(
         CancellationToken cancellationToken)
     {
         var run = await runRepository.GetRunAsync(runId, cancellationToken);
-        if (run is null || !string.Equals(run.Run.Status, "InProgress", StringComparison.OrdinalIgnoreCase))
+        if (run is null || !string.Equals(run.Run.Status, QueueStatusInProgress, StringComparison.OrdinalIgnoreCase))
         {
             return;
         }
@@ -224,10 +236,10 @@ public sealed class RunQueueRecoveryService(
         var processedWorkers = runtime?.ProcessedWorkers ?? 0;
         var runId = current?.RunId ?? runtime?.RunId;
 
-        return string.Equals(terminalStatus, "Canceled", StringComparison.OrdinalIgnoreCase)
+        return string.Equals(terminalStatus, RuntimeStatusCanceled, StringComparison.OrdinalIgnoreCase)
             ? new RuntimeStatus(
-                Status: "Idle",
-                Stage: "Canceled",
+                Status: RuntimeStatusIdle,
+                Stage: RuntimeStageCanceled,
                 RunId: runId,
                 Mode: mode,
                 DryRun: dryRun,
@@ -240,8 +252,8 @@ public sealed class RunQueueRecoveryService(
                 CompletedAt: completedAt,
                 ErrorMessage: null)
             : new RuntimeStatus(
-                Status: "Failed",
-                Stage: mode ?? runtime?.Stage ?? "Recovered",
+                Status: RuntimeStatusFailed,
+                Stage: mode ?? runtime?.Stage ?? RuntimeStageRecovered,
                 RunId: runId,
                 Mode: mode,
                 DryRun: dryRun,
