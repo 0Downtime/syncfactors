@@ -67,11 +67,11 @@ public sealed class LogSafetyTests
             ["Nested"] = new Dictionary<string, object?> { ["WorkerId"] = "10001" }
         };
 
-        var result = Assert.IsAssignableFrom<IReadOnlyDictionary<string, object?>>(LogSafety.RedactStructuredValue(value));
-        var nested = Assert.IsAssignableFrom<IReadOnlyDictionary<string, object?>>(result["Nested"]);
+        var result = Assert.IsType<Dictionary<string, object?>>(LogSafety.RedactStructuredValue(value));
+        var nested = Assert.IsType<Dictionary<string, object?>>(result["Nested"]);
 
         Assert.Equal("[REDACTED:RequestedBy]", result["RequestedBy"]);
-        Assert.Equal(true, result["DryRun"]);
+        Assert.True(result["DryRun"] is true);
         Assert.Equal("[REDACTED:WorkerId]", nested["WorkerId"]);
     }
 }

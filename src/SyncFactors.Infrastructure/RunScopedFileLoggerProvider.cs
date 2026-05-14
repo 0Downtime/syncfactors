@@ -1,52 +1,31 @@
-using System.Collections.Concurrent;
 using Microsoft.Extensions.Logging;
 
 namespace SyncFactors.Infrastructure;
 
-public sealed class RunScopedFileLoggerProvider(string? configuredDirectory) : ILoggerProvider, ISupportExternalScope
+public sealed class RunScopedFileLoggerProvider(string? configuredDirectory) : RedactingFileLoggerProvider
 {
-    private readonly ConcurrentDictionary<string, RedactingLogFileWriter> _writers = new(StringComparer.OrdinalIgnoreCase);
-    private IExternalScopeProvider _scopeProvider = new LoggerExternalScopeProvider();
-
-    public ILogger CreateLogger(string categoryName)
-    {
-        return new RunScopedFileLogger(categoryName, this);
-    }
-
-    public void Dispose()
-    {
-        foreach (var writer in _writers.Values)
-        {
-            writer.Dispose();
-        }
-
-        _writers.Clear();
-    }
-
-    public void SetScopeProvider(IExternalScopeProvider scopeProvider)
-    {
-        _scopeProvider = scopeProvider ?? new LoggerExternalScopeProvider();
-    }
-
-    private void Write(LogLevel logLevel, string categoryName, EventId eventId, string message, Exception? exception)
+    protected override void Write(LogLevel logLevel, string categoryName, EventId eventId, string message, Exception? exception)
     {
         if (!TryGetRunId(out var runId))
         {
             return;
         }
 
-        var writer = _writers.GetOrAdd(
+        WriteToFile(
             runId,
-            static (id, directory) => new RedactingLogFileWriter(LocalFileLogging.ResolveRunLogPath(id, directory)),
-            configuredDirectory);
-
-        writer.Write(DateTimeOffset.Now, logLevel, categoryName, eventId, message, exception);
+            LocalFileLogging.ResolveRunLogPath(runId, configuredDirectory),
+            DateTimeOffset.Now,
+            logLevel,
+            categoryName,
+            eventId,
+            message,
+            exception);
     }
 
     private bool TryGetRunId(out string runId)
     {
         var scopeState = new ScopeSearchState();
-        _scopeProvider.ForEachScope(
+        ScopeProvider.ForEachScope(
             static (scope, state) =>
             {
                 if (state.RunId is not null)
@@ -96,40 +75,6 @@ public sealed class RunScopedFileLoggerProvider(string? configuredDirectory) : I
         }
 
         return null;
-    }
-
-    private sealed class RunScopedFileLogger(string categoryName, RunScopedFileLoggerProvider provider) : ILogger
-    {
-        public IDisposable BeginScope<TState>(TState state) where TState : notnull
-        {
-            return provider._scopeProvider.Push(state);
-        }
-
-        public bool IsEnabled(LogLevel logLevel)
-        {
-            return logLevel != LogLevel.None;
-        }
-
-        public void Log<TState>(
-            LogLevel logLevel,
-            EventId eventId,
-            TState state,
-            Exception? exception,
-            Func<TState, Exception?, string> formatter)
-        {
-            if (!IsEnabled(logLevel))
-            {
-                return;
-            }
-
-            var message = formatter(state, exception);
-            if (string.IsNullOrWhiteSpace(message) && exception is null)
-            {
-                return;
-            }
-
-            provider.Write(logLevel, categoryName, eventId, message, exception);
-        }
     }
 
     private sealed class ScopeSearchState

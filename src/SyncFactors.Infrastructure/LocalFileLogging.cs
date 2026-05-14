@@ -73,13 +73,13 @@ public static class LocalFileLogging
             {
                 file.Delete();
             }
-            catch (IOException)
+            catch (IOException exception)
             {
-                continue;
+                _ = exception;
             }
-            catch (UnauthorizedAccessException)
+            catch (UnauthorizedAccessException exception)
             {
-                continue;
+                _ = exception;
             }
         }
     }
