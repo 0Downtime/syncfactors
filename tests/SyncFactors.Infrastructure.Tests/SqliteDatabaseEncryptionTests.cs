@@ -68,6 +68,49 @@ public sealed class SqliteDatabaseEncryptionTests : IDisposable
         }
     }
 
+    [Fact]
+    public async Task InitializeAsync_ReopensEncryptedDatabase_WhenSamePasswordIsConfigured()
+    {
+        var databasePath = Path.Combine(Path.GetTempPath(), $"syncfactors-encrypted-reopen-{Guid.NewGuid():N}.db");
+        SetSqlitePassword("test-sqlcipher-reopen-password");
+
+        try
+        {
+            var initializer = new SqliteDatabaseInitializer(new SqlitePathResolver(databasePath));
+            await initializer.InitializeAsync(CancellationToken.None);
+            await initializer.InitializeAsync(CancellationToken.None);
+
+            Assert.False(HasPlaintextSqliteHeader(databasePath));
+            Assert.True(await OpenAndReadSchemaVersionAsync(databasePath, "test-sqlcipher-reopen-password") > 0);
+        }
+        finally
+        {
+            DeleteDatabaseFiles(databasePath);
+        }
+    }
+
+    [Fact]
+    public async Task InitializeAsync_ThrowsWhenEncryptedDatabaseUsesDifferentPassword()
+    {
+        var databasePath = Path.Combine(Path.GetTempPath(), $"syncfactors-encrypted-wrong-password-{Guid.NewGuid():N}.db");
+
+        try
+        {
+            SetSqlitePassword("test-sqlcipher-original-password");
+            await new SqliteDatabaseInitializer(new SqlitePathResolver(databasePath)).InitializeAsync(CancellationToken.None);
+
+            SetSqlitePassword("test-sqlcipher-different-password");
+            var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+                () => new SqliteDatabaseInitializer(new SqlitePathResolver(databasePath)).InitializeAsync(CancellationToken.None));
+
+            Assert.Contains("configured SQLCipher password", ex.Message, StringComparison.Ordinal);
+        }
+        finally
+        {
+            DeleteDatabaseFiles(databasePath);
+        }
+    }
+
     private static void SetSqlitePassword(string? password)
     {
         Environment.SetEnvironmentVariable(PasswordEnvironmentVariable, password);
