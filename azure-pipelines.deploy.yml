@@ -19,6 +19,7 @@ variables:
   installRoot: C:\SyncFactors
   runProfile: real
   apiUrls: https://127.0.0.1:5087
+  tlsCertificateThumbprint: ''
   apiPort: 5087
   configureFirewall: false
   installPowerShell: true
@@ -293,6 +294,9 @@ stages:
                           $securePassword = ConvertTo-SecureString $serviceUserPassword -AsPlainText -Force
                           $credential = [pscredential]::new($credentialUserName, $securePassword)
                           $installArgs += @('-Credential', $credential)
+                      }
+                      if (-not [string]::IsNullOrWhiteSpace('$(tlsCertificateThumbprint)')) {
+                          $installArgs += @('-TlsCertificateThumbprint', '$(tlsCertificateThumbprint)')
                       }
 
                       & $pwsh -NoProfile -ExecutionPolicy Bypass -File $installScript @installArgs
