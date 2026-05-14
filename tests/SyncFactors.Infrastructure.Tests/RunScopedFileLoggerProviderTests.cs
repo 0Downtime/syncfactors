@@ -88,4 +88,44 @@ public sealed class RunScopedFileLoggerProviderTests
         Assert.DoesNotContain("Jane Doe", contents, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("jane.doe@example.local", contents, StringComparison.OrdinalIgnoreCase);
     }
+
+    [Fact]
+    public void LocalFileLogger_RedactsExceptionPii()
+    {
+        var logRoot = Path.Combine(Path.GetTempPath(), "syncfactors-local-logs", Guid.NewGuid().ToString("N"));
+        using var provider = new LocalFileLoggerProvider("api", logRoot);
+        provider.SetScopeProvider(new LoggerExternalScopeProvider());
+        var logger = provider.CreateLogger("Tests.Local");
+        var exception = new InvalidOperationException("Failed for UserPrincipalName=jane.doe@example.local");
+
+        logger.LogError(exception, "Lookup failed for WorkerId={WorkerId}", "10001");
+
+        var logPath = LocalFileLogging.ResolveDatedFilePath("api", logRoot, DateTimeOffset.Now);
+        var contents = File.ReadAllText(logPath);
+        Assert.Contains("WorkerId=[REDACTED:WorkerId]", contents, StringComparison.Ordinal);
+        Assert.Contains("UserPrincipalName=[REDACTED:UserPrincipalName]", contents, StringComparison.Ordinal);
+        Assert.DoesNotContain("jane.doe@example.local", contents, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void PruneDatedFiles_RetainsNewestFiles()
+    {
+        var logRoot = Path.Combine(Path.GetTempPath(), "syncfactors-local-logs", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(logRoot);
+        var oldPath = LocalFileLogging.ResolveDatedFilePath("api", logRoot, DateTimeOffset.UtcNow.AddDays(-2));
+        var middlePath = LocalFileLogging.ResolveDatedFilePath("api", logRoot, DateTimeOffset.UtcNow.AddDays(-1));
+        var newestPath = LocalFileLogging.ResolveDatedFilePath("api", logRoot, DateTimeOffset.UtcNow);
+        File.WriteAllText(oldPath, "old");
+        File.WriteAllText(middlePath, "middle");
+        File.WriteAllText(newestPath, "newest");
+        File.SetLastWriteTimeUtc(oldPath, DateTime.UtcNow.AddDays(-2));
+        File.SetLastWriteTimeUtc(middlePath, DateTime.UtcNow.AddDays(-1));
+        File.SetLastWriteTimeUtc(newestPath, DateTime.UtcNow);
+
+        LocalFileLogging.PruneDatedFiles("api", logRoot, retainedFileCountLimit: 2);
+
+        Assert.False(File.Exists(oldPath));
+        Assert.True(File.Exists(middlePath));
+        Assert.True(File.Exists(newestPath));
+    }
 }

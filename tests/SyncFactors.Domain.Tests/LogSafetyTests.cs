@@ -56,4 +56,22 @@ public sealed class LogSafetyTests
         Assert.Contains("Planned worker action.", result, StringComparison.Ordinal);
         Assert.Contains("Bucket=updates", result, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void RedactStructuredValue_RedactsSensitiveDictionaryEntries()
+    {
+        var value = new Dictionary<string, object?>
+        {
+            ["RequestedBy"] = "jane.doe@example.local",
+            ["DryRun"] = true,
+            ["Nested"] = new Dictionary<string, object?> { ["WorkerId"] = "10001" }
+        };
+
+        var result = Assert.IsAssignableFrom<IReadOnlyDictionary<string, object?>>(LogSafety.RedactStructuredValue(value));
+        var nested = Assert.IsAssignableFrom<IReadOnlyDictionary<string, object?>>(result["Nested"]);
+
+        Assert.Equal("[REDACTED:RequestedBy]", result["RequestedBy"]);
+        Assert.Equal(true, result["DryRun"]);
+        Assert.Equal("[REDACTED:WorkerId]", nested["WorkerId"]);
+    }
 }

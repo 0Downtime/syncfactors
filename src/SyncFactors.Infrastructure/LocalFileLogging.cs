@@ -75,9 +75,11 @@ public static class LocalFileLogging
             }
             catch (IOException)
             {
+                continue;
             }
             catch (UnauthorizedAccessException)
             {
+                continue;
             }
         }
     }
