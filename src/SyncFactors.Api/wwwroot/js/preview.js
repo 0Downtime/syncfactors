@@ -17,7 +17,7 @@
     var diffRows = Array.prototype.slice.call(document.querySelectorAll("[data-preview-diff-body] .diff-row"));
 
     function emitToast(detail) {
-        window.dispatchEvent(new CustomEvent("syncfactors:toast", { detail: detail }));
+        globalThis.dispatchEvent(new CustomEvent("syncfactors:toast", { detail: detail }));
     }
 
     forms.forEach(function (state) {

@@ -1,4 +1,5 @@
 using System.Net.Http.Json;
+using System.Net.Security;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -313,9 +314,21 @@ public sealed class AutomationRunner(AutomationOptions options, TextWriter outpu
 {
     private readonly HttpClient _apiClient = new(new HttpClientHandler
     {
-        ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator
+        ServerCertificateCustomValidationCallback = ValidateCertificateForAutomationTarget
     });
     private readonly HttpClient _mockClient = new();
+
+    private static bool ValidateCertificateForAutomationTarget(
+        HttpRequestMessage request,
+        System.Security.Cryptography.X509Certificates.X509Certificate2? certificate,
+        System.Security.Cryptography.X509Certificates.X509Chain? chain,
+        SslPolicyErrors sslPolicyErrors)
+    {
+        _ = certificate;
+        _ = chain;
+        return sslPolicyErrors == SslPolicyErrors.None ||
+               (request.RequestUri is { IsLoopback: true } && sslPolicyErrors == SslPolicyErrors.RemoteCertificateChainErrors);
+    }
 
     public async Task<AutomationRunReport> RunAsync(IReadOnlyList<AutomationScenario> scenarios, CancellationToken cancellationToken)
     {
@@ -1034,7 +1047,7 @@ public sealed class AutomationRunner(AutomationOptions options, TextWriter outpu
         string.Equals(status, "Failed", StringComparison.OrdinalIgnoreCase) ||
         string.Equals(status, "Canceled", StringComparison.OrdinalIgnoreCase);
 
-    private async Task<RunQueueRequest> ReadRunQueueRequestAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+    private static async Task<RunQueueRequest> ReadRunQueueRequestAsync(HttpResponseMessage response, CancellationToken cancellationToken)
     {
         await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
         return await JsonSerializer.DeserializeAsync<RunQueueRequest>(stream, AutomationCliJson.Options, cancellationToken)

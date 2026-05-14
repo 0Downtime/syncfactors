@@ -40,7 +40,7 @@ public sealed class SqliteLocalUserStore(SqlitePathResolver pathResolver) : ILoc
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         return await reader.ReadAsync(cancellationToken)
-            ? MapUser(reader)
+            ? await MapUserAsync(reader, cancellationToken)
             : null;
     }
 
@@ -72,9 +72,9 @@ public sealed class SqliteLocalUserStore(SqlitePathResolver pathResolver) : ILoc
                 IsActive: reader.GetInt64(3) != 0,
                 CreatedAt: DateTimeOffset.Parse(reader.GetString(4)),
                 UpdatedAt: DateTimeOffset.Parse(reader.GetString(5)),
-                LastLoginAt: reader.IsDBNull(6) ? null : DateTimeOffset.Parse(reader.GetString(6)),
+                LastLoginAt: await reader.IsDBNullAsync(6, cancellationToken) ? null : DateTimeOffset.Parse(reader.GetString(6)),
                 FailedLoginCount: reader.GetInt32(7),
-                LockoutEndAt: reader.IsDBNull(8) ? null : DateTimeOffset.Parse(reader.GetString(8))));
+                LockoutEndAt: await reader.IsDBNullAsync(8, cancellationToken) ? null : DateTimeOffset.Parse(reader.GetString(8))));
         }
 
         return users;
@@ -101,7 +101,7 @@ public sealed class SqliteLocalUserStore(SqlitePathResolver pathResolver) : ILoc
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         return await reader.ReadAsync(cancellationToken)
-            ? MapUser(reader)
+            ? await MapUserAsync(reader, cancellationToken)
             : null;
     }
 
@@ -262,7 +262,7 @@ public sealed class SqliteLocalUserStore(SqlitePathResolver pathResolver) : ILoc
     public static string NormalizeUsername(string username) =>
         username.Trim().ToUpperInvariant();
 
-    private static LocalUserRecord MapUser(SqliteDataReader reader)
+    private static async Task<LocalUserRecord> MapUserAsync(SqliteDataReader reader, CancellationToken cancellationToken)
     {
         return new LocalUserRecord(
             UserId: reader.GetString(0),
@@ -273,9 +273,9 @@ public sealed class SqliteLocalUserStore(SqlitePathResolver pathResolver) : ILoc
             IsActive: reader.GetInt64(5) != 0,
             CreatedAt: DateTimeOffset.Parse(reader.GetString(6)),
             UpdatedAt: DateTimeOffset.Parse(reader.GetString(7)),
-            LastLoginAt: reader.IsDBNull(8) ? null : DateTimeOffset.Parse(reader.GetString(8)),
+            LastLoginAt: await reader.IsDBNullAsync(8, cancellationToken) ? null : DateTimeOffset.Parse(reader.GetString(8)),
             FailedLoginCount: reader.GetInt32(9),
-            LockoutEndAt: reader.IsDBNull(10) ? null : DateTimeOffset.Parse(reader.GetString(10)));
+            LockoutEndAt: await reader.IsDBNullAsync(10, cancellationToken) ? null : DateTimeOffset.Parse(reader.GetString(10)));
     }
 
     private static async Task<SqliteConnection> OpenConnectionAsync(string databasePath, CancellationToken cancellationToken)

@@ -1,5 +1,6 @@
 @using System.Reflection
 @inject Microsoft.AspNetCore.Hosting.IWebHostEnvironment HostEnvironment
+@inject SyncFactors.Contracts.RealSyncSettings RealSyncSettings
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -24,6 +25,7 @@
     var isSyncPage = currentPage.StartsWith("/Sync", StringComparison.OrdinalIgnoreCase);
     var isExceptionsPage = currentPage.StartsWith("/Exceptions", StringComparison.OrdinalIgnoreCase);
     var isPreviewPage = currentPage.StartsWith("/Preview", StringComparison.OrdinalIgnoreCase);
+    var isWorkersPage = currentPage.StartsWith("/Workers", StringComparison.OrdinalIgnoreCase);
     var isLookupPage = currentPage.StartsWith("/Lookup", StringComparison.OrdinalIgnoreCase);
     var isAdminPage = currentPage.StartsWith("/Admin", StringComparison.OrdinalIgnoreCase);
     var isAdminUsersPage = currentPage.StartsWith("/Admin/Users", StringComparison.OrdinalIgnoreCase);
@@ -38,7 +40,8 @@
     }
 
     var appEnvironment = HostEnvironment.EnvironmentName;
-    var showDevelopmentBanner = string.Equals(appEnvironment, "Development", StringComparison.OrdinalIgnoreCase);
+    var showDryRunBanner = RealSyncSettings.DryRunOnly;
+    var showDevelopmentBanner = !showDryRunBanner && string.Equals(appEnvironment, "Development", StringComparison.OrdinalIgnoreCase);
 }
 <body data-page="@currentPageToken">
     <div class="shell">
@@ -57,9 +60,9 @@
                     <a class="@(isSyncPage ? "is-active" : null)" asp-page="/Sync">Sync</a>
                     <a class="@(isExceptionsPage ? "is-active" : null)" asp-page="/Exceptions">Exceptions</a>
                     <details class="nav-menu" data-nav-menu>
-                        <summary class="@(isPreviewPage || isLookupPage ? "is-active" : null)">Tools</summary>
+                        <summary class="@(isPreviewPage || isWorkersPage || isLookupPage ? "is-active" : null)">Tools</summary>
                         <div class="nav-menu-panel">
-                            <a class="@(isPreviewPage ? "is-active" : null)" asp-page="/Preview">Provision</a>
+                            <a class="@(isWorkersPage || isPreviewPage ? "is-active" : null)" asp-page="/Workers">Worker 360</a>
                             <a class="@(isLookupPage ? "is-active" : null)" asp-page="/Lookup">Lookup</a>
                         </div>
                     </details>
@@ -93,7 +96,7 @@
                                 <span>Signed in as <strong>@User.Identity.Name</strong></span>
                                 <span class="auth-role">Role: @role</span>
                             </div>
-                            <div class="theme-toggle" id="theme-toggle" role="group" aria-label="Color mode">
+                            <div class="theme-toggle" data-theme-toggle role="group" aria-label="Color mode">
                                 <button class="theme-toggle-option" type="button" data-theme-option="system" aria-pressed="false">System</button>
                                 <button class="theme-toggle-option" type="button" data-theme-option="light" aria-pressed="false">Light</button>
                                 <button class="theme-toggle-option" type="button" data-theme-option="dark" aria-pressed="false">Dark</button>
@@ -104,7 +107,7 @@
                 }
                 else
                 {
-                    <div class="theme-toggle" id="theme-toggle" role="group" aria-label="Color mode">
+                    <div class="theme-toggle" data-theme-toggle role="group" aria-label="Color mode">
                         <button class="theme-toggle-option" type="button" data-theme-option="system" aria-pressed="false">System</button>
                         <button class="theme-toggle-option" type="button" data-theme-option="light" aria-pressed="false">Light</button>
                         <button class="theme-toggle-option" type="button" data-theme-option="dark" aria-pressed="false">Dark</button>
@@ -122,7 +125,14 @@
             </button>
         </footer>
     </div>
-    @if (showDevelopmentBanner)
+    @if (showDryRunBanner)
+    {
+        <div class="environment-corner-banner environment-corner-banner--dryrun" role="status" aria-label="Dry-run mode and version">
+            <strong>Dry Run Mode</strong>
+            <span>v@(appVersion)</span>
+        </div>
+    }
+    else if (showDevelopmentBanner)
     {
         <div class="environment-corner-banner" role="status" aria-label="Environment and version">
             <strong>@appEnvironment</strong>

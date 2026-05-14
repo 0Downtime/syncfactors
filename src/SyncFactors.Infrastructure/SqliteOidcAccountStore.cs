@@ -78,7 +78,7 @@ public sealed class SqliteOidcAccountStore(SqlitePathResolver pathResolver) : IO
             accounts.Add(new OidcAccountRecord(
                 Subject: reader.GetString(0),
                 Username: reader.GetString(1),
-                DisplayName: reader.IsDBNull(2) ? null : reader.GetString(2),
+                DisplayName: await reader.IsDBNullAsync(2, cancellationToken) ? null : reader.GetString(2),
                 AccessLevel: reader.GetString(3),
                 Groups: ParseGroups(reader.GetString(4)),
                 FirstSeenAt: DateTimeOffset.Parse(reader.GetString(5)),

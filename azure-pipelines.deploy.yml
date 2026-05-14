@@ -1,0 +1,307 @@
+name: syncfactors-windows-cd-$(Date:yyyyMMdd).$(Rev:r)
+
+trigger:
+  branches:
+    include:
+      - main
+
+pr: none
+
+variables:
+  dotnetSdkVersion: 10.0.x
+  runtimeIdentifier: win-x64
+  artifactName: syncfactors-windows
+  deployTargetMachines: ''
+  deployAdminUserName: ''
+  deployAdminPassword: ''
+  deploymentEnvironment: SyncFactors-Windows
+  remoteStagingPath: C:\SyncFactors\_staging
+  installRoot: C:\SyncFactors
+  runProfile: real
+  apiUrls: https://127.0.0.1:5087
+  apiPort: 5087
+  configureFirewall: false
+  installPowerShell: true
+  apiServiceName: SyncFactors.Api
+  workerServiceName: SyncFactors.Worker
+  createLocalServiceAccount: false
+  windowsCredentialPrefix: SyncFactors
+  serviceUserName: ''
+  serviceUserPassword: ''
+
+stages:
+  - stage: Build
+    displayName: Build, test, and package
+    jobs:
+      - job: BuildWindowsBundle
+        displayName: Build Windows deployment bundle
+        pool:
+          vmImage: windows-latest
+        steps:
+          - checkout: self
+            fetchDepth: 0
+
+          - task: UseDotNet@2
+            displayName: Install .NET SDK
+            inputs:
+              packageType: sdk
+              version: $(dotnetSdkVersion)
+
+          - task: PowerShell@2
+            displayName: Resolve release metadata
+            inputs:
+              pwsh: true
+              targetType: inline
+              script: |
+                $ErrorActionPreference = 'Stop'
+                $info = & ./scripts/Get-SyncFactorsReleaseInfo.ps1 -Channel Prerelease -RunNumber $env:BUILD_BUILDID -CommitSha $env:BUILD_SOURCEVERSION
+                Write-Host "##vso[task.setvariable variable=releaseVersion]$($info.version)"
+                Write-Host "##vso[task.setvariable variable=assemblyInformationalVersion]$($info.assemblyInformationalVersion)"
+                Write-Host "##vso[task.setvariable variable=releaseCommitSha]$($info.commitSha)"
+
+          - task: DotNetCoreCLI@2
+            displayName: Restore solution
+            inputs:
+              command: restore
+              projects: SyncFactors.Next.sln
+
+          - task: DotNetCoreCLI@2
+            displayName: Build solution
+            inputs:
+              command: build
+              projects: SyncFactors.Next.sln
+              arguments: --configuration Release --no-restore
+
+          - task: DotNetCoreCLI@2
+            displayName: Test solution
+            inputs:
+              command: test
+              projects: SyncFactors.Next.sln
+              arguments: --configuration Release --no-build --logger "trx;LogFilePrefix=test-results" --results-directory "$(Agent.TempDirectory)\test-results"
+              publishTestResults: false
+
+          - task: PublishTestResults@2
+            displayName: Publish test results
+            condition: always()
+            inputs:
+              testResultsFormat: VSTest
+              testResultsFiles: '$(Agent.TempDirectory)\test-results\*.trx'
+              failTaskOnFailedTests: true
+
+          - task: PowerShell@2
+            displayName: Publish applications
+            inputs:
+              pwsh: true
+              targetType: inline
+              script: |
+                $ErrorActionPreference = 'Stop'
+                dotnet publish ./src/SyncFactors.Api/SyncFactors.Api.csproj `
+                  --configuration Release `
+                  --runtime $(runtimeIdentifier) `
+                  --self-contained true `
+                  --output ./artifacts/publish/api `
+                  /p:Version="$(releaseVersion)" `
+                  /p:InformationalVersion="$(assemblyInformationalVersion)" `
+                  /p:SourceRevisionId="$(releaseCommitSha)"
+
+                dotnet publish ./src/SyncFactors.Worker/SyncFactors.Worker.csproj `
+                  --configuration Release `
+                  --runtime $(runtimeIdentifier) `
+                  --self-contained true `
+                  --output ./artifacts/publish/worker `
+                  /p:Version="$(releaseVersion)" `
+                  /p:InformationalVersion="$(assemblyInformationalVersion)" `
+                  /p:SourceRevisionId="$(releaseCommitSha)"
+
+          - task: PowerShell@2
+            displayName: Validate application versions
+            inputs:
+              pwsh: true
+              targetType: inline
+              script: |
+                $ErrorActionPreference = 'Stop'
+                ./scripts/Assert-SyncFactorsAssemblyVersion.ps1 `
+                  -AssemblyPath ./artifacts/publish/api/SyncFactors.Api.dll `
+                  -ExpectedInformationalVersion "$(assemblyInformationalVersion)" `
+                  -ExpectedCommitSha "$(releaseCommitSha)"
+                ./scripts/Assert-SyncFactorsAssemblyVersion.ps1 `
+                  -AssemblyPath ./artifacts/publish/worker/SyncFactors.Worker.dll `
+                  -ExpectedInformationalVersion "$(assemblyInformationalVersion)" `
+                  -ExpectedCommitSha "$(releaseCommitSha)"
+
+          - task: PowerShell@2
+            displayName: Build deployment bundle
+            inputs:
+              pwsh: true
+              targetType: inline
+              script: |
+                $ErrorActionPreference = 'Stop'
+                New-Item -Path "$(Build.ArtifactStagingDirectory)" -ItemType Directory -Force | Out-Null
+                $bundleName = "syncfactors-$(releaseVersion)-$(runtimeIdentifier).zip"
+                $bundlePath = Join-Path "$(Build.ArtifactStagingDirectory)" $bundleName
+                & ./scripts/New-SyncFactorsReleaseBundle.ps1 `
+                  -OutputPath $bundlePath `
+                  -Version "$(releaseVersion)" `
+                  -RuntimeIdentifier "$(runtimeIdentifier)" `
+                  -CommitSha "$(releaseCommitSha)"
+                Write-Host "##vso[task.setvariable variable=bundleFileName]$bundleName"
+
+          - task: PublishPipelineArtifact@1
+            displayName: Publish deployment artifact
+            inputs:
+              targetPath: $(Build.ArtifactStagingDirectory)
+              artifact: $(artifactName)
+
+  - stage: Deploy
+    displayName: Deploy to Windows Server
+    dependsOn: Build
+    condition: and(succeeded(), ne(variables['deployTargetMachines'], ''))
+    jobs:
+      - deployment: DeployWindowsServices
+        displayName: Deploy SyncFactors Windows services
+        environment: $(deploymentEnvironment)
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - task: DownloadPipelineArtifact@2
+                  displayName: Download deployment artifact
+                  inputs:
+                    buildType: current
+                    artifactName: $(artifactName)
+                    targetPath: $(Pipeline.Workspace)\$(artifactName)
+
+                - task: WindowsMachineFileCopy@2
+                  displayName: Copy bundle to Windows server
+                  inputs:
+                    SourcePath: $(Pipeline.Workspace)\$(artifactName)\*.zip
+                    MachineNames: $(deployTargetMachines)
+                    AdminUserName: $(deployAdminUserName)
+                    AdminPassword: $(deployAdminPassword)
+                    TargetPath: $(remoteStagingPath)
+                    CleanTargetBeforeCopy: true
+                    CopyFilesInParallel: true
+
+                - task: PowerShellOnTargetMachines@3
+                  displayName: Install prerequisites and services
+                  inputs:
+                    Machines: $(deployTargetMachines)
+                    UserName: $(deployAdminUserName)
+                    UserPassword: $(deployAdminPassword)
+                    ScriptType: Inline
+                    InlineScript: |
+                      $ErrorActionPreference = 'Stop'
+
+                      function Convert-ToBool {
+                          param([string]$Value)
+                          return $Value -match '^(1|true|yes|y)$'
+                      }
+
+                      function Resolve-PowerShellCore {
+                          $command = Get-Command pwsh -ErrorAction SilentlyContinue
+                          if ($command) {
+                              return $command.Source
+                          }
+
+                          $powerShellRoot = Join-Path $env:ProgramFiles 'PowerShell'
+                          if (Test-Path -Path $powerShellRoot -PathType Container) {
+                              $candidate = Get-ChildItem -Path $powerShellRoot -Filter pwsh.exe -Recurse -File -ErrorAction SilentlyContinue |
+                                  Sort-Object FullName -Descending |
+                                  Select-Object -First 1
+                              if ($candidate) {
+                                  return $candidate.FullName
+                              }
+                          }
+
+                          throw 'PowerShell 7 was not found after prerequisite installation.'
+                      }
+
+                      $stagingPath = '$(remoteStagingPath)'
+                      $installRoot = '$(installRoot)'
+                      $runProfile = '$(runProfile)'
+                      $apiUrls = '$(apiUrls)'
+                      $apiPort = [int]'$(apiPort)'
+                      $configureFirewall = Convert-ToBool '$(configureFirewall)'
+                      $installPowerShell = Convert-ToBool '$(installPowerShell)'
+                      $apiServiceName = '$(apiServiceName)'
+                      $workerServiceName = '$(workerServiceName)'
+                      $createLocalServiceAccount = Convert-ToBool '$(createLocalServiceAccount)'
+                      $windowsCredentialPrefix = '$(windowsCredentialPrefix)'
+                      $serviceUserName = '$(serviceUserName)'
+                      $serviceUserPassword = '$(serviceUserPassword)'
+
+                      if (-not (Test-Path -Path $stagingPath -PathType Container)) {
+                          throw "Deployment staging path '$stagingPath' was not found."
+                      }
+
+                      $bundle = Get-ChildItem -Path $stagingPath -Filter 'syncfactors-*.zip' -File |
+                          Sort-Object LastWriteTimeUtc -Descending |
+                          Select-Object -First 1
+                      if (-not $bundle) {
+                          throw "No SyncFactors bundle zip was found under '$stagingPath'."
+                      }
+
+                      New-Item -Path $installRoot -ItemType Directory -Force | Out-Null
+
+                      Expand-Archive -Path $bundle.FullName -DestinationPath $installRoot -Force
+
+                      $prereqScript = Join-Path $installRoot 'scripts\Install-SyncFactorsWindowsPrerequisites.ps1'
+                      $prereqArgs = @(
+                          '-InstallRoot', $installRoot,
+                          '-ApiPort', $apiPort
+                      )
+                      if ($configureFirewall) {
+                          $prereqArgs += '-ConfigureFirewall'
+                      }
+                      if ($installPowerShell) {
+                          $prereqArgs += '-InstallPowerShell'
+                      }
+                      if (-not [string]::IsNullOrWhiteSpace($serviceUserName)) {
+                          $prereqArgs += @('-ServiceAccount', $serviceUserName)
+                          if ($createLocalServiceAccount) {
+                              if ([string]::IsNullOrWhiteSpace($serviceUserPassword)) {
+                                  throw 'serviceUserPassword must be set when createLocalServiceAccount is true.'
+                              }
+
+                              $serviceSecurePassword = ConvertTo-SecureString $serviceUserPassword -AsPlainText -Force
+                              $prereqArgs += @('-CreateLocalServiceAccount', '-ServiceAccountPassword', $serviceSecurePassword)
+                          }
+                      }
+                      & $prereqScript @prereqArgs
+
+                      $pwsh = Resolve-PowerShellCore
+                      $installScript = Join-Path $installRoot 'scripts\Install-SyncFactorsWindowsServices.ps1'
+                      $installArgs = @(
+                          '-BundleRoot', $installRoot,
+                          '-RunProfile', $runProfile,
+                          '-ApiUrls', $apiUrls,
+                          '-ApiServiceName', $apiServiceName,
+                          '-WorkerServiceName', $workerServiceName,
+                          '-WindowsCredentialPrefix', $windowsCredentialPrefix,
+                          '-Force'
+                      )
+                      if (-not [string]::IsNullOrWhiteSpace($serviceUserName)) {
+                          if ([string]::IsNullOrWhiteSpace($serviceUserPassword)) {
+                              throw 'serviceUserPassword must be set when serviceUserName is set.'
+                          }
+
+                          $credentialUserName = $serviceUserName
+                          if ($createLocalServiceAccount -and -not $credentialUserName.Contains('\') -and -not $credentialUserName.Contains('@')) {
+                              $credentialUserName = ".\$credentialUserName"
+                          }
+
+                          $securePassword = ConvertTo-SecureString $serviceUserPassword -AsPlainText -Force
+                          $credential = [pscredential]::new($credentialUserName, $securePassword)
+                          $installArgs += @('-Credential', $credential)
+                      }
+
+                      & $pwsh -NoProfile -ExecutionPolicy Bypass -File $installScript @installArgs
+                      if ($LASTEXITCODE -ne 0) {
+                          throw "Service installation failed with code $LASTEXITCODE."
+                      }
+
+                      Start-Service -Name $apiServiceName
+                      Start-Service -Name $workerServiceName
+                      Get-Service -Name $apiServiceName, $workerServiceName |
+                          Select-Object Name, Status, StartType |
+                          Format-Table -AutoSize

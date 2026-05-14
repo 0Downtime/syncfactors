@@ -50,8 +50,7 @@ public sealed class MockApiTests
     [Fact]
     public void TokenService_IssuesBearerToken_ForValidClientCredentials()
     {
-        var service = new MockTokenService();
-        var token = service.IssueToken("client_credentials", "mock-client-id", "mock-client-secret", "MOCK", new MockAuthenticationOptions());
+        var token = MockTokenService.IssueToken("client_credentials", "mock-client-id", "mock-client-secret", "MOCK", new MockAuthenticationOptions());
 
         Assert.NotNull(token);
         Assert.Equal("mock-access-token", token!.AccessToken);
@@ -60,8 +59,7 @@ public sealed class MockApiTests
     [Fact]
     public void TokenService_RejectsInvalidClientCredentials()
     {
-        var service = new MockTokenService();
-        var token = service.IssueToken("client_credentials", "bad", "bad", "MOCK", new MockAuthenticationOptions());
+        var token = MockTokenService.IssueToken("client_credentials", "bad", "bad", "MOCK", new MockAuthenticationOptions());
 
         Assert.Null(token);
     }

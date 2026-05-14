@@ -29,7 +29,7 @@ public sealed class SqliteRunQueueStore(SqlitePathResolver pathResolver) : IRunQ
             RunId: null,
             ErrorMessage: null);
 
-        await using var connection = new SqliteConnection($"Data Source={databasePath}");
+        await using var connection = SqliteConnections.Open(databasePath);
         await connection.OpenAsync(cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText =
@@ -76,7 +76,7 @@ public sealed class SqliteRunQueueStore(SqlitePathResolver pathResolver) : IRunQ
             return null;
         }
 
-        await using var connection = new SqliteConnection($"Data Source={databasePath}");
+        await using var connection = SqliteConnections.Open(databasePath);
         await connection.OpenAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
 
@@ -160,7 +160,7 @@ public sealed class SqliteRunQueueStore(SqlitePathResolver pathResolver) : IRunQ
             return null;
         }
 
-        await using var connection = new SqliteConnection($"Data Source={databasePath}");
+        await using var connection = SqliteConnections.Open(databasePath);
         await connection.OpenAsync(cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText =
@@ -185,7 +185,7 @@ public sealed class SqliteRunQueueStore(SqlitePathResolver pathResolver) : IRunQ
             return null;
         }
 
-        await using var connection = new SqliteConnection($"Data Source={databasePath}");
+        await using var connection = SqliteConnections.Open(databasePath);
         await connection.OpenAsync(cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText =
@@ -214,7 +214,7 @@ public sealed class SqliteRunQueueStore(SqlitePathResolver pathResolver) : IRunQ
             return false;
         }
 
-        await using var connection = new SqliteConnection($"Data Source={databasePath}");
+        await using var connection = SqliteConnections.Open(databasePath);
         await connection.OpenAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
 
@@ -284,14 +284,21 @@ public sealed class SqliteRunQueueStore(SqlitePathResolver pathResolver) : IRunQ
             return false;
         }
 
-        await using var connection = new SqliteConnection($"Data Source={databasePath}");
-        await connection.OpenAsync(cancellationToken);
-        await using var command = connection.CreateCommand();
-        command.CommandText = "SELECT status FROM run_queue WHERE request_id = $requestId LIMIT 1;";
-        command.Parameters.AddWithValue("$requestId", requestId);
-        var result = await command.ExecuteScalarAsync(cancellationToken);
-        return result is string status &&
-               string.Equals(status, "CancelRequested", StringComparison.OrdinalIgnoreCase);
+        try
+        {
+            await using var connection = SqliteConnections.Open(databasePath);
+            await connection.OpenAsync(cancellationToken);
+            await using var command = connection.CreateCommand();
+            command.CommandText = "SELECT status FROM run_queue WHERE request_id = $requestId LIMIT 1;";
+            command.Parameters.AddWithValue("$requestId", requestId);
+            var result = await command.ExecuteScalarAsync(cancellationToken);
+            return result is string status &&
+                   string.Equals(status, "CancelRequested", StringComparison.OrdinalIgnoreCase);
+        }
+        catch (SqliteException ex) when (SqliteConnections.IsBusyOrLocked(ex))
+        {
+            return false;
+        }
     }
 
     public async Task CompleteAsync(string requestId, string runId, CancellationToken cancellationToken)
@@ -317,7 +324,7 @@ public sealed class SqliteRunQueueStore(SqlitePathResolver pathResolver) : IRunQ
             return 0;
         }
 
-        await using var connection = new SqliteConnection($"Data Source={databasePath}");
+        await using var connection = SqliteConnections.Open(databasePath);
         await connection.OpenAsync(cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText =
@@ -367,7 +374,7 @@ public sealed class SqliteRunQueueStore(SqlitePathResolver pathResolver) : IRunQ
             RunId: request.RunId,
             ErrorMessage: null);
 
-        await using var connection = new SqliteConnection($"Data Source={databasePath}");
+        await using var connection = SqliteConnections.Open(databasePath);
         await connection.OpenAsync(cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText =
@@ -415,7 +422,7 @@ public sealed class SqliteRunQueueStore(SqlitePathResolver pathResolver) : IRunQ
             return;
         }
 
-        await using var connection = new SqliteConnection($"Data Source={databasePath}");
+        await using var connection = SqliteConnections.Open(databasePath);
         await connection.OpenAsync(cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText =

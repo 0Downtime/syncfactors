@@ -57,6 +57,38 @@ public sealed class GraveyardAutoDeleteCoordinatorTests
     }
 
     [Fact]
+    public async Task TryExecuteAsync_ManualReviewDeletions_RebucketsDeleteWithoutExecutingDirectoryMutation()
+    {
+        var retentionStore = new StubGraveyardRetentionStore(
+            [
+                CreateRecord("10001", isOnHold: false, endDateUtc: DateTimeOffset.Parse("2026-02-01T00:00:00Z"))
+            ]);
+        var commandGateway = new CapturingDirectoryCommandGateway();
+        var lifecycle = new CapturingRunLifecycleService();
+        var coordinator = CreateCoordinator(
+            retentionStore,
+            CreateDirectoryGateway("10001"),
+            commandGateway,
+            lifecycle,
+            autoDeleteEnabled: true,
+            now: DateTimeOffset.Parse("2026-04-11T12:00:00Z"),
+            manualReviewDeletions: true);
+
+        var runId = await coordinator.TryExecuteAsync(CancellationToken.None);
+
+        Assert.NotNull(runId);
+        Assert.Empty(commandGateway.Commands);
+        Assert.Empty(retentionStore.ResolvedWorkerIds);
+        Assert.Equal(1, lifecycle.CompletedCalls);
+        var entry = Assert.Single(lifecycle.Entries);
+        Assert.Equal("manualReview", entry.Bucket);
+        Assert.Equal("SafetyPolicy", entry.ReviewCategory);
+        Assert.Equal("DeletionRequiresManualReview", entry.ReviewCaseType);
+        Assert.Equal(JsonValueKind.Null, entry.Item.GetProperty("action").ValueKind);
+        Assert.False(entry.Item.GetProperty("applied").GetBoolean());
+    }
+
+    [Fact]
     public async Task TryExecuteAsync_HonorsDeletionGuardrail()
     {
         var retentionStore = new StubGraveyardRetentionStore(
@@ -140,7 +172,8 @@ public sealed class GraveyardAutoDeleteCoordinatorTests
         CapturingRunLifecycleService lifecycle,
         bool autoDeleteEnabled,
         DateTimeOffset now,
-        int maxDeletionsPerRun = 10)
+        int maxDeletionsPerRun = 10,
+        bool manualReviewDeletions = false)
     {
         var queueService = new GraveyardDeletionQueueService(
             retentionStore,
@@ -155,7 +188,11 @@ public sealed class GraveyardAutoDeleteCoordinatorTests
             commandGateway,
             lifecycle,
             new GraveyardDeletionQueueSettings(RetentionDays: 30, AutoDeleteEnabled: autoDeleteEnabled),
-            new WorkerRunSettings(MaxCreatesPerRun: 10, MaxDisablesPerRun: 10, MaxDeletionsPerRun: maxDeletionsPerRun),
+            new WorkerRunSettings(
+                MaxCreatesPerRun: 10,
+                MaxDisablesPerRun: 10,
+                MaxDeletionsPerRun: maxDeletionsPerRun,
+                ManualReviewDeletions: manualReviewDeletions),
             NullLogger<GraveyardAutoDeleteCoordinator>.Instance,
             new FakeTimeProvider(now));
     }

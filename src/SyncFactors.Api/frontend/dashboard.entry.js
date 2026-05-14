@@ -4,6 +4,7 @@ import { BarChart, PieChart } from "echarts/charts";
 import { GraphicComponent, GridComponent, LegendComponent, TooltipComponent } from "echarts/components";
 import { CanvasRenderer } from "echarts/renderers";
 import { animate, stagger } from "motion";
+import { buildRunMixAxis } from "./dashboard-axis.js";
 
 echarts.use([BarChart, PieChart, GraphicComponent, GridComponent, LegendComponent, TooltipComponent, CanvasRenderer]);
 
@@ -11,7 +12,7 @@ echarts.use([BarChart, PieChart, GraphicComponent, GridComponent, LegendComponen
     const dashboardPollIntervalMs = 15000;
     const progressAnimationDurationMs = 700;
     const runsPageSize = 25;
-    const reduceMotionQuery = window.matchMedia ? window.matchMedia("(prefers-reduced-motion: reduce)") : null;
+    const reduceMotionQuery = globalThis.matchMedia ? globalThis.matchMedia("(prefers-reduced-motion: reduce)") : null;
     const supportsViewTransitions = typeof document.startViewTransition === "function";
     const usDateTimeFormatter = new Intl.DateTimeFormat("en-US", {
         year: "numeric",
@@ -109,7 +110,7 @@ echarts.use([BarChart, PieChart, GraphicComponent, GridComponent, LegendComponen
     const initialHealthProbesEnabled = (elements.root.getAttribute("data-health-probes-enabled") || "true").toLowerCase() !== "false";
     const healthPollIntervalMs = Math.max(
         1000,
-        parseInt(elements.root.getAttribute("data-health-probe-interval-ms") || "45000", 10) || 45000);
+        Number.parseInt(elements.root.getAttribute("data-health-probe-interval-ms") || "45000", 10) || 45000);
     const valueNodes = {
         status: elements.statusRoot.querySelector("[data-status-value]"),
         stage: elements.statusRoot.querySelector("[data-stage-value]"),
@@ -178,7 +179,7 @@ echarts.use([BarChart, PieChart, GraphicComponent, GridComponent, LegendComponen
         });
     }
 
-    window.addEventListener("syncfactors:themechange", function () {
+    globalThis.addEventListener("syncfactors:themechange", function () {
         refreshCharts();
     });
 
@@ -190,7 +191,7 @@ echarts.use([BarChart, PieChart, GraphicComponent, GridComponent, LegendComponen
         healthMenu.open = false;
     });
 
-    window.addEventListener("resize", function () {
+    globalThis.addEventListener("resize", function () {
         if (runsChartInstance) {
             runsChartInstance.resize();
         }
@@ -280,8 +281,8 @@ echarts.use([BarChart, PieChart, GraphicComponent, GridComponent, LegendComponen
 
         return String(value)
             .trim()
-            .replace(/[-_]+/g, " ")
-            .replace(/(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])/g, " ");
+            .replaceAll(/[-_]+/g, " ")
+            .replaceAll(/(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])/g, " ");
     }
 
     function runKindLabel(run) {
@@ -345,7 +346,7 @@ echarts.use([BarChart, PieChart, GraphicComponent, GridComponent, LegendComponen
     }
 
     function textOrFallback(value, fallback) {
-        return value ? value : fallback;
+        return value || fallback;
     }
 
     function displayStage(stage) {
@@ -353,7 +354,7 @@ echarts.use([BarChart, PieChart, GraphicComponent, GridComponent, LegendComponen
             return "standby";
         }
 
-        return stage.replace(/inprogress/ig, "in progress").toLowerCase();
+        return stage.replaceAll(/inprogress/ig, "in progress").toLowerCase();
     }
 
     function workerProgressPercent(status) {
@@ -1010,7 +1011,7 @@ echarts.use([BarChart, PieChart, GraphicComponent, GridComponent, LegendComponen
             return;
         }
 
-        scheduleTimerId = window.setInterval(function () {
+        scheduleTimerId = globalThis.setInterval(function () {
             if (latestScheduleSnapshot) {
                 renderSchedule(latestScheduleSnapshot);
             }
@@ -1272,7 +1273,11 @@ echarts.use([BarChart, PieChart, GraphicComponent, GridComponent, LegendComponen
         row.addEventListener("mouseenter", function () {
             setHoveredRun(row.dataset.runId);
         });
-        row.addEventListener("mouseleave", function () {
+        row.addEventListener("mouseleave", function (event) {
+            if (event.relatedTarget && elements.runsBody?.contains(event.relatedTarget)) {
+                return;
+            }
+
             setHoveredRun(null);
         });
 
@@ -1286,7 +1291,7 @@ echarts.use([BarChart, PieChart, GraphicComponent, GridComponent, LegendComponen
 
         const isSelected = !!selectedRunId && selectedRunId === row.dataset.runId;
         const isHovered = !!hoveredRunId && hoveredRunId === row.dataset.runId;
-        const isDimmed = (!!selectedRunId && !isSelected) || (!!hoveredRunId && !isHovered && !isSelected);
+        const isDimmed = !!selectedRunId && !isSelected;
 
         row.classList.toggle("is-selected", isSelected);
         row.classList.toggle("is-hovered", isHovered);
@@ -1451,7 +1456,7 @@ echarts.use([BarChart, PieChart, GraphicComponent, GridComponent, LegendComponen
     }
 
     function timelineProcessedDetail(processedWorkers, totalWorkers) {
-        if (!(totalWorkers > 0)) {
+        if (totalWorkers <= 0) {
             return null;
         }
 
@@ -1733,39 +1738,6 @@ echarts.use([BarChart, PieChart, GraphicComponent, GridComponent, LegendComponen
         });
     }
 
-    function buildRunMixAxis(runs) {
-        const stackedDefinitions = bucketDefinitions.filter(function (definition) { return definition.runMix; });
-        const rawMax = runs.reduce(function (currentMax, run) {
-            const total = stackedDefinitions.reduce(function (sum, definition) {
-                return sum + (run[definition.key] || 0);
-            }, 0);
-            return Math.max(currentMax, total);
-        }, 0);
-
-        if (rawMax <= 5) {
-            return { max: 5, splitNumber: 5 };
-        }
-
-        if (rawMax <= 10) {
-            return { max: 10, splitNumber: 5 };
-        }
-
-        if (rawMax <= 20) {
-            return { max: 20, splitNumber: 4 };
-        }
-
-        if (rawMax <= 50) {
-            return { max: 50, splitNumber: 5 };
-        }
-
-        const paddedMax = rawMax * 1.12;
-        const max = paddedMax <= 100
-            ? 100
-            : Math.ceil(paddedMax / 100) * 100;
-
-        return { max, splitNumber: 5 };
-    }
-
     function bindRunsChartEvents(displayRuns) {
         if (!runsChartInstance) {
             return;
@@ -1881,6 +1853,50 @@ echarts.use([BarChart, PieChart, GraphicComponent, GridComponent, LegendComponen
         });
     }
 
+    function setBucketChartMeta(message, title) {
+        if (!elements.bucketChartMeta) {
+            return;
+        }
+
+        elements.bucketChartMeta.textContent = message;
+        elements.bucketChartMeta.title = title || message;
+    }
+
+    function renderBucketChartEmpty(message) {
+        toggleHidden(elements.bucketChart, false);
+        toggleHidden(elements.bucketChartEmpty, true);
+
+        if (!bucketChartInstance) {
+            return;
+        }
+
+        bucketChartInstance.setOption({
+            animation: false,
+            backgroundColor: "transparent",
+            tooltip: { show: false },
+            legend: { show: false },
+            graphic: [
+                {
+                    type: "text",
+                    left: "center",
+                    top: "middle",
+                    style: {
+                        text: message,
+                        fill: getThemePalette().muted,
+                        fontSize: 14,
+                        fontWeight: 650,
+                        lineHeight: 20,
+                        textAlign: "center"
+                    },
+                    silent: true
+                }
+            ],
+            series: []
+        }, true);
+
+        bindBucketChartEvents();
+    }
+
     function renderBucketChart(snapshot) {
         if (!elements.bucketChart) {
             return;
@@ -1895,18 +1911,11 @@ echarts.use([BarChart, PieChart, GraphicComponent, GridComponent, LegendComponen
             snapshot.lastCompletedRun ||
             (allRuns.length ? allRuns[0] : null);
         if (!focusRun) {
-            toggleHidden(elements.bucketChart, true);
+            toggleHidden(elements.bucketChart, false);
             toggleHidden(elements.bucketChartEmpty, false);
             renderBucketSummary(null, 0, 0);
-            if (elements.bucketChartMeta) {
-                elements.bucketChartMeta.textContent = "Change composition appears once a run summary is available.";
-            }
-            if (elements.bucketChartEmpty) {
-                elements.bucketChartEmpty.textContent = "Change composition appears once a run summary is available.";
-            }
-            if (bucketChartInstance) {
-                bucketChartInstance.clear();
-            }
+            setBucketChartMeta("Waiting for a run summary.");
+            renderBucketChartEmpty("Change composition appears once a run summary is available.");
             return;
         }
 
@@ -1936,34 +1945,22 @@ echarts.use([BarChart, PieChart, GraphicComponent, GridComponent, LegendComponen
         renderBucketSummary(focusRun, changedTotal, runTotal);
 
         if (!entries.length) {
-            toggleHidden(elements.bucketChart, true);
+            toggleHidden(elements.bucketChart, false);
             toggleHidden(elements.bucketChartEmpty, false);
-            if (elements.bucketChartMeta) {
-                elements.bucketChartMeta.textContent = runDisplayName(focusRun) + " has no changed buckets to chart.";
-            }
-            if (elements.bucketChartEmpty) {
-                elements.bucketChartEmpty.textContent = changedTotal > 0
-                    ? "Changed buckets will appear here once bucket counts are available."
-                    : "No changed buckets in this run.";
-            }
-            if (bucketChartInstance) {
-                bucketChartInstance.clear();
-            }
+            setBucketChartMeta("No changed buckets in this run.", runDisplayName(focusRun));
+            renderBucketChartEmpty(changedTotal > 0
+                ? "Changed buckets will appear here once bucket counts are available."
+                : "No changed buckets in this run.");
             return;
         }
 
         toggleHidden(elements.bucketChart, false);
         toggleHidden(elements.bucketChartEmpty, true);
 
-        if (elements.bucketChartMeta) {
-            elements.bucketChartMeta.textContent = snapshot.activeRun
-                ? "Click a slice to filter changed buckets. Showing live change composition for " + runDisplayName(focusRun) + "."
-                : "Click a slice to filter changed buckets. Showing change composition for " + runDisplayName(focusRun) + ".";
-        }
+        setBucketChartMeta("Click a slice to filter changed buckets.", runDisplayName(focusRun));
 
         bucketChartInstance.setOption({
-            animationDuration: motionAllowed() ? 420 : 0,
-            animationDurationUpdate: motionAllowed() ? 360 : 0,
+            animation: false,
             backgroundColor: "transparent",
             tooltip: {
                 trigger: "item",
@@ -2236,6 +2233,7 @@ echarts.use([BarChart, PieChart, GraphicComponent, GridComponent, LegendComponen
             const payload = await response.json();
             renderSchedule(payload && payload.schedule ? payload.schedule : null);
         } catch (error) {
+            globalThis.console.debug("Schedule request failed.", error);
             if (!latestScheduleSnapshot) {
                 renderSchedule(null);
             }
@@ -2278,22 +2276,22 @@ echarts.use([BarChart, PieChart, GraphicComponent, GridComponent, LegendComponen
         }
 
         if (!dashboardTimerId) {
-            dashboardTimerId = window.setInterval(loadDashboard, dashboardPollIntervalMs);
+            dashboardTimerId = globalThis.setInterval(loadDashboard, dashboardPollIntervalMs);
         }
 
         if (!healthTimerId) {
-            healthTimerId = window.setInterval(loadHealth, healthPollIntervalMs);
+            healthTimerId = globalThis.setInterval(loadHealth, healthPollIntervalMs);
         }
     }
 
     function stopFallbackPolling() {
         if (dashboardTimerId) {
-            window.clearInterval(dashboardTimerId);
+            globalThis.clearInterval(dashboardTimerId);
             dashboardTimerId = null;
         }
 
         if (healthTimerId) {
-            window.clearInterval(healthTimerId);
+            globalThis.clearInterval(healthTimerId);
             healthTimerId = null;
         }
     }
@@ -2303,7 +2301,7 @@ echarts.use([BarChart, PieChart, GraphicComponent, GridComponent, LegendComponen
             return;
         }
 
-        reconnectTimerId = window.setTimeout(function () {
+        reconnectTimerId = globalThis.setTimeout(function () {
             reconnectTimerId = null;
             void startRealtimeConnection();
         }, 5000);
@@ -2404,21 +2402,21 @@ echarts.use([BarChart, PieChart, GraphicComponent, GridComponent, LegendComponen
         void startRealtimeConnection();
     }
 
-    if ("requestIdleCallback" in window) {
-        window.requestIdleCallback(startDashboard, { timeout: 2000 });
+    if ("requestIdleCallback" in globalThis) {
+        globalThis.requestIdleCallback(startDashboard, { timeout: 2000 });
     } else {
-        window.setTimeout(startDashboard, 0);
+        globalThis.setTimeout(startDashboard, 0);
     }
 
-    window.addEventListener("beforeunload", function () {
+    globalThis.addEventListener("beforeunload", function () {
         stopFallbackPolling();
 
         if (reconnectTimerId) {
-            window.clearTimeout(reconnectTimerId);
+            globalThis.clearTimeout(reconnectTimerId);
         }
 
         if (scheduleTimerId) {
-            window.clearInterval(scheduleTimerId);
+            globalThis.clearInterval(scheduleTimerId);
         }
 
         clearProgressDoneTimer();

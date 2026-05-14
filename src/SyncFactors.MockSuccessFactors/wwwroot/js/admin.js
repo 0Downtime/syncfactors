@@ -3,7 +3,7 @@
 
     const themeStorageKey = "syncfactors-next-theme";
     const root = document.documentElement;
-    const colorSchemeQuery = window.matchMedia ? window.matchMedia("(prefers-color-scheme: dark)") : null;
+    const colorSchemeQuery = globalThis.matchMedia ? globalThis.matchMedia("(prefers-color-scheme: dark)") : null;
 
     const state = {
         workers: [],
@@ -86,9 +86,9 @@
 
     function persistTheme(themePreference) {
         try {
-            window.localStorage.setItem(themeStorageKey, themePreference);
+            globalThis.localStorage.setItem(themeStorageKey, themePreference);
         } catch (error) {
-            return;
+            globalThis.console.debug("Theme preference could not be persisted.", error);
         }
     }
 
@@ -119,19 +119,7 @@
             return;
         }
 
-        if (typeof colorSchemeQuery.addEventListener === "function") {
-            colorSchemeQuery.addEventListener("change", handleSystemThemeChange);
-        } else if (typeof colorSchemeQuery.addListener === "function") {
-            colorSchemeQuery.addListener(handleSystemThemeChange);
-        }
-    }
-
-    function escapeHtml(value) {
-        return String(value || "")
-            .replace(/&/g, "&amp;")
-            .replace(/</g, "&lt;")
-            .replace(/>/g, "&gt;")
-            .replace(/"/g, "&quot;");
+        colorSchemeQuery.addEventListener?.("change", handleSystemThemeChange);
     }
 
     function todayValue() {
@@ -239,8 +227,8 @@
         elements.toast.hidden = false;
         elements.toast.className = "toast toast-" + (tone || "info");
         elements.toast.textContent = message;
-        window.clearTimeout(elements.toast._timer);
-        elements.toast._timer = window.setTimeout(function () {
+        globalThis.clearTimeout(elements.toast._timer);
+        elements.toast._timer = globalThis.setTimeout(function () {
             elements.toast.hidden = true;
         }, 3200);
     }
@@ -269,10 +257,40 @@
     }
 
     function bucketClassName(bucket) {
-        return String(bucket || "unknown")
-            .toLowerCase()
-            .replace(/[^a-z0-9]+/g, "-")
-            .replace(/^-+|-+$/g, "") || "unknown";
+        const normalized = [];
+        let lastWasSeparator = true;
+        for (const character of String(bucket || "unknown").toLowerCase()) {
+            const isAlphaNumeric = (character >= "a" && character <= "z") || (character >= "0" && character <= "9");
+            if (isAlphaNumeric) {
+                normalized.push(character);
+                lastWasSeparator = false;
+            } else if (!lastWasSeparator) {
+                normalized.push("-");
+                lastWasSeparator = true;
+            }
+        }
+
+        if (normalized.at(-1) === "-") {
+            normalized.pop();
+        }
+
+        return normalized.join("") || "unknown";
+    }
+
+    function appendTextElement(parent, tagName, className, text) {
+        const element = document.createElement(tagName);
+        if (className) {
+            element.className = className;
+        }
+
+        element.textContent = text == null ? "" : String(text);
+        parent.appendChild(element);
+        return element;
+    }
+
+    function renderEmptyState(parent, message) {
+        parent.replaceChildren();
+        appendTextElement(parent, "p", "empty-state", message);
     }
 
     function renderBucketSummary() {
@@ -281,41 +299,60 @@
         }
 
         if (!state.provisioningBuckets.length) {
-            elements.bucketSummary.innerHTML = '<p class="empty-state">No bucket data available.</p>';
+            renderEmptyState(elements.bucketSummary, "No bucket data available.");
             return;
         }
 
-        elements.bucketSummary.innerHTML = state.provisioningBuckets.map(function (bucket) {
+        const bucketCards = state.provisioningBuckets.map(function (bucket) {
             const bucketLabel = bucket.label || bucket.bucket || "Unknown";
             const bucketValue = bucket.bucket || "unknown";
-            return [
-                '<article class="bucket-card">',
-                '<span class="bucket-chip bucket-chip-' + escapeHtml(bucketClassName(bucketValue)) + '">' + escapeHtml(bucketLabel) + "</span>",
-                '<strong>' + escapeHtml(String(bucket.count || 0)) + "</strong>",
-                '<span class="worker-meta">' + escapeHtml(bucketValue) + "</span>",
-                "</article>"
-            ].join("");
-        }).join("");
+            const card = document.createElement("article");
+            card.className = "bucket-card";
+
+            appendTextElement(card, "span", "bucket-chip bucket-chip-" + bucketClassName(bucketValue), bucketLabel);
+            appendTextElement(card, "strong", "", String(bucket.count || 0));
+            appendTextElement(card, "span", "worker-meta", bucketValue);
+            return card;
+        });
+
+        elements.bucketSummary.replaceChildren(...bucketCards);
     }
 
     function renderWorkerList() {
-        const html = state.workers.map(function (worker) {
-            const selected = worker.personIdExternal === state.selectedWorkerId ? " is-selected" : "";
+        if (!elements.workerList) {
+            return;
+        }
+
+        if (!state.workers.length) {
+            renderEmptyState(elements.workerList, "No workers matched the current filter.");
+            return;
+        }
+
+        const workerItems = state.workers.map(function (worker) {
             const tags = Array.isArray(worker.scenarioTags) ? worker.scenarioTags.join(", ") : "";
             const provisioningBucket = worker.provisioningBucket || "unknown";
             const provisioningBucketLabel = worker.provisioningBucketLabel || provisioningBucket;
-            return [
-                '<button type="button" class="worker-list-item' + selected + '" data-worker-id="' + escapeHtml(worker.personIdExternal) + '">',
-                '<span class="worker-name">' + escapeHtml(worker.displayName || worker.userId || worker.personIdExternal) + "</span>",
-                '<span class="worker-meta">' + escapeHtml(worker.personIdExternal + " • " + (worker.userId || "")) + "</span>",
-                '<span class="worker-meta">' + escapeHtml((worker.employmentStatus || "") + " • " + (worker.lifecycleState || "")) + "</span>",
-                '<div class="worker-chip-row"><span class="bucket-chip bucket-chip-' + escapeHtml(bucketClassName(provisioningBucket)) + '">' + escapeHtml(provisioningBucketLabel) + '</span><span class="worker-meta">' + escapeHtml(provisioningBucket) + "</span></div>",
-                '<span class="worker-meta">' + escapeHtml([worker.company, worker.department, tags].filter(Boolean).join(" • ")) + "</span>",
-                "</button>"
-            ].join("");
-        }).join("");
 
-        elements.workerList.innerHTML = html || '<p class="empty-state">No workers matched the current filter.</p>';
+            const item = document.createElement("button");
+            item.type = "button";
+            item.className = "worker-list-item" + (worker.personIdExternal === state.selectedWorkerId ? " is-selected" : "");
+            item.dataset.workerId = worker.personIdExternal || "";
+
+            appendTextElement(item, "span", "worker-name", worker.displayName || worker.userId || worker.personIdExternal);
+            appendTextElement(item, "span", "worker-meta", worker.personIdExternal + " • " + (worker.userId || ""));
+            appendTextElement(item, "span", "worker-meta", (worker.employmentStatus || "") + " • " + (worker.lifecycleState || ""));
+
+            const chipRow = document.createElement("div");
+            chipRow.className = "worker-chip-row";
+            appendTextElement(chipRow, "span", "bucket-chip bucket-chip-" + bucketClassName(provisioningBucket), provisioningBucketLabel);
+            appendTextElement(chipRow, "span", "worker-meta", provisioningBucket);
+            item.appendChild(chipRow);
+
+            appendTextElement(item, "span", "worker-meta", [worker.company, worker.department, tags].filter(Boolean).join(" • "));
+            return item;
+        });
+
+        elements.workerList.replaceChildren(...workerItems);
     }
 
     function setBucketChip(element, bucket, label) {
@@ -471,7 +508,7 @@
         }
 
         return path.split(".").reduce(function (current, segment) {
-            return current && Object.prototype.hasOwnProperty.call(current, segment) ? current[segment] : null;
+            return current && Object.hasOwn(current, segment) ? current[segment] : null;
         }, worker);
     }
 
@@ -552,7 +589,7 @@
     }
 
     function isSafeTopLevelField(path) {
-        return path.indexOf(".") === -1 &&
+        return !path.includes(".") &&
             path !== "__proto__" &&
             path !== "prototype" &&
             path !== "constructor";
@@ -617,7 +654,7 @@
         }
 
         if (action === "reset") {
-            if (!window.confirm("Reset the runtime worker state back to the seeded population?")) {
+            if (!globalThis.confirm("Reset the runtime worker state back to the seeded population?")) {
                 return;
             }
 
@@ -638,7 +675,7 @@
             return;
         }
 
-        if (action === "delete" && !window.confirm("Delete the selected worker from the runtime population?")) {
+        if (action === "delete" && !globalThis.confirm("Delete the selected worker from the runtime population?")) {
             return;
         }
 
@@ -663,8 +700,8 @@
 
     function bindEvents() {
         elements.filterInput.addEventListener("input", function () {
-            window.clearTimeout(filterTimer);
-            filterTimer = window.setTimeout(async function () {
+            globalThis.clearTimeout(filterTimer);
+            filterTimer = globalThis.setTimeout(async function () {
                 state.filter = elements.filterInput.value.trim();
                 await loadWorkers(true);
             }, 180);

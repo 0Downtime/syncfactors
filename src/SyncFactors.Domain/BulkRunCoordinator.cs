@@ -24,9 +24,9 @@ public sealed class BulkRunCoordinator(
 {
     public async Task<string> ExecuteAsync(RunQueueRequest request, int maxDegreeOfParallelism, CancellationToken cancellationToken)
     {
-        if (!request.DryRun && !realSyncSettings.Enabled)
+        if (!request.DryRun && !realSyncSettings.EffectiveWriteEnabled)
         {
-            throw new InvalidOperationException("Real AD sync is disabled for this environment.");
+            throw new InvalidOperationException(realSyncSettings.LiveWriteDisabledMessage);
         }
 
         using var runCancellationSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -228,7 +228,7 @@ public sealed class BulkRunCoordinator(
                                         Item: guardrailItem),
                                     ct);
                                 Interlocked.CompareExchange(ref guardrailFailure, new GuardrailExceededException(runId, reason), null);
-                                runCancellationSource.Cancel();
+                                await runCancellationSource.CancelAsync();
                                 return;
                             }
                         }
@@ -238,30 +238,39 @@ public sealed class BulkRunCoordinator(
                              string.Equals(bucket, "graveyardMoves", StringComparison.OrdinalIgnoreCase)) &&
                             plan.Operations.Any(operation => string.Equals(operation.Kind, "DisableUser", StringComparison.OrdinalIgnoreCase)))
                         {
-                            var nextDisableCount = Interlocked.Increment(ref disableCount);
-                            if (nextDisableCount > settings.MaxDisablesPerRun)
+                            if (ManualReviewSafetyPolicy.RequiresDisableReview(settings, bucket, plan.Operations))
                             {
-                                bucket = "guardrailFailures";
-                                reason = $"Disable guardrail exceeded. MaxDisablesPerRun={settings.MaxDisablesPerRun}.";
-                                var guardrailItem = BuildEntryItem(runId, request.DryRun, syncScope, plan, bucket, action: null, applied: false, succeeded: false, reason, plannedCommand: null, commandResult: null, captureMetadata);
-                                await channel.Writer.WriteAsync(
-                                    new WorkerRunResult(
-                                        WorkerId: worker.WorkerId,
-                                        Bucket: bucket,
-                                        SamAccountName: plan.Identity.SamAccountName,
-                                        Reason: reason,
-                                        ReviewCategory: plan.ReviewCategory,
-                                        ReviewCaseType: plan.ReviewCaseType,
-                                        Action: null,
-                                        Applied: false,
-                                        Succeeded: false,
-                                        OperationSummary: BuildOperationSummary(plan, action: null, bucket),
-                                        DiffRows: plan.AttributeChanges.Select(change => new DiffRow(change.Attribute, change.Source, change.Before, change.After, change.Changed)).ToArray(),
-                                        Item: guardrailItem),
-                                    ct);
-                                Interlocked.CompareExchange(ref guardrailFailure, new GuardrailExceededException(runId, reason), null);
-                                runCancellationSource.Cancel();
-                                return;
+                                plan = ManualReviewSafetyPolicy.ToDisableManualReview(plan);
+                                bucket = plan.Bucket;
+                                reason = plan.Reason;
+                            }
+                            else
+                            {
+                                var nextDisableCount = Interlocked.Increment(ref disableCount);
+                                if (nextDisableCount > settings.MaxDisablesPerRun)
+                                {
+                                    bucket = "guardrailFailures";
+                                    reason = $"Disable guardrail exceeded. MaxDisablesPerRun={settings.MaxDisablesPerRun}.";
+                                    var guardrailItem = BuildEntryItem(runId, request.DryRun, syncScope, plan, bucket, action: null, applied: false, succeeded: false, reason, plannedCommand: null, commandResult: null, captureMetadata);
+                                    await channel.Writer.WriteAsync(
+                                        new WorkerRunResult(
+                                            WorkerId: worker.WorkerId,
+                                            Bucket: bucket,
+                                            SamAccountName: plan.Identity.SamAccountName,
+                                            Reason: reason,
+                                            ReviewCategory: plan.ReviewCategory,
+                                            ReviewCaseType: plan.ReviewCaseType,
+                                            Action: null,
+                                            Applied: false,
+                                            Succeeded: false,
+                                            OperationSummary: BuildOperationSummary(plan, action: null, bucket),
+                                            DiffRows: plan.AttributeChanges.Select(change => new DiffRow(change.Attribute, change.Source, change.Before, change.After, change.Changed)).ToArray(),
+                                            Item: guardrailItem),
+                                        ct);
+                                    Interlocked.CompareExchange(ref guardrailFailure, new GuardrailExceededException(runId, reason), null);
+                                    await runCancellationSource.CancelAsync();
+                                    return;
+                                }
                             }
                         }
 
@@ -440,7 +449,7 @@ public sealed class BulkRunCoordinator(
         }
         finally
         {
-            runCancellationSource.Cancel();
+            await runCancellationSource.CancelAsync();
             try
             {
                 await cancellationMonitor;
@@ -457,13 +466,28 @@ public sealed class BulkRunCoordinator(
         while (!runCancellationSource.IsCancellationRequested &&
                await timer.WaitForNextTickAsync(cancellationToken))
         {
-            if (!await runQueueStore.IsCancellationRequestedAsync(requestId, cancellationToken))
+            bool cancellationRequested;
+            try
+            {
+                cancellationRequested = await runQueueStore.IsCancellationRequestedAsync(requestId, cancellationToken);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Failed to poll cancellation state for run queue item {RequestId}.", requestId);
+                continue;
+            }
+
+            if (!cancellationRequested)
             {
                 continue;
             }
 
             logger.LogInformation("Cancellation requested for run queue item {RequestId}.", requestId);
-            runCancellationSource.Cancel();
+            await runCancellationSource.CancelAsync();
             return;
         }
     }

@@ -31,7 +31,6 @@ builder.Services.Configure<MockSuccessFactorsOptions>(builder.Configuration.GetS
 builder.Services.AddSingleton<IConfigureOptions<MockSuccessFactorsOptions>, MockSuccessFactorsOptionsSetup>();
 builder.Services.AddSingleton<MockFixtureStore>();
 builder.Services.AddSingleton<ODataResponseBuilder>();
-builder.Services.AddSingleton<MockTokenService>();
 builder.Services.AddSingleton(new SyncFactorsConfigPathResolver(
     builder.Configuration["SyncFactors:ConfigPath"],
     builder.Configuration["SyncFactors:MappingConfigPath"]));
@@ -67,6 +66,16 @@ builder.Services.AddSingleton(serviceProvider =>
         config.Ad.IdentityAttribute,
         identityCorrelation?.SuccessorPersonIdExternalAttribute,
         identityCorrelation?.PreviousPersonIdExternalAttribute);
+});
+builder.Services.AddSingleton(serviceProvider =>
+{
+    var config = serviceProvider.GetRequiredService<SyncFactorsConfigurationLoader>().GetSyncConfig();
+    return new WorkerRunSettings(
+        config.Safety.MaxCreatesPerRun,
+        config.Safety.MaxDisablesPerRun,
+        config.Safety.MaxDeletionsPerRun,
+        ManualReviewRequired(config, "DisableUser", "MoveToGraveyardOu"),
+        ManualReviewRequired(config, "DeleteUser"));
 });
 builder.Services.AddSingleton<ILifecyclePolicy, LifecyclePolicy>();
 builder.Services.AddSingleton<IAttributeDiffService, AttributeDiffService>();
@@ -119,12 +128,11 @@ app.MapGet("/", () => options.Admin.Enabled
 app.MapPost("/oauth/token", async Task<Results<Ok<TokenResponse>, UnauthorizedHttpResult>> (
     HttpContext httpContext,
     IOptions<MockSuccessFactorsOptions> configuredOptions,
-    MockTokenService tokenService,
     CancellationToken cancellationToken) =>
 {
     var form = await httpContext.Request.ReadFormAsync(cancellationToken);
     var configured = configuredOptions.Value.Authentication;
-    var token = tokenService.IssueToken(
+    var token = MockTokenService.IssueToken(
         grantType: form["grant_type"].ToString(),
         clientId: form["client_id"].ToString(),
         clientSecret: form["client_secret"].ToString(),
@@ -320,7 +328,7 @@ adminApi.MapPost("/reset", (MockFixtureStore store) =>
     }));
 
 app.MapRazorPages();
-app.Run();
+await app.RunAsync();
 
 static IResult RunAdminMutation(Func<IResult> action)
 {
@@ -386,6 +394,14 @@ static bool IsLoopbackRequest(HttpRequest request, MockAdminOptions adminOptions
     }
 
     return false;
+}
+
+static bool ManualReviewRequired(SyncFactorsConfigDocument config, params string[] operationKinds)
+{
+    return config.Approval.Enabled &&
+           operationKinds.Any(operationKind =>
+               config.Approval.RequireFor.Any(required =>
+                   string.Equals(required, operationKind, StringComparison.OrdinalIgnoreCase)));
 }
 
 public partial class Program

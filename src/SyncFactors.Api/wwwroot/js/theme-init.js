@@ -1,20 +1,21 @@
 (function () {
-    var key = "syncfactors-next-theme";
-    var storedTheme = null;
+    const key = "syncfactors-next-theme";
+    let storedTheme = null;
     try {
-        storedTheme = window.localStorage.getItem(key);
+        storedTheme = globalThis.localStorage.getItem(key);
     } catch (error) {
+        globalThis.console.debug("Theme preference could not be read.", error);
         storedTheme = null;
     }
 
-    var themePreference = storedTheme === "system" || storedTheme === "dark" || storedTheme === "light"
+    const themePreference = storedTheme === "system" || storedTheme === "dark" || storedTheme === "light"
         ? storedTheme
         : "system";
-    var theme = themePreference === "dark"
-        ? "dark"
-        : themePreference === "light"
-            ? "light"
-            : (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+    const prefersDark = globalThis.matchMedia?.("(prefers-color-scheme: dark)")?.matches === true;
+    let theme = "light";
+    if (themePreference === "dark" || (themePreference === "system" && prefersDark)) {
+        theme = "dark";
+    }
 
     document.documentElement.dataset.themePreference = themePreference;
     document.documentElement.dataset.theme = theme;

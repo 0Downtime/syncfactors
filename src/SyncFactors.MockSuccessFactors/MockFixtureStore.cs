@@ -357,7 +357,7 @@ public sealed class MockFixtureStore
         return worker;
     }
 
-    private MockAdminWorkerSummary BuildSummary(MockWorkerFixture worker)
+    private static MockAdminWorkerSummary BuildSummary(MockWorkerFixture worker)
     {
         var displayName = worker.DisplayName;
         if (string.IsNullOrWhiteSpace(displayName))

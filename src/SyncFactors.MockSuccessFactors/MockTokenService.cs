@@ -1,8 +1,8 @@
 namespace SyncFactors.MockSuccessFactors;
 
-public sealed class MockTokenService
+public static class MockTokenService
 {
-    public TokenResponse? IssueToken(
+    public static TokenResponse? IssueToken(
         string grantType,
         string clientId,
         string clientSecret,

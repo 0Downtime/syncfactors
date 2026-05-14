@@ -107,6 +107,50 @@ public sealed class BulkRunCoordinatorTests
     }
 
     [Fact]
+    public async Task ExecuteAsync_ContinuesWhenCancellationPollingFails()
+    {
+        CapturingRunLifecycleService.Entries.Clear();
+        CapturingRunLifecycleService.Reset();
+        var runQueueStore = new ThrowingCancellationRunQueueStore();
+        var coordinator = new BulkRunCoordinator(
+            new DelayedWorkerSource([CreateWorker("10001")], TimeSpan.FromMilliseconds(1200)),
+            new CapturingDeltaSyncService(),
+            runQueueStore,
+            new StubGraveyardRetentionStore(),
+            new StubWorkerPlanningService(),
+            new StubDirectoryMutationCommandBuilder(),
+            new StubDirectoryCommandGateway(),
+            new StubDirectoryGateway(),
+            new CapturingRunLifecycleService(),
+            new RealSyncSettings(),
+            new WorkerRunSettings(MaxCreatesPerRun: 10),
+            CreateLifecycleSettings(),
+            NullLogger<BulkRunCoordinator>.Instance,
+            TimeProvider.System);
+
+        var runId = await coordinator.ExecuteAsync(
+            new RunQueueRequest(
+                RequestId: "req-poll-failure",
+                Mode: "BulkSync",
+                DryRun: true,
+                RunTrigger: "AdHoc",
+                RequestedBy: "test",
+                Status: "Pending",
+                RequestedAt: DateTimeOffset.UtcNow,
+                StartedAt: null,
+                CompletedAt: null,
+                RunId: null,
+                ErrorMessage: null),
+            maxDegreeOfParallelism: 1,
+            CancellationToken.None);
+
+        Assert.StartsWith("bulk-", runId, StringComparison.Ordinal);
+        Assert.True(runQueueStore.CancellationPolls > 0);
+        Assert.Equal(1, CapturingRunLifecycleService.CompletedCalls);
+        Assert.Equal(0, CapturingRunLifecycleService.FailedCalls);
+    }
+
+    [Fact]
     public async Task ExecuteAsync_LiveRun_AdvancesDeltaCheckpointAfterSuccess()
     {
         CapturingRunLifecycleService.Entries.Clear();
@@ -187,6 +231,46 @@ public sealed class BulkRunCoordinatorTests
             CancellationToken.None));
 
         Assert.Equal("Real AD sync is disabled for this environment.", exception.Message);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_LiveRun_RejectsWhenDryRunOnlyIsEnabled()
+    {
+        CapturingRunLifecycleService.Entries.Clear();
+        CapturingRunLifecycleService.Reset();
+        var coordinator = new BulkRunCoordinator(
+            new StubWorkerSource([CreateWorker("10001")]),
+            new CapturingDeltaSyncService(),
+            new StubRunQueueStore(),
+            new StubGraveyardRetentionStore(),
+            new StubWorkerPlanningService(),
+            new StubDirectoryMutationCommandBuilder(),
+            new SuccessfulDirectoryCommandGateway(),
+            new StubDirectoryGateway(),
+            new CapturingRunLifecycleService(),
+            new RealSyncSettings(Enabled: true, DryRunOnly: true),
+            new WorkerRunSettings(MaxCreatesPerRun: 10),
+            CreateLifecycleSettings(),
+            NullLogger<BulkRunCoordinator>.Instance,
+            TimeProvider.System);
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => coordinator.ExecuteAsync(
+            new RunQueueRequest(
+                RequestId: "req-live-dry-run-only",
+                Mode: "BulkSync",
+                DryRun: false,
+                RunTrigger: "AdHoc",
+                RequestedBy: "test",
+                Status: "Pending",
+                RequestedAt: DateTimeOffset.UtcNow,
+                StartedAt: null,
+                CompletedAt: null,
+                RunId: null,
+                ErrorMessage: null),
+            maxDegreeOfParallelism: 1,
+            CancellationToken.None));
+
+        Assert.Equal("Dry-run-only mode is enabled. Live AD writes are disabled for this environment.", exception.Message);
     }
 
     [Fact]
@@ -518,6 +602,53 @@ public sealed class BulkRunCoordinatorTests
     }
 
     [Fact]
+    public async Task ExecuteAsync_ManualReviewDisables_RebucketsDisableWithoutExecutingDirectoryMutation()
+    {
+        CapturingRunLifecycleService.Entries.Clear();
+        CapturingRunLifecycleService.Reset();
+        var commandGateway = new CapturingDirectoryCommandGateway();
+        var coordinator = new BulkRunCoordinator(
+            new StubWorkerSource([CreateWorker("10004", "64308")]),
+            new CapturingDeltaSyncService(),
+            new StubRunQueueStore(),
+            new StubGraveyardRetentionStore(),
+            new GraveyardWorkerPlanningService(),
+            new StubDirectoryMutationCommandBuilder(),
+            commandGateway,
+            new StubDirectoryGateway(),
+            new CapturingRunLifecycleService(),
+            new RealSyncSettings(),
+            new WorkerRunSettings(MaxCreatesPerRun: 10, ManualReviewDisables: true),
+            CreateLifecycleSettings(),
+            NullLogger<BulkRunCoordinator>.Instance,
+            TimeProvider.System);
+
+        await coordinator.ExecuteAsync(
+            new RunQueueRequest(
+                RequestId: "req-manual-disable",
+                Mode: "BulkSync",
+                DryRun: false,
+                RunTrigger: "AdHoc",
+                RequestedBy: "test",
+                Status: "Pending",
+                RequestedAt: DateTimeOffset.UtcNow,
+                StartedAt: null,
+                CompletedAt: null,
+                RunId: null,
+                ErrorMessage: null),
+            maxDegreeOfParallelism: 1,
+            CancellationToken.None);
+
+        Assert.Empty(commandGateway.Commands);
+        var entry = Assert.Single(CapturingRunLifecycleService.Entries);
+        Assert.Equal("manualReview", entry.Bucket);
+        Assert.Equal("SafetyPolicy", entry.ReviewCategory);
+        Assert.Equal("DisableRequiresManualReview", entry.ReviewCaseType);
+        Assert.Equal(JsonValueKind.Null, entry.Item.GetProperty("plannedCommand").ValueKind);
+        Assert.Equal(JsonValueKind.Null, entry.Item.GetProperty("liveResult").ValueKind);
+    }
+
+    [Fact]
     public async Task ExecuteAsync_PersistsPopulationTotalsInRunReport()
     {
         CapturingRunLifecycleService.Entries.Clear();
@@ -642,6 +773,26 @@ public sealed class BulkRunCoordinatorTests
                 cancellationToken.ThrowIfCancellationRequested();
                 yield return worker;
                 await Task.Yield();
+            }
+        }
+    }
+
+    private sealed class DelayedWorkerSource(IReadOnlyList<WorkerSnapshot> workers, TimeSpan delay) : IWorkerSource
+    {
+        public Task<WorkerSnapshot?> GetWorkerAsync(string workerId, CancellationToken cancellationToken)
+        {
+            _ = cancellationToken;
+            return Task.FromResult(workers.FirstOrDefault(worker => worker.WorkerId == workerId));
+        }
+
+        public async IAsyncEnumerable<WorkerSnapshot> ListWorkersAsync(WorkerListingMode mode, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
+        {
+            _ = mode;
+            await Task.Delay(delay, cancellationToken);
+            foreach (var worker in workers)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                yield return worker;
             }
         }
     }
@@ -908,7 +1059,7 @@ public sealed class BulkRunCoordinatorTests
         }
     }
 
-    private sealed class StubRunQueueStore : IRunQueueStore
+    private class StubRunQueueStore : IRunQueueStore
     {
         public Task<RunQueueRequest> EnqueueAsync(StartRunRequest request, CancellationToken cancellationToken)
         {
@@ -950,7 +1101,7 @@ public sealed class BulkRunCoordinatorTests
             return Task.FromResult(false);
         }
 
-        public Task<bool> IsCancellationRequestedAsync(string requestId, CancellationToken cancellationToken)
+        public virtual Task<bool> IsCancellationRequestedAsync(string requestId, CancellationToken cancellationToken)
         {
             _ = requestId;
             _ = cancellationToken;
@@ -981,6 +1132,19 @@ public sealed class BulkRunCoordinatorTests
             _ = errorMessage;
             _ = cancellationToken;
             return Task.CompletedTask;
+        }
+    }
+
+    private sealed class ThrowingCancellationRunQueueStore : StubRunQueueStore
+    {
+        public int CancellationPolls { get; private set; }
+
+        public override Task<bool> IsCancellationRequestedAsync(string requestId, CancellationToken cancellationToken)
+        {
+            _ = requestId;
+            _ = cancellationToken;
+            CancellationPolls++;
+            throw new InvalidOperationException("Cancellation store unavailable.");
         }
     }
 

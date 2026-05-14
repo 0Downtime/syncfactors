@@ -28,6 +28,9 @@
   <a href="https://github.com/0Downtime/syncfactors/actions/workflows/codeql.yml">
     <img src="https://github.com/0Downtime/syncfactors/actions/workflows/codeql.yml/badge.svg?branch=main" alt="CodeQL" />
   </a>
+  <a href="https://sonarcloud.io/summary/new_code?id=0Downtime_sf-ad-sync">
+    <img src="https://sonarcloud.io/api/project_badges/measure?project=0Downtime_sf-ad-sync&amp;metric=alert_status" alt="Quality Gate Status" />
+  </a>
   <a href="https://github.com/0Downtime/syncfactors/blob/main/LICENSE">
     <img src="https://img.shields.io/github/license/0Downtime/syncfactors" alt="License" />
   </a>
@@ -163,6 +166,103 @@ pwsh .\scripts\Uninstall-SyncFactorsWindowsServices.ps1
 ```
 
 Use `Event Viewer > Windows Logs > Application` with sources `SyncFactors.Api` and `SyncFactors.Worker` for service startup, shutdown, warning, and error events. Local rolling logs are also enabled by default under `state\logs` inside the bundle root.
+
+### Azure DevOps Windows Deployment
+
+[`azure-pipelines.deploy.yml`](azure-pipelines.deploy.yml) builds, tests, packages, and deploys the self-contained Windows bundle to one or more Windows servers over WinRM. The deploy stage is skipped until `deployTargetMachines` is set in the Azure DevOps pipeline variables.
+
+Configure these Azure DevOps variables before enabling deployment:
+
+| Variable | Purpose |
+| --- | --- |
+| `deployTargetMachines` | Comma-separated Windows server DNS names or IP addresses reachable over WinRM. |
+| `deployAdminUserName` / `deployAdminPassword` | Local or domain administrator credential used by Azure DevOps for copy/install tasks. Mark the password secret. |
+| `installRoot` | Target install directory. Defaults to `C:\SyncFactors`. |
+| `remoteStagingPath` | Temporary bundle copy path. Defaults to `C:\SyncFactors\_staging`. |
+| `runProfile` | Service profile passed to the installer. Defaults to `real`. |
+| `apiUrls` | Kestrel bind URL for the API Windows Service. Defaults to `https://127.0.0.1:5087`. |
+| `configureFirewall` | Set to `true` to create or update an inbound Domain/Private firewall rule for `apiPort`. |
+| `createLocalServiceAccount` | Set to `true` to create `serviceUserName` as a local Windows runtime account before installing services. Leave `false` for a pre-created domain account. |
+| `windowsCredentialPrefix` | Windows Credential Manager target prefix used by the services. Defaults to `SyncFactors`. |
+| `serviceUserName` / `serviceUserPassword` | Runtime Windows service credential for `SyncFactors.Api` and `SyncFactors.Worker`. Mark the password secret. |
+
+The deployment uses two accounts: a deploy account for Azure DevOps WinRM/file-copy/install actions and a runtime account for the API and worker Windows Services. The runtime account is also the default Active Directory identity: keep `ad.username` and `ad.bindPassword` blank, and SyncFactors binds to AD as the Windows service identity on Windows. The deployment runs [`scripts/Install-SyncFactorsWindowsPrerequisites.ps1`](scripts/Install-SyncFactorsWindowsPrerequisites.ps1) on the server before service installation. That script creates the install/runtime/log directories, installs or verifies PowerShell 7, creates an optional local runtime account, grants `Log on as a service`, grants runtime-account access to the deployment paths, and can open the API firewall port. The app bundle is self-contained, so no separate .NET runtime installation is required on the server.
+
+For a manual service-account setup, grant the account:
+
+| Permission | Reason |
+| --- | --- |
+| `Log on as a service` on the Windows server | Required by Windows Service Control Manager when the API and worker run under a named account. |
+| Modify on `C:\SyncFactors` and `C:\SyncFactors\state` | Allows the service to read the app/config files and write SQLite runtime state and local logs. |
+| Read access to the HTTPS certificate private key or configured PFX path, when using a service-bound TLS certificate | Allows Kestrel to load the HTTPS certificate. |
+| The approved AD delegation for SyncFactors-managed OUs/groups | Allows the application to bind to AD as the service identity and apply approved changes with least privilege. |
+
+To create and prepare a local account from an elevated PowerShell session:
+
+```powershell
+Set-ExecutionPolicy -Scope Process Bypass
+$password = Read-Host 'SyncFactors service password' -AsSecureString
+
+& .\scripts\Install-SyncFactorsWindowsPrerequisites.ps1 `
+  -InstallRoot C:\SyncFactors `
+  -ServiceAccount sfsvc `
+  -ServiceAccountPassword $password `
+  -CreateLocalServiceAccount `
+  -InstallPowerShell
+```
+
+To create local deploy and runtime accounts with scoped permissions in one pass:
+
+```powershell
+Set-ExecutionPolicy -Scope Process Bypass
+$deployPassword = Read-Host 'SyncFactors deploy password' -AsSecureString
+$runtimePassword = Read-Host 'SyncFactors runtime password' -AsSecureString
+
+& .\scripts\New-SyncFactorsWindowsServiceAccounts.ps1 `
+  -InstallRoot C:\SyncFactors `
+  -DeployAccount sfdeploy `
+  -DeployAccountPassword $deployPassword `
+  -CreateLocalDeployAccount `
+  -RuntimeAccount sfsvc `
+  -RuntimeAccountPassword $runtimePassword `
+  -CreateLocalRuntimeAccount
+```
+
+That script keeps the runtime account out of local administrators. The deploy account is added only to the target server's local `Administrators` and `Remote Management Users` groups because Azure DevOps needs administrative rights to copy artifacts, install prerequisites, grant service rights, and create/update Windows Services.
+
+For a pre-created domain account, omit `-CreateLocalServiceAccount` and pass the domain identity:
+
+```powershell
+Set-ExecutionPolicy -Scope Process Bypass
+
+& .\scripts\Install-SyncFactorsWindowsPrerequisites.ps1 `
+  -InstallRoot C:\SyncFactors `
+  -ServiceAccount 'CONTOSO\svc-syncfactors' `
+  -InstallPowerShell
+```
+
+For pre-created domain deploy and runtime accounts:
+
+```powershell
+Set-ExecutionPolicy -Scope Process Bypass
+
+& .\scripts\New-SyncFactorsWindowsServiceAccounts.ps1 `
+  -InstallRoot C:\SyncFactors `
+  -DeployAccount 'CONTOSO\svc-syncfactors-deploy' `
+  -RuntimeAccount 'CONTOSO\svc-syncfactors-runtime'
+```
+
+Windows services can read configured SyncFactors secrets directly from Windows Credential Manager when the matching environment variable is not set. Store each value under the Windows identity that runs the service, normally `svc-syncfactors-runtime`, using target names like `SyncFactors/SF_AD_SYNC_SF_USERNAME` and `SyncFactors/SF_AD_SYNC_SF_PASSWORD`. To use a different namespace, set the service environment variable `SYNCFACTORS_WINDOWS_CREDENTIAL_PREFIX`; for example `SyncFactors/Production` makes the SuccessFactors password target `SyncFactors/Production/SF_AD_SYNC_SF_PASSWORD`.
+
+Run this while logged on as the runtime service account, or through an approved privileged process that creates credentials in that account profile:
+
+```powershell
+Set-ExecutionPolicy -Scope Process Bypass
+
+& .\scripts\Set-SyncFactorsWindowsCredential.ps1 -VariableName SF_AD_SYNC_AD_SERVER
+& .\scripts\Set-SyncFactorsWindowsCredential.ps1 -VariableName SF_AD_SYNC_SF_USERNAME
+& .\scripts\Set-SyncFactorsWindowsCredential.ps1 -VariableName SF_AD_SYNC_SF_PASSWORD
+```
 
 To validate a sanitized SuccessFactors export or fixture-style worker document against the expected source contract:
 
@@ -397,6 +497,14 @@ By default, the import helpers skip secure-store variables that are missing or b
 
 Set `SYNCFACTORS_RUN_PROFILE=mock` or `real` to switch the active SuccessFactors config. Leave `SYNCFACTORS_CONFIG_PATH` empty for profile-based resolution, or set it only when you want an explicit one-off override.
 
+For a production monitoring deployment that must not expose AD write actions, set:
+
+```bash
+SyncFactors__Runtime__DryRunOnly=true
+```
+
+This deployment-level override is stronger than `sync.realSyncEnabled` in the sync JSON. When it is enabled, the API and worker reject live AD writes, scheduled runs queue as dry runs, live-write controls are removed from the UI, and the shared UI shell shows a persistent `DRY RUN MODE` banner.
+
 To enable local rolling file logs for the SyncFactors API and worker, add these worktree env vars:
 
 ```bash
@@ -587,7 +695,7 @@ pwsh ./scripts/Configure-EntraOidcAppRegistration.ps1 `
   -RequireAssignment
 ```
 
-For Active Directory binds, the current .NET LDAP integration uses simple bind semantics. Set `SF_AD_SYNC_AD_USERNAME` to a UPN such as `svc_successfactors@example.local`, not a down-level logon name such as `EXAMPLE\svc_successfactors`, or AD may reject the credentials even when the password is correct.
+For Active Directory binds on Windows, the default production deployment leaves `ad.username` and `ad.bindPassword` blank so the LDAP connection uses the Windows service identity. Delegate the approved SyncFactors AD permissions to the runtime account, for example `svc-syncfactors-runtime`, and do not configure separate AD bind credentials unless IAM requires a third account. If you do configure explicit AD bind credentials, set `SF_AD_SYNC_AD_USERNAME` to a UPN such as `svc_syncfactors_adbind@example.local`, not a down-level logon name such as `EXAMPLE\svc_syncfactors_adbind`, or AD may reject the credentials even when the password is correct.
 
 If your primary AD transport is `ldaps` or `starttls` and you need an explicit downgrade path for troubleshooting, set `ad.transport.allowLdapFallback` to `true`. SyncFactors will try the configured secure transport first and only retry plain LDAP on port `389` when the configured port was the secure default. Leave this disabled unless you intentionally want that behavior.
 
@@ -702,9 +810,9 @@ The lower-level start scripts remain available if you need to launch individual 
 
 ## Codex Worktrees On macOS
 
-Codex app worktrees can bootstrap this repository through the checked-in local environment at `.codex/environments/environment.toml`. Open the project in the Codex app, choose the local environment when starting a worktree thread, and Codex will run `scripts/codex/setup-worktree-macos.sh` on worktree creation. That macOS wrapper delegates to the shared PowerShell bootstrap script so the setup behavior matches Windows.
+Codex workspace settings are local-only for this repository. To prepare a Codex worktree on macOS, run `scripts/codex/setup-worktree-macos.sh` from the checkout. That macOS wrapper delegates to the shared PowerShell bootstrap script so the setup behavior matches Windows.
 
-This setup is intentionally scoped to the core local dev loop:
+The setup is intentionally scoped to the core local dev loop:
 
 - prepare local config files for the current .NET runtime when missing
 - copy ignored local runtime files from the primary checkout when missing
@@ -712,8 +820,6 @@ This setup is intentionally scoped to the core local dev loop:
 - create `config/local.codex-run.json` from the tracked launcher defaults when missing
 - create runtime/report directories used by the API and worker
 - fall back to `.env.worktree.example` when `.env.worktree` is still missing
-
-For project-scoped `.codex` settings to load, this repo or one of its parent paths must be marked trusted in `~/.codex/config.toml`. Codex skips project-scoped `.codex` layers for untrusted projects.
 
 ## Mock SuccessFactors
 

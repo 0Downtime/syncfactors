@@ -4,7 +4,6 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Security.Application;
 using System.DirectoryServices.Protocols;
 using System.Diagnostics;
-using System.Text.RegularExpressions;
 
 namespace SyncFactors.Infrastructure;
 
@@ -15,7 +14,6 @@ public sealed class ActiveDirectoryGateway(
     ILogger<ActiveDirectoryGateway> logger) : IDirectoryGateway
 {
     private static readonly TimeSpan LdapOperationTimeout = TimeSpan.FromSeconds(10);
-    private static readonly Regex LdapAttributeNamePattern = new("^[A-Za-z][A-Za-z0-9-]*$", RegexOptions.Compiled);
     private const int OuListingPageSize = 500;
     private const int MaxTransientLdapRetries = 3;
 
@@ -594,7 +592,12 @@ public sealed class ActiveDirectoryGateway(
         var entry = FindFirstEntryMatchingAny(
             connection,
             searchBases,
-            [("userPrincipalName", userPrincipalName), ("mail", userPrincipalName)],
+            [
+                ("userPrincipalName", userPrincipalName),
+                ("mail", userPrincipalName),
+                ("proxyAddresses", $"SMTP:{userPrincipalName}"),
+                ("proxyAddresses", $"smtp:{userPrincipalName}")
+            ],
             "mail",
             logger,
             "email local-part search");
@@ -857,7 +860,7 @@ public sealed class ActiveDirectoryGateway(
         string searchAttribute,
         string searchValue,
         string additionalAttribute,
-        IReadOnlyList<string>? extraAttributes = null)
+        IReadOnlyList<string>? extraAttributes)
     {
         return new SearchRequest(
             searchBase,
@@ -878,7 +881,7 @@ public sealed class ActiveDirectoryGateway(
         string searchBase,
         IReadOnlyList<(string Attribute, string Value)> searchClauses,
         string additionalAttribute,
-        IReadOnlyList<string>? extraAttributes = null)
+        IReadOnlyList<string>? extraAttributes)
     {
         return new SearchRequest(
             searchBase,
@@ -901,6 +904,7 @@ public sealed class ActiveDirectoryGateway(
             "sn",
             "userPrincipalName",
             "mail",
+            "proxyAddresses",
             "department",
             "company",
             "physicalDeliveryOfficeName",
@@ -985,6 +989,29 @@ public sealed class ActiveDirectoryGateway(
         return attribute.Count == 0 ? null : attribute[0]?.ToString();
     }
 
+    private static string? GetAttributeValues(SearchResultEntry entry, string attributeName)
+    {
+        var resolvedAttributeName = ResolveAttributeName(entry, attributeName);
+        if (resolvedAttributeName is null)
+        {
+            return null;
+        }
+
+        var values = entry.Attributes[resolvedAttributeName].GetValues(typeof(string));
+        if (values is null)
+        {
+            return null;
+        }
+
+        var normalized = values
+            .Cast<object?>()
+            .Select(value => value?.ToString())
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Cast<string>()
+            .ToArray();
+        return normalized.Length == 0 ? null : string.Join('\n', normalized);
+    }
+
     private static string? GetObjectGuidAttribute(SearchResultEntry entry)
     {
         var resolvedAttributeName = ResolveAttributeName(entry, "objectGUID");
@@ -1048,6 +1075,7 @@ public sealed class ActiveDirectoryGateway(
             ["Surname"] = GetAttribute(entry, "sn"),
             ["UserPrincipalName"] = GetAttribute(entry, "userPrincipalName"),
             ["mail"] = GetAttribute(entry, "mail"),
+            ["proxyAddresses"] = GetAttributeValues(entry, "proxyAddresses"),
             ["department"] = GetAttribute(entry, "department"),
             ["company"] = GetAttribute(entry, "company"),
             ["physicalDeliveryOfficeName"] = GetAttribute(entry, "physicalDeliveryOfficeName"),
@@ -1173,11 +1201,24 @@ public sealed class ActiveDirectoryGateway(
 
     private static string ValidateLdapAttributeName(string value)
     {
-        if (!LdapAttributeNamePattern.IsMatch(value))
+        if (!IsLdapAttributeName(value))
         {
             throw new InvalidOperationException($"Invalid LDAP attribute name '{value}'.");
         }
 
         return value;
     }
+
+    private static bool IsLdapAttributeName(string value)
+    {
+        if (string.IsNullOrEmpty(value) || !IsAsciiLetter(value[0]))
+        {
+            return false;
+        }
+
+        return value.Skip(1).All(character => IsAsciiLetter(character) || char.IsAsciiDigit(character) || character == '-');
+    }
+
+    private static bool IsAsciiLetter(char value) =>
+        value is >= 'A' and <= 'Z' or >= 'a' and <= 'z';
 }

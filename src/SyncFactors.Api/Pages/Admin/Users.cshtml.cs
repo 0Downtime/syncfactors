@@ -77,7 +77,7 @@ public sealed class UsersModel(
          string.Equals(AuthenticationMode, "hybrid", StringComparison.Ordinal)) &&
         OidcRoleResolver.HasConfiguredRoleGroups(authOptions.Value);
 
-    public string AccessBadgeClass(string accessLevel) => accessLevel switch
+    public static string AccessBadgeClass(string accessLevel) => accessLevel switch
     {
         SecurityRoles.Admin => "info",
         SecurityRoles.Operator => "good",

@@ -55,7 +55,7 @@ public sealed class AdminDeletionQueueModelTests
 
         await model.OnGetAsync(CancellationToken.None);
 
-        Assert.Equal("Terminated (64308)", model.FormatStatus(model.PendingUsers[0]));
+        Assert.Equal("Terminated (64308)", DeletionQueueModel.FormatStatus(model.PendingUsers[0]));
     }
 
     [Fact]

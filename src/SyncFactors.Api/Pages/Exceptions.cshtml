@@ -13,7 +13,7 @@
 </section>
 
 <section class="preview-inspector-grid exception-summary-grid" aria-label="Exception queue summary">
-    @foreach (var queueType in Model.QueueTypes)
+    @foreach (var queueType in ExceptionsModel.QueueTypes)
     {
         <a class="preview-inspector-card exception-summary-card @(string.Equals(Model.QueueType, queueType.Key, StringComparison.OrdinalIgnoreCase) ? "active" : null)"
            data-tone="@queueType.Tone"
@@ -44,7 +44,7 @@
             <span>Queue</span>
             <select asp-for="QueueType">
                 <option value="">All exception queues</option>
-                @foreach (var queueType in Model.QueueTypes)
+                @foreach (var queueType in ExceptionsModel.QueueTypes)
                 {
                     <option value="@queueType.Key">@queueType.Label</option>
                 }

@@ -243,7 +243,7 @@ public static class FixtureGenerationCommand
             LastName = nameProfile.LastName,
             PreferredName = nameProfile.PreferredName,
             DisplayName = worker.DisplayName is null ? null : nameProfile.DisplayName,
-            UserId = string.IsNullOrWhiteSpace(worker.UserId) ? userName : userName,
+            UserId = userName,
             EmailType = worker.EmailType is null ? null : "B",
             ManagerId = managerId,
             Department = AliasDimension("Department", worker.Department),
@@ -392,10 +392,8 @@ public static class FixtureGenerationCommand
             navigation.TryGetProperty("results", out var results) &&
             results.ValueKind == JsonValueKind.Array)
         {
-            foreach (var item in results.EnumerateArray())
-            {
-                return item.Clone();
-            }
+            var enumerator = results.EnumerateArray();
+            return enumerator.MoveNext() ? enumerator.Current.Clone() : null;
         }
 
         return null;

@@ -1,4 +1,6 @@
 using System.Reflection;
+using System.DirectoryServices.Protocols;
+using SyncFactors.Domain;
 
 namespace SyncFactors.Infrastructure.Tests;
 
@@ -20,6 +22,25 @@ public sealed class ActiveDirectoryConnectionFactoryTests
         Assert.NotNull(method);
 
         var actual = Assert.IsType<bool>(method!.Invoke(null, [username]));
+        Assert.Equal(expected, actual);
+    }
+
+    [Fact]
+    public void ResolveAuthType_UsesBasic_WhenUsernameIsConfigured()
+    {
+        var actual = InvokeResolveAuthType("svc-syncfactors@example.local");
+
+        Assert.Equal(AuthType.Basic, actual);
+    }
+
+    [Fact]
+    public void ResolveAuthType_UsesCurrentWindowsIdentity_WhenUsernameIsBlankOnWindows()
+    {
+        var actual = InvokeResolveAuthType("");
+
+        var expected = OperatingSystem.IsWindows()
+            ? AuthType.Negotiate
+            : AuthType.Anonymous;
         Assert.Equal(expected, actual);
     }
 
@@ -86,5 +107,34 @@ public sealed class ActiveDirectoryConnectionFactoryTests
         Assert.NotNull(method);
 
         method!.Invoke(null, [setProtocolVersion, setSigning, setSealing, requireSigning]);
+    }
+
+    private static AuthType InvokeResolveAuthType(string? username)
+    {
+        var method = typeof(SyncFactorsConfigurationLoader).Assembly
+            .GetType("SyncFactors.Infrastructure.ActiveDirectoryConnectionFactory")
+            ?.GetMethod(
+                "ResolveAuthType",
+                BindingFlags.NonPublic | BindingFlags.Static);
+
+        Assert.NotNull(method);
+
+        var config = new ActiveDirectoryConfig(
+            Server: "dc01.example.test",
+            Port: 636,
+            Username: username,
+            BindPassword: null,
+            IdentityAttribute: "employeeID",
+            DefaultActiveOu: "OU=Active,DC=example,DC=test",
+            PrehireOu: "OU=Prehire,DC=example,DC=test",
+            GraveyardOu: "OU=Graveyard,DC=example,DC=test",
+            Transport: new ActiveDirectoryTransportConfig("ldaps", false, true, true, []),
+            IdentityPolicy: new ActiveDirectoryIdentityPolicyConfig(true),
+            LeaveOu: null,
+            UpnSuffix: "example.test",
+            LicensingGroups: [],
+            IdentityCorrelation: null);
+
+        return Assert.IsType<AuthType>(method!.Invoke(null, [config]));
     }
 }

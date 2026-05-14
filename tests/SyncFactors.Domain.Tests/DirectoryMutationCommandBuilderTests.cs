@@ -301,6 +301,59 @@ public sealed class DirectoryMutationCommandBuilderTests
         Assert.Equal("christopher.brien@example.test", command.Attributes["mail"]);
     }
 
+    [Fact]
+    public void Build_FromPlan_CarriesProxyAddresses_WhenPrimarySmtpChanges()
+    {
+        var worker = new WorkerSnapshot(
+            WorkerId: "44522",
+            PreferredName: "Christopher",
+            LastName: "Brien",
+            Department: "Infrastructure & Security",
+            TargetOu: "OU=Employees,DC=example,DC=com",
+            IsPrehire: false,
+            Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase));
+
+        var plan = new PlannedWorkerAction(
+            Worker: worker,
+            DirectoryUser: new DirectoryUserSnapshot(
+                SamAccountName: "44522",
+                DistinguishedName: "CN=44522,OU=Employees,DC=example,DC=com",
+                Enabled: true,
+                DisplayName: "Old, Chris",
+                Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+                {
+                    ["UserPrincipalName"] = "chris.old@example.test",
+                    ["mail"] = "chris.old@example.test",
+                    ["proxyAddresses"] = "SMTP:chris.old@example.test"
+                }),
+            Identity: new IdentityMatchResult("updates", MatchedExistingUser: true, SamAccountName: "44522", Reason: null, OperatorActionSummary: null),
+            ManagerDistinguishedName: null,
+            ProposedEmailAddress: "Christopher.Brien@example.test",
+            AttributeChanges:
+            [
+                new AttributeChange("mail", "resolved email local-part", "chris.old@example.test", "Christopher.Brien@example.test", true),
+                new AttributeChange("proxyAddresses", "resolved email local-part", "SMTP:chris.old@example.test", "SMTP:christopher.brien@example.test\nsmtp:chris.old@example.test", true)
+            ],
+            MissingSourceAttributes: [],
+            Bucket: "updates",
+            CurrentOu: "OU=Employees,DC=example,DC=com",
+            TargetOu: "OU=Employees,DC=example,DC=com",
+            CurrentEnabled: true,
+            TargetEnabled: true,
+            PrimaryAction: "UpdateUser",
+            Operations: [new DirectoryOperation("UpdateUser")],
+            ReviewCategory: null,
+            ReviewCaseType: null,
+            Reason: null,
+            CanAutoApply: true);
+
+        var command = new DirectoryMutationCommandBuilder().Build(plan);
+
+        Assert.Equal("chris.old@example.test", command.UserPrincipalName);
+        Assert.Equal("christopher.brien@example.test", command.Mail);
+        Assert.Equal(["SMTP:christopher.brien@example.test", "smtp:chris.old@example.test"], command.ProxyAddresses);
+    }
+
     private sealed class StubAttributeMappingProvider : IAttributeMappingProvider
     {
         public IReadOnlyList<AttributeMapping> GetEnabledMappings() =>
