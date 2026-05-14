@@ -1,6 +1,6 @@
 # OU Decision Tree
 
-This mirrors the current `LifecyclePolicy.Evaluate(...)` implementation in [src/SyncFactors.Domain/LifecyclePolicy.cs](/Users/chrisbrien/dev/github.com/syncfactors/src/SyncFactors.Domain/LifecyclePolicy.cs:8). The config inputs are assembled in [src/SyncFactors.Api/Program.cs](/Users/chrisbrien/dev/github.com/syncfactors/src/SyncFactors.Api/Program.cs:103).
+This mirrors the current `LifecyclePolicy.Evaluate(...)` implementation in [`src/SyncFactors.Domain/LifecyclePolicy.cs`](../src/SyncFactors.Domain/LifecyclePolicy.cs). The config inputs are assembled during API and worker startup from the active sync config.
 
 ## Decision Tree
 
@@ -69,6 +69,6 @@ The configured value sets are then compared case-insensitively:
 
 ## Important Notes
 
-- The source worker is initially created with `TargetOu = ad.defaultActiveOu` in [src/SyncFactors.Infrastructure/SuccessFactorsWorkerSource.cs](/Users/chrisbrien/dev/github.com/syncfactors/src/SyncFactors.Infrastructure/SuccessFactorsWorkerSource.cs:1283), but the lifecycle policy overrides that with the final OU decision.
+- The source worker is initially created with `TargetOu = ad.defaultActiveOu` in [`src/SyncFactors.Infrastructure/SuccessFactorsWorkerSource.cs`](../src/SyncFactors.Infrastructure/SuccessFactorsWorkerSource.cs), but the lifecycle policy overrides that with the final OU decision.
 - The only branch that explicitly refuses to create a missing account is the inactive or terminated branch. If no AD account exists there, the result is `unchanged` with target OU still set to the graveyard OU.
 - If `ad.leaveOu` is not configured, leave users fall back to `ad.defaultActiveOu` but remain disabled.
