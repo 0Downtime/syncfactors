@@ -181,7 +181,7 @@ function Add-SyncFactorsCertificateHostCandidate {
         return $false
     }
 
-    $normalized = $HostName.Trim().Trim('[', ']').TrimEnd('.')
+    $normalized = $HostName.Trim().TrimEnd('.').Trim('[', ']')
     if ([string]::IsNullOrWhiteSpace($normalized) -or (Test-SyncFactorsWildcardHost -HostName $normalized)) {
         return $false
     }
@@ -221,6 +221,7 @@ function Get-SyncFactorsCertificateHostCandidates {
                 $null = Add-SyncFactorsCertificateHostCandidate -Candidates $candidates -HostName $uri.Host
             }
             catch {
+                Write-Verbose "Skipping invalid HTTPS URL '$rawUrl': $($_.Exception.Message)"
             }
         }
     }
@@ -231,6 +232,7 @@ function Get-SyncFactorsCertificateHostCandidates {
             $null = Add-SyncFactorsCertificateHostCandidate -Candidates $candidates -HostName ([System.Net.Dns]::GetHostEntry('').HostName)
         }
         catch {
+            Write-Verbose "Could not resolve local host name: $($_.Exception.Message)"
         }
     }
 

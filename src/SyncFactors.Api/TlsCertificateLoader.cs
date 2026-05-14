@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Security.Cryptography.X509Certificates;
 using System.Security.Cryptography;
 using System.Text.RegularExpressions;
@@ -5,7 +6,7 @@ using Microsoft.Extensions.Configuration;
 
 namespace SyncFactors.Api;
 
-internal static class TlsCertificateLoader
+internal static partial class TlsCertificateLoader
 {
     private const string MachineCertificateThumbprintKey = "SyncFactors:Tls:MachineCertificateThumbprint";
     private const string MachineCertificateThumbprintEnvironmentVariable = "SYNCFACTORS_TLS_CERT_THUMBPRINT";
@@ -18,6 +19,7 @@ internal static class TlsCertificateLoader
         "Kestrel:Certificates:Default:Thumbprint"
     ];
 
+    [ExcludeFromCodeCoverage(Justification = "LocalMachine certificate store selection requires a Windows host with machine certificate private keys.")]
     public static bool TryLoadDefaultMachineCertificate(
         IConfiguration configuration,
         out X509Certificate2? certificate,
@@ -89,7 +91,7 @@ internal static class TlsCertificateLoader
                !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("ASPNETCORE_Kestrel__Certificates__Default__Thumbprint"));
     }
 
-    internal static IReadOnlyList<string> GetHostCandidates(IConfiguration configuration)
+    internal static List<string> GetHostCandidates(IConfiguration configuration)
     {
         var candidates = new List<string>();
         var hadPublicHost = AddHostCandidate(candidates, Environment.GetEnvironmentVariable("SYNCFACTORS_API_PUBLIC_HOST"));
@@ -114,13 +116,7 @@ internal static class TlsCertificateLoader
         if (hadPublicHost || hasWildcardBinding || candidates.Count == 0)
         {
             AddHostCandidate(candidates, Environment.MachineName);
-            try
-            {
-                AddHostCandidate(candidates, System.Net.Dns.GetHostEntry(string.Empty).HostName);
-            }
-            catch
-            {
-            }
+            AddHostCandidate(candidates, System.Net.Dns.GetHostName());
         }
 
         return candidates;
@@ -129,7 +125,7 @@ internal static class TlsCertificateLoader
     internal static string NormalizeThumbprint(string? thumbprint) =>
         string.IsNullOrWhiteSpace(thumbprint)
             ? string.Empty
-            : Regex.Replace(thumbprint, "[^0-9A-Fa-f]", string.Empty).ToUpperInvariant();
+            : CertificateThumbprintCharactersRegex().Replace(thumbprint, string.Empty).ToUpperInvariant();
 
     internal static bool HostMatchesCertificateName(string host, string certificateName)
     {
@@ -160,7 +156,7 @@ internal static class TlsCertificateLoader
         return prefix.Length > 0 && !prefix.Contains('.', StringComparison.Ordinal);
     }
 
-    private static bool IsUsableServerCertificate(X509Certificate2 certificate)
+    internal static bool IsUsableServerCertificate(X509Certificate2 certificate)
     {
         if (!certificate.HasPrivateKey || certificate.NotAfter <= DateTime.Now || certificate.NotBefore > DateTime.Now)
         {
@@ -178,14 +174,14 @@ internal static class TlsCertificateLoader
             .Any(oid => string.Equals(oid.Value, "1.3.6.1.5.5.7.3.1", StringComparison.Ordinal));
     }
 
-    private static bool CertificateMatchesAnyHost(X509Certificate2 certificate, IReadOnlyList<string> hostCandidates)
+    internal static bool CertificateMatchesAnyHost(X509Certificate2 certificate, List<string> hostCandidates)
     {
         var certificateNames = GetCertificateDnsNames(certificate);
         return certificateNames.Any(certificateName =>
             hostCandidates.Any(host => HostMatchesCertificateName(host, certificateName)));
     }
 
-    private static IReadOnlyList<string> GetCertificateDnsNames(X509Certificate2 certificate)
+    internal static List<string> GetCertificateDnsNames(X509Certificate2 certificate)
     {
         var names = new List<string>();
         AddHostCandidate(names, certificate.GetNameInfo(X509NameType.DnsName, forIssuer: false));
@@ -200,25 +196,21 @@ internal static class TlsCertificateLoader
             return null;
         }
 
-        foreach (var part in subject.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-        {
-            if (part.StartsWith("CN=", StringComparison.OrdinalIgnoreCase))
-            {
-                return part[3..];
-            }
-        }
-
-        return null;
+        return subject
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(part => part.StartsWith("CN=", StringComparison.OrdinalIgnoreCase))
+            .Select(part => part[3..])
+            .FirstOrDefault();
     }
 
-    private static bool AddHostCandidate(ICollection<string> candidates, string? host)
+    internal static bool AddHostCandidate(List<string> candidates, string? host)
     {
         if (string.IsNullOrWhiteSpace(host))
         {
             return false;
         }
 
-        var normalized = host.Trim().Trim('[', ']').TrimEnd('.');
+        var normalized = host.Trim().TrimEnd('.').Trim('[', ']');
         if (string.IsNullOrWhiteSpace(normalized) ||
             IsWildcardHost(normalized))
         {
@@ -238,4 +230,7 @@ internal static class TlsCertificateLoader
         string.Equals(host, "+", StringComparison.Ordinal) ||
         string.Equals(host, "0.0.0.0", StringComparison.Ordinal) ||
         string.Equals(host, "::", StringComparison.Ordinal);
+
+    [GeneratedRegex("[^0-9A-Fa-f]", RegexOptions.CultureInvariant)]
+    private static partial Regex CertificateThumbprintCharactersRegex();
 }
