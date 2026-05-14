@@ -4,6 +4,7 @@ public static class LocalFileLogging
 {
     public const string EnabledEnvironmentVariable = "SYNCFACTORS_LOCAL_FILE_LOGGING_ENABLED";
     public const string DirectoryEnvironmentVariable = "SYNCFACTORS_LOCAL_LOG_DIRECTORY";
+    public const int RetainedFileCountLimit = 7;
     private const string RepositoryRootEnvironmentVariable = "REPO_ROOT";
 
     public static bool IsEnabled(string? configuredValue)
@@ -40,6 +41,45 @@ public static class LocalFileLogging
     public static string ResolveRollingFilePath(string processName, string? configuredDirectory)
     {
         return Path.Combine(ResolveDirectory(configuredDirectory), $"{processName}-.log");
+    }
+
+    public static string ResolveDatedFilePath(string processName, string? configuredDirectory, DateTimeOffset timestamp)
+    {
+        return Path.Combine(ResolveDirectory(configuredDirectory), $"{processName}-{timestamp:yyyyMMdd}.log");
+    }
+
+    public static void PruneDatedFiles(string processName, string? configuredDirectory, int retainedFileCountLimit = RetainedFileCountLimit)
+    {
+        if (retainedFileCountLimit <= 0)
+        {
+            return;
+        }
+
+        var directory = ResolveDirectory(configuredDirectory);
+        if (!Directory.Exists(directory))
+        {
+            return;
+        }
+
+        var files = Directory
+            .EnumerateFiles(directory, $"{processName}-*.log", SearchOption.TopDirectoryOnly)
+            .Select(path => new FileInfo(path))
+            .OrderByDescending(file => file.LastWriteTimeUtc)
+            .Skip(retainedFileCountLimit);
+
+        foreach (var file in files)
+        {
+            try
+            {
+                file.Delete();
+            }
+            catch (IOException)
+            {
+            }
+            catch (UnauthorizedAccessException)
+            {
+            }
+        }
     }
 
     public static string ResolveRunLogDirectory(string? configuredDirectory)

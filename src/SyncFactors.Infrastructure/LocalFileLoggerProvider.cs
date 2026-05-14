@@ -5,14 +5,15 @@ using SyncFactors.Domain;
 
 namespace SyncFactors.Infrastructure;
 
-public sealed class RunScopedFileLoggerProvider(string? configuredDirectory) : ILoggerProvider, ISupportExternalScope
+public sealed class LocalFileLoggerProvider(string processName, string? configuredDirectory) : ILoggerProvider, ISupportExternalScope
 {
-    private readonly ConcurrentDictionary<string, RunLogWriter> _writers = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, DailyLogWriter> _writers = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, byte> _prunedPaths = new(StringComparer.OrdinalIgnoreCase);
     private IExternalScopeProvider _scopeProvider = new LoggerExternalScopeProvider();
 
     public ILogger CreateLogger(string categoryName)
     {
-        return new RunScopedFileLogger(categoryName, this);
+        return new LocalFileLogger(categoryName, this);
     }
 
     public void Dispose()
@@ -32,75 +33,18 @@ public sealed class RunScopedFileLoggerProvider(string? configuredDirectory) : I
 
     private void Write(LogLevel logLevel, string categoryName, EventId eventId, string message, Exception? exception)
     {
-        if (!TryGetRunId(out var runId))
+        var timestamp = DateTimeOffset.Now;
+        var path = LocalFileLogging.ResolveDatedFilePath(processName, configuredDirectory, timestamp);
+        if (_prunedPaths.TryAdd(path, 0))
         {
-            return;
+            LocalFileLogging.PruneDatedFiles(processName, configuredDirectory);
         }
 
-        var writer = _writers.GetOrAdd(
-            runId,
-            static (id, directory) => new RunLogWriter(LocalFileLogging.ResolveRunLogPath(id, directory)),
-            configuredDirectory);
-
-        writer.Write(DateTimeOffset.Now, logLevel, categoryName, eventId, message, exception);
+        var writer = _writers.GetOrAdd(path, static resolvedPath => new DailyLogWriter(resolvedPath));
+        writer.Write(timestamp, logLevel, categoryName, eventId, message, exception);
     }
 
-    private bool TryGetRunId(out string runId)
-    {
-        var scopeState = new ScopeSearchState();
-        _scopeProvider.ForEachScope(
-            static (scope, state) =>
-            {
-                if (state.RunId is not null)
-                {
-                    return;
-                }
-
-                state.RunId = TryReadRunId(scope);
-            },
-            scopeState);
-
-        var resolvedRunId = scopeState.RunId;
-        if (string.IsNullOrWhiteSpace(resolvedRunId))
-        {
-            runId = string.Empty;
-            return false;
-        }
-
-        runId = resolvedRunId;
-        return true;
-    }
-
-    private static string? TryReadRunId(object? scope)
-    {
-        if (scope is IEnumerable<KeyValuePair<string, object?>> nullablePairs)
-        {
-            foreach (var pair in nullablePairs)
-            {
-                if (string.Equals(pair.Key, "RunId", StringComparison.OrdinalIgnoreCase))
-                {
-                    return pair.Value?.ToString();
-                }
-            }
-
-            return null;
-        }
-
-        if (scope is IEnumerable<KeyValuePair<string, object>> pairs)
-        {
-            foreach (var pair in pairs)
-            {
-                if (string.Equals(pair.Key, "RunId", StringComparison.OrdinalIgnoreCase))
-                {
-                    return pair.Value?.ToString();
-                }
-            }
-        }
-
-        return null;
-    }
-
-    private sealed class RunScopedFileLogger(string categoryName, RunScopedFileLoggerProvider provider) : ILogger
+    private sealed class LocalFileLogger(string categoryName, LocalFileLoggerProvider provider) : ILogger
     {
         public IDisposable BeginScope<TState>(TState state) where TState : notnull
         {
@@ -134,7 +78,7 @@ public sealed class RunScopedFileLoggerProvider(string? configuredDirectory) : I
         }
     }
 
-    private sealed class RunLogWriter(string path) : IDisposable
+    private sealed class DailyLogWriter(string path) : IDisposable
     {
         private readonly object _gate = new();
         private readonly StreamWriter _writer = CreateWriter(path);
@@ -170,7 +114,7 @@ public sealed class RunScopedFileLoggerProvider(string? configuredDirectory) : I
                     if (!string.IsNullOrWhiteSpace(eventId.Name))
                     {
                         _writer.Write(":");
-                        _writer.Write(eventId.Name);
+                        _writer.Write(LogSafety.RedactPiiInText(eventId.Name));
                     }
 
                     _writer.Write(")");
@@ -212,10 +156,5 @@ public sealed class RunScopedFileLoggerProvider(string? configuredDirectory) : I
                 _ => "NON"
             };
         }
-    }
-
-    private sealed class ScopeSearchState
-    {
-        public string? RunId { get; set; }
     }
 }
