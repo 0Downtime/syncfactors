@@ -184,6 +184,56 @@ pwsh .\scripts\Uninstall-SyncFactorsWindowsServices.ps1
 
 Use `Event Viewer > Windows Logs > Application` with sources `SyncFactors.Api` and `SyncFactors.Worker` for service startup, shutdown, warning, and error events. Local rolling logs are also enabled by default under `state\logs` inside the bundle root.
 
+### Repeatable Windows Patch Deployment
+
+For QA and production patching, bootstrap the server once, then deploy new release zips with [`scripts/Deploy-SyncFactorsWindowsPatch.ps1`](scripts/Deploy-SyncFactorsWindowsPatch.ps1). The patch deploy keeps the durable server-owned paths intact:
+
+- `C:\SyncFactors\config\local.*`
+- `C:\SyncFactors\state\runtime\syncfactors.db`
+- `C:\SyncFactors\state\logs`
+- Windows Credential Manager secrets
+- the installed service account and HTTPS certificate
+
+First-time server setup still uses the prerequisite and service installers:
+
+```powershell
+Set-ExecutionPolicy -Scope Process Bypass
+$password = Read-Host 'SyncFactors service password' -AsSecureString
+
+.\scripts\Install-SyncFactorsWindowsPrerequisites.ps1 `
+  -InstallRoot C:\SyncFactors `
+  -ServiceAccount sfsvc `
+  -ServiceAccountPassword $password `
+  -CreateLocalServiceAccount `
+  -InstallPowerShell `
+  -ConfigureFirewall `
+  -ApiPort 5087
+
+$credential = [pscredential]::new("$env:COMPUTERNAME\sfsvc", $password)
+
+.\scripts\Install-SyncFactorsWindowsServices.ps1 `
+  -BundleRoot C:\SyncFactors `
+  -RunProfile real `
+  -ApiUrls 'https://0.0.0.0:5087' `
+  -TlsCertificateThumbprint '<local-machine-my-thumbprint>' `
+  -WindowsCredentialPrefix SyncFactors `
+  -Credential $credential `
+  -Force
+```
+
+After the services exist, deploy each incremental QA or production bundle from an elevated PowerShell session:
+
+```powershell
+.\scripts\Deploy-SyncFactorsWindowsPatch.ps1 `
+  -BundleZip C:\SyncFactors\_staging\syncfactors-<version>-win-x64.zip `
+  -InstallRoot C:\SyncFactors `
+  -HealthUrl https://localhost:5087/Login
+```
+
+The patch script expands the bundle to `_staging`, backs up deployable files to `_backups\<timestamp>`, stops `SyncFactors.Api` and `SyncFactors.Worker`, replaces `app`, scripts, docs, and sample config files, restarts services, and health-checks the API. It does not overwrite `config\local.*` or `state`. If startup or the health check fails, it restores the backed-up deployable files and restarts the previous version unless `-NoRollbackOnFailure` is set.
+
+Use `-InstallOrUpdateServices -Credential $credential` only when the patch must create or replace the Windows service definitions. Existing service credentials cannot be recovered from Windows, so that mode requires the credential again.
+
 ### Azure DevOps Windows Deployment
 
 [`azure-pipelines.deploy.yml`](azure-pipelines.deploy.yml) builds, tests, packages, and deploys the self-contained Windows bundle to one or more Windows servers over WinRM. The deploy stage is skipped until `deployTargetMachines` is set in the Azure DevOps pipeline variables.

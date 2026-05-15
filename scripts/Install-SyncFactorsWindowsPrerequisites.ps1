@@ -69,8 +69,32 @@ function ConvertTo-AccountSid {
         [string]$Identity
     )
 
-    $account = [System.Security.Principal.NTAccount]::new($Identity)
-    return $account.Translate([System.Security.Principal.SecurityIdentifier])
+    $normalized = $Identity.Trim()
+    $localName = $null
+    if ($normalized.StartsWith('.\')) {
+        $localName = $normalized.Substring(2)
+    }
+    elseif ($normalized.StartsWith("$env:COMPUTERNAME\", [System.StringComparison]::OrdinalIgnoreCase)) {
+        $localName = $normalized.Substring($env:COMPUTERNAME.Length + 1)
+    }
+    elseif (-not $normalized.Contains('\') -and -not $normalized.Contains('@')) {
+        $localName = $normalized
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($localName)) {
+        $localUser = Get-LocalUser -Name $localName -ErrorAction SilentlyContinue
+        if ($localUser) {
+            return $localUser.SID
+        }
+    }
+
+    try {
+        $account = [System.Security.Principal.NTAccount]::new($normalized)
+        return $account.Translate([System.Security.Principal.SecurityIdentifier])
+    }
+    catch {
+        throw "Could not resolve Windows account '$Identity' to a SID. For local accounts, create the account first or pass '.\name', '$env:COMPUTERNAME\name', or just 'name'."
+    }
 }
 
 function Install-PowerShellCore {
@@ -123,18 +147,18 @@ function Ensure-LocalServiceAccount {
     $localName = Resolve-LocalAccountName -Identity $Identity
     $existing = Get-LocalUser -Name $localName -ErrorAction SilentlyContinue
     if ($existing) {
-        return ".\$localName"
+        return "$env:COMPUTERNAME\$localName"
     }
 
     New-LocalUser `
         -Name $localName `
         -Password $Password `
         -FullName 'SyncFactors Windows service account' `
-        -Description 'Runs SyncFactors.Api and SyncFactors.Worker Windows services.' `
+        -Description 'Runs SyncFactors services' `
         -PasswordNeverExpires `
         -UserMayNotChangePassword | Out-Null
 
-    return ".\$localName"
+    return "$env:COMPUTERNAME\$localName"
 }
 
 function Grant-LogOnAsServiceRight {
