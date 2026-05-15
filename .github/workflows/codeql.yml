@@ -31,10 +31,17 @@ jobs:
         id: runner
         env:
           GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          PR_HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name || '' }}
           REPO: ${{ github.repository }}
         shell: bash
         run: |
           set -euo pipefail
+
+          if [[ "$EVENT_NAME" == "pull_request" && "$PR_HEAD_REPOSITORY" != "$REPO" ]]; then
+            echo 'runs-on="ubuntu-latest"' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
 
           runner_json="$(gh api "repos/${REPO}/actions/runners?per_page=100" 2>/dev/null || true)"
           if [[ -n "$runner_json" ]] && jq -e '.runners[]? | select(.name == "Mac" and .status == "online" and .busy == false)' >/dev/null 2>&1 <<< "$runner_json"; then

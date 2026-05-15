@@ -42,6 +42,7 @@ stages:
         steps:
           - checkout: self
             fetchDepth: 0
+            persistCredentials: false
 
           - task: UseDotNet@2
             displayName: Install .NET SDK
@@ -157,7 +158,7 @@ stages:
   - stage: Deploy
     displayName: Deploy to Windows Server
     dependsOn: Build
-    condition: and(succeeded(), ne(variables['deployTargetMachines'], ''))
+    condition: and(succeeded(), ne(variables['deployTargetMachines'], ''), ne(variables['Build.Reason'], 'PullRequest'))
     jobs:
       - deployment: DeployWindowsServices
         displayName: Deploy SyncFactors Windows services
