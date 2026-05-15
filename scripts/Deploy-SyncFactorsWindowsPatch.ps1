@@ -14,6 +14,7 @@ param(
     [string]$WindowsCredentialPrefix = 'SyncFactors',
     [string]$SqlitePassword,
     [switch]$DisableSqliteEncryption,
+    [string]$SecurityAuditLogPath,
     [pscredential]$Credential,
     [switch]$InstallOrUpdateServices,
     [string]$HealthUrl = 'https://localhost:5087/Login',
@@ -274,6 +275,9 @@ try {
         }
         if ($DisableSqliteEncryption.IsPresent) {
             $installArgs += '-DisableSqliteEncryption'
+        }
+        if (-not [string]::IsNullOrWhiteSpace($SecurityAuditLogPath)) {
+            $installArgs += @('-SecurityAuditLogPath', $SecurityAuditLogPath)
         }
 
         if ($PSCmdlet.ShouldProcess("$ApiServiceName,$WorkerServiceName", 'Install or update Windows services')) {

@@ -17,6 +17,7 @@ param(
     [string]$SqlitePath,
     [string]$SqlitePassword,
     [switch]$DisableSqliteEncryption,
+    [string]$SecurityAuditLogPath,
     [string]$LogDirectory,
     [string]$TlsCertificatePath,
     [string]$TlsCertificatePassword,
@@ -307,6 +308,9 @@ if ([string]::IsNullOrWhiteSpace($SqlitePath)) {
 if ([string]::IsNullOrWhiteSpace($LogDirectory)) {
     $LogDirectory = Join-Path $runtimeRoot 'logs'
 }
+if ([string]::IsNullOrWhiteSpace($SecurityAuditLogPath)) {
+    $SecurityAuditLogPath = Join-Path $runtimeRoot 'runtime\security-audit.jsonl'
+}
 if ([string]::IsNullOrWhiteSpace($ConfigPath)) {
     $ConfigPath = Resolve-DefaultConfigPath -Root $resolvedBundleRoot -Profile $RunProfile
 }
@@ -317,9 +321,11 @@ if ([string]::IsNullOrWhiteSpace($MappingConfigPath)) {
 $ConfigPath = [System.IO.Path]::GetFullPath($ConfigPath)
 $MappingConfigPath = [System.IO.Path]::GetFullPath($MappingConfigPath)
 $SqlitePath = [System.IO.Path]::GetFullPath($SqlitePath)
+$SecurityAuditLogPath = [System.IO.Path]::GetFullPath($SecurityAuditLogPath)
 $LogDirectory = [System.IO.Path]::GetFullPath($LogDirectory)
 
 New-Item -Path (Split-Path -Path $SqlitePath -Parent) -ItemType Directory -Force | Out-Null
+New-Item -Path (Split-Path -Path $SecurityAuditLogPath -Parent) -ItemType Directory -Force | Out-Null
 New-Item -Path $LogDirectory -ItemType Directory -Force | Out-Null
 
 $sqlitePasswordSource = 'disabled'
@@ -368,6 +374,7 @@ $commonEnvironment = @(
     "SyncFactors__ConfigPath=$ConfigPath",
     "SyncFactors__MappingConfigPath=$MappingConfigPath",
     "SyncFactors__SqlitePath=$SqlitePath",
+    "SYNCFACTORS_SECURITY_AUDIT_LOG_PATH=$SecurityAuditLogPath",
     "SYNCFACTORS_LOCAL_FILE_LOGGING_ENABLED=true",
     "SYNCFACTORS_LOCAL_LOG_DIRECTORY=$LogDirectory",
     "Logging__LogLevel__Default=Information",
@@ -441,6 +448,7 @@ if ($Service -in @('All', 'Worker')) {
     sqlitePath = $SqlitePath
     sqliteEncryption = if ([string]::IsNullOrWhiteSpace($SqlitePassword)) { 'disabled' } else { 'enabled' }
     sqlitePasswordSource = $sqlitePasswordSource
+    securityAuditLogPath = $SecurityAuditLogPath
     logDirectory = $LogDirectory
     eventLog = 'Application'
 }

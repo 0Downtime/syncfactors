@@ -174,7 +174,7 @@ Start-Service SyncFactors.Api
 Start-Service SyncFactors.Worker
 ```
 
-The installer creates `SyncFactors.Api` and `SyncFactors.Worker`, registers matching Windows Event Log sources under the Application log, configures restart-on-failure recovery, and writes service environment values for the selected profile, config paths, SQLite path, SQLite encryption password, and local file logging. It also creates local config files from the bundled samples when they are missing. SQLite encryption is enabled by default for Windows Services; pass `-SqlitePassword` to provide a managed SQLCipher key, or let the installer generate one and store it in the service environment. To replace existing service definitions, rerun with `-Force`; the installer reuses the existing service password when present.
+The installer creates `SyncFactors.Api` and `SyncFactors.Worker`, registers matching Windows Event Log sources under the Application log, configures restart-on-failure recovery, and writes service environment values for the selected profile, config paths, SQLite path, security audit log path, SQLite encryption password, and local file logging. It also creates local config files from the bundled samples when they are missing. SQLite encryption is enabled by default for Windows Services; pass `-SqlitePassword` to provide a managed SQLCipher key, or let the installer generate one and store it in the service environment. To replace existing service definitions, rerun with `-Force`; the installer reuses the existing service password when present.
 
 Uninstall the services from an elevated session:
 
@@ -512,7 +512,7 @@ SF_AD_SYNC_AD_DEFAULT_PASSWORD=
 
 ### SQLite Encryption
 
-SQLite encryption is enabled by default for Windows Service installs. `scripts/Install-SyncFactorsWindowsServices.ps1` sets `SYNCFACTORS_SQLITE_PASSWORD` in the API and worker service environments by using this order: an explicit `-SqlitePassword`, an existing installed service environment value, the current process `SYNCFACTORS_SQLITE_PASSWORD`, or a newly generated password for a fresh/plaintext database. Use `-DisableSqliteEncryption` only for disposable lab installs that intentionally keep a plaintext runtime database.
+SQLite encryption is enabled by default for Windows Service installs. `scripts/Install-SyncFactorsWindowsServices.ps1` sets `SYNCFACTORS_SQLITE_PASSWORD` in the API and worker service environments by using this order: an explicit `-SqlitePassword`, an existing installed service environment value, the current process `SYNCFACTORS_SQLITE_PASSWORD`, or a newly generated password for a fresh/plaintext database. The installer also sets `SYNCFACTORS_SECURITY_AUDIT_LOG_PATH` to an absolute path under `state\runtime` so service startup never depends on `C:\Windows\system32` as the working directory. Use `-DisableSqliteEncryption` only for disposable lab installs that intentionally keep a plaintext runtime database.
 
 For non-service launches, set `SYNCFACTORS_SQLITE_PASSWORD` to enable SQLCipher encryption for the runtime SQLite database. The same value must be present for the API, worker, and automation commands that open the runtime database. The app also recognizes `SyncFactors__SqlitePassword`, but `SYNCFACTORS_SQLITE_PASSWORD` is preferred because it is clearly secret material and should come from the OS secret store or service environment rather than tracked JSON.
 
