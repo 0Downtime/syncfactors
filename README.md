@@ -194,6 +194,15 @@ For QA and production patching, bootstrap the server once, then deploy new relea
 - Windows Credential Manager secrets
 - the installed service account and HTTPS certificate
 
+Fresh server setup uses four durable layers:
+
+1. Extract the release bundle to `C:\SyncFactors`.
+2. Prepare the Windows service account, directory ACLs, PowerShell 7, and optional firewall rule.
+3. Configure the HTTPS certificate and the app secrets under the Windows identity that runs the services.
+4. Install `SyncFactors.Api` and `SyncFactors.Worker`.
+
+Windows Credential Manager is still the preferred place for SuccessFactors, AD, OIDC, and break-glass secrets for a service deployment, but it is per Windows identity. Values saved while logged on as a deploy/admin account are not visible to `SyncFactors.Api` or `SyncFactors.Worker` when those services run as `sfsvc` or a domain runtime account. The service resolver checks process environment variables first, then `Windows Credential Manager` target names like `SyncFactors/SF_AD_SYNC_SF_USERNAME` in the service account profile. The service installer writes operational settings such as config paths, log paths, TLS thumbprint, SQLite path, and SQLite encryption password into the service registry environment; app credentials should stay in Windows Credential Manager unless there is an operational reason to place them directly in the service environment.
+
 First-time server setup still uses the prerequisite and service installers:
 
 ```powershell
@@ -210,12 +219,56 @@ $password = Read-Host 'SyncFactors service password' -AsSecureString
   -ApiPort 5087
 
 $credential = [pscredential]::new("$env:COMPUTERNAME\sfsvc", $password)
+```
+
+For a CA-issued or enterprise PFX certificate, import it into `LocalMachine\My` and grant the runtime account read access to the private key:
+
+```powershell
+$pfxPassword = Read-Host 'SyncFactors HTTPS PFX password' -AsSecureString
+$pfxPasswordPointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($pfxPassword)
+try {
+  $pfxPasswordPlain = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($pfxPasswordPointer)
+
+  .\scripts\Install-SyncFactorsHttpsCertificateFromPfx.ps1 `
+    -PfxPath C:\SyncFactors\certs\syncfactors-api.pfx `
+    -PfxPassword $pfxPasswordPlain `
+    -StoreLocation LocalMachine `
+    -ServiceAccount "$env:COMPUTERNAME\sfsvc"
+}
+finally {
+  [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($pfxPasswordPointer)
+  Remove-Variable pfxPasswordPlain -ErrorAction SilentlyContinue
+}
+
+$tlsThumbprint = (Get-PfxCertificate C:\SyncFactors\certs\syncfactors-api.pfx).Thumbprint
+```
+
+If the certificate is already in `LocalMachine\My`, set `$tlsThumbprint` to its thumbprint and make sure the service account can read the private key.
+
+Store real profile secrets under the runtime service identity. This opens a PowerShell prompt as `sfsvc`, loads that account profile, and writes Credential Manager targets such as `SyncFactors/SF_AD_SYNC_SF_USERNAME`:
+
+```powershell
+Start-Process pwsh `
+  -Credential $credential `
+  -LoadUserProfile `
+  -ArgumentList @(
+    '-NoProfile',
+    '-ExecutionPolicy', 'Bypass',
+    '-NoExit',
+    '-Command',
+    'Set-Location C:\SyncFactors; .\scripts\Set-SyncFactorsWindowsCredential.ps1 -VariableName SF_AD_SYNC_AD_SERVER; .\scripts\Set-SyncFactorsWindowsCredential.ps1 -VariableName SF_AD_SYNC_SF_USERNAME; .\scripts\Set-SyncFactorsWindowsCredential.ps1 -VariableName SF_AD_SYNC_SF_PASSWORD'
+  )
+```
+
+Then install the services from the elevated deploy/admin session:
+
+```powershell
 
 .\scripts\Install-SyncFactorsWindowsServices.ps1 `
   -BundleRoot C:\SyncFactors `
   -RunProfile real `
   -ApiUrls 'https://0.0.0.0:5087' `
-  -TlsCertificateThumbprint '<local-machine-my-thumbprint>' `
+  -TlsCertificateThumbprint $tlsThumbprint `
   -WindowsCredentialPrefix SyncFactors `
   -Credential $credential `
   -Force
@@ -321,7 +374,7 @@ Set-ExecutionPolicy -Scope Process Bypass
   -RuntimeAccount 'CONTOSO\svc-syncfactors-runtime'
 ```
 
-Windows services can read configured SyncFactors secrets directly from Windows Credential Manager when the matching environment variable is not set. Store each value under the Windows identity that runs the service, normally `svc-syncfactors-runtime`, using target names like `SyncFactors/SF_AD_SYNC_SF_USERNAME` and `SyncFactors/SF_AD_SYNC_SF_PASSWORD`. To use a different namespace, set the service environment variable `SYNCFACTORS_WINDOWS_CREDENTIAL_PREFIX`; for example `SyncFactors/Production` makes the SuccessFactors password target `SyncFactors/Production/SF_AD_SYNC_SF_PASSWORD`.
+Windows services can read configured SyncFactors secrets directly from Windows Credential Manager when the matching environment variable is not set. Store each value under the Windows identity that runs the service, normally `svc-syncfactors-runtime`, using target names like `SyncFactors/SF_AD_SYNC_SF_USERNAME` and `SyncFactors/SF_AD_SYNC_SF_PASSWORD`. To use a different namespace, set the service environment variable `SYNCFACTORS_WINDOWS_CREDENTIAL_PREFIX`; for example `SyncFactors/Production` makes the SuccessFactors password target `SyncFactors/Production/SF_AD_SYNC_SF_PASSWORD`. Do not use credentials stored under your admin/deploy account for service startup; use `Start-Process -Credential <runtime-account> -LoadUserProfile` or an equivalent privileged process to run the credential script as the runtime account.
 
 Run this while logged on as the runtime service account, or through an approved privileged process that creates credentials in that account profile:
 
@@ -841,6 +894,8 @@ If you are using Windows Credential Manager, import values before launching serv
 ```powershell
 pwsh ./scripts/codex/Save-WorktreeEnvToWindowsCredentialManager.ps1
 ```
+
+That worktree import command stores secrets for the current Windows identity. For Windows Services, use it only when the current identity is the service runtime account; otherwise use `scripts/Set-SyncFactorsWindowsCredential.ps1` from a PowerShell session started as the runtime account.
 
 Or start the profile-aware stack in one command:
 
