@@ -69,7 +69,7 @@ public sealed class SqliteDatabaseEncryptionTests : IDisposable
     }
 
     [Fact]
-    public async Task InitializeAsync_ReopensEncryptedDatabase_WhenPasswordIsStillConfigured()
+    public async Task InitializeAsync_ReopensEncryptedDatabase_WhenSamePasswordIsConfigured()
     {
         var databasePath = Path.Combine(Path.GetTempPath(), $"syncfactors-encrypted-reopen-{Guid.NewGuid():N}.db");
         SetSqlitePassword("test-sqlcipher-reopen-password");
@@ -77,7 +77,6 @@ public sealed class SqliteDatabaseEncryptionTests : IDisposable
         try
         {
             var initializer = new SqliteDatabaseInitializer(new SqlitePathResolver(databasePath));
-
             await initializer.InitializeAsync(CancellationToken.None);
             await initializer.InitializeAsync(CancellationToken.None);
 
@@ -91,20 +90,20 @@ public sealed class SqliteDatabaseEncryptionTests : IDisposable
     }
 
     [Fact]
-    public async Task InitializeAsync_Throws_WhenEncryptedDatabasePasswordDoesNotMatch()
+    public async Task InitializeAsync_ThrowsWhenEncryptedDatabaseUsesDifferentPassword()
     {
-        var databasePath = Path.Combine(Path.GetTempPath(), $"syncfactors-encrypted-wrong-key-{Guid.NewGuid():N}.db");
+        var databasePath = Path.Combine(Path.GetTempPath(), $"syncfactors-encrypted-wrong-password-{Guid.NewGuid():N}.db");
 
         try
         {
             SetSqlitePassword("test-sqlcipher-original-password");
             await new SqliteDatabaseInitializer(new SqlitePathResolver(databasePath)).InitializeAsync(CancellationToken.None);
 
-            SetSqlitePassword("test-sqlcipher-wrong-password");
+            SetSqlitePassword("test-sqlcipher-different-password");
             var ex = await Assert.ThrowsAsync<InvalidOperationException>(
                 () => new SqliteDatabaseInitializer(new SqlitePathResolver(databasePath)).InitializeAsync(CancellationToken.None));
 
-            Assert.Contains("configured SQLCipher password", ex.Message, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("configured SQLCipher password", ex.Message, StringComparison.Ordinal);
         }
         finally
         {
