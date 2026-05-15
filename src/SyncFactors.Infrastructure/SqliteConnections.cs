@@ -1,4 +1,5 @@
 using Microsoft.Data.Sqlite;
+using System.Data;
 
 namespace SyncFactors.Infrastructure;
 
@@ -7,6 +8,7 @@ internal static class SqliteConnections
     public const string PasswordEnvironmentVariable = "SYNCFACTORS_SQLITE_PASSWORD";
     public const string ConfigurationPasswordEnvironmentVariable = "SyncFactors__SqlitePassword";
     private const int DefaultCommandTimeoutSeconds = 10;
+    private const int DefaultBusyTimeoutMilliseconds = DefaultCommandTimeoutSeconds * 1000;
 
     static SqliteConnections()
     {
@@ -48,11 +50,48 @@ internal static class SqliteConnections
             builder.Password = password;
         }
 
-        return new SqliteConnection(builder.ToString());
+        var connection = new SqliteConnection(builder.ToString());
+        connection.StateChange += (_, args) =>
+        {
+            if (args.CurrentState == ConnectionState.Open)
+            {
+                ConfigureOpenConnection(connection, mode);
+            }
+        };
+
+        return connection;
     }
 
     public static bool IsBusyOrLocked(SqliteException exception)
     {
         return exception.SqliteErrorCode is 5 or 6;
+    }
+
+    private static void ConfigureOpenConnection(SqliteConnection connection, SqliteOpenMode mode)
+    {
+        using (var busyTimeoutCommand = connection.CreateCommand())
+        {
+            busyTimeoutCommand.CommandText = $"PRAGMA busy_timeout = {DefaultBusyTimeoutMilliseconds};";
+            busyTimeoutCommand.ExecuteNonQuery();
+        }
+
+        if (mode == SqliteOpenMode.ReadOnly ||
+            string.Equals(connection.DataSource, ":memory:", StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        try
+        {
+            using var journalModeCommand = connection.CreateCommand();
+            journalModeCommand.CommandText = "PRAGMA journal_mode = WAL;";
+            _ = journalModeCommand.ExecuteScalar();
+        }
+        catch (SqliteException ex) when (IsBusyOrLocked(ex))
+        {
+            // Another process may be initializing the same runtime database. The
+            // busy timeout still applies, and a later write-capable connection can
+            // enable WAL once the transient lock clears.
+        }
     }
 }
