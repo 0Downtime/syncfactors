@@ -120,6 +120,15 @@ public static class LocalFileLogging
 
         var currentDirectory = Path.GetFullPath(Environment.CurrentDirectory);
         var discoveredRepositoryRoot = TryFindRepositoryRoot(currentDirectory);
+        if (discoveredRepositoryRoot is null && OperatingSystem.IsWindows())
+        {
+            var runtimeRoot = SyncFactorsRuntimePaths.TryGetRuntimeRoot();
+            if (!string.IsNullOrWhiteSpace(runtimeRoot))
+            {
+                return runtimeRoot;
+            }
+        }
+
         return discoveredRepositoryRoot ?? currentDirectory;
     }
 
