@@ -246,6 +246,35 @@ stages:
 
                       New-Item -Path $installRoot -ItemType Directory -Force | Out-Null
 
+                      $existingPatchScript = Join-Path $installRoot 'scripts\Deploy-SyncFactorsWindowsPatch.ps1'
+                      $apiServiceExists = $null -ne (Get-Service -Name $apiServiceName -ErrorAction SilentlyContinue)
+                      $workerServiceExists = $null -ne (Get-Service -Name $workerServiceName -ErrorAction SilentlyContinue)
+                      if ((Test-Path -Path $existingPatchScript -PathType Leaf) -and $apiServiceExists -and $workerServiceExists) {
+                          $patchArgs = @(
+                              '-BundleZip', $bundle.FullName,
+                              '-InstallRoot', $installRoot,
+                              '-ApiServiceName', $apiServiceName,
+                              '-WorkerServiceName', $workerServiceName,
+                              '-RunProfile', $runProfile,
+                              '-ApiUrls', $apiUrls,
+                              '-WindowsCredentialPrefix', $windowsCredentialPrefix,
+                              '-HealthUrl', "https://localhost:$apiPort/Login"
+                          )
+                          if (-not [string]::IsNullOrWhiteSpace('$(tlsCertificateThumbprint)')) {
+                              $patchArgs += @('-TlsCertificateThumbprint', '$(tlsCertificateThumbprint)')
+                          }
+                          if (-not [string]::IsNullOrWhiteSpace('$(sqlitePassword)')) {
+                              $patchArgs += @('-SqlitePassword', '$(sqlitePassword)')
+                          }
+
+                          & $existingPatchScript @patchArgs
+
+                          Get-Service -Name $apiServiceName, $workerServiceName |
+                              Select-Object Name, Status, StartType |
+                              Format-Table -AutoSize
+                          return
+                      }
+
                       Expand-Archive -Path $bundle.FullName -DestinationPath $installRoot -Force
 
                       $prereqScript = Join-Path $installRoot 'scripts\Install-SyncFactorsWindowsPrerequisites.ps1'

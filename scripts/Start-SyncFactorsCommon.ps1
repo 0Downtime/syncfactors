@@ -172,7 +172,6 @@ function Normalize-SyncFactorsCertificateThumbprint {
 
 function Add-SyncFactorsCertificateHostCandidate {
     param(
-        [Parameter(Mandatory)]
         [System.Collections.Generic.List[string]]$Candidates,
         [string]$HostName
     )
