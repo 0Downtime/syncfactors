@@ -29,6 +29,7 @@ variables:
   windowsCredentialPrefix: SyncFactors
   serviceUserName: ''
   serviceUserPassword: ''
+  sqlitePassword: ''
 
 stages:
   - stage: Build
@@ -297,6 +298,9 @@ stages:
                       }
                       if (-not [string]::IsNullOrWhiteSpace('$(tlsCertificateThumbprint)')) {
                           $installArgs += @('-TlsCertificateThumbprint', '$(tlsCertificateThumbprint)')
+                      }
+                      if (-not [string]::IsNullOrWhiteSpace('$(sqlitePassword)')) {
+                          $installArgs += @('-SqlitePassword', '$(sqlitePassword)')
                       }
 
                       & $pwsh -NoProfile -ExecutionPolicy Bypass -File $installScript @installArgs

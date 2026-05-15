@@ -160,14 +160,7 @@ public sealed class SqliteSyncScheduleStore(SqlitePathResolver pathResolver, Tim
     private static DateTimeOffset? ParseDate(string? value) => DateTimeOffset.TryParse(value, out var parsed) ? parsed : null;
 
     private static SqliteConnection OpenConnection(string databasePath)
-    {
-        var connectionString = new SqliteConnectionStringBuilder
-        {
-            DataSource = databasePath,
-            Mode = SqliteOpenMode.ReadWriteCreate
-        }.ToString();
-        return new SqliteConnection(connectionString);
-    }
+        => SqliteConnections.Open(databasePath);
 
     private static async Task<SyncScheduleStatus?> ReadCurrentAsync(SqliteConnection connection, CancellationToken cancellationToken)
     {

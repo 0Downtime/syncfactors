@@ -21,7 +21,13 @@ public sealed class SqliteDatabaseInitializer(SqlitePathResolver pathResolver)
             RuntimeFileSecurity.EnsureDirectory(directory);
         }
 
-        await using var connection = OpenConnection(databasePath);
+        var sqlitePassword = SqliteConnections.GetConfiguredPassword();
+        if (!string.IsNullOrWhiteSpace(sqlitePassword))
+        {
+            await SqliteDatabaseEncryptionMigrator.EnsureEncryptedAsync(databasePath, sqlitePassword, cancellationToken);
+        }
+
+        await using var connection = SqliteConnections.Open(databasePath);
         await connection.OpenAsync(cancellationToken);
 
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
@@ -830,16 +836,6 @@ public sealed class SqliteDatabaseInitializer(SqlitePathResolver pathResolver)
         command.Transaction = (SqliteTransaction)transaction;
         command.CommandText = "ALTER TABLE run_queue ADD COLUMN requested_by TEXT NULL;";
         await command.ExecuteNonQueryAsync(cancellationToken);
-    }
-
-    private static SqliteConnection OpenConnection(string databasePath)
-    {
-        var connectionString = new SqliteConnectionStringBuilder
-        {
-            DataSource = databasePath,
-            Mode = SqliteOpenMode.ReadWriteCreate,
-        }.ToString();
-        return new SqliteConnection(connectionString);
     }
 
 }

@@ -1600,24 +1600,10 @@ public sealed class SqliteRunRepository(SqlitePathResolver pathResolver) : IRunR
     }
 
     private static SqliteConnection OpenConnection(string databasePath)
-    {
-        var connectionString = new SqliteConnectionStringBuilder
-        {
-            DataSource = databasePath,
-            Mode = SqliteOpenMode.ReadWriteCreate,
-        }.ToString();
-        return new SqliteConnection(connectionString);
-    }
+        => SqliteConnections.Open(databasePath);
 
     private static SqliteConnection OpenWriteConnection(string databasePath)
-    {
-        var connectionString = new SqliteConnectionStringBuilder
-        {
-            DataSource = databasePath,
-            Mode = SqliteOpenMode.ReadWriteCreate,
-        }.ToString();
-        return new SqliteConnection(connectionString);
-    }
+        => SqliteConnections.Open(databasePath);
 
     private static void BindRunRecord(SqliteCommand command, RunRecord run)
     {
