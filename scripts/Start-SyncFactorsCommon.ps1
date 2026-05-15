@@ -265,6 +265,33 @@ function Test-SyncFactorsCertificateHostMatch {
     return $prefix.Length -gt 0 -and -not $prefix.Contains('.')
 }
 
+function ConvertTo-SyncFactorsCertificateDnsName {
+    param(
+        [AllowNull()]
+        [object]$DnsName
+    )
+
+    if ($null -eq $DnsName) {
+        return $null
+    }
+
+    if ($DnsName -is [string]) {
+        return $DnsName
+    }
+
+    $unicodeProperty = $DnsName.PSObject.Properties['Unicode']
+    if ($null -ne $unicodeProperty -and -not [string]::IsNullOrWhiteSpace([string]$unicodeProperty.Value)) {
+        return [string]$unicodeProperty.Value
+    }
+
+    $punycodeProperty = $DnsName.PSObject.Properties['Punycode']
+    if ($null -ne $punycodeProperty -and -not [string]::IsNullOrWhiteSpace([string]$punycodeProperty.Value)) {
+        return [string]$punycodeProperty.Value
+    }
+
+    return [string]$DnsName
+}
+
 function Get-SyncFactorsCertificateDnsNames {
     param(
         [Parameter(Mandatory)]
@@ -274,8 +301,9 @@ function Get-SyncFactorsCertificateDnsNames {
     $names = [System.Collections.Generic.List[string]]::new()
     $dnsNameListProperty = $Certificate.PSObject.Properties['DnsNameList']
     if ($null -ne $dnsNameListProperty) {
-        foreach ($dnsName in @($dnsNameListProperty.Value | ForEach-Object { $_.Unicode })) {
-            $null = Add-SyncFactorsCertificateHostCandidate -Candidates $names -HostName $dnsName
+        foreach ($dnsName in @($dnsNameListProperty.Value)) {
+            $resolvedDnsName = ConvertTo-SyncFactorsCertificateDnsName -DnsName $dnsName
+            $null = Add-SyncFactorsCertificateHostCandidate -Candidates $names -HostName $resolvedDnsName
         }
     }
 
