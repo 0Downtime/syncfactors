@@ -174,7 +174,7 @@ Start-Service SyncFactors.Api
 Start-Service SyncFactors.Worker
 ```
 
-The installer creates `SyncFactors.Api` and `SyncFactors.Worker`, registers matching Windows Event Log sources under the Application log, configures restart-on-failure recovery, and writes service environment values for the selected profile, config paths, SQLite path, and local file logging. It also creates local config files from the bundled samples when they are missing. To replace existing service definitions, rerun with `-Force`.
+The installer creates `SyncFactors.Api` and `SyncFactors.Worker`, registers matching Windows Event Log sources under the Application log, configures restart-on-failure recovery, and writes service environment values for the selected profile, config paths, SQLite path, SQLite encryption password, and local file logging. It also creates local config files from the bundled samples when they are missing. SQLite encryption is enabled by default for Windows Services; pass `-SqlitePassword` to provide a managed SQLCipher key, or let the installer generate one and store it in the service environment. To replace existing service definitions, rerun with `-Force`; the installer reuses the existing service password when present.
 
 Uninstall the services from an elevated session:
 
@@ -253,7 +253,7 @@ Configure these Azure DevOps variables before enabling deployment:
 | `createLocalServiceAccount` | Set to `true` to create `serviceUserName` as a local Windows runtime account before installing services. Leave `false` for a pre-created domain account. |
 | `windowsCredentialPrefix` | Windows Credential Manager target prefix used by the services. Defaults to `SyncFactors`. |
 | `serviceUserName` / `serviceUserPassword` | Runtime Windows service credential for `SyncFactors.Api` and `SyncFactors.Worker`. Mark the password secret. |
-| `sqlitePassword` | Optional SQLCipher password for the runtime SQLite database. Mark it secret and keep the same value for API, worker, and automation. |
+| `sqlitePassword` | Optional override for the runtime SQLCipher password. If omitted, the service installer reuses the existing service value or generates one on first install. Mark it secret when set and keep the same value for API, worker, and automation. |
 
 The deployment uses two accounts: a deploy account for Azure DevOps WinRM/file-copy/install actions and a runtime account for the API and worker Windows Services. The runtime account is also the default Active Directory identity: keep `ad.username` and `ad.bindPassword` blank, and SyncFactors binds to AD as the Windows service identity on Windows. The deployment runs [`scripts/Install-SyncFactorsWindowsPrerequisites.ps1`](scripts/Install-SyncFactorsWindowsPrerequisites.ps1) on the server before service installation. That script creates the install/runtime/log directories, installs or verifies PowerShell 7, creates an optional local runtime account, grants `Log on as a service`, grants runtime-account access to the deployment paths, and can open the API firewall port. The app bundle is self-contained, so no separate .NET runtime installation is required on the server.
 
@@ -512,9 +512,11 @@ SF_AD_SYNC_AD_DEFAULT_PASSWORD=
 
 ### SQLite Encryption
 
-Set `SYNCFACTORS_SQLITE_PASSWORD` to enable SQLCipher encryption for the runtime SQLite database. The same value must be present for the API, worker, and automation commands that open the runtime database. The app also recognizes `SyncFactors__SqlitePassword`, but `SYNCFACTORS_SQLITE_PASSWORD` is preferred because it is clearly secret material and should come from the OS secret store or service environment rather than tracked JSON.
+SQLite encryption is enabled by default for Windows Service installs. `scripts/Install-SyncFactorsWindowsServices.ps1` sets `SYNCFACTORS_SQLITE_PASSWORD` in the API and worker service environments by using this order: an explicit `-SqlitePassword`, an existing installed service environment value, the current process `SYNCFACTORS_SQLITE_PASSWORD`, or a newly generated password for a fresh/plaintext database. Use `-DisableSqliteEncryption` only for disposable lab installs that intentionally keep a plaintext runtime database.
 
-When the password is configured and the existing database is still plaintext, startup exports the plaintext database to an encrypted SQLCipher copy, replaces the active database file, and leaves an owner-only `*.plaintext-<timestamp>.bak` rollback copy beside it. Validate startup, then move or securely delete that plaintext backup according to your retention policy. If the password is changed later, the app will not silently rekey an encrypted database; keep the original key available until a deliberate rekey workflow is added.
+For non-service launches, set `SYNCFACTORS_SQLITE_PASSWORD` to enable SQLCipher encryption for the runtime SQLite database. The same value must be present for the API, worker, and automation commands that open the runtime database. The app also recognizes `SyncFactors__SqlitePassword`, but `SYNCFACTORS_SQLITE_PASSWORD` is preferred because it is clearly secret material and should come from the OS secret store or service environment rather than tracked JSON.
+
+When the password is configured and the existing database is still plaintext, startup exports the plaintext database to an encrypted SQLCipher copy, replaces the active database file, and leaves an owner-only `*.plaintext-<timestamp>.bak` rollback copy beside it. Validate startup, then move or securely delete that plaintext backup according to your retention policy. If the password is changed later, the app will not silently rekey an encrypted database; keep the original key available until a deliberate rekey workflow is added. The service installer will stop rather than generate a replacement password when it finds an existing database that does not look plaintext and no current password was supplied or recoverable from the service environment.
 
 `.env.worktree.example` also carries the Entra/OIDC keys and optional auth session tuning values as commented placeholders until you intentionally enable SSO for that worktree.
 

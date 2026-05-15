@@ -16,6 +16,7 @@ param(
     [string]$MappingConfigPath,
     [string]$SqlitePath,
     [string]$SqlitePassword,
+    [switch]$DisableSqliteEncryption,
     [string]$LogDirectory,
     [string]$TlsCertificatePath,
     [string]$TlsCertificatePassword,
@@ -180,6 +181,66 @@ function Set-ServiceRecoveryPolicy {
     }
 }
 
+function Get-ServiceEnvironmentValue {
+    param(
+        [Parameter(Mandatory)]
+        [string[]]$ServiceNames,
+        [Parameter(Mandatory)]
+        [string]$Name
+    )
+
+    foreach ($serviceName in $ServiceNames) {
+        $serviceKey = "HKLM:\SYSTEM\CurrentControlSet\Services\$serviceName"
+        if (-not (Test-Path -Path $serviceKey)) {
+            continue
+        }
+
+        $environment = Get-ItemPropertyValue -Path $serviceKey -Name Environment -ErrorAction SilentlyContinue
+        if ($null -eq $environment) {
+            continue
+        }
+
+        foreach ($entry in @($environment)) {
+            if ($entry.StartsWith("$Name=", [System.StringComparison]::OrdinalIgnoreCase)) {
+                return $entry.Substring($Name.Length + 1)
+            }
+        }
+    }
+
+    return $null
+}
+
+function New-SqliteEncryptionPassword {
+    $bytes = [System.Security.Cryptography.RandomNumberGenerator]::GetBytes(48)
+    return [Convert]::ToBase64String($bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_')
+}
+
+function Test-SqliteDatabaseIsPlaintext {
+    param(
+        [Parameter(Mandatory)]
+        [string]$Path
+    )
+
+    if (-not (Test-Path -Path $Path -PathType Leaf)) {
+        return $false
+    }
+
+    $stream = [System.IO.File]::Open($Path, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
+    try {
+        if ($stream.Length -lt 16) {
+            return $false
+        }
+
+        $bytes = [byte[]]::new(16)
+        [void]$stream.Read($bytes, 0, $bytes.Length)
+        $header = [System.Text.Encoding]::ASCII.GetString($bytes)
+        return $header.StartsWith('SQLite format 3', [System.StringComparison]::Ordinal)
+    }
+    finally {
+        $stream.Dispose()
+    }
+}
+
 function Install-SyncFactorsService {
     param(
         [Parameter(Mandatory)]
@@ -252,9 +313,6 @@ if ([string]::IsNullOrWhiteSpace($ConfigPath)) {
 if ([string]::IsNullOrWhiteSpace($MappingConfigPath)) {
     $MappingConfigPath = Join-Path (Join-Path $resolvedBundleRoot 'config') 'local.syncfactors.mapping-config.json'
 }
-if ([string]::IsNullOrWhiteSpace($SqlitePassword)) {
-    $SqlitePassword = $env:SYNCFACTORS_SQLITE_PASSWORD
-}
 
 $ConfigPath = [System.IO.Path]::GetFullPath($ConfigPath)
 $MappingConfigPath = [System.IO.Path]::GetFullPath($MappingConfigPath)
@@ -263,6 +321,46 @@ $LogDirectory = [System.IO.Path]::GetFullPath($LogDirectory)
 
 New-Item -Path (Split-Path -Path $SqlitePath -Parent) -ItemType Directory -Force | Out-Null
 New-Item -Path $LogDirectory -ItemType Directory -Force | Out-Null
+
+$sqlitePasswordSource = 'disabled'
+if ($DisableSqliteEncryption.IsPresent) {
+    if (-not [string]::IsNullOrWhiteSpace($SqlitePassword)) {
+        throw 'Do not pass -SqlitePassword when -DisableSqliteEncryption is set.'
+    }
+
+    if ((Test-Path -Path $SqlitePath -PathType Leaf) -and -not (Test-SqliteDatabaseIsPlaintext -Path $SqlitePath)) {
+        throw "SQLite encryption cannot be disabled because '$SqlitePath' does not look like a plaintext SQLite database."
+    }
+}
+else {
+    if (-not [string]::IsNullOrWhiteSpace($SqlitePassword)) {
+        $sqlitePasswordSource = 'parameter'
+    }
+
+    if ([string]::IsNullOrWhiteSpace($SqlitePassword)) {
+        $existingSqlitePassword = Get-ServiceEnvironmentValue -ServiceNames @($ApiServiceName, $WorkerServiceName) -Name 'SYNCFACTORS_SQLITE_PASSWORD'
+        if (-not [string]::IsNullOrWhiteSpace($existingSqlitePassword)) {
+            $SqlitePassword = $existingSqlitePassword
+            $sqlitePasswordSource = 'existing-service-environment'
+        }
+    }
+
+    if ([string]::IsNullOrWhiteSpace($SqlitePassword)) {
+        $SqlitePassword = $env:SYNCFACTORS_SQLITE_PASSWORD
+        if (-not [string]::IsNullOrWhiteSpace($SqlitePassword)) {
+            $sqlitePasswordSource = 'environment'
+        }
+    }
+
+    if ([string]::IsNullOrWhiteSpace($SqlitePassword)) {
+        if ((Test-Path -Path $SqlitePath -PathType Leaf) -and -not (Test-SqliteDatabaseIsPlaintext -Path $SqlitePath)) {
+            throw "Existing SQLite database '$SqlitePath' does not look plaintext and no SQLCipher password was supplied or found in the existing service environment. Re-run with -SqlitePassword or set SYNCFACTORS_SQLITE_PASSWORD to the original database password."
+        }
+
+        $SqlitePassword = New-SqliteEncryptionPassword
+        $sqlitePasswordSource = 'generated'
+    }
+}
 
 $commonEnvironment = @(
     "DOTNET_ENVIRONMENT=Production",
@@ -342,6 +440,7 @@ if ($Service -in @('All', 'Worker')) {
     mappingConfigPath = $MappingConfigPath
     sqlitePath = $SqlitePath
     sqliteEncryption = if ([string]::IsNullOrWhiteSpace($SqlitePassword)) { 'disabled' } else { 'enabled' }
+    sqlitePasswordSource = $sqlitePasswordSource
     logDirectory = $LogDirectory
     eventLog = 'Application'
 }
