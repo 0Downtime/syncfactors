@@ -1,7 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using Serilog;
 using SyncFactors.Domain;
 using SyncFactors.Infrastructure;
 using SyncFactors.Worker;
@@ -251,24 +250,7 @@ static void ConfigureLocalFileLogging(
         return;
     }
 
-    var logPath = LocalFileLogging.ResolveRollingFilePath(processName, directoryValue);
-    var logDirectory = Path.GetDirectoryName(logPath);
-    if (!string.IsNullOrWhiteSpace(logDirectory))
-    {
-        Directory.CreateDirectory(logDirectory);
-    }
-
-    var logger = new LoggerConfiguration()
-        .MinimumLevel.Verbose()
-        .Enrich.FromLogContext()
-        .WriteTo.File(
-            path: logPath,
-            rollingInterval: RollingInterval.Day,
-            retainedFileCountLimit: 7,
-            outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level:u3}] {SourceContext}: {Message:lj}{NewLine}{Exception}")
-        .CreateLogger();
-
-    logging.AddSerilog(logger, dispose: true);
+    logging.AddProvider(new LocalFileLoggerProvider(processName, directoryValue));
     logging.AddProvider(new RunScopedFileLoggerProvider(directoryValue));
 }
 

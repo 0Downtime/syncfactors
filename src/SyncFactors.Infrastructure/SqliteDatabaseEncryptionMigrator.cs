@@ -47,9 +47,7 @@ internal static class SqliteDatabaseEncryptionMigrator
         {
             await using var connection = Open(databasePath, password);
             await connection.OpenAsync(cancellationToken);
-            await using var command = connection.CreateCommand();
-            command.CommandText = "SELECT COUNT(*) FROM sqlite_master;";
-            await command.ExecuteScalarAsync(cancellationToken);
+            await CountSqliteObjectsAsync(connection, cancellationToken);
             return true;
         }
         catch (SqliteException)
@@ -76,9 +74,7 @@ internal static class SqliteDatabaseEncryptionMigrator
         {
             await using var connection = SqliteConnections.OpenPlaintext(databasePath);
             await connection.OpenAsync(cancellationToken);
-            await using var command = connection.CreateCommand();
-            command.CommandText = "SELECT COUNT(*) FROM sqlite_master;";
-            await command.ExecuteScalarAsync(cancellationToken);
+            await CountSqliteObjectsAsync(connection, cancellationToken);
             return true;
         }
         catch (SqliteException)
@@ -101,11 +97,7 @@ internal static class SqliteDatabaseEncryptionMigrator
             await using (var connection = SqliteConnections.OpenPlaintext(databasePath))
             {
                 await connection.OpenAsync(cancellationToken);
-                await using (var checkpoint = connection.CreateCommand())
-                {
-                    checkpoint.CommandText = "PRAGMA wal_checkpoint(TRUNCATE);";
-                    await checkpoint.ExecuteNonQueryAsync(cancellationToken);
-                }
+                await TruncateWalAsync(connection, cancellationToken);
 
                 await using (var attach = connection.CreateCommand())
                 {
@@ -115,17 +107,8 @@ internal static class SqliteDatabaseEncryptionMigrator
                     await attach.ExecuteNonQueryAsync(cancellationToken);
                 }
 
-                await using (var export = connection.CreateCommand())
-                {
-                    export.CommandText = "SELECT sqlcipher_export('encrypted');";
-                    await export.ExecuteNonQueryAsync(cancellationToken);
-                }
-
-                await using (var detach = connection.CreateCommand())
-                {
-                    detach.CommandText = "DETACH DATABASE encrypted;";
-                    await detach.ExecuteNonQueryAsync(cancellationToken);
-                }
+                await ExportEncryptedDatabaseAsync(connection, cancellationToken);
+                await DetachEncryptedDatabaseAsync(connection, cancellationToken);
             }
 
             File.Move(databasePath, backupPath);
@@ -160,6 +143,42 @@ internal static class SqliteDatabaseEncryptionMigrator
         };
 
         return new SqliteConnection(builder.ToString());
+    }
+
+    private static async Task<object?> CountSqliteObjectsAsync(
+        SqliteConnection connection,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT COUNT(*) FROM sqlite_master;";
+        return await command.ExecuteScalarAsync(cancellationToken);
+    }
+
+    private static async Task TruncateWalAsync(
+        SqliteConnection connection,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = "PRAGMA wal_checkpoint(TRUNCATE);";
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task ExportEncryptedDatabaseAsync(
+        SqliteConnection connection,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT sqlcipher_export('encrypted');";
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task DetachEncryptedDatabaseAsync(
+        SqliteConnection connection,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = "DETACH DATABASE encrypted;";
+        await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     private static void MoveIfExists(string sourcePath, string destinationPath)
