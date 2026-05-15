@@ -309,7 +309,7 @@ public sealed class SuccessFactorsUserLookupService(
             return $"SuccessFactors request failed. Status={(int)response.StatusCode}, ContentType={contentType}.";
         }
 
-        return $"SuccessFactors request failed. Status={(int)response.StatusCode}, ContentType={contentType}, BodyPreview={LogSafety.SingleLine(body)}";
+        return $"SuccessFactors request failed. Status={(int)response.StatusCode}, ContentType={contentType}, BodyPreview={LogSafety.RedactPii(body)}";
     }
 
     private static int CountItems(JsonElement root)

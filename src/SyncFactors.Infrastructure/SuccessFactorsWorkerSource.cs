@@ -857,7 +857,7 @@ public sealed class SuccessFactorsWorkerSource(
             return "(empty)";
         }
 
-        return LogSafety.SingleLine(value);
+        return LogSafety.RedactPii(value);
     }
 
     private static InvalidOperationException CreateDetailedSuccessFactorsException(

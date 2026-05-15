@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using SyncFactors.Domain;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -22,12 +23,16 @@ public sealed class SecurityAuditService(ILogger<SecurityAuditService> logger) :
         var values = fields
             .Where(field => field.Value is not null)
             .ToDictionary(field => field.Key, field => field.Value, StringComparer.OrdinalIgnoreCase);
+        var logValues = values.ToDictionary(
+            field => field.Key,
+            field => LogSafety.RedactStructuredValue(field.Value),
+            StringComparer.OrdinalIgnoreCase);
 
         logger.LogInformation(
             "SecurityAudit EventType={EventType} Outcome={Outcome} Fields={Fields}",
             eventType,
             outcome,
-            values);
+            logValues);
 
         AppendJsonLine(eventType, outcome, values);
     }
