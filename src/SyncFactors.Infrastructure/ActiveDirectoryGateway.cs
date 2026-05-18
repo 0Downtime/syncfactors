@@ -305,8 +305,12 @@ public sealed class ActiveDirectoryGateway(
         var clauses = new List<(string Attribute, string Value)>();
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-        AddLookupClause(clauses, seen, config.IdentityAttribute, ResolveDirectoryIdentityValue(worker, config.IdentityAttribute, mappings));
-        AddLookupClause(clauses, seen, "sAMAccountName", worker.WorkerId);
+        var directoryIdentityValue = ResolveDirectoryIdentityValue(worker, config.IdentityAttribute, mappings);
+        AddLookupClause(clauses, seen, config.IdentityAttribute, directoryIdentityValue.Value);
+        if (ShouldAddWorkerSamAccountNameFallback(worker, directoryIdentityValue))
+        {
+            AddLookupClause(clauses, seen, "sAMAccountName", worker.WorkerId);
+        }
         if (config.IdentityCorrelation?.Enabled == true)
         {
             AddLookupClause(clauses, seen, config.IdentityCorrelation.SuccessorPersonIdExternalAttribute, worker.WorkerId);
@@ -360,7 +364,7 @@ public sealed class ActiveDirectoryGateway(
                 .OrderBy(name => name, StringComparer.OrdinalIgnoreCase));
     }
 
-    private static string ResolveDirectoryIdentityValue(
+    private static DirectoryIdentityLookupValue ResolveDirectoryIdentityValue(
         WorkerSnapshot worker,
         string identityAttribute,
         IReadOnlyList<AttributeMapping> mappings)
@@ -368,7 +372,7 @@ public sealed class ActiveDirectoryGateway(
         if (worker.Attributes.TryGetValue(identityAttribute, out var directValue) &&
             !string.IsNullOrWhiteSpace(directValue))
         {
-            return directValue.Trim();
+            return new DirectoryIdentityLookupValue(directValue.Trim(), UsedWorkerIdFallback: false);
         }
 
         var mapping = mappings.FirstOrDefault(candidate =>
@@ -378,7 +382,7 @@ public sealed class ActiveDirectoryGateway(
             var mappedValue = ApplyMappingTransform(ResolveMappedSourceValue(worker, mapping.Source), mapping.Transform);
             if (!string.IsNullOrWhiteSpace(mappedValue))
             {
-                return mappedValue;
+                return new DirectoryIdentityLookupValue(mappedValue, UsedWorkerIdFallback: false);
             }
         }
 
@@ -386,11 +390,21 @@ public sealed class ActiveDirectoryGateway(
             worker.Attributes.TryGetValue("personIdExternal", out var personIdExternal) &&
             !string.IsNullOrWhiteSpace(personIdExternal))
         {
-            return personIdExternal.Trim();
+            return new DirectoryIdentityLookupValue(personIdExternal.Trim(), UsedWorkerIdFallback: false);
         }
 
-        return worker.WorkerId;
+        return new DirectoryIdentityLookupValue(worker.WorkerId, UsedWorkerIdFallback: true);
     }
+
+    private static bool ShouldAddWorkerSamAccountNameFallback(
+        WorkerSnapshot worker,
+        DirectoryIdentityLookupValue directoryIdentityValue)
+    {
+        return directoryIdentityValue.UsedWorkerIdFallback ||
+               string.Equals(directoryIdentityValue.Value, worker.WorkerId, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private sealed record DirectoryIdentityLookupValue(string Value, bool UsedWorkerIdFallback);
 
     private static string? ResolveMappedSourceValue(WorkerSnapshot worker, string source)
     {

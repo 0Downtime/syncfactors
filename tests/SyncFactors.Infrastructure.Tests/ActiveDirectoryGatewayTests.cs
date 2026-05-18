@@ -185,7 +185,7 @@ public sealed class ActiveDirectoryGatewayTests
     }
 
     [Fact]
-    public void BuildLookupClauses_UsesMappedIdentityValueAndSamFallback()
+    public void BuildLookupClauses_UsesMappedIdentityValueWithoutWorkerIdSamFallback()
     {
         var method = typeof(ActiveDirectoryGateway).GetMethod(
             "BuildLookupClauses",
@@ -212,8 +212,8 @@ public sealed class ActiveDirectoryGatewayTests
         var clauses = Assert.IsAssignableFrom<IReadOnlyList<(string Attribute, string Value)>>(
             method!.Invoke(null, [worker, CreateConfig(), mappings]));
 
-        Assert.Contains(("employeeID", "10000"), clauses);
-        Assert.Contains(("sAMAccountName", "user.10000"), clauses);
+        var clause = Assert.Single(clauses);
+        Assert.Equal(("employeeID", "10000"), clause);
     }
 
     [Fact]
@@ -242,6 +242,39 @@ public sealed class ActiveDirectoryGatewayTests
         Assert.Equal(2, clauses.Count);
         Assert.Contains(("employeeID", "10000"), clauses);
         Assert.Contains(("sAMAccountName", "10000"), clauses);
+    }
+
+    [Fact]
+    public void BuildLookupClauses_UsesMappedSamAccountNameOnly_WhenSourceIdentitiesDiffer()
+    {
+        var method = typeof(ActiveDirectoryGateway).GetMethod(
+            "BuildLookupClauses",
+            BindingFlags.NonPublic | BindingFlags.Static);
+        Assert.NotNull(method);
+
+        var worker = new SyncFactors.Contracts.WorkerSnapshot(
+            WorkerId: "46309",
+            PreferredName: "Preferred46309",
+            LastName: "Sample46309",
+            Department: "IT",
+            TargetOu: "OU=Users,DC=example,DC=com",
+            IsPrehire: false,
+            Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["personIdExternal"] = "46305",
+                ["userId"] = "46309"
+            });
+        var mappings = new[]
+        {
+            new SyncFactors.Domain.AttributeMapping("personIdExternal", "sAMAccountName", Required: true, Transform: "Trim")
+        };
+
+        var config = CreateConfig() with { IdentityAttribute = "sAMAccountName" };
+        var clauses = Assert.IsAssignableFrom<IReadOnlyList<(string Attribute, string Value)>>(
+            method!.Invoke(null, [worker, config, mappings]));
+
+        var clause = Assert.Single(clauses);
+        Assert.Equal(("sAMAccountName", "46305"), clause);
     }
 
     [Fact]
