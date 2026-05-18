@@ -29,7 +29,6 @@ public sealed class WorkerPlanningService(
             DisplayName: null,
             Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase));
         var identityReview = default((string ReviewCategory, string ReviewCaseType, string Reason)?);
-        var sourceReview = ResolveSourceReview(worker);
         try
         {
             directoryUser = await directoryGateway.FindByWorkerAsync(worker, cancellationToken) ?? directoryUser;
@@ -39,6 +38,9 @@ public sealed class WorkerPlanningService(
             logger.LogWarning(ex, "Worker identity lookup is ambiguous. WorkerId={WorkerId}", worker.WorkerId);
             identityReview = ("DirectoryIdentity", "AmbiguousWorkerIdentity", ex.Message);
         }
+
+        identityReview ??= ResolveMatchedSamAccountNameReview(worker, directoryUser);
+        var sourceReview = ResolveSourceReview(worker);
 
         var managerId = worker.Attributes.TryGetValue("managerId", out var resolvedManagerId) ? resolvedManagerId : null;
         string? managerDistinguishedName = null;
@@ -217,6 +219,37 @@ public sealed class WorkerPlanningService(
             : "Worker source data was ambiguous.";
 
         return (reviewCategory, reviewCaseType, reason);
+    }
+
+    private (string ReviewCategory, string ReviewCaseType, string Reason)? ResolveMatchedSamAccountNameReview(
+        WorkerSnapshot worker,
+        DirectoryUserSnapshot directoryUser)
+    {
+        if (!string.Equals(_identityCorrelationSettings.IdentityAttribute, "sAMAccountName", StringComparison.OrdinalIgnoreCase) ||
+            string.IsNullOrWhiteSpace(directoryUser.SamAccountName) ||
+            string.Equals(directoryUser.SamAccountName, worker.WorkerId, StringComparison.OrdinalIgnoreCase) ||
+            IsConfiguredIdentityCorrelationMatch(worker, directoryUser))
+        {
+            return null;
+        }
+
+        return (
+            "DirectoryIdentity",
+            "SourceIdentityMismatch",
+            $"Matched AD account '{directoryUser.SamAccountName}', but source worker id is '{worker.WorkerId}'. Automatic sync is held to avoid updating a different AD account.");
+    }
+
+    private bool IsConfiguredIdentityCorrelationMatch(WorkerSnapshot worker, DirectoryUserSnapshot directoryUser)
+    {
+        if (!_identityCorrelationSettings.Enabled)
+        {
+            return false;
+        }
+
+        var successorValue = ResolveDirectoryAttribute(directoryUser, _identityCorrelationSettings.SuccessorPersonIdExternalAttribute);
+        var previousValue = ResolveDirectoryAttribute(directoryUser, _identityCorrelationSettings.PreviousPersonIdExternalAttribute);
+        return string.Equals(successorValue, worker.WorkerId, StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(previousValue, worker.WorkerId, StringComparison.OrdinalIgnoreCase);
     }
 
     private IdentityCorrelationDecision ResolveIdentityCorrelation(

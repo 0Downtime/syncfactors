@@ -38,6 +38,46 @@ public sealed class WorkerPlanningServiceTests
     }
 
     [Fact]
+    public async Task PlanAsync_MatchedDifferentSamAccountNameWithSamIdentityRequiresManualReview()
+    {
+        var service = CreateService(
+            directoryUser: new DirectoryUserSnapshot(
+                SamAccountName: "46305",
+                DistinguishedName: "CN=46305,OU=Employees,DC=example,DC=com",
+                Enabled: true,
+                DisplayName: "Worker 46305",
+                Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+                {
+                    ["sAMAccountName"] = "46305",
+                    ["UserPrincipalName"] = "46305@example.com",
+                    ["mail"] = "46305@example.com"
+                }),
+            attributeDiffService: new ThrowingAttributeDiffService(),
+            identityCorrelationSettings: new IdentityCorrelationSettings(
+                Enabled: false,
+                IdentityAttribute: "sAMAccountName",
+                SuccessorPersonIdExternalAttribute: null,
+                PreviousPersonIdExternalAttribute: null));
+
+        var plan = await service.PlanAsync(CreateWorker("46309", new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["emplStatus"] = "64300",
+            ["personIdExternal"] = "46305",
+            ["userId"] = "46309"
+        }), logPath: null, CancellationToken.None);
+
+        Assert.Equal("manualReview", plan.Bucket);
+        Assert.Equal("DirectoryIdentity", plan.ReviewCategory);
+        Assert.Equal("SourceIdentityMismatch", plan.ReviewCaseType);
+        Assert.Contains("Matched AD account '46305'", plan.Reason);
+        Assert.False(plan.CanAutoApply);
+        Assert.Empty(plan.Operations);
+        Assert.NotNull(plan.DecisionSteps);
+        var decisionSteps = plan.DecisionSteps;
+        Assert.Contains(decisionSteps, step => step.Step == "Directory Identity" && step.Outcome == "Blocked");
+    }
+
+    [Fact]
     public async Task PlanAsync_ResolvedManagerAddsManagerAttributeChangeAndUpdateOperation()
     {
         var directoryGateway = new StubDirectoryGateway(
@@ -103,7 +143,8 @@ public sealed class WorkerPlanningServiceTests
         DirectoryUserSnapshot? directoryUser,
         IDirectoryGateway? directoryGateway = null,
         IAttributeDiffService? attributeDiffService = null,
-        IAttributeMappingProvider? attributeMappingProvider = null)
+        IAttributeMappingProvider? attributeMappingProvider = null,
+        IdentityCorrelationSettings? identityCorrelationSettings = null)
     {
         return new WorkerPlanningService(
             directoryGateway ?? new StubDirectoryGateway(directoryUser, managerDistinguishedName: null),
@@ -117,7 +158,8 @@ public sealed class WorkerPlanningServiceTests
                 DirectoryIdentityAttribute: "employeeID")),
             attributeDiffService ?? new StaticAttributeDiffService([]),
             attributeMappingProvider ?? new StaticAttributeMappingProvider([]),
-            NullLogger<WorkerPlanningService>.Instance);
+            NullLogger<WorkerPlanningService>.Instance,
+            identityCorrelationSettings: identityCorrelationSettings);
     }
 
     private static WorkerSnapshot CreateWorker(string workerId, IReadOnlyDictionary<string, string?> attributes)

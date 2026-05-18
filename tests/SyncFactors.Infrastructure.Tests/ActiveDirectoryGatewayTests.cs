@@ -185,7 +185,7 @@ public sealed class ActiveDirectoryGatewayTests
     }
 
     [Fact]
-    public void BuildLookupClauses_UsesMappedIdentityValueWithoutWorkerIdSamFallback()
+    public void BuildLookupClauses_UsesMappedIdentityValueAndSamFallback()
     {
         var method = typeof(ActiveDirectoryGateway).GetMethod(
             "BuildLookupClauses",
@@ -212,8 +212,8 @@ public sealed class ActiveDirectoryGatewayTests
         var clauses = Assert.IsAssignableFrom<IReadOnlyList<(string Attribute, string Value)>>(
             method!.Invoke(null, [worker, CreateConfig(), mappings]));
 
-        var clause = Assert.Single(clauses);
-        Assert.Equal(("employeeID", "10000"), clause);
+        Assert.Contains(("employeeID", "10000"), clauses);
+        Assert.Contains(("sAMAccountName", "user.10000"), clauses);
     }
 
     [Fact]
@@ -245,7 +245,7 @@ public sealed class ActiveDirectoryGatewayTests
     }
 
     [Fact]
-    public void BuildLookupClauses_UsesMappedSamAccountNameOnly_WhenSourceIdentitiesDiffer()
+    public void BuildLookupClauses_KeepsWorkerIdSamFallback_WhenSourceIdentitiesDiffer()
     {
         var method = typeof(ActiveDirectoryGateway).GetMethod(
             "BuildLookupClauses",
@@ -273,8 +273,8 @@ public sealed class ActiveDirectoryGatewayTests
         var clauses = Assert.IsAssignableFrom<IReadOnlyList<(string Attribute, string Value)>>(
             method!.Invoke(null, [worker, config, mappings]));
 
-        var clause = Assert.Single(clauses);
-        Assert.Equal(("sAMAccountName", "46305"), clause);
+        Assert.Contains(("sAMAccountName", "46305"), clauses);
+        Assert.Contains(("sAMAccountName", "46309"), clauses);
     }
 
     [Fact]
