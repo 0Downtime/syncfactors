@@ -245,6 +245,39 @@ public sealed class ActiveDirectoryGatewayTests
     }
 
     [Fact]
+    public void BuildLookupClauses_KeepsWorkerIdSamFallback_WhenSourceIdentitiesDiffer()
+    {
+        var method = typeof(ActiveDirectoryGateway).GetMethod(
+            "BuildLookupClauses",
+            BindingFlags.NonPublic | BindingFlags.Static);
+        Assert.NotNull(method);
+
+        var worker = new SyncFactors.Contracts.WorkerSnapshot(
+            WorkerId: "46309",
+            PreferredName: "Preferred46309",
+            LastName: "Sample46309",
+            Department: "IT",
+            TargetOu: "OU=Users,DC=example,DC=com",
+            IsPrehire: false,
+            Attributes: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["personIdExternal"] = "46305",
+                ["userId"] = "46309"
+            });
+        var mappings = new[]
+        {
+            new SyncFactors.Domain.AttributeMapping("personIdExternal", "sAMAccountName", Required: true, Transform: "Trim")
+        };
+
+        var config = CreateConfig() with { IdentityAttribute = "sAMAccountName" };
+        var clauses = Assert.IsAssignableFrom<IReadOnlyList<(string Attribute, string Value)>>(
+            method!.Invoke(null, [worker, config, mappings]));
+
+        Assert.Contains(("sAMAccountName", "46305"), clauses);
+        Assert.Contains(("sAMAccountName", "46309"), clauses);
+    }
+
+    [Fact]
     public void BuildLookupClauses_IncludesIdentityCorrelationAttributesWhenEnabled()
     {
         var method = typeof(ActiveDirectoryGateway).GetMethod(
