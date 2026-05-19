@@ -76,12 +76,13 @@ public sealed class WorkerPlanningService(
         var proposedEmailAddress = string.Empty;
         var attributeChanges = new List<AttributeChange>();
         IReadOnlyList<MissingSourceAttributeRow> missingSourceAttributes = [];
-        var hasAmbiguousWorkerIdentity = string.Equals(identityReview?.ReviewCaseType, "AmbiguousWorkerIdentity", StringComparison.Ordinal);
+        var hasWorkerIdentityReviewBlock = identityReview is not null &&
+            !string.Equals(identityReview.Value.ReviewCaseType, "AmbiguousManagerIdentity", StringComparison.Ordinal);
         var hasSourceReviewBlock = sourceReview is not null;
         var hasIdentityCorrelationReviewBlock = identityCorrelation.Review is not null;
         var suppressDiffGeneration = suppressInactiveCreateValidation || identityCorrelation.IsSupersededInactive;
 
-        if (!suppressDiffGeneration && !hasAmbiguousWorkerIdentity && !hasSourceReviewBlock && !hasIdentityCorrelationReviewBlock)
+        if (!suppressDiffGeneration && !hasWorkerIdentityReviewBlock && !hasSourceReviewBlock && !hasIdentityCorrelationReviewBlock)
         {
             proposedEmailAddress = _emailAddressPolicy.BuildEmailAddress(
                 await directoryGateway.ResolveAvailableEmailLocalPartAsync(
@@ -163,7 +164,7 @@ public sealed class WorkerPlanningService(
             identity,
             lifecycle,
             suppressInactiveCreateValidation,
-            hasAmbiguousWorkerIdentity,
+            hasWorkerIdentityReviewBlock,
             hasSourceReviewBlock,
             proposedEmailAddress,
             attributeChanges,
@@ -567,7 +568,7 @@ public sealed class WorkerPlanningService(
         IdentityMatchResult identity,
         LifecycleDecision lifecycle,
         bool suppressInactiveCreateValidation,
-        bool hasAmbiguousWorkerIdentity,
+        bool hasWorkerIdentityReviewBlock,
         bool hasSourceReviewBlock,
         string? proposedEmailAddress,
         IReadOnlyList<AttributeChange> attributeChanges,
@@ -591,7 +592,7 @@ public sealed class WorkerPlanningService(
             : " Worker is not marked as prehire.";
         steps.Add(new ProvisioningDecisionStep("Source Worker", "Loaded", sourceSummary));
 
-        if (string.Equals(identityReview?.ReviewCaseType, "AmbiguousWorkerIdentity", StringComparison.Ordinal))
+        if (hasWorkerIdentityReviewBlock)
         {
             var review = identityReview!.Value;
             steps.Add(new ProvisioningDecisionStep("Directory Identity", "Blocked", review.Reason, "warn"));
@@ -662,12 +663,12 @@ public sealed class WorkerPlanningService(
                 "Required-mapping validation was skipped because source data requires manual review.",
                 "warn"));
         }
-        else if (hasAmbiguousWorkerIdentity)
+        else if (hasWorkerIdentityReviewBlock)
         {
             steps.Add(new ProvisioningDecisionStep(
                 "Required Inputs",
                 "Skipped",
-                "Required-mapping validation was skipped because worker identity resolution is ambiguous.",
+                "Required-mapping validation was skipped because directory identity review blocked automatic planning.",
                 "warn"));
         }
         else if (missingSourceAttributes.Count > 0)
@@ -705,7 +706,7 @@ public sealed class WorkerPlanningService(
                 "No proposed email was computed because source data requires manual review.",
                 "warn"));
         }
-        else if (hasAmbiguousWorkerIdentity)
+        else if (hasWorkerIdentityReviewBlock)
         {
             steps.Add(new ProvisioningDecisionStep(
                 "Email Resolution",
@@ -753,12 +754,12 @@ public sealed class WorkerPlanningService(
                 "No mapped attribute diff was generated because source data requires manual review.",
                 "warn"));
         }
-        else if (hasAmbiguousWorkerIdentity)
+        else if (hasWorkerIdentityReviewBlock)
         {
             steps.Add(new ProvisioningDecisionStep(
                 "Attribute Diff",
                 "Skipped",
-                "No mapped attribute diff was generated because worker identity review blocked planning.",
+                "No mapped attribute diff was generated because directory identity review blocked planning.",
                 "warn"));
         }
         else
