@@ -8,7 +8,6 @@ internal static class SqliteConnections
     public const string PasswordEnvironmentVariable = "SYNCFACTORS_SQLITE_PASSWORD";
     public const string ConfigurationPasswordEnvironmentVariable = "SyncFactors__SqlitePassword";
     private const int DefaultCommandTimeoutSeconds = 10;
-    private const int DefaultBusyTimeoutMilliseconds = DefaultCommandTimeoutSeconds * 1000;
 
     static SqliteConnections()
     {
@@ -71,7 +70,7 @@ internal static class SqliteConnections
     {
         using (var busyTimeoutCommand = connection.CreateCommand())
         {
-            busyTimeoutCommand.CommandText = $"PRAGMA busy_timeout = {DefaultBusyTimeoutMilliseconds};";
+            busyTimeoutCommand.CommandText = "PRAGMA busy_timeout = 5000;";
             busyTimeoutCommand.ExecuteNonQuery();
         }
 
