@@ -189,4 +189,51 @@ public sealed class RunScopedFileLoggerProviderTests
     {
         Assert.Equal(expected, LocalFileLogging.ResolveRetainedFileCountLimit(configuredValue, defaultValue));
     }
+
+    [Fact]
+    public void Configure_WhenRunLoggingDisabled_WritesOnlyProcessLog()
+    {
+        var logRoot = Path.Combine(Path.GetTempPath(), "syncfactors-local-logs", Guid.NewGuid().ToString("N"));
+        using var loggerFactory = LoggerFactory.Create(logging => LocalFileLogging.Configure(
+            logging,
+            processName: "api",
+            enabledValue: "true",
+            directoryValue: logRoot,
+            retainedFileCountLimitValue: "2",
+            runLoggingEnabledValue: "false",
+            runRetainedFileCountLimitValue: "1"));
+        var logger = loggerFactory.CreateLogger("Tests.Local");
+
+        using (logger.BeginScope(new Dictionary<string, object?> { ["RunId"] = "run-with-disabled-run-log" }))
+        {
+            logger.LogInformation("Process log only.");
+        }
+
+        var processLogPath = LocalFileLogging.ResolveDatedFilePath("api", logRoot, DateTimeOffset.Now);
+        Assert.True(File.Exists(processLogPath));
+        Assert.False(Directory.Exists(LocalFileLogging.ResolveRunLogDirectory(logRoot)));
+    }
+
+    [Fact]
+    public void Configure_WhenRunLoggingEnabled_WritesProcessAndRunLogs()
+    {
+        var logRoot = Path.Combine(Path.GetTempPath(), "syncfactors-local-logs", Guid.NewGuid().ToString("N"));
+        using var loggerFactory = LoggerFactory.Create(logging => LocalFileLogging.Configure(
+            logging,
+            processName: "worker",
+            enabledValue: "true",
+            directoryValue: logRoot,
+            retainedFileCountLimitValue: "2",
+            runLoggingEnabledValue: "true",
+            runRetainedFileCountLimitValue: "1"));
+        var logger = loggerFactory.CreateLogger("Tests.Local");
+
+        using (logger.BeginScope(new Dictionary<string, object?> { ["RunId"] = "run-with-enabled-run-log" }))
+        {
+            logger.LogInformation("Process and run logs.");
+        }
+
+        Assert.True(File.Exists(LocalFileLogging.ResolveDatedFilePath("worker", logRoot, DateTimeOffset.Now)));
+        Assert.True(File.Exists(LocalFileLogging.ResolveRunLogPath("run-with-enabled-run-log", logRoot)));
+    }
 }
