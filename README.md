@@ -644,9 +644,12 @@ To enable local rolling file logs for the SyncFactors API and worker, add these 
 ```bash
 SYNCFACTORS_LOCAL_FILE_LOGGING_ENABLED=true
 SYNCFACTORS_LOCAL_LOG_DIRECTORY=
+SYNCFACTORS_LOCAL_LOG_RETAINED_FILE_COUNT=7
+SYNCFACTORS_RUN_FILE_LOGGING_ENABLED=false
+SYNCFACTORS_RUN_LOG_RETAINED_FILE_COUNT=200
 ```
 
-When enabled, the API writes `api-*.log` and the worker writes `worker-*.log` with daily rotation and 7 retained files. Sync execution logs are also duplicated into one file per run under `runs/<runId>.log` in the same log directory, and preview logs are written under `preview-logs/` in that same root. Leave `SYNCFACTORS_LOCAL_LOG_DIRECTORY` blank to use the default `./logs` directory under the SyncFactors working directory.
+When enabled, the API writes `api-*.log` and the worker writes `worker-*.log` with daily rotation and 7 retained files by default. Per-run duplicate logs under `runs/<runId>.log` are disabled by default to keep disk usage down; set `SYNCFACTORS_RUN_FILE_LOGGING_ENABLED=true` only when troubleshooting needs a separate run-scoped text log. When per-run logs are enabled, SyncFactors retains the newest 200 run log files by default. Preview logs are written under `preview-logs/` in that same root. Leave `SYNCFACTORS_LOCAL_LOG_DIRECTORY` blank to use the default runtime log directory.
 
 To send API and worker telemetry to Azure Application Insights, set:
 

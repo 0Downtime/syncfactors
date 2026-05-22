@@ -4,14 +4,18 @@ public static class LocalFileLogging
 {
     public const string EnabledEnvironmentVariable = "SYNCFACTORS_LOCAL_FILE_LOGGING_ENABLED";
     public const string DirectoryEnvironmentVariable = "SYNCFACTORS_LOCAL_LOG_DIRECTORY";
+    public const string RetainedFileCountLimitEnvironmentVariable = "SYNCFACTORS_LOCAL_LOG_RETAINED_FILE_COUNT";
+    public const string RunFileLoggingEnabledEnvironmentVariable = "SYNCFACTORS_RUN_FILE_LOGGING_ENABLED";
+    public const string RunRetainedFileCountLimitEnvironmentVariable = "SYNCFACTORS_RUN_LOG_RETAINED_FILE_COUNT";
     public const int RetainedFileCountLimit = 7;
+    public const int RunRetainedFileCountLimit = 200;
     private const string RepositoryRootEnvironmentVariable = "REPO_ROOT";
 
-    public static bool IsEnabled(string? configuredValue)
+    public static bool IsEnabled(string? configuredValue, bool defaultValue = true)
     {
         if (string.IsNullOrWhiteSpace(configuredValue))
         {
-            return true;
+            return defaultValue;
         }
 
         return configuredValue.Trim().ToLowerInvariant() switch
@@ -26,6 +30,18 @@ public static class LocalFileLogging
             "yes" => true,
             _ => false
         };
+    }
+
+    public static int ResolveRetainedFileCountLimit(string? configuredValue, int defaultValue)
+    {
+        if (string.IsNullOrWhiteSpace(configuredValue))
+        {
+            return defaultValue;
+        }
+
+        return int.TryParse(configuredValue.Trim(), out var parsed) && parsed > 0
+            ? parsed
+            : defaultValue;
     }
 
     public static string ResolveDirectory(string? configuredDirectory)
@@ -63,6 +79,42 @@ public static class LocalFileLogging
 
         var files = Directory
             .EnumerateFiles(directory, $"{processName}-*.log", SearchOption.TopDirectoryOnly)
+            .Select(path => new FileInfo(path))
+            .OrderByDescending(file => file.LastWriteTimeUtc)
+            .Skip(retainedFileCountLimit);
+
+        foreach (var file in files)
+        {
+            try
+            {
+                file.Delete();
+            }
+            catch (IOException exception)
+            {
+                _ = exception;
+            }
+            catch (UnauthorizedAccessException exception)
+            {
+                _ = exception;
+            }
+        }
+    }
+
+    public static void PruneRunLogFiles(string? configuredDirectory, int retainedFileCountLimit = RunRetainedFileCountLimit)
+    {
+        if (retainedFileCountLimit <= 0)
+        {
+            return;
+        }
+
+        var directory = ResolveRunLogDirectory(configuredDirectory);
+        if (!Directory.Exists(directory))
+        {
+            return;
+        }
+
+        var files = Directory
+            .EnumerateFiles(directory, "*.log", SearchOption.TopDirectoryOnly)
             .Select(path => new FileInfo(path))
             .OrderByDescending(file => file.LastWriteTimeUtc)
             .Skip(retainedFileCountLimit);

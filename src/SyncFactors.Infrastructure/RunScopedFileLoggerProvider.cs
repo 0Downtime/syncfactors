@@ -1,9 +1,14 @@
+using System.Collections.Concurrent;
 using Microsoft.Extensions.Logging;
 
 namespace SyncFactors.Infrastructure;
 
-public sealed class RunScopedFileLoggerProvider(string? configuredDirectory) : RedactingFileLoggerProvider
+public sealed class RunScopedFileLoggerProvider(
+    string? configuredDirectory,
+    int retainedFileCountLimit = LocalFileLogging.RunRetainedFileCountLimit) : RedactingFileLoggerProvider
 {
+    private readonly ConcurrentDictionary<string, byte> _prunedRunPaths = new(StringComparer.OrdinalIgnoreCase);
+
     protected override void Write(LogLevel logLevel, string categoryName, EventId eventId, string message, Exception? exception)
     {
         if (!TryGetRunId(out var runId))
@@ -20,6 +25,10 @@ public sealed class RunScopedFileLoggerProvider(string? configuredDirectory) : R
             eventId,
             message,
             exception);
+        if (_prunedRunPaths.TryAdd(runId, 0))
+        {
+            LocalFileLogging.PruneRunLogFiles(configuredDirectory, retainedFileCountLimit);
+        }
     }
 
     private bool TryGetRunId(out string runId)

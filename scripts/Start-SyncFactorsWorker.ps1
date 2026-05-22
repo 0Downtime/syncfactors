@@ -18,14 +18,14 @@ $env:SyncFactors__ConfigPath = $resolvedConfigPath
 $env:SyncFactors__MappingConfigPath = $resolvedMappingConfigPath
 $env:SyncFactors__SqlitePath = $SqlitePath
 Set-StandardLoggingEnvironment -DefaultLevel 'Information' -Overrides @{
-    'Logging__LogLevel__SyncFactors' = 'Debug'
+    'Logging__LogLevel__SyncFactors' = 'Information'
 }
 
 Write-Host "Starting SyncFactors.Worker" -ForegroundColor Cyan
 Write-Host "Config: $resolvedConfigPath"
 Write-Host "Mapping Config: $resolvedMappingConfigPath"
 Write-Host "SQLite: $SqlitePath"
-Write-Host "Logging: SyncFactors=Debug" -ForegroundColor Cyan
+Write-Host "Logging: SyncFactors=Information" -ForegroundColor Cyan
 if (Test-SyncFactorsLocalFileLoggingEnabled) {
     Write-Host "Local file logging: $(Get-SyncFactorsLocalLogDirectory -ProjectRoot $projectRoot)" -ForegroundColor Cyan
 }
