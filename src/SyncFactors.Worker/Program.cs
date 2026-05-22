@@ -10,7 +10,7 @@ const string WindowsServiceName = "SyncFactors.Worker";
 
 var builder = Host.CreateApplicationBuilder(args);
 ConfigureWindowsService(builder.Services, WindowsServiceName);
-ConfigureLocalFileLogging(
+LocalFileLogging.Configure(
     builder.Logging,
     processName: "worker",
     enabledValue: builder.Configuration[LocalFileLogging.EnabledEnvironmentVariable],
@@ -240,36 +240,6 @@ static string DescribeSuccessFactorsAccountConfiguration(SuccessFactorsAuthConfi
     }
 
     return "Missing";
-}
-
-static void ConfigureLocalFileLogging(
-    ILoggingBuilder logging,
-    string processName,
-    string? enabledValue,
-    string? directoryValue,
-    string? retainedFileCountLimitValue,
-    string? runLoggingEnabledValue,
-    string? runRetainedFileCountLimitValue)
-{
-    if (!LocalFileLogging.IsEnabled(enabledValue))
-    {
-        return;
-    }
-
-    var retainedFileCountLimit = LocalFileLogging.ResolveRetainedFileCountLimit(
-        retainedFileCountLimitValue,
-        LocalFileLogging.RetainedFileCountLimit);
-    logging.AddProvider(new LocalFileLoggerProvider(processName, directoryValue, retainedFileCountLimit));
-
-    if (!LocalFileLogging.IsEnabled(runLoggingEnabledValue, defaultValue: false))
-    {
-        return;
-    }
-
-    var runRetainedFileCountLimit = LocalFileLogging.ResolveRetainedFileCountLimit(
-        runRetainedFileCountLimitValue,
-        LocalFileLogging.RunRetainedFileCountLimit);
-    logging.AddProvider(new RunScopedFileLoggerProvider(directoryValue, runRetainedFileCountLimit));
 }
 
 static void ConfigureWindowsService(IServiceCollection services, string serviceName)
