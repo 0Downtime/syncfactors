@@ -1,5 +1,7 @@
 namespace SyncFactors.Infrastructure;
 
+using Microsoft.Extensions.Logging;
+
 public static class LocalFileLogging
 {
     public const string EnabledEnvironmentVariable = "SYNCFACTORS_LOCAL_FILE_LOGGING_ENABLED";
@@ -42,6 +44,36 @@ public static class LocalFileLogging
         return int.TryParse(configuredValue.Trim(), out var parsed) && parsed > 0
             ? parsed
             : defaultValue;
+    }
+
+    public static void Configure(
+        ILoggingBuilder logging,
+        string processName,
+        string? enabledValue,
+        string? directoryValue,
+        string? retainedFileCountLimitValue,
+        string? runLoggingEnabledValue,
+        string? runRetainedFileCountLimitValue)
+    {
+        if (!IsEnabled(enabledValue))
+        {
+            return;
+        }
+
+        var retainedFileCountLimit = ResolveRetainedFileCountLimit(
+            retainedFileCountLimitValue,
+            RetainedFileCountLimit);
+        logging.AddProvider(new LocalFileLoggerProvider(processName, directoryValue, retainedFileCountLimit));
+
+        if (!IsEnabled(runLoggingEnabledValue, defaultValue: false))
+        {
+            return;
+        }
+
+        var runRetainedFileCountLimit = ResolveRetainedFileCountLimit(
+            runRetainedFileCountLimitValue,
+            RunRetainedFileCountLimit);
+        logging.AddProvider(new RunScopedFileLoggerProvider(directoryValue, runRetainedFileCountLimit));
     }
 
     public static string ResolveDirectory(string? configuredDirectory)
