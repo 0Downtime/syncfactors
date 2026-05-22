@@ -40,11 +40,14 @@ if (!string.IsNullOrWhiteSpace(launcherProbeAction))
 var builder = WebApplication.CreateBuilder(args);
 ConfigureDefaultHttpsCertificate(builder);
 ConfigureWindowsService(builder.Services, WindowsServiceName);
-ConfigureLocalFileLogging(
+LocalFileLogging.Configure(
     builder.Logging,
     processName: "api",
     enabledValue: builder.Configuration[LocalFileLogging.EnabledEnvironmentVariable],
-    directoryValue: builder.Configuration[LocalFileLogging.DirectoryEnvironmentVariable]);
+    directoryValue: builder.Configuration[LocalFileLogging.DirectoryEnvironmentVariable],
+    retainedFileCountLimitValue: builder.Configuration[LocalFileLogging.RetainedFileCountLimitEnvironmentVariable],
+    runLoggingEnabledValue: builder.Configuration[LocalFileLogging.RunFileLoggingEnabledEnvironmentVariable],
+    runRetainedFileCountLimitValue: builder.Configuration[LocalFileLogging.RunRetainedFileCountLimitEnvironmentVariable]);
 ConfigureApplicationInsights(builder);
 var authSettings = builder.Configuration.GetSection("SyncFactors:Auth").Get<LocalAuthOptions>() ?? new LocalAuthOptions();
 var cspEnabled = builder.Configuration.GetValue<bool?>("SyncFactors:SecurityHeaders:EnableContentSecurityPolicy")
@@ -1160,21 +1163,6 @@ static string DescribeSuccessFactorsAccountConfiguration(SuccessFactorsAuthConfi
     }
 
     return "Missing";
-}
-
-static void ConfigureLocalFileLogging(
-    ILoggingBuilder logging,
-    string processName,
-    string? enabledValue,
-    string? directoryValue)
-{
-    if (!LocalFileLogging.IsEnabled(enabledValue))
-    {
-        return;
-    }
-
-    logging.AddProvider(new LocalFileLoggerProvider(processName, directoryValue));
-    logging.AddProvider(new RunScopedFileLoggerProvider(directoryValue));
 }
 
 static void ConfigureWindowsService(IServiceCollection services, string serviceName)
