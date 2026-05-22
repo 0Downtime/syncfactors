@@ -642,7 +642,7 @@ public sealed class DependencyHealthServiceTests
             pathResolver,
             heartbeatStore,
             new HttpClient(new HangingMessageHandler()),
-            new FakeTimeProvider(DateTimeOffset.Parse("2026-03-27T12:01:30Z")),
+            new FakeTimeProvider(DateTimeOffset.Parse("2026-03-27T12:03:00Z")),
             NullLogger<DependencyHealthService>.Instance);
 
         var snapshot = await service.GetSnapshotAsync(CancellationToken.None);
@@ -738,7 +738,7 @@ public sealed class DependencyHealthServiceTests
             var degradedSnapshot = await CreateHealthService(
                 configLoader,
                 pathResolver,
-                new StubWorkerHeartbeatStore(CreateHeartbeat(checkedAt.AddSeconds(-75), state: "Idle")),
+                new StubWorkerHeartbeatStore(CreateHeartbeat(checkedAt.AddMinutes(-3), state: "Idle")),
                 checkedAt).GetSnapshotAsync(CancellationToken.None);
             var degradedProbe = Assert.Single(degradedSnapshot.Probes, probe => probe.Dependency == "Worker Service");
             Assert.Equal(DependencyHealthStates.Degraded, degradedProbe.Status);
@@ -747,7 +747,7 @@ public sealed class DependencyHealthServiceTests
             var unhealthySnapshot = await CreateHealthService(
                 configLoader,
                 pathResolver,
-                new StubWorkerHeartbeatStore(CreateHeartbeat(checkedAt.AddMinutes(-5), state: "Idle")),
+                new StubWorkerHeartbeatStore(CreateHeartbeat(checkedAt.AddMinutes(-6), state: "Idle")),
                 checkedAt).GetSnapshotAsync(CancellationToken.None);
             var unhealthyProbe = Assert.Single(unhealthySnapshot.Probes, probe => probe.Dependency == "Worker Service");
             Assert.Equal(DependencyHealthStates.Unhealthy, unhealthyProbe.Status);

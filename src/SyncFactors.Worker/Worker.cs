@@ -20,7 +20,8 @@ public sealed class Worker(
     TimeProvider timeProvider,
     SyncFactorsConfigurationLoader configLoader) : BackgroundService
 {
-    private static readonly TimeSpan HeartbeatInterval = TimeSpan.FromSeconds(15);
+    private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(15);
+    private static readonly TimeSpan HeartbeatInterval = TimeSpan.FromMinutes(1);
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -28,8 +29,9 @@ public sealed class Worker(
         var startedAt = timeProvider.GetUtcNow();
         await WriteHeartbeatAsync(startedAt, "Starting", "Worker process started.", stoppingToken);
         await WriteHeartbeatAsync(startedAt, "Idle", "Waiting for scheduled work.", stoppingToken);
+        var lastHeartbeatAt = timeProvider.GetUtcNow();
 
-        using var timer = new PeriodicTimer(HeartbeatInterval);
+        using var timer = new PeriodicTimer(PollInterval);
         do
         {
             await syncScheduleCoordinator.TryEnqueueDueRunAsync(stoppingToken);
@@ -39,6 +41,7 @@ public sealed class Worker(
             {
                 var activity = $"Executing queued run {claimed.RequestId}.";
                 await WriteHeartbeatAsync(startedAt, "Running", activity, stoppingToken);
+                lastHeartbeatAt = timeProvider.GetUtcNow();
                 using var heartbeatCts = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
                 var heartbeatTask = PumpHeartbeatsAsync(startedAt, "Running", activity, heartbeatCts.Token);
                 try
@@ -81,7 +84,12 @@ public sealed class Worker(
             else
             {
                 await graveyardAutoDeleteCoordinator.TryExecuteAsync(stoppingToken);
-                await WriteHeartbeatAsync(startedAt, "Idle", "Waiting for scheduled work.", stoppingToken);
+                var now = timeProvider.GetUtcNow();
+                if (now - lastHeartbeatAt >= HeartbeatInterval)
+                {
+                    await WriteHeartbeatAsync(startedAt, "Idle", "Waiting for scheduled work.", stoppingToken);
+                    lastHeartbeatAt = now;
+                }
             }
         }
         while (await timer.WaitForNextTickAsync(stoppingToken));

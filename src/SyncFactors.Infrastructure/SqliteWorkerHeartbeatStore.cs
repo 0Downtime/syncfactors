@@ -6,6 +6,15 @@ namespace SyncFactors.Infrastructure;
 
 public sealed class SqliteWorkerHeartbeatStore(SqlitePathResolver pathResolver) : IWorkerHeartbeatStore
 {
+    private static readonly TimeSpan[] BusyRetryDelays =
+    [
+        TimeSpan.FromMilliseconds(100),
+        TimeSpan.FromMilliseconds(250),
+        TimeSpan.FromMilliseconds(500),
+        TimeSpan.FromSeconds(1),
+        TimeSpan.FromSeconds(2)
+    ];
+
     public async Task<WorkerHeartbeat?> GetCurrentAsync(CancellationToken cancellationToken)
     {
         var databasePath = pathResolver.Resolve();
@@ -14,7 +23,7 @@ public sealed class SqliteWorkerHeartbeatStore(SqlitePathResolver pathResolver) 
             return null;
         }
 
-        await using var connection = OpenConnection(databasePath, SqliteOpenMode.ReadWriteCreate);
+        await using var connection = OpenConnection(databasePath, SqliteOpenMode.ReadOnly);
         await connection.OpenAsync(cancellationToken);
 
         await using var command = connection.CreateCommand();
@@ -53,46 +62,59 @@ public sealed class SqliteWorkerHeartbeatStore(SqlitePathResolver pathResolver) 
             return;
         }
 
+        await SaveWithRetryAsync(databasePath, heartbeat, cancellationToken);
+    }
+
+    private static async Task SaveWithRetryAsync(string databasePath, WorkerHeartbeat heartbeat, CancellationToken cancellationToken)
+    {
+        for (var attempt = 0; ; attempt++)
+        {
+            try
+            {
+                await SaveOnceAsync(databasePath, heartbeat, cancellationToken);
+                return;
+            }
+            catch (SqliteException ex) when (SqliteConnections.IsBusyOrLocked(ex) && attempt < BusyRetryDelays.Length)
+            {
+                await Task.Delay(BusyRetryDelays[attempt], cancellationToken);
+            }
+        }
+    }
+
+    private static async Task SaveOnceAsync(string databasePath, WorkerHeartbeat heartbeat, CancellationToken cancellationToken)
+    {
         await using var connection = OpenConnection(databasePath, SqliteOpenMode.ReadWriteCreate);
         await connection.OpenAsync(cancellationToken);
-        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
 
-        await using (var deleteCommand = connection.CreateCommand())
-        {
-            deleteCommand.Transaction = (SqliteTransaction)transaction;
-            deleteCommand.CommandText = "DELETE FROM worker_heartbeat;";
-            await deleteCommand.ExecuteNonQueryAsync(cancellationToken);
-        }
-
-        await using (var insertCommand = connection.CreateCommand())
-        {
-            insertCommand.Transaction = (SqliteTransaction)transaction;
-            insertCommand.CommandText =
-                """
-                INSERT INTO worker_heartbeat (
-                  service,
-                  state,
-                  activity,
-                  started_at,
-                  last_seen_at
-                )
-                VALUES (
-                  $service,
-                  $state,
-                  $activity,
-                  $startedAt,
-                  $lastSeenAt
-                );
-                """;
-            insertCommand.Parameters.AddWithValue("$service", heartbeat.Service);
-            insertCommand.Parameters.AddWithValue("$state", heartbeat.State);
-            insertCommand.Parameters.AddWithValue("$activity", (object?)heartbeat.Activity ?? DBNull.Value);
-            insertCommand.Parameters.AddWithValue("$startedAt", heartbeat.StartedAt.ToString("O"));
-            insertCommand.Parameters.AddWithValue("$lastSeenAt", heartbeat.LastSeenAt.ToString("O"));
-            await insertCommand.ExecuteNonQueryAsync(cancellationToken);
-        }
-
-        await transaction.CommitAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            INSERT INTO worker_heartbeat (
+              service,
+              state,
+              activity,
+              started_at,
+              last_seen_at
+            )
+            VALUES (
+              $service,
+              $state,
+              $activity,
+              $startedAt,
+              $lastSeenAt
+            )
+            ON CONFLICT(service) DO UPDATE SET
+              state = excluded.state,
+              activity = excluded.activity,
+              started_at = excluded.started_at,
+              last_seen_at = excluded.last_seen_at;
+            """;
+        command.Parameters.AddWithValue("$service", heartbeat.Service);
+        command.Parameters.AddWithValue("$state", heartbeat.State);
+        command.Parameters.AddWithValue("$activity", (object?)heartbeat.Activity ?? DBNull.Value);
+        command.Parameters.AddWithValue("$startedAt", heartbeat.StartedAt.ToString("O"));
+        command.Parameters.AddWithValue("$lastSeenAt", heartbeat.LastSeenAt.ToString("O"));
+        await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     private static SqliteConnection OpenConnection(string databasePath, SqliteOpenMode mode)

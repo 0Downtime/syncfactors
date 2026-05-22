@@ -5,7 +5,7 @@ namespace SyncFactors.Infrastructure;
 
 public sealed class SqliteDatabaseInitializer(SqlitePathResolver pathResolver)
 {
-    private const int CurrentSchemaVersion = 14;
+    private const int CurrentSchemaVersion = 15;
 
     public async Task InitializeAsync(CancellationToken cancellationToken)
     {
@@ -128,6 +128,12 @@ public sealed class SqliteDatabaseInitializer(SqlitePathResolver pathResolver)
         {
             await ApplyVersion14Async(connection, transaction, cancellationToken);
             await InsertVersionAsync(connection, transaction, 14, cancellationToken);
+        }
+
+        if (!appliedVersions.Contains(15))
+        {
+            await ApplyVersion15Async(connection, transaction, cancellationToken);
+            await InsertVersionAsync(connection, transaction, 15, cancellationToken);
         }
 
         await transaction.CommitAsync(cancellationToken);
@@ -490,6 +496,40 @@ public sealed class SqliteDatabaseInitializer(SqlitePathResolver pathResolver)
               maintenance_key TEXT NOT NULL PRIMARY KEY,
               last_completed_at TEXT NOT NULL
             );
+            """;
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task ApplyVersion15Async(
+        SqliteConnection connection,
+        DbTransaction transaction,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = (SqliteTransaction)transaction;
+        command.CommandText =
+            """
+            CREATE TABLE IF NOT EXISTS worker_heartbeat (
+              service TEXT NOT NULL,
+              state TEXT NOT NULL,
+              activity TEXT NULL,
+              started_at TEXT NOT NULL,
+              last_seen_at TEXT NOT NULL
+            );
+
+            DELETE FROM worker_heartbeat
+            WHERE rowid NOT IN (
+              SELECT rowid
+              FROM worker_heartbeat
+              ORDER BY last_seen_at DESC, rowid DESC
+              LIMIT 1
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_worker_heartbeat_last_seen
+              ON worker_heartbeat (last_seen_at);
+
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_worker_heartbeat_service
+              ON worker_heartbeat (service);
             """;
         await command.ExecuteNonQueryAsync(cancellationToken);
     }

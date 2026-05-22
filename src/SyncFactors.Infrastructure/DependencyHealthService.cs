@@ -23,8 +23,8 @@ public sealed class DependencyHealthService(
 {
     private static readonly TimeSpan ActiveDirectoryTimeout = TimeSpan.FromSeconds(10);
     private static readonly TimeSpan SuccessFactorsTimeout = TimeSpan.FromSeconds(10);
-    private static readonly TimeSpan HealthyHeartbeatAge = TimeSpan.FromSeconds(45);
-    private static readonly TimeSpan DegradedHeartbeatAge = TimeSpan.FromMinutes(2);
+    private static readonly TimeSpan HealthyHeartbeatAge = TimeSpan.FromMinutes(2);
+    private static readonly TimeSpan DegradedHeartbeatAge = TimeSpan.FromMinutes(5);
     private static readonly IReadOnlyDictionary<string, string> SuccessFactorsEntityNavigationAliases =
         new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
@@ -359,7 +359,7 @@ public sealed class DependencyHealthService(
                 return BuildProbe("SQLite", DependencyHealthStates.Unhealthy, "SQLite path is not configured.", checkedAt, stopwatch.ElapsedMilliseconds);
             }
 
-            await using var connection = SqliteConnections.Open(databasePath);
+            await using var connection = SqliteConnections.Open(databasePath, SqliteOpenMode.ReadOnly);
 
             await connection.OpenAsync(cancellationToken);
             await using var command = connection.CreateCommand();

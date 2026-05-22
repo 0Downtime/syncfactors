@@ -24,7 +24,7 @@ public sealed class RunQueueRecoveryService(
     private const string RuntimeStatusSucceeded = "Succeeded";
     private const string WorkerHeartbeatRunningState = "Running";
 
-    private static readonly TimeSpan FreshRunningHeartbeatAge = TimeSpan.FromMinutes(2);
+    private static readonly TimeSpan FreshRunningHeartbeatAge = TimeSpan.FromMinutes(3);
 
     public async Task<int> RecoverIfNeededAsync(string trigger, CancellationToken cancellationToken, bool ignoreFreshHeartbeat = false)
     {
