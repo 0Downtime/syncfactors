@@ -128,4 +128,65 @@ public sealed class RunScopedFileLoggerProviderTests
         Assert.True(File.Exists(middlePath));
         Assert.True(File.Exists(newestPath));
     }
+
+    [Fact]
+    public void PruneRunLogFiles_RetainsNewestFiles()
+    {
+        var logRoot = Path.Combine(Path.GetTempPath(), "syncfactors-run-logs", Guid.NewGuid().ToString("N"));
+        var runDirectory = LocalFileLogging.ResolveRunLogDirectory(logRoot);
+        Directory.CreateDirectory(runDirectory);
+        var oldPath = LocalFileLogging.ResolveRunLogPath("old-run", logRoot);
+        var middlePath = LocalFileLogging.ResolveRunLogPath("middle-run", logRoot);
+        var newestPath = LocalFileLogging.ResolveRunLogPath("newest-run", logRoot);
+        File.WriteAllText(oldPath, "old");
+        File.WriteAllText(middlePath, "middle");
+        File.WriteAllText(newestPath, "newest");
+        File.SetLastWriteTimeUtc(oldPath, DateTime.UtcNow.AddDays(-2));
+        File.SetLastWriteTimeUtc(middlePath, DateTime.UtcNow.AddDays(-1));
+        File.SetLastWriteTimeUtc(newestPath, DateTime.UtcNow);
+
+        LocalFileLogging.PruneRunLogFiles(logRoot, retainedFileCountLimit: 2);
+
+        Assert.False(File.Exists(oldPath));
+        Assert.True(File.Exists(middlePath));
+        Assert.True(File.Exists(newestPath));
+    }
+
+    [Fact]
+    public void RunScopedFileLogger_PrunesRunLogsAfterWriting()
+    {
+        var logRoot = Path.Combine(Path.GetTempPath(), "syncfactors-run-logs", Guid.NewGuid().ToString("N"));
+        var runDirectory = LocalFileLogging.ResolveRunLogDirectory(logRoot);
+        Directory.CreateDirectory(runDirectory);
+        var oldPath = LocalFileLogging.ResolveRunLogPath("old-run", logRoot);
+        File.WriteAllText(oldPath, "old");
+        File.SetLastWriteTimeUtc(oldPath, DateTime.UtcNow.AddDays(-1));
+
+        using var provider = new RunScopedFileLoggerProvider(logRoot, retainedFileCountLimit: 1);
+        provider.SetScopeProvider(new LoggerExternalScopeProvider());
+        var logger = provider.CreateLogger("Tests.RunScoped");
+
+        using (logger.BeginScope(new Dictionary<string, object?> { ["RunId"] = "new-run" }))
+        {
+            logger.LogInformation("New run log.");
+        }
+
+        Assert.False(File.Exists(oldPath));
+        Assert.True(File.Exists(LocalFileLogging.ResolveRunLogPath("new-run", logRoot)));
+    }
+
+    [Theory]
+    [InlineData(null, 5, 5)]
+    [InlineData("", 5, 5)]
+    [InlineData("3", 5, 3)]
+    [InlineData("0", 5, 5)]
+    [InlineData("-2", 5, 5)]
+    [InlineData("invalid", 5, 5)]
+    public void ResolveRetainedFileCountLimit_UsesPositiveConfiguredValueOnly(
+        string? configuredValue,
+        int defaultValue,
+        int expected)
+    {
+        Assert.Equal(expected, LocalFileLogging.ResolveRetainedFileCountLimit(configuredValue, defaultValue));
+    }
 }

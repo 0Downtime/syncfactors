@@ -14,7 +14,10 @@ ConfigureLocalFileLogging(
     builder.Logging,
     processName: "worker",
     enabledValue: builder.Configuration[LocalFileLogging.EnabledEnvironmentVariable],
-    directoryValue: builder.Configuration[LocalFileLogging.DirectoryEnvironmentVariable]);
+    directoryValue: builder.Configuration[LocalFileLogging.DirectoryEnvironmentVariable],
+    retainedFileCountLimitValue: builder.Configuration[LocalFileLogging.RetainedFileCountLimitEnvironmentVariable],
+    runLoggingEnabledValue: builder.Configuration[LocalFileLogging.RunFileLoggingEnabledEnvironmentVariable],
+    runRetainedFileCountLimitValue: builder.Configuration[LocalFileLogging.RunRetainedFileCountLimitEnvironmentVariable]);
 ConfigureApplicationInsights(builder);
 builder.Services.AddSingleton(new ScaffoldDataPathResolver(builder.Configuration["SyncFactors:ScaffoldDataPath"]));
 builder.Services.AddSingleton(new SqlitePathResolver(builder.Configuration["SyncFactors:SqlitePath"]));
@@ -243,15 +246,30 @@ static void ConfigureLocalFileLogging(
     ILoggingBuilder logging,
     string processName,
     string? enabledValue,
-    string? directoryValue)
+    string? directoryValue,
+    string? retainedFileCountLimitValue,
+    string? runLoggingEnabledValue,
+    string? runRetainedFileCountLimitValue)
 {
     if (!LocalFileLogging.IsEnabled(enabledValue))
     {
         return;
     }
 
-    logging.AddProvider(new LocalFileLoggerProvider(processName, directoryValue));
-    logging.AddProvider(new RunScopedFileLoggerProvider(directoryValue));
+    var retainedFileCountLimit = LocalFileLogging.ResolveRetainedFileCountLimit(
+        retainedFileCountLimitValue,
+        LocalFileLogging.RetainedFileCountLimit);
+    logging.AddProvider(new LocalFileLoggerProvider(processName, directoryValue, retainedFileCountLimit));
+
+    if (!LocalFileLogging.IsEnabled(runLoggingEnabledValue, defaultValue: false))
+    {
+        return;
+    }
+
+    var runRetainedFileCountLimit = LocalFileLogging.ResolveRetainedFileCountLimit(
+        runRetainedFileCountLimitValue,
+        LocalFileLogging.RunRetainedFileCountLimit);
+    logging.AddProvider(new RunScopedFileLoggerProvider(directoryValue, runRetainedFileCountLimit));
 }
 
 static void ConfigureWindowsService(IServiceCollection services, string serviceName)
