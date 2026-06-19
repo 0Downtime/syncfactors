@@ -239,6 +239,15 @@ public sealed record RealSyncSettings(
         : "Real AD sync is disabled for this environment.";
 }
 
+public sealed record SuccessFactorsEmailWritebackResult(
+    string UserId,
+    string EmailAddress,
+    string? PreviousEmailAddress,
+    string Endpoint,
+    bool Applied,
+    bool Succeeded,
+    string Message);
+
 public sealed record WorkerRunSettings(
     int MaxCreatesPerRun,
     int MaxDisablesPerRun = int.MaxValue,

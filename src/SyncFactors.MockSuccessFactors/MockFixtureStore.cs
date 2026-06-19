@@ -141,6 +141,29 @@ public sealed class MockFixtureStore
         }
     }
 
+    public MockWorkerFixture UpdateUserEmail(string userId, string email)
+    {
+        lock (_gate)
+        {
+            var existing = _document.Workers.FirstOrDefault(worker =>
+                string.Equals(worker.UserId, userId, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(worker.UserName, userId, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(worker.PersonIdExternal, userId, StringComparison.OrdinalIgnoreCase))
+                ?? throw new KeyNotFoundException($"User '{userId}' was not found.");
+
+            var updated = existing with
+            {
+                Email = email,
+                LastModifiedDateTime = DateTimeOffset.UtcNow.ToString("O")
+            };
+
+            SetDocumentUnsafe(_document.Workers
+                .Select(worker => ReferenceEquals(worker, existing) ? updated : worker)
+                .ToArray());
+            return updated;
+        }
+    }
+
     public MockWorkerFixture CloneWorker(string workerId)
     {
         lock (_gate)

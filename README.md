@@ -631,6 +631,8 @@ By default, the import helpers skip secure-store variables that are missing or b
 
 Set `SYNCFACTORS_RUN_PROFILE=mock` or `real` to switch the active SuccessFactors config. Leave `SYNCFACTORS_CONFIG_PATH` empty for profile-based resolution, or set it only when you want an explicit one-off override.
 
+SuccessFactors email writeback is off by default. To write the generated Active Directory `mail` value back to the SuccessFactors `User.email` field after a successful live AD mutation, set `successFactors.emailWriteback.enabled=true` in the sync config. The writeback uses SuccessFactors OData `User` upsert and records planned/result details on the run entry; failures land in the existing `conflicts` bucket.
+
 For a production monitoring deployment that must not expose AD write actions, set:
 
 ```bash

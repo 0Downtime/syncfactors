@@ -25,6 +25,13 @@
         "companyId": "MOCK"
       }
     },
+    "emailWriteback": {
+      "enabled": false,
+      "userEntitySet": "User",
+      "userIdSourceAttribute": "userId",
+      "emailField": "email",
+      "sourceEmailAttribute": "email"
+    },
     "query": {
       "entitySet": "EmpJob",
       "identityField": "userId",

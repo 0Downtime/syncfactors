@@ -16,7 +16,8 @@ public sealed class FullSyncRunService(
     WorkerRunSettings settings,
     LifecyclePolicySettings lifecycleSettings,
     ILogger<FullSyncRunService> logger,
-    IRunCaptureMetadataProvider? runCaptureMetadataProvider = null) : IFullSyncRunService
+    IRunCaptureMetadataProvider? runCaptureMetadataProvider = null,
+    ISuccessFactorsEmailWritebackGateway? successFactorsEmailWritebackGateway = null) : IFullSyncRunService
 {
     public async Task<RunLaunchResult> LaunchAsync(LaunchFullRunRequest request, CancellationToken cancellationToken)
     {
@@ -313,6 +314,7 @@ public sealed class FullSyncRunService(
             string? distinguishedName = plan.DirectoryUser.DistinguishedName;
             DirectoryCommandResult? commandResult = null;
             DirectoryMutationCommand? plannedCommand = null;
+            SuccessFactorsEmailWritebackResult? emailWritebackResult = null;
             var applied = false;
 
             if (string.Equals(bucket, "creates", StringComparison.OrdinalIgnoreCase) &&
@@ -351,6 +353,16 @@ public sealed class FullSyncRunService(
                     {
                         bucket = "conflicts";
                     }
+                    else
+                    {
+                        emailWritebackResult = await WriteBackSuccessFactorsEmailAsync(plan, plannedCommand, dryRun, cancellationToken);
+                        if (emailWritebackResult is { Succeeded: false })
+                        {
+                            succeeded = false;
+                            bucket = "conflicts";
+                            message = emailWritebackResult.Message;
+                        }
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -372,6 +384,7 @@ public sealed class FullSyncRunService(
             if (dryRun && plan.CanAutoApply && plan.Operations.Count > 0 && bucket != "guardrailFailures")
             {
                 plannedCommand = mutationCommandBuilder.Build(plan);
+                emailWritebackResult = await WriteBackSuccessFactorsEmailAsync(plan, plannedCommand, dryRun, cancellationToken);
             }
 
             message ??= plan.Reason ?? $"No synced attributes changed for {worker.WorkerId}.";
@@ -389,7 +402,8 @@ public sealed class FullSyncRunService(
                 plannedCommand,
                 commandResult,
                 captureMetadata,
-                lifecycleSettings.DirectoryIdentityAttribute);
+                lifecycleSettings.DirectoryIdentityAttribute,
+                emailWritebackResult);
 
             return new WorkerOutcome(
                 Bucket: bucket,
@@ -421,6 +435,16 @@ public sealed class FullSyncRunService(
                         distinguishedName,
                         targetOu = plan.TargetOu
                     },
+                    successFactorsEmailWriteback = emailWritebackResult is null
+                        ? null
+                        : new
+                        {
+                            emailWritebackResult.UserId,
+                            emailWritebackResult.EmailAddress,
+                            emailWritebackResult.Applied,
+                            emailWritebackResult.Succeeded,
+                            emailWritebackResult.Message
+                        },
                     message,
                     succeeded
                 },
@@ -555,6 +579,17 @@ public sealed class FullSyncRunService(
             ProposedEmailAddress = resolvedEmailAddress,
             AttributeChanges = RewriteEmailAttributeChanges(plan.AttributeChanges, resolvedEmailAddress)
         };
+    }
+
+    private Task<SuccessFactorsEmailWritebackResult?> WriteBackSuccessFactorsEmailAsync(
+        PlannedWorkerAction plan,
+        DirectoryMutationCommand command,
+        bool dryRun,
+        CancellationToken cancellationToken)
+    {
+        return successFactorsEmailWritebackGateway is null
+            ? Task.FromResult<SuccessFactorsEmailWritebackResult?>(null)
+            : successFactorsEmailWritebackGateway.WriteBackEmailAsync(plan, command, dryRun, cancellationToken);
     }
 
     private static string ResolveAvailableInRunEmailAddress(string proposedEmailAddress, ISet<string> reservedEmailAddresses)

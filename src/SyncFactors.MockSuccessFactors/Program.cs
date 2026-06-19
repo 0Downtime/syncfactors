@@ -5,6 +5,7 @@ using SyncFactors.Domain;
 using SyncFactors.Infrastructure;
 using SyncFactors.MockSuccessFactors;
 using System.Net;
+using System.Text.Json;
 
 var command = FixtureGenerationCommand.TryParse(args);
 if (command is not null)
@@ -229,6 +230,9 @@ app.MapGet("/odata/v2/EmpJob", (
     return Results.Json(payload);
 });
 
+app.MapPost("/odata/v2/upsert", HandleUserUpsertAsync);
+app.MapPost("/odata/v2/User/upsert", HandleUserUpsertAsync);
+
 var adminApi = app.MapGroup("/api/admin");
 
 adminApi.MapGet("/workers", (string? filter, MockFixtureStore store, IOptions<MockSuccessFactorsOptions> configuredOptions) =>
@@ -402,6 +406,103 @@ static bool ManualReviewRequired(SyncFactorsConfigDocument config, params string
            operationKinds.Any(operationKind =>
                config.Approval.RequireFor.Any(required =>
                    string.Equals(required, operationKind, StringComparison.OrdinalIgnoreCase)));
+}
+
+static async Task<IResult> HandleUserUpsertAsync(
+    HttpContext httpContext,
+    MockFixtureStore store,
+    IOptions<MockSuccessFactorsOptions> configuredOptions)
+{
+    if (!AuthenticationValidator.IsAuthorized(httpContext.Request, configuredOptions.Value.Authentication))
+    {
+        return Results.Unauthorized();
+    }
+
+    JsonDocument document;
+    try
+    {
+        document = await JsonDocument.ParseAsync(httpContext.Request.Body, cancellationToken: httpContext.RequestAborted);
+    }
+    catch (JsonException)
+    {
+        return Results.BadRequest(new { error = "Malformed JSON payload." });
+    }
+
+    using (document)
+    {
+        var payloads = document.RootElement.ValueKind == JsonValueKind.Array
+            ? document.RootElement.EnumerateArray().Select(item => item.Clone()).ToArray()
+            : new[] { document.RootElement.Clone() };
+        var results = payloads.Select((payload, index) => UpsertUserEmail(store, payload, index)).ToArray();
+        return Results.Json(new { d = results });
+    }
+}
+
+static object UpsertUserEmail(MockFixtureStore store, JsonElement payload, int index)
+{
+    var userId = GetString(payload, "userId") ?? ExtractUserIdFromMetadataUri(payload);
+    var email = GetString(payload, "email");
+    if (string.IsNullOrWhiteSpace(userId) || string.IsNullOrWhiteSpace(email))
+    {
+        return BuildUpsertResult(null, "ERROR", "FAILED", "User upsert requires userId and email.", index, 400);
+    }
+
+    try
+    {
+        store.UpdateUserEmail(userId, email);
+        return BuildUpsertResult($"User/userId={userId}", "OK", "UPSERTED", null, index, 200);
+    }
+    catch (KeyNotFoundException ex)
+    {
+        return BuildUpsertResult($"User/userId={userId}", "ERROR", "FAILED", ex.Message, index, 404);
+    }
+}
+
+static object BuildUpsertResult(string? key, string status, string editStatus, string? message, int index, int httpCode)
+{
+    return new
+    {
+        key,
+        status,
+        editStatus,
+        message,
+        index,
+        httpCode,
+        inlineResults = (object?)null
+    };
+}
+
+static string? ExtractUserIdFromMetadataUri(JsonElement payload)
+{
+    if (!payload.TryGetProperty("__metadata", out var metadata) ||
+        metadata.ValueKind != JsonValueKind.Object)
+    {
+        return null;
+    }
+
+    var uri = GetString(metadata, "uri");
+    if (string.IsNullOrWhiteSpace(uri))
+    {
+        return null;
+    }
+
+    const string prefix = "User('";
+    var start = uri.IndexOf(prefix, StringComparison.OrdinalIgnoreCase);
+    if (start < 0)
+    {
+        return null;
+    }
+
+    start += prefix.Length;
+    var end = uri.IndexOf("')", start, StringComparison.Ordinal);
+    return end > start ? uri[start..end].Replace("''", "'", StringComparison.Ordinal) : null;
+}
+
+static string? GetString(JsonElement element, string propertyName)
+{
+    return element.TryGetProperty(propertyName, out var property) && property.ValueKind == JsonValueKind.String
+        ? property.GetString()
+        : null;
 }
 
 public partial class Program

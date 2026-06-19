@@ -80,7 +80,8 @@ public sealed class SyncFactorsConfigurationLoader
                         PageSize: TryGetInt32(previewQuery, "pageSize") ?? 200,
                         Select: previewQuery.GetRequiredStringArray("select"),
                         Expand: previewQuery.TryGetStringArray("expand") ?? [])
-                    : null),
+                    : null,
+                EmailWriteback: LoadSuccessFactorsEmailWriteback(document.GetRequiredObject("successFactors"))),
             Ad: new ActiveDirectoryConfig(
                 Server: GetRequiredSecretValue(
                     environmentVariableName: secrets.AdServerEnv,
@@ -166,6 +167,26 @@ public sealed class SyncFactorsConfigurationLoader
             .ToArray();
 
         return new MappingConfigDocument(mappings);
+    }
+
+    private static SuccessFactorsEmailWritebackConfig LoadSuccessFactorsEmailWriteback(JsonElement successFactors)
+    {
+        if (!successFactors.TryGetObject("emailWriteback", out var emailWriteback))
+        {
+            return new SuccessFactorsEmailWritebackConfig(
+                Enabled: false,
+                UserEntitySet: "User",
+                UserIdSourceAttribute: "userId",
+                EmailField: "email",
+                SourceEmailAttribute: "email");
+        }
+
+        return new SuccessFactorsEmailWritebackConfig(
+            Enabled: emailWriteback.TryGetBoolean("enabled") ?? false,
+            UserEntitySet: NormalizeRequiredValue(emailWriteback.TryGetString("userEntitySet") ?? "User", "successFactors.emailWriteback.userEntitySet"),
+            UserIdSourceAttribute: NormalizeRequiredValue(emailWriteback.TryGetString("userIdSourceAttribute") ?? "userId", "successFactors.emailWriteback.userIdSourceAttribute"),
+            EmailField: NormalizeRequiredValue(emailWriteback.TryGetString("emailField") ?? "email", "successFactors.emailWriteback.emailField"),
+            SourceEmailAttribute: NormalizeRequiredValue(emailWriteback.TryGetString("sourceEmailAttribute") ?? "email", "successFactors.emailWriteback.sourceEmailAttribute"));
     }
 
     private static SecretsConfig LoadSecrets(JsonElement document)

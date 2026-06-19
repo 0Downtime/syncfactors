@@ -120,6 +120,8 @@ public sealed class SyncFactorsConfigurationValidator(SyncFactorsConfigurationLo
             throw new InvalidOperationException("SyncFactors successFactors.query.deltaOverlapMinutes must be non-negative.");
         }
 
+        ValidateSuccessFactorsEmailWriteback(sync.SuccessFactors.EmailWriteback);
+
         if (mapping.Mappings.Count == 0)
         {
             throw new InvalidOperationException("SyncFactors mapping config must contain at least one mapping.");
@@ -260,6 +262,28 @@ public sealed class SyncFactorsConfigurationValidator(SyncFactorsConfigurationLo
         if (string.Equals(successorAttribute, previousAttribute, StringComparison.OrdinalIgnoreCase))
         {
             throw new InvalidOperationException("SyncFactors AD identity correlation successor and previous attributes must be different.");
+        }
+    }
+
+    private static void ValidateSuccessFactorsEmailWriteback(SuccessFactorsEmailWritebackConfig config)
+    {
+        if (!config.Enabled)
+        {
+            return;
+        }
+
+        if (config.UserEntitySet.Contains('/', StringComparison.Ordinal) ||
+            config.UserEntitySet.Contains('\\', StringComparison.Ordinal) ||
+            config.UserEntitySet.Contains('?', StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("SyncFactors successFactors.emailWriteback.userEntitySet must be an OData entity set name, not a path.");
+        }
+
+        if (config.EmailField.Contains('/', StringComparison.Ordinal) ||
+            config.EmailField.Contains('\\', StringComparison.Ordinal) ||
+            config.EmailField.Contains('?', StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("SyncFactors successFactors.emailWriteback.emailField must be a User entity property name, not a path.");
         }
     }
 

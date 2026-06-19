@@ -20,7 +20,8 @@ public sealed class BulkRunCoordinator(
     LifecyclePolicySettings lifecycleSettings,
     ILogger<BulkRunCoordinator> logger,
     TimeProvider timeProvider,
-    IRunCaptureMetadataProvider? runCaptureMetadataProvider = null)
+    IRunCaptureMetadataProvider? runCaptureMetadataProvider = null,
+    ISuccessFactorsEmailWritebackGateway? successFactorsEmailWritebackGateway = null)
 {
     public async Task<string> ExecuteAsync(RunQueueRequest request, int maxDegreeOfParallelism, CancellationToken cancellationToken)
     {
@@ -203,6 +204,7 @@ public sealed class BulkRunCoordinator(
                         var applied = false;
                         var succeeded = true;
                         DirectoryCommandResult? commandResult = null;
+                        SuccessFactorsEmailWritebackResult? emailWritebackResult = null;
 
                         if (plan.CanAutoApply && string.Equals(bucket, "creates", StringComparison.OrdinalIgnoreCase))
                         {
@@ -296,6 +298,16 @@ public sealed class BulkRunCoordinator(
                                 {
                                     bucket = "conflicts";
                                 }
+                                else
+                                {
+                                    emailWritebackResult = await WriteBackSuccessFactorsEmailAsync(plan, plannedCommand!, request.DryRun, ct);
+                                    if (emailWritebackResult is { Succeeded: false })
+                                    {
+                                        succeeded = false;
+                                        bucket = "conflicts";
+                                        reason = emailWritebackResult.Message;
+                                    }
+                                }
                             }
                             catch (Exception ex)
                             {
@@ -305,8 +317,12 @@ public sealed class BulkRunCoordinator(
                                 reason = ex.Message;
                             }
                         }
+                        else if (request.DryRun && plannedCommand is not null)
+                        {
+                            emailWritebackResult = await WriteBackSuccessFactorsEmailAsync(plan, plannedCommand, request.DryRun, ct);
+                        }
 
-                        var item = BuildEntryItem(runId, request.DryRun, syncScope, plan, bucket, action, applied, succeeded, reason, plannedCommand, commandResult, captureMetadata);
+                        var item = BuildEntryItem(runId, request.DryRun, syncScope, plan, bucket, action, applied, succeeded, reason, plannedCommand, commandResult, captureMetadata, emailWritebackResult);
                         await UpdateGraveyardRetentionAsync(plan, ct);
                         await channel.Writer.WriteAsync(
                             new WorkerRunResult(
@@ -623,7 +639,8 @@ public sealed class BulkRunCoordinator(
         string? reason,
         DirectoryMutationCommand? plannedCommand,
         DirectoryCommandResult? commandResult,
-        RunCaptureMetadata captureMetadata) =>
+        RunCaptureMetadata captureMetadata,
+        SuccessFactorsEmailWritebackResult? emailWritebackResult = null) =>
         RunEntrySnapshotBuilder.Build(
             runId,
             dryRun,
@@ -637,7 +654,19 @@ public sealed class BulkRunCoordinator(
             plannedCommand,
             commandResult,
             captureMetadata,
-            lifecycleSettings.DirectoryIdentityAttribute);
+            lifecycleSettings.DirectoryIdentityAttribute,
+            emailWritebackResult);
+
+    private Task<SuccessFactorsEmailWritebackResult?> WriteBackSuccessFactorsEmailAsync(
+        PlannedWorkerAction plan,
+        DirectoryMutationCommand command,
+        bool dryRun,
+        CancellationToken cancellationToken)
+    {
+        return successFactorsEmailWritebackGateway is null
+            ? Task.FromResult<SuccessFactorsEmailWritebackResult?>(null)
+            : successFactorsEmailWritebackGateway.WriteBackEmailAsync(plan, command, dryRun, cancellationToken);
+    }
 
     private static JsonElement BuildReport(
         string runId,

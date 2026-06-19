@@ -153,6 +153,11 @@ builder.Services.AddHttpClient<SuccessFactorsWorkerSource>()
     {
         AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate
     });
+builder.Services.AddHttpClient<SuccessFactorsEmailWritebackGateway>()
+    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+    {
+        AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate
+    });
 builder.Services.AddHttpClient<SuccessFactorsUserLookupService>()
     .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
     {
@@ -164,6 +169,7 @@ builder.Services.AddHttpClient<IDependencyHealthService, DependencyHealthService
         AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate
     });
 builder.Services.AddTransient<IWorkerSource>(serviceProvider => serviceProvider.GetRequiredService<SuccessFactorsWorkerSource>());
+builder.Services.AddTransient<ISuccessFactorsEmailWritebackGateway>(serviceProvider => serviceProvider.GetRequiredService<SuccessFactorsEmailWritebackGateway>());
 builder.Services.AddTransient<ActiveDirectoryGateway>();
 builder.Services.AddTransient<IDirectoryGateway>(serviceProvider =>
 {

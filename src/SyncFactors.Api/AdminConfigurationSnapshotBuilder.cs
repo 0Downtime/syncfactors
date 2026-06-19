@@ -285,6 +285,16 @@ public sealed class AdminConfigurationSnapshotBuilder(
                     CreateEntry("Preview query", NotConfiguredValue, SyncConfigSource)
                 ])
             : BuildQueryGroup("Preview query", sync.SuccessFactors.PreviewQuery));
+        groups.Add(new AdminConfigurationGroupViewModel(
+            Title: "Email writeback",
+            Entries:
+            [
+                CreateEntry("Enabled", sync.SuccessFactors.EmailWriteback.Enabled ? "Enabled" : "Disabled", SyncConfigSource),
+                CreateEntry("User entity set", sync.SuccessFactors.EmailWriteback.UserEntitySet, SyncConfigSource),
+                CreateEntry("User ID source", sync.SuccessFactors.EmailWriteback.UserIdSourceAttribute, SyncConfigSource),
+                CreateEntry("Email field", sync.SuccessFactors.EmailWriteback.EmailField, SyncConfigSource),
+                CreateEntry("Source email attribute", sync.SuccessFactors.EmailWriteback.SourceEmailAttribute, SyncConfigSource)
+            ]));
 
         return new AdminConfigurationSectionViewModel(
             Id: "successfactors",

@@ -298,7 +298,9 @@ public sealed class DetailModel(RunEntriesQueryService queryService) : PageModel
             BuildSnapshotPanel(entry.Item, "directoryBefore", "AD Before", "Directory state observed before planning."),
             BuildSnapshotPanel(entry.Item, "plannedDirectoryState", "Planned AD State", "Target account state and operations saved for this run."),
             BuildSnapshotPanel(entry.Item, "plannedCommand", "Planned Command", "Sanitized AD command SyncFactors would send for an auto-applicable entry.", nullSummary: "No AD command was planned for this entry."),
+            BuildSnapshotPanel(entry.Item, "plannedSuccessFactorsEmailWriteback", "Planned SF Email Writeback", "SuccessFactors User email update staged from Active Directory output.", nullSummary: "No SuccessFactors email writeback was planned for this entry."),
             BuildSnapshotPanel(entry.Item, "liveResult", "Live Verification", "Real sync execution and readback result saved for this entry.", nullSummary: IsDryRun ? "Dry runs do not have live verification." : "No live AD result was captured for this entry."),
+            BuildSnapshotPanel(entry.Item, "successFactorsEmailWritebackResult", "SF Email Writeback Result", "SuccessFactors OData writeback result saved for this entry.", nullSummary: IsDryRun ? "Dry runs do not call SuccessFactors writeback." : "No SuccessFactors email writeback result was captured for this entry."),
             BuildSnapshotPanel(entry.Item, "captureMetadata", "Capture Metadata", "Run and configuration fingerprints captured with this entry.")
         ];
     }

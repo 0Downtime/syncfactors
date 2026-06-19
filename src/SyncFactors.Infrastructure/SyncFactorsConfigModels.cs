@@ -25,7 +25,15 @@ public sealed record SuccessFactorsConfig(
     string BaseUrl,
     SuccessFactorsAuthConfig Auth,
     SuccessFactorsQueryConfig Query,
-    SuccessFactorsQueryConfig? PreviewQuery);
+    SuccessFactorsQueryConfig? PreviewQuery,
+    SuccessFactorsEmailWritebackConfig EmailWriteback);
+
+public sealed record SuccessFactorsEmailWritebackConfig(
+    bool Enabled,
+    string UserEntitySet,
+    string UserIdSourceAttribute,
+    string EmailField,
+    string SourceEmailAttribute);
 
 public sealed record SuccessFactorsAuthConfig(
     string Mode,

@@ -30,7 +30,8 @@ public static class RunEntrySnapshotBuilder
         DirectoryMutationCommand? plannedCommand,
         DirectoryCommandResult? liveResult,
         RunCaptureMetadata captureMetadata,
-        string directoryIdentityAttribute = "sAMAccountName")
+        string directoryIdentityAttribute = "sAMAccountName",
+        SuccessFactorsEmailWritebackResult? emailWritebackResult = null)
     {
         var managerId = GetAttribute(plan.Worker.Attributes, "managerId");
         var changedAttributeDetails = plan.AttributeChanges
@@ -141,6 +142,15 @@ public static class RunEntrySnapshotBuilder
                 operations
             },
             plannedCommand = plannedCommand is null ? null : SanitizeCommand(plannedCommand),
+            plannedSuccessFactorsEmailWriteback = emailWritebackResult is null
+                ? null
+                : new
+                {
+                    userId = emailWritebackResult.UserId,
+                    emailAddress = emailWritebackResult.EmailAddress,
+                    previousEmailAddress = emailWritebackResult.PreviousEmailAddress,
+                    endpoint = emailWritebackResult.Endpoint
+                },
             liveResult = dryRun || (!applied && liveResult is null)
                 ? null
                 : new
@@ -155,6 +165,18 @@ public static class RunEntrySnapshotBuilder
                     verifiedEnabled = liveResult?.VerifiedEnabled,
                     verifiedDistinguishedName = liveResult?.VerifiedDistinguishedName,
                     verifiedParentOu = liveResult?.VerifiedParentOu
+                },
+            successFactorsEmailWritebackResult = emailWritebackResult is null || (!emailWritebackResult.Applied && !dryRun)
+                ? null
+                : new
+                {
+                    applied = emailWritebackResult.Applied,
+                    succeeded = emailWritebackResult.Succeeded,
+                    userId = emailWritebackResult.UserId,
+                    emailAddress = emailWritebackResult.EmailAddress,
+                    previousEmailAddress = emailWritebackResult.PreviousEmailAddress,
+                    endpoint = emailWritebackResult.Endpoint,
+                    message = emailWritebackResult.Message
                 },
             captureMetadata = new
             {

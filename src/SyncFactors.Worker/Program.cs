@@ -112,7 +112,13 @@ builder.Services.AddHttpClient<SuccessFactorsWorkerSource>()
     {
         AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate
     });
+builder.Services.AddHttpClient<SuccessFactorsEmailWritebackGateway>()
+    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+    {
+        AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate
+    });
 builder.Services.AddTransient<IWorkerSource>(serviceProvider => serviceProvider.GetRequiredService<SuccessFactorsWorkerSource>());
+builder.Services.AddTransient<ISuccessFactorsEmailWritebackGateway>(serviceProvider => serviceProvider.GetRequiredService<SuccessFactorsEmailWritebackGateway>());
 builder.Services.AddSingleton<ScaffoldDirectoryCommandGateway>();
 builder.Services.AddTransient<ActiveDirectoryGateway>();
 builder.Services.AddTransient<IDirectoryGateway>(serviceProvider => serviceProvider.GetRequiredService<ActiveDirectoryGateway>());

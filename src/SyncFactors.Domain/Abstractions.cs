@@ -97,6 +97,15 @@ public interface IDirectoryCommandGateway
     Task<DirectoryCommandResult> ExecuteAsync(DirectoryMutationCommand command, CancellationToken cancellationToken);
 }
 
+public interface ISuccessFactorsEmailWritebackGateway
+{
+    Task<SuccessFactorsEmailWritebackResult?> WriteBackEmailAsync(
+        PlannedWorkerAction plan,
+        DirectoryMutationCommand command,
+        bool dryRun,
+        CancellationToken cancellationToken);
+}
+
 public interface IEmailSender
 {
     Task SendAsync(string subject, string body, IReadOnlyList<string> recipients, CancellationToken cancellationToken);
