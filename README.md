@@ -129,8 +129,8 @@ The repository is still alpha. The implementation is concrete enough to document
 Primary commands from the repository root:
 
 ```powershell
-dotnet build ./SyncFactors.Next.sln
-dotnet test ./SyncFactors.Next.sln
+dotnet build ./SyncFactors.Next.sln -m:1
+dotnet test ./SyncFactors.Next.sln -m:1
 ```
 
 Run the local validation entrypoint:
@@ -497,6 +497,8 @@ Build the browser bundle manually when needed:
 ```powershell
 npm run build:ui
 ```
+
+The checked-in `wwwroot/dist` files are the production browser payload. Source maps are intentionally off for the default production bundle; use `npm run build:ui:sourcemap` for local debugging.
 
 Or keep it rebuilding while you edit:
 

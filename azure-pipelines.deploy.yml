@@ -73,14 +73,14 @@ stages:
             inputs:
               command: build
               projects: SyncFactors.Next.sln
-              arguments: --configuration Release --no-restore
+              arguments: --configuration Release --no-restore -m:1
 
           - task: DotNetCoreCLI@2
             displayName: Test solution
             inputs:
               command: test
               projects: SyncFactors.Next.sln
-              arguments: --configuration Release --no-build --logger "trx;LogFilePrefix=test-results" --results-directory "$(Agent.TempDirectory)\test-results"
+              arguments: --configuration Release --no-build -m:1 --logger "trx;LogFilePrefix=test-results" --results-directory "$(Agent.TempDirectory)\test-results"
               publishTestResults: false
 
           - task: PublishTestResults@2

@@ -11,6 +11,7 @@
     <EnableNETAnalyzers>true</EnableNETAnalyzers>
     <AnalysisLevel>latest</AnalysisLevel>
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    <BuildInParallel>false</BuildInParallel>
     <TreatWarningsAsErrors Condition="'$(CI)' == 'true' Or '$(GITHUB_ACTIONS)' == 'true'">true</TreatWarningsAsErrors>
     <TreatWarningsAsErrors Condition="'$(CI)' != 'true' And '$(GITHUB_ACTIONS)' != 'true'">false</TreatWarningsAsErrors>
   </PropertyGroup>

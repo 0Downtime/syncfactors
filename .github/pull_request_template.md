@@ -2,7 +2,7 @@
 - 
 
 ## Validation
-- [ ] `dotnet test ./SyncFactors.Next.sln`
+- [ ] `dotnet test ./SyncFactors.Next.sln -m:1`
 - [ ] relevant manual validation completed
 
 ## Risk Notes

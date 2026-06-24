@@ -85,7 +85,7 @@ jobs:
             /d:sonar.qualitygate.timeout=300
 
       - name: Build solution for analysis
-        run: dotnet build ./SyncFactors.Next.sln --configuration Release
+        run: dotnet build ./SyncFactors.Next.sln --configuration Release -m:1
 
       - name: Install frontend dependencies
         working-directory: ./src/SyncFactors.Api
@@ -100,6 +100,7 @@ jobs:
           dotnet test ./SyncFactors.Next.sln \
             --configuration Release \
             --no-build \
+            -m:1 \
             --settings ./coverlet.runsettings \
             --results-directory ./artifacts/coverage \
             --collect:"XPlat Code Coverage"

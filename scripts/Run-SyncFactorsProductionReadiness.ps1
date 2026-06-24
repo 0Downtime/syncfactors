@@ -190,7 +190,7 @@ try {
                 SYNCFACTORS_MAPPING_CONFIG_PATH = $null
                 SYNCFACTORS_RUN_PROFILE = $null
             } -ScriptBlock {
-                dotnet test (Join-Path $projectRoot 'SyncFactors.Next.sln') --no-build
+                dotnet test (Join-Path $projectRoot 'SyncFactors.Next.sln') --no-build -m:1
                 if ($LASTEXITCODE -ne 0) {
                     throw "dotnet test failed."
                 }

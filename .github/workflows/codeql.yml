@@ -86,7 +86,7 @@ jobs:
 
       - name: Build solution
         if: ${{ matrix.build-mode == 'manual' }}
-        run: dotnet build ./SyncFactors.Next.sln --configuration Release
+        run: dotnet build ./SyncFactors.Next.sln --configuration Release -m:1
 
       - name: Perform CodeQL analysis
         uses: github/codeql-action/analyze@7211b7c8077ea37d8641b6271f6a365a22a5fbfa # v4

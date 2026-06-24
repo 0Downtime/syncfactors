@@ -387,10 +387,12 @@ The API and worker support:
 
 Primary validation:
 
-- `dotnet build ./SyncFactors.Next.sln`
-- `dotnet test ./SyncFactors.Next.sln`
+- `dotnet build ./SyncFactors.Next.sln -m:1`
+- `dotnet test ./SyncFactors.Next.sln -m:1`
 - `pwsh ./scripts/Validate-SyncFactors.ps1`
 - `npm ci --ignore-scripts`, `npm run test:ui`, and `npm run build:ui` from `src/SyncFactors.Api` when touching the UI bundle
+
+The checked-in `src/SyncFactors.Api/wwwroot/dist` files are the production browser payload. Source maps are opt-in with `npm run build:ui:sourcemap` for local debugging and are ignored by git.
 
 CI currently includes GitHub Actions for .NET build/test, frontend tests/build, lifecycle simulation master coverage, SBOM generation, SonarCloud, Semgrep, Gitleaks, Trivy, dependency review, CodeQL, and release packaging.
 

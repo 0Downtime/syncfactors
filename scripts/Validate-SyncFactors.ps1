@@ -35,7 +35,7 @@ try {
 
     if (-not $SkipSolutionTests) {
         Write-Host "`n==> Running solution test suite" -ForegroundColor Cyan
-        dotnet test $solutionPath --no-build
+        dotnet test $solutionPath --no-build -m:1
         if ($LASTEXITCODE -ne 0) {
             throw "dotnet test on the solution failed."
         }

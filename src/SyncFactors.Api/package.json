@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "build:ui": "node esbuild.config.mjs",
+    "build:ui:sourcemap": "node esbuild.config.mjs --sourcemap",
     "test:ui": "vitest run --coverage",
     "watch:ui": "node esbuild.config.mjs --watch"
   },

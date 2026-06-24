@@ -5,6 +5,7 @@ TestResults/
 testResults.xml
 coverage.xml
 src/SyncFactors.Api/coverage/
+src/SyncFactors.Api/wwwroot/dist/*.map
 *.coverage
 *.trx
 artifacts/

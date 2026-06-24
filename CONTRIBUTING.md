@@ -20,7 +20,7 @@ pwsh ./scripts/Validate-SyncFactors.ps1
 4. For focused .NET-only changes, the minimum local check is:
 
 ```powershell
-dotnet test ./SyncFactors.Next.sln
+dotnet test ./SyncFactors.Next.sln -m:1
 ```
 
 5. If your change affects the operator browser bundle, run the frontend checks:
