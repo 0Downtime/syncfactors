@@ -4,6 +4,252 @@ SyncFactors is currently a local-first .NET 10 application for operating Success
 
 The runtime is split into an ASP.NET Core operator portal/API, a background worker, domain services, infrastructure adapters, and a local mock SuccessFactors service used for development and test automation.
 
+## Technical Architecture Diagram
+
+The diagrams below reflect the current implementation in `src/SyncFactors.Api`, `src/SyncFactors.Worker`, `src/SyncFactors.Domain`, `src/SyncFactors.Infrastructure`, and `src/SyncFactors.MockSuccessFactors`.
+
+### System Context And Runtime Containers
+
+```mermaid
+flowchart LR
+    operator["Operator browser<br/>Razor Pages, JSON API, SignalR client"]
+    oidc["OIDC identity provider<br/>optional SSO"]
+    sf["SAP SuccessFactors OData<br/>PerPerson, EmpJob, User upsert"]
+    mockSf["SyncFactors.MockSuccessFactors<br/>local OData-compatible fixture service"]
+    ad["Microsoft Active Directory<br/>LDAP or LDAPS"]
+    smtp["SMTP relay<br/>graveyard retention alerts"]
+    ai["Application Insights<br/>optional telemetry"]
+    localLogs[("Local logs<br/>API logs, worker logs, run logs")]
+    audit[("Security audit JSONL<br/>hash-chain events")]
+    secrets["Secret sources<br/>environment, macOS Keychain, Windows Credential Manager"]
+    config["Config and mapping JSON<br/>sync config, AD/SF settings, field mappings"]
+
+    subgraph host["Local SyncFactors host or Windows service deployment"]
+        api["SyncFactors.Api<br/>ASP.NET Core Razor Pages<br/>authenticated JSON endpoints<br/>SignalR dashboard hub"]
+        worker["SyncFactors.Worker<br/>background hosted service<br/>queue consumer and scheduler"]
+        domain["SyncFactors.Domain<br/>planning, lifecycle policy,<br/>guardrails, run coordination"]
+        infra["SyncFactors.Infrastructure<br/>SQLite, SuccessFactors, AD,<br/>auth, config, logging adapters"]
+        sqlite[("SQLite runtime database<br/>runs, entries, queue, schedules,<br/>status, users, settings, checkpoints")]
+        runtimeFiles[("Runtime files<br/>preview logs, scaffold data,<br/>local config, release-bundle state")]
+    end
+
+    operator -->|"Razor pages and /api/*"| api
+    api -->|"cookie auth; optional challenge"| oidc
+    api -->|"read status, runs, queue, settings"| sqlite
+    api -->|"queue, cancel, preview, apply, admin actions"| domain
+    api -->|"adapter calls and persistence"| infra
+    api -->|"dashboard pushes"| operator
+
+    worker -->|"claim queue, heartbeat, schedules"| sqlite
+    worker -->|"execute queued full, delta, delete, retention work"| domain
+    worker -->|"adapter calls and persistence"| infra
+
+    domain -->|"port interfaces"| infra
+    infra -->|"OData queries and email writeback"| sf
+    infra -.->|"local run profile / tests"| mockSf
+    infra -->|"lookup and mutation commands"| ad
+    infra -->|"send reports"| smtp
+    infra -->|"resolve secrets"| secrets
+    infra -->|"load settings"| config
+    infra --> sqlite
+    infra --> runtimeFiles
+    api --> localLogs
+    worker --> localLogs
+    api --> audit
+    api -.->|"telemetry"| ai
+    worker -.->|"telemetry"| ai
+```
+
+### Codebase Dependency Map
+
+```mermaid
+flowchart TB
+    contracts["SyncFactors.Contracts<br/>DTOs, runtime records, settings"]
+
+    subgraph entrypoints["Entrypoints"]
+        apiProj["SyncFactors.Api<br/>operator portal, JSON API, SignalR"]
+        workerProj["SyncFactors.Worker<br/>queued run executor"]
+        automationProj["SyncFactors.Automation<br/>scenario runner and local bootstrap CLI"]
+        mockProj["SyncFactors.MockSuccessFactors<br/>fixture-backed OData service"]
+    end
+
+    subgraph domainProj["SyncFactors.Domain"]
+        planning["WorkerPlanningService<br/>identity, lifecycle, diff planning"]
+        runCoord["BulkRunCoordinator<br/>FullSyncRunService<br/>ApplyPreviewService"]
+        schedule["SyncScheduleCoordinator<br/>RunLifecycleService"]
+        retention["GraveyardDeletionQueueService<br/>GraveyardAutoDeleteCoordinator<br/>GraveyardRetentionReportCoordinator"]
+        policies["LifecyclePolicy<br/>ManualReviewSafetyPolicy<br/>DirectoryMutationCommandBuilder"]
+    end
+
+    subgraph infraProj["SyncFactors.Infrastructure"]
+        sqliteStores["SQLite stores<br/>RunRepository, RunQueueStore,<br/>RuntimeStatusStore, ScheduleStore,<br/>LocalUserStore, OidcAccountStore"]
+        sfAdapters["SuccessFactors adapters<br/>WorkerSource, DeltaSyncService,<br/>UserLookupService, EmailWritebackGateway"]
+        adAdapters["Active Directory adapters<br/>Gateway, CommandGateway,<br/>ConnectionPool"]
+        authConfig["Auth, config, secrets<br/>LocalAuthService, ConfigurationLoader,<br/>SecretResolver"]
+        obs["Observability and files<br/>DependencyHealthService,<br/>SecurityAuditService, file loggers"]
+    end
+
+    apiProj --> contracts
+    workerProj --> contracts
+    automationProj --> contracts
+    mockProj --> contracts
+
+    apiProj --> domainProj
+    workerProj --> domainProj
+    automationProj --> domainProj
+    mockProj --> domainProj
+
+    apiProj --> infraProj
+    workerProj --> infraProj
+    automationProj --> infraProj
+    mockProj --> infraProj
+
+    domainProj --> contracts
+    infraProj --> contracts
+    infraProj --> domainProj
+
+    runCoord --> planning
+    runCoord --> policies
+    runCoord --> schedule
+    retention --> schedule
+    sqliteStores --> sqliteDb[("SQLite")]
+    sfAdapters --> successFactors["SuccessFactors or mock service"]
+    adAdapters --> activeDirectory["Active Directory"]
+    authConfig --> secretStores["environment / secure stores"]
+    obs --> logSinks["logs / audit / telemetry"]
+```
+
+### Queued Sync Execution Flow
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Operator
+    participant API as SyncFactors.Api
+    participant Audit as SecurityAuditService
+    participant Queue as SqliteRunQueueStore
+    participant Worker as SyncFactors.Worker
+    participant Schedule as SyncScheduleCoordinator
+    participant Bulk as BulkRunCoordinator
+    participant Delta as SuccessFactorsDeltaSyncService
+    participant SF as SuccessFactors adapters
+    participant Planner as WorkerPlanningService
+    participant ADRead as ActiveDirectoryGateway
+    participant ADWrite as ActiveDirectoryCommandGateway
+    participant RunLife as RunLifecycleService
+    participant Stores as SQLite stores
+    participant Hub as DashboardRealtimeService and SignalR
+
+    Operator->>API: POST /api/runs with dryRun or live request
+    API->>Audit: record operator request and live-write intent
+    API->>Queue: EnqueueAsync(StartRunRequest)
+    API-->>Operator: request id and pending status
+
+    loop every worker heartbeat interval
+        Worker->>Schedule: TryEnqueueDueRunAsync()
+        Worker->>Queue: ClaimNextPendingAsync("SyncFactors.Worker")
+    end
+
+    Worker->>Bulk: ExecuteAsync(claimed request, maxDegreeOfParallelism)
+    Bulk->>RunLife: StartRunAsync()
+    RunLife->>Stores: Save initial run and runtime status
+    Bulk->>Delta: GetWindowAsync()
+    Delta->>Stores: read delta checkpoint
+    Bulk->>SF: ListWorkersAsync(DeltaPreferred)
+    SF-->>Bulk: worker snapshots from full or delta OData query
+
+    par per worker, bounded by MaxDegreeOfParallelism
+        Bulk->>Planner: PlanAsync(worker)
+        Planner->>ADRead: FindByWorkerAsync(worker)
+        Planner->>ADRead: ResolveManagerDistinguishedNameAsync(managerId)
+        Planner->>ADRead: ResolveAvailableEmailLocalPartAsync(worker)
+        Planner-->>Bulk: PlannedWorkerAction with bucket, operations, diff, review state
+        Bulk->>Bulk: apply guardrails and manual-review safety policy
+        alt dry run or manual review or unchanged
+            Bulk->>RunLife: AppendRunEntryAsync(planned result)
+        else live auto-apply
+            Bulk->>ADWrite: ExecuteAsync(DirectoryMutationCommand)
+            ADWrite-->>Bulk: DirectoryCommandResult
+            Bulk->>SF: optional SuccessFactors email writeback
+            Bulk->>RunLife: AppendRunEntryAsync(applied result)
+        end
+    end
+
+    Bulk->>RunLife: RecordProgressAsync() for each result
+    RunLife->>Stores: persist run_entries and runtime_status
+    Bulk->>RunLife: CompleteRunAsync() or FailRunAsync()
+    Bulk->>Delta: RecordSuccessfulRunAsync(checkpoint) on success
+    Worker->>Queue: CompleteAsync, CancelAsync, or FailAsync
+    Hub->>Stores: poll dashboard snapshot sources
+    Hub-->>Operator: push live dashboard update
+```
+
+### Storage, Auth, And Operations Model
+
+```mermaid
+flowchart TB
+    subgraph access["Access control"]
+        cookie["Cookie auth<br/>SyncFactors.Auth"]
+        localAuth["Local break-glass auth<br/>LocalAuthService"]
+        oidcAuth["OIDC auth<br/>OpenIdConnect handler"]
+        roles["Viewer / Operator / Admin / BreakGlassAdmin policies"]
+    end
+
+    subgraph sqlite["SQLite schema version 14"]
+        schema["schema_versions"]
+        runs["runs"]
+        entries["run_entries"]
+        status["runtime_status"]
+        heartbeat["worker_heartbeat"]
+        queue["run_queue"]
+        scheduleTable["sync_schedule"]
+        deltaState["delta_sync_state"]
+        retentionTables["graveyard_retention<br/>graveyard_retention_report_state"]
+        settingsTable["dashboard_settings"]
+        users["local_users"]
+        oidcAccounts["oidc_accounts"]
+        maintenance["maintenance_state"]
+    end
+
+    subgraph adapters["Infrastructure adapters"]
+        sqliteInit["SqliteDatabaseInitializer<br/>schema migration and SQLCipher setup"]
+        sqliteRuntime["SQLite stores<br/>runtime status, runs, queue,<br/>schedule, heartbeat, users, settings"]
+        sfClient["SuccessFactors HTTP clients<br/>gzip/deflate OData requests"]
+        adPool["ActiveDirectoryConnectionPool<br/>LDAP/LDAPS leases, retries, fallback"]
+        adCommand["ActiveDirectoryCommandGateway<br/>create, update, move, enable,<br/>disable, delete, group membership"]
+        health["DependencyHealthService<br/>SF, AD, worker heartbeat probes"]
+        auditSvc["SecurityAuditService<br/>operator/admin audit trail"]
+    end
+
+    cookie --> roles
+    localAuth --> users
+    oidcAuth --> oidcAccounts
+    roles --> apiPolicies["Razor conventions and /api groups"]
+
+    sqliteInit --> sqlite
+    sqliteRuntime --> sqlite
+    sfClient --> sfSystem["SuccessFactors OData"]
+    adPool --> adSystem["Active Directory"]
+    adCommand --> adPool
+    health --> sfClient
+    health --> adPool
+    health --> heartbeat
+    auditSvc --> auditLog[("security audit JSONL")]
+
+    queue --> workerLoop["Worker queue loop"]
+    scheduleTable --> workerLoop
+    workerLoop --> runs
+    workerLoop --> entries
+    workerLoop --> status
+    workerLoop --> heartbeat
+    workerLoop --> deltaState
+    workerLoop --> retentionTables
+    runs --> dashboard["Dashboard, run detail, exceptions"]
+    entries --> dashboard
+    status --> dashboard
+    settingsTable --> dashboard
+```
+
 ## Runtime Components
 
 ### SyncFactors.Api
