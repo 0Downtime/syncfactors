@@ -98,6 +98,20 @@ public interface IDirectoryCommandGateway
     Task<DirectoryCommandResult> ExecuteAsync(DirectoryMutationCommand command, CancellationToken cancellationToken);
 }
 
+/// <summary>
+/// Executes a preview-derived mutation only when the implementation can bind the reviewed
+/// source and directory state to the actual directory write. Implementations must reject a
+/// stale precondition before any directory mutation; callers must not fall back to
+/// <see cref="IDirectoryCommandGateway.ExecuteAsync"/> when this capability is unavailable.
+/// </summary>
+public interface IAtomicPreviewDirectoryCommandGateway : IDirectoryCommandGateway
+{
+    Task<DirectoryCommandResult> ExecuteIfCurrentAsync(
+        DirectoryMutationCommand command,
+        WorkerPreviewResult reviewedPreview,
+        CancellationToken cancellationToken);
+}
+
 public interface IEmailSender
 {
     Task SendAsync(string subject, string body, IReadOnlyList<string> recipients, CancellationToken cancellationToken);

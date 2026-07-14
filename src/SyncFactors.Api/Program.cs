@@ -179,6 +179,7 @@ builder.Services.AddSingleton<IRunCaptureMetadataProvider, RunCaptureMetadataPro
 builder.Services.AddSingleton<IActiveDirectoryConnectionPool, ActiveDirectoryConnectionPool>();
 builder.Services.AddSingleton<IWorkerHeartbeatStore, SqliteWorkerHeartbeatStore>();
 builder.Services.AddTransient<IWorkerPreviewPlanner, WorkerPreviewPlanner>();
+builder.Services.AddTransient<IPreviewApplyFreshnessValidator, PreviewApplyFreshnessValidator>();
 builder.Services.AddTransient<IApplyPreviewService, ApplyPreviewService>();
 builder.Services.AddTransient<IFullSyncRunService, FullSyncRunService>();
 builder.Services.AddSingleton<IDashboardSnapshotService, DashboardSnapshotService>();

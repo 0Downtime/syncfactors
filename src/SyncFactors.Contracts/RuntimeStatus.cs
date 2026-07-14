@@ -466,7 +466,10 @@ public sealed record WorkerPreviewResult(
     IReadOnlyList<SourceAttributeRow> UnusedSourceAttributes,
     IReadOnlyList<MissingSourceAttributeRow> MissingSourceAttributes,
     IReadOnlyList<WorkerPreviewEntry> Entries,
-    IReadOnlyList<ProvisioningDecisionStep>? DecisionSteps = null);
+    IReadOnlyList<ProvisioningDecisionStep>? DecisionSteps = null,
+    DateTimeOffset? CreatedAtUtc = null,
+    string? SourceStateFingerprint = null,
+    string? DirectoryStateFingerprint = null);
 
 public sealed record WorkerPreviewEntry(
     string Bucket,

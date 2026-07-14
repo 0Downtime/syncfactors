@@ -36,9 +36,15 @@ public sealed class WorkerPreviewPlanner(
             attributeMappingProvider.GetEnabledMappings());
         var history = await runRepository.ListWorkerPreviewHistoryAsync(worker.WorkerId, 1, cancellationToken);
         var previewWithHistory = preview with { PreviousRunId = history.FirstOrDefault()?.RunId };
-        var fingerprint = WorkerPreviewFingerprint.Compute(previewWithHistory);
+        var previewWithState = previewWithHistory with
+        {
+            CreatedAtUtc = startedAt,
+            SourceStateFingerprint = WorkerPreviewStateFingerprint.ComputeSource(plan.Worker),
+            DirectoryStateFingerprint = WorkerPreviewStateFingerprint.ComputeDirectory(plan.DirectoryUser)
+        };
+        var fingerprint = WorkerPreviewFingerprint.Compute(previewWithState);
         var previewRunId = $"preview-{worker.WorkerId}-{startedAt:yyyyMMddHHmmssfff}";
-        var finalizedPreview = previewWithHistory with
+        var finalizedPreview = previewWithState with
         {
             RunId = previewRunId,
             Fingerprint = fingerprint
