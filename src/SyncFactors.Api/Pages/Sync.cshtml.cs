@@ -12,7 +12,8 @@ public sealed class SyncModel(
     IRunQueueStore runQueueStore,
     RealSyncSettings realSyncSettings,
     ISyncScheduleStore syncScheduleStore,
-    IWebHostEnvironment hostEnvironment) : PageModel
+    IWebHostEnvironment hostEnvironment,
+    ISecurityAuditService? audit = null) : PageModel
 {
     private const int RunsPageSize = 25;
     private const string DryRunMode = "DryRun";
@@ -118,13 +119,14 @@ public sealed class SyncModel(
 
         try
         {
-            await runQueueStore.EnqueueAsync(
+            var queued = await runQueueStore.EnqueueAsync(
                 new StartRunRequest(
                     DryRun: !string.Equals(RunMode, LiveRunMode, StringComparison.Ordinal),
                     Mode: "BulkSync",
                     RunTrigger: "AdHoc",
                     RequestedBy: ResolveRequestedBy()),
                 cancellationToken);
+            audit?.Write("RunQueued", "Success", ("RequestedBy", queued.RequestedBy), ("Mode", queued.Mode), ("DryRun", queued.DryRun));
         }
         catch (RunQueueConflictException)
         {
@@ -164,13 +166,14 @@ public sealed class SyncModel(
 
         try
         {
-            await runQueueStore.EnqueueAsync(
+            var queued = await runQueueStore.EnqueueAsync(
                 new StartRunRequest(
                     DryRun: false,
                     Mode: DeleteAllUsersMode,
                     RunTrigger: "DeleteAllUsers",
                     RequestedBy: ResolveRequestedBy()),
                 cancellationToken);
+            audit?.Write("DeleteAllUsersQueued", "Success", ("RequestedBy", queued.RequestedBy));
         }
         catch (RunQueueConflictException)
         {
@@ -193,6 +196,7 @@ public sealed class SyncModel(
             return RedirectToPage(new { PageNumber });
         }
 
+        audit?.Write("RunCancelled", "Success", ("RequestedBy", ResolveRequestedBy()));
         SuccessMessage = "Run cancellation requested.";
         ErrorMessage = null;
         return RedirectToPage(new { PageNumber });
@@ -210,6 +214,7 @@ public sealed class SyncModel(
                 Enabled: ScheduleEnabled,
                 IntervalMinutes: IntervalMinutes),
             cancellationToken);
+        audit?.Write("SyncScheduleUpdated", "Success", ("RequestedBy", ResolveRequestedBy()), ("Enabled", Schedule.Enabled), ("IntervalMinutes", Schedule.IntervalMinutes));
 
         SuccessMessage = Schedule.Enabled
             ? ScheduledRunsAreDryRunOnly

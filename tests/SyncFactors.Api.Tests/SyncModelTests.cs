@@ -47,6 +47,22 @@ public sealed class SyncModelTests
     }
 
     [Fact]
+    public async Task OnPostStartRunAsync_WritesEquivalentQueueAuditEvent()
+    {
+        var audit = new CapturingSecurityAuditService();
+        var model = CreateModel(audit: audit);
+
+        await model.OnPostStartRunAsync(CancellationToken.None);
+
+        var entry = Assert.Single(audit.Entries);
+        Assert.Equal("RunQueued", entry.EventType);
+        Assert.Equal("Success", entry.Outcome);
+        Assert.Equal("Sync page", entry.Fields["RequestedBy"]);
+        Assert.Equal("BulkSync", entry.Fields["Mode"]);
+        Assert.Equal(true, entry.Fields["DryRun"]);
+    }
+
+    [Fact]
     public async Task OnPostStartRunAsync_QueuesLiveRunWhenSelected()
     {
         var queueStore = new CapturingRunQueueStore();
@@ -477,6 +493,7 @@ public sealed class SyncModelTests
         CapturingRunQueueStore? queueStore = null,
         RealSyncSettings? realSyncSettings = null,
         StubSyncScheduleStore? scheduleStore = null,
+        CapturingSecurityAuditService? audit = null,
         string environmentName = "Development")
     {
         return new SyncModel(
@@ -484,7 +501,8 @@ public sealed class SyncModelTests
             queueStore ?? new CapturingRunQueueStore(),
             realSyncSettings ?? new RealSyncSettings(),
             scheduleStore ?? new StubSyncScheduleStore(),
-            new StubWebHostEnvironment(environmentName));
+            new StubWebHostEnvironment(environmentName),
+            audit);
     }
 
     private sealed class StubDashboardSnapshotService(DashboardSnapshot snapshot) : IDashboardSnapshotService
@@ -663,5 +681,13 @@ public sealed class SyncModelTests
             _ = cancellationToken;
             return Task.FromResult(_current);
         }
+    }
+
+    private sealed class CapturingSecurityAuditService : ISecurityAuditService
+    {
+        public List<(string EventType, string Outcome, IReadOnlyDictionary<string, object?> Fields)> Entries { get; } = [];
+
+        public void Write(string eventType, string outcome, params (string Key, object? Value)[] fields) =>
+            Entries.Add((eventType, outcome, fields.ToDictionary(field => field.Key, field => field.Value)));
     }
 }

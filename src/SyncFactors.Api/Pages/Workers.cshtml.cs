@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc.RazorPages;
 using SyncFactors.Api;
 using SyncFactors.Contracts;
 using SyncFactors.Domain;
+using SyncFactors.Infrastructure;
 
 namespace SyncFactors.Api.Pages;
 
@@ -10,7 +11,8 @@ public sealed class Worker360Model(
     IWorkerPreviewPlanner previewPlanner,
     IApplyPreviewService applyPreviewService,
     IRunRepository runRepository,
-    RealSyncSettings? realSyncSettings = null) : PageModel
+    RealSyncSettings? realSyncSettings = null,
+    ISecurityAuditService? audit = null) : PageModel
 {
     private readonly RealSyncSettings _realSyncSettings = realSyncSettings ?? new RealSyncSettings();
 
@@ -143,6 +145,12 @@ public sealed class Worker360Model(
                     PreviewFingerprint: PreviewFingerprint,
                     AcknowledgeRealSync: AcknowledgeRealSync),
                 cancellationToken);
+            audit?.Write(
+                "PreviewApplied",
+                ApplyResult.Succeeded ? "Success" : "Failure",
+                ("RequestedBy", PageContext?.HttpContext?.User.Identity?.Name ?? "Workers page"),
+                ("WorkerId", WorkerId),
+                ("PreviewRunId", PreviewRunId));
         }
         catch (Exception ex)
         {
