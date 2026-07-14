@@ -249,6 +249,7 @@ public sealed class WorkerHostTests
         public Task<bool> HasPendingOrActiveRunAsync(CancellationToken cancellationToken) => Task.FromResult(false);
         public Task<bool> CancelPendingOrActiveAsync(string? requestedBy, CancellationToken cancellationToken) => Task.FromResult(false);
         public Task<bool> IsCancellationRequestedAsync(string requestId, CancellationToken cancellationToken) => Task.FromResult(false);
+        public Task<int> RecoverOrphanedActiveRunsAsync(string? errorMessage, CancellationToken cancellationToken) => Task.FromResult(0);
         public Task CompleteAsync(string requestId, string runId, CancellationToken cancellationToken)
         {
             CompletedRuns.Add((requestId, runId));
