@@ -15,6 +15,19 @@ public sealed class ActiveDirectoryCommandGatewayTests
     }
 
     [Fact]
+    public void CreateReferralWarning_ExcludesSearchBaseAndExceptionDetails()
+    {
+        var method = typeof(ActiveDirectoryCommandGateway).GetMethod("CreateReferralWarning", BindingFlags.NonPublic | BindingFlags.Static);
+
+        Assert.NotNull(method);
+        var warning = Assert.IsType<string>(method!.Invoke(null, ["FindExistingUser"]));
+
+        Assert.Equal("Active Directory referral skipped. Operation=FindExistingUser", warning);
+        Assert.DoesNotContain("OU=", warning, StringComparison.Ordinal);
+        Assert.DoesNotContain("ldap://", warning, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void GetParentDistinguishedName_IgnoresEscapedCommaInCommonName()
     {
         var method = typeof(ActiveDirectoryCommandGateway).GetMethod("GetParentDistinguishedName", BindingFlags.NonPublic | BindingFlags.Static);

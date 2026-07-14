@@ -4,6 +4,10 @@ updates:
     directory: "/"
     schedule:
       interval: weekly
+    cooldown:
+      semver-major-days: 14
+      semver-minor-days: 7
+      semver-patch-days: 3
     open-pull-requests-limit: 10
     commit-message:
       prefix: "chore"
@@ -13,9 +17,13 @@ updates:
         patterns:
           - "*"
   - package-ecosystem: npm
-    directory: "/"
+    directory: "/src/SyncFactors.Api"
     schedule:
       interval: weekly
+    cooldown:
+      semver-major-days: 14
+      semver-minor-days: 7
+      semver-patch-days: 3
     open-pull-requests-limit: 10
     commit-message:
       prefix: "chore"
@@ -28,6 +36,10 @@ updates:
     directory: "/"
     schedule:
       interval: weekly
+    cooldown:
+      semver-major-days: 14
+      semver-minor-days: 7
+      semver-patch-days: 3
     open-pull-requests-limit: 10
     commit-message:
       prefix: "chore"

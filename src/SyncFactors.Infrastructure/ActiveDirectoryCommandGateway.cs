@@ -967,6 +967,11 @@ public sealed class ActiveDirectoryCommandGateway(
         return exception.Message.Contains("referral", StringComparison.OrdinalIgnoreCase);
     }
 
+    private static string CreateReferralWarning(string operation)
+    {
+        return $"Active Directory referral skipped. Operation={operation}";
+    }
+
     private static string? GetAttribute(SearchResultEntry entry, string attributeName)
     {
         var resolvedAttributeName = ResolveAttributeName(entry, attributeName);
@@ -1528,12 +1533,12 @@ public sealed class ActiveDirectoryCommandGateway(
             }
             catch (DirectoryOperationException ex) when (IsReferralException(ex))
             {
-                logger.LogWarning(ex, "Skipping AD command search base because the server returned a referral. SearchBase={SearchBase} Operation={Operation}", searchBase, operation);
+                logger.LogWarning(CreateReferralWarning(operation));
                 continue;
             }
             catch (LdapException ex) when (IsReferralException(ex))
             {
-                logger.LogWarning(ex, "Skipping AD command search base because the LDAP client encountered a referral. SearchBase={SearchBase} Operation={Operation}", searchBase, operation);
+                logger.LogWarning(CreateReferralWarning(operation));
                 continue;
             }
 
@@ -1593,12 +1598,12 @@ public sealed class ActiveDirectoryCommandGateway(
             }
             catch (DirectoryOperationException ex) when (IsReferralException(ex))
             {
-                logger.LogWarning(ex, "Skipping AD command search base because the server returned a referral. SearchBase={SearchBase} Operation={Operation}", searchBase, operation);
+                logger.LogWarning(CreateReferralWarning(operation));
                 continue;
             }
             catch (LdapException ex) when (IsReferralException(ex))
             {
-                logger.LogWarning(ex, "Skipping AD command search base because the LDAP client encountered a referral. SearchBase={SearchBase} Operation={Operation}", searchBase, operation);
+                logger.LogWarning(CreateReferralWarning(operation));
                 continue;
             }
 
@@ -1642,12 +1647,12 @@ public sealed class ActiveDirectoryCommandGateway(
             }
             catch (DirectoryOperationException ex) when (IsReferralException(ex))
             {
-                logger.LogWarning(ex, "Skipping AD command search base because the server returned a referral. SearchBase={SearchBase} Operation={Operation}", searchBase, operation);
+                logger.LogWarning(CreateReferralWarning(operation));
                 continue;
             }
             catch (LdapException ex) when (IsReferralException(ex))
             {
-                logger.LogWarning(ex, "Skipping AD command search base because the LDAP client encountered a referral. SearchBase={SearchBase} Operation={Operation}", searchBase, operation);
+                logger.LogWarning(CreateReferralWarning(operation));
                 continue;
             }
 
@@ -2130,12 +2135,12 @@ public sealed class ActiveDirectoryCommandGateway(
             }
             catch (DirectoryOperationException ex) when (IsReferralException(ex))
             {
-                logger.LogWarning(ex, "Skipping AD create conflict domain search base because the server returned a referral. SearchBase={SearchBase} Operation={Operation}", searchBase, operation);
+                logger.LogWarning(CreateReferralWarning(operation));
                 continue;
             }
             catch (LdapException ex) when (IsReferralException(ex))
             {
-                logger.LogWarning(ex, "Skipping AD create conflict domain search base because the LDAP client encountered a referral. SearchBase={SearchBase} Operation={Operation}", searchBase, operation);
+                logger.LogWarning(CreateReferralWarning(operation));
                 continue;
             }
 
