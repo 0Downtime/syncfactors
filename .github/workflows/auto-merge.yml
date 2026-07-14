@@ -7,6 +7,7 @@ on:
       - reopened
       - synchronize
       - ready_for_review
+      - labeled
 
 permissions:
   contents: write
@@ -19,7 +20,7 @@ concurrency:
 jobs:
   enable:
     name: Enable auto-merge
-    if: github.event.pull_request.base.ref == 'main' && github.event.pull_request.state == 'open' && github.event.pull_request.draft == false && github.event.pull_request.head.repo.fork == false && github.event.pull_request.head.repo.full_name == github.repository
+    if: github.event.pull_request.base.ref == 'main' && github.event.pull_request.state == 'open' && github.event.pull_request.draft == false && github.event.pull_request.head.repo.fork == false && github.event.pull_request.head.repo.full_name == github.repository && (github.actor == 'dependabot[bot]' || contains(github.event.pull_request.labels.*.name, 'automerge:approved'))
     runs-on: ubuntu-latest
     steps:
       - name: Enable GitHub auto-merge for the pull request

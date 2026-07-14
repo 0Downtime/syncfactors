@@ -1017,4 +1017,30 @@ GitHub Actions currently provides:
 - `dependency-review.yml`: pull-request dependency review
 - `release.yml`: Windows x64 self-contained release bundle publishing
 
+### Main branch merge policy
+
+`auto-merge.yml` can only enable auto-merge for a same-repository PR opened by
+`dependabot[bot]`, or for a PR carrying the `automerge:approved` label. A
+maintainer must apply that label only after review; contributors without
+repository write access must not be allowed to apply it. Auto-merge remains
+subject to the required checks below.
+
+Apply the following settings to the `main` branch protection rule (or an
+equivalent repository ruleset). These are GitHub repository settings and are
+intentionally not changed by this repository:
+
+- Require a pull request before merging, with at least one approving review;
+  dismiss stale approvals when new commits are pushed; require conversation
+  resolution; and restrict bypass permissions to repository administrators.
+- Require status checks to pass and require the branch to be up to date before
+  merging. Select these exact check names: `dotnet`, `GitHub Workflow Security
+  Policy`, `Semgrep Security SAST`, `Gitleaks Secret Scan`, `Trivy Repository
+  Scan`, `Analyze (csharp, none)`, `Analyze (javascript-typescript, none)`, and
+  `Dependency Review`.
+- Enable **Allow auto-merge**. Do not make `Release` a required PR check:
+  `test.yml`, `security.yml`, and `release.yml` run after the merge on the
+  resulting `main` push, so the release workflow cannot be a pre-merge check.
+- Block direct pushes to `main` except for the intended repository
+  administrators and automation, and require the same rules for administrators.
+
 The Azure DevOps deployment pipeline is separate from GitHub Actions. `azure-pipelines.deploy.yml` builds and tests the same solution, creates the Windows bundle, and deploys only when deployment variables are configured.
