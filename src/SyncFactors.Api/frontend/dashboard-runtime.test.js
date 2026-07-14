@@ -91,6 +91,26 @@ describe("createRealtimeLifecycle", function () {
         expect(scheduleReconnect).not.toHaveBeenCalled();
     });
 
+    it("does not create or start a connection when started after browser shutdown", async function () {
+        const createConnectionSpy = vi.fn(createConnection);
+        const lifecycle = createRealtimeLifecycle({
+            createConnection: createConnectionSpy,
+            handleEvent: vi.fn(),
+            setLiveState: vi.fn(),
+            startFallbackPolling: vi.fn(),
+            stopFallbackPolling: vi.fn(),
+            loadDashboard: vi.fn(),
+            loadHealth: vi.fn(),
+            scheduleReconnect: vi.fn()
+        });
+
+        await lifecycle.dispose();
+        await lifecycle.start();
+
+        expect(createConnectionSpy).not.toHaveBeenCalled();
+        expect(lifecycle.connection).toBeNull();
+    });
+
     it("ignores late realtime callbacks after browser shutdown", async function () {
         const connection = createConnection();
         const setLiveState = vi.fn();

@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging.Abstractions;
 using SyncFactors.Contracts;
 using SyncFactors.Domain;
+using SyncFactors.Infrastructure;
 using SyncFactors.Worker;
 using WorkerService = SyncFactors.Worker.Worker;
 
@@ -9,7 +10,7 @@ namespace SyncFactors.Api.Tests;
 public sealed class WorkerHostTests
 {
     [Fact]
-    public async Task ExecuteAsync_DispatchesClaimedRun_InvokesMaintenanceAndPersistsShutdownHeartbeats()
+    public async Task ExecuteAsync_DispatchesClaimedRun_InvokesMaintenanceAndCapturesHeartbeatStates()
     {
         var heartbeatStore = new CapturingHeartbeatStore();
         using var cancellation = new CancellationTokenSource();
@@ -98,6 +99,87 @@ public sealed class WorkerHostTests
         Assert.Equal("request-1", deleteCoordinator.RequestId);
     }
 
+    [Fact]
+    public async Task ExecuteAsync_WhenStoppedDuringAnActiveRun_FailsQueueAndPersistsStoppingHeartbeat()
+    {
+        var tempRoot = Path.Combine(Path.GetTempPath(), "syncfactors-worker-host", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempRoot);
+        try
+        {
+            var pathResolver = new SqlitePathResolver(Path.Combine(tempRoot, "runtime.db"));
+            await new SqliteDatabaseInitializer(pathResolver).InitializeAsync(CancellationToken.None);
+            IWorkerHeartbeatStore heartbeatStore = new SqliteWorkerHeartbeatStore(pathResolver);
+            using var cancellation = new CancellationTokenSource();
+            var queueStore = new CapturingRunQueueStore(CreateRequest(), cancellation, cancelOnComplete: false);
+            var bulkRunCoordinator = new BlockingBulkRunCoordinator();
+            var worker = new TestWorker(
+                NullLogger<WorkerService>.Instance,
+                queueStore,
+                new CapturingScheduleCoordinator(),
+                new CapturingRetentionReportCoordinator(),
+                new CapturingAutoDeleteCoordinator(),
+                bulkRunCoordinator,
+                new NoopDeleteAllUsersCoordinator(),
+                heartbeatStore,
+                TimeProvider.System,
+                new FixedWorkerExecutionSettings(1));
+
+            var running = worker.RunAsync(cancellation.Token);
+            await bulkRunCoordinator.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            cancellation.Cancel();
+
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => running);
+
+            Assert.Equal([("request-1", null, "Worker stopped while processing the queued run.")], queueStore.FailedRuns);
+            var heartbeat = await heartbeatStore.GetCurrentAsync(CancellationToken.None);
+            Assert.NotNull(heartbeat);
+            Assert.Equal("Stopping", heartbeat!.State);
+            Assert.Equal("Worker stopped while processing run request-1.", heartbeat.Activity);
+        }
+        finally
+        {
+            Directory.Delete(tempRoot, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_WhenRunIsCanceled_CancelsQueueAndPersistsIdleHeartbeat()
+    {
+        var tempRoot = Path.Combine(Path.GetTempPath(), "syncfactors-worker-host", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempRoot);
+        try
+        {
+            var pathResolver = new SqlitePathResolver(Path.Combine(tempRoot, "runtime.db"));
+            await new SqliteDatabaseInitializer(pathResolver).InitializeAsync(CancellationToken.None);
+            IWorkerHeartbeatStore heartbeatStore = new SqliteWorkerHeartbeatStore(pathResolver);
+            using var cancellation = new CancellationTokenSource();
+            var queueStore = new CapturingRunQueueStore(CreateRequest(), cancellation, cancelOnComplete: false);
+            var worker = new TestWorker(
+                NullLogger<WorkerService>.Instance,
+                queueStore,
+                new CapturingScheduleCoordinator(),
+                new CapturingRetentionReportCoordinator(),
+                new CapturingAutoDeleteCoordinator(),
+                new RunCanceledBulkRunCoordinator("run-canceled", "Run canceled by operator."),
+                new NoopDeleteAllUsersCoordinator(),
+                heartbeatStore,
+                TimeProvider.System,
+                new FixedWorkerExecutionSettings(1));
+
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => worker.RunAsync(cancellation.Token));
+
+            Assert.Equal([("request-1", "run-canceled", "Run canceled by operator.")], queueStore.CanceledRuns);
+            var heartbeat = await heartbeatStore.GetCurrentAsync(CancellationToken.None);
+            Assert.NotNull(heartbeat);
+            Assert.Equal("Idle", heartbeat!.State);
+            Assert.Equal("Run request-1 canceled.", heartbeat.Activity);
+        }
+        finally
+        {
+            Directory.Delete(tempRoot, recursive: true);
+        }
+    }
+
     private static RunQueueRequest CreateRequest(string mode = "BulkSync") => new(
         RequestId: "request-1",
         Mode: mode,
@@ -145,10 +227,12 @@ public sealed class WorkerHostTests
         public Task<WorkerHeartbeat?> GetCurrentAsync(CancellationToken cancellationToken) => Task.FromResult<WorkerHeartbeat?>(null);
     }
 
-    private sealed class CapturingRunQueueStore(RunQueueRequest? request, CancellationTokenSource cancellation) : IRunQueueStore
+    private sealed class CapturingRunQueueStore(RunQueueRequest? request, CancellationTokenSource cancellation, bool cancelOnComplete = true) : IRunQueueStore
     {
         public Task<RunQueueRequest> EnqueueAsync(StartRunRequest request, CancellationToken cancellationToken) => throw new NotSupportedException();
         public List<(string RequestId, string RunId)> CompletedRuns { get; } = [];
+        public List<(string RequestId, string? RunId, string? ErrorMessage)> CanceledRuns { get; } = [];
+        public List<(string RequestId, string? RunId, string ErrorMessage)> FailedRuns { get; } = [];
         private bool _claimed;
         public Task<RunQueueRequest?> ClaimNextPendingAsync(string workerName, CancellationToken cancellationToken)
         {
@@ -168,11 +252,24 @@ public sealed class WorkerHostTests
         public Task CompleteAsync(string requestId, string runId, CancellationToken cancellationToken)
         {
             CompletedRuns.Add((requestId, runId));
+            if (cancelOnComplete)
+            {
+                cancellation.Cancel();
+            }
+
+            return Task.CompletedTask;
+        }
+        public Task CancelAsync(string requestId, string? runId, string? errorMessage, CancellationToken cancellationToken)
+        {
+            CanceledRuns.Add((requestId, runId, errorMessage));
             cancellation.Cancel();
             return Task.CompletedTask;
         }
-        public Task CancelAsync(string requestId, string? runId, string? errorMessage, CancellationToken cancellationToken) => Task.CompletedTask;
-        public Task FailAsync(string requestId, string? runId, string errorMessage, CancellationToken cancellationToken) => Task.CompletedTask;
+        public Task FailAsync(string requestId, string? runId, string errorMessage, CancellationToken cancellationToken)
+        {
+            FailedRuns.Add((requestId, runId, errorMessage));
+            return Task.CompletedTask;
+        }
     }
 
     private sealed class CapturingScheduleCoordinator : ISyncScheduleCoordinator
@@ -207,6 +304,26 @@ public sealed class WorkerHostTests
             RequestId = request.RequestId;
             MaxDegreeOfParallelism = maxDegreeOfParallelism;
             return Task.FromResult("run-1");
+        }
+    }
+
+    private sealed class BlockingBulkRunCoordinator : IBulkRunCoordinator
+    {
+        public TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public async Task<string> ExecuteAsync(RunQueueRequest request, int maxDegreeOfParallelism, CancellationToken cancellationToken)
+        {
+            Started.TrySetResult();
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            return "unreachable";
+        }
+    }
+
+    private sealed class RunCanceledBulkRunCoordinator(string runId, string message) : IBulkRunCoordinator
+    {
+        public Task<string> ExecuteAsync(RunQueueRequest request, int maxDegreeOfParallelism, CancellationToken cancellationToken)
+        {
+            throw new RunCanceledException(runId, message);
         }
     }
 

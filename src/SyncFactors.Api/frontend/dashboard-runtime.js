@@ -50,6 +50,10 @@ export function createRealtimeLifecycle({
     }
 
     function start() {
+        if (disposed) {
+            return Promise.resolve();
+        }
+
         if (startPromise) {
             return startPromise;
         }
