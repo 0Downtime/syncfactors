@@ -483,15 +483,18 @@ operatorApi.MapPost("/runs", async (StartRunRequest request, ClaimsPrincipal use
         return Results.BadRequest(new { error = realSyncSettings.LiveWriteDisabledMessage });
     }
 
-    if (await queueStore.HasPendingOrActiveRunAsync(cancellationToken))
+    var requestedBy = ResolveRequestedBy(user, request.RequestedBy ?? "API");
+    RunQueueRequest queued;
+    try
+    {
+        queued = await queueStore.EnqueueAsync(
+            request with { RequestedBy = requestedBy },
+            cancellationToken);
+    }
+    catch (RunQueueConflictException)
     {
         return Results.Conflict(new { error = "A run is already pending or in progress." });
     }
-
-    var requestedBy = ResolveRequestedBy(user, request.RequestedBy ?? "API");
-    var queued = await queueStore.EnqueueAsync(
-        request with { RequestedBy = requestedBy },
-        cancellationToken);
     audit.Write("RunQueued", "Success", ("RequestedBy", requestedBy), ("Mode", queued.Mode), ("DryRun", queued.DryRun));
     return Results.Accepted($"/api/runs/{queued.RequestId}", queued);
 });
@@ -663,23 +666,26 @@ adminApi.MapPost("/runs/delete-all", async (
         return Results.BadRequest(new { error = realSyncSettings.LiveWriteDisabledMessage });
     }
 
-    if (await queueStore.HasPendingOrActiveRunAsync(cancellationToken))
-    {
-        return Results.Conflict(new { error = "A run is already pending or in progress." });
-    }
-
     if (!string.Equals(request.ConfirmationText?.Trim(), SyncFactors.Api.Pages.SyncModel.DeleteAllUsersConfirmationPhrase, StringComparison.Ordinal))
     {
         return Results.BadRequest(new { error = $"Type {SyncFactors.Api.Pages.SyncModel.DeleteAllUsersConfirmationPhrase} to queue the delete-all AD reset run." });
     }
 
-    var queued = await queueStore.EnqueueAsync(
-        new StartRunRequest(
-            DryRun: false,
-            Mode: "DeleteAllUsers",
-            RunTrigger: "DeleteAllUsers",
-            RequestedBy: ResolveRequestedBy(user, "API")),
-        cancellationToken);
+    RunQueueRequest queued;
+    try
+    {
+        queued = await queueStore.EnqueueAsync(
+            new StartRunRequest(
+                DryRun: false,
+                Mode: "DeleteAllUsers",
+                RunTrigger: "DeleteAllUsers",
+                RequestedBy: ResolveRequestedBy(user, "API")),
+            cancellationToken);
+    }
+    catch (RunQueueConflictException)
+    {
+        return Results.Conflict(new { error = "A run is already pending or in progress." });
+    }
 
     audit.Write("DeleteAllUsersQueued", "Success", ("RequestedBy", ResolveRequestedBy(user, "API")));
     return Results.Accepted($"/api/runs/{queued.RequestId}", queued);

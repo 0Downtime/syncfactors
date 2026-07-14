@@ -228,11 +228,11 @@ public sealed class SyncModelTests
     }
 
     [Fact]
-    public async Task OnPostStartRunAsync_WhenRunAlreadyPending_RedirectsWithError()
+    public async Task OnPostStartRunAsync_WhenAtomicEnqueueConflicts_RedirectsWithError()
     {
         var queueStore = new CapturingRunQueueStore
         {
-            HasPendingOrActiveRun = true
+            ThrowRunQueueConflictOnEnqueue = true
         };
         var model = CreateModel(queueStore: queueStore);
 
@@ -433,6 +433,8 @@ public sealed class SyncModelTests
 
         public bool HasPendingOrActiveRun { get; set; }
 
+        public bool ThrowRunQueueConflictOnEnqueue { get; set; }
+
         public bool CancelRequested { get; private set; }
 
         public RunQueueRequest? PendingOrActiveRun { get; set; }
@@ -440,6 +442,11 @@ public sealed class SyncModelTests
         public Task<RunQueueRequest> EnqueueAsync(StartRunRequest request, CancellationToken cancellationToken)
         {
             _ = cancellationToken;
+            if (ThrowRunQueueConflictOnEnqueue)
+            {
+                throw new RunQueueConflictException();
+            }
+
             LastRequest = request;
             return Task.FromResult(new RunQueueRequest("req-1", request.Mode, request.DryRun, request.RunTrigger, request.RequestedBy, "Pending", DateTimeOffset.UtcNow, null, null, null, null));
         }

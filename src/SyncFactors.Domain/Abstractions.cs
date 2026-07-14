@@ -2,6 +2,8 @@ using SyncFactors.Contracts;
 
 namespace SyncFactors.Domain;
 
+public sealed class RunQueueConflictException() : InvalidOperationException("A run is already pending or in progress.");
+
 public interface IRuntimeStatusStore
 {
     Task<RuntimeStatus?> GetCurrentAsync(CancellationToken cancellationToken);

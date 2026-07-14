@@ -17,7 +17,7 @@ public sealed class SqliteRunQueueStore(SqlitePathResolver pathResolver) : IRunQ
         }
 
         var queued = new RunQueueRequest(
-            RequestId: $"runreq-{DateTimeOffset.UtcNow:yyyyMMddHHmmssfff}",
+            RequestId: $"runreq-{Guid.NewGuid():N}",
             Mode: string.IsNullOrWhiteSpace(request.Mode) ? "BulkSync" : request.Mode,
             DryRun: request.DryRun,
             RunTrigger: string.IsNullOrWhiteSpace(request.RunTrigger) ? "AdHoc" : request.RunTrigger,
@@ -64,7 +64,14 @@ public sealed class SqliteRunQueueStore(SqlitePathResolver pathResolver) : IRunQ
             );
             """;
         Bind(command, queued, workerName: null);
-        await command.ExecuteNonQueryAsync(cancellationToken);
+        try
+        {
+            await command.ExecuteNonQueryAsync(cancellationToken);
+        }
+        catch (SqliteException ex) when (ex.SqliteErrorCode == 19)
+        {
+            throw new RunQueueConflictException();
+        }
         return queued;
     }
 
@@ -78,68 +85,34 @@ public sealed class SqliteRunQueueStore(SqlitePathResolver pathResolver) : IRunQ
 
         await using var connection = SqliteConnections.Open(databasePath);
         await connection.OpenAsync(cancellationToken);
-        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
-
-        await using (var activeCommand = connection.CreateCommand())
-        {
-            activeCommand.Transaction = (SqliteTransaction)transaction;
-            activeCommand.CommandText = "SELECT request_id FROM run_queue WHERE status = 'InProgress' LIMIT 1;";
-            var active = await activeCommand.ExecuteScalarAsync(cancellationToken);
-            if (active is not null)
-            {
-                await transaction.CommitAsync(cancellationToken);
-                return null;
-            }
-        }
-
-        RunQueueRequest? pending = null;
-        await using (var selectCommand = connection.CreateCommand())
-        {
-            selectCommand.Transaction = (SqliteTransaction)transaction;
-            selectCommand.CommandText =
-                """
-                SELECT request_id, mode, dry_run, run_trigger, requested_by, status, requested_at, started_at, completed_at, run_id, error_message
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            UPDATE run_queue
+            SET status = 'InProgress',
+                started_at = $startedAt,
+                worker_name = $workerName
+            WHERE request_id = (
+                SELECT request_id
                 FROM run_queue
                 WHERE status = 'Pending'
-                ORDER BY requested_at ASC
-                LIMIT 1;
-                """;
-            await using var reader = await selectCommand.ExecuteReaderAsync(cancellationToken);
-            if (await reader.ReadAsync(cancellationToken))
-            {
-                pending = Map(reader);
-            }
-        }
-
-        if (pending is null)
-        {
-            await transaction.CommitAsync(cancellationToken);
-            return null;
-        }
-
-        var claimed = pending with
-        {
-            Status = "InProgress",
-            StartedAt = DateTimeOffset.UtcNow
-        };
-
-        await using (var updateCommand = connection.CreateCommand())
-        {
-            updateCommand.Transaction = (SqliteTransaction)transaction;
-            updateCommand.CommandText =
-                """
-                UPDATE run_queue
-                SET status = $status,
-                    started_at = $startedAt,
-                    worker_name = $workerName
-                WHERE request_id = $requestId;
-                """;
-            Bind(updateCommand, claimed, workerName);
-            await updateCommand.ExecuteNonQueryAsync(cancellationToken);
-        }
-
-        await transaction.CommitAsync(cancellationToken);
-        return claimed;
+                ORDER BY requested_at ASC, request_id ASC
+                LIMIT 1
+            )
+              AND status = 'Pending'
+              AND NOT EXISTS (
+                SELECT 1
+                FROM run_queue
+                WHERE status IN ('InProgress', 'CancelRequested')
+            )
+            RETURNING request_id, mode, dry_run, run_trigger, requested_by, status, requested_at, started_at, completed_at, run_id, error_message;
+            """;
+        command.Parameters.AddWithValue("$startedAt", DateTimeOffset.UtcNow.ToString("O"));
+        command.Parameters.AddWithValue("$workerName", workerName);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        return await reader.ReadAsync(cancellationToken)
+            ? Map(reader)
+            : null;
     }
 
     public async Task<bool> HasPendingOrActiveRunAsync(CancellationToken cancellationToken)
@@ -216,64 +189,40 @@ public sealed class SqliteRunQueueStore(SqlitePathResolver pathResolver) : IRunQ
 
         await using var connection = SqliteConnections.Open(databasePath);
         await connection.OpenAsync(cancellationToken);
-        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        var cancellationMessage = string.IsNullOrWhiteSpace(requestedBy)
+            ? "Cancellation requested."
+            : $"Cancellation requested by {requestedBy}.";
 
-        RunQueueRequest? current = null;
-        await using (var selectCommand = connection.CreateCommand())
-        {
-            selectCommand.Transaction = (SqliteTransaction)transaction;
-            selectCommand.CommandText =
-                """
-                SELECT request_id, mode, dry_run, run_trigger, requested_by, status, requested_at, started_at, completed_at, run_id, error_message
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            UPDATE run_queue
+            SET status = CASE status
+                    WHEN 'Pending' THEN 'Canceled'
+                    ELSE 'CancelRequested'
+                END,
+                completed_at = CASE status
+                    WHEN 'Pending' THEN $completedAt
+                    ELSE completed_at
+                END,
+                error_message = $errorMessage
+            WHERE request_id = (
+                SELECT request_id
                 FROM run_queue
                 WHERE status IN ('Pending', 'InProgress', 'CancelRequested')
                 ORDER BY CASE status
                     WHEN 'InProgress' THEN 0
                     WHEN 'CancelRequested' THEN 1
                     ELSE 2
-                END, requested_at ASC
-                LIMIT 1;
-                """;
-            await using var reader = await selectCommand.ExecuteReaderAsync(cancellationToken);
-            if (await reader.ReadAsync(cancellationToken))
-            {
-                current = Map(reader);
-            }
-        }
-
-        if (current is null)
-        {
-            await transaction.CommitAsync(cancellationToken);
-            return false;
-        }
-
-        var cancellationMessage = string.IsNullOrWhiteSpace(requestedBy)
-            ? "Cancellation requested."
-            : $"Cancellation requested by {requestedBy}.";
-
-        await using var updateCommand = connection.CreateCommand();
-        updateCommand.Transaction = (SqliteTransaction)transaction;
-        updateCommand.CommandText =
-            string.Equals(current.Status, "Pending", StringComparison.OrdinalIgnoreCase)
-                ? """
-                UPDATE run_queue
-                SET status = 'Canceled',
-                    completed_at = $completedAt,
-                    error_message = $errorMessage
-                WHERE request_id = $requestId;
-                """
-                : """
-                UPDATE run_queue
-                SET status = 'CancelRequested',
-                    error_message = $errorMessage
-                WHERE request_id = $requestId;
-                """;
-        updateCommand.Parameters.AddWithValue("$requestId", current.RequestId);
-        updateCommand.Parameters.AddWithValue("$completedAt", DateTimeOffset.UtcNow.ToString("O"));
-        updateCommand.Parameters.AddWithValue("$errorMessage", cancellationMessage);
-        var affected = await updateCommand.ExecuteNonQueryAsync(cancellationToken);
-        await transaction.CommitAsync(cancellationToken);
-        return affected > 0;
+                END, requested_at ASC, request_id ASC
+                LIMIT 1
+            )
+              AND status IN ('Pending', 'InProgress', 'CancelRequested')
+            RETURNING request_id;
+            """;
+        command.Parameters.AddWithValue("$completedAt", DateTimeOffset.UtcNow.ToString("O"));
+        command.Parameters.AddWithValue("$errorMessage", cancellationMessage);
+        return await command.ExecuteScalarAsync(cancellationToken) is not null;
     }
 
     public async Task<bool> IsCancellationRequestedAsync(string requestId, CancellationToken cancellationToken)

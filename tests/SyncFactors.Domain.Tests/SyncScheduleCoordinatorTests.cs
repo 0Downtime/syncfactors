@@ -88,9 +88,9 @@ public sealed class SyncScheduleCoordinatorTests
     }
 
     [Fact]
-    public async Task TryEnqueueDueRunAsync_DoesNotQueue_WhenAnotherRunIsPending()
+    public async Task TryEnqueueDueRunAsync_DoesNotQueue_WhenAtomicEnqueueConflicts()
     {
-        var queueStore = new CapturingRunQueueStore { HasPendingOrActiveRun = true };
+        var queueStore = new CapturingRunQueueStore { ThrowRunQueueConflictOnEnqueue = true };
         var scheduleStore = new StubSyncScheduleStore(
             new SyncScheduleStatus(
                 Enabled: true,
@@ -117,11 +117,18 @@ public sealed class SyncScheduleCoordinatorTests
     {
         public bool HasPendingOrActiveRun { get; set; }
 
+        public bool ThrowRunQueueConflictOnEnqueue { get; set; }
+
         public StartRunRequest? LastRequest { get; private set; }
 
         public Task<RunQueueRequest> EnqueueAsync(StartRunRequest request, CancellationToken cancellationToken)
         {
             _ = cancellationToken;
+            if (ThrowRunQueueConflictOnEnqueue)
+            {
+                throw new RunQueueConflictException();
+            }
+
             LastRequest = request;
             return Task.FromResult(new RunQueueRequest("req-1", "BulkSync", request.DryRun, request.RunTrigger, request.RequestedBy, "Pending", DateTimeOffset.UtcNow, null, null, null, null));
         }

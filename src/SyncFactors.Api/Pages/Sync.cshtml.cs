@@ -109,13 +109,6 @@ public sealed class SyncModel(
 
     public async Task<IActionResult> OnPostStartRunAsync(CancellationToken cancellationToken)
     {
-        if (await runQueueStore.HasPendingOrActiveRunAsync(cancellationToken))
-        {
-            ErrorMessage = "A run is already pending or in progress.";
-            SuccessMessage = null;
-            return RedirectToPage(new { PageNumber });
-        }
-
         if (string.Equals(RunMode, LiveRunMode, StringComparison.Ordinal) && !realSyncSettings.EffectiveWriteEnabled)
         {
             ErrorMessage = $"{realSyncSettings.LiveWriteDisabledMessage} Queue a dry run instead.";
@@ -123,13 +116,22 @@ public sealed class SyncModel(
             return RedirectToPage(new { PageNumber });
         }
 
-        await runQueueStore.EnqueueAsync(
-            new StartRunRequest(
-                DryRun: !string.Equals(RunMode, LiveRunMode, StringComparison.Ordinal),
-                Mode: "BulkSync",
-                RunTrigger: "AdHoc",
-                RequestedBy: ResolveRequestedBy()),
-            cancellationToken);
+        try
+        {
+            await runQueueStore.EnqueueAsync(
+                new StartRunRequest(
+                    DryRun: !string.Equals(RunMode, LiveRunMode, StringComparison.Ordinal),
+                    Mode: "BulkSync",
+                    RunTrigger: "AdHoc",
+                    RequestedBy: ResolveRequestedBy()),
+                cancellationToken);
+        }
+        catch (RunQueueConflictException)
+        {
+            ErrorMessage = "A run is already pending or in progress.";
+            SuccessMessage = null;
+            return RedirectToPage(new { PageNumber });
+        }
 
         SuccessMessage = string.Equals(RunMode, LiveRunMode, StringComparison.Ordinal)
             ? "Live provisioning run queued."
@@ -146,13 +148,6 @@ public sealed class SyncModel(
             return Forbid();
         }
 
-        if (await runQueueStore.HasPendingOrActiveRunAsync(cancellationToken))
-        {
-            ErrorMessage = "A run is already pending or in progress.";
-            SuccessMessage = null;
-            return RedirectToPage(new { PageNumber });
-        }
-
         if (!realSyncSettings.EffectiveWriteEnabled)
         {
             ErrorMessage = realSyncSettings.LiveWriteDisabledMessage;
@@ -167,13 +162,22 @@ public sealed class SyncModel(
             return RedirectToPage(new { PageNumber });
         }
 
-        await runQueueStore.EnqueueAsync(
-            new StartRunRequest(
-                DryRun: false,
-                Mode: DeleteAllUsersMode,
-                RunTrigger: "DeleteAllUsers",
-                RequestedBy: ResolveRequestedBy()),
-            cancellationToken);
+        try
+        {
+            await runQueueStore.EnqueueAsync(
+                new StartRunRequest(
+                    DryRun: false,
+                    Mode: DeleteAllUsersMode,
+                    RunTrigger: "DeleteAllUsers",
+                    RequestedBy: ResolveRequestedBy()),
+                cancellationToken);
+        }
+        catch (RunQueueConflictException)
+        {
+            ErrorMessage = "A run is already pending or in progress.";
+            SuccessMessage = null;
+            return RedirectToPage(new { PageNumber });
+        }
 
         SuccessMessage = "Delete-all AD reset queued.";
         ErrorMessage = null;
