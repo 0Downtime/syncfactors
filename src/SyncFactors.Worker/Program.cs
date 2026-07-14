@@ -9,6 +9,7 @@ using System.Net;
 const string WindowsServiceName = "SyncFactors.Worker";
 
 var builder = Host.CreateApplicationBuilder(args);
+SecurityAuditService.ValidateStartup(builder.Environment.IsProduction());
 ConfigureWindowsService(builder.Services, WindowsServiceName);
 LocalFileLogging.Configure(
     builder.Logging,
@@ -20,6 +21,7 @@ LocalFileLogging.Configure(
     runRetainedFileCountLimitValue: builder.Configuration[LocalFileLogging.RunRetainedFileCountLimitEnvironmentVariable],
     retentionDaysValue: builder.Configuration[LocalFileLogging.RetentionDaysEnvironmentVariable]);
 ConfigureApplicationInsights(builder);
+builder.Services.AddSingleton<ISecurityAuditService, SecurityAuditService>();
 builder.Services.AddSingleton(new ScaffoldDataPathResolver(builder.Configuration["SyncFactors:ScaffoldDataPath"]));
 builder.Services.AddSingleton(new SqlitePathResolver(builder.Configuration["SyncFactors:SqlitePath"]));
 builder.Services.AddSingleton(new SyncFactorsConfigPathResolver(
@@ -115,6 +117,13 @@ builder.Services.AddHttpClient<SuccessFactorsWorkerSource>()
     });
 builder.Services.AddTransient<IWorkerSource>(serviceProvider => serviceProvider.GetRequiredService<SuccessFactorsWorkerSource>());
 builder.Services.AddDirectoryServiceRuntimeGateways(builder.Configuration["SYNCFACTORS_RUN_PROFILE"]);
+builder.Services.AddTransient<IDirectoryCommandGateway>(serviceProvider =>
+{
+    IDirectoryCommandGateway inner = DirectoryServiceRuntimeSelector.UseScaffoldDirectoryServices(builder.Configuration["SYNCFACTORS_RUN_PROFILE"])
+        ? serviceProvider.GetRequiredService<ScaffoldDirectoryCommandGateway>()
+        : serviceProvider.GetRequiredService<ActiveDirectoryCommandGateway>();
+    return new AuditedDirectoryCommandGateway(inner, serviceProvider.GetRequiredService<ISecurityAuditService>());
+});
 builder.Services.AddTransient<IEmailSender, SmtpEmailSender>();
 builder.Services.AddSingleton<IAttributeMappingProvider, AttributeMappingProvider>();
 builder.Services.AddSingleton<IIdentityMatcher, IdentityMatcher>();
