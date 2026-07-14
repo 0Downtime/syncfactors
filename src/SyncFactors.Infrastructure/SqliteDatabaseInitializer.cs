@@ -46,6 +46,13 @@ public sealed class SqliteDatabaseInitializer(SqlitePathResolver pathResolver)
         }
 
         var appliedVersions = await GetAppliedVersionsAsync(connection, transaction, cancellationToken);
+        var newerSchemaVersion = appliedVersions.Where(version => version > CurrentSchemaVersion).DefaultIfEmpty().Max();
+        if (newerSchemaVersion > CurrentSchemaVersion)
+        {
+            throw new InvalidOperationException(
+                $"Database schema version {newerSchemaVersion} is newer than this binary supports ({CurrentSchemaVersion}). Downgrades are not supported.");
+        }
+
         if (!appliedVersions.Contains(1))
         {
             await ApplyVersion1Async(connection, transaction, cancellationToken);
