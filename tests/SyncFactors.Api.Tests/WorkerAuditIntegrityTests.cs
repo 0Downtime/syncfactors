@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Reflection;
 using SyncFactors.Contracts;
 using SyncFactors.Domain;
 using SyncFactors.Infrastructure;
@@ -47,6 +48,14 @@ public sealed class WorkerAuditIntegrityTests
         Assert.True(File.Exists(fixture.DatabasePath));
     }
 
+    [Fact]
+    public void WorkerStartupFixture_UsesTheTestAssemblyBuildConfiguration()
+    {
+        Assert.Equal(
+            typeof(WorkerAuditIntegrityTests).Assembly.GetCustomAttribute<AssemblyConfigurationAttribute>()!.Configuration,
+            WorkerStartupFixture.BuildConfiguration);
+    }
+
     private sealed class WorkerStartupFixture : IAsyncDisposable
     {
         private WorkerStartupFixture(string temporaryDirectory)
@@ -59,6 +68,9 @@ public sealed class WorkerAuditIntegrityTests
         public string TemporaryDirectory { get; }
         public string DatabasePath { get; }
         public string AuditPath { get; }
+        internal static string BuildConfiguration => typeof(WorkerAuditIntegrityTests).Assembly
+            .GetCustomAttribute<AssemblyConfigurationAttribute>()?.Configuration
+            ?? throw new InvalidOperationException("The test assembly build configuration is unavailable.");
 
         public static Task<WorkerStartupFixture> CreateAsync()
         {
@@ -79,6 +91,8 @@ public sealed class WorkerAuditIntegrityTests
             startInfo.ArgumentList.Add("--project");
             startInfo.ArgumentList.Add(Path.Combine(FindRepositoryRoot(), "src", "SyncFactors.Worker", "SyncFactors.Worker.csproj"));
             startInfo.ArgumentList.Add("--no-build");
+            startInfo.ArgumentList.Add("--configuration");
+            startInfo.ArgumentList.Add(BuildConfiguration);
             startInfo.Environment["DOTNET_ENVIRONMENT"] = "Production";
             startInfo.Environment["SYNCFACTORS_SECURITY_AUDIT_LOG_PATH"] = AuditPath;
             startInfo.Environment["SyncFactors__SqlitePath"] = DatabasePath;

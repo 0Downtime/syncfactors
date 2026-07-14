@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
+using SyncFactors.Contracts;
 using SyncFactors.Domain;
 using SyncFactors.Infrastructure;
 
@@ -28,6 +29,49 @@ public sealed class DirectoryServiceRuntimeServiceCollectionExtensionsTests
         Assert.DoesNotContain(services, descriptor => descriptor.ServiceType == typeof(ActiveDirectoryCommandGateway));
     }
 
+    [Fact]
+    public void AddDirectoryServiceRuntimeGateways_ExposesOnlyDecoratedCommandGateway_WhenDecoratorIsProvided()
+    {
+        using var fixture = new ScaffoldDataFixture();
+        var services = new ServiceCollection();
+        services.AddSingleton(new ScaffoldDataPathResolver(fixture.Path));
+        services.AddSingleton<ScaffoldDataStore>();
+        services.AddDirectoryServiceRuntimeGateways("mock", (serviceProvider, inner) => new DecoratingDirectoryCommandGateway(inner));
+
+        Assert.Single(services, descriptor => descriptor.ServiceType == typeof(IDirectoryCommandGateway));
+
+        using var provider = services.BuildServiceProvider();
+        var commandGateway = provider.GetRequiredService<IDirectoryCommandGateway>();
+        var commandGateways = provider.GetServices<IDirectoryCommandGateway>();
+
+        Assert.IsType<DecoratingDirectoryCommandGateway>(commandGateway);
+        Assert.All(commandGateways, gateway => Assert.IsType<DecoratingDirectoryCommandGateway>(gateway));
+    }
+
+    [Fact]
+    public void AddDirectoryServiceRuntimeGateways_ExposesOnlyDecoratedActiveDirectoryCommandGateway_ForRealProfile()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton(new SyncFactorsConfigurationLoader(new SyncFactorsConfigPathResolver(null, null)));
+        services.AddSingleton<IActiveDirectoryConnectionPool>(new ActiveDirectoryConnectionPool());
+        services.AddLogging();
+        services.AddDirectoryServiceRuntimeGateways("real", (serviceProvider, inner) => new DecoratingDirectoryCommandGateway(inner));
+
+        Assert.Single(services, descriptor => descriptor.ServiceType == typeof(IDirectoryCommandGateway));
+
+        using var provider = services.BuildServiceProvider();
+        var commandGateway = provider.GetRequiredService<IDirectoryCommandGateway>();
+        var commandGateways = provider.GetServices<IDirectoryCommandGateway>();
+
+        var decoratedCommandGateway = Assert.IsType<DecoratingDirectoryCommandGateway>(commandGateway);
+        Assert.IsType<ActiveDirectoryCommandGateway>(decoratedCommandGateway.Inner);
+        Assert.All(commandGateways, gateway =>
+        {
+            var decoratedGateway = Assert.IsType<DecoratingDirectoryCommandGateway>(gateway);
+            Assert.IsType<ActiveDirectoryCommandGateway>(decoratedGateway.Inner);
+        });
+    }
+
     [Theory]
     [InlineData(null)]
     [InlineData("")]
@@ -55,5 +99,13 @@ public sealed class DirectoryServiceRuntimeServiceCollectionExtensionsTests
         {
             Directory.Delete(_directory, recursive: true);
         }
+    }
+
+    private sealed class DecoratingDirectoryCommandGateway(IDirectoryCommandGateway inner) : IDirectoryCommandGateway
+    {
+        public IDirectoryCommandGateway Inner => inner;
+
+        public Task<DirectoryCommandResult> ExecuteAsync(DirectoryMutationCommand command, CancellationToken cancellationToken) =>
+            inner.ExecuteAsync(command, cancellationToken);
     }
 }

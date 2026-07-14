@@ -5,22 +5,32 @@ namespace SyncFactors.Infrastructure;
 
 public static class DirectoryServiceRuntimeServiceCollectionExtensions
 {
-    public static IServiceCollection AddDirectoryServiceRuntimeGateways(this IServiceCollection services, string? runProfile)
+    public static IServiceCollection AddDirectoryServiceRuntimeGateways(
+        this IServiceCollection services,
+        string? runProfile,
+        Func<IServiceProvider, IDirectoryCommandGateway, IDirectoryCommandGateway>? commandGatewayDecorator = null)
     {
-        if (DirectoryServiceRuntimeSelector.UseScaffoldDirectoryServices(runProfile))
+        var useScaffoldDirectoryServices = DirectoryServiceRuntimeSelector.UseScaffoldDirectoryServices(runProfile);
+        if (useScaffoldDirectoryServices)
         {
             services.AddSingleton<ScaffoldDirectoryGateway>();
             services.AddSingleton<ScaffoldDirectoryCommandGateway>();
             services.AddTransient<IDirectoryGateway>(serviceProvider => serviceProvider.GetRequiredService<ScaffoldDirectoryGateway>());
-            services.AddTransient<IDirectoryCommandGateway>(serviceProvider => serviceProvider.GetRequiredService<ScaffoldDirectoryCommandGateway>());
         }
         else
         {
             services.AddTransient<ActiveDirectoryGateway>();
             services.AddTransient<ActiveDirectoryCommandGateway>();
             services.AddTransient<IDirectoryGateway>(serviceProvider => serviceProvider.GetRequiredService<ActiveDirectoryGateway>());
-            services.AddTransient<IDirectoryCommandGateway>(serviceProvider => serviceProvider.GetRequiredService<ActiveDirectoryCommandGateway>());
         }
+
+        services.AddTransient<IDirectoryCommandGateway>(serviceProvider =>
+        {
+            IDirectoryCommandGateway commandGateway = useScaffoldDirectoryServices
+                ? serviceProvider.GetRequiredService<ScaffoldDirectoryCommandGateway>()
+                : serviceProvider.GetRequiredService<ActiveDirectoryCommandGateway>();
+            return commandGatewayDecorator?.Invoke(serviceProvider, commandGateway) ?? commandGateway;
+        });
 
         return services;
     }
