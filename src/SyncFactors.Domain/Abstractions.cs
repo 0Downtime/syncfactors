@@ -51,8 +51,7 @@ public interface IDeltaSyncStateStore
 public interface IDirectoryGateway
 {
     Task<DirectoryUserSnapshot?> FindByWorkerAsync(WorkerSnapshot worker, CancellationToken cancellationToken);
-    Task<IReadOnlyList<DirectoryUserSnapshot>> ListUsersInOuAsync(string ouDistinguishedName, CancellationToken cancellationToken) =>
-        Task.FromResult<IReadOnlyList<DirectoryUserSnapshot>>([]);
+    Task<IReadOnlyList<DirectoryUserSnapshot>> ListUsersInOuAsync(string ouDistinguishedName, CancellationToken cancellationToken);
     Task<string?> ResolveManagerDistinguishedNameAsync(string managerId, CancellationToken cancellationToken);
     Task<string> ResolveAvailableEmailLocalPartAsync(WorkerSnapshot worker, bool isCreate, CancellationToken cancellationToken);
     Task<string> ResolveAvailableEmailLocalPartAsync(
@@ -126,21 +125,17 @@ public interface IRunRepository
     Task<RunDetail?> GetRunAsync(string runId, CancellationToken cancellationToken);
     Task<WorkerPreviewResult?> GetWorkerPreviewAsync(string runId, CancellationToken cancellationToken);
     Task<IReadOnlyList<WorkerPreviewHistoryItem>> ListWorkerPreviewHistoryAsync(string workerId, int take, CancellationToken cancellationToken);
-    Task<int> CountWorkerRunHistoryAsync(string workerId, CancellationToken cancellationToken) =>
-        Task.FromResult(0);
-    Task<IReadOnlyList<WorkerRunHistoryItem>> ListWorkerRunHistoryAsync(string workerId, int skip, int take, CancellationToken cancellationToken) =>
-        Task.FromResult<IReadOnlyList<WorkerRunHistoryItem>>([]);
+    Task<int> CountWorkerRunHistoryAsync(string workerId, CancellationToken cancellationToken);
+    Task<IReadOnlyList<WorkerRunHistoryItem>> ListWorkerRunHistoryAsync(string workerId, int skip, int take, CancellationToken cancellationToken);
     Task SaveRunAsync(RunRecord run, CancellationToken cancellationToken);
     Task ReplaceRunEntriesAsync(string runId, IReadOnlyList<RunEntryRecord> entries, CancellationToken cancellationToken);
     Task AppendRunEntryAsync(RunEntryRecord entry, CancellationToken cancellationToken);
-    Task<int> PruneTerminalRunsStartedBeforeAsync(DateTimeOffset cutoffUtc, CancellationToken cancellationToken) =>
-        Task.FromResult(0);
+    Task<int> PruneTerminalRunsStartedBeforeAsync(DateTimeOffset cutoffUtc, CancellationToken cancellationToken);
     Task<bool> VacuumIfNeededAsync(
         DateTimeOffset nowUtc,
         long minimumFreeBytes,
         TimeSpan minimumInterval,
-        CancellationToken cancellationToken) =>
-        Task.FromResult(false);
+        CancellationToken cancellationToken);
     Task<IReadOnlyList<RunEntry>> GetRunEntriesAsync(
         string runId,
         string? bucket,
@@ -169,8 +164,7 @@ public interface IRunRepository
         string? filter,
         string? employmentStatus,
         string? entryId,
-        CancellationToken cancellationToken) =>
-        Task.FromResult<IReadOnlyList<EmploymentStatusTotal>>([]);
+        CancellationToken cancellationToken);
     Task<int> CountRunEntriesAsync(
         string runId,
         string? bucket,
@@ -201,8 +195,7 @@ public interface IRunQueueStore
     Task FailAsync(string requestId, string? runId, string errorMessage, CancellationToken cancellationToken);
     Task<RunQueueRequest> SeedRecoveryProbeAsync(RunQueueRecoveryProbeRequest request, CancellationToken cancellationToken) =>
         throw new NotSupportedException("Run queue recovery probes are not supported by this store.");
-    Task<int> RecoverOrphanedActiveRunsAsync(string? errorMessage, CancellationToken cancellationToken) =>
-        Task.FromResult(0);
+    Task<int> RecoverOrphanedActiveRunsAsync(string? errorMessage, CancellationToken cancellationToken);
 }
 
 public interface ISyncScheduleStore

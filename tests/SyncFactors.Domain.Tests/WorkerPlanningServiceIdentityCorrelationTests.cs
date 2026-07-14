@@ -177,6 +177,9 @@ public sealed class WorkerPlanningServiceIdentityCorrelationTests
             _ = cancellationToken;
             return Task.FromResult("cbrien");
         }
+        public Task<IReadOnlyList<DirectoryUserSnapshot>> ListUsersInOuAsync(string ouDistinguishedName, CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyList<DirectoryUserSnapshot>>([]);
+
     }
 
     private sealed class EmptyAttributeDiffService : IAttributeDiffService

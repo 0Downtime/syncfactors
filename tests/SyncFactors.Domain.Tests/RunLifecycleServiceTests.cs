@@ -505,6 +505,14 @@ public sealed class RunLifecycleServiceTests
             _ = cancellationToken;
             throw new NotSupportedException();
         }
+        public Task<int> CountWorkerRunHistoryAsync(string workerId, CancellationToken cancellationToken) => Task.FromResult(0);
+
+        public Task<IReadOnlyList<WorkerRunHistoryItem>> ListWorkerRunHistoryAsync(string workerId, int skip, int take, CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyList<WorkerRunHistoryItem>>([]);
+
+        public Task<IReadOnlyList<EmploymentStatusTotal>> GetRunEntryEmploymentStatusTotalsAsync(string runId, string? bucket, string? workerId, string? reason, string? filter, string? employmentStatus, string? entryId, CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyList<EmploymentStatusTotal>>([]);
+
     }
 
     private sealed class FixedTimeProvider(DateTimeOffset utcNow) : TimeProvider

@@ -613,5 +613,12 @@ public sealed class PreviewModelTests
             _ = cancellationToken;
             return Task.FromResult<IReadOnlyList<ChangedAttributeTotal>>([]);
         }
+        public Task<int> PruneTerminalRunsStartedBeforeAsync(DateTimeOffset cutoffUtc, CancellationToken cancellationToken) => Task.FromResult(0);
+
+        public Task<bool> VacuumIfNeededAsync(DateTimeOffset nowUtc, long minimumFreeBytes, TimeSpan minimumInterval, CancellationToken cancellationToken) => Task.FromResult(false);
+
+        public Task<IReadOnlyList<EmploymentStatusTotal>> GetRunEntryEmploymentStatusTotalsAsync(string runId, string? bucket, string? workerId, string? reason, string? filter, string? employmentStatus, string? entryId, CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyList<EmploymentStatusTotal>>([]);
+
     }
 }

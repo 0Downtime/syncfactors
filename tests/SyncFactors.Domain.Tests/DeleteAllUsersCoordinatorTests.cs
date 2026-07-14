@@ -284,6 +284,8 @@ public sealed class DeleteAllUsersCoordinatorTests
             _ = cancellationToken;
             return Task.CompletedTask;
         }
+        public Task<int> RecoverOrphanedActiveRunsAsync(string? errorMessage, CancellationToken cancellationToken) => Task.FromResult(0);
+
     }
 
     private sealed class CapturingRunLifecycleService : IRunLifecycleService
