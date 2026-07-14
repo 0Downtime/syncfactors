@@ -372,6 +372,32 @@ public sealed class SqliteRunQueueStoreTests
     }
 
     [Fact]
+    public async Task SeedRecoveryProbeAsync_ConflictingProbePreservesExistingNonTerminalRequest()
+    {
+        var databasePath = await CreateDatabaseAsync();
+
+        try
+        {
+            var store = new SqliteRunQueueStore(new SqlitePathResolver(databasePath));
+            var active = await store.EnqueueAsync(new StartRunRequest(DryRun: true, RequestedBy: "operator"), CancellationToken.None);
+
+            await Assert.ThrowsAsync<RunQueueConflictException>(() =>
+                store.SeedRecoveryProbeAsync(
+                    new RunQueueRecoveryProbeRequest(RequestId: "recovery-probe-conflict", Status: "InProgress"),
+                    CancellationToken.None));
+
+            var persisted = await store.GetAsync(active.RequestId, CancellationToken.None);
+            Assert.NotNull(persisted);
+            Assert.Equal("Pending", persisted!.Status);
+            Assert.Null(await store.GetAsync("recovery-probe-conflict", CancellationToken.None));
+        }
+        finally
+        {
+            File.Delete(databasePath);
+        }
+    }
+
+    [Fact]
     public async Task SeedRecoveryProbeAsync_ValidatesStatusAndDefaultsBlankFields()
     {
         var databasePath = await CreateDatabaseAsync();

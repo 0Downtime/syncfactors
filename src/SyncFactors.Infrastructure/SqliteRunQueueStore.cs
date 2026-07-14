@@ -328,7 +328,7 @@ public sealed class SqliteRunQueueStore(SqlitePathResolver pathResolver) : IRunQ
         await using var command = connection.CreateCommand();
         command.CommandText =
             """
-            INSERT OR REPLACE INTO run_queue (
+            INSERT INTO run_queue (
               request_id,
               mode,
               dry_run,
@@ -359,7 +359,14 @@ public sealed class SqliteRunQueueStore(SqlitePathResolver pathResolver) : IRunQ
             """;
         Bind(command, seeded, request.WorkerName);
         command.Parameters.AddWithValue("$runId", (object?)seeded.RunId ?? DBNull.Value);
-        await command.ExecuteNonQueryAsync(cancellationToken);
+        try
+        {
+            await command.ExecuteNonQueryAsync(cancellationToken);
+        }
+        catch (SqliteException ex) when (ex.SqliteErrorCode == 19)
+        {
+            throw new RunQueueConflictException();
+        }
         return seeded;
     }
 
