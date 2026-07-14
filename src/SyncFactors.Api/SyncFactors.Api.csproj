@@ -16,6 +16,7 @@
 
     <Compile Include="HealthEndpointMappings.cs" />
     <Compile Include="LauncherProbe.cs" />
+    <Compile Include="OidcAuthorizationRevalidator.cs" />
     <Compile Include="OidcRoleResolver.cs" />
     <Compile Include="TlsCertificateLoader.cs" />
     <Compile Include="AdminConfigurationSnapshotBuilder.cs" />

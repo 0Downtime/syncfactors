@@ -84,6 +84,11 @@ builder.Services.AddSingleton<ISecurityAuditService, SecurityAuditService>();
 builder.Services.AddSingleton<ILocalUserStore, SqliteLocalUserStore>();
 builder.Services.AddSingleton<ILocalAuthService, LocalAuthService>();
 builder.Services.AddSingleton<IOidcAccountStore, SqliteOidcAccountStore>();
+builder.Services.AddSingleton<IOidcUserInfoClient, OidcUserInfoClient>();
+builder.Services.AddSingleton<OidcAuthorizationRevalidator>();
+builder.Services.AddSingleton(serviceProvider => new OidcCookiePrincipalValidator(
+    serviceProvider.GetRequiredService<OidcAuthorizationRevalidator>(),
+    authSettings));
 builder.Services.AddSingleton<Microsoft.AspNetCore.Identity.IPasswordHasher<LocalUserRecord>, Microsoft.AspNetCore.Identity.PasswordHasher<LocalUserRecord>>();
 builder.Services.AddSingleton<ScaffoldDataStore>();
 builder.Services.AddSingleton<ScaffoldWorkerSource>();
@@ -245,7 +250,7 @@ if (oidcEnabled)
         options.SignedOutCallbackPath = authSettings.Oidc.SignedOutCallbackPath;
         options.SignedOutRedirectUri = "/Login?LoggedOut=true";
         options.ResponseType = "code";
-        options.SaveTokens = false;
+        options.SaveTokens = true;
         options.GetClaimsFromUserInfoEndpoint = true;
         options.MapInboundClaims = false;
         options.Scope.Clear();
@@ -958,12 +963,12 @@ static string DescribeSimpleBindPrincipalFormat(string? username)
     return "BareUsername";
 }
 
-static Task ValidateCookiePrincipalAsync(Microsoft.AspNetCore.Authentication.Cookies.CookieValidatePrincipalContext context, LocalAuthOptions authSettings)
+static async Task ValidateCookiePrincipalAsync(Microsoft.AspNetCore.Authentication.Cookies.CookieValidatePrincipalContext context, LocalAuthOptions authSettings)
 {
     var identity = context.Principal?.Identity as ClaimsIdentity;
     if (identity is null)
     {
-        return Task.CompletedTask;
+        return;
     }
 
     var issuedAtValue = identity.FindFirst(SecurityClaimTypes.SessionIssuedAt)?.Value;
@@ -971,23 +976,41 @@ static Task ValidateCookiePrincipalAsync(Microsoft.AspNetCore.Authentication.Coo
         DateTimeOffset.UtcNow - issuedAt > authSettings.GetAbsoluteSessionLifetime())
     {
         context.RejectPrincipal();
-        return context.HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+        await context.HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+        return;
     }
 
     var authSource = identity.FindFirst(SecurityClaimTypes.AuthSource)?.Value;
-    if (!string.Equals(authSource, "local", StringComparison.Ordinal))
+    if (string.Equals(authSource, "local", StringComparison.Ordinal))
     {
-        return Task.CompletedTask;
+        var userId = context.Principal?.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (string.IsNullOrWhiteSpace(userId))
+        {
+            context.RejectPrincipal();
+            await context.HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+            return;
+        }
+
+        await RefreshLocalPrincipalAsync(context, userId);
+        return;
     }
 
-    var userId = context.Principal?.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-    if (string.IsNullOrWhiteSpace(userId))
+    if (!OidcAuthorizationRevalidator.ShouldRevalidate(context.Principal!))
     {
         context.RejectPrincipal();
-        return context.HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+        await context.HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+        return;
     }
 
-    return RefreshLocalPrincipalAsync(context, userId);
+    var validator = context.HttpContext.RequestServices.GetRequiredService<OidcCookiePrincipalValidator>();
+    if (!await validator.ValidateAsync(context.Principal!, context.Properties, context.HttpContext.RequestAborted))
+    {
+        context.RejectPrincipal();
+        await context.HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+        return;
+    }
+
+    context.ShouldRenew = true;
 }
 
 static async Task RefreshLocalPrincipalAsync(Microsoft.AspNetCore.Authentication.Cookies.CookieValidatePrincipalContext context, string userId)
