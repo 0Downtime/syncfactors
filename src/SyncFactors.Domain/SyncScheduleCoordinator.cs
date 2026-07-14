@@ -8,7 +8,7 @@ public sealed class SyncScheduleCoordinator(
     IRunQueueStore runQueueStore,
     RealSyncSettings realSyncSettings,
     TimeProvider timeProvider,
-    ILogger<SyncScheduleCoordinator> logger)
+    ILogger<SyncScheduleCoordinator> logger) : ISyncScheduleCoordinator
 {
     private static readonly TimeSpan FailedAttemptBackoff = TimeSpan.FromMinutes(1);
 

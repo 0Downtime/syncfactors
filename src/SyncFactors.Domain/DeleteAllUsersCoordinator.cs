@@ -13,7 +13,7 @@ public sealed class DeleteAllUsersCoordinator(
     RealSyncSettings realSyncSettings,
     WorkerRunSettings settings,
     ILogger<DeleteAllUsersCoordinator> logger,
-    TimeProvider timeProvider)
+    TimeProvider timeProvider) : IDeleteAllUsersCoordinator
 {
     public async Task<string> ExecuteAsync(RunQueueRequest request, CancellationToken cancellationToken)
     {

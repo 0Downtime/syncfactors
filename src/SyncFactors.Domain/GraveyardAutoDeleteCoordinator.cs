@@ -13,7 +13,7 @@ public sealed class GraveyardAutoDeleteCoordinator(
     WorkerRunSettings workerRunSettings,
     RealSyncSettings realSyncSettings,
     ILogger<GraveyardAutoDeleteCoordinator> logger,
-    TimeProvider timeProvider)
+    TimeProvider timeProvider) : IGraveyardAutoDeleteCoordinator
 {
     public async Task<GraveyardDeletionApprovalResult> ApproveDeleteAsync(
         string workerId,

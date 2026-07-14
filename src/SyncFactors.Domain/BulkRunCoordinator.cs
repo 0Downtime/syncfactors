@@ -20,7 +20,7 @@ public sealed class BulkRunCoordinator(
     LifecyclePolicySettings lifecycleSettings,
     ILogger<BulkRunCoordinator> logger,
     TimeProvider timeProvider,
-    IRunCaptureMetadataProvider? runCaptureMetadataProvider = null)
+    IRunCaptureMetadataProvider? runCaptureMetadataProvider = null) : IBulkRunCoordinator
 {
     public async Task<string> ExecuteAsync(RunQueueRequest request, int maxDegreeOfParallelism, CancellationToken cancellationToken)
     {

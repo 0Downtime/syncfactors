@@ -10,14 +10,14 @@ namespace SyncFactors.Worker;
 public class Worker(
     ILogger<Worker> logger,
     IRunQueueStore runQueueStore,
-    SyncScheduleCoordinator syncScheduleCoordinator,
-    GraveyardRetentionReportCoordinator graveyardRetentionReportCoordinator,
-    GraveyardAutoDeleteCoordinator graveyardAutoDeleteCoordinator,
-    BulkRunCoordinator bulkRunCoordinator,
-    DeleteAllUsersCoordinator deleteAllUsersCoordinator,
+    ISyncScheduleCoordinator syncScheduleCoordinator,
+    IGraveyardRetentionReportCoordinator graveyardRetentionReportCoordinator,
+    IGraveyardAutoDeleteCoordinator graveyardAutoDeleteCoordinator,
+    IBulkRunCoordinator bulkRunCoordinator,
+    IDeleteAllUsersCoordinator deleteAllUsersCoordinator,
     IWorkerHeartbeatStore workerHeartbeatStore,
     TimeProvider timeProvider,
-    SyncFactorsConfigurationLoader configLoader) : BackgroundService
+    IWorkerExecutionSettings executionSettings) : BackgroundService
 {
     private static readonly TimeSpan HeartbeatInterval = TimeSpan.FromSeconds(15);
 
@@ -42,7 +42,7 @@ public class Worker(
                 var heartbeatTask = PumpHeartbeatsAsync(startedAt, "Running", activity, heartbeatCts.Token);
                 try
                 {
-                    var maxDegreeOfParallelism = Math.Max(1, configLoader.GetSyncConfig().Sync.MaxDegreeOfParallelism);
+                    var maxDegreeOfParallelism = Math.Max(1, executionSettings.GetMaxDegreeOfParallelism());
                     var runId = string.Equals(claimed.Mode, "DeleteAllUsers", StringComparison.OrdinalIgnoreCase)
                         ? await deleteAllUsersCoordinator.ExecuteAsync(claimed, stoppingToken)
                         : await bulkRunCoordinator.ExecuteAsync(claimed, maxDegreeOfParallelism, stoppingToken);
