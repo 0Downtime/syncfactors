@@ -140,6 +140,66 @@ public sealed class GraveyardAutoDeleteCoordinatorTests
         Assert.Contains(lifecycle.Entries, entry => entry.WorkerId == "10001" && entry.Bucket == "deletions");
     }
 
+    [Theory]
+    [InlineData(false, false, "Real AD sync is disabled for this environment.")]
+    [InlineData(true, true, "Dry-run-only mode is enabled. Live AD writes are disabled for this environment.")]
+    public async Task ApproveDeleteAsync_RejectsDirectoryMutation_WhenLiveWritesAreDisabled(
+        bool enabled,
+        bool dryRunOnly,
+        string expectedMessage)
+    {
+        var retentionStore = new StubGraveyardRetentionStore(
+            [
+                CreateRecord("10001", isOnHold: false, endDateUtc: DateTimeOffset.Parse("2026-02-01T00:00:00Z"))
+            ]);
+        var commandGateway = new CapturingDirectoryCommandGateway();
+        var lifecycle = new CapturingRunLifecycleService();
+        var coordinator = CreateCoordinator(
+            retentionStore,
+            CreateDirectoryGateway("10001"),
+            commandGateway,
+            lifecycle,
+            autoDeleteEnabled: false,
+            now: DateTimeOffset.Parse("2026-04-11T12:00:00Z"),
+            realSyncSettings: new RealSyncSettings(enabled, dryRunOnly));
+
+        var result = await coordinator.ApproveDeleteAsync("10001", "admin", CancellationToken.None);
+
+        Assert.False(result.Succeeded);
+        Assert.Equal(expectedMessage, result.Message);
+        Assert.Empty(commandGateway.Commands);
+        Assert.Empty(retentionStore.ResolvedWorkerIds);
+    }
+
+    [Theory]
+    [InlineData(false, false, "Real AD sync is disabled for this environment.")]
+    [InlineData(true, true, "Dry-run-only mode is enabled. Live AD writes are disabled for this environment.")]
+    public async Task TryExecuteAsync_RejectsDirectoryMutation_WhenLiveWritesAreDisabled(
+        bool enabled,
+        bool dryRunOnly,
+        string expectedMessage)
+    {
+        var retentionStore = new StubGraveyardRetentionStore(
+            [
+                CreateRecord("10001", isOnHold: false, endDateUtc: DateTimeOffset.Parse("2026-02-01T00:00:00Z"))
+            ]);
+        var commandGateway = new CapturingDirectoryCommandGateway();
+        var coordinator = CreateCoordinator(
+            retentionStore,
+            CreateDirectoryGateway("10001"),
+            commandGateway,
+            new CapturingRunLifecycleService(),
+            autoDeleteEnabled: true,
+            now: DateTimeOffset.Parse("2026-04-11T12:00:00Z"),
+            realSyncSettings: new RealSyncSettings(enabled, dryRunOnly));
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => coordinator.TryExecuteAsync(CancellationToken.None));
+
+        Assert.Equal(expectedMessage, exception.Message);
+        Assert.Empty(commandGateway.Commands);
+        Assert.Empty(retentionStore.ResolvedWorkerIds);
+    }
+
     [Fact]
     public async Task ApproveDeleteAsync_BlocksHeldUser()
     {
@@ -173,7 +233,8 @@ public sealed class GraveyardAutoDeleteCoordinatorTests
         bool autoDeleteEnabled,
         DateTimeOffset now,
         int maxDeletionsPerRun = 10,
-        bool manualReviewDeletions = false)
+        bool manualReviewDeletions = false,
+        RealSyncSettings? realSyncSettings = null)
     {
         var queueService = new GraveyardDeletionQueueService(
             retentionStore,
@@ -193,6 +254,7 @@ public sealed class GraveyardAutoDeleteCoordinatorTests
                 MaxDisablesPerRun: 10,
                 MaxDeletionsPerRun: maxDeletionsPerRun,
                 ManualReviewDeletions: manualReviewDeletions),
+            realSyncSettings ?? new RealSyncSettings(),
             NullLogger<GraveyardAutoDeleteCoordinator>.Instance,
             new FakeTimeProvider(now));
     }
