@@ -3,12 +3,11 @@ using Microsoft.Extensions.Logging;
 using SyncFactors.Contracts;
 using SyncFactors.Domain;
 using SyncFactors.Infrastructure;
-using System.Diagnostics.CodeAnalysis;
+
 
 namespace SyncFactors.Worker;
 
-[ExcludeFromCodeCoverage(Justification = "Hosted worker loop behavior is verified through coordinator and recovery tests; the service shell depends on timers and host shutdown.")]
-public sealed class Worker(
+public class Worker(
     ILogger<Worker> logger,
     IRunQueueStore runQueueStore,
     SyncScheduleCoordinator syncScheduleCoordinator,

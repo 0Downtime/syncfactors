@@ -5,6 +5,7 @@ import { GraphicComponent, GridComponent, LegendComponent, TooltipComponent } fr
 import { CanvasRenderer } from "echarts/renderers";
 import { animate, stagger } from "motion";
 import { buildRunMixAxis } from "./dashboard-axis.js";
+import { createRealtimeLifecycle } from "./dashboard-runtime.js";
 
 echarts.use([BarChart, PieChart, GraphicComponent, GridComponent, LegendComponent, TooltipComponent, CanvasRenderer]);
 
@@ -130,8 +131,7 @@ echarts.use([BarChart, PieChart, GraphicComponent, GridComponent, LegendComponen
     let reconnectTimerId = null;
     let isLoadingHealth = false;
     let isLoadingDashboard = false;
-    let connection = null;
-    let connectionStartPromise = null;
+    let realtimeLifecycle = null;
     let runsChartInstance = null;
     let bucketChartInstance = null;
     let latestDashboardSnapshot = null;
@@ -2339,58 +2339,23 @@ echarts.use([BarChart, PieChart, GraphicComponent, GridComponent, LegendComponen
         renderDashboard(snapshot);
     }
 
-    async function startRealtimeConnection() {
-        if (connectionStartPromise) {
-            return connectionStartPromise;
-        }
-
-        if (!connection) {
-            connection = new signalR.HubConnectionBuilder()
-                .withUrl("/hubs/dashboard")
-                .withAutomaticReconnect([0, 2000, 5000, 10000, 20000])
-                .build();
-
-            connection.on("dashboardEvent", handleRealtimeEvent);
-
-            connection.onreconnecting(function () {
-                setLiveState("reconnecting", "Live connection interrupted. Polling fallback is active.");
-                startFallbackPolling({ immediate: false });
-            });
-
-            connection.onreconnected(function () {
-                setLiveState("live", "Push updates are active again.");
-                stopFallbackPolling();
-                void loadDashboard();
-                void loadHealth();
-            });
-
-            connection.onclose(function () {
-                setLiveState("fallback", "Live connection is unavailable. Polling fallback remains active.");
-                startFallbackPolling({ immediate: false });
-                connection = null;
-                connectionStartPromise = null;
-                scheduleReconnect();
-            });
-        }
-
-        setLiveState("connecting", "Connecting to the live dashboard channel.");
-
-        connectionStartPromise = connection.start()
-            .then(function () {
-                setLiveState("live", "Push updates are active.");
-                stopFallbackPolling();
-            })
-            .catch(function () {
-                setLiveState("fallback", "Live connection failed to start. Polling fallback remains active.");
-                startFallbackPolling({ immediate: false });
-                connection = null;
-                scheduleReconnect();
-            })
-            .finally(function () {
-                connectionStartPromise = null;
-            });
-
-        return connectionStartPromise;
+    function startRealtimeConnection() {
+        realtimeLifecycle ??= createRealtimeLifecycle({
+            createConnection: function () {
+                return new signalR.HubConnectionBuilder()
+                    .withUrl("/hubs/dashboard")
+                    .withAutomaticReconnect([0, 2000, 5000, 10000, 20000])
+                    .build();
+            },
+            handleEvent: handleRealtimeEvent,
+            setLiveState,
+            startFallbackPolling,
+            stopFallbackPolling,
+            loadDashboard,
+            loadHealth,
+            scheduleReconnect
+        });
+        return realtimeLifecycle.start();
     }
 
     function startDashboard() {
@@ -2421,8 +2386,8 @@ echarts.use([BarChart, PieChart, GraphicComponent, GridComponent, LegendComponen
 
         clearProgressDoneTimer();
 
-        if (connection) {
-            void connection.stop();
+        if (realtimeLifecycle) {
+            void realtimeLifecycle.dispose();
         }
 
         if (runsChartInstance) {

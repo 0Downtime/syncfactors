@@ -16,6 +16,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\SyncFactors.Api\SyncFactors.Api.csproj" />
+    <ProjectReference Include="..\..\src\SyncFactors.Worker\SyncFactors.Worker.csproj" />
   </ItemGroup>
 
   <ItemGroup>
