@@ -198,6 +198,47 @@ jobs:
         { Invoke-WorkflowPolicy -Root $fixtureRoot } | Should -Throw '*must depend on verify-required-ci-checks*'
     }
 
+    It 'rejects release gates that accept a same-name GitHub Actions check without workflow and job provenance' {
+        $fixtureRoot = Join-Path $TestDrive 'spoofable-release-check'
+        New-WorkflowFixture -Root $fixtureRoot -Workflows @{
+            'auto-merge.yml' = @'
+name: Auto Merge
+on:
+  pull_request_target:
+jobs:
+  enable:
+    if: github.actor == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - run: gh pr merge --auto --merge "$PR_URL"
+'@
+            'test.yml' = "name: Test`non:`n  push:`n    branches: [main]"
+            'security.yml' = "name: Security Scans`non:`n  push:`n    branches: [main]"
+            'release.yml' = @'
+name: Release
+on:
+  push:
+    branches: [main]
+jobs:
+  verify-required-ci-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - shell: pwsh
+        run: |
+          $requiredChecks = @('dotnet')
+          $latestByName = @{}
+          if ($check.app.slug -ne 'github-actions' -or $check.details_url -notmatch '^https://github\.com/[^/]+/[^/]+/actions/runs/\d+/job/\d+$') { throw 'untrusted-provenance' }
+  prerelease:
+    needs: [verify-required-ci-checks]
+    runs-on: ubuntu-latest
+    steps:
+      - run: gh release create v0.1.1
+'@
+        }
+
+        { Invoke-WorkflowPolicy -Root $fixtureRoot } | Should -Throw '*workflow and job provenance*'
+    }
+
     It 'gates prerelease and stable publication on the complete verified CI check set' {
         $releaseWorkflow = Get-Content -Path (Join-Path $PSScriptRoot '../.github/workflows/release.yml') -Raw
 
@@ -207,4 +248,32 @@ jobs:
         $releaseWorkflow | Should -Match '\$check\.app\.slug -ne ''github-actions'''
         $releaseWorkflow | Should -Match '\$check\.details_url -notmatch'
     }
+
+    It 'rejects same-name checks unless their workflow and job provenance matches the release policy' {
+        $releaseWorkflow = Get-Content -Path (Join-Path $PSScriptRoot '../.github/workflows/release.yml') -Raw
+
+        $releaseWorkflow | Should -Match "(?ms)checkName\s*=\s*'dotnet'.*?workflowFile\s*=\s*'test\.yml'.*?jobName\s*=\s*'dotnet'"
+        $releaseWorkflow | Should -Match "(?ms)checkName\s*=\s*'GitHub Workflow Security Policy'.*?workflowFile\s*=\s*'security\.yml'.*?jobName\s*=\s*'GitHub Workflow Security Policy'"
+        $releaseWorkflow | Should -Match "(?ms)checkName\s*=\s*'Semgrep Security SAST'.*?workflowFile\s*=\s*'security\.yml'.*?jobName\s*=\s*'Semgrep Security SAST'"
+        $releaseWorkflow | Should -Match "(?ms)checkName\s*=\s*'Gitleaks Secret Scan'.*?workflowFile\s*=\s*'security\.yml'.*?jobName\s*=\s*'Gitleaks Secret Scan'"
+        $releaseWorkflow | Should -Match "(?ms)checkName\s*=\s*'Trivy Repository Scan'.*?workflowFile\s*=\s*'security\.yml'.*?jobName\s*=\s*'Trivy Repository Scan'"
+        $releaseWorkflow | Should -Match "(?ms)checkName\s*=\s*'Analyze \(csharp, none\)'.*?workflowFile\s*=\s*'codeql\.yml'.*?jobName\s*=\s*'Analyze \(csharp, none\)'"
+        $releaseWorkflow | Should -Match "(?ms)checkName\s*=\s*'Analyze \(javascript-typescript, none\)'.*?workflowFile\s*=\s*'codeql\.yml'.*?jobName\s*=\s*'Analyze \(javascript-typescript, none\)'"
+
+        $releaseWorkflow | Should -Match 'actions/workflows/\$workflowFile'
+        $releaseWorkflow | Should -Match '\$run\.workflow_id -ne \$workflowIds\[\$requiredCheck\.workflowFile\]'
+        $releaseWorkflow | Should -Match '\$job\.id -eq \[Int64\]\$jobId -and \$job\.name -eq \$requiredCheck\.jobName'
+        $releaseWorkflow | Should -Match '(?s)\$matchingChecks\.Count -eq 0.*?\$incompleteChecks \+= "\$\(\$requiredCheck\.checkName\)=missing"'
+        $releaseWorkflow | Should -Not -Match '\$latestByName'
+    }
+
+    It 'keeps untrusted same-name checks pending until the provenance deadline' {
+            $releaseWorkflow = Get-Content -Path (Join-Path $PSScriptRoot '../.github/workflows/release.yml') -Raw
+
+            $releaseWorkflow | Should -Match '\$untrustedSameName = @\{\}'
+            $releaseWorkflow | Should -Match '(?s)if \(\$null -eq \$trustedCheck\) \{.*?\$incompleteChecks \+= "\$\(\$requiredCheck\.checkName\)=untrusted-provenance".*?\$untrustedSameName\[.*?\] = @\('
+            $releaseWorkflow | Should -Match '(?s)if \(\(Get-Date\) -ge \$deadline\) \{.*?\$failedChecks \+= "\$untrustedName=untrusted-provenance"'
+            $releaseWorkflow | Should -Not -Match '\$latestByName'
+            $releaseWorkflow | Should -Not -Match '\$incompleteChecks \+= "\$\( \$requiredCheck\.checkName\)=untrusted-provenance"'
+        }
 }

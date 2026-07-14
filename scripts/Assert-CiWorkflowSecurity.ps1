@@ -116,6 +116,14 @@ if (Test-Path -Path $githubWorkflowRoot -PathType Container) {
                     Add-PolicyError $workflowFile.FullName 'publishing release jobs must depend on verify-required-ci-checks.'
                 }
             }
+
+            $hasWorkflowLookup = $content -match 'actions/workflows/\$workflowFile'
+            $hasWorkflowBinding = $content -match '\$run\.workflow_id\s+-ne\s+\$workflowIds\[\$requiredCheck\.workflowFile\]'
+            $hasJobBinding = $content -match '\$job\.id\s+-eq\s+\[Int64\]\$jobId\s+-and\s+\$job\.name\s+-eq\s+\$requiredCheck\.jobName'
+            $keepsUntrustedChecksPending = $content -match '(?s)if\s*\(\$null\s+-eq\s+\$trustedCheck\)\s*\{.*?\$incompleteChecks\s*\+=\s*"\$\(\$requiredCheck\.checkName\)=untrusted-provenance"'
+            if (-not ($hasWorkflowLookup -and $hasWorkflowBinding -and $hasJobBinding -and $keepsUntrustedChecksPending)) {
+                Add-PolicyError $workflowFile.FullName 'required CI check acceptance must bind same-name checks to their expected workflow and job provenance.'
+            }
         }
 
         if ($hasPullRequest -and $content -match 'self-hosted') {
