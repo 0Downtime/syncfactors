@@ -168,6 +168,41 @@ public sealed class SyncModelTests
     }
 
     [Fact]
+    public async Task OnPostDeleteAllUsersAsync_WritesEquivalentAuditEvent()
+    {
+        var audit = new CapturingSecurityAuditService();
+        var model = CreateModel(audit: audit);
+        model.DeleteAllUsersConfirmationText = SyncModel.DeleteAllUsersConfirmationPhrase;
+        AttachAuthenticatedUser(model, "admin@example.com", SecurityRoles.Admin);
+
+        await model.OnPostDeleteAllUsersAsync(CancellationToken.None);
+
+        var entry = Assert.Single(audit.Entries);
+        Assert.Equal("DeleteAllUsersQueued", entry.EventType);
+        Assert.Equal("Success", entry.Outcome);
+        Assert.Equal("admin@example.com", entry.Fields["RequestedBy"]);
+    }
+
+    [Fact]
+    public async Task OnPostDeleteAllUsersAsync_PreservesQueuedOutcomeWhenAuditWriteFailsWithoutExposingDetails()
+    {
+        var queueStore = new CapturingRunQueueStore();
+        var model = CreateModel(
+            queueStore: queueStore,
+            audit: new ThrowingSecurityAuditService(new UnauthorizedAccessException("/secret/audit-path")));
+        model.DeleteAllUsersConfirmationText = SyncModel.DeleteAllUsersConfirmationPhrase;
+        AttachAuthenticatedUser(model, "admin@example.com", SecurityRoles.Admin);
+
+        var result = await model.OnPostDeleteAllUsersAsync(CancellationToken.None);
+
+        Assert.IsType<RedirectToPageResult>(result);
+        Assert.NotNull(queueStore.LastRequest);
+        Assert.Equal("Delete-all AD reset queued.", model.SuccessMessage);
+        Assert.Equal("The action completed, but security audit recording failed.", model.ErrorMessage);
+        Assert.DoesNotContain("/secret/audit-path", model.ErrorMessage, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task OnPostDeleteAllUsersAsync_ForbidsOutsideDevelopment()
     {
         var queueStore = new CapturingRunQueueStore();
@@ -262,6 +297,38 @@ public sealed class SyncModelTests
     }
 
     [Fact]
+    public async Task OnPostCancelRunAsync_WritesEquivalentAuditEvent()
+    {
+        var audit = new CapturingSecurityAuditService();
+        var queueStore = new CapturingRunQueueStore { HasPendingOrActiveRun = true };
+        var model = CreateModel(queueStore: queueStore, audit: audit);
+
+        await model.OnPostCancelRunAsync(CancellationToken.None);
+
+        var entry = Assert.Single(audit.Entries);
+        Assert.Equal("RunCancelled", entry.EventType);
+        Assert.Equal("Success", entry.Outcome);
+        Assert.Equal("Sync page", entry.Fields["RequestedBy"]);
+    }
+
+    [Fact]
+    public async Task OnPostCancelRunAsync_PreservesCancellationOutcomeWhenAuditWriteFailsWithoutExposingDetails()
+    {
+        var queueStore = new CapturingRunQueueStore { HasPendingOrActiveRun = true };
+        var model = CreateModel(
+            queueStore: queueStore,
+            audit: new ThrowingSecurityAuditService(new UnauthorizedAccessException("/secret/audit-path")));
+
+        var result = await model.OnPostCancelRunAsync(CancellationToken.None);
+
+        Assert.IsType<RedirectToPageResult>(result);
+        Assert.True(queueStore.CancelRequested);
+        Assert.Equal("Run cancellation requested.", model.SuccessMessage);
+        Assert.Equal("The action completed, but security audit recording failed.", model.ErrorMessage);
+        Assert.DoesNotContain("/secret/audit-path", model.ErrorMessage, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task OnPostSaveScheduleAsync_UpdatesSchedule()
     {
         var scheduleStore = new StubSyncScheduleStore();
@@ -278,6 +345,46 @@ public sealed class SyncModelTests
         Assert.Equal(45, scheduleStore.LastUpdateRequest.IntervalMinutes);
         Assert.True(model.Schedule.Enabled);
         Assert.Equal(45, model.Schedule.IntervalMinutes);
+    }
+
+    [Fact]
+    public async Task OnPostSaveScheduleAsync_WritesEquivalentAuditEvent()
+    {
+        var audit = new CapturingSecurityAuditService();
+        var model = CreateModel(audit: audit);
+        model.ScheduleEnabled = true;
+        model.IntervalMinutes = 45;
+        AttachAuthenticatedUser(model, "admin@example.com", SecurityRoles.Admin);
+
+        await model.OnPostSaveScheduleAsync(CancellationToken.None);
+
+        var entry = Assert.Single(audit.Entries);
+        Assert.Equal("SyncScheduleUpdated", entry.EventType);
+        Assert.Equal("Success", entry.Outcome);
+        Assert.Equal("admin@example.com", entry.Fields["RequestedBy"]);
+        Assert.Equal(true, entry.Fields["Enabled"]);
+        Assert.Equal(45, entry.Fields["IntervalMinutes"]);
+    }
+
+    [Fact]
+    public async Task OnPostSaveScheduleAsync_PreservesUpdatedScheduleWhenAuditWriteFailsWithoutExposingDetails()
+    {
+        var scheduleStore = new StubSyncScheduleStore();
+        var model = CreateModel(
+            scheduleStore: scheduleStore,
+            audit: new ThrowingSecurityAuditService(new UnauthorizedAccessException("/secret/audit-path")));
+        model.ScheduleEnabled = true;
+        model.IntervalMinutes = 45;
+        AttachAuthenticatedUser(model, "admin@example.com", SecurityRoles.Admin);
+
+        var result = await model.OnPostSaveScheduleAsync(CancellationToken.None);
+
+        Assert.IsType<PageResult>(result);
+        Assert.NotNull(scheduleStore.LastUpdateRequest);
+        Assert.True(scheduleStore.LastUpdateRequest!.Enabled);
+        Assert.Equal("Recurring sync enabled every 45 minutes.", model.SuccessMessage);
+        Assert.Equal("The action completed, but security audit recording failed.", model.ErrorMessage);
+        Assert.DoesNotContain("/secret/audit-path", model.ErrorMessage, StringComparison.Ordinal);
     }
 
     [Fact]

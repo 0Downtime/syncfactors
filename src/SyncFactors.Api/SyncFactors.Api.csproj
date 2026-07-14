@@ -7,6 +7,7 @@
 
   <ItemGroup>
     <Compile Include="ActiveDirectoryFailureDiagnostics.cs" />
+    <Compile Include="ApiAuditWriteHandler.cs" />
     <Compile Include="ExceptionQueueQueryService.cs" />
     <Compile Include="RunEntriesQueryService.cs" />
     <Compile Include="DashboardHub.cs" />

@@ -26,6 +26,7 @@ if (!string.IsNullOrWhiteSpace(launcherProbeAction))
     }
 
     var probeBuilder = WebApplication.CreateBuilder(args);
+    SecurityAuditService.ValidateStartup(probeBuilder.Environment.IsProduction());
     var authOptions = probeBuilder.Configuration.GetSection("SyncFactors:Auth").Get<LocalAuthOptions>() ?? new LocalAuthOptions();
     var sqlitePathResolver = new SqlitePathResolver(probeBuilder.Configuration["SyncFactors:SqlitePath"]);
     var databaseInitializer = new SqliteDatabaseInitializer(sqlitePathResolver);
@@ -484,7 +485,11 @@ operatorApi.MapPost("/runs", async (StartRunRequest request, ClaimsPrincipal use
     {
         return Results.Conflict(new { error = "A run is already pending or in progress." });
     }
-    audit.Write("RunQueued", "Success", ("RequestedBy", requestedBy), ("Mode", queued.Mode), ("DryRun", queued.DryRun));
+    if (!ApiAuditWriteHandler.TryWrite(() => audit.Write("RunQueued", "Success", ("RequestedBy", requestedBy), ("Mode", queued.Mode), ("DryRun", queued.DryRun))))
+    {
+        return AuditRecordingFailedAccepted($"/api/runs/{queued.RequestId}");
+    }
+
     return Results.Accepted($"/api/runs/{queued.RequestId}", queued);
 });
 
@@ -494,7 +499,10 @@ operatorApi.MapPost("/runs/cancel", async (ClaimsPrincipal user, IRunQueueStore 
     var canceled = await queueStore.CancelPendingOrActiveAsync(requestedBy, cancellationToken);
     if (canceled)
     {
-        audit.Write("RunCancelled", "Success", ("RequestedBy", requestedBy));
+        if (!ApiAuditWriteHandler.TryWrite(() => audit.Write("RunCancelled", "Success", ("RequestedBy", requestedBy))))
+        {
+            return AuditRecordingFailed();
+        }
     }
 
     return canceled
@@ -511,7 +519,11 @@ readApi.MapGet("/sync/schedule", async (ISyncScheduleStore scheduleStore, Cancel
 adminApi.MapPut("/sync/schedule", async (UpdateSyncScheduleRequest request, ClaimsPrincipal user, ISyncScheduleStore scheduleStore, ISecurityAuditService audit, CancellationToken cancellationToken) =>
 {
     var schedule = await scheduleStore.UpdateAsync(request, cancellationToken);
-    audit.Write("SyncScheduleUpdated", "Success", ("RequestedBy", ResolveRequestedBy(user, "API")), ("Enabled", schedule.Enabled), ("IntervalMinutes", schedule.IntervalMinutes));
+    if (!ApiAuditWriteHandler.TryWrite(() => audit.Write("SyncScheduleUpdated", "Success", ("RequestedBy", ResolveRequestedBy(user, "API")), ("Enabled", schedule.Enabled), ("IntervalMinutes", schedule.IntervalMinutes))))
+    {
+        return AuditRecordingFailed();
+    }
+
     return Results.Ok(new { schedule });
 });
 
@@ -610,10 +622,18 @@ operatorApi.MapPost("/preview/{workerId}/apply", async (
     }
 
     var result = await applyPreviewService.ApplyAsync(request, cancellationToken);
-    audit.Write("PreviewApplied", result.Succeeded ? "Success" : "Failure", ("RequestedBy", ResolveRequestedBy(user, "API")), ("WorkerId", request.WorkerId), ("PreviewRunId", request.PreviewRunId));
-    return result.Succeeded
-        ? Results.Ok(result)
-        : Results.BadRequest(result);
+    var auditWritten = ApiAuditWriteHandler.TryWrite(() => audit.Write("PreviewApplied", result.Succeeded ? "Success" : "Failure", ("RequestedBy", ResolveRequestedBy(user, "API")), ("WorkerId", request.WorkerId), ("PreviewRunId", request.PreviewRunId)));
+    if (!result.Succeeded)
+    {
+        return Results.BadRequest(result);
+    }
+
+    if (!auditWritten)
+    {
+        return AuditRecordingFailed();
+    }
+
+    return Results.Ok(result);
 });
 
 operatorApi.MapPost("/runs/full", async (
@@ -630,10 +650,19 @@ operatorApi.MapPost("/runs/full", async (
     }
 
     var result = await fullSyncRunService.LaunchAsync(request, cancellationToken);
-    audit.Write("FullRunLaunched", string.Equals(result.Status, "Succeeded", StringComparison.OrdinalIgnoreCase) ? "Success" : "Failure", ("RequestedBy", ResolveRequestedBy(user, "API")), ("DryRun", request.DryRun), ("RunId", result.RunId));
-    return string.Equals(result.Status, "Succeeded", StringComparison.OrdinalIgnoreCase)
-        ? Results.Ok(result)
-        : Results.BadRequest(result);
+    var launched = string.Equals(result.Status, "Succeeded", StringComparison.OrdinalIgnoreCase);
+    var auditWritten = ApiAuditWriteHandler.TryWrite(() => audit.Write("FullRunLaunched", launched ? "Success" : "Failure", ("RequestedBy", ResolveRequestedBy(user, "API")), ("DryRun", request.DryRun), ("RunId", result.RunId)));
+    if (!launched)
+    {
+        return Results.BadRequest(result);
+    }
+
+    if (!auditWritten)
+    {
+        return AuditRecordingFailed();
+    }
+
+    return Results.Ok(result);
 });
 
 adminApi.MapPost("/runs/delete-all", async (
@@ -676,7 +705,11 @@ adminApi.MapPost("/runs/delete-all", async (
         return Results.Conflict(new { error = "A run is already pending or in progress." });
     }
 
-    audit.Write("DeleteAllUsersQueued", "Success", ("RequestedBy", ResolveRequestedBy(user, "API")));
+    if (!ApiAuditWriteHandler.TryWrite(() => audit.Write("DeleteAllUsersQueued", "Success", ("RequestedBy", ResolveRequestedBy(user, "API")))))
+    {
+        return AuditRecordingFailedAccepted($"/api/runs/{queued.RequestId}");
+    }
+
     return Results.Accepted($"/api/runs/{queued.RequestId}", queued);
 });
 
@@ -706,14 +739,18 @@ operatorApi.MapPost("/admin/runs/queue/recovery-probe", async Task<IResult> (
         cancellationToken,
         ignoreFreshHeartbeat: request.Force);
     var latest = await queueStore.GetAsync(seeded.RequestId, cancellationToken);
-    audit.Write(
-        "RunQueueRecoveryProbed",
-        recovered > 0 ? "Success" : "NoOp",
-        ("RequestedBy", ResolveRequestedBy(user, "API")),
-        ("RequestId", seeded.RequestId),
-        ("SeedStatus", request.Status),
-        ("Recovered", recovered),
-        ("FinalStatus", latest?.Status));
+    if (!ApiAuditWriteHandler.TryWrite(() => audit.Write(
+            "RunQueueRecoveryProbed",
+            recovered > 0 ? "Success" : "NoOp",
+            ("RequestedBy", ResolveRequestedBy(user, "API")),
+            ("RequestId", seeded.RequestId),
+            ("SeedStatus", request.Status),
+            ("Recovered", recovered),
+            ("FinalStatus", latest?.Status))))
+    {
+        return AuditRecordingFailed();
+    }
+
     return Results.Ok(new { seeded, recovered, request = latest });
 });
 
@@ -731,13 +768,18 @@ adminApi.MapPost("/admin/users", async (
     CancellationToken cancellationToken) =>
 {
     var result = await authService.CreateUserAsync(request.Username, request.Password, request.ResolvedRole, cancellationToken);
-    audit.Write(
-        "LocalUserCreated",
-        result.Succeeded ? "Success" : "Failure",
-        ("RequestedBy", ResolveRequestedBy(user, "API")),
-        ("Username", request.Username),
-        ("Role", request.ResolvedRole));
-    return result.Succeeded ? Results.Ok(result) : Results.BadRequest(result);
+    var auditWritten = ApiAuditWriteHandler.TryWrite(() => audit.Write(
+            "LocalUserCreated",
+            result.Succeeded ? "Success" : "Failure",
+            ("RequestedBy", ResolveRequestedBy(user, "API")),
+            ("Username", request.Username),
+            ("Role", request.ResolvedRole)));
+    if (!result.Succeeded)
+    {
+        return Results.BadRequest(result);
+    }
+
+    return auditWritten ? Results.Ok(result) : AuditRecordingFailed();
 });
 
 adminApi.MapPost("/admin/users/{userId}/password", async (
@@ -749,8 +791,13 @@ adminApi.MapPost("/admin/users/{userId}/password", async (
     CancellationToken cancellationToken) =>
 {
     var result = await authService.ResetPasswordAsync(userId, request.NewPassword, cancellationToken);
-    audit.Write("LocalUserPasswordReset", result.Succeeded ? "Success" : "Failure", ("RequestedBy", ResolveRequestedBy(user, "API")), ("UserId", userId));
-    return result.Succeeded ? Results.Ok(result) : Results.BadRequest(result);
+    var auditWritten = ApiAuditWriteHandler.TryWrite(() => audit.Write("LocalUserPasswordReset", result.Succeeded ? "Success" : "Failure", ("RequestedBy", ResolveRequestedBy(user, "API")), ("UserId", userId)));
+    if (!result.Succeeded)
+    {
+        return Results.BadRequest(result);
+    }
+
+    return auditWritten ? Results.Ok(result) : AuditRecordingFailed();
 });
 
 adminApi.MapPost("/admin/users/{userId}/role", async (
@@ -763,13 +810,18 @@ adminApi.MapPost("/admin/users/{userId}/role", async (
 {
     var actingUserId = user.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
     var result = await authService.SetUserRoleAsync(userId, request.ResolvedRole, actingUserId, cancellationToken);
-    audit.Write(
-        "LocalUserRoleUpdated",
-        result.Succeeded ? "Success" : "Failure",
-        ("RequestedBy", ResolveRequestedBy(user, "API")),
-        ("UserId", userId),
-        ("Role", request.ResolvedRole));
-    return result.Succeeded ? Results.Ok(result) : Results.BadRequest(result);
+    var auditWritten = ApiAuditWriteHandler.TryWrite(() => audit.Write(
+            "LocalUserRoleUpdated",
+            result.Succeeded ? "Success" : "Failure",
+            ("RequestedBy", ResolveRequestedBy(user, "API")),
+            ("UserId", userId),
+            ("Role", request.ResolvedRole)));
+    if (!result.Succeeded)
+    {
+        return Results.BadRequest(result);
+    }
+
+    return auditWritten ? Results.Ok(result) : AuditRecordingFailed();
 });
 
 adminApi.MapPost("/admin/users/{userId}/active", async (
@@ -782,13 +834,18 @@ adminApi.MapPost("/admin/users/{userId}/active", async (
 {
     var actingUserId = user.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
     var result = await authService.SetUserActiveStateAsync(userId, request.IsActive, actingUserId, cancellationToken);
-    audit.Write(
-        "LocalUserActiveStateUpdated",
-        result.Succeeded ? "Success" : "Failure",
-        ("RequestedBy", ResolveRequestedBy(user, "API")),
-        ("UserId", userId),
-        ("IsActive", request.IsActive));
-    return result.Succeeded ? Results.Ok(result) : Results.BadRequest(result);
+    var auditWritten = ApiAuditWriteHandler.TryWrite(() => audit.Write(
+            "LocalUserActiveStateUpdated",
+            result.Succeeded ? "Success" : "Failure",
+            ("RequestedBy", ResolveRequestedBy(user, "API")),
+            ("UserId", userId),
+            ("IsActive", request.IsActive)));
+    if (!result.Succeeded)
+    {
+        return Results.BadRequest(result);
+    }
+
+    return auditWritten ? Results.Ok(result) : AuditRecordingFailed();
 });
 
 adminApi.MapDelete("/admin/users/{userId}", async (
@@ -800,8 +857,13 @@ adminApi.MapDelete("/admin/users/{userId}", async (
 {
     var actingUserId = user.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
     var result = await authService.DeleteUserAsync(userId, actingUserId, cancellationToken);
-    audit.Write("LocalUserDeleted", result.Succeeded ? "Success" : "Failure", ("RequestedBy", ResolveRequestedBy(user, "API")), ("UserId", userId));
-    return result.Succeeded ? Results.Ok(result) : Results.BadRequest(result);
+    var auditWritten = ApiAuditWriteHandler.TryWrite(() => audit.Write("LocalUserDeleted", result.Succeeded ? "Success" : "Failure", ("RequestedBy", ResolveRequestedBy(user, "API")), ("UserId", userId)));
+    if (!result.Succeeded)
+    {
+        return Results.BadRequest(result);
+    }
+
+    return auditWritten ? Results.Ok(result) : AuditRecordingFailed();
 });
 
 app.MapHub<DashboardHub>("/hubs/dashboard")
@@ -1136,6 +1198,12 @@ static string ResolveRequestedBy(ClaimsPrincipal user, string fallback) =>
     string.IsNullOrWhiteSpace(user.Identity?.Name)
         ? fallback
         : user.Identity!.Name!;
+
+static IResult AuditRecordingFailed() =>
+    Results.Ok(ApiAuditWriteHandler.CreateFailureResponse());
+
+static IResult AuditRecordingFailedAccepted(string location) =>
+    Results.Accepted(location, ApiAuditWriteHandler.CreateFailureResponse());
 
 static void ReplaceClaim(ClaimsIdentity identity, string claimType, string value)
 {
