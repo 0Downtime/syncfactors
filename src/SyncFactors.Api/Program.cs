@@ -143,8 +143,7 @@ builder.Services.AddSingleton(serviceProvider =>
         identityCorrelation?.SuccessorPersonIdExternalAttribute,
         identityCorrelation?.PreviousPersonIdExternalAttribute);
 });
-builder.Services.AddSingleton<ScaffoldDirectoryGateway>();
-builder.Services.AddSingleton<ScaffoldDirectoryCommandGateway>();
+builder.Services.AddDirectoryServiceRuntimeGateways(builder.Configuration["SYNCFACTORS_RUN_PROFILE"]);
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<IWorkerPreviewLogWriter, FileWorkerPreviewLogWriter>();
 builder.Services.AddSingleton<IDeltaSyncStateStore, SqliteDeltaSyncStateStore>();
@@ -165,22 +164,7 @@ builder.Services.AddHttpClient<IDependencyHealthService, DependencyHealthService
         AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate
     });
 builder.Services.AddTransient<IWorkerSource>(serviceProvider => serviceProvider.GetRequiredService<SuccessFactorsWorkerSource>());
-builder.Services.AddTransient<ActiveDirectoryGateway>();
-builder.Services.AddTransient<IDirectoryGateway>(serviceProvider =>
-{
-    var config = serviceProvider.GetRequiredService<SyncFactorsConfigurationLoader>().GetSyncConfig();
-    return DirectoryServiceRuntimeSelector.UseScaffoldDirectoryServices(config, builder.Configuration["SYNCFACTORS_RUN_PROFILE"])
-        ? serviceProvider.GetRequiredService<ScaffoldDirectoryGateway>()
-        : serviceProvider.GetRequiredService<ActiveDirectoryGateway>();
-});
-builder.Services.AddTransient<ActiveDirectoryCommandGateway>();
-builder.Services.AddTransient<IDirectoryCommandGateway>(serviceProvider =>
-{
-    var config = serviceProvider.GetRequiredService<SyncFactorsConfigurationLoader>().GetSyncConfig();
-    return DirectoryServiceRuntimeSelector.UseScaffoldDirectoryServices(config, builder.Configuration["SYNCFACTORS_RUN_PROFILE"])
-        ? serviceProvider.GetRequiredService<ScaffoldDirectoryCommandGateway>()
-        : serviceProvider.GetRequiredService<ActiveDirectoryCommandGateway>();
-});
+
 builder.Services.AddSingleton<IAttributeMappingProvider, AttributeMappingProvider>();
 builder.Services.AddSingleton<IIdentityMatcher, IdentityMatcher>();
 builder.Services.AddSingleton<ILifecyclePolicy, LifecyclePolicy>();
