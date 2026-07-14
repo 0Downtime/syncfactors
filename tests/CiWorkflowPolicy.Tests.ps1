@@ -165,4 +165,46 @@ jobs:
 
         { Invoke-WorkflowPolicy -Root $fixtureRoot } | Should -Throw '*must run on pushes to main*'
     }
+
+    It 'rejects a publishing release job that does not depend on verified CI checks' {
+        $fixtureRoot = Join-Path $TestDrive 'ungated-release-publication'
+        New-WorkflowFixture -Root $fixtureRoot -Workflows @{
+            'auto-merge.yml' = @'
+name: Auto Merge
+on:
+  pull_request_target:
+jobs:
+  enable:
+    if: github.actor == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - run: gh pr merge --auto --merge "$PR_URL"
+'@
+            'test.yml' = "name: Test`non:`n  push:`n    branches: [main]"
+            'security.yml' = "name: Security Scans`non:`n  push:`n    branches: [main]"
+            'release.yml' = @'
+name: Release
+on:
+  push:
+    branches: [main]
+jobs:
+  emergency-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - run: gh release create v0.1.1
+'@
+        }
+
+        { Invoke-WorkflowPolicy -Root $fixtureRoot } | Should -Throw '*must depend on verify-required-ci-checks*'
+    }
+
+    It 'gates prerelease and stable publication on the complete verified CI check set' {
+        $releaseWorkflow = Get-Content -Path (Join-Path $PSScriptRoot '../.github/workflows/release.yml') -Raw
+
+        $releaseWorkflow | Should -Match '(?ms)^  verify-required-ci-checks:.*?''dotnet''.*?''GitHub Workflow Security Policy''.*?''Semgrep Security SAST''.*?''Gitleaks Secret Scan''.*?''Trivy Repository Scan''.*?''Analyze \(csharp, none\)''.*?''Analyze \(javascript-typescript, none\)'''
+        $releaseWorkflow | Should -Match '(?ms)^  prerelease:.*?^    needs: \[select-runner, verify-required-ci-checks\]'
+        $releaseWorkflow | Should -Match '(?ms)^  stable-release:.*?^    needs: \[select-runner, verify-required-ci-checks\]'
+        $releaseWorkflow | Should -Match '\$check\.app\.slug -ne ''github-actions'''
+        $releaseWorkflow | Should -Match '\$check\.details_url -notmatch'
+    }
 }

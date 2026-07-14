@@ -109,6 +109,15 @@ if (Test-Path -Path $githubWorkflowRoot -PathType Container) {
             }
         }
 
+        if ($workflowFile.Name -match '^release\.ya?ml$' -and $content -match '\bgh\s+release\s+create\b') {
+            $publishingJobs = [regex]::Matches($content, '(?ms)^  \S+:.*?(?=^  \S|\z)') | Where-Object { $_.Value -match '\bgh\s+release\s+create\b' }
+            foreach ($publishingJob in $publishingJobs) {
+                if ($publishingJob.Value -notmatch '(?m)^\s*needs:\s*\[[^\]]*\bverify-required-ci-checks\b[^\]]*\]') {
+                    Add-PolicyError $workflowFile.FullName 'publishing release jobs must depend on verify-required-ci-checks.'
+                }
+            }
+        }
+
         if ($hasPullRequest -and $content -match 'self-hosted') {
             $guardsExternalForks =
                 $content -match 'github\.event\.pull_request\.head\.repo\.full_name\s*(?:!=|==)\s*github\.repository' -or
