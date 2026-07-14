@@ -117,16 +117,16 @@ public sealed class SyncModel(
             return RedirectToPage(new { PageNumber });
         }
 
+        RunQueueRequest queued;
         try
         {
-            var queued = await runQueueStore.EnqueueAsync(
+            queued = await runQueueStore.EnqueueAsync(
                 new StartRunRequest(
                     DryRun: !string.Equals(RunMode, LiveRunMode, StringComparison.Ordinal),
                     Mode: "BulkSync",
                     RunTrigger: "AdHoc",
                     RequestedBy: ResolveRequestedBy()),
                 cancellationToken);
-            audit?.Write("RunQueued", "Success", ("RequestedBy", queued.RequestedBy), ("Mode", queued.Mode), ("DryRun", queued.DryRun));
         }
         catch (RunQueueConflictException)
         {
@@ -139,6 +139,7 @@ public sealed class SyncModel(
             ? "Live provisioning run queued."
             : "Dry-run sync queued.";
         ErrorMessage = null;
+        TryWriteAudit(() => audit?.Write("RunQueued", "Success", ("RequestedBy", queued.RequestedBy), ("Mode", queued.Mode), ("DryRun", queued.DryRun)));
         return RedirectToPage("/Index");
     }
 
@@ -164,16 +165,16 @@ public sealed class SyncModel(
             return RedirectToPage(new { PageNumber });
         }
 
+        RunQueueRequest queued;
         try
         {
-            var queued = await runQueueStore.EnqueueAsync(
+            queued = await runQueueStore.EnqueueAsync(
                 new StartRunRequest(
                     DryRun: false,
                     Mode: DeleteAllUsersMode,
                     RunTrigger: "DeleteAllUsers",
                     RequestedBy: ResolveRequestedBy()),
                 cancellationToken);
-            audit?.Write("DeleteAllUsersQueued", "Success", ("RequestedBy", queued.RequestedBy));
         }
         catch (RunQueueConflictException)
         {
@@ -184,6 +185,7 @@ public sealed class SyncModel(
 
         SuccessMessage = "Delete-all AD reset queued.";
         ErrorMessage = null;
+        TryWriteAudit(() => audit?.Write("DeleteAllUsersQueued", "Success", ("RequestedBy", queued.RequestedBy)));
         return RedirectToPage(new { PageNumber });
     }
 
@@ -196,9 +198,9 @@ public sealed class SyncModel(
             return RedirectToPage(new { PageNumber });
         }
 
-        audit?.Write("RunCancelled", "Success", ("RequestedBy", ResolveRequestedBy()));
         SuccessMessage = "Run cancellation requested.";
         ErrorMessage = null;
+        TryWriteAudit(() => audit?.Write("RunCancelled", "Success", ("RequestedBy", ResolveRequestedBy())));
         return RedirectToPage(new { PageNumber });
     }
 
@@ -214,13 +216,13 @@ public sealed class SyncModel(
                 Enabled: ScheduleEnabled,
                 IntervalMinutes: IntervalMinutes),
             cancellationToken);
-        audit?.Write("SyncScheduleUpdated", "Success", ("RequestedBy", ResolveRequestedBy()), ("Enabled", Schedule.Enabled), ("IntervalMinutes", Schedule.IntervalMinutes));
-
         SuccessMessage = Schedule.Enabled
             ? ScheduledRunsAreDryRunOnly
                 ? $"Recurring dry-run sync enabled every {Schedule.IntervalMinutes} minutes."
                 : $"Recurring sync enabled every {Schedule.IntervalMinutes} minutes."
             : "Recurring sync disabled.";
+        ErrorMessage = null;
+        TryWriteAudit(() => audit?.Write("SyncScheduleUpdated", "Success", ("RequestedBy", ResolveRequestedBy()), ("Enabled", Schedule.Enabled), ("IntervalMinutes", Schedule.IntervalMinutes)));
 
         await LoadSnapshotAsync(cancellationToken);
         HasPendingOrActiveRun = await runQueueStore.HasPendingOrActiveRunAsync(cancellationToken);
@@ -254,4 +256,16 @@ public sealed class SyncModel(
         string.IsNullOrWhiteSpace(PageContext?.HttpContext?.User.Identity?.Name)
             ? "Sync page"
             : PageContext.HttpContext.User.Identity!.Name!;
+
+    private void TryWriteAudit(Action write)
+    {
+        try
+        {
+            write();
+        }
+        catch (Exception)
+        {
+            ErrorMessage = "The action completed, but security audit recording failed.";
+        }
+    }
 }

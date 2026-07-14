@@ -320,10 +320,10 @@ builder.Services.AddRazorPages(options =>
 
 var app = builder.Build();
 
+SecurityAuditService.ValidateStartup(app.Environment.IsProduction());
 await app.Services.GetRequiredService<SqliteDatabaseInitializer>().InitializeAsync(CancellationToken.None);
 await app.Services.GetRequiredService<ILocalAuthService>().EnsureBootstrapAdminAsync(CancellationToken.None);
 app.Services.GetRequiredService<SyncFactorsConfigurationValidator>().Validate();
-SecurityAuditService.ValidateStartup(app.Environment.IsProduction());
 ValidateAuthConfiguration(app);
 LogRuntimeVersion(app.Logger, "api", typeof(Program).Assembly);
 LogConfiguredEndpoints(app);

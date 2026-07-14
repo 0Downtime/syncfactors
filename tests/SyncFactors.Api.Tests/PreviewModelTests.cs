@@ -4,6 +4,7 @@ using SyncFactors.Api;
 using SyncFactors.Api.Pages;
 using SyncFactors.Contracts;
 using SyncFactors.Domain;
+using SyncFactors.Infrastructure;
 
 namespace SyncFactors.Api.Tests;
 
@@ -143,6 +144,57 @@ public sealed class PreviewModelTests
         Assert.NotNull(model.ApplyResult);
         Assert.Equal("apply-10001-20260327120000", model.ApplyResult!.RunId);
         Assert.Null(model.ErrorMessage);
+    }
+
+    [Fact]
+    public async Task OnPostApplyAsync_WritesEquivalentAuditEvent()
+    {
+        var preview = CreatePreview(workerId: "10001");
+        var audit = new CapturingSecurityAuditService();
+        var model = new Worker360Model(
+            new CapturingWorkerPreviewPlanner(preview),
+            new CapturingApplyPreviewService(new DirectoryCommandResult(true, "UpdateUser", "10001", null, "Updated.", "apply-10001")),
+            new StubRunRepository(preview),
+            audit: audit)
+        {
+            WorkerId = "10001",
+            PreviewRunId = preview.RunId!,
+            PreviewFingerprint = preview.Fingerprint,
+            AcknowledgeRealSync = true
+        };
+
+        await model.OnPostApplyAsync(CancellationToken.None);
+
+        var entry = Assert.Single(audit.Entries);
+        Assert.Equal("PreviewApplied", entry.EventType);
+        Assert.Equal("Success", entry.Outcome);
+        Assert.Equal("10001", entry.Fields["WorkerId"]);
+        Assert.Equal(preview.RunId, entry.Fields["PreviewRunId"]);
+    }
+
+    [Fact]
+    public async Task OnPostApplyAsync_PreservesApplyOutcomeWhenAuditWriteFailsWithoutExposingDetails()
+    {
+        var preview = CreatePreview(workerId: "10001");
+        var model = new Worker360Model(
+            new CapturingWorkerPreviewPlanner(preview),
+            new CapturingApplyPreviewService(new DirectoryCommandResult(true, "UpdateUser", "10001", null, "Updated.", "apply-10001")),
+            new StubRunRepository(preview),
+            audit: new ThrowingSecurityAuditService(new UnauthorizedAccessException("/secret/audit-path")))
+        {
+            WorkerId = "10001",
+            PreviewRunId = preview.RunId!,
+            PreviewFingerprint = preview.Fingerprint,
+            AcknowledgeRealSync = true
+        };
+
+        var result = await model.OnPostApplyAsync(CancellationToken.None);
+
+        Assert.IsType<PageResult>(result);
+        Assert.NotNull(model.ApplyResult);
+        Assert.True(model.ApplyResult!.Succeeded);
+        Assert.Equal("The action completed, but security audit recording failed.", model.ErrorMessage);
+        Assert.DoesNotContain("/secret/audit-path", model.ErrorMessage, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -481,6 +533,25 @@ public sealed class PreviewModelTests
             _ = request;
             _ = cancellationToken;
             return Task.FromException<DirectoryCommandResult>(exception);
+        }
+    }
+
+    private sealed class CapturingSecurityAuditService : ISecurityAuditService
+    {
+        public List<(string EventType, string Outcome, IReadOnlyDictionary<string, object?> Fields)> Entries { get; } = [];
+
+        public void Write(string eventType, string outcome, params (string Key, object? Value)[] fields) =>
+            Entries.Add((eventType, outcome, fields.ToDictionary(field => field.Key, field => field.Value)));
+    }
+
+    private sealed class ThrowingSecurityAuditService(Exception exception) : ISecurityAuditService
+    {
+        public void Write(string eventType, string outcome, params (string Key, object? Value)[] fields)
+        {
+            _ = eventType;
+            _ = outcome;
+            _ = fields;
+            throw exception;
         }
     }
 

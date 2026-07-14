@@ -145,12 +145,12 @@ public sealed class Worker360Model(
                     PreviewFingerprint: PreviewFingerprint,
                     AcknowledgeRealSync: AcknowledgeRealSync),
                 cancellationToken);
-            audit?.Write(
+            TryWriteAudit(() => audit?.Write(
                 "PreviewApplied",
                 ApplyResult.Succeeded ? "Success" : "Failure",
                 ("RequestedBy", PageContext?.HttpContext?.User.Identity?.Name ?? "Workers page"),
                 ("WorkerId", WorkerId),
-                ("PreviewRunId", PreviewRunId));
+                ("PreviewRunId", PreviewRunId)));
         }
         catch (Exception ex)
         {
@@ -226,6 +226,18 @@ public sealed class Worker360Model(
 
         TotalRunHistory = await runRepository.CountWorkerRunHistoryAsync(WorkerId, cancellationToken);
         RunHistory = await runRepository.ListWorkerRunHistoryAsync(WorkerId, 0, 12, cancellationToken);
+    }
+
+    private void TryWriteAudit(Action write)
+    {
+        try
+        {
+            write();
+        }
+        catch (Exception)
+        {
+            ErrorMessage = "The action completed, but security audit recording failed.";
+        }
     }
 
     private static IEnumerable<SourceAttributeRow> SelectSourceSummary(WorkerPreviewResult preview)

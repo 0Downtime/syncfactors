@@ -63,6 +63,21 @@ public sealed class SyncModelTests
     }
 
     [Fact]
+    public async Task OnPostStartRunAsync_PreservesQueuedOutcomeWhenAuditWriteFailsWithoutExposingDetails()
+    {
+        var queueStore = new CapturingRunQueueStore();
+        var model = CreateModel(queueStore: queueStore, audit: new ThrowingSecurityAuditService(new UnauthorizedAccessException("/secret/audit-path")));
+
+        var result = await model.OnPostStartRunAsync(CancellationToken.None);
+
+        Assert.IsType<RedirectToPageResult>(result);
+        Assert.NotNull(queueStore.LastRequest);
+        Assert.Equal("Dry-run sync queued.", model.SuccessMessage);
+        Assert.Equal("The action completed, but security audit recording failed.", model.ErrorMessage);
+        Assert.DoesNotContain("/secret/audit-path", model.ErrorMessage, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task OnPostStartRunAsync_QueuesLiveRunWhenSelected()
     {
         var queueStore = new CapturingRunQueueStore();
@@ -493,7 +508,7 @@ public sealed class SyncModelTests
         CapturingRunQueueStore? queueStore = null,
         RealSyncSettings? realSyncSettings = null,
         StubSyncScheduleStore? scheduleStore = null,
-        CapturingSecurityAuditService? audit = null,
+        ISecurityAuditService? audit = null,
         string environmentName = "Development")
     {
         return new SyncModel(
@@ -689,5 +704,16 @@ public sealed class SyncModelTests
 
         public void Write(string eventType, string outcome, params (string Key, object? Value)[] fields) =>
             Entries.Add((eventType, outcome, fields.ToDictionary(field => field.Key, field => field.Value)));
+    }
+
+    private sealed class ThrowingSecurityAuditService(Exception exception) : ISecurityAuditService
+    {
+        public void Write(string eventType, string outcome, params (string Key, object? Value)[] fields)
+        {
+            _ = eventType;
+            _ = outcome;
+            _ = fields;
+            throw exception;
+        }
     }
 }
