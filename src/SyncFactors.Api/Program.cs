@@ -47,7 +47,8 @@ LocalFileLogging.Configure(
     directoryValue: builder.Configuration[LocalFileLogging.DirectoryEnvironmentVariable],
     retainedFileCountLimitValue: builder.Configuration[LocalFileLogging.RetainedFileCountLimitEnvironmentVariable],
     runLoggingEnabledValue: builder.Configuration[LocalFileLogging.RunFileLoggingEnabledEnvironmentVariable],
-    runRetainedFileCountLimitValue: builder.Configuration[LocalFileLogging.RunRetainedFileCountLimitEnvironmentVariable]);
+    runRetainedFileCountLimitValue: builder.Configuration[LocalFileLogging.RunRetainedFileCountLimitEnvironmentVariable],
+    retentionDaysValue: builder.Configuration[LocalFileLogging.RetentionDaysEnvironmentVariable]);
 ConfigureApplicationInsights(builder);
 var authSettings = builder.Configuration.GetSection("SyncFactors:Auth").Get<LocalAuthOptions>() ?? new LocalAuthOptions();
 var cspEnabled = builder.Configuration.GetValue<bool?>("SyncFactors:SecurityHeaders:EnableContentSecurityPolicy")

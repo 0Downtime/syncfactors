@@ -1,16 +1,20 @@
 namespace SyncFactors.Infrastructure;
 
 using Microsoft.Extensions.Logging;
+using System.Security;
 
 public static class LocalFileLogging
 {
     public const string EnabledEnvironmentVariable = "SYNCFACTORS_LOCAL_FILE_LOGGING_ENABLED";
     public const string DirectoryEnvironmentVariable = "SYNCFACTORS_LOCAL_LOG_DIRECTORY";
     public const string RetainedFileCountLimitEnvironmentVariable = "SYNCFACTORS_LOCAL_LOG_RETAINED_FILE_COUNT";
+    public const string RetentionDaysEnvironmentVariable = "SYNCFACTORS_LOCAL_LOG_RETENTION_DAYS";
     public const string RunFileLoggingEnabledEnvironmentVariable = "SYNCFACTORS_RUN_FILE_LOGGING_ENABLED";
     public const string RunRetainedFileCountLimitEnvironmentVariable = "SYNCFACTORS_RUN_LOG_RETAINED_FILE_COUNT";
     public const int RetainedFileCountLimit = 7;
     public const int RunRetainedFileCountLimit = 200;
+    public const int LogRetentionDays = 7;
+    public const int MaximumLogRetentionDays = 36_500;
     private const string RepositoryRootEnvironmentVariable = "REPO_ROOT";
 
     public static bool IsEnabled(string? configuredValue, bool defaultValue = true)
@@ -46,6 +50,14 @@ public static class LocalFileLogging
             : defaultValue;
     }
 
+    public static int ResolveLogRetentionDays(string? configuredValue)
+    {
+        return int.TryParse(configuredValue?.Trim(), out var parsed) &&
+               parsed is > 0 and <= MaximumLogRetentionDays
+            ? parsed
+            : LogRetentionDays;
+    }
+
     public static void Configure(
         ILoggingBuilder logging,
         string processName,
@@ -53,7 +65,8 @@ public static class LocalFileLogging
         string? directoryValue,
         string? retainedFileCountLimitValue,
         string? runLoggingEnabledValue,
-        string? runRetainedFileCountLimitValue)
+        string? runRetainedFileCountLimitValue,
+        string? retentionDaysValue = null)
     {
         if (!IsEnabled(enabledValue))
         {
@@ -63,7 +76,9 @@ public static class LocalFileLogging
         var retainedFileCountLimit = ResolveRetainedFileCountLimit(
             retainedFileCountLimitValue,
             RetainedFileCountLimit);
-        logging.AddProvider(new LocalFileLoggerProvider(processName, directoryValue, retainedFileCountLimit));
+        var retentionDays = ResolveLogRetentionDays(retentionDaysValue);
+        PruneExpiredLogFiles(directoryValue, retentionDays, DateTimeOffset.UtcNow);
+        logging.AddProvider(new LocalFileLoggerProvider(processName, directoryValue, retainedFileCountLimit, retentionDays));
 
         if (!IsEnabled(runLoggingEnabledValue, defaultValue: false))
         {
@@ -109,9 +124,7 @@ public static class LocalFileLogging
             return;
         }
 
-        var files = Directory
-            .EnumerateFiles(directory, $"{processName}-*.log", SearchOption.TopDirectoryOnly)
-            .Select(path => new FileInfo(path))
+        var files = GetFileInfosFromSafeDirectory(directory, $"{processName}-*.log")
             .OrderByDescending(file => file.LastWriteTimeUtc)
             .Skip(retainedFileCountLimit);
 
@@ -126,6 +139,10 @@ public static class LocalFileLogging
                 _ = exception;
             }
             catch (UnauthorizedAccessException exception)
+            {
+                _ = exception;
+            }
+            catch (SecurityException exception)
             {
                 _ = exception;
             }
@@ -145,9 +162,7 @@ public static class LocalFileLogging
             return;
         }
 
-        var files = Directory
-            .EnumerateFiles(directory, "*.log", SearchOption.TopDirectoryOnly)
-            .Select(path => new FileInfo(path))
+        var files = GetFileInfosFromSafeDirectory(directory, "*.log")
             .OrderByDescending(file => file.LastWriteTimeUtc)
             .Skip(retainedFileCountLimit);
 
@@ -162,6 +177,56 @@ public static class LocalFileLogging
                 _ = exception;
             }
             catch (UnauthorizedAccessException exception)
+            {
+                _ = exception;
+            }
+            catch (SecurityException exception)
+            {
+                _ = exception;
+            }
+        }
+    }
+
+    public static void PruneExpiredLogFiles(
+        string? configuredDirectory,
+        int retentionDays,
+        DateTimeOffset now)
+    {
+        if (retentionDays is <= 0 or > MaximumLogRetentionDays)
+        {
+            return;
+        }
+
+        var directory = ResolveDirectory(configuredDirectory);
+        if (!Directory.Exists(directory))
+        {
+            return;
+        }
+
+        var cutoff = now.UtcDateTime.AddDays(-retentionDays);
+        var files = GetFileInfosFromSafeDirectory(directory, "api-*.log")
+            .Concat(GetFileInfosFromSafeDirectory(directory, "worker-*.log"))
+            .Concat(GetFileInfosFromSafeDirectory(ResolveRunLogDirectory(configuredDirectory), "*.log"))
+            .Concat(GetFileInfosFromSafeDirectory(ResolvePreviewLogDirectory(configuredDirectory), "*.jsonl"));
+
+        foreach (var file in files)
+        {
+            try
+            {
+                if (file.LastWriteTimeUtc < cutoff)
+                {
+                    file.Delete();
+                }
+            }
+            catch (IOException exception)
+            {
+                _ = exception;
+            }
+            catch (UnauthorizedAccessException exception)
+            {
+                _ = exception;
+            }
+            catch (SecurityException exception)
             {
                 _ = exception;
             }
@@ -192,6 +257,57 @@ public static class LocalFileLogging
     {
         var invalidChars = Path.GetInvalidFileNameChars();
         return new string(value.Select(ch => invalidChars.Contains(ch) ? '_' : ch).ToArray());
+    }
+
+    private static string[] GetFilesFromSafeDirectory(string directory, string searchPattern)
+    {
+        try
+        {
+            var info = new DirectoryInfo(directory);
+            if (!info.Exists || info.Attributes.HasFlag(FileAttributes.ReparsePoint))
+            {
+                return [];
+            }
+
+            return Directory.GetFiles(directory, searchPattern, SearchOption.TopDirectoryOnly);
+        }
+        catch (IOException)
+        {
+            return [];
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return [];
+        }
+        catch (SecurityException)
+        {
+            return [];
+        }
+    }
+
+    private static FileInfo[] GetFileInfosFromSafeDirectory(string directory, string searchPattern)
+    {
+        var files = new List<FileInfo>();
+        foreach (var path in GetFilesFromSafeDirectory(directory, searchPattern))
+        {
+            try
+            {
+                var file = new FileInfo(path);
+                _ = file.LastWriteTimeUtc;
+                files.Add(file);
+            }
+            catch (IOException)
+            {
+            }
+            catch (UnauthorizedAccessException)
+            {
+            }
+            catch (SecurityException)
+            {
+            }
+        }
+
+        return [.. files];
     }
 
     private static string ResolveDefaultBaseDirectory()

@@ -377,6 +377,7 @@ $commonEnvironment = @(
     "SYNCFACTORS_SECURITY_AUDIT_LOG_PATH=$SecurityAuditLogPath",
     "SYNCFACTORS_LOCAL_FILE_LOGGING_ENABLED=true",
     "SYNCFACTORS_LOCAL_LOG_DIRECTORY=$LogDirectory",
+    "SYNCFACTORS_LOCAL_LOG_RETENTION_DAYS=7",
     "SYNCFACTORS_RUN_FILE_LOGGING_ENABLED=false",
     "Logging__LogLevel__Default=Information",
     "Logging__LogLevel__Microsoft=Warning",

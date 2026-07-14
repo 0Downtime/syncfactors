@@ -130,6 +130,32 @@ public sealed class RunScopedFileLoggerProviderTests
     }
 
     [Fact]
+    public void PruneDatedFiles_DoesNotTraverseLinkedLogDirectory()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        var linkPath = Path.Combine(Path.GetTempPath(), "syncfactors-linked-log-root", Guid.NewGuid().ToString("N"));
+        var outsideDirectory = Path.Combine(Path.GetTempPath(), "syncfactors-outside-logs", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(Path.GetDirectoryName(linkPath)!);
+        Directory.CreateDirectory(outsideDirectory);
+        var oldPath = LocalFileLogging.ResolveDatedFilePath("worker", outsideDirectory, DateTimeOffset.UtcNow.AddDays(-2));
+        var newPath = LocalFileLogging.ResolveDatedFilePath("worker", outsideDirectory, DateTimeOffset.UtcNow);
+        File.WriteAllText(oldPath, "old");
+        File.WriteAllText(newPath, "new");
+        File.SetLastWriteTimeUtc(oldPath, DateTime.UtcNow.AddDays(-2));
+        File.SetLastWriteTimeUtc(newPath, DateTime.UtcNow);
+        Directory.CreateSymbolicLink(linkPath, outsideDirectory);
+
+        LocalFileLogging.PruneDatedFiles("worker", linkPath, retainedFileCountLimit: 1);
+
+        Assert.True(File.Exists(oldPath));
+        Assert.True(File.Exists(newPath));
+    }
+
+    [Fact]
     public void PruneRunLogFiles_RetainsNewestFiles()
     {
         var logRoot = Path.Combine(Path.GetTempPath(), "syncfactors-run-logs", Guid.NewGuid().ToString("N"));
@@ -150,6 +176,116 @@ public sealed class RunScopedFileLoggerProviderTests
         Assert.False(File.Exists(oldPath));
         Assert.True(File.Exists(middlePath));
         Assert.True(File.Exists(newestPath));
+    }
+
+    [Fact]
+    public void PruneRunLogFiles_DoesNotTraverseLinkedRunDirectory()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        var logRoot = Path.Combine(Path.GetTempPath(), "syncfactors-linked-logs", Guid.NewGuid().ToString("N"));
+        var outsideDirectory = Path.Combine(Path.GetTempPath(), "syncfactors-outside-runs", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(logRoot);
+        Directory.CreateDirectory(outsideDirectory);
+        var oldPath = Path.Combine(outsideDirectory, "old.log");
+        var newPath = Path.Combine(outsideDirectory, "new.log");
+        File.WriteAllText(oldPath, "old");
+        File.WriteAllText(newPath, "new");
+        File.SetLastWriteTimeUtc(oldPath, DateTime.UtcNow.AddDays(-2));
+        File.SetLastWriteTimeUtc(newPath, DateTime.UtcNow);
+        Directory.CreateSymbolicLink(LocalFileLogging.ResolveRunLogDirectory(logRoot), outsideDirectory);
+
+        LocalFileLogging.PruneRunLogFiles(logRoot, retainedFileCountLimit: 1);
+
+        Assert.True(File.Exists(oldPath));
+        Assert.True(File.Exists(newPath));
+    }
+
+    [Fact]
+    public void PruneExpiredLogFiles_RemovesProcessRunAndPreviewLogsOlderThanRetentionWindow()
+    {
+        var logRoot = Path.Combine(Path.GetTempPath(), "syncfactors-expiring-logs", Guid.NewGuid().ToString("N"));
+        var runDirectory = LocalFileLogging.ResolveRunLogDirectory(logRoot);
+        var previewDirectory = LocalFileLogging.ResolvePreviewLogDirectory(logRoot);
+        Directory.CreateDirectory(runDirectory);
+        Directory.CreateDirectory(previewDirectory);
+        var now = new DateTimeOffset(2026, 7, 14, 12, 0, 0, TimeSpan.Zero);
+        var expiredProcessPath = LocalFileLogging.ResolveDatedFilePath("worker", logRoot, now.AddDays(-8));
+        var currentProcessPath = LocalFileLogging.ResolveDatedFilePath("worker", logRoot, now.AddDays(-6));
+        var expiredRunPath = LocalFileLogging.ResolveRunLogPath("expired-run", logRoot);
+        var currentRunPath = LocalFileLogging.ResolveRunLogPath("current-run", logRoot);
+        var expiredPreviewPath = Path.Combine(previewDirectory, "expired.jsonl");
+        var currentPreviewPath = Path.Combine(previewDirectory, "current.jsonl");
+
+        foreach (var path in new[]
+                 {
+                     expiredProcessPath,
+                     currentProcessPath,
+                     expiredRunPath,
+                     currentRunPath,
+                     expiredPreviewPath,
+                     currentPreviewPath
+                 })
+        {
+            File.WriteAllText(path, "log");
+        }
+
+        foreach (var path in new[] { expiredProcessPath, expiredRunPath, expiredPreviewPath })
+        {
+            File.SetLastWriteTimeUtc(path, now.AddDays(-8).UtcDateTime);
+        }
+
+        foreach (var path in new[] { currentProcessPath, currentRunPath, currentPreviewPath })
+        {
+            File.SetLastWriteTimeUtc(path, now.AddDays(-6).UtcDateTime);
+        }
+
+        LocalFileLogging.PruneExpiredLogFiles(logRoot, retentionDays: 7, now);
+
+        Assert.False(File.Exists(expiredProcessPath));
+        Assert.False(File.Exists(expiredRunPath));
+        Assert.False(File.Exists(expiredPreviewPath));
+        Assert.True(File.Exists(currentProcessPath));
+        Assert.True(File.Exists(currentRunPath));
+        Assert.True(File.Exists(currentPreviewPath));
+    }
+
+    [Fact]
+    public void PruneExpiredLogFiles_DoesNotTraverseLinkedLogDirectories()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        var logRoot = Path.Combine(Path.GetTempPath(), "syncfactors-linked-logs", Guid.NewGuid().ToString("N"));
+        var outsideDirectory = Path.Combine(Path.GetTempPath(), "syncfactors-outside-logs", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(logRoot);
+        Directory.CreateDirectory(outsideDirectory);
+        var victimPath = Path.Combine(outsideDirectory, "victim.log");
+        File.WriteAllText(victimPath, "must remain");
+        File.SetLastWriteTimeUtc(victimPath, DateTime.UtcNow.AddDays(-8));
+        Directory.CreateSymbolicLink(LocalFileLogging.ResolveRunLogDirectory(logRoot), outsideDirectory);
+
+        LocalFileLogging.PruneExpiredLogFiles(logRoot, retentionDays: 7, DateTimeOffset.UtcNow);
+
+        Assert.True(File.Exists(victimPath));
+    }
+
+    [Fact]
+    public void PruneExpiredLogFiles_IgnoresUnsupportedRetentionDays()
+    {
+        var logRoot = Path.Combine(Path.GetTempPath(), "syncfactors-expiring-logs", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(logRoot);
+        var oldPath = LocalFileLogging.ResolveDatedFilePath("worker", logRoot, DateTimeOffset.UtcNow.AddDays(-8));
+        File.WriteAllText(oldPath, "old");
+
+        LocalFileLogging.PruneExpiredLogFiles(logRoot, int.MaxValue, DateTimeOffset.UtcNow);
+
+        Assert.True(File.Exists(oldPath));
     }
 
     [Fact]
@@ -175,6 +311,29 @@ public sealed class RunScopedFileLoggerProviderTests
         Assert.True(File.Exists(LocalFileLogging.ResolveRunLogPath("new-run", logRoot)));
     }
 
+    [Fact]
+    public void LocalFileLogger_PrunesExpiredLogsWhenDailyProcessLogStarts()
+    {
+        var logRoot = Path.Combine(Path.GetTempPath(), "syncfactors-expiring-logs", Guid.NewGuid().ToString("N"));
+        var runDirectory = LocalFileLogging.ResolveRunLogDirectory(logRoot);
+        Directory.CreateDirectory(runDirectory);
+        var expiredRunPath = LocalFileLogging.ResolveRunLogPath("expired-run", logRoot);
+        File.WriteAllText(expiredRunPath, "old");
+        File.SetLastWriteTimeUtc(expiredRunPath, DateTime.UtcNow.AddDays(-3));
+
+        using var provider = new LocalFileLoggerProvider(
+            "worker",
+            logRoot,
+            retainedFileCountLimit: 7,
+            retentionDays: 2);
+        provider.SetScopeProvider(new LoggerExternalScopeProvider());
+        var logger = provider.CreateLogger("Tests.Local");
+
+        logger.LogInformation("Start today's worker log.");
+
+        Assert.False(File.Exists(expiredRunPath));
+    }
+
     [Theory]
     [InlineData(null, 5, 5)]
     [InlineData("", 5, 5)]
@@ -188,6 +347,19 @@ public sealed class RunScopedFileLoggerProviderTests
         int expected)
     {
         Assert.Equal(expected, LocalFileLogging.ResolveRetainedFileCountLimit(configuredValue, defaultValue));
+    }
+
+    [Theory]
+    [InlineData(null, 7)]
+    [InlineData("30", 30)]
+    [InlineData("0", 7)]
+    [InlineData("-1", 7)]
+    [InlineData("36501", 7)]
+    [InlineData("2147483647", 7)]
+    [InlineData("invalid", 7)]
+    public void ResolveLogRetentionDays_UsesOnlySupportedValues(string? configuredValue, int expected)
+    {
+        Assert.Equal(expected, LocalFileLogging.ResolveLogRetentionDays(configuredValue));
     }
 
     [Fact]
@@ -212,6 +384,57 @@ public sealed class RunScopedFileLoggerProviderTests
         var processLogPath = LocalFileLogging.ResolveDatedFilePath("api", logRoot, DateTimeOffset.Now);
         Assert.True(File.Exists(processLogPath));
         Assert.False(Directory.Exists(LocalFileLogging.ResolveRunLogDirectory(logRoot)));
+    }
+
+    [Fact]
+    public void Configure_PrunesLogsOlderThanSevenDaysByDefault()
+    {
+        var logRoot = Path.Combine(Path.GetTempPath(), "syncfactors-expiring-logs", Guid.NewGuid().ToString("N"));
+        var runDirectory = LocalFileLogging.ResolveRunLogDirectory(logRoot);
+        var previewDirectory = LocalFileLogging.ResolvePreviewLogDirectory(logRoot);
+        Directory.CreateDirectory(runDirectory);
+        Directory.CreateDirectory(previewDirectory);
+        var expiredRunPath = LocalFileLogging.ResolveRunLogPath("expired-run", logRoot);
+        var expiredPreviewPath = Path.Combine(previewDirectory, "expired.jsonl");
+        File.WriteAllText(expiredRunPath, "old");
+        File.WriteAllText(expiredPreviewPath, "old");
+        File.SetLastWriteTimeUtc(expiredRunPath, DateTime.UtcNow.AddDays(-8));
+        File.SetLastWriteTimeUtc(expiredPreviewPath, DateTime.UtcNow.AddDays(-8));
+
+        using var loggerFactory = LoggerFactory.Create(logging => LocalFileLogging.Configure(
+            logging,
+            processName: "worker",
+            enabledValue: "true",
+            directoryValue: logRoot,
+            retainedFileCountLimitValue: null,
+            runLoggingEnabledValue: "false",
+            runRetainedFileCountLimitValue: null));
+
+        Assert.False(File.Exists(expiredRunPath));
+        Assert.False(File.Exists(expiredPreviewPath));
+    }
+
+    [Fact]
+    public void Configure_UsesConfiguredLogRetentionDays()
+    {
+        var logRoot = Path.Combine(Path.GetTempPath(), "syncfactors-expiring-logs", Guid.NewGuid().ToString("N"));
+        var runDirectory = LocalFileLogging.ResolveRunLogDirectory(logRoot);
+        Directory.CreateDirectory(runDirectory);
+        var expiredRunPath = LocalFileLogging.ResolveRunLogPath("three-day-old-run", logRoot);
+        File.WriteAllText(expiredRunPath, "old");
+        File.SetLastWriteTimeUtc(expiredRunPath, DateTime.UtcNow.AddDays(-3));
+
+        using var loggerFactory = LoggerFactory.Create(logging => LocalFileLogging.Configure(
+            logging,
+            processName: "worker",
+            enabledValue: "true",
+            directoryValue: logRoot,
+            retainedFileCountLimitValue: null,
+            runLoggingEnabledValue: "false",
+            runRetainedFileCountLimitValue: null,
+            retentionDaysValue: "2"));
+
+        Assert.False(File.Exists(expiredRunPath));
     }
 
     [Fact]
