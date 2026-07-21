@@ -477,7 +477,7 @@ The simulator uses:
 - focused failure sample: `config/mock-successfactors/sample-lifecycle-failure-scenario.json`
 - focused single-worker sample: `config/mock-successfactors/sample-lifecycle-scenario.json`
 
-The checked-in simulator scenarios also roll up into a master test in CI. When desired lifecycle behavior changes, update the scenario and fixture files first so the master suite remains the executable contract for expected sync behavior.
+The checked-in simulator scenarios also roll up into a master test in CI. When desired planner and simulated-lifecycle behavior changes, update the scenario and fixture files first so the master suite remains the executable contract for that simulated behavior. The simulator uses an in-memory directory and applies the requested enabled state directly; it does not model production AD's disabled-first create, transport-dependent password and enablement sequence, licensing-group mutations, or all LDAP failure semantics. Production gateway tests remain the executable contract for those behaviors.
 
 You can also call the CLI directly:
 
