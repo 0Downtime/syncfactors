@@ -8,7 +8,16 @@ export default defineConfig({
       provider: "v8",
       reporter: ["text-summary", "lcov"],
       reportsDirectory: "coverage",
-      include: ["frontend/dashboard-axis.js"]
+      include: [
+        "frontend/dashboard-axis.js",
+        "frontend/dashboard-runtime.js"
+      ],
+      thresholds: {
+        lines: 75,
+        functions: 75,
+        branches: 70,
+        statements: 75
+      }
     }
   }
 });

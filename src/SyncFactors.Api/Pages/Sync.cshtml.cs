@@ -12,7 +12,8 @@ public sealed class SyncModel(
     IRunQueueStore runQueueStore,
     RealSyncSettings realSyncSettings,
     ISyncScheduleStore syncScheduleStore,
-    IWebHostEnvironment hostEnvironment) : PageModel
+    IWebHostEnvironment hostEnvironment,
+    ISecurityAuditService? audit = null) : PageModel
 {
     private const int RunsPageSize = 25;
     private const string DryRunMode = "DryRun";
@@ -109,13 +110,6 @@ public sealed class SyncModel(
 
     public async Task<IActionResult> OnPostStartRunAsync(CancellationToken cancellationToken)
     {
-        if (await runQueueStore.HasPendingOrActiveRunAsync(cancellationToken))
-        {
-            ErrorMessage = "A run is already pending or in progress.";
-            SuccessMessage = null;
-            return RedirectToPage(new { PageNumber });
-        }
-
         if (string.Equals(RunMode, LiveRunMode, StringComparison.Ordinal) && !realSyncSettings.EffectiveWriteEnabled)
         {
             ErrorMessage = $"{realSyncSettings.LiveWriteDisabledMessage} Queue a dry run instead.";
@@ -123,18 +117,29 @@ public sealed class SyncModel(
             return RedirectToPage(new { PageNumber });
         }
 
-        await runQueueStore.EnqueueAsync(
-            new StartRunRequest(
-                DryRun: !string.Equals(RunMode, LiveRunMode, StringComparison.Ordinal),
-                Mode: "BulkSync",
-                RunTrigger: "AdHoc",
-                RequestedBy: ResolveRequestedBy()),
-            cancellationToken);
+        RunQueueRequest queued;
+        try
+        {
+            queued = await runQueueStore.EnqueueAsync(
+                new StartRunRequest(
+                    DryRun: !string.Equals(RunMode, LiveRunMode, StringComparison.Ordinal),
+                    Mode: "BulkSync",
+                    RunTrigger: "AdHoc",
+                    RequestedBy: ResolveRequestedBy()),
+                cancellationToken);
+        }
+        catch (RunQueueConflictException)
+        {
+            ErrorMessage = "A run is already pending or in progress.";
+            SuccessMessage = null;
+            return RedirectToPage(new { PageNumber });
+        }
 
         SuccessMessage = string.Equals(RunMode, LiveRunMode, StringComparison.Ordinal)
             ? "Live provisioning run queued."
             : "Dry-run sync queued.";
         ErrorMessage = null;
+        TryWriteAudit(() => audit?.Write("RunQueued", "Success", ("RequestedBy", queued.RequestedBy), ("Mode", queued.Mode), ("DryRun", queued.DryRun)));
         return RedirectToPage("/Index");
     }
 
@@ -144,13 +149,6 @@ public sealed class SyncModel(
             !User.IsInRole(SecurityRoles.Admin) && !User.IsInRole(SecurityRoles.BreakGlassAdmin))
         {
             return Forbid();
-        }
-
-        if (await runQueueStore.HasPendingOrActiveRunAsync(cancellationToken))
-        {
-            ErrorMessage = "A run is already pending or in progress.";
-            SuccessMessage = null;
-            return RedirectToPage(new { PageNumber });
         }
 
         if (!realSyncSettings.EffectiveWriteEnabled)
@@ -167,16 +165,27 @@ public sealed class SyncModel(
             return RedirectToPage(new { PageNumber });
         }
 
-        await runQueueStore.EnqueueAsync(
-            new StartRunRequest(
-                DryRun: false,
-                Mode: DeleteAllUsersMode,
-                RunTrigger: "DeleteAllUsers",
-                RequestedBy: ResolveRequestedBy()),
-            cancellationToken);
+        RunQueueRequest queued;
+        try
+        {
+            queued = await runQueueStore.EnqueueAsync(
+                new StartRunRequest(
+                    DryRun: false,
+                    Mode: DeleteAllUsersMode,
+                    RunTrigger: "DeleteAllUsers",
+                    RequestedBy: ResolveRequestedBy()),
+                cancellationToken);
+        }
+        catch (RunQueueConflictException)
+        {
+            ErrorMessage = "A run is already pending or in progress.";
+            SuccessMessage = null;
+            return RedirectToPage(new { PageNumber });
+        }
 
         SuccessMessage = "Delete-all AD reset queued.";
         ErrorMessage = null;
+        TryWriteAudit(() => audit?.Write("DeleteAllUsersQueued", "Success", ("RequestedBy", queued.RequestedBy)));
         return RedirectToPage(new { PageNumber });
     }
 
@@ -191,6 +200,7 @@ public sealed class SyncModel(
 
         SuccessMessage = "Run cancellation requested.";
         ErrorMessage = null;
+        TryWriteAudit(() => audit?.Write("RunCancelled", "Success", ("RequestedBy", ResolveRequestedBy())));
         return RedirectToPage(new { PageNumber });
     }
 
@@ -206,12 +216,13 @@ public sealed class SyncModel(
                 Enabled: ScheduleEnabled,
                 IntervalMinutes: IntervalMinutes),
             cancellationToken);
-
         SuccessMessage = Schedule.Enabled
             ? ScheduledRunsAreDryRunOnly
                 ? $"Recurring dry-run sync enabled every {Schedule.IntervalMinutes} minutes."
                 : $"Recurring sync enabled every {Schedule.IntervalMinutes} minutes."
             : "Recurring sync disabled.";
+        ErrorMessage = null;
+        TryWriteAudit(() => audit?.Write("SyncScheduleUpdated", "Success", ("RequestedBy", ResolveRequestedBy()), ("Enabled", Schedule.Enabled), ("IntervalMinutes", Schedule.IntervalMinutes)));
 
         await LoadSnapshotAsync(cancellationToken);
         HasPendingOrActiveRun = await runQueueStore.HasPendingOrActiveRunAsync(cancellationToken);
@@ -245,4 +256,16 @@ public sealed class SyncModel(
         string.IsNullOrWhiteSpace(PageContext?.HttpContext?.User.Identity?.Name)
             ? "Sync page"
             : PageContext.HttpContext.User.Identity!.Name!;
+
+    private void TryWriteAudit(Action write)
+    {
+        try
+        {
+            write();
+        }
+        catch (Exception)
+        {
+            ErrorMessage = "The action completed, but security audit recording failed.";
+        }
+    }
 }

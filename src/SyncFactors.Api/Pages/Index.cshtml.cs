@@ -11,7 +11,8 @@ public sealed class IndexModel(
     DashboardSettingsProvider dashboardSettingsProvider,
     ISyncScheduleStore syncScheduleStore,
     IRunQueueStore runQueueStore,
-    IWebHostEnvironment hostEnvironment) : PageModel
+    IWebHostEnvironment hostEnvironment,
+    ISecurityAuditService? audit = null) : PageModel
 {
     public RuntimeStatus Status { get; private set; } = new(
         Status: "Idle",
@@ -128,6 +129,7 @@ public sealed class IndexModel(
 
         SuccessMessage = "Run cancellation requested.";
         ErrorMessage = null;
+        TryWriteAudit(() => audit?.Write("RunCancelled", "Success", ("RequestedBy", ResolveRequestedBy())));
         return RedirectToPage();
     }
 
@@ -154,6 +156,18 @@ public sealed class IndexModel(
         string.IsNullOrWhiteSpace(PageContext?.HttpContext?.User.Identity?.Name)
             ? "Dashboard"
             : PageContext.HttpContext.User.Identity!.Name!;
+
+    private void TryWriteAudit(Action write)
+    {
+        try
+        {
+            write();
+        }
+        catch (Exception)
+        {
+            ErrorMessage = "The action completed, but security audit recording failed.";
+        }
+    }
 
     private bool CanOperate() =>
         User.IsInRole(SecurityRoles.Operator) ||

@@ -1,5 +1,6 @@
 using Microsoft.Data.Sqlite;
 using SyncFactors.Contracts;
+using SyncFactors.Domain;
 using SyncFactors.Infrastructure;
 
 namespace SyncFactors.Infrastructure.Tests;
@@ -37,7 +38,47 @@ public sealed class SqliteRunQueueStoreTests
     }
 
     [Fact]
-    public async Task ClaimNextPendingAsync_ClaimsOldestPendingRequest()
+    public async Task EnqueueAsync_ConcurrentRequestsAllowOnlyOnePendingRunAndUseGuidRequestIds()
+    {
+        var databasePath = await CreateDatabaseAsync();
+
+        try
+        {
+            using var start = new ManualResetEventSlim(false);
+            var stores = Enumerable.Range(0, 12)
+                .Select(_ => new SqliteRunQueueStore(new SqlitePathResolver(databasePath)))
+                .ToArray();
+
+            var attempts = stores.Select(store => Task.Run(async () =>
+            {
+                start.Wait();
+                try
+                {
+                    return await store.EnqueueAsync(
+                        new StartRunRequest(DryRun: true, RequestedBy: "concurrent-test"),
+                        CancellationToken.None);
+                }
+                catch (InvalidOperationException)
+                {
+                    return null;
+                }
+            })).ToArray();
+
+            start.Set();
+            var queued = (await Task.WhenAll(attempts)).Where(request => request is not null).ToArray();
+
+            var request = Assert.Single(queued);
+            Assert.True(Guid.TryParse(request!.RequestId["runreq-".Length..], out _));
+            Assert.True(await stores[0].HasPendingOrActiveRunAsync(CancellationToken.None));
+        }
+        finally
+        {
+            File.Delete(databasePath);
+        }
+    }
+
+    [Fact]
+    public async Task ClaimNextPendingAsync_ConcurrentWorkersAtomicallyClaimOnlyOneRequest()
     {
         var databasePath = await CreateDatabaseAsync();
 
@@ -49,9 +90,46 @@ public sealed class SqliteRunQueueStoreTests
                 INSERT INTO run_queue (
                   request_id, mode, dry_run, run_trigger, requested_by, status, requested_at, started_at, completed_at, run_id, worker_name, error_message
                 )
-                VALUES
-                  ('req-new', 'BulkSync', 1, 'AdHoc', 'newer', 'Pending', '2026-04-06T12:05:00Z', NULL, NULL, NULL, NULL, NULL),
-                  ('req-old', 'BulkSync', 0, 'Scheduled', 'older', 'Pending', '2026-04-06T12:00:00Z', NULL, NULL, NULL, NULL, NULL);
+                VALUES ('req-pending', 'BulkSync', 1, 'AdHoc', 'test', 'Pending', '2026-04-06T12:00:00Z', NULL, NULL, NULL, NULL, NULL);
+                """);
+
+            using var start = new ManualResetEventSlim(false);
+            var stores = Enumerable.Range(0, 12)
+                .Select(_ => new SqliteRunQueueStore(new SqlitePathResolver(databasePath)))
+                .ToArray();
+            var attempts = stores.Select((store, index) => Task.Run(async () =>
+            {
+                start.Wait();
+                return await store.ClaimNextPendingAsync($"worker-{index}", CancellationToken.None);
+            })).ToArray();
+
+            start.Set();
+            var claimed = (await Task.WhenAll(attempts)).Where(request => request is not null).ToArray();
+
+            var request = Assert.Single(claimed);
+            Assert.Equal("req-pending", request!.RequestId);
+            Assert.Equal("InProgress", request.Status);
+        }
+        finally
+        {
+            File.Delete(databasePath);
+        }
+    }
+
+    [Fact]
+    public async Task ClaimNextPendingAsync_ClaimsPendingRequest()
+    {
+        var databasePath = await CreateDatabaseAsync();
+
+        try
+        {
+            await ExecuteAsync(
+                databasePath,
+                """
+                INSERT INTO run_queue (
+                  request_id, mode, dry_run, run_trigger, requested_by, status, requested_at, started_at, completed_at, run_id, worker_name, error_message
+                )
+                VALUES ('req-pending', 'BulkSync', 0, 'Scheduled', 'older', 'Pending', '2026-04-06T12:00:00Z', NULL, NULL, NULL, NULL, NULL);
                 """);
 
             var store = new SqliteRunQueueStore(new SqlitePathResolver(databasePath));
@@ -59,11 +137,11 @@ public sealed class SqliteRunQueueStoreTests
             var claimed = await store.ClaimNextPendingAsync("worker-a", CancellationToken.None);
 
             Assert.NotNull(claimed);
-            Assert.Equal("req-old", claimed!.RequestId);
+            Assert.Equal("req-pending", claimed!.RequestId);
             Assert.Equal("InProgress", claimed.Status);
             Assert.NotNull(claimed.StartedAt);
 
-            var persisted = await store.GetAsync("req-old", CancellationToken.None);
+            var persisted = await store.GetAsync("req-pending", CancellationToken.None);
             Assert.Equal("InProgress", persisted!.Status);
             Assert.NotNull(persisted.StartedAt);
         }
@@ -86,9 +164,7 @@ public sealed class SqliteRunQueueStoreTests
                 INSERT INTO run_queue (
                   request_id, mode, dry_run, run_trigger, requested_by, status, requested_at, started_at, completed_at, run_id, worker_name, error_message
                 )
-                VALUES
-                  ('req-active', 'BulkSync', 1, 'AdHoc', 'test', 'InProgress', '2026-04-06T12:00:00Z', '2026-04-06T12:01:00Z', NULL, NULL, 'worker-a', NULL),
-                  ('req-pending', 'BulkSync', 1, 'AdHoc', 'test', 'Pending', '2026-04-06T12:02:00Z', NULL, NULL, NULL, NULL, NULL);
+                VALUES ('req-active', 'BulkSync', 1, 'AdHoc', 'test', 'InProgress', '2026-04-06T12:00:00Z', '2026-04-06T12:01:00Z', NULL, NULL, 'worker-a', NULL);
                 """);
 
             var store = new SqliteRunQueueStore(new SqlitePathResolver(databasePath));
@@ -105,7 +181,7 @@ public sealed class SqliteRunQueueStoreTests
     }
 
     [Fact]
-    public async Task GetPendingOrActiveAsync_PrioritizesActiveThenCancelRequestedThenPending()
+    public async Task GetPendingOrActiveAsync_ReturnsTheOneNonTerminalRequest()
     {
         var databasePath = await CreateDatabaseAsync();
 
@@ -117,25 +193,21 @@ public sealed class SqliteRunQueueStoreTests
                 INSERT INTO run_queue (
                   request_id, mode, dry_run, run_trigger, requested_by, status, requested_at, started_at, completed_at, run_id, worker_name, error_message
                 )
-                VALUES
-                  ('req-pending', 'BulkSync', 1, 'AdHoc', 'test', 'Pending', '2026-04-06T12:00:00Z', NULL, NULL, NULL, NULL, NULL),
-                  ('req-cancel', 'BulkSync', 1, 'AdHoc', 'test', 'CancelRequested', '2026-04-06T12:01:00Z', '2026-04-06T12:02:00Z', NULL, NULL, 'worker-a', 'cancel'),
-                  ('req-active', 'BulkSync', 1, 'AdHoc', 'test', 'InProgress', '2026-04-06T12:02:00Z', '2026-04-06T12:03:00Z', NULL, NULL, 'worker-b', NULL);
+                VALUES ('req-pending', 'BulkSync', 1, 'AdHoc', 'test', 'Pending', '2026-04-06T12:00:00Z', NULL, NULL, NULL, NULL, NULL);
                 """);
 
             var store = new SqliteRunQueueStore(new SqlitePathResolver(databasePath));
 
-            var active = await store.GetPendingOrActiveAsync(CancellationToken.None);
-            Assert.Equal("req-active", active!.RequestId);
-            Assert.True(await store.HasPendingOrActiveRunAsync(CancellationToken.None));
-
-            await ExecuteAsync(databasePath, "UPDATE run_queue SET status = 'Completed', completed_at = '2026-04-06T12:04:00Z' WHERE request_id = 'req-active';");
-            var cancelRequested = await store.GetPendingOrActiveAsync(CancellationToken.None);
-            Assert.Equal("req-cancel", cancelRequested!.RequestId);
-
-            await ExecuteAsync(databasePath, "UPDATE run_queue SET status = 'Canceled', completed_at = '2026-04-06T12:05:00Z' WHERE request_id = 'req-cancel';");
             var pending = await store.GetPendingOrActiveAsync(CancellationToken.None);
             Assert.Equal("req-pending", pending!.RequestId);
+            Assert.True(await store.HasPendingOrActiveRunAsync(CancellationToken.None));
+
+            await ExecuteAsync(databasePath, "UPDATE run_queue SET status = 'CancelRequested', started_at = '2026-04-06T12:02:00Z' WHERE request_id = 'req-pending';");
+            var cancelRequested = await store.GetPendingOrActiveAsync(CancellationToken.None);
+            Assert.Equal("req-pending", cancelRequested!.RequestId);
+
+            await ExecuteAsync(databasePath, "UPDATE run_queue SET status = 'Completed', completed_at = '2026-04-06T12:05:00Z' WHERE request_id = 'req-pending';");
+            Assert.Null(await store.GetPendingOrActiveAsync(CancellationToken.None));
         }
         finally
         {
@@ -194,6 +266,38 @@ public sealed class SqliteRunQueueStoreTests
     }
 
     [Fact]
+    public async Task CancelPendingOrActiveAsync_ClaimedRunIsRecoveredBeforeAnotherRunCanBeEnqueued()
+    {
+        var databasePath = await CreateDatabaseAsync();
+
+        try
+        {
+            var store = new SqliteRunQueueStore(new SqlitePathResolver(databasePath));
+            var queued = await store.EnqueueAsync(new StartRunRequest(DryRun: true), CancellationToken.None);
+            var claimed = await store.ClaimNextPendingAsync("worker-a", CancellationToken.None);
+
+            Assert.Equal(queued.RequestId, claimed!.RequestId);
+            Assert.True(await store.CancelPendingOrActiveAsync("operator", CancellationToken.None));
+            Assert.True(await store.IsCancellationRequestedAsync(queued.RequestId, CancellationToken.None));
+            await Assert.ThrowsAsync<RunQueueConflictException>(() =>
+                store.EnqueueAsync(new StartRunRequest(DryRun: true), CancellationToken.None));
+
+            Assert.Equal(1, await store.RecoverOrphanedActiveRunsAsync("Recovered on startup.", CancellationToken.None));
+
+            var recovered = await store.GetAsync(queued.RequestId, CancellationToken.None);
+            Assert.Equal("Canceled", recovered!.Status);
+            Assert.NotNull(recovered.CompletedAt);
+
+            var next = await store.EnqueueAsync(new StartRunRequest(DryRun: true), CancellationToken.None);
+            Assert.Equal("Pending", next.Status);
+        }
+        finally
+        {
+            File.Delete(databasePath);
+        }
+    }
+
+    [Fact]
     public async Task IsCancellationRequestedAsync_ReturnsTrueOnlyForCancelRequested()
     {
         var databasePath = await CreateDatabaseAsync();
@@ -206,14 +310,13 @@ public sealed class SqliteRunQueueStoreTests
                 INSERT INTO run_queue (
                   request_id, mode, dry_run, run_trigger, requested_by, status, requested_at, started_at, completed_at, run_id, worker_name, error_message
                 )
-                VALUES
-                  ('req-cancel', 'BulkSync', 1, 'AdHoc', 'test', 'CancelRequested', '2026-04-06T12:00:00Z', NULL, NULL, NULL, NULL, NULL),
-                  ('req-active', 'BulkSync', 1, 'AdHoc', 'test', 'InProgress', '2026-04-06T12:00:00Z', NULL, NULL, NULL, NULL, NULL);
+                VALUES ('req-cancel', 'BulkSync', 1, 'AdHoc', 'test', 'CancelRequested', '2026-04-06T12:00:00Z', NULL, NULL, NULL, NULL, NULL);
                 """);
 
             var store = new SqliteRunQueueStore(new SqlitePathResolver(databasePath));
 
             Assert.True(await store.IsCancellationRequestedAsync("req-cancel", CancellationToken.None));
+            await ExecuteAsync(databasePath, "UPDATE run_queue SET status = 'InProgress' WHERE request_id = 'req-cancel';");
             Assert.False(await store.IsCancellationRequestedAsync("req-active", CancellationToken.None));
             Assert.False(await store.IsCancellationRequestedAsync("missing", CancellationToken.None));
         }
@@ -236,16 +339,15 @@ public sealed class SqliteRunQueueStoreTests
                 INSERT INTO run_queue (
                   request_id, mode, dry_run, run_trigger, requested_by, status, requested_at, started_at, completed_at, run_id, worker_name, error_message
                 )
-                VALUES
-                  ('req-complete', 'BulkSync', 1, 'AdHoc', 'test', 'InProgress', '2026-04-06T12:00:00Z', NULL, NULL, NULL, NULL, NULL),
-                  ('req-cancel', 'BulkSync', 1, 'AdHoc', 'test', 'CancelRequested', '2026-04-06T12:01:00Z', NULL, NULL, NULL, NULL, NULL),
-                  ('req-fail', 'BulkSync', 1, 'AdHoc', 'test', 'InProgress', '2026-04-06T12:02:00Z', NULL, NULL, NULL, NULL, NULL);
+                VALUES ('req-complete', 'BulkSync', 1, 'AdHoc', 'test', 'InProgress', '2026-04-06T12:00:00Z', NULL, NULL, NULL, NULL, NULL);
                 """);
 
             var store = new SqliteRunQueueStore(new SqlitePathResolver(databasePath));
 
             await store.CompleteAsync("req-complete", "run-1", CancellationToken.None);
+            await ExecuteAsync(databasePath, "INSERT INTO run_queue (request_id, mode, dry_run, run_trigger, requested_by, status, requested_at, started_at, completed_at, run_id, worker_name, error_message) VALUES ('req-cancel', 'BulkSync', 1, 'AdHoc', 'test', 'CancelRequested', '2026-04-06T12:01:00Z', NULL, NULL, NULL, NULL, NULL);");
             await store.CancelAsync("req-cancel", null, "Stopped.", CancellationToken.None);
+            await ExecuteAsync(databasePath, "INSERT INTO run_queue (request_id, mode, dry_run, run_trigger, requested_by, status, requested_at, started_at, completed_at, run_id, worker_name, error_message) VALUES ('req-fail', 'BulkSync', 1, 'AdHoc', 'test', 'InProgress', '2026-04-06T12:02:00Z', NULL, NULL, NULL, NULL, NULL);");
             await store.FailAsync("req-fail", "run-3", "Failed.", CancellationToken.None);
 
             var completed = await store.GetAsync("req-complete", CancellationToken.None);
@@ -262,6 +364,32 @@ public sealed class SqliteRunQueueStoreTests
             Assert.Equal("Failed", failed!.Status);
             Assert.Equal("run-3", failed.RunId);
             Assert.Equal("Failed.", failed.ErrorMessage);
+        }
+        finally
+        {
+            File.Delete(databasePath);
+        }
+    }
+
+    [Fact]
+    public async Task SeedRecoveryProbeAsync_ConflictingProbePreservesExistingNonTerminalRequest()
+    {
+        var databasePath = await CreateDatabaseAsync();
+
+        try
+        {
+            var store = new SqliteRunQueueStore(new SqlitePathResolver(databasePath));
+            var active = await store.EnqueueAsync(new StartRunRequest(DryRun: true, RequestedBy: "operator"), CancellationToken.None);
+
+            await Assert.ThrowsAsync<RunQueueConflictException>(() =>
+                store.SeedRecoveryProbeAsync(
+                    new RunQueueRecoveryProbeRequest(RequestId: "recovery-probe-conflict", Status: "InProgress"),
+                    CancellationToken.None));
+
+            var persisted = await store.GetAsync(active.RequestId, CancellationToken.None);
+            Assert.NotNull(persisted);
+            Assert.Equal("Pending", persisted!.Status);
+            Assert.Null(await store.GetAsync("recovery-probe-conflict", CancellationToken.None));
         }
         finally
         {
@@ -353,7 +481,7 @@ public sealed class SqliteRunQueueStoreTests
     }
 
     [Fact]
-    public async Task RecoverOrphanedActiveRunsAsync_TransitionsActiveStatusesToTerminalStatuses()
+    public async Task RecoverOrphanedActiveRunsAsync_TransitionsTheActiveStatusToATerminalStatus()
     {
         var databasePath = await CreateDatabaseAsync();
 
@@ -365,16 +493,13 @@ public sealed class SqliteRunQueueStoreTests
                 INSERT INTO run_queue (
                   request_id, mode, dry_run, run_trigger, requested_by, status, requested_at, started_at, completed_at, run_id, worker_name, error_message
                 )
-                VALUES
-                  ('req-1', 'BulkSync', 1, 'AdHoc', 'test', 'InProgress', '2026-04-06T12:00:00Z', '2026-04-06T12:01:00Z', NULL, NULL, 'SyncFactors.Worker', NULL),
-                  ('req-2', 'BulkSync', 1, 'AdHoc', 'test', 'CancelRequested', '2026-04-06T12:00:00Z', '2026-04-06T12:01:00Z', NULL, NULL, 'SyncFactors.Worker', 'Cancellation requested.'),
-                  ('req-3', 'BulkSync', 1, 'AdHoc', 'test', 'Pending', '2026-04-06T12:00:00Z', NULL, NULL, NULL, NULL, NULL);
+                VALUES ('req-1', 'BulkSync', 1, 'AdHoc', 'test', 'InProgress', '2026-04-06T12:00:00Z', '2026-04-06T12:01:00Z', NULL, NULL, 'SyncFactors.Worker', NULL);
                 """);
 
             var store = new SqliteRunQueueStore(new SqlitePathResolver(databasePath));
             var recovered = await store.RecoverOrphanedActiveRunsAsync("Recovered on startup.", CancellationToken.None);
 
-            Assert.Equal(2, recovered);
+            Assert.Equal(1, recovered);
 
             await using var verifyConnection = new SqliteConnection($"Data Source={databasePath};Mode=ReadOnly");
             await verifyConnection.OpenAsync();
@@ -388,17 +513,52 @@ public sealed class SqliteRunQueueStoreTests
             Assert.False(reader.IsDBNull(2));
             Assert.Equal("Recovered on startup.", reader.GetString(3));
 
-            Assert.True(await reader.ReadAsync());
-            Assert.Equal("req-2", reader.GetString(0));
-            Assert.Equal("Canceled", reader.GetString(1));
-            Assert.False(reader.IsDBNull(2));
-            Assert.Equal("Cancellation requested.", reader.GetString(3));
+            Assert.False(await reader.ReadAsync());
+        }
+        finally
+        {
+            File.Delete(databasePath);
+        }
+    }
 
+    [Fact]
+    public async Task InitializeAsync_RepairsLegacyDuplicateNonTerminalRequestsAndAddsExclusiveIndex()
+    {
+        var databasePath = await CreateDatabaseAsync();
+
+        try
+        {
+            await ExecuteAsync(
+                databasePath,
+                """
+                DROP INDEX idx_run_queue_one_non_terminal;
+                DELETE FROM schema_versions WHERE version = 15;
+                INSERT INTO run_queue (request_id, mode, dry_run, run_trigger, requested_by, status, requested_at, started_at, completed_at, run_id, worker_name, error_message)
+                VALUES
+                  ('req-active', 'BulkSync', 1, 'AdHoc', 'test', 'InProgress', '2026-04-06T12:00:00Z', '2026-04-06T12:01:00Z', NULL, NULL, 'worker-a', NULL),
+                  ('req-pending', 'BulkSync', 1, 'AdHoc', 'test', 'Pending', '2026-04-06T12:02:00Z', NULL, NULL, NULL, NULL, NULL);
+                """);
+
+            await new SqliteDatabaseInitializer(new SqlitePathResolver(databasePath)).InitializeAsync(CancellationToken.None);
+
+            await using var connection = new SqliteConnection($"Data Source={databasePath};Mode=ReadOnly");
+            await connection.OpenAsync();
+            await using var command = connection.CreateCommand();
+            command.CommandText =
+                """
+                SELECT COUNT(*) FROM run_queue WHERE status IN ('Pending', 'InProgress', 'CancelRequested');
+                SELECT status FROM run_queue WHERE request_id = 'req-pending';
+                SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = 'idx_run_queue_one_non_terminal';
+                """;
+
+            Assert.Equal(1L, (long)(await command.ExecuteScalarAsync())!);
+            await using var reader = await command.ExecuteReaderAsync();
+            Assert.True(await reader.NextResultAsync());
             Assert.True(await reader.ReadAsync());
-            Assert.Equal("req-3", reader.GetString(0));
-            Assert.Equal("Pending", reader.GetString(1));
-            Assert.True(reader.IsDBNull(2));
-            Assert.True(reader.IsDBNull(3));
+            Assert.Equal("Canceled", reader.GetString(0));
+            Assert.True(await reader.NextResultAsync());
+            Assert.True(await reader.ReadAsync());
+            Assert.Equal(1L, reader.GetInt64(0));
         }
         finally
         {

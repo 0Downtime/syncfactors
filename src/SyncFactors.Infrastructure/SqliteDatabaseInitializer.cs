@@ -5,7 +5,7 @@ namespace SyncFactors.Infrastructure;
 
 public sealed class SqliteDatabaseInitializer(SqlitePathResolver pathResolver)
 {
-    private const int CurrentSchemaVersion = 14;
+    private const int CurrentSchemaVersion = 15;
 
     public async Task InitializeAsync(CancellationToken cancellationToken)
     {
@@ -46,6 +46,13 @@ public sealed class SqliteDatabaseInitializer(SqlitePathResolver pathResolver)
         }
 
         var appliedVersions = await GetAppliedVersionsAsync(connection, transaction, cancellationToken);
+        var newerSchemaVersion = appliedVersions.Where(version => version > CurrentSchemaVersion).DefaultIfEmpty().Max();
+        if (newerSchemaVersion > CurrentSchemaVersion)
+        {
+            throw new InvalidOperationException(
+                $"Database schema version {newerSchemaVersion} is newer than this binary supports ({CurrentSchemaVersion}). Downgrades are not supported.");
+        }
+
         if (!appliedVersions.Contains(1))
         {
             await ApplyVersion1Async(connection, transaction, cancellationToken);
@@ -128,6 +135,12 @@ public sealed class SqliteDatabaseInitializer(SqlitePathResolver pathResolver)
         {
             await ApplyVersion14Async(connection, transaction, cancellationToken);
             await InsertVersionAsync(connection, transaction, 14, cancellationToken);
+        }
+
+        if (!appliedVersions.Contains(15))
+        {
+            await ApplyVersion15Async(connection, transaction, cancellationToken);
+            await InsertVersionAsync(connection, transaction, 15, cancellationToken);
         }
 
         await transaction.CommitAsync(cancellationToken);
@@ -491,6 +504,48 @@ public sealed class SqliteDatabaseInitializer(SqlitePathResolver pathResolver)
               last_completed_at TEXT NOT NULL
             );
             """;
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task ApplyVersion15Async(
+        SqliteConnection connection,
+        DbTransaction transaction,
+        CancellationToken cancellationToken)
+    {
+        if (!await TableExistsAsync(connection, transaction, "run_queue", cancellationToken))
+        {
+            return;
+        }
+
+        await using var command = connection.CreateCommand();
+        command.Transaction = (SqliteTransaction)transaction;
+        command.CommandText =
+            """
+            UPDATE run_queue
+            SET status = CASE status
+                    WHEN 'Pending' THEN 'Canceled'
+                    ELSE 'Failed'
+                END,
+                completed_at = $completedAt,
+                error_message = COALESCE(error_message, 'Superseded while enforcing run queue exclusivity.')
+            WHERE status IN ('Pending', 'InProgress', 'CancelRequested')
+              AND request_id <> (
+                  SELECT request_id
+                  FROM run_queue
+                  WHERE status IN ('Pending', 'InProgress', 'CancelRequested')
+                  ORDER BY CASE status
+                      WHEN 'InProgress' THEN 0
+                      WHEN 'CancelRequested' THEN 1
+                      ELSE 2
+                  END, requested_at ASC, request_id ASC
+                  LIMIT 1
+              );
+
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_run_queue_one_non_terminal
+              ON run_queue (1)
+              WHERE status IN ('Pending', 'InProgress', 'CancelRequested');
+            """;
+        command.Parameters.AddWithValue("$completedAt", DateTimeOffset.UtcNow.ToString("O"));
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 

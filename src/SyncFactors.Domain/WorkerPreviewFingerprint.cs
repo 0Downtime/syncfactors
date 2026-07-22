@@ -15,6 +15,9 @@ internal static class WorkerPreviewFingerprint
         builder.Append(preview.ManagerDistinguishedName).Append('|');
         builder.Append(preview.CurrentEnabled?.ToString() ?? "null").Append('|');
         builder.Append(preview.ProposedEnable?.ToString() ?? "null").Append('|');
+        builder.Append(preview.CreatedAtUtc?.ToUniversalTime().ToString("O") ?? "null").Append('|');
+        builder.Append(preview.SourceStateFingerprint).Append('|');
+        builder.Append(preview.DirectoryStateFingerprint).Append('|');
 
         foreach (var bucket in preview.Buckets)
         {

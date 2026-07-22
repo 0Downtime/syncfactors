@@ -10,7 +10,7 @@ public sealed class GraveyardRetentionReportCoordinator(
     GraveyardRetentionNotificationSettings settings,
     LifecyclePolicySettings lifecycleSettings,
     TimeProvider timeProvider,
-    ILogger<GraveyardRetentionReportCoordinator> logger)
+    ILogger<GraveyardRetentionReportCoordinator> logger) : IGraveyardRetentionReportCoordinator
 {
     public async Task<bool> TrySendDueReportAsync(CancellationToken cancellationToken)
     {

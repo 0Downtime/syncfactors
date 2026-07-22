@@ -8,7 +8,7 @@ public sealed class SyncScheduleCoordinator(
     IRunQueueStore runQueueStore,
     RealSyncSettings realSyncSettings,
     TimeProvider timeProvider,
-    ILogger<SyncScheduleCoordinator> logger)
+    ILogger<SyncScheduleCoordinator> logger) : ISyncScheduleCoordinator
 {
     private static readonly TimeSpan FailedAttemptBackoff = TimeSpan.FromMinutes(1);
 
@@ -29,12 +29,6 @@ public sealed class SyncScheduleCoordinator(
             return false;
         }
 
-        if (await runQueueStore.HasPendingOrActiveRunAsync(cancellationToken))
-        {
-            logger.LogDebug("Scheduled sync is due but another run is already pending or active.");
-            return false;
-        }
-
         try
         {
             await runQueueStore.EnqueueAsync(
@@ -45,6 +39,11 @@ public sealed class SyncScheduleCoordinator(
                 cancellationToken);
             await scheduleStore.RecordSuccessfulEnqueueAsync(now, cancellationToken);
             return true;
+        }
+        catch (RunQueueConflictException)
+        {
+            logger.LogDebug("Scheduled sync is due but another run is already pending or active.");
+            return false;
         }
         catch (Exception ex)
         {

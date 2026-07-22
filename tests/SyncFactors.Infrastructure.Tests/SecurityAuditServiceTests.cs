@@ -66,6 +66,48 @@ public sealed class SecurityAuditServiceTests : IDisposable
     }
 
     [Fact]
+    public void VerifyIntegrity_RequiresKeyedEntries_WhenProductionIntegrityIsRequired()
+    {
+        var auditPath = Path.Combine(_tempRoot, "state", "security-audit.jsonl");
+        Environment.SetEnvironmentVariable("SYNCFACTORS_SECURITY_AUDIT_LOG_PATH", auditPath);
+        var service = new SecurityAuditService(NullLogger<SecurityAuditService>.Instance);
+        service.Write("RunQueued", "Success");
+
+        var result = SecurityAuditService.VerifyIntegrity(auditPath, requireKeyedIntegrity: true);
+
+        Assert.False(result.IsValid);
+        Assert.Equal("Audit log integrity verification failed.", result.Error);
+    }
+
+    [Fact]
+    public void ValidateStartup_RejectsMissingKeyInProductionWithoutExposingConfigurationDetails()
+    {
+        Environment.SetEnvironmentVariable(SecurityAuditService.IntegrityKeyEnvironmentVariable, null);
+
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            SecurityAuditService.ValidateStartup(isProduction: true));
+
+        Assert.Equal("Security audit integrity validation failed.", exception.Message);
+    }
+
+    [Fact]
+    public void ValidateStartup_RejectsTamperedAuditLogWithoutExposingEntryContent()
+    {
+        var auditPath = Path.Combine(_tempRoot, "state", "security-audit.jsonl");
+        Environment.SetEnvironmentVariable("SYNCFACTORS_SECURITY_AUDIT_LOG_PATH", auditPath);
+        Environment.SetEnvironmentVariable(SecurityAuditService.IntegrityKeyEnvironmentVariable, "test-integrity-key");
+        var service = new SecurityAuditService(NullLogger<SecurityAuditService>.Instance);
+        service.Write("RunQueued", "Success", ("RequestedBy", "sensitive-user@example.com"));
+        File.WriteAllText(auditPath, "{ invalid json }");
+
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            SecurityAuditService.ValidateStartup(isProduction: true));
+
+        Assert.Equal("Security audit integrity validation failed.", exception.Message);
+        Assert.DoesNotContain("sensitive-user@example.com", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Write_HardensAuditFilePermissions_WhenUnixFileModesAreAvailable()
     {
         if (OperatingSystem.IsWindows())

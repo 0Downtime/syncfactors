@@ -67,7 +67,8 @@ public sealed class ApplyPreviewServiceTests
             new StubRunRepository(preview),
             new StubRuntimeStatusStore(),
             new RealSyncSettings(),
-            NullLogger<ApplyPreviewService>.Instance);
+            NullLogger<ApplyPreviewService>.Instance,
+            AcceptingPreviewApplyFreshnessValidator.Instance);
 
         await service.ApplyAsync(
             new ApplyPreviewRequest(
@@ -91,6 +92,60 @@ public sealed class ApplyPreviewServiceTests
         Assert.Equal("preview.email@example.test", command.UserPrincipalName);
         Assert.Equal("preview.email@example.test", command.Mail);
         Assert.Equal("CN=Manager,OU=LabUsers,DC=example,DC=com", command.ManagerDistinguishedName);
+    }
+
+    [Fact]
+    public async Task ApplyAsync_RejectsDirectoryWriteWhenStateDivergesAtAtomicMutationBoundary()
+    {
+        var preview = CreateApplicablePreview();
+        var directoryCommandGateway = new DivergingAtomicDirectoryCommandGateway();
+        var service = new ApplyPreviewService(
+            new DirectoryMutationCommandBuilder(),
+            directoryCommandGateway,
+            new StubRunRepository(preview),
+            new StubRuntimeStatusStore(),
+            new RealSyncSettings(),
+            NullLogger<ApplyPreviewService>.Instance,
+            AcceptingPreviewApplyFreshnessValidator.Instance);
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => service.ApplyAsync(
+            new ApplyPreviewRequest(
+                WorkerId: preview.WorkerId,
+                PreviewRunId: preview.RunId!,
+                PreviewFingerprint: preview.Fingerprint,
+                AcknowledgeRealSync: true),
+            CancellationToken.None));
+
+        Assert.Equal("The saved preview no longer matches the current state at the directory mutation boundary. Refresh preview before applying.", exception.Message);
+        Assert.Equal(1, directoryCommandGateway.AtomicPreconditionChecks);
+        Assert.Equal(0, directoryCommandGateway.DirectoryWrites);
+        Assert.Equal(0, directoryCommandGateway.UnconditionalWrites);
+    }
+
+    [Fact]
+    public async Task ApplyAsync_RejectsUnconditionalGatewayBeforeAnyDirectoryWrite()
+    {
+        var preview = CreateApplicablePreview();
+        var directoryCommandGateway = new UnconditionalDirectoryCommandGateway();
+        var service = new ApplyPreviewService(
+            new DirectoryMutationCommandBuilder(),
+            directoryCommandGateway,
+            new StubRunRepository(preview),
+            new StubRuntimeStatusStore(),
+            new RealSyncSettings(),
+            NullLogger<ApplyPreviewService>.Instance,
+            AcceptingPreviewApplyFreshnessValidator.Instance);
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => service.ApplyAsync(
+            new ApplyPreviewRequest(
+                WorkerId: preview.WorkerId,
+                PreviewRunId: preview.RunId!,
+                PreviewFingerprint: preview.Fingerprint,
+                AcknowledgeRealSync: true),
+            CancellationToken.None));
+
+        Assert.Equal("The configured directory gateway cannot atomically apply a reviewed preview. Refresh preview after configuring an atomic preview mutation gateway.", exception.Message);
+        Assert.Equal(0, directoryCommandGateway.DirectoryWrites);
     }
 
     [Fact]
@@ -146,7 +201,8 @@ public sealed class ApplyPreviewServiceTests
             runRepository,
             new StubRuntimeStatusStore(),
             new RealSyncSettings(),
-            NullLogger<ApplyPreviewService>.Instance);
+            NullLogger<ApplyPreviewService>.Instance,
+            AcceptingPreviewApplyFreshnessValidator.Instance);
 
         await service.ApplyAsync(
             new ApplyPreviewRequest(
@@ -217,7 +273,8 @@ public sealed class ApplyPreviewServiceTests
             runRepository,
             runtimeStatusStore,
             new RealSyncSettings(),
-            NullLogger<ApplyPreviewService>.Instance);
+            NullLogger<ApplyPreviewService>.Instance,
+            AcceptingPreviewApplyFreshnessValidator.Instance);
 
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => service.ApplyAsync(
             new ApplyPreviewRequest(
@@ -292,7 +349,8 @@ public sealed class ApplyPreviewServiceTests
             runRepository,
             runtimeStatusStore,
             new RealSyncSettings(),
-            NullLogger<ApplyPreviewService>.Instance);
+            NullLogger<ApplyPreviewService>.Instance,
+            AcceptingPreviewApplyFreshnessValidator.Instance);
 
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => service.ApplyAsync(
             new ApplyPreviewRequest(
@@ -362,7 +420,8 @@ public sealed class ApplyPreviewServiceTests
             new StubRunRepository(preview),
             new StubRuntimeStatusStore(),
             new RealSyncSettings(),
-            NullLogger<ApplyPreviewService>.Instance);
+            NullLogger<ApplyPreviewService>.Instance,
+            AcceptingPreviewApplyFreshnessValidator.Instance);
 
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => service.ApplyAsync(
             new ApplyPreviewRequest(
@@ -431,7 +490,8 @@ public sealed class ApplyPreviewServiceTests
             new StubRunRepository(preview),
             new StubRuntimeStatusStore(),
             new RealSyncSettings(),
-            NullLogger<ApplyPreviewService>.Instance);
+            NullLogger<ApplyPreviewService>.Instance,
+            AcceptingPreviewApplyFreshnessValidator.Instance);
 
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => service.ApplyAsync(
             new ApplyPreviewRequest(
@@ -497,7 +557,8 @@ public sealed class ApplyPreviewServiceTests
             new StubRunRepository(preview),
             new StubRuntimeStatusStore(),
             new RealSyncSettings(Enabled: false),
-            NullLogger<ApplyPreviewService>.Instance);
+            NullLogger<ApplyPreviewService>.Instance,
+            AcceptingPreviewApplyFreshnessValidator.Instance);
 
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => service.ApplyAsync(
             new ApplyPreviewRequest(
@@ -561,7 +622,8 @@ public sealed class ApplyPreviewServiceTests
             new StubRunRepository(preview),
             new StubRuntimeStatusStore(),
             new RealSyncSettings(Enabled: true, DryRunOnly: true),
-            NullLogger<ApplyPreviewService>.Instance);
+            NullLogger<ApplyPreviewService>.Instance,
+            AcceptingPreviewApplyFreshnessValidator.Instance);
 
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => service.ApplyAsync(
             new ApplyPreviewRequest(
@@ -636,7 +698,8 @@ public sealed class ApplyPreviewServiceTests
             new StubRunRepository(preview),
             new StubRuntimeStatusStore(),
             new RealSyncSettings(),
-            NullLogger<ApplyPreviewService>.Instance);
+            NullLogger<ApplyPreviewService>.Instance,
+            AcceptingPreviewApplyFreshnessValidator.Instance);
 
         await service.ApplyAsync(
             new ApplyPreviewRequest(
@@ -651,7 +714,92 @@ public sealed class ApplyPreviewServiceTests
         Assert.Null(command.ManagerDistinguishedName);
     }
 
-    private sealed class CapturingDirectoryCommandGateway : IDirectoryCommandGateway
+    private sealed class AcceptingPreviewApplyFreshnessValidator : IPreviewApplyFreshnessValidator
+    {
+        public static readonly AcceptingPreviewApplyFreshnessValidator Instance = new();
+
+        public Task ValidateAsync(WorkerPreviewResult preview, CancellationToken cancellationToken)
+        {
+            _ = preview;
+            _ = cancellationToken;
+            return Task.CompletedTask;
+        }
+    }
+
+    private static WorkerPreviewResult CreateApplicablePreview() =>
+        new(
+            ReportPath: null,
+            RunId: "preview-atomic-boundary",
+            PreviousRunId: null,
+            Fingerprint: "fingerprint-atomic-boundary",
+            Mode: "Preview",
+            Status: "Planned",
+            ErrorMessage: null,
+            ArtifactType: "WorkerPreview",
+            SuccessFactorsAuth: "NativeScaffold",
+            WorkerId: "10001",
+            Buckets: ["updates"],
+            MatchedExistingUser: true,
+            ReviewCategory: null,
+            ReviewCaseType: null,
+            Reason: null,
+            OperatorActionSummary: null,
+            SamAccountName: "10001",
+            ManagerDistinguishedName: null,
+            TargetOu: "OU=LabUsers,DC=example,DC=com",
+            CurrentDistinguishedName: "CN=Sample,OU=LabUsers,DC=example,DC=com",
+            CurrentEnabled: true,
+            ProposedEnable: true,
+            OperationSummary: null,
+            DiffRows: [new DiffRow("UserPrincipalName", "email", "old@example.test", "new@example.test", true)],
+            SourceAttributes: [],
+            UsedSourceAttributes: [],
+            UnusedSourceAttributes: [],
+            MissingSourceAttributes: [],
+            Entries: []);
+
+    private sealed class DivergingAtomicDirectoryCommandGateway : IAtomicPreviewDirectoryCommandGateway
+    {
+        public int AtomicPreconditionChecks { get; private set; }
+        public int DirectoryWrites { get; private set; }
+        public int UnconditionalWrites { get; private set; }
+
+        public Task<DirectoryCommandResult> ExecuteAsync(DirectoryMutationCommand command, CancellationToken cancellationToken)
+        {
+            _ = command;
+            _ = cancellationToken;
+            UnconditionalWrites++;
+            return Task.FromResult(new DirectoryCommandResult(true, "UpdateUser", "10001", null, "unexpected", null));
+        }
+
+        public Task<DirectoryCommandResult> ExecuteIfCurrentAsync(
+            DirectoryMutationCommand command,
+            WorkerPreviewResult reviewedPreview,
+            CancellationToken cancellationToken)
+        {
+            _ = command;
+            _ = reviewedPreview;
+            _ = cancellationToken;
+            AtomicPreconditionChecks++;
+            return Task.FromException<DirectoryCommandResult>(new InvalidOperationException(
+                "The saved preview no longer matches the current state at the directory mutation boundary. Refresh preview before applying."));
+        }
+    }
+
+    private sealed class UnconditionalDirectoryCommandGateway : IDirectoryCommandGateway
+    {
+        public int DirectoryWrites { get; private set; }
+
+        public Task<DirectoryCommandResult> ExecuteAsync(DirectoryMutationCommand command, CancellationToken cancellationToken)
+        {
+            _ = command;
+            _ = cancellationToken;
+            DirectoryWrites++;
+            return Task.FromResult(new DirectoryCommandResult(true, "UpdateUser", "10001", null, "unexpected", null));
+        }
+    }
+
+    private sealed class CapturingDirectoryCommandGateway : IAtomicPreviewDirectoryCommandGateway
     {
         public DirectoryMutationCommand? LastCommand { get; private set; }
 
@@ -661,15 +809,33 @@ public sealed class ApplyPreviewServiceTests
             LastCommand = command;
             return Task.FromResult(new DirectoryCommandResult(true, command.Action, command.SamAccountName, null, "ok", null));
         }
+
+        public Task<DirectoryCommandResult> ExecuteIfCurrentAsync(
+            DirectoryMutationCommand command,
+            WorkerPreviewResult reviewedPreview,
+            CancellationToken cancellationToken)
+        {
+            _ = reviewedPreview;
+            return ExecuteAsync(command, cancellationToken);
+        }
     }
 
-    private sealed class ThrowingDirectoryCommandGateway(Exception exception) : IDirectoryCommandGateway
+    private sealed class ThrowingDirectoryCommandGateway(Exception exception) : IAtomicPreviewDirectoryCommandGateway
     {
         public Task<DirectoryCommandResult> ExecuteAsync(DirectoryMutationCommand command, CancellationToken cancellationToken)
         {
             _ = command;
             _ = cancellationToken;
             return Task.FromException<DirectoryCommandResult>(exception);
+        }
+
+        public Task<DirectoryCommandResult> ExecuteIfCurrentAsync(
+            DirectoryMutationCommand command,
+            WorkerPreviewResult reviewedPreview,
+            CancellationToken cancellationToken)
+        {
+            _ = reviewedPreview;
+            return ExecuteAsync(command, cancellationToken);
         }
     }
 
@@ -765,6 +931,18 @@ public sealed class ApplyPreviewServiceTests
             _ = cancellationToken;
             return Task.FromResult<IReadOnlyList<ChangedAttributeTotal>>([]);
         }
+        public Task<int> CountWorkerRunHistoryAsync(string workerId, CancellationToken cancellationToken) => Task.FromResult(0);
+
+        public Task<IReadOnlyList<WorkerRunHistoryItem>> ListWorkerRunHistoryAsync(string workerId, int skip, int take, CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyList<WorkerRunHistoryItem>>([]);
+
+        public Task<int> PruneTerminalRunsStartedBeforeAsync(DateTimeOffset cutoffUtc, CancellationToken cancellationToken) => Task.FromResult(0);
+
+        public Task<bool> VacuumIfNeededAsync(DateTimeOffset nowUtc, long minimumFreeBytes, TimeSpan minimumInterval, CancellationToken cancellationToken) => Task.FromResult(false);
+
+        public Task<IReadOnlyList<EmploymentStatusTotal>> GetRunEntryEmploymentStatusTotalsAsync(string runId, string? bucket, string? workerId, string? reason, string? filter, string? employmentStatus, string? entryId, CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyList<EmploymentStatusTotal>>([]);
+
     }
 
     private sealed class CapturingRunRepository(WorkerPreviewResult preview) : IRunRepository
@@ -861,6 +1039,18 @@ public sealed class ApplyPreviewServiceTests
             _ = cancellationToken;
             return Task.FromResult<IReadOnlyList<ChangedAttributeTotal>>([]);
         }
+        public Task<int> CountWorkerRunHistoryAsync(string workerId, CancellationToken cancellationToken) => Task.FromResult(0);
+
+        public Task<IReadOnlyList<WorkerRunHistoryItem>> ListWorkerRunHistoryAsync(string workerId, int skip, int take, CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyList<WorkerRunHistoryItem>>([]);
+
+        public Task<int> PruneTerminalRunsStartedBeforeAsync(DateTimeOffset cutoffUtc, CancellationToken cancellationToken) => Task.FromResult(0);
+
+        public Task<bool> VacuumIfNeededAsync(DateTimeOffset nowUtc, long minimumFreeBytes, TimeSpan minimumInterval, CancellationToken cancellationToken) => Task.FromResult(false);
+
+        public Task<IReadOnlyList<EmploymentStatusTotal>> GetRunEntryEmploymentStatusTotalsAsync(string runId, string? bucket, string? workerId, string? reason, string? filter, string? employmentStatus, string? entryId, CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyList<EmploymentStatusTotal>>([]);
+
     }
 
     private sealed class StubRuntimeStatusStore : IRuntimeStatusStore

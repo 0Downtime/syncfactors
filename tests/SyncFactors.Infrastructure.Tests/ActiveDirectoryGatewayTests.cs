@@ -9,6 +9,19 @@ namespace SyncFactors.Infrastructure.Tests;
 public sealed class ActiveDirectoryGatewayTests
 {
     [Fact]
+    public void CreateReferralWarning_ExcludesSearchBaseAndExceptionDetails()
+    {
+        var method = typeof(ActiveDirectoryGateway).GetMethod("CreateReferralWarning", BindingFlags.NonPublic | BindingFlags.Static);
+
+        Assert.NotNull(method);
+        var warning = Assert.IsType<string>(method!.Invoke(null, ["FindUniqueEntry"]));
+
+        Assert.Equal("Active Directory referral skipped. Operation=FindUniqueEntry", warning);
+        Assert.DoesNotContain("OU=", warning, StringComparison.Ordinal);
+        Assert.DoesNotContain("ldap://", warning, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void ResolveAvailableEmailLocalPart_ReturnsBaseCandidate_WhenAvailable()
     {
         var result = InvokeResolver("john.smith", static _ => false);

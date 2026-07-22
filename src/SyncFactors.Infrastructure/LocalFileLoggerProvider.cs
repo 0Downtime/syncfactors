@@ -6,7 +6,8 @@ namespace SyncFactors.Infrastructure;
 public sealed class LocalFileLoggerProvider(
     string processName,
     string? configuredDirectory,
-    int retainedFileCountLimit = LocalFileLogging.RetainedFileCountLimit) : RedactingFileLoggerProvider
+    int retainedFileCountLimit = LocalFileLogging.RetainedFileCountLimit,
+    int retentionDays = LocalFileLogging.LogRetentionDays) : RedactingFileLoggerProvider
 {
     private readonly ConcurrentDictionary<string, byte> _prunedPaths = new(StringComparer.OrdinalIgnoreCase);
 
@@ -17,6 +18,7 @@ public sealed class LocalFileLoggerProvider(
         if (_prunedPaths.TryAdd(path, 0))
         {
             LocalFileLogging.PruneDatedFiles(processName, configuredDirectory, retainedFileCountLimit);
+            LocalFileLogging.PruneExpiredLogFiles(configuredDirectory, retentionDays, timestamp);
         }
 
         WriteToFile(path, path, timestamp, logLevel, categoryName, eventId, message, exception);

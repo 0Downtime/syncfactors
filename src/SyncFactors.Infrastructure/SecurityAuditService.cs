@@ -66,53 +66,79 @@ public sealed class SecurityAuditService(ILogger<SecurityAuditService> logger) :
         }
     }
 
-    public static SecurityAuditIntegrityResult VerifyIntegrity(string path)
+    public static SecurityAuditIntegrityResult VerifyIntegrity(string path, bool requireKeyedIntegrity = false)
     {
         if (!File.Exists(path))
         {
             return new SecurityAuditIntegrityResult(false, 0, "Audit log was not found.");
         }
 
-        string? expectedPreviousHash = null;
-        var lineNumber = 0;
-        foreach (var line in File.ReadLines(path))
+        try
         {
-            if (string.IsNullOrWhiteSpace(line))
+            string? expectedPreviousHash = null;
+            var lineNumber = 0;
+            foreach (var line in File.ReadLines(path))
             {
-                continue;
+                if (string.IsNullOrWhiteSpace(line))
+                {
+                    continue;
+                }
+
+                lineNumber++;
+                using var document = JsonDocument.Parse(line);
+                var root = document.RootElement;
+                if (!root.TryGetProperty("integrity", out var integrity) ||
+                    !IsSupportedIntegrityAlgorithm(integrity.TryGetString("algorithm")))
+                {
+                    return IntegrityFailure(lineNumber, requireKeyedIntegrity, "Audit entry is missing supported integrity metadata.");
+                }
+
+                var algorithm = integrity.GetRequiredString("algorithm");
+                if (requireKeyedIntegrity && !string.Equals(algorithm, HmacSha256Algorithm, StringComparison.Ordinal))
+                {
+                    return IntegrityFailure(lineNumber, requireKeyedIntegrity, "Audit entry is not keyed.");
+                }
+
+                var previousHash = integrity.TryGetString("previousHash");
+                if (!string.Equals(previousHash, expectedPreviousHash, StringComparison.Ordinal))
+                {
+                    return IntegrityFailure(lineNumber, requireKeyedIntegrity, "Audit entry previous hash does not match prior entry.");
+                }
+
+                var timestampUtc = root.GetProperty("timestampUtc").GetDateTimeOffset();
+                var eventType = root.GetRequiredString("eventType");
+                var outcome = root.GetRequiredString("outcome");
+                var canonicalFields = CanonicalizeFields(root.GetProperty("fields"));
+                var expectedEntryHash = ComputeEntryHash(timestampUtc, eventType, outcome, canonicalFields, previousHash, algorithm);
+                var actualEntryHash = integrity.TryGetString("entryHash");
+                if (!string.Equals(actualEntryHash, expectedEntryHash, StringComparison.Ordinal))
+                {
+                    return IntegrityFailure(lineNumber, requireKeyedIntegrity, "Audit entry hash does not match entry content.");
+                }
+
+                expectedPreviousHash = actualEntryHash;
             }
 
-            lineNumber++;
-            using var document = JsonDocument.Parse(line);
-            var root = document.RootElement;
-            if (!root.TryGetProperty("integrity", out var integrity) ||
-                !IsSupportedIntegrityAlgorithm(integrity.TryGetString("algorithm")))
-            {
-                return new SecurityAuditIntegrityResult(false, lineNumber, "Audit entry is missing supported integrity metadata.");
-            }
+            return new SecurityAuditIntegrityResult(true, lineNumber, null);
+        }
+        catch (Exception ex) when (ex is IOException or JsonException or InvalidOperationException or FormatException)
+        {
+            return new SecurityAuditIntegrityResult(false, 0, "Audit log integrity verification failed.");
+        }
+    }
 
-            var algorithm = integrity.GetRequiredString("algorithm");
-            var previousHash = integrity.TryGetString("previousHash");
-            if (!string.Equals(previousHash, expectedPreviousHash, StringComparison.Ordinal))
-            {
-                return new SecurityAuditIntegrityResult(false, lineNumber, "Audit entry previous hash does not match prior entry.");
-            }
-
-            var timestampUtc = root.GetProperty("timestampUtc").GetDateTimeOffset();
-            var eventType = root.GetRequiredString("eventType");
-            var outcome = root.GetRequiredString("outcome");
-            var canonicalFields = CanonicalizeFields(root.GetProperty("fields"));
-            var expectedEntryHash = ComputeEntryHash(timestampUtc, eventType, outcome, canonicalFields, previousHash, algorithm);
-            var actualEntryHash = integrity.TryGetString("entryHash");
-            if (!string.Equals(actualEntryHash, expectedEntryHash, StringComparison.Ordinal))
-            {
-                return new SecurityAuditIntegrityResult(false, lineNumber, "Audit entry hash does not match entry content.");
-            }
-
-            expectedPreviousHash = actualEntryHash;
+    public static void ValidateStartup(bool isProduction)
+    {
+        if (isProduction && string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(IntegrityKeyEnvironmentVariable)))
+        {
+            throw new InvalidOperationException("Security audit integrity validation failed.");
         }
 
-        return new SecurityAuditIntegrityResult(true, lineNumber, null);
+        var path = ResolveAuditPath();
+        if (File.Exists(path) && !VerifyIntegrity(path, requireKeyedIntegrity: isProduction).IsValid)
+        {
+            throw new InvalidOperationException("Security audit integrity validation failed.");
+        }
     }
 
     public static string ResolveAuditPath()
@@ -159,10 +185,25 @@ public sealed class SecurityAuditService(ILogger<SecurityAuditService> logger) :
         return ComputeSha256(lastLine);
     }
 
-    private static string ResolveIntegrityAlgorithm() =>
-        string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(IntegrityKeyEnvironmentVariable))
-            ? Sha256Algorithm
-            : HmacSha256Algorithm;
+    private static string ResolveIntegrityAlgorithm()
+    {
+        var hasIntegrityKey = !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(IntegrityKeyEnvironmentVariable));
+        if (!hasIntegrityKey && IsProductionEnvironment())
+        {
+            throw new InvalidOperationException("Security audit integrity validation failed.");
+        }
+
+        return hasIntegrityKey ? HmacSha256Algorithm : Sha256Algorithm;
+    }
+
+    private static SecurityAuditIntegrityResult IntegrityFailure(int lineNumber, bool requireKeyedIntegrity, string detailedError) =>
+        new(false, lineNumber, requireKeyedIntegrity ? "Audit log integrity verification failed." : detailedError);
+
+    private static bool IsProductionEnvironment() =>
+        string.Equals(
+            Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? Environment.GetEnvironmentVariable("DOTNET_ENVIRONMENT"),
+            "Production",
+            StringComparison.OrdinalIgnoreCase);
 
     private static bool IsSupportedIntegrityAlgorithm(string? algorithm) =>
         string.Equals(algorithm, Sha256Algorithm, StringComparison.Ordinal) ||

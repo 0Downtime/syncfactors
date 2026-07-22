@@ -11,8 +11,9 @@ public sealed class GraveyardAutoDeleteCoordinator(
     IRunLifecycleService runLifecycleService,
     GraveyardDeletionQueueSettings settings,
     WorkerRunSettings workerRunSettings,
+    RealSyncSettings realSyncSettings,
     ILogger<GraveyardAutoDeleteCoordinator> logger,
-    TimeProvider timeProvider)
+    TimeProvider timeProvider) : IGraveyardAutoDeleteCoordinator
 {
     public async Task<GraveyardDeletionApprovalResult> ApproveDeleteAsync(
         string workerId,
@@ -386,6 +387,11 @@ public sealed class GraveyardAutoDeleteCoordinator(
         var succeeded = true;
         var bucket = "deletions";
         var reasonMessage = $"Deleted AD user {item.SamAccountName ?? item.WorkerId}.";
+
+        if (!realSyncSettings.EffectiveWriteEnabled)
+        {
+            throw new InvalidOperationException(realSyncSettings.LiveWriteDisabledMessage);
+        }
 
         try
         {

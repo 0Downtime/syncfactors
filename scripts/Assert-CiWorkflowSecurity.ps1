@@ -1,7 +1,12 @@
+ [CmdletBinding()]
+param(
+    [string] $RepositoryRoot = (Join-Path $PSScriptRoot '..')
+)
+
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$repoRoot = Resolve-Path (Join-Path $PSScriptRoot '..')
+$repoRoot = (Resolve-Path $RepositoryRoot).Path
 $errors = [System.Collections.Generic.List[string]]::new()
 
 function Add-PolicyError {
@@ -81,6 +86,43 @@ if (Test-Path -Path $githubWorkflowRoot -PathType Container) {
 
             if ($content -match 'secrets\.') {
                 Add-PolicyError $workflowFile.FullName 'pull_request_target workflows must not expose repository secrets.'
+            }
+        }
+
+        if ($workflowFile.Name -match '^auto-merge\.ya?ml$' -and $content -match '\bgh\s+pr\s+merge\s+--auto\b') {
+            $hasTrustedBotGuard = $content -match "github\.actor\s*==\s*'dependabot\[bot\]'"
+            $hasReviewedOptInGuard = $content -match "contains\(\s*github\.event\.pull_request\.labels\.\*\.name\s*,\s*'automerge:approved'\s*\)"
+            if (-not ($hasTrustedBotGuard -or $hasReviewedOptInGuard)) {
+                Add-PolicyError $workflowFile.FullName 'automatic merge must be limited to a trusted bot or an explicit reviewed opt-in.'
+            }
+
+            $hasLabeledTrigger = $content -match '(?m)^\s*-\s*labeled\s*$|^\s*types:\s*\[[^\]]*\blabeled\b[^\]]*\]\s*$'
+            if ($hasReviewedOptInGuard -and -not $hasLabeledTrigger) {
+                Add-PolicyError $workflowFile.FullName 'reviewed auto-merge opt-ins must listen for labeled events.'
+            }
+        }
+
+        if ($workflowFile.Name -match '^(test|security|release)\.ya?ml$') {
+            $runsOnMainPush = $content -match '(?ms)^\s*push:\s*(?:\r?\n\s*branches:\s*(?:\r?\n\s*-\s*main\b|\[\s*main\s*\]))'
+            if (-not $runsOnMainPush) {
+                Add-PolicyError $workflowFile.FullName 'must run on pushes to main so merged changes are tested, scanned, and released.'
+            }
+        }
+
+        if ($workflowFile.Name -match '^release\.ya?ml$' -and $content -match '\bgh\s+release\s+create\b') {
+            $publishingJobs = [regex]::Matches($content, '(?ms)^  \S+:.*?(?=^  \S|\z)') | Where-Object { $_.Value -match '\bgh\s+release\s+create\b' }
+            foreach ($publishingJob in $publishingJobs) {
+                if ($publishingJob.Value -notmatch '(?m)^\s*needs:\s*\[[^\]]*\bverify-required-ci-checks\b[^\]]*\]') {
+                    Add-PolicyError $workflowFile.FullName 'publishing release jobs must depend on verify-required-ci-checks.'
+                }
+            }
+
+            $hasWorkflowLookup = $content -match 'actions/workflows/\$workflowFile'
+            $hasWorkflowBinding = $content -match '\$run\.workflow_id\s+-ne\s+\$workflowIds\[\$requiredCheck\.workflowFile\]'
+            $hasJobBinding = $content -match '\$job\.id\s+-eq\s+\[Int64\]\$jobId\s+-and\s+\$job\.name\s+-eq\s+\$requiredCheck\.jobName'
+            $keepsUntrustedChecksPending = $content -match '(?s)if\s*\(\$null\s+-eq\s+\$trustedCheck\)\s*\{.*?\$incompleteChecks\s*\+=\s*"\$\(\$requiredCheck\.checkName\)=untrusted-provenance"'
+            if (-not ($hasWorkflowLookup -and $hasWorkflowBinding -and $hasJobBinding -and $keepsUntrustedChecksPending)) {
+                Add-PolicyError $workflowFile.FullName 'required CI check acceptance must bind same-name checks to their expected workflow and job provenance.'
             }
         }
 

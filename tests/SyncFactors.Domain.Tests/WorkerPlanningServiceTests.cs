@@ -231,6 +231,9 @@ public sealed class WorkerPlanningServiceTests
             _ = cancellationToken;
             return Task.FromResult($"user{worker.WorkerId}");
         }
+        public Task<IReadOnlyList<DirectoryUserSnapshot>> ListUsersInOuAsync(string ouDistinguishedName, CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyList<DirectoryUserSnapshot>>([]);
+
     }
 
     private sealed class StaticAttributeDiffService(IReadOnlyList<AttributeChange> changes) : IAttributeDiffService

@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc.RazorPages;
 using SyncFactors.Api;
 using SyncFactors.Contracts;
 using SyncFactors.Domain;
+using SyncFactors.Infrastructure;
 
 namespace SyncFactors.Api.Pages;
 
@@ -10,7 +11,8 @@ public sealed class Worker360Model(
     IWorkerPreviewPlanner previewPlanner,
     IApplyPreviewService applyPreviewService,
     IRunRepository runRepository,
-    RealSyncSettings? realSyncSettings = null) : PageModel
+    RealSyncSettings? realSyncSettings = null,
+    ISecurityAuditService? audit = null) : PageModel
 {
     private readonly RealSyncSettings _realSyncSettings = realSyncSettings ?? new RealSyncSettings();
 
@@ -143,6 +145,12 @@ public sealed class Worker360Model(
                     PreviewFingerprint: PreviewFingerprint,
                     AcknowledgeRealSync: AcknowledgeRealSync),
                 cancellationToken);
+            TryWriteAudit(() => audit?.Write(
+                "PreviewApplied",
+                ApplyResult.Succeeded ? "Success" : "Failure",
+                ("RequestedBy", PageContext?.HttpContext?.User.Identity?.Name ?? "Workers page"),
+                ("WorkerId", WorkerId),
+                ("PreviewRunId", PreviewRunId)));
         }
         catch (Exception ex)
         {
@@ -218,6 +226,18 @@ public sealed class Worker360Model(
 
         TotalRunHistory = await runRepository.CountWorkerRunHistoryAsync(WorkerId, cancellationToken);
         RunHistory = await runRepository.ListWorkerRunHistoryAsync(WorkerId, 0, 12, cancellationToken);
+    }
+
+    private void TryWriteAudit(Action write)
+    {
+        try
+        {
+            write();
+        }
+        catch (Exception)
+        {
+            ErrorMessage = "The action completed, but security audit recording failed.";
+        }
     }
 
     private static IEnumerable<SourceAttributeRow> SelectSourceSummary(WorkerPreviewResult preview)

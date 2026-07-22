@@ -15,7 +15,8 @@ public sealed class ApplyPreviewService(
     IRunRepository runRepository,
     IRuntimeStatusStore runtimeStatusStore,
     RealSyncSettings realSyncSettings,
-    ILogger<ApplyPreviewService> logger) : IApplyPreviewService
+    ILogger<ApplyPreviewService> logger,
+    IPreviewApplyFreshnessValidator freshnessValidator) : IApplyPreviewService
 {
     public async Task<DirectoryCommandResult> ApplyAsync(ApplyPreviewRequest request, CancellationToken cancellationToken)
     {
@@ -77,7 +78,14 @@ public sealed class ApplyPreviewService(
 
         try
         {
-            var result = await directoryCommandGateway.ExecuteAsync(command, cancellationToken);
+            await freshnessValidator.ValidateAsync(preview, cancellationToken);
+            if (directoryCommandGateway is not IAtomicPreviewDirectoryCommandGateway atomicPreviewGateway)
+            {
+                throw new InvalidOperationException(
+                    "The configured directory gateway cannot atomically apply a reviewed preview. Refresh preview after configuring an atomic preview mutation gateway.");
+            }
+
+            var result = await atomicPreviewGateway.ExecuteIfCurrentAsync(command, preview, cancellationToken);
             var completedAt = DateTimeOffset.UtcNow;
             logger.LogInformation("Directory mutation command finished. WorkerId={WorkerId} Action={Action} Succeeded={Succeeded} Message={Message}", worker.WorkerId, result.Action, result.Succeeded, result.Message);
 

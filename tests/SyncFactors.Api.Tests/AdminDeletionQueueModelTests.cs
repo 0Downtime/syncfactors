@@ -205,6 +205,7 @@ public sealed class AdminDeletionQueueModelTests
             lifecycle ?? new CapturingRunLifecycleService(),
             settings,
             new WorkerRunSettings(MaxCreatesPerRun: 10, MaxDisablesPerRun: 10, MaxDeletionsPerRun: 10),
+            new RealSyncSettings(),
             NullLogger<GraveyardAutoDeleteCoordinator>.Instance,
             new FakeTimeProvider(now));
 

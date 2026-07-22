@@ -9,6 +9,7 @@ using System.Net;
 const string WindowsServiceName = "SyncFactors.Worker";
 
 var builder = Host.CreateApplicationBuilder(args);
+SecurityAuditService.ValidateStartup(builder.Environment.IsProduction());
 ConfigureWindowsService(builder.Services, WindowsServiceName);
 LocalFileLogging.Configure(
     builder.Logging,
@@ -17,8 +18,10 @@ LocalFileLogging.Configure(
     directoryValue: builder.Configuration[LocalFileLogging.DirectoryEnvironmentVariable],
     retainedFileCountLimitValue: builder.Configuration[LocalFileLogging.RetainedFileCountLimitEnvironmentVariable],
     runLoggingEnabledValue: builder.Configuration[LocalFileLogging.RunFileLoggingEnabledEnvironmentVariable],
-    runRetainedFileCountLimitValue: builder.Configuration[LocalFileLogging.RunRetainedFileCountLimitEnvironmentVariable]);
+    runRetainedFileCountLimitValue: builder.Configuration[LocalFileLogging.RunRetainedFileCountLimitEnvironmentVariable],
+    retentionDaysValue: builder.Configuration[LocalFileLogging.RetentionDaysEnvironmentVariable]);
 ConfigureApplicationInsights(builder);
+builder.Services.AddSingleton<ISecurityAuditService, SecurityAuditService>();
 builder.Services.AddSingleton(new ScaffoldDataPathResolver(builder.Configuration["SyncFactors:ScaffoldDataPath"]));
 builder.Services.AddSingleton(new SqlitePathResolver(builder.Configuration["SyncFactors:SqlitePath"]));
 builder.Services.AddSingleton(new SyncFactorsConfigPathResolver(
@@ -113,11 +116,9 @@ builder.Services.AddHttpClient<SuccessFactorsWorkerSource>()
         AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate
     });
 builder.Services.AddTransient<IWorkerSource>(serviceProvider => serviceProvider.GetRequiredService<SuccessFactorsWorkerSource>());
-builder.Services.AddSingleton<ScaffoldDirectoryCommandGateway>();
-builder.Services.AddTransient<ActiveDirectoryGateway>();
-builder.Services.AddTransient<IDirectoryGateway>(serviceProvider => serviceProvider.GetRequiredService<ActiveDirectoryGateway>());
-builder.Services.AddTransient<ActiveDirectoryCommandGateway>();
-builder.Services.AddTransient<IDirectoryCommandGateway>(serviceProvider => serviceProvider.GetRequiredService<ActiveDirectoryCommandGateway>());
+builder.Services.AddDirectoryServiceRuntimeGateways(
+    builder.Configuration["SYNCFACTORS_RUN_PROFILE"],
+    (serviceProvider, inner) => new AuditedDirectoryCommandGateway(inner, serviceProvider.GetRequiredService<ISecurityAuditService>()));
 builder.Services.AddTransient<IEmailSender, SmtpEmailSender>();
 builder.Services.AddSingleton<IAttributeMappingProvider, AttributeMappingProvider>();
 builder.Services.AddSingleton<IIdentityMatcher, IdentityMatcher>();
@@ -128,12 +129,13 @@ builder.Services.AddTransient<IAttributeDiffService, AttributeDiffService>();
 builder.Services.AddSingleton<IRunCaptureMetadataProvider, RunCaptureMetadataProvider>();
 builder.Services.AddTransient<IWorkerPlanningService, WorkerPlanningService>();
 builder.Services.AddSingleton<IDirectoryMutationCommandBuilder, DirectoryMutationCommandBuilder>();
-builder.Services.AddTransient<BulkRunCoordinator>();
-builder.Services.AddTransient<DeleteAllUsersCoordinator>();
+builder.Services.AddTransient<IBulkRunCoordinator, BulkRunCoordinator>();
+builder.Services.AddTransient<IDeleteAllUsersCoordinator, DeleteAllUsersCoordinator>();
 builder.Services.AddTransient<GraveyardDeletionQueueService>();
-builder.Services.AddTransient<GraveyardAutoDeleteCoordinator>();
-builder.Services.AddTransient<SyncScheduleCoordinator>();
-builder.Services.AddTransient<GraveyardRetentionReportCoordinator>();
+builder.Services.AddTransient<IGraveyardAutoDeleteCoordinator, GraveyardAutoDeleteCoordinator>();
+builder.Services.AddTransient<ISyncScheduleCoordinator, SyncScheduleCoordinator>();
+builder.Services.AddTransient<IGraveyardRetentionReportCoordinator, GraveyardRetentionReportCoordinator>();
+builder.Services.AddSingleton<IWorkerExecutionSettings, ConfigurationWorkerExecutionSettings>();
 builder.Services.AddSingleton<IRunLifecycleService, RunLifecycleService>();
 builder.Services.AddHostedService<Worker>();
 

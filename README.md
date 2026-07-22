@@ -477,7 +477,7 @@ The simulator uses:
 - focused failure sample: `config/mock-successfactors/sample-lifecycle-failure-scenario.json`
 - focused single-worker sample: `config/mock-successfactors/sample-lifecycle-scenario.json`
 
-The checked-in simulator scenarios also roll up into a master test in CI. When desired lifecycle behavior changes, update the scenario and fixture files first so the master suite remains the executable contract for expected sync behavior.
+The checked-in simulator scenarios also roll up into a master test in CI. When desired planner and simulated-lifecycle behavior changes, update the scenario and fixture files first so the master suite remains the executable contract for that simulated behavior. The simulator uses an in-memory directory and applies the requested enabled state directly; it does not model production AD's disabled-first create, transport-dependent password and enablement sequence, licensing-group mutations, or all LDAP failure semantics. Production gateway tests remain the executable contract for those behaviors.
 
 You can also call the CLI directly:
 
@@ -644,12 +644,13 @@ To enable local rolling file logs for the SyncFactors API and worker, add these 
 ```bash
 SYNCFACTORS_LOCAL_FILE_LOGGING_ENABLED=true
 SYNCFACTORS_LOCAL_LOG_DIRECTORY=
+SYNCFACTORS_LOCAL_LOG_RETENTION_DAYS=7
 SYNCFACTORS_LOCAL_LOG_RETAINED_FILE_COUNT=7
 SYNCFACTORS_RUN_FILE_LOGGING_ENABLED=false
 SYNCFACTORS_RUN_LOG_RETAINED_FILE_COUNT=200
 ```
 
-When enabled, the API writes `api-*.log` and the worker writes `worker-*.log` with daily rotation and 7 retained files by default. Per-run duplicate logs under `runs/<runId>.log` are disabled by default to keep disk usage down; set `SYNCFACTORS_RUN_FILE_LOGGING_ENABLED=true` only when troubleshooting needs a separate run-scoped text log. When per-run logs are enabled, SyncFactors retains the newest 200 run log files by default. Preview logs are written under `preview-logs/` in that same root. Leave `SYNCFACTORS_LOCAL_LOG_DIRECTORY` blank to use the default runtime log directory.
+When enabled, the API writes `api-*.log` and the worker writes `worker-*.log` with daily rotation. Process, per-run, and preview logs older than `SYNCFACTORS_LOCAL_LOG_RETENTION_DAYS` are deleted at service startup and when each daily process log begins; the default is 7 days. `SYNCFACTORS_LOCAL_LOG_RETAINED_FILE_COUNT` remains a secondary cap on daily process logs. Per-run duplicate logs under `runs/<runId>.log` are disabled by default to keep disk usage down; set `SYNCFACTORS_RUN_FILE_LOGGING_ENABLED=true` only when troubleshooting needs a separate run-scoped text log. When per-run logs are enabled, SyncFactors also retains no more than the newest 200 run log files by default. Preview logs are written under `preview-logs/` in that same root. Leave `SYNCFACTORS_LOCAL_LOG_DIRECTORY` blank to use the default runtime log directory.
 
 To send API and worker telemetry to Azure Application Insights, set:
 
@@ -1015,5 +1016,31 @@ GitHub Actions currently provides:
 - `codeql.yml`: CodeQL analysis for C# and JavaScript/TypeScript
 - `dependency-review.yml`: pull-request dependency review
 - `release.yml`: Windows x64 self-contained release bundle publishing
+
+### Main branch merge policy
+
+`auto-merge.yml` can only enable auto-merge for a same-repository PR opened by
+`dependabot[bot]`, or for a PR carrying the `automerge:approved` label. A
+maintainer must apply that label only after review; contributors without
+repository write access must not be allowed to apply it. Auto-merge remains
+subject to the required checks below.
+
+Apply the following settings to the `main` branch protection rule (or an
+equivalent repository ruleset). These are GitHub repository settings and are
+intentionally not changed by this repository:
+
+- Require a pull request before merging, with at least one approving review;
+  dismiss stale approvals when new commits are pushed; require conversation
+  resolution; and restrict bypass permissions to repository administrators.
+- Require status checks to pass and require the branch to be up to date before
+  merging. Select these exact check names: `dotnet`, `GitHub Workflow Security
+  Policy`, `Semgrep Security SAST`, `Gitleaks Secret Scan`, `Trivy Repository
+  Scan`, `Analyze (csharp, none)`, `Analyze (javascript-typescript, none)`, and
+  `Dependency Review`.
+- Enable **Allow auto-merge**. Do not make `Release` a required PR check:
+  `test.yml`, `security.yml`, and `release.yml` run after the merge on the
+  resulting `main` push, so the release workflow cannot be a pre-merge check.
+- Block direct pushes to `main` except for the intended repository
+  administrators and automation, and require the same rules for administrators.
 
 The Azure DevOps deployment pipeline is separate from GitHub Actions. `azure-pipelines.deploy.yml` builds and tests the same solution, creates the Windows bundle, and deploys only when deployment variables are configured.

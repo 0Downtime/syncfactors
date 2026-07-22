@@ -7,6 +7,7 @@ using Microsoft.Extensions.FileProviders;
 using SyncFactors.Api.Pages;
 using SyncFactors.Contracts;
 using SyncFactors.Domain;
+using SyncFactors.Infrastructure;
 
 namespace SyncFactors.Api.Tests;
 
@@ -87,6 +88,42 @@ public sealed class IndexModelTests
     }
 
     [Fact]
+    public async Task OnPostCancelRunAsync_WritesEquivalentAuditEvent()
+    {
+        var audit = new CapturingSecurityAuditService();
+        var runQueueStore = new CapturingRunQueueStore { HasPendingOrActiveRun = true };
+        var model = CreateModel(new StubDashboardSettingsStore(enabledOverride: null), "Production", runQueueStore, audit);
+        AttachUser(model, "operator@example.com", "Operator");
+
+        await model.OnPostCancelRunAsync(CancellationToken.None);
+
+        var entry = Assert.Single(audit.Entries);
+        Assert.Equal("RunCancelled", entry.EventType);
+        Assert.Equal("Success", entry.Outcome);
+        Assert.Equal("operator@example.com", entry.Fields["RequestedBy"]);
+    }
+
+    [Fact]
+    public async Task OnPostCancelRunAsync_PreservesCancellationOutcomeWhenAuditWriteFailsWithoutExposingDetails()
+    {
+        var runQueueStore = new CapturingRunQueueStore { HasPendingOrActiveRun = true };
+        var model = CreateModel(
+            new StubDashboardSettingsStore(enabledOverride: null),
+            "Production",
+            runQueueStore,
+            new ThrowingSecurityAuditService(new UnauthorizedAccessException("/secret/audit-path")));
+        AttachUser(model, "operator@example.com", "Operator");
+
+        var result = await model.OnPostCancelRunAsync(CancellationToken.None);
+
+        Assert.IsType<RedirectToPageResult>(result);
+        Assert.True(runQueueStore.CancelRequested);
+        Assert.Equal("Run cancellation requested.", model.SuccessMessage);
+        Assert.Equal("The action completed, but security audit recording failed.", model.ErrorMessage);
+        Assert.DoesNotContain("/secret/audit-path", model.ErrorMessage, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task OnPostCancelRunAsync_ForbidsViewers()
     {
         var runQueueStore = new CapturingRunQueueStore { HasPendingOrActiveRun = true };
@@ -102,7 +139,8 @@ public sealed class IndexModelTests
     private static IndexModel CreateModel(
         StubDashboardSettingsStore settingsStore,
         string environmentName,
-        CapturingRunQueueStore? runQueueStore = null)
+        CapturingRunQueueStore? runQueueStore = null,
+        ISecurityAuditService? audit = null)
     {
         return new IndexModel(
             new StubDashboardSnapshotService(),
@@ -111,7 +149,8 @@ public sealed class IndexModelTests
                 settingsStore),
             new StubSyncScheduleStore(),
             runQueueStore ?? new CapturingRunQueueStore(),
-            new StubWebHostEnvironment(environmentName));
+            new StubWebHostEnvironment(environmentName),
+            audit);
     }
 
     private static void AttachUser(PageModel model, string username, string role)
@@ -143,6 +182,25 @@ public sealed class IndexModelTests
                     RequiresAttention: false,
                     AttentionMessage: null,
                     CheckedAt: DateTimeOffset.Parse("2026-04-17T12:00:00Z")));
+        }
+    }
+
+    private sealed class CapturingSecurityAuditService : ISecurityAuditService
+    {
+        public List<(string EventType, string Outcome, IReadOnlyDictionary<string, object?> Fields)> Entries { get; } = [];
+
+        public void Write(string eventType, string outcome, params (string Key, object? Value)[] fields) =>
+            Entries.Add((eventType, outcome, fields.ToDictionary(field => field.Key, field => field.Value)));
+    }
+
+    private sealed class ThrowingSecurityAuditService(Exception exception) : ISecurityAuditService
+    {
+        public void Write(string eventType, string outcome, params (string Key, object? Value)[] fields)
+        {
+            _ = eventType;
+            _ = outcome;
+            _ = fields;
+            throw exception;
         }
     }
 
@@ -229,6 +287,8 @@ public sealed class IndexModelTests
             _ = cancellationToken;
             return Task.CompletedTask;
         }
+        public Task<int> RecoverOrphanedActiveRunsAsync(string? errorMessage, CancellationToken cancellationToken) => Task.FromResult(0);
+
     }
 
     private sealed class StubSyncScheduleStore : ISyncScheduleStore

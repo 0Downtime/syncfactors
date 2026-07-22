@@ -1081,6 +1081,9 @@ public sealed class WorkerPreviewPlannerTests
             _ = cancellationToken;
             return Task.FromResult("christopher.brien");
         }
+        public Task<IReadOnlyList<DirectoryUserSnapshot>> ListUsersInOuAsync(string ouDistinguishedName, CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyList<DirectoryUserSnapshot>>([]);
+
     }
 
     private sealed class StubIdentityMatcher : IIdentityMatcher
@@ -1121,6 +1124,9 @@ public sealed class WorkerPreviewPlannerTests
             _ = cancellationToken;
             return Task.FromResult("Christopher.Brien");
         }
+        public Task<IReadOnlyList<DirectoryUserSnapshot>> ListUsersInOuAsync(string ouDistinguishedName, CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyList<DirectoryUserSnapshot>>([]);
+
     }
 
     private sealed class StubAttributeDiffService : IAttributeDiffService
@@ -1281,6 +1287,9 @@ public sealed class WorkerPreviewPlannerTests
             _ = cancellationToken;
             return Task.FromResult("christopher.brien2");
         }
+        public Task<IReadOnlyList<DirectoryUserSnapshot>> ListUsersInOuAsync(string ouDistinguishedName, CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyList<DirectoryUserSnapshot>>([]);
+
     }
 
     private sealed class ExistingUserEmailResolutionDirectoryGateway : IDirectoryGateway
@@ -1332,6 +1341,9 @@ public sealed class WorkerPreviewPlannerTests
             LastExistingDirectoryUser = existingDirectoryUser;
             return Task.FromResult("christopher.brien2");
         }
+        public Task<IReadOnlyList<DirectoryUserSnapshot>> ListUsersInOuAsync(string ouDistinguishedName, CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyList<DirectoryUserSnapshot>>([]);
+
     }
 
     private sealed class ThrowingManagerDirectoryGateway : IDirectoryGateway
@@ -1357,6 +1369,9 @@ public sealed class WorkerPreviewPlannerTests
             _ = cancellationToken;
             return Task.FromResult("christopher.brien");
         }
+        public Task<IReadOnlyList<DirectoryUserSnapshot>> ListUsersInOuAsync(string ouDistinguishedName, CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyList<DirectoryUserSnapshot>>([]);
+
     }
 
     private sealed class AmbiguousManagerDirectoryGateway : IDirectoryGateway
@@ -1389,6 +1404,9 @@ public sealed class WorkerPreviewPlannerTests
             _ = cancellationToken;
             return Task.FromResult("christopher.brien");
         }
+        public Task<IReadOnlyList<DirectoryUserSnapshot>> ListUsersInOuAsync(string ouDistinguishedName, CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyList<DirectoryUserSnapshot>>([]);
+
     }
 
     private sealed class AmbiguousWorkerDirectoryGateway : IDirectoryGateway
@@ -1421,6 +1439,9 @@ public sealed class WorkerPreviewPlannerTests
             _ = cancellationToken;
             return Task.FromResult("christopher.brien");
         }
+        public Task<IReadOnlyList<DirectoryUserSnapshot>> ListUsersInOuAsync(string ouDistinguishedName, CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyList<DirectoryUserSnapshot>>([]);
+
     }
 
     private sealed class DisabledExistingUserDirectoryGateway : IDirectoryGateway
@@ -1456,6 +1477,9 @@ public sealed class WorkerPreviewPlannerTests
             _ = cancellationToken;
             return Task.FromResult("christopher.brien2");
         }
+        public Task<IReadOnlyList<DirectoryUserSnapshot>> ListUsersInOuAsync(string ouDistinguishedName, CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyList<DirectoryUserSnapshot>>([]);
+
     }
 
     private sealed class DisabledGraveyardUserDirectoryGateway : IDirectoryGateway
@@ -1491,6 +1515,9 @@ public sealed class WorkerPreviewPlannerTests
             _ = cancellationToken;
             return Task.FromResult("christopher.brien2");
         }
+        public Task<IReadOnlyList<DirectoryUserSnapshot>> ListUsersInOuAsync(string ouDistinguishedName, CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyList<DirectoryUserSnapshot>>([]);
+
     }
 
     private sealed class ExistingUserWithChangedManagerDirectoryGateway : IDirectoryGateway
@@ -1527,6 +1554,9 @@ public sealed class WorkerPreviewPlannerTests
             _ = cancellationToken;
             return Task.FromResult("christopher.brien2");
         }
+        public Task<IReadOnlyList<DirectoryUserSnapshot>> ListUsersInOuAsync(string ouDistinguishedName, CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyList<DirectoryUserSnapshot>>([]);
+
     }
 
     private sealed class ChangedDepartmentDiffService : IAttributeDiffService
@@ -1680,6 +1710,18 @@ public sealed class WorkerPreviewPlannerTests
             _ = cancellationToken;
             return Task.FromResult<IReadOnlyList<ChangedAttributeTotal>>([]);
         }
+        public Task<int> CountWorkerRunHistoryAsync(string workerId, CancellationToken cancellationToken) => Task.FromResult(0);
+
+        public Task<IReadOnlyList<WorkerRunHistoryItem>> ListWorkerRunHistoryAsync(string workerId, int skip, int take, CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyList<WorkerRunHistoryItem>>([]);
+
+        public Task<int> PruneTerminalRunsStartedBeforeAsync(DateTimeOffset cutoffUtc, CancellationToken cancellationToken) => Task.FromResult(0);
+
+        public Task<bool> VacuumIfNeededAsync(DateTimeOffset nowUtc, long minimumFreeBytes, TimeSpan minimumInterval, CancellationToken cancellationToken) => Task.FromResult(false);
+
+        public Task<IReadOnlyList<EmploymentStatusTotal>> GetRunEntryEmploymentStatusTotalsAsync(string runId, string? bucket, string? workerId, string? reason, string? filter, string? employmentStatus, string? entryId, CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyList<EmploymentStatusTotal>>([]);
+
     }
 
     private sealed class StubRunRepository : CapturingRunRepository;
