@@ -16,6 +16,8 @@ public sealed class GraveyardAutoDeleteCoordinator(
     ILogger<GraveyardAutoDeleteCoordinator> logger,
     TimeProvider timeProvider) : IGraveyardAutoDeleteCoordinator
 {
+    private static readonly TimeSpan DeletionLeaseDuration = TimeSpan.FromMinutes(5);
+
     public async Task<GraveyardDeletionApprovalResult> ApproveDeleteAsync(
         string workerId,
         string? requestedBy,
@@ -470,10 +472,13 @@ public sealed class GraveyardAutoDeleteCoordinator(
                 Item: BuildEntryItem(item, "conflicts", action: null, applied: false, succeeded: false, reason));
         }
 
+        var leaseAcquiredAtUtc = timeProvider.GetUtcNow();
         var claim = await retentionStore.TryClaimDeletionAsync(
             item.WorkerId,
             item.Version,
             Guid.NewGuid().ToString("N"),
+            leaseAcquiredAtUtc,
+            leaseAcquiredAtUtc.Add(DeletionLeaseDuration),
             cancellationToken);
         if (claim is null)
         {
@@ -498,7 +503,12 @@ public sealed class GraveyardAutoDeleteCoordinator(
             var revalidatedSnapshot = await deletionQueueService.GetSnapshotAsync(cancellationToken);
             var revalidatedItem = revalidatedSnapshot.Pending.FirstOrDefault(candidate =>
                 string.Equals(candidate.WorkerId, item.WorkerId, StringComparison.OrdinalIgnoreCase));
-            var revalidatedClaim = await retentionStore.GetDeletionClaimAsync(item.WorkerId, claim.ClaimId, claim.Version, cancellationToken);
+            var revalidatedClaim = await retentionStore.GetDeletionClaimAsync(
+                item.WorkerId,
+                claim.ClaimId,
+                claim.Version,
+                timeProvider.GetUtcNow(),
+                cancellationToken);
             if (revalidatedClaim is null ||
                 revalidatedItem is null ||
                 !revalidatedItem.IsEligibleForDeletion ||
@@ -523,7 +533,29 @@ public sealed class GraveyardAutoDeleteCoordinator(
                     Item: BuildEntryItem(item, "conflicts", action: null, applied: false, succeeded: false, reason));
             }
 
-            var result = await directoryCommandGateway.ExecuteAsync(BuildDeleteCommand(revalidatedItem), cancellationToken);
+            var remainingLeaseDuration = claim.LeaseExpiresAtUtc - timeProvider.GetUtcNow();
+            if (remainingLeaseDuration <= TimeSpan.Zero)
+            {
+                const string reason = "Deletion was not executed because its durable mutation lease expired before the directory mutation.";
+                await retentionStore.ReleaseDeletionClaimAsync(item.WorkerId, claim.ClaimId, claim.Version, CancellationToken.None);
+                return new WorkerRunResult(
+                    WorkerId: item.WorkerId,
+                    Bucket: "conflicts",
+                    SamAccountName: item.SamAccountName,
+                    Reason: reason,
+                    ReviewCategory: "ExternalSystem",
+                    ReviewCaseType: "DeletePreconditionFailed",
+                    Action: null,
+                    Applied: false,
+                    Succeeded: false,
+                    OperationSummary: null,
+                    DiffRows: [],
+                    Item: BuildEntryItem(item, "conflicts", action: null, applied: false, succeeded: false, reason));
+            }
+
+            using var leaseCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            leaseCancellation.CancelAfter(remainingLeaseDuration);
+            var result = await directoryCommandGateway.ExecuteAsync(BuildDeleteCommand(revalidatedItem), leaseCancellation.Token);
             applied = true;
             succeeded = result.Succeeded;
             reasonMessage = result.Message;

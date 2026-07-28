@@ -12,13 +12,13 @@ public sealed class SqliteDatabaseMigrationTests
 
         try
         {
-            await CreateSchemaVersionDatabaseAsync(databasePath, version: 17);
+            await CreateSchemaVersionDatabaseAsync(databasePath, version: 18);
 
             var exception = await Assert.ThrowsAsync<InvalidOperationException>(
                 () => new SqliteDatabaseInitializer(new SqlitePathResolver(databasePath)).InitializeAsync(CancellationToken.None));
 
             Assert.Contains("newer", exception.Message, StringComparison.OrdinalIgnoreCase);
-            Assert.Equal(new[] { 17 }, await GetAppliedVersionsAsync(databasePath));
+            Assert.Equal(new[] { 18 }, await GetAppliedVersionsAsync(databasePath));
             Assert.False(await TableExistsAsync(databasePath, "runs"));
         }
         finally
@@ -38,7 +38,7 @@ public sealed class SqliteDatabaseMigrationTests
 
             await new SqliteDatabaseInitializer(new SqlitePathResolver(databasePath)).InitializeAsync(CancellationToken.None);
 
-            Assert.Equal(Enumerable.Range(1, 16), await GetAppliedVersionsAsync(databasePath));
+            Assert.Equal(Enumerable.Range(1, 17), await GetAppliedVersionsAsync(databasePath));
             foreach (var table in new[] { "run_queue", "sync_schedule", "delta_sync_state", "local_users", "graveyard_retention", "dashboard_settings", "oidc_accounts", "maintenance_state" })
             {
                 Assert.True(await TableExistsAsync(databasePath, table));
@@ -54,6 +54,7 @@ public sealed class SqliteDatabaseMigrationTests
             Assert.Contains("version", await GetTableColumnsAsync(databasePath, "graveyard_retention"));
             Assert.Contains("deletion_claim_id", await GetTableColumnsAsync(databasePath, "graveyard_retention"));
             Assert.Contains("deletion_claim_version", await GetTableColumnsAsync(databasePath, "graveyard_retention"));
+            Assert.Contains("deletion_lease_expires_at_utc", await GetTableColumnsAsync(databasePath, "graveyard_retention"));
             Assert.Contains("health_probe_interval_seconds", await GetTableColumnsAsync(databasePath, "dashboard_settings"));
         }
         finally
@@ -114,7 +115,7 @@ public sealed class SqliteDatabaseMigrationTests
             await connection.OpenAsync();
             await using var command = connection.CreateCommand();
             command.CommandText = "SELECT COUNT(*) FROM schema_versions;";
-            Assert.Equal(16L, (long)(await command.ExecuteScalarAsync() ?? 0L));
+            Assert.Equal(17L, (long)(await command.ExecuteScalarAsync() ?? 0L));
         }
         finally
         {

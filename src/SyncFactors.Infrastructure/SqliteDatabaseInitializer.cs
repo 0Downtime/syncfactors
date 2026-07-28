@@ -5,7 +5,7 @@ namespace SyncFactors.Infrastructure;
 
 public sealed class SqliteDatabaseInitializer(SqlitePathResolver pathResolver)
 {
-    private const int CurrentSchemaVersion = 16;
+    private const int CurrentSchemaVersion = 17;
 
     public async Task InitializeAsync(CancellationToken cancellationToken)
     {
@@ -147,6 +147,12 @@ public sealed class SqliteDatabaseInitializer(SqlitePathResolver pathResolver)
         {
             await ApplyVersion16Async(connection, transaction, cancellationToken);
             await InsertVersionAsync(connection, transaction, 16, cancellationToken);
+        }
+
+        if (!appliedVersions.Contains(17))
+        {
+            await ApplyVersion17Async(connection, transaction, cancellationToken);
+            await InsertVersionAsync(connection, transaction, 17, cancellationToken);
         }
 
         await transaction.CommitAsync(cancellationToken);
@@ -586,6 +592,23 @@ public sealed class SqliteDatabaseInitializer(SqlitePathResolver pathResolver)
             {
                 await AddColumnAsync(connection, transaction, "run_queue", "target_worker_id TEXT NULL", cancellationToken);
             }
+        }
+    }
+
+    private static async Task ApplyVersion17Async(
+        SqliteConnection connection,
+        DbTransaction transaction,
+        CancellationToken cancellationToken)
+    {
+        if (!await TableExistsAsync(connection, transaction, "graveyard_retention", cancellationToken))
+        {
+            return;
+        }
+
+        var retentionColumns = await GetTableColumnsAsync(connection, transaction, "graveyard_retention", cancellationToken);
+        if (!retentionColumns.Contains("deletion_lease_expires_at_utc"))
+        {
+            await AddColumnAsync(connection, transaction, "graveyard_retention", "deletion_lease_expires_at_utc TEXT NULL", cancellationToken);
         }
     }
 
