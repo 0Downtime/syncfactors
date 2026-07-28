@@ -89,7 +89,8 @@ public sealed class GraveyardDeletionQueueService(
             IsEligibleForDeletion: daysUntilDue <= 0,
             IsOnHold: record.IsOnHold,
             HoldPlacedAtUtc: record.HoldPlacedAtUtc,
-            HoldPlacedBy: record.HoldPlacedBy);
+            HoldPlacedBy: record.HoldPlacedBy,
+            Version: record.Version);
     }
 
     private static bool TryResolveCurrentDirectoryUser(
@@ -131,4 +132,5 @@ public sealed record GraveyardDeletionQueueItem(
     bool IsEligibleForDeletion,
     bool IsOnHold,
     DateTimeOffset? HoldPlacedAtUtc,
-    string? HoldPlacedBy);
+    string? HoldPlacedBy,
+    long Version = 0);

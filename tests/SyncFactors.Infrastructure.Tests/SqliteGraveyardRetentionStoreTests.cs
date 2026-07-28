@@ -1,5 +1,6 @@
 using Microsoft.Data.Sqlite;
 using SyncFactors.Contracts;
+using SyncFactors.Domain;
 using SyncFactors.Infrastructure;
 
 namespace SyncFactors.Infrastructure.Tests;
@@ -33,6 +34,9 @@ public sealed class SqliteGraveyardRetentionStoreTests
             Assert.Contains("is_on_hold", columns);
             Assert.Contains("hold_placed_at_utc", columns);
             Assert.Contains("hold_placed_by", columns);
+            Assert.Contains("version", columns);
+            Assert.Contains("deletion_claim_id", columns);
+            Assert.Contains("deletion_claim_version", columns);
         }
         finally
         {
@@ -90,6 +94,45 @@ public sealed class SqliteGraveyardRetentionStoreTests
             Assert.False(record.IsOnHold);
             Assert.Null(record.HoldPlacedAtUtc);
             Assert.Null(record.HoldPlacedBy);
+        }
+        finally
+        {
+            File.Delete(databasePath);
+        }
+    }
+
+    [Fact]
+    public async Task DeletionClaims_AreVersionedExclusiveAndInvalidatedByAHold()
+    {
+        var databasePath = Path.Combine(Path.GetTempPath(), $"syncfactors-graveyard-claim-{Guid.NewGuid():N}.db");
+
+        try
+        {
+            await new SqliteDatabaseInitializer(new SqlitePathResolver(databasePath)).InitializeAsync(CancellationToken.None);
+            IGraveyardRetentionStore store = new SqliteGraveyardRetentionStore(new SqlitePathResolver(databasePath));
+            await store.UpsertObservedAsync(
+                new GraveyardRetentionRecord(
+                    WorkerId: "10001",
+                    SamAccountName: "10001",
+                    DisplayName: "Retired User",
+                    DistinguishedName: "CN=Retired User,OU=Graveyard,DC=example,DC=com",
+                    Status: "T",
+                    EndDateUtc: DateTimeOffset.Parse("2026-01-01T00:00:00Z"),
+                    LastObservedAtUtc: DateTimeOffset.Parse("2026-04-01T00:00:00Z"),
+                    Active: true),
+                CancellationToken.None);
+
+            var firstClaim = await store.TryClaimDeletionAsync("10001", expectedVersion: 0, claimId: "claim-one", CancellationToken.None);
+            var duplicateClaim = await store.TryClaimDeletionAsync("10001", expectedVersion: 0, claimId: "claim-two", CancellationToken.None);
+
+            Assert.NotNull(firstClaim);
+            Assert.Equal(1, firstClaim!.Version);
+            Assert.Null(duplicateClaim);
+
+            await store.SetHoldAsync("10001", true, "admin-1", DateTimeOffset.Parse("2026-04-11T12:00:00Z"), CancellationToken.None);
+
+            Assert.Null(await store.GetDeletionClaimAsync("10001", "claim-one", firstClaim.Version, CancellationToken.None));
+            Assert.False(await store.ResolveDeletionClaimAsync("10001", "claim-one", firstClaim.Version, CancellationToken.None));
         }
         finally
         {

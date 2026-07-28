@@ -5,7 +5,7 @@ namespace SyncFactors.Infrastructure;
 
 public sealed class SqliteDatabaseInitializer(SqlitePathResolver pathResolver)
 {
-    private const int CurrentSchemaVersion = 15;
+    private const int CurrentSchemaVersion = 16;
 
     public async Task InitializeAsync(CancellationToken cancellationToken)
     {
@@ -141,6 +141,12 @@ public sealed class SqliteDatabaseInitializer(SqlitePathResolver pathResolver)
         {
             await ApplyVersion15Async(connection, transaction, cancellationToken);
             await InsertVersionAsync(connection, transaction, 15, cancellationToken);
+        }
+
+        if (!appliedVersions.Contains(16))
+        {
+            await ApplyVersion16Async(connection, transaction, cancellationToken);
+            await InsertVersionAsync(connection, transaction, 16, cancellationToken);
         }
 
         await transaction.CommitAsync(cancellationToken);
@@ -546,6 +552,53 @@ public sealed class SqliteDatabaseInitializer(SqlitePathResolver pathResolver)
               WHERE status IN ('Pending', 'InProgress', 'CancelRequested');
             """;
         command.Parameters.AddWithValue("$completedAt", DateTimeOffset.UtcNow.ToString("O"));
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task ApplyVersion16Async(
+        SqliteConnection connection,
+        DbTransaction transaction,
+        CancellationToken cancellationToken)
+    {
+        if (await TableExistsAsync(connection, transaction, "graveyard_retention", cancellationToken))
+        {
+            var retentionColumns = await GetTableColumnsAsync(connection, transaction, "graveyard_retention", cancellationToken);
+            if (!retentionColumns.Contains("version"))
+            {
+                await AddColumnAsync(connection, transaction, "graveyard_retention", "version INTEGER NOT NULL DEFAULT 0", cancellationToken);
+            }
+
+            if (!retentionColumns.Contains("deletion_claim_id"))
+            {
+                await AddColumnAsync(connection, transaction, "graveyard_retention", "deletion_claim_id TEXT NULL", cancellationToken);
+            }
+
+            if (!retentionColumns.Contains("deletion_claim_version"))
+            {
+                await AddColumnAsync(connection, transaction, "graveyard_retention", "deletion_claim_version INTEGER NULL", cancellationToken);
+            }
+        }
+
+        if (await TableExistsAsync(connection, transaction, "run_queue", cancellationToken))
+        {
+            var queueColumns = await GetTableColumnsAsync(connection, transaction, "run_queue", cancellationToken);
+            if (!queueColumns.Contains("target_worker_id"))
+            {
+                await AddColumnAsync(connection, transaction, "run_queue", "target_worker_id TEXT NULL", cancellationToken);
+            }
+        }
+    }
+
+    private static async Task AddColumnAsync(
+        SqliteConnection connection,
+        DbTransaction transaction,
+        string table,
+        string columnDefinition,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = (SqliteTransaction)transaction;
+        command.CommandText = $"ALTER TABLE {table} ADD COLUMN {columnDefinition};";
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 

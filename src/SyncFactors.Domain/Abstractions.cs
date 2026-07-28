@@ -226,6 +226,14 @@ public interface IGraveyardRetentionStore
     Task ResolveAsync(string workerId, CancellationToken cancellationToken);
     Task<IReadOnlyList<GraveyardRetentionRecord>> ListActiveAsync(CancellationToken cancellationToken);
     Task SetHoldAsync(string workerId, bool isOnHold, string? actingUserId, DateTimeOffset changedAtUtc, CancellationToken cancellationToken);
+    Task<GraveyardDeletionClaim?> TryClaimDeletionAsync(string workerId, long expectedVersion, string claimId, CancellationToken cancellationToken) =>
+        throw new NotSupportedException("Durable graveyard deletion claims are not supported by this store.");
+    Task<GraveyardDeletionClaim?> GetDeletionClaimAsync(string workerId, string claimId, long claimVersion, CancellationToken cancellationToken) =>
+        throw new NotSupportedException("Durable graveyard deletion claims are not supported by this store.");
+    Task<bool> ReleaseDeletionClaimAsync(string workerId, string claimId, long claimVersion, CancellationToken cancellationToken) =>
+        throw new NotSupportedException("Durable graveyard deletion claims are not supported by this store.");
+    Task<bool> ResolveDeletionClaimAsync(string workerId, string claimId, long claimVersion, CancellationToken cancellationToken) =>
+        throw new NotSupportedException("Durable graveyard deletion claims are not supported by this store.");
     Task<GraveyardRetentionReportStatus> GetReportStatusAsync(CancellationToken cancellationToken);
     Task RecordReportAttemptAsync(DateTimeOffset attemptedAt, string? error, DateTimeOffset? sentAtUtc, CancellationToken cancellationToken);
 }
