@@ -103,7 +103,29 @@ public sealed class WorkerAuditIntegrityTests
             Assert.NotNull(process);
             var standardOutput = process!.StandardOutput.ReadToEndAsync();
             var standardError = process.StandardError.ReadToEndAsync();
-            await process.WaitForExitAsync();
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+            try
+            {
+                await process.WaitForExitAsync(timeout.Token);
+            }
+            catch (OperationCanceledException) when (timeout.IsCancellationRequested)
+            {
+                if (!process.HasExited)
+                {
+                    process.Kill(entireProcessTree: true);
+                }
+
+                await process.WaitForExitAsync();
+            }
+            finally
+            {
+                if (!process.HasExited)
+                {
+                    process.Kill(entireProcessTree: true);
+                    await process.WaitForExitAsync();
+                }
+            }
+
             return (process.ExitCode, await standardOutput + await standardError);
         }
 

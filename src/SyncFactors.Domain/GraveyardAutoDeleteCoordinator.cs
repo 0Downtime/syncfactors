@@ -9,7 +9,6 @@ public sealed class GraveyardAutoDeleteCoordinator(
     IGraveyardRetentionStore retentionStore,
     IDirectoryCommandGateway directoryCommandGateway,
     IRunLifecycleService runLifecycleService,
-    IRunQueueStore runQueueStore,
     GraveyardDeletionQueueSettings settings,
     WorkerRunSettings workerRunSettings,
     RealSyncSettings realSyncSettings,
@@ -34,148 +33,11 @@ public sealed class GraveyardAutoDeleteCoordinator(
             null));
     }
 
-    public async Task<string> ExecuteApprovedDeleteAsync(RunQueueRequest request, CancellationToken cancellationToken)
+    public Task<string> ExecuteApprovedDeleteAsync(RunQueueRequest request, CancellationToken cancellationToken)
     {
-        if (!string.Equals(request.Mode, RunQueueProtocol.GraveyardDeleteApprovalMode, StringComparison.OrdinalIgnoreCase) ||
-            !string.Equals(
-                request.RunTrigger,
-                RunQueueProtocol.AuthenticatedAdminDeletionQueueTrigger,
-                StringComparison.Ordinal) ||
-            string.IsNullOrWhiteSpace(request.TargetWorkerId))
-        {
-            throw new InvalidOperationException("Graveyard deletion approval provenance is invalid.");
-        }
-
-        if (request.DryRun || !realSyncSettings.EffectiveWriteEnabled)
-        {
-            throw new InvalidOperationException(realSyncSettings.LiveWriteDisabledMessage);
-        }
-
-        var snapshot = await deletionQueueService.GetSnapshotAsync(cancellationToken);
-        var item = snapshot.Pending.FirstOrDefault(candidate =>
-            string.Equals(candidate.WorkerId, request.TargetWorkerId, StringComparison.OrdinalIgnoreCase));
-        if (item is null || !item.IsEligibleForDeletion)
-        {
-            throw new InvalidOperationException($"Worker {request.TargetWorkerId} is no longer eligible for approved deletion.");
-        }
-
-        var actor = string.IsNullOrWhiteSpace(request.RequestedBy) ? "Admin" : request.RequestedBy;
-        var runId = $"graveyard-delete-approval-{timeProvider.GetUtcNow():yyyyMMddHHmmssfff}";
-        using var logScope = RunLoggingScope.Begin(logger, runId, mode: "GraveyardDeleteApproval");
-        var startedAt = timeProvider.GetUtcNow();
-        var tally = new RunTally(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
-
-        await runLifecycleService.StartRunAsync(
-            runId,
-            mode: "GraveyardDeleteApproval",
-            dryRun: false,
-            runTrigger: RunQueueProtocol.AuthenticatedAdminDeletionQueueTrigger,
-            requestedBy: actor,
-            totalWorkers: 1,
-            initialAction: $"Approving graveyard deletion for worker {item.WorkerId}.",
-            cancellationToken);
-
-        try
-        {
-            var result = await DeleteUserAsync(item, deletionCount: 0, cancellationToken);
-            tally = AddToTally(tally, result.Bucket);
-
-            await runLifecycleService.AppendRunEntryAsync(
-                runId,
-                new RunEntryRecord(
-                    EntryId: $"{runId}:{result.Bucket}:{item.WorkerId}:0",
-                    RunId: runId,
-                    Bucket: result.Bucket,
-                    BucketIndex: 0,
-                    WorkerId: item.WorkerId,
-                    SamAccountName: item.SamAccountName,
-                    Reason: result.Reason,
-                    ReviewCategory: result.ReviewCategory,
-                    ReviewCaseType: result.ReviewCaseType,
-                    StartedAt: startedAt,
-                    Item: result.Item),
-                cancellationToken);
-
-            await runLifecycleService.RecordProgressAsync(
-                runId,
-                mode: "GraveyardDeleteApproval",
-                dryRun: false,
-                processedWorkers: 1,
-                totalWorkers: 1,
-                currentWorkerId: item.WorkerId,
-                lastAction: result.Reason ?? result.Action ?? result.Bucket,
-                tally: tally,
-                cancellationToken);
-
-            var report = BuildReport(
-                runId,
-                startedAt,
-                totalWorkers: 1,
-                tally,
-                kind: "graveyardDeleteApproval",
-                syncScope: "Graveyard delete approval",
-                mode: "GraveyardDeleteApproval",
-                runTrigger: RunQueueProtocol.AuthenticatedAdminDeletionQueueTrigger,
-                requestedBy: actor);
-
-            if (string.Equals(result.Bucket, "guardrailFailures", StringComparison.OrdinalIgnoreCase))
-            {
-                await runLifecycleService.FailRunAsync(
-                    runId,
-                    mode: "GraveyardDeleteApproval",
-                    dryRun: false,
-                    processedWorkers: 1,
-                    totalWorkers: 1,
-                    currentWorkerId: item.WorkerId,
-                    errorMessage: result.Reason ?? "Deletion guardrail exceeded.",
-                    tally: tally,
-                    report: report,
-                    startedAt: startedAt,
-                    cancellationToken);
-                throw new GuardrailExceededException(runId, result.Reason ?? "Deletion guardrail exceeded.");
-            }
-
-            await runLifecycleService.CompleteRunAsync(
-                runId,
-                mode: "GraveyardDeleteApproval",
-                dryRun: false,
-                totalWorkers: 1,
-                tally: tally,
-                report: report,
-                startedAt: startedAt,
-                cancellationToken);
-
-            return runId;
-        }
-        catch (GuardrailExceededException)
-        {
-            throw;
-        }
-        catch (Exception ex)
-        {
-            await runLifecycleService.FailRunAsync(
-                runId,
-                mode: "GraveyardDeleteApproval",
-                dryRun: false,
-                processedWorkers: 0,
-                totalWorkers: 1,
-                currentWorkerId: item.WorkerId,
-                errorMessage: ex.Message,
-                tally: tally,
-                report: BuildReport(
-                    runId,
-                    startedAt,
-                    totalWorkers: 1,
-                    tally,
-                    kind: "graveyardDeleteApproval",
-                    syncScope: "Graveyard delete approval",
-                    mode: "GraveyardDeleteApproval",
-                    runTrigger: RunQueueProtocol.AuthenticatedAdminDeletionQueueTrigger,
-                    requestedBy: actor),
-                startedAt: startedAt,
-                cancellationToken);
-            throw;
-        }
+        _ = request;
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromException<string>(new InvalidOperationException(RunQueueProtocol.DeletionCapabilityDisabledMessage));
     }
 
     public async Task<string?> TryExecuteAsync(CancellationToken cancellationToken)

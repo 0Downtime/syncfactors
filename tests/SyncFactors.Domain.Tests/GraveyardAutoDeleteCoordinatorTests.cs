@@ -222,22 +222,19 @@ public sealed class GraveyardAutoDeleteCoordinatorTests
             ]);
         var commandGateway = new CapturingDirectoryCommandGateway();
         var lifecycle = new CapturingRunLifecycleService();
-        var runQueueStore = new CapturingRunQueueStore();
         var coordinator = CreateCoordinator(
             retentionStore,
             CreateDirectoryGateway("10001"),
             commandGateway,
             lifecycle,
             autoDeleteEnabled: false,
-            now: DateTimeOffset.Parse("2026-04-11T12:00:00Z"),
-            runQueueStore: runQueueStore);
+            now: DateTimeOffset.Parse("2026-04-11T12:00:00Z"));
 
         var result = await coordinator.ApproveDeleteAsync("10001", "admin", CancellationToken.None);
 
         Assert.False(result.Succeeded);
         Assert.Equal(RunQueueProtocol.DeletionCapabilityDisabledMessage, result.Message);
         Assert.Null(result.RunId);
-        Assert.Null(runQueueStore.Enqueued);
         Assert.Empty(commandGateway.Commands);
         Assert.Empty(retentionStore.ResolvedWorkerIds);
         Assert.Empty(lifecycle.Entries);
@@ -274,7 +271,45 @@ public sealed class GraveyardAutoDeleteCoordinatorTests
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
             coordinator.ExecuteApprovedDeleteAsync(forgedRequest, CancellationToken.None));
 
-        Assert.Contains("provenance", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(RunQueueProtocol.DeletionCapabilityDisabledMessage, exception.Message);
+        Assert.Empty(commandGateway.Commands);
+        Assert.Empty(retentionStore.ResolvedWorkerIds);
+        Assert.Empty(lifecycle.Entries);
+    }
+
+    [Fact]
+    public async Task ExecuteApprovedDeleteAsync_RejectsValidLegacyApprovalWhenDeletionCapabilityIsDisabled()
+    {
+        var retentionStore = new StubGraveyardRetentionStore(
+            [CreateRecord("10001", isOnHold: false, endDateUtc: DateTimeOffset.Parse("2026-02-01T00:00:00Z"))]);
+        var commandGateway = new CapturingDirectoryCommandGateway();
+        var lifecycle = new CapturingRunLifecycleService();
+        var coordinator = CreateCoordinator(
+            retentionStore,
+            CreateDirectoryGateway("10001"),
+            commandGateway,
+            lifecycle,
+            autoDeleteEnabled: false,
+            now: DateTimeOffset.Parse("2026-04-11T12:00:00Z"),
+            realSyncSettings: new RealSyncSettings(Enabled: true, DryRunOnly: false));
+        var legacyApproval = new RunQueueRequest(
+            RequestId: "legacy-approval",
+            Mode: RunQueueProtocol.GraveyardDeleteApprovalMode,
+            DryRun: false,
+            RunTrigger: RunQueueProtocol.AuthenticatedAdminDeletionQueueTrigger,
+            RequestedBy: "admin",
+            Status: "InProgress",
+            RequestedAt: DateTimeOffset.Parse("2026-04-11T11:59:00Z"),
+            StartedAt: DateTimeOffset.Parse("2026-04-11T12:00:00Z"),
+            CompletedAt: null,
+            RunId: null,
+            ErrorMessage: null,
+            TargetWorkerId: "10001");
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            coordinator.ExecuteApprovedDeleteAsync(legacyApproval, CancellationToken.None));
+
+        Assert.Equal(RunQueueProtocol.DeletionCapabilityDisabledMessage, exception.Message);
         Assert.Empty(commandGateway.Commands);
         Assert.Empty(retentionStore.ResolvedWorkerIds);
         Assert.Empty(lifecycle.Entries);
@@ -292,8 +327,7 @@ public sealed class GraveyardAutoDeleteCoordinatorTests
             commandGateway,
             new CapturingRunLifecycleService(),
             autoDeleteEnabled: false,
-            now: DateTimeOffset.Parse("2026-04-11T12:00:00Z"),
-            runQueueStore: new CapturingRunQueueStore());
+            now: DateTimeOffset.Parse("2026-04-11T12:00:00Z"));
 
         var first = await coordinator.ApproveDeleteAsync("10001", "admin", CancellationToken.None);
         var duplicate = await coordinator.ApproveDeleteAsync("10001", "admin", CancellationToken.None);
@@ -398,8 +432,7 @@ public sealed class GraveyardAutoDeleteCoordinatorTests
         DateTimeOffset now,
         int maxDeletionsPerRun = 10,
         bool manualReviewDeletions = false,
-        RealSyncSettings? realSyncSettings = null,
-        CapturingRunQueueStore? runQueueStore = null)
+        RealSyncSettings? realSyncSettings = null)
     {
         var queueService = new GraveyardDeletionQueueService(
             retentionStore,
@@ -413,7 +446,6 @@ public sealed class GraveyardAutoDeleteCoordinatorTests
             retentionStore,
             commandGateway,
             lifecycle,
-            runQueueStore ?? new CapturingRunQueueStore(),
             new GraveyardDeletionQueueSettings(RetentionDays: 30, AutoDeleteEnabled: autoDeleteEnabled),
             new WorkerRunSettings(
                 MaxCreatesPerRun: 10,
@@ -728,46 +760,6 @@ public sealed class GraveyardAutoDeleteCoordinatorTests
     {
         public Task<DirectoryCommandResult> ExecuteAsync(DirectoryMutationCommand command, CancellationToken cancellationToken) =>
             Task.FromResult(new DirectoryCommandResult(false, command.Action, command.SamAccountName, command.CurrentDistinguishedName, "Directory deletion failed", null));
-    }
-
-    private sealed class CapturingRunQueueStore : IRunQueueStore
-    {
-        public RunQueueRequest? Enqueued { get; private set; }
-
-        public Task<RunQueueRequest> EnqueueAsync(StartRunRequest request, CancellationToken cancellationToken)
-        {
-            if (Enqueued is not null)
-            {
-                throw new RunQueueConflictException();
-            }
-
-            Enqueued = new RunQueueRequest(
-                RequestId: "approval-request-1",
-                Mode: request.Mode,
-                DryRun: request.DryRun,
-                RunTrigger: request.RunTrigger,
-                RequestedBy: request.RequestedBy,
-                Status: "Pending",
-                RequestedAt: DateTimeOffset.UtcNow,
-                StartedAt: null,
-                CompletedAt: null,
-                RunId: null,
-                ErrorMessage: null,
-                TargetWorkerId: request.TargetWorkerId);
-            return Task.FromResult(Enqueued);
-        }
-
-        public Task<RunQueueRequest?> ClaimNextPendingAsync(string workerName, CancellationToken cancellationToken) => Task.FromResult<RunQueueRequest?>(null);
-        public Task<int> QuarantineReservedModesAsync(CancellationToken cancellationToken) => Task.FromResult(0);
-        public Task<RunQueueRequest?> GetAsync(string requestId, CancellationToken cancellationToken) => Task.FromResult<RunQueueRequest?>(null);
-        public Task<RunQueueRequest?> GetPendingOrActiveAsync(CancellationToken cancellationToken) => Task.FromResult<RunQueueRequest?>(Enqueued);
-        public Task<bool> HasPendingOrActiveRunAsync(CancellationToken cancellationToken) => Task.FromResult(Enqueued is not null);
-        public Task<bool> CancelPendingOrActiveAsync(string? requestedBy, CancellationToken cancellationToken) => Task.FromResult(false);
-        public Task<bool> IsCancellationRequestedAsync(string requestId, CancellationToken cancellationToken) => Task.FromResult(false);
-        public Task CompleteAsync(string requestId, string runId, CancellationToken cancellationToken) => Task.CompletedTask;
-        public Task CancelAsync(string requestId, string? runId, string? errorMessage, CancellationToken cancellationToken) => Task.CompletedTask;
-        public Task FailAsync(string requestId, string? runId, string errorMessage, CancellationToken cancellationToken) => Task.CompletedTask;
-        public Task<int> RecoverOrphanedActiveRunsAsync(string? errorMessage, CancellationToken cancellationToken) => Task.FromResult(0);
     }
 
     private sealed class CapturingRunLifecycleService : IRunLifecycleService
