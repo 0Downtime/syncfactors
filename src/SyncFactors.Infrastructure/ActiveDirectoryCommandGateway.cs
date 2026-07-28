@@ -39,6 +39,11 @@ public sealed class ActiveDirectoryCommandGateway(
 
     public async Task<DirectoryCommandResult> ExecuteAsync(DirectoryMutationCommand command, CancellationToken cancellationToken)
     {
+        if (RequestsDeleteUser(command))
+        {
+            throw new InvalidOperationException("Directory mutation action 'DeleteUser' is unavailable.");
+        }
+
         var config = configLoader.GetSyncConfig().Ad;
         if (string.IsNullOrWhiteSpace(config.Server))
         {
@@ -135,7 +140,6 @@ public sealed class ActiveDirectoryCommandGateway(
                 "MoveUser" => MoveUser(connection, command, config, logger, operation.TargetOu, distinguishedName).DistinguishedName,
                 "EnableUser" => SetAccountEnabled(connection, command, config, logger, true, distinguishedName).DistinguishedName,
                 "DisableUser" => SetAccountEnabled(connection, command, config, logger, false, distinguishedName).DistinguishedName,
-                "DeleteUser" => DeleteUser(connection, command, config, logger, distinguishedName).DistinguishedName,
                 _ => throw new InvalidOperationException($"Unsupported action {operation.Kind}.")
             };
         }
@@ -677,26 +681,9 @@ public sealed class ActiveDirectoryCommandGateway(
         return new DirectoryCommandResult(true, command.Action, command.SamAccountName, distinguishedName, enabled ? $"Enabled AD user {command.SamAccountName}." : $"Disabled AD user {command.SamAccountName}.", null);
     }
 
-    private static DirectoryCommandResult DeleteUser(
-        LdapConnection connection,
-        DirectoryMutationCommand command,
-        ActiveDirectoryConfig config,
-        ILogger logger,
-        string? distinguishedName)
-    {
-        var existing = string.IsNullOrWhiteSpace(distinguishedName)
-            ? FindExistingUser(connection, ResolveIdentityLookupValue(command, config), config)
-            : FindExistingUserByDistinguishedName(connection, distinguishedName);
-        distinguishedName = ResolveTargetDistinguishedName(distinguishedName, existing);
-        if (string.IsNullOrWhiteSpace(distinguishedName))
-        {
-            return new DirectoryCommandResult(false, command.Action, command.SamAccountName, null, "Could not resolve AD user to delete.", null);
-        }
-
-        var request = new DeleteRequest(distinguishedName);
-        ExecuteModify(connection, request, logger, "delete user request", ("WorkerId", command.WorkerId), ("DistinguishedName", distinguishedName));
-        return new DirectoryCommandResult(true, command.Action, command.SamAccountName, distinguishedName, $"Deleted AD user {command.SamAccountName}.", null);
-    }
+    private static bool RequestsDeleteUser(DirectoryMutationCommand command) =>
+        string.Equals(command.Action, "DeleteUser", StringComparison.OrdinalIgnoreCase) ||
+        command.Operations.Any(operation => string.Equals(operation.Kind, "DeleteUser", StringComparison.OrdinalIgnoreCase));
 
     private static void SetManager(LdapConnection connection, string distinguishedName, string managerDn, ILogger logger, string workerId)
     {
