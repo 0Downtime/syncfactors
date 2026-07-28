@@ -516,7 +516,11 @@ public sealed class SecurityAuditService(ILogger<SecurityAuditService> logger) :
     private static void ConfigureAuditDurability(SqliteConnection connection)
     {
         using var command = connection.CreateCommand();
-        command.CommandText = "PRAGMA synchronous = FULL;";
+        command.CommandText =
+            """
+            PRAGMA busy_timeout = 30000;
+            PRAGMA synchronous = FULL;
+            """;
         command.ExecuteNonQuery();
     }
 
