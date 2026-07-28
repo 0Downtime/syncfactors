@@ -32,6 +32,7 @@ web/.vite/
 .DS_Store
 
 # Local workspace tooling state
+.worktrees/
 .codex/
 .agents/
 .playwright-cli/
