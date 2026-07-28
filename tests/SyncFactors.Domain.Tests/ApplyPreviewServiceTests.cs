@@ -144,7 +144,7 @@ public sealed class ApplyPreviewServiceTests
                 AcknowledgeRealSync: true),
             CancellationToken.None));
 
-        Assert.Equal("The configured directory gateway cannot atomically apply a reviewed preview. Refresh preview after configuring an atomic preview mutation gateway.", exception.Message);
+        Assert.Equal(service.CapabilityUnavailableMessage, exception.Message);
         Assert.Equal(0, directoryCommandGateway.DirectoryWrites);
     }
 

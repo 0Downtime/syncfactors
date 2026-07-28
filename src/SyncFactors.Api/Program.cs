@@ -93,6 +93,7 @@ builder.Services.AddSingleton(serviceProvider => new OidcCookiePrincipalValidato
 builder.Services.AddSingleton<Microsoft.AspNetCore.Identity.IPasswordHasher<LocalUserRecord>, Microsoft.AspNetCore.Identity.PasswordHasher<LocalUserRecord>>();
 builder.Services.AddSingleton<ScaffoldDataStore>();
 builder.Services.AddSingleton<ScaffoldWorkerSource>();
+builder.Services.AddSingleton(SuccessFactorsSourceSettings.FromRunProfile(builder.Configuration["SYNCFACTORS_RUN_PROFILE"]));
 builder.Services.AddSingleton(serviceProvider =>
 {
     var config = serviceProvider.GetRequiredService<SyncFactorsConfigurationLoader>().GetSyncConfig();
@@ -149,7 +150,12 @@ builder.Services.AddSingleton(serviceProvider =>
         identityCorrelation?.SuccessorPersonIdExternalAttribute,
         identityCorrelation?.PreviousPersonIdExternalAttribute);
 });
-builder.Services.AddDirectoryServiceRuntimeGateways(builder.Configuration["SYNCFACTORS_RUN_PROFILE"]);
+builder.Services.AddDirectoryServiceRuntimeGateways(
+    builder.Configuration["SYNCFACTORS_RUN_PROFILE"],
+    (serviceProvider, inner) => AuditedDirectoryCommandGateway.Decorate(
+        inner,
+        serviceProvider.GetRequiredService<ISecurityAuditService>(),
+        AuditedDirectoryCommandGateway.ApiActor));
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<IWorkerPreviewLogWriter, FileWorkerPreviewLogWriter>();
 builder.Services.AddSingleton<IDeltaSyncStateStore, SqliteDeltaSyncStateStore>();
@@ -181,7 +187,6 @@ builder.Services.AddSingleton<IWorkerHeartbeatStore, SqliteWorkerHeartbeatStore>
 builder.Services.AddTransient<IWorkerPreviewPlanner, WorkerPreviewPlanner>();
 builder.Services.AddTransient<IPreviewApplyFreshnessValidator, PreviewApplyFreshnessValidator>();
 builder.Services.AddTransient<IApplyPreviewService, ApplyPreviewService>();
-builder.Services.AddTransient<IFullSyncRunService, FullSyncRunService>();
 builder.Services.AddSingleton<IDashboardSnapshotService, DashboardSnapshotService>();
 builder.Services.AddSingleton<IRuntimeStatusStore, SqliteRuntimeStatusStore>();
 builder.Services.AddSingleton<IRunRepository, SqliteRunRepository>();
@@ -632,6 +637,13 @@ operatorApi.MapPost("/preview/{workerId}/apply", async (
         return Results.BadRequest(new { error = realSyncSettings.LiveWriteDisabledMessage });
     }
 
+    if (!applyPreviewService.CanApplyPreview)
+    {
+        return Results.Json(
+            new { error = applyPreviewService.CapabilityUnavailableMessage },
+            statusCode: StatusCodes.Status503ServiceUnavailable);
+    }
+
     var result = await applyPreviewService.ApplyAsync(request, cancellationToken);
     var auditWritten = ApiAuditWriteHandler.TryWrite(() => audit.Write("PreviewApplied", result.Succeeded ? "Success" : "Failure", ("RequestedBy", ResolveRequestedBy(user, "API")), ("WorkerId", request.WorkerId), ("PreviewRunId", request.PreviewRunId)));
     if (!result.Succeeded)
@@ -651,7 +663,7 @@ operatorApi.MapPost("/runs/full", async (
     LaunchFullRunRequest request,
     ClaimsPrincipal user,
     RealSyncSettings realSyncSettings,
-    IFullSyncRunService fullSyncRunService,
+    IRunQueueStore queueStore,
     ISecurityAuditService audit,
     CancellationToken cancellationToken) =>
 {
@@ -660,20 +672,36 @@ operatorApi.MapPost("/runs/full", async (
         return Results.BadRequest(new { error = realSyncSettings.LiveWriteDisabledMessage });
     }
 
-    var result = await fullSyncRunService.LaunchAsync(request, cancellationToken);
-    var launched = string.Equals(result.Status, "Succeeded", StringComparison.OrdinalIgnoreCase);
-    var auditWritten = ApiAuditWriteHandler.TryWrite(() => audit.Write("FullRunLaunched", launched ? "Success" : "Failure", ("RequestedBy", ResolveRequestedBy(user, "API")), ("DryRun", request.DryRun), ("RunId", result.RunId)));
-    if (!launched)
+    var requestedBy = ResolveRequestedBy(user, "API");
+    RunQueueRequest queued;
+    try
     {
-        return Results.BadRequest(result);
+        queued = await queueStore.EnqueueAsync(
+            new StartRunRequest(
+                DryRun: request.DryRun,
+                Mode: RunQueueProtocol.BulkSyncMode,
+                RunTrigger: RunQueueProtocol.OperatorApiTrigger,
+                RequestedBy: requestedBy,
+                TargetWorkerId: null),
+            cancellationToken);
+    }
+    catch (RunQueueConflictException)
+    {
+        return Results.Conflict(new { error = "A run is already pending or in progress." });
     }
 
-    if (!auditWritten)
+    if (!ApiAuditWriteHandler.TryWrite(() => audit.Write(
+            "RunQueued",
+            "Success",
+            ("RequestedBy", requestedBy),
+            ("Mode", queued.Mode),
+            ("DryRun", queued.DryRun),
+            ("CompatibilityEndpoint", "/api/runs/full"))))
     {
-        return AuditRecordingFailed();
+        return AuditRecordingFailedAccepted($"/api/runs/{queued.RequestId}");
     }
 
-    return Results.Ok(result);
+    return Results.Accepted($"/api/runs/{queued.RequestId}", queued);
 });
 
 adminApi.MapPost("/runs/delete-all", (

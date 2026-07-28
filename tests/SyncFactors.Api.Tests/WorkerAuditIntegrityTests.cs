@@ -189,6 +189,24 @@ public sealed class WorkerAuditIntegrityTests
     }
 
     [Fact]
+    public async Task AuditedDirectoryCommandGateway_UsesConfiguredApiActorForCorrelatedIntentAndOutcome()
+    {
+        var auditEntries = new List<(string EventType, string Outcome, Dictionary<string, object?> Fields)>();
+        var gateway = new AuditedDirectoryCommandGateway(
+            new CountingDirectoryCommandGateway(),
+            new CapturingSecurityAuditService(auditEntries),
+            AuditedDirectoryCommandGateway.ApiActor);
+
+        await gateway.ExecuteAsync(CreateCommand(action: "UpdateUser"), CancellationToken.None);
+
+        Assert.Equal(2, auditEntries.Count);
+        Assert.All(auditEntries, entry => Assert.Equal("SyncFactors.Api", entry.Fields["Actor"]));
+        Assert.Equal("MutationIntent", auditEntries[0].EventType);
+        Assert.Equal("DirectoryMutation", auditEntries[1].EventType);
+        Assert.Equal(auditEntries[0].Fields["CorrelationId"], auditEntries[1].Fields["CorrelationId"]);
+    }
+
+    [Fact]
     public async Task AuditedDirectoryCommandGateway_ReportsUnknownOutcomeWhenTerminalAuditWriteFails()
     {
         var auditService = new FailsOnSecondWriteSecurityAuditService();
