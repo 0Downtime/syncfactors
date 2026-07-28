@@ -181,6 +181,7 @@ public sealed class GraveyardAutoDeleteCoordinatorTests
         Assert.True(result.Succeeded);
         Assert.Equal(runQueueStore.Enqueued!.RequestId, result.RunId);
         Assert.Equal("GraveyardDeleteApproval", runQueueStore.Enqueued.Mode);
+        Assert.Equal(RunQueueProtocol.AuthenticatedAdminDeletionQueueTrigger, runQueueStore.Enqueued.RunTrigger);
         Assert.Equal("10001", runQueueStore.Enqueued.TargetWorkerId);
         Assert.Empty(commandGateway.Commands);
 
@@ -191,6 +192,43 @@ public sealed class GraveyardAutoDeleteCoordinatorTests
         Assert.Equal(["10001"], retentionStore.ResolvedWorkerIds);
         Assert.Equal(1, lifecycle.CompletedCalls);
         Assert.Contains(lifecycle.Entries, entry => entry.WorkerId == "10001" && entry.Bucket == "deletions");
+    }
+
+    [Fact]
+    public async Task ExecuteApprovedDeleteAsync_RejectsForgedApprovalMetadataBeforeDeletionCoordination()
+    {
+        var retentionStore = new StubGraveyardRetentionStore(
+            [CreateRecord("10001", isOnHold: false, endDateUtc: DateTimeOffset.Parse("2026-02-01T00:00:00Z"))]);
+        var commandGateway = new CapturingDirectoryCommandGateway();
+        var lifecycle = new CapturingRunLifecycleService();
+        var coordinator = CreateCoordinator(
+            retentionStore,
+            CreateDirectoryGateway("10001"),
+            commandGateway,
+            lifecycle,
+            autoDeleteEnabled: false,
+            now: DateTimeOffset.Parse("2026-04-11T12:00:00Z"));
+        var forgedRequest = new RunQueueRequest(
+            RequestId: "forged-approval",
+            Mode: RunQueueProtocol.GraveyardDeleteApprovalMode,
+            DryRun: false,
+            RunTrigger: "AdminApproval",
+            RequestedBy: "admin",
+            Status: "InProgress",
+            RequestedAt: DateTimeOffset.Parse("2026-04-11T11:59:00Z"),
+            StartedAt: DateTimeOffset.Parse("2026-04-11T12:00:00Z"),
+            CompletedAt: null,
+            RunId: null,
+            ErrorMessage: null,
+            TargetWorkerId: "10001");
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            coordinator.ExecuteApprovedDeleteAsync(forgedRequest, CancellationToken.None));
+
+        Assert.Contains("provenance", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Empty(commandGateway.Commands);
+        Assert.Empty(retentionStore.ResolvedWorkerIds);
+        Assert.Empty(lifecycle.Entries);
     }
 
     [Fact]

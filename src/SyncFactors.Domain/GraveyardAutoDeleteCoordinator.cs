@@ -54,8 +54,8 @@ public sealed class GraveyardAutoDeleteCoordinator(
             queued = await runQueueStore.EnqueueAsync(
                 new StartRunRequest(
                     DryRun: false,
-                    Mode: "GraveyardDeleteApproval",
-                    RunTrigger: "AdminApproval",
+                    Mode: RunQueueProtocol.GraveyardDeleteApprovalMode,
+                    RunTrigger: RunQueueProtocol.AuthenticatedAdminDeletionQueueTrigger,
                     RequestedBy: string.IsNullOrWhiteSpace(requestedBy) ? "Admin" : requestedBy,
                     TargetWorkerId: item.WorkerId),
                 cancellationToken);
@@ -73,10 +73,14 @@ public sealed class GraveyardAutoDeleteCoordinator(
 
     public async Task<string> ExecuteApprovedDeleteAsync(RunQueueRequest request, CancellationToken cancellationToken)
     {
-        if (!string.Equals(request.Mode, "GraveyardDeleteApproval", StringComparison.OrdinalIgnoreCase) ||
+        if (!string.Equals(request.Mode, RunQueueProtocol.GraveyardDeleteApprovalMode, StringComparison.OrdinalIgnoreCase) ||
+            !string.Equals(
+                request.RunTrigger,
+                RunQueueProtocol.AuthenticatedAdminDeletionQueueTrigger,
+                StringComparison.Ordinal) ||
             string.IsNullOrWhiteSpace(request.TargetWorkerId))
         {
-            throw new InvalidOperationException("A graveyard deletion approval request must identify a target worker.");
+            throw new InvalidOperationException("Graveyard deletion approval provenance is invalid.");
         }
 
         if (request.DryRun || !realSyncSettings.EffectiveWriteEnabled)
@@ -102,7 +106,7 @@ public sealed class GraveyardAutoDeleteCoordinator(
             runId,
             mode: "GraveyardDeleteApproval",
             dryRun: false,
-            runTrigger: "AdminApproval",
+            runTrigger: RunQueueProtocol.AuthenticatedAdminDeletionQueueTrigger,
             requestedBy: actor,
             totalWorkers: 1,
             initialAction: $"Approving graveyard deletion for worker {item.WorkerId}.",
@@ -148,7 +152,7 @@ public sealed class GraveyardAutoDeleteCoordinator(
                 kind: "graveyardDeleteApproval",
                 syncScope: "Graveyard delete approval",
                 mode: "GraveyardDeleteApproval",
-                runTrigger: "AdminApproval",
+                runTrigger: RunQueueProtocol.AuthenticatedAdminDeletionQueueTrigger,
                 requestedBy: actor);
 
             if (string.Equals(result.Bucket, "guardrailFailures", StringComparison.OrdinalIgnoreCase))
@@ -203,7 +207,7 @@ public sealed class GraveyardAutoDeleteCoordinator(
                     kind: "graveyardDeleteApproval",
                     syncScope: "Graveyard delete approval",
                     mode: "GraveyardDeleteApproval",
-                    runTrigger: "AdminApproval",
+                    runTrigger: RunQueueProtocol.AuthenticatedAdminDeletionQueueTrigger,
                     requestedBy: actor),
                 startedAt: startedAt,
                 cancellationToken);
