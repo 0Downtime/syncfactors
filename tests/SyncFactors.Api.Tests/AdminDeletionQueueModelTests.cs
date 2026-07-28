@@ -168,28 +168,22 @@ public sealed class AdminDeletionQueueModelTests
     }
 
     [Fact]
-    public async Task OnPostApproveDeleteAsync_QueuesEligibleUserWithoutDirectExecution()
+    public async Task OnPostApproveDeleteAsync_RejectsEligibleUserWhenDeletionCapabilityIsDisabled()
     {
         var store = new CapturingRetentionStore([CreateRecord("10001", false)]);
-        var commandGateway = new CapturingDirectoryCommandGateway();
-        var lifecycle = new CapturingRunLifecycleService();
-        var model = CreateModel(store, commandGateway: commandGateway, lifecycle: lifecycle);
+        var model = CreateModel(store);
 
         var result = await model.OnPostApproveDeleteAsync("10001", CancellationToken.None);
 
         Assert.IsType<RedirectToPageResult>(result);
-        Assert.Empty(commandGateway.Commands);
-        Assert.Empty(store.ResolvedWorkerIds);
-        Assert.Contains("queued", model.SuccessMessage, StringComparison.OrdinalIgnoreCase);
-        Assert.Empty(lifecycle.Entries);
+        Assert.Null(model.SuccessMessage);
+        Assert.Equal(RunQueueProtocol.DeletionCapabilityDisabledMessage, model.ErrorMessage);
     }
 
     private static DeletionQueueModel CreateModel(
         CapturingRetentionStore store,
         string actingUserId = "admin-1",
-        string username = "admin",
-        CapturingDirectoryCommandGateway? commandGateway = null,
-        CapturingRunLifecycleService? lifecycle = null)
+        string username = "admin")
     {
         var workerIds = recordsFromStore(store)
             .Select(record => record.WorkerId)
@@ -210,21 +204,8 @@ public sealed class AdminDeletionQueueModelTests
             settings,
             lifecycleSettings,
             new FakeTimeProvider(now));
-        var deleteCoordinator = new GraveyardAutoDeleteCoordinator(
-            service,
-            store,
-            commandGateway ?? new CapturingDirectoryCommandGateway(),
-            lifecycle ?? new CapturingRunLifecycleService(),
-            new CapturingRunQueueStore(),
-            settings,
-            new WorkerRunSettings(MaxCreatesPerRun: 10, MaxDisablesPerRun: 10, MaxDeletionsPerRun: 10),
-            new RealSyncSettings(),
-            NullLogger<GraveyardAutoDeleteCoordinator>.Instance,
-            new FakeTimeProvider(now));
-
         return new DeletionQueueModel(
             service,
-            deleteCoordinator,
             store,
             new FakeTimeProvider(now))
         {
@@ -361,6 +342,7 @@ public sealed class AdminDeletionQueueModelTests
                 TargetWorkerId: request.TargetWorkerId));
 
         public Task<RunQueueRequest?> ClaimNextPendingAsync(string workerName, CancellationToken cancellationToken) => Task.FromResult<RunQueueRequest?>(null);
+        public Task<int> QuarantineReservedModesAsync(CancellationToken cancellationToken) => Task.FromResult(0);
         public Task<RunQueueRequest?> GetAsync(string requestId, CancellationToken cancellationToken) => Task.FromResult<RunQueueRequest?>(null);
         public Task<RunQueueRequest?> GetPendingOrActiveAsync(CancellationToken cancellationToken) => Task.FromResult<RunQueueRequest?>(null);
         public Task<bool> HasPendingOrActiveRunAsync(CancellationToken cancellationToken) => Task.FromResult(false);

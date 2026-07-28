@@ -5,7 +5,7 @@ namespace SyncFactors.Infrastructure;
 
 public sealed class SqliteDatabaseInitializer(SqlitePathResolver pathResolver)
 {
-    private const int CurrentSchemaVersion = 17;
+    private const int CurrentSchemaVersion = 18;
 
     public async Task InitializeAsync(CancellationToken cancellationToken)
     {
@@ -153,6 +153,12 @@ public sealed class SqliteDatabaseInitializer(SqlitePathResolver pathResolver)
         {
             await ApplyVersion17Async(connection, transaction, cancellationToken);
             await InsertVersionAsync(connection, transaction, 17, cancellationToken);
+        }
+
+        if (!appliedVersions.Contains(18))
+        {
+            await ApplyVersion18Async(connection, transaction, cancellationToken);
+            await InsertVersionAsync(connection, transaction, 18, cancellationToken);
         }
 
         await transaction.CommitAsync(cancellationToken);
@@ -612,6 +618,55 @@ public sealed class SqliteDatabaseInitializer(SqlitePathResolver pathResolver)
         }
     }
 
+    private static async Task ApplyVersion18Async(
+        SqliteConnection connection,
+        DbTransaction transaction,
+        CancellationToken cancellationToken)
+    {
+        await using (var command = connection.CreateCommand())
+        {
+            command.Transaction = (SqliteTransaction)transaction;
+            command.CommandText =
+                """
+                CREATE TABLE IF NOT EXISTS directory_deletion_quarantine (
+                  source_kind TEXT NOT NULL,
+                  source_id TEXT NOT NULL,
+                  destructive_mode TEXT NOT NULL,
+                  original_status TEXT NOT NULL,
+                  classification TEXT NOT NULL,
+                  reason_code TEXT NOT NULL,
+                  reason_message TEXT NOT NULL,
+                  run_id TEXT NULL,
+                  dry_run INTEGER NOT NULL DEFAULT 0,
+                  captured_at TEXT NOT NULL,
+                  PRIMARY KEY (source_kind, source_id)
+                );
+
+                CREATE TRIGGER IF NOT EXISTS directory_deletion_quarantine_immutable_update
+                BEFORE UPDATE ON directory_deletion_quarantine
+                BEGIN
+                  SELECT RAISE(ABORT, 'directory deletion quarantine evidence is immutable');
+                END;
+
+                CREATE TRIGGER IF NOT EXISTS directory_deletion_quarantine_immutable_delete
+                BEFORE DELETE ON directory_deletion_quarantine
+                BEGIN
+                  SELECT RAISE(ABORT, 'directory deletion quarantine evidence is immutable');
+                END;
+                """;
+            await command.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        if (await TableExistsAsync(connection, transaction, "runtime_status", cancellationToken))
+        {
+            var runtimeColumns = await GetTableColumnsAsync(connection, transaction, "runtime_status", cancellationToken);
+            if (!runtimeColumns.Contains("mode"))
+            {
+                await AddColumnAsync(connection, transaction, "runtime_status", "mode TEXT NULL", cancellationToken);
+            }
+        }
+    }
+
     private static async Task AddColumnAsync(
         SqliteConnection connection,
         DbTransaction transaction,
@@ -823,6 +878,7 @@ public sealed class SqliteDatabaseInitializer(SqlitePathResolver pathResolver)
             "runs" => "PRAGMA table_info(runs);",
             "run_queue" => "PRAGMA table_info(run_queue);",
             "runtime_status" => "PRAGMA table_info(runtime_status);",
+            "directory_deletion_quarantine" => "PRAGMA table_info(directory_deletion_quarantine);",
             "schema_versions" => "PRAGMA table_info(schema_versions);",
             "sync_schedule" => "PRAGMA table_info(sync_schedule);",
             "worker_heartbeat" => "PRAGMA table_info(worker_heartbeat);",

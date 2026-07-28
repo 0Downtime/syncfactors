@@ -188,6 +188,15 @@ public static class RunQueueProtocol
     public const string OperatorApiTrigger = "AdHoc";
     public const string GraveyardDeleteApprovalMode = "GraveyardDeleteApproval";
     public const string AuthenticatedAdminDeletionQueueTrigger = "AuthenticatedAdminDeletionQueueApproval";
+    public const string DeleteAllUsersMode = "DeleteAllUsers";
+    public const string GraveyardAutoDeleteMode = "GraveyardAutoDelete";
+    public const string DeletionCapabilityDisabledMessage =
+        "Graveyard deletion is unavailable; records remain review-only until an atomic AD object-identity fence is approved.";
+
+    public static bool IsReservedDeletionMode(string? mode) =>
+        string.Equals(mode, DeleteAllUsersMode, StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(mode, GraveyardDeleteApprovalMode, StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(mode, GraveyardAutoDeleteMode, StringComparison.OrdinalIgnoreCase);
 }
 
 public sealed record RunQueueRequest(
