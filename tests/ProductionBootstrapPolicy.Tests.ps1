@@ -19,6 +19,34 @@ Describe 'Production bootstrap safety policy' {
         $appSettings.SyncFactors.Runtime.DryRunOnly | Should -BeTrue
     }
 
+    It 'defaults fresh Production service installations to dry-run-only' {
+        $installer = Get-Content -Path (Join-Path $repositoryRoot 'scripts/Install-SyncFactorsWindowsServices.ps1') -Raw
+
+        $installer | Should -Match '\$dryRunOnly\s*=\s*if\s*\(\$EnableLiveWrites\.IsPresent\)\s*\{\s*''false''\s*\}\s*else\s*\{\s*''true''\s*\}'
+    }
+
+    It 'validates API audit integrity before startup initialization' {
+        $program = Get-Content -Path (Join-Path $repositoryRoot 'src/SyncFactors.Api/Program.cs') -Raw
+        $appBuild = $program.IndexOf('var app = builder.Build();', [StringComparison]::Ordinal)
+        $auditValidation = $program.IndexOf('SecurityAuditService.ValidateStartup(app.Environment.IsProduction());', [StringComparison]::Ordinal)
+        $databaseInitialization = $program.IndexOf('await app.Services.GetRequiredService<SqliteDatabaseInitializer>().InitializeAsync(CancellationToken.None);', [StringComparison]::Ordinal)
+
+        $appBuild | Should -BeGreaterThan -1
+        $auditValidation | Should -BeGreaterThan $appBuild
+        $databaseInitialization | Should -BeGreaterThan $auditValidation
+    }
+
+    It 'validates worker audit integrity before the host is built' {
+        $program = Get-Content -Path (Join-Path $repositoryRoot 'src/SyncFactors.Worker/Program.cs') -Raw
+        $builderCreation = $program.IndexOf('var builder = Host.CreateApplicationBuilder(args);', [StringComparison]::Ordinal)
+        $auditValidation = $program.IndexOf('SecurityAuditService.ValidateStartup(builder.Environment.IsProduction());', [StringComparison]::Ordinal)
+        $hostBuild = $program.IndexOf('var host = builder.Build();', [StringComparison]::Ordinal)
+
+        $builderCreation | Should -BeGreaterThan -1
+        $auditValidation | Should -BeGreaterThan $builderCreation
+        $hostBuild | Should -BeGreaterThan $auditValidation
+    }
+
     It 'ships the real production sample with live writes disabled and conservative approval gates' {
         $sample = Get-Content -Path (Join-Path $repositoryRoot 'config/sample.real-successfactors.real-ad.sync-config.json') -Raw | ConvertFrom-Json
 
