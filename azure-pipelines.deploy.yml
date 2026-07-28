@@ -30,6 +30,8 @@ variables:
   serviceUserName: ''
   serviceUserPassword: ''
   sqlitePassword: ''
+  securityAuditIntegrityKey: ''
+  enableLiveWrites: false
 
 stages:
   - stage: Build
@@ -82,6 +84,13 @@ stages:
               projects: SyncFactors.Next.sln
               arguments: --configuration Release --no-build --logger "trx;LogFilePrefix=test-results" --results-directory "$(Agent.TempDirectory)\test-results"
               publishTestResults: false
+
+          - task: PowerShell@2
+            displayName: Verify production bootstrap policy
+            inputs:
+              pwsh: true
+              targetType: inline
+              script: Invoke-Pester -Path ./tests/ProductionBootstrapPolicy.Tests.ps1 -CI
 
           - task: PublishTestResults@2
             displayName: Publish test results
@@ -232,6 +241,8 @@ stages:
                       $windowsCredentialPrefix = '$(windowsCredentialPrefix)'
                       $serviceUserName = '$(serviceUserName)'
                       $serviceUserPassword = '$(serviceUserPassword)'
+                      $securityAuditIntegrityKeyValue = '$(securityAuditIntegrityKey)'
+                      $enableLiveWrites = Convert-ToBool '$(enableLiveWrites)'
 
                       if (-not (Test-Path -Path $stagingPath -PathType Container)) {
                           throw "Deployment staging path '$stagingPath' was not found."
@@ -312,6 +323,9 @@ stages:
                           '-WindowsCredentialPrefix', $windowsCredentialPrefix,
                           '-Force'
                       )
+                      if ($enableLiveWrites) {
+                          $installArgs += '-EnableLiveWrites'
+                      }
                       if (-not [string]::IsNullOrWhiteSpace($serviceUserName)) {
                           if ([string]::IsNullOrWhiteSpace($serviceUserPassword)) {
                               throw 'serviceUserPassword must be set when serviceUserName is set.'
@@ -333,9 +347,20 @@ stages:
                           $installArgs += @('-SqlitePassword', '$(sqlitePassword)')
                       }
 
-                      & $pwsh -NoProfile -ExecutionPolicy Bypass -File $installScript @installArgs
-                      if ($LASTEXITCODE -ne 0) {
-                          throw "Service installation failed with code $LASTEXITCODE."
+                      $previousIntegrityKey = $env:SYNCFACTORS_SECURITY_AUDIT_INTEGRITY_KEY
+                      try {
+                          if (-not [string]::IsNullOrWhiteSpace($securityAuditIntegrityKeyValue)) {
+                              $env:SYNCFACTORS_SECURITY_AUDIT_INTEGRITY_KEY = $securityAuditIntegrityKeyValue
+                          }
+
+                          & $pwsh -NoProfile -ExecutionPolicy Bypass -File $installScript @installArgs
+                          if ($LASTEXITCODE -ne 0) {
+                              throw "Service installation failed with code $LASTEXITCODE."
+                          }
+                      }
+                      finally {
+                          $env:SYNCFACTORS_SECURITY_AUDIT_INTEGRITY_KEY = $previousIntegrityKey
+                          $securityAuditIntegrityKeyValue = $null
                       }
 
                       Start-Service -Name $apiServiceName
