@@ -45,9 +45,7 @@ public class Worker(
                     var maxDegreeOfParallelism = Math.Max(1, executionSettings.GetMaxDegreeOfParallelism());
                     var runId = string.Equals(claimed.Mode, "DeleteAllUsers", StringComparison.OrdinalIgnoreCase)
                         ? await deleteAllUsersCoordinator.ExecuteAsync(claimed, stoppingToken)
-                        : string.Equals(claimed.Mode, "GraveyardDeleteApproval", StringComparison.OrdinalIgnoreCase)
-                            ? await graveyardAutoDeleteCoordinator.ExecuteApprovedDeleteAsync(claimed, stoppingToken)
-                            : await bulkRunCoordinator.ExecuteAsync(claimed, maxDegreeOfParallelism, stoppingToken);
+                        : await ExecuteClaimedRunAsync(claimed, maxDegreeOfParallelism, stoppingToken);
                     await runQueueStore.CompleteAsync(claimed.RequestId, runId, CancellationToken.None);
                     await TryWriteHeartbeatAsync(startedAt, "Idle", $"Completed queued run {claimed.RequestId}.", CancellationToken.None);
                 }
@@ -86,6 +84,29 @@ public class Worker(
             }
         }
         while (await timer.WaitForNextTickAsync(stoppingToken));
+    }
+
+    private async Task<string> ExecuteClaimedRunAsync(
+        RunQueueRequest claimed,
+        int maxDegreeOfParallelism,
+        CancellationToken cancellationToken)
+    {
+        if (!string.Equals(claimed.Mode, RunQueueProtocol.GraveyardDeleteApprovalMode, StringComparison.OrdinalIgnoreCase))
+        {
+            return await bulkRunCoordinator.ExecuteAsync(claimed, maxDegreeOfParallelism, cancellationToken);
+        }
+
+        if (!string.Equals(
+                claimed.RunTrigger,
+                RunQueueProtocol.AuthenticatedAdminDeletionQueueTrigger,
+                StringComparison.Ordinal) ||
+            claimed.DryRun ||
+            string.IsNullOrWhiteSpace(claimed.TargetWorkerId))
+        {
+            throw new InvalidOperationException("Graveyard deletion approval provenance is invalid.");
+        }
+
+        return await graveyardAutoDeleteCoordinator.ExecuteApprovedDeleteAsync(claimed, cancellationToken);
     }
 
     private Task WriteHeartbeatAsync(

@@ -106,7 +106,12 @@ public sealed class WorkerHostTests
         var autoDeleteCoordinator = new CapturingAutoDeleteCoordinator();
         var worker = new TestWorker(
             NullLogger<WorkerService>.Instance,
-            new CapturingRunQueueStore(CreateRequest("GraveyardDeleteApproval", targetWorkerId: "10001"), cancellation),
+            new CapturingRunQueueStore(
+                CreateRequest(
+                    RunQueueProtocol.GraveyardDeleteApprovalMode,
+                    targetWorkerId: "10001",
+                    runTrigger: RunQueueProtocol.AuthenticatedAdminDeletionQueueTrigger),
+                cancellation),
             new CapturingScheduleCoordinator(),
             new CapturingRetentionReportCoordinator(),
             autoDeleteCoordinator,
@@ -119,6 +124,38 @@ public sealed class WorkerHostTests
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => worker.RunAsync(cancellation.Token));
 
         Assert.Equal("request-1", autoDeleteCoordinator.ApprovedRequestId);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_RejectsGraveyardDeletionWithoutExactAdminApprovalProvenance()
+    {
+        using var cancellation = new CancellationTokenSource();
+        var autoDeleteCoordinator = new CapturingAutoDeleteCoordinator();
+        var queueStore = new CapturingRunQueueStore(
+            CreateRequest(
+                "GraveyardDeleteApproval",
+                targetWorkerId: "10001",
+                runTrigger: "AdminApproval",
+                requestedBy: "admin"),
+            cancellation);
+        var worker = new TestWorker(
+            NullLogger<WorkerService>.Instance,
+            queueStore,
+            new CapturingScheduleCoordinator(),
+            new CapturingRetentionReportCoordinator(),
+            autoDeleteCoordinator,
+            new CapturingBulkRunCoordinator(),
+            new NoopDeleteAllUsersCoordinator(),
+            new CapturingHeartbeatStore(),
+            TimeProvider.System,
+            new FixedWorkerExecutionSettings(1));
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => worker.RunAsync(cancellation.Token));
+
+        Assert.Null(autoDeleteCoordinator.ApprovedRequestId);
+        var failure = Assert.Single(queueStore.FailedRuns);
+        Assert.Equal("request-1", failure.RequestId);
+        Assert.Contains("provenance", failure.ErrorMessage, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -202,12 +239,16 @@ public sealed class WorkerHostTests
         }
     }
 
-    private static RunQueueRequest CreateRequest(string mode = "BulkSync", string? targetWorkerId = null) => new(
+    private static RunQueueRequest CreateRequest(
+        string mode = "BulkSync",
+        string? targetWorkerId = null,
+        string runTrigger = "Scheduled",
+        string? requestedBy = "test") => new(
         RequestId: "request-1",
         Mode: mode,
         DryRun: !string.Equals(mode, "GraveyardDeleteApproval", StringComparison.OrdinalIgnoreCase),
-        RunTrigger: "Scheduled",
-        RequestedBy: "test",
+        RunTrigger: runTrigger,
+        RequestedBy: requestedBy,
         Status: "Active",
         RequestedAt: DateTimeOffset.UtcNow,
         StartedAt: DateTimeOffset.UtcNow,
@@ -292,6 +333,7 @@ public sealed class WorkerHostTests
         public Task FailAsync(string requestId, string? runId, string errorMessage, CancellationToken cancellationToken)
         {
             FailedRuns.Add((requestId, runId, errorMessage));
+            cancellation.Cancel();
             return Task.CompletedTask;
         }
     }

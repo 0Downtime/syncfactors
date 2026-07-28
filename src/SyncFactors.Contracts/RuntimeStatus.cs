@@ -182,6 +182,14 @@ public sealed record RunTally(
     int ManualReview,
     int Unchanged);
 
+public static class RunQueueProtocol
+{
+    public const string BulkSyncMode = "BulkSync";
+    public const string OperatorApiTrigger = "AdHoc";
+    public const string GraveyardDeleteApprovalMode = "GraveyardDeleteApproval";
+    public const string AuthenticatedAdminDeletionQueueTrigger = "AuthenticatedAdminDeletionQueueApproval";
+}
+
 public sealed record RunQueueRequest(
     string RequestId,
     string Mode,

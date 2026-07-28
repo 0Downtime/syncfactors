@@ -470,6 +470,11 @@ readApi.MapGet("/runs/queue/{requestId}", async (string requestId, IRunQueueStor
 
 operatorApi.MapPost("/runs", async (StartRunRequest request, ClaimsPrincipal user, IRunQueueStore queueStore, RealSyncSettings realSyncSettings, ISecurityAuditService audit, CancellationToken cancellationToken) =>
 {
+    if (!string.Equals(request.Mode, RunQueueProtocol.BulkSyncMode, StringComparison.OrdinalIgnoreCase))
+    {
+        return Results.BadRequest(new { error = "The general run endpoint only accepts BulkSync mode." });
+    }
+
     if (!request.DryRun && !realSyncSettings.EffectiveWriteEnabled)
     {
         return Results.BadRequest(new { error = realSyncSettings.LiveWriteDisabledMessage });
@@ -480,7 +485,12 @@ operatorApi.MapPost("/runs", async (StartRunRequest request, ClaimsPrincipal use
     try
     {
         queued = await queueStore.EnqueueAsync(
-            request with { RequestedBy = requestedBy },
+            new StartRunRequest(
+                DryRun: request.DryRun,
+                Mode: RunQueueProtocol.BulkSyncMode,
+                RunTrigger: RunQueueProtocol.OperatorApiTrigger,
+                RequestedBy: requestedBy,
+                TargetWorkerId: null),
             cancellationToken);
     }
     catch (RunQueueConflictException)

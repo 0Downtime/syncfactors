@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
+using SyncFactors.Contracts;
 using SyncFactors.Infrastructure;
 
 namespace SyncFactors.Api.Tests;
@@ -65,6 +66,52 @@ public sealed class MutationAuthorizationIntegrationTests
         Assert.NotEqual(HttpStatusCode.Forbidden, response.StatusCode);
         Assert.DoesNotContain(client.DefaultRequestHeaders, header =>
             string.Equals(header.Key, "RequestVerificationToken", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Theory]
+    [InlineData("GraveyardDeleteApproval")]
+    [InlineData("DeleteAllUsers")]
+    [InlineData("GraveyardAutoDelete")]
+    [InlineData("UnknownInternalMode")]
+    public async Task OperatorRunEndpoint_RejectsReservedAndUnknownModes_WhenEveryQueueFieldIsAttackerControlled(string mode)
+    {
+        await using var fixture = await AuthorizationFixture.CreateAsync();
+        using var client = await fixture.SignInAsync(SecurityRoles.Operator);
+
+        using var response = await client.PostAsJsonAsync("/api/runs", new
+        {
+            dryRun = true,
+            mode,
+            targetWorkerId = "10001",
+            runTrigger = "AdminApproval",
+            requestedBy = "admin"
+        });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task OperatorRunEndpoint_UsesCanonicalModeAndServerOwnedQueueMetadata_ForAllowedRun()
+    {
+        await using var fixture = await AuthorizationFixture.CreateAsync();
+        using var client = await fixture.SignInAsync(SecurityRoles.Operator);
+
+        using var response = await client.PostAsJsonAsync("/api/runs", new
+        {
+            dryRun = true,
+            mode = "bUlKsYnC",
+            targetWorkerId = "10001",
+            runTrigger = "AdminApproval",
+            requestedBy = "admin"
+        });
+        var queued = await response.Content.ReadFromJsonAsync<RunQueueRequest>();
+
+        Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
+        Assert.NotNull(queued);
+        Assert.Equal("BulkSync", queued!.Mode);
+        Assert.Equal("AdHoc", queued.RunTrigger);
+        Assert.Equal("operator", queued.RequestedBy);
+        Assert.Null(queued.TargetWorkerId);
     }
 
     [Fact]
