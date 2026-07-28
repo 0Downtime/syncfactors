@@ -54,7 +54,10 @@ public sealed class SqliteGraveyardRetentionStore(SqlitePathResolver pathResolve
               status = excluded.status,
               end_date_utc = excluded.end_date_utc,
               last_observed_at_utc = excluded.last_observed_at_utc,
-              active = excluded.active;
+              active = excluded.active,
+              version = graveyard_retention.version + 1,
+              deletion_claim_id = NULL,
+              deletion_claim_version = NULL;
             """;
         command.Parameters.AddWithValue("$workerId", record.WorkerId);
         command.Parameters.AddWithValue("$samAccountName", (object?)record.SamAccountName ?? DBNull.Value);
@@ -84,7 +87,10 @@ public sealed class SqliteGraveyardRetentionStore(SqlitePathResolver pathResolve
         command.CommandText =
             """
             UPDATE graveyard_retention
-            SET active = 0
+            SET active = 0,
+                version = version + 1,
+                deletion_claim_id = NULL,
+                deletion_claim_version = NULL
             WHERE worker_id = $workerId;
             """;
         command.Parameters.AddWithValue("$workerId", workerId);
@@ -104,7 +110,7 @@ public sealed class SqliteGraveyardRetentionStore(SqlitePathResolver pathResolve
         await using var command = connection.CreateCommand();
         command.CommandText =
             """
-            SELECT worker_id, sam_account_name, display_name, distinguished_name, status, end_date_utc, last_observed_at_utc, active, is_on_hold, hold_placed_at_utc, hold_placed_by
+            SELECT worker_id, sam_account_name, display_name, distinguished_name, status, end_date_utc, last_observed_at_utc, active, is_on_hold, hold_placed_at_utc, hold_placed_by, version, deletion_claim_id, deletion_claim_version
             FROM graveyard_retention
             WHERE active = 1;
             """;
@@ -123,7 +129,10 @@ public sealed class SqliteGraveyardRetentionStore(SqlitePathResolver pathResolve
                 Active: reader.GetInt32(7) != 0,
                 IsOnHold: reader.GetInt32(8) != 0,
                 HoldPlacedAtUtc: ParseDate(await reader.IsDBNullAsync(9, cancellationToken) ? null : reader.GetString(9)),
-                HoldPlacedBy: await reader.IsDBNullAsync(10, cancellationToken) ? null : reader.GetString(10)));
+                HoldPlacedBy: await reader.IsDBNullAsync(10, cancellationToken) ? null : reader.GetString(10),
+                Version: reader.GetInt64(11),
+                DeletionClaimId: await reader.IsDBNullAsync(12, cancellationToken) ? null : reader.GetString(12),
+                DeletionClaimVersion: await reader.IsDBNullAsync(13, cancellationToken) ? null : reader.GetInt64(13)));
         }
 
         return records;
@@ -145,7 +154,10 @@ public sealed class SqliteGraveyardRetentionStore(SqlitePathResolver pathResolve
             UPDATE graveyard_retention
             SET is_on_hold = $isOnHold,
                 hold_placed_at_utc = $holdPlacedAtUtc,
-                hold_placed_by = $holdPlacedBy
+                hold_placed_by = $holdPlacedBy,
+                version = version + 1,
+                deletion_claim_id = NULL,
+                deletion_claim_version = NULL
             WHERE worker_id = $workerId;
             """;
         command.Parameters.AddWithValue("$workerId", workerId);
@@ -154,6 +166,85 @@ public sealed class SqliteGraveyardRetentionStore(SqlitePathResolver pathResolve
         command.Parameters.AddWithValue("$holdPlacedBy", isOnHold ? (object?)actingUserId ?? DBNull.Value : DBNull.Value);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
+
+    public async Task<GraveyardDeletionClaim?> TryClaimDeletionAsync(
+        string workerId,
+        long expectedVersion,
+        string claimId,
+        CancellationToken cancellationToken)
+    {
+        var databasePath = pathResolver.ResolveConfiguredPath() ?? pathResolver.Resolve();
+        if (string.IsNullOrWhiteSpace(databasePath) || string.IsNullOrWhiteSpace(workerId) || string.IsNullOrWhiteSpace(claimId))
+        {
+            return null;
+        }
+
+        await using var connection = OpenConnection(databasePath);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            UPDATE graveyard_retention
+            SET version = version + 1,
+                deletion_claim_id = $claimId,
+                deletion_claim_version = version + 1
+            WHERE worker_id = $workerId
+              AND version = $expectedVersion
+              AND active = 1
+              AND is_on_hold = 0
+              AND deletion_claim_id IS NULL
+            RETURNING worker_id, deletion_claim_id, deletion_claim_version;
+            """;
+        command.Parameters.AddWithValue("$workerId", workerId);
+        command.Parameters.AddWithValue("$expectedVersion", expectedVersion);
+        command.Parameters.AddWithValue("$claimId", claimId);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        return await reader.ReadAsync(cancellationToken)
+            ? new GraveyardDeletionClaim(reader.GetString(0), reader.GetString(1), reader.GetInt64(2))
+            : null;
+    }
+
+    public async Task<GraveyardDeletionClaim?> GetDeletionClaimAsync(
+        string workerId,
+        string claimId,
+        long claimVersion,
+        CancellationToken cancellationToken)
+    {
+        var databasePath = pathResolver.ResolveConfiguredPath() ?? pathResolver.Resolve();
+        if (string.IsNullOrWhiteSpace(databasePath))
+        {
+            return null;
+        }
+
+        await using var connection = OpenConnection(databasePath);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT worker_id, deletion_claim_id, deletion_claim_version
+            FROM graveyard_retention
+            WHERE worker_id = $workerId
+              AND active = 1
+              AND is_on_hold = 0
+              AND version = $claimVersion
+              AND deletion_claim_id = $claimId
+              AND deletion_claim_version = $claimVersion
+            LIMIT 1;
+            """;
+        command.Parameters.AddWithValue("$workerId", workerId);
+        command.Parameters.AddWithValue("$claimId", claimId);
+        command.Parameters.AddWithValue("$claimVersion", claimVersion);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        return await reader.ReadAsync(cancellationToken)
+            ? new GraveyardDeletionClaim(reader.GetString(0), reader.GetString(1), reader.GetInt64(2))
+            : null;
+    }
+
+    public Task<bool> ReleaseDeletionClaimAsync(string workerId, string claimId, long claimVersion, CancellationToken cancellationToken) =>
+        UpdateClaimAsync(workerId, claimId, claimVersion, resolve: false, cancellationToken);
+
+    public Task<bool> ResolveDeletionClaimAsync(string workerId, string claimId, long claimVersion, CancellationToken cancellationToken) =>
+        UpdateClaimAsync(workerId, claimId, claimVersion, resolve: true, cancellationToken);
 
     public async Task<GraveyardRetentionReportStatus> GetReportStatusAsync(CancellationToken cancellationToken)
     {
@@ -221,6 +312,43 @@ public sealed class SqliteGraveyardRetentionStore(SqlitePathResolver pathResolve
         command.Parameters.AddWithValue("$lastAttemptedAtUtc", attemptedAt.ToString("O"));
         command.Parameters.AddWithValue("$lastError", (object?)error ?? DBNull.Value);
         await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private async Task<bool> UpdateClaimAsync(
+        string workerId,
+        string claimId,
+        long claimVersion,
+        bool resolve,
+        CancellationToken cancellationToken)
+    {
+        var databasePath = pathResolver.ResolveConfiguredPath() ?? pathResolver.Resolve();
+        if (string.IsNullOrWhiteSpace(databasePath))
+        {
+            return false;
+        }
+
+        await using var connection = OpenConnection(databasePath);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            UPDATE graveyard_retention
+            SET active = CASE WHEN $resolve = 1 THEN 0 ELSE active END,
+                version = version + 1,
+                deletion_claim_id = NULL,
+                deletion_claim_version = NULL
+            WHERE worker_id = $workerId
+              AND active = 1
+              AND is_on_hold = 0
+              AND version = $claimVersion
+              AND deletion_claim_id = $claimId
+              AND deletion_claim_version = $claimVersion;
+            """;
+        command.Parameters.AddWithValue("$resolve", resolve ? 1 : 0);
+        command.Parameters.AddWithValue("$workerId", workerId);
+        command.Parameters.AddWithValue("$claimId", claimId);
+        command.Parameters.AddWithValue("$claimVersion", claimVersion);
+        return await command.ExecuteNonQueryAsync(cancellationToken) == 1;
     }
 
     private static object ToDbValue(DateTimeOffset? value) => value?.ToString("O") ?? (object)DBNull.Value;

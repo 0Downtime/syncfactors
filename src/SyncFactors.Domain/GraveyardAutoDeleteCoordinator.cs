@@ -9,6 +9,7 @@ public sealed class GraveyardAutoDeleteCoordinator(
     IGraveyardRetentionStore retentionStore,
     IDirectoryCommandGateway directoryCommandGateway,
     IRunLifecycleService runLifecycleService,
+    IRunQueueStore runQueueStore,
     GraveyardDeletionQueueSettings settings,
     WorkerRunSettings workerRunSettings,
     RealSyncSettings realSyncSettings,
@@ -42,7 +43,56 @@ public sealed class GraveyardAutoDeleteCoordinator(
             return new GraveyardDeletionApprovalResult(false, $"Worker {workerId} is not due for deletion yet.", null);
         }
 
-        var actor = string.IsNullOrWhiteSpace(requestedBy) ? "Admin" : requestedBy;
+        if (!realSyncSettings.EffectiveWriteEnabled)
+        {
+            return new GraveyardDeletionApprovalResult(false, realSyncSettings.LiveWriteDisabledMessage, null);
+        }
+
+        RunQueueRequest queued;
+        try
+        {
+            queued = await runQueueStore.EnqueueAsync(
+                new StartRunRequest(
+                    DryRun: false,
+                    Mode: "GraveyardDeleteApproval",
+                    RunTrigger: "AdminApproval",
+                    RequestedBy: string.IsNullOrWhiteSpace(requestedBy) ? "Admin" : requestedBy,
+                    TargetWorkerId: item.WorkerId),
+                cancellationToken);
+        }
+        catch (RunQueueConflictException)
+        {
+            return new GraveyardDeletionApprovalResult(false, "A run is already pending or in progress; deletion approval remains unexecuted.", null);
+        }
+
+        return new GraveyardDeletionApprovalResult(
+            true,
+            $"Deletion approval for worker {item.WorkerId} was queued for serialized execution.",
+            queued.RequestId);
+    }
+
+    public async Task<string> ExecuteApprovedDeleteAsync(RunQueueRequest request, CancellationToken cancellationToken)
+    {
+        if (!string.Equals(request.Mode, "GraveyardDeleteApproval", StringComparison.OrdinalIgnoreCase) ||
+            string.IsNullOrWhiteSpace(request.TargetWorkerId))
+        {
+            throw new InvalidOperationException("A graveyard deletion approval request must identify a target worker.");
+        }
+
+        if (request.DryRun || !realSyncSettings.EffectiveWriteEnabled)
+        {
+            throw new InvalidOperationException(realSyncSettings.LiveWriteDisabledMessage);
+        }
+
+        var snapshot = await deletionQueueService.GetSnapshotAsync(cancellationToken);
+        var item = snapshot.Pending.FirstOrDefault(candidate =>
+            string.Equals(candidate.WorkerId, request.TargetWorkerId, StringComparison.OrdinalIgnoreCase));
+        if (item is null || !item.IsEligibleForDeletion)
+        {
+            throw new InvalidOperationException($"Worker {request.TargetWorkerId} is no longer eligible for approved deletion.");
+        }
+
+        var actor = string.IsNullOrWhiteSpace(request.RequestedBy) ? "Admin" : request.RequestedBy;
         var runId = $"graveyard-delete-approval-{timeProvider.GetUtcNow():yyyyMMddHHmmssfff}";
         using var logScope = RunLoggingScope.Begin(logger, runId, mode: "GraveyardDeleteApproval");
         var startedAt = timeProvider.GetUtcNow();
@@ -115,7 +165,7 @@ public sealed class GraveyardAutoDeleteCoordinator(
                     report: report,
                     startedAt: startedAt,
                     cancellationToken);
-                return new GraveyardDeletionApprovalResult(false, result.Reason ?? "Deletion guardrail exceeded.", runId);
+                throw new GuardrailExceededException(runId, result.Reason ?? "Deletion guardrail exceeded.");
             }
 
             await runLifecycleService.CompleteRunAsync(
@@ -128,9 +178,11 @@ public sealed class GraveyardAutoDeleteCoordinator(
                 startedAt: startedAt,
                 cancellationToken);
 
-            return string.Equals(result.Bucket, "deletions", StringComparison.OrdinalIgnoreCase)
-                ? new GraveyardDeletionApprovalResult(true, result.Reason ?? $"Deleted AD user {item.SamAccountName ?? item.WorkerId}.", runId)
-                : new GraveyardDeletionApprovalResult(false, result.Reason ?? $"Could not delete worker {item.WorkerId}.", runId);
+            return runId;
+        }
+        catch (GuardrailExceededException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -155,7 +207,7 @@ public sealed class GraveyardAutoDeleteCoordinator(
                     requestedBy: actor),
                 startedAt: startedAt,
                 cancellationToken);
-            return new GraveyardDeletionApprovalResult(false, ex.Message, runId);
+            throw;
         }
     }
 
@@ -414,23 +466,81 @@ public sealed class GraveyardAutoDeleteCoordinator(
                 Item: BuildEntryItem(item, "conflicts", action: null, applied: false, succeeded: false, reason));
         }
 
+        var claim = await retentionStore.TryClaimDeletionAsync(
+            item.WorkerId,
+            item.Version,
+            Guid.NewGuid().ToString("N"),
+            cancellationToken);
+        if (claim is null)
+        {
+            const string reason = "Deletion was not executed because another operation changed or claimed the current graveyard queue state.";
+            return new WorkerRunResult(
+                WorkerId: item.WorkerId,
+                Bucket: "conflicts",
+                SamAccountName: item.SamAccountName,
+                Reason: reason,
+                ReviewCategory: "ExternalSystem",
+                ReviewCaseType: "DeletePreconditionFailed",
+                Action: null,
+                Applied: false,
+                Succeeded: false,
+                OperationSummary: null,
+                DiffRows: [],
+                Item: BuildEntryItem(item, "conflicts", action: null, applied: false, succeeded: false, reason));
+        }
+
         try
         {
-            var result = await directoryCommandGateway.ExecuteAsync(BuildDeleteCommand(currentItem), cancellationToken);
+            var revalidatedSnapshot = await deletionQueueService.GetSnapshotAsync(cancellationToken);
+            var revalidatedItem = revalidatedSnapshot.Pending.FirstOrDefault(candidate =>
+                string.Equals(candidate.WorkerId, item.WorkerId, StringComparison.OrdinalIgnoreCase));
+            var revalidatedClaim = await retentionStore.GetDeletionClaimAsync(item.WorkerId, claim.ClaimId, claim.Version, cancellationToken);
+            if (revalidatedClaim is null ||
+                revalidatedItem is null ||
+                !revalidatedItem.IsEligibleForDeletion ||
+                revalidatedItem.IsOnHold ||
+                revalidatedItem.Version != claim.Version ||
+                string.IsNullOrWhiteSpace(revalidatedItem.DistinguishedName))
+            {
+                const string reason = "Deletion was not executed because its durable claim, hold/due state, or graveyard directory location changed before the directory mutation.";
+                await retentionStore.ReleaseDeletionClaimAsync(item.WorkerId, claim.ClaimId, claim.Version, CancellationToken.None);
+                return new WorkerRunResult(
+                    WorkerId: item.WorkerId,
+                    Bucket: "conflicts",
+                    SamAccountName: item.SamAccountName,
+                    Reason: reason,
+                    ReviewCategory: "ExternalSystem",
+                    ReviewCaseType: "DeletePreconditionFailed",
+                    Action: null,
+                    Applied: false,
+                    Succeeded: false,
+                    OperationSummary: null,
+                    DiffRows: [],
+                    Item: BuildEntryItem(item, "conflicts", action: null, applied: false, succeeded: false, reason));
+            }
+
+            var result = await directoryCommandGateway.ExecuteAsync(BuildDeleteCommand(revalidatedItem), cancellationToken);
             applied = true;
             succeeded = result.Succeeded;
             reasonMessage = result.Message;
             if (result.Succeeded)
             {
-                await retentionStore.ResolveAsync(item.WorkerId, cancellationToken);
+                if (!await retentionStore.ResolveDeletionClaimAsync(item.WorkerId, claim.ClaimId, claim.Version, cancellationToken))
+                {
+                    bucket = "conflicts";
+                    succeeded = false;
+                    reasonMessage = "The directory user was deleted, but the retention claim could not be resolved because it changed concurrently.";
+                }
             }
             else
             {
                 bucket = "conflicts";
+                await retentionStore.ReleaseDeletionClaimAsync(item.WorkerId, claim.ClaimId, claim.Version, cancellationToken);
             }
         }
         catch (Exception ex)
         {
+            await retentionStore.ReleaseDeletionClaimAsync(item.WorkerId, claim.ClaimId, claim.Version, CancellationToken.None);
             applied = true;
             succeeded = false;
             bucket = "conflicts";

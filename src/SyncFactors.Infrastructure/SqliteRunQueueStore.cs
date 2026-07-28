@@ -27,7 +27,8 @@ public sealed class SqliteRunQueueStore(SqlitePathResolver pathResolver) : IRunQ
             StartedAt: null,
             CompletedAt: null,
             RunId: null,
-            ErrorMessage: null);
+            ErrorMessage: null,
+            TargetWorkerId: request.TargetWorkerId);
 
         await using var connection = SqliteConnections.Open(databasePath);
         await connection.OpenAsync(cancellationToken);
@@ -46,7 +47,8 @@ public sealed class SqliteRunQueueStore(SqlitePathResolver pathResolver) : IRunQ
               completed_at,
               run_id,
               worker_name,
-              error_message
+              error_message,
+              target_worker_id
             )
             VALUES (
               $requestId,
@@ -60,7 +62,8 @@ public sealed class SqliteRunQueueStore(SqlitePathResolver pathResolver) : IRunQ
               NULL,
               NULL,
               NULL,
-              NULL
+              NULL,
+              $targetWorkerId
             );
             """;
         Bind(command, queued, workerName: null);
@@ -105,7 +108,7 @@ public sealed class SqliteRunQueueStore(SqlitePathResolver pathResolver) : IRunQ
                 FROM run_queue
                 WHERE status IN ('InProgress', 'CancelRequested')
             )
-            RETURNING request_id, mode, dry_run, run_trigger, requested_by, status, requested_at, started_at, completed_at, run_id, error_message;
+            RETURNING request_id, mode, dry_run, run_trigger, requested_by, status, requested_at, started_at, completed_at, run_id, error_message, target_worker_id;
             """;
         command.Parameters.AddWithValue("$startedAt", DateTimeOffset.UtcNow.ToString("O"));
         command.Parameters.AddWithValue("$workerName", workerName);
@@ -138,7 +141,7 @@ public sealed class SqliteRunQueueStore(SqlitePathResolver pathResolver) : IRunQ
         await using var command = connection.CreateCommand();
         command.CommandText =
             """
-            SELECT request_id, mode, dry_run, run_trigger, requested_by, status, requested_at, started_at, completed_at, run_id, error_message
+            SELECT request_id, mode, dry_run, run_trigger, requested_by, status, requested_at, started_at, completed_at, run_id, error_message, target_worker_id
             FROM run_queue
             WHERE request_id = $requestId
             LIMIT 1;
@@ -163,7 +166,7 @@ public sealed class SqliteRunQueueStore(SqlitePathResolver pathResolver) : IRunQ
         await using var command = connection.CreateCommand();
         command.CommandText =
             """
-            SELECT request_id, mode, dry_run, run_trigger, requested_by, status, requested_at, started_at, completed_at, run_id, error_message
+            SELECT request_id, mode, dry_run, run_trigger, requested_by, status, requested_at, started_at, completed_at, run_id, error_message, target_worker_id
             FROM run_queue
             WHERE status IN ('Pending', 'InProgress', 'CancelRequested')
             ORDER BY CASE status
@@ -340,7 +343,8 @@ public sealed class SqliteRunQueueStore(SqlitePathResolver pathResolver) : IRunQ
               completed_at,
               run_id,
               worker_name,
-              error_message
+              error_message,
+              target_worker_id
             )
             VALUES (
               $requestId,
@@ -354,6 +358,7 @@ public sealed class SqliteRunQueueStore(SqlitePathResolver pathResolver) : IRunQ
               NULL,
               $runId,
               $workerName,
+              NULL,
               NULL
             );
             """;
@@ -388,7 +393,8 @@ public sealed class SqliteRunQueueStore(SqlitePathResolver pathResolver) : IRunQ
                 completed_at = $completedAt,
                 run_id = $runId,
                 error_message = $errorMessage
-            WHERE request_id = $requestId;
+            WHERE request_id = $requestId
+              AND status IN ('InProgress', 'CancelRequested');
             """;
         command.Parameters.AddWithValue("$requestId", requestId);
         command.Parameters.AddWithValue("$status", status);
@@ -409,6 +415,7 @@ public sealed class SqliteRunQueueStore(SqlitePathResolver pathResolver) : IRunQ
         command.Parameters.AddWithValue("$requestedAt", request.RequestedAt.ToString("O"));
         command.Parameters.AddWithValue("$startedAt", (object?)request.StartedAt?.ToString("O") ?? DBNull.Value);
         command.Parameters.AddWithValue("$workerName", (object?)workerName ?? DBNull.Value);
+        command.Parameters.AddWithValue("$targetWorkerId", (object?)request.TargetWorkerId ?? DBNull.Value);
     }
 
     private static RunQueueRequest Map(SqliteDataReader reader)
@@ -424,7 +431,8 @@ public sealed class SqliteRunQueueStore(SqlitePathResolver pathResolver) : IRunQ
             StartedAt: ParseDate(reader.GetStringOrDefault("started_at")),
             CompletedAt: ParseDate(reader.GetStringOrDefault("completed_at")),
             RunId: reader.GetStringOrDefault("run_id"),
-            ErrorMessage: reader.GetStringOrDefault("error_message"));
+            ErrorMessage: reader.GetStringOrDefault("error_message"),
+            TargetWorkerId: reader.GetStringOrDefault("target_worker_id"));
     }
 
     private static DateTimeOffset? ParseDate(string? value)

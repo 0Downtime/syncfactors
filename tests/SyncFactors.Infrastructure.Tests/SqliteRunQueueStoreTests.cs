@@ -181,6 +181,36 @@ public sealed class SqliteRunQueueStoreTests
     }
 
     [Fact]
+    public async Task FailAsync_DoesNotClobberATerminalRequestWhenAStaleWorkerReportsLate()
+    {
+        var databasePath = await CreateDatabaseAsync();
+
+        try
+        {
+            await ExecuteAsync(
+                databasePath,
+                """
+                INSERT INTO run_queue (
+                  request_id, mode, dry_run, run_trigger, requested_by, status, requested_at, started_at, completed_at, run_id, worker_name, error_message
+                )
+                VALUES ('req-completed', 'BulkSync', 0, 'AdHoc', 'test', 'Completed', '2026-04-06T12:00:00Z', '2026-04-06T12:01:00Z', '2026-04-06T12:02:00Z', 'run-1', 'worker-a', NULL);
+                """);
+            var store = new SqliteRunQueueStore(new SqlitePathResolver(databasePath));
+
+            await store.FailAsync("req-completed", "stale-run", "late worker failure", CancellationToken.None);
+
+            var persisted = await store.GetAsync("req-completed", CancellationToken.None);
+            Assert.Equal("Completed", persisted!.Status);
+            Assert.Equal("run-1", persisted.RunId);
+            Assert.Null(persisted.ErrorMessage);
+        }
+        finally
+        {
+            File.Delete(databasePath);
+        }
+    }
+
+    [Fact]
     public async Task GetPendingOrActiveAsync_ReturnsTheOneNonTerminalRequest()
     {
         var databasePath = await CreateDatabaseAsync();

@@ -193,13 +193,15 @@ public sealed record RunQueueRequest(
     DateTimeOffset? StartedAt,
     DateTimeOffset? CompletedAt,
     string? RunId,
-    string? ErrorMessage);
+    string? ErrorMessage,
+    string? TargetWorkerId = null);
 
 public sealed record StartRunRequest(
     bool DryRun,
     string Mode = "BulkSync",
     string RunTrigger = "AdHoc",
-    string? RequestedBy = null);
+    string? RequestedBy = null,
+    string? TargetWorkerId = null);
 
 public sealed record RunQueueRecoveryProbeRequest(
     string? RequestId,
@@ -406,7 +408,15 @@ public sealed record GraveyardRetentionRecord(
     bool Active,
     bool IsOnHold = false,
     DateTimeOffset? HoldPlacedAtUtc = null,
-    string? HoldPlacedBy = null);
+    string? HoldPlacedBy = null,
+    long Version = 0,
+    string? DeletionClaimId = null,
+    long? DeletionClaimVersion = null);
+
+public sealed record GraveyardDeletionClaim(
+    string WorkerId,
+    string ClaimId,
+    long Version);
 
 public sealed record GraveyardRetentionReportStatus(
     DateTimeOffset? LastSentAtUtc,

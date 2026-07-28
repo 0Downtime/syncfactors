@@ -45,7 +45,9 @@ public class Worker(
                     var maxDegreeOfParallelism = Math.Max(1, executionSettings.GetMaxDegreeOfParallelism());
                     var runId = string.Equals(claimed.Mode, "DeleteAllUsers", StringComparison.OrdinalIgnoreCase)
                         ? await deleteAllUsersCoordinator.ExecuteAsync(claimed, stoppingToken)
-                        : await bulkRunCoordinator.ExecuteAsync(claimed, maxDegreeOfParallelism, stoppingToken);
+                        : string.Equals(claimed.Mode, "GraveyardDeleteApproval", StringComparison.OrdinalIgnoreCase)
+                            ? await graveyardAutoDeleteCoordinator.ExecuteApprovedDeleteAsync(claimed, stoppingToken)
+                            : await bulkRunCoordinator.ExecuteAsync(claimed, maxDegreeOfParallelism, stoppingToken);
                     await runQueueStore.CompleteAsync(claimed.RequestId, runId, CancellationToken.None);
                     await TryWriteHeartbeatAsync(startedAt, "Idle", $"Completed queued run {claimed.RequestId}.", CancellationToken.None);
                 }

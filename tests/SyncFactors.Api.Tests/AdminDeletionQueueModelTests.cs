@@ -153,7 +153,7 @@ public sealed class AdminDeletionQueueModelTests
     }
 
     [Fact]
-    public async Task OnPostApproveDeleteAsync_DeletesEligibleUser()
+    public async Task OnPostApproveDeleteAsync_QueuesEligibleUserWithoutDirectExecution()
     {
         var store = new CapturingRetentionStore([CreateRecord("10001", false)]);
         var commandGateway = new CapturingDirectoryCommandGateway();
@@ -163,13 +163,10 @@ public sealed class AdminDeletionQueueModelTests
         var result = await model.OnPostApproveDeleteAsync("10001", CancellationToken.None);
 
         Assert.IsType<RedirectToPageResult>(result);
-        var command = Assert.Single(commandGateway.Commands);
-        Assert.Equal("DeleteUser", command.Action);
-        Assert.Equal("10001", command.WorkerId);
-        Assert.Equal(["10001"], store.ResolvedWorkerIds);
-        Assert.Contains("Deleted", model.SuccessMessage, StringComparison.OrdinalIgnoreCase);
-        Assert.Single(lifecycle.Entries);
-        Assert.Equal("GraveyardDeleteApproval", lifecycle.CompletedMode);
+        Assert.Empty(commandGateway.Commands);
+        Assert.Empty(store.ResolvedWorkerIds);
+        Assert.Contains("queued", model.SuccessMessage, StringComparison.OrdinalIgnoreCase);
+        Assert.Empty(lifecycle.Entries);
     }
 
     private static DeletionQueueModel CreateModel(
@@ -203,6 +200,7 @@ public sealed class AdminDeletionQueueModelTests
             store,
             commandGateway ?? new CapturingDirectoryCommandGateway(),
             lifecycle ?? new CapturingRunLifecycleService(),
+            new CapturingRunQueueStore(),
             settings,
             new WorkerRunSettings(MaxCreatesPerRun: 10, MaxDisablesPerRun: 10, MaxDeletionsPerRun: 10),
             new RealSyncSettings(),
@@ -326,6 +324,35 @@ public sealed class AdminDeletionQueueModelTests
             Commands.Add(command);
             return Task.FromResult(new DirectoryCommandResult(true, command.Action, command.SamAccountName, command.CurrentDistinguishedName, "Deleted", null));
         }
+    }
+
+    private sealed class CapturingRunQueueStore : IRunQueueStore
+    {
+        public Task<RunQueueRequest> EnqueueAsync(StartRunRequest request, CancellationToken cancellationToken) =>
+            Task.FromResult(new RunQueueRequest(
+                RequestId: "approval-request-1",
+                Mode: request.Mode,
+                DryRun: request.DryRun,
+                RunTrigger: request.RunTrigger,
+                RequestedBy: request.RequestedBy,
+                Status: "Pending",
+                RequestedAt: DateTimeOffset.UtcNow,
+                StartedAt: null,
+                CompletedAt: null,
+                RunId: null,
+                ErrorMessage: null,
+                TargetWorkerId: request.TargetWorkerId));
+
+        public Task<RunQueueRequest?> ClaimNextPendingAsync(string workerName, CancellationToken cancellationToken) => Task.FromResult<RunQueueRequest?>(null);
+        public Task<RunQueueRequest?> GetAsync(string requestId, CancellationToken cancellationToken) => Task.FromResult<RunQueueRequest?>(null);
+        public Task<RunQueueRequest?> GetPendingOrActiveAsync(CancellationToken cancellationToken) => Task.FromResult<RunQueueRequest?>(null);
+        public Task<bool> HasPendingOrActiveRunAsync(CancellationToken cancellationToken) => Task.FromResult(false);
+        public Task<bool> CancelPendingOrActiveAsync(string? requestedBy, CancellationToken cancellationToken) => Task.FromResult(false);
+        public Task<bool> IsCancellationRequestedAsync(string requestId, CancellationToken cancellationToken) => Task.FromResult(false);
+        public Task CompleteAsync(string requestId, string runId, CancellationToken cancellationToken) => Task.CompletedTask;
+        public Task CancelAsync(string requestId, string? runId, string? errorMessage, CancellationToken cancellationToken) => Task.CompletedTask;
+        public Task FailAsync(string requestId, string? runId, string errorMessage, CancellationToken cancellationToken) => Task.CompletedTask;
+        public Task<int> RecoverOrphanedActiveRunsAsync(string? errorMessage, CancellationToken cancellationToken) => Task.FromResult(0);
     }
 
     private sealed class CapturingRunLifecycleService : IRunLifecycleService
