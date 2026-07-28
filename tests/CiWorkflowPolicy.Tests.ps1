@@ -276,4 +276,12 @@ jobs:
             $releaseWorkflow | Should -Not -Match '\$latestByName'
             $releaseWorkflow | Should -Not -Match '\$incompleteChecks \+= "\$\( \$requiredCheck\.checkName\)=untrusted-provenance"'
         }
+
+    It 'runs the Production bootstrap policy in GitHub security CI and Azure deployment CI' {
+        $securityWorkflow = Get-Content -Path (Join-Path $PSScriptRoot '../.github/workflows/security.yml') -Raw
+        $azurePipeline = Get-Content -Path (Join-Path $PSScriptRoot '../azure-pipelines.deploy.yml') -Raw
+
+        $securityWorkflow | Should -Match 'Invoke-Pester .*ProductionBootstrapPolicy\.Tests\.ps1.*-CI'
+        $azurePipeline | Should -Match 'Invoke-Pester .*ProductionBootstrapPolicy\.Tests\.ps1.*-CI'
+    }
 }
