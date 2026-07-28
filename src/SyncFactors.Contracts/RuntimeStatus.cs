@@ -424,7 +424,21 @@ public sealed record GraveyardRetentionRecord(
 public sealed record GraveyardDeletionClaim(
     string WorkerId,
     string ClaimId,
-    long Version);
+    long Version,
+    DateTimeOffset LeaseExpiresAtUtc = default);
+
+public enum GraveyardHoldChangeOutcome
+{
+    Accepted,
+    ActiveDeletionLease,
+    NotFound,
+    StateChanged
+}
+
+public sealed record GraveyardHoldChangeResult(GraveyardHoldChangeOutcome Outcome)
+{
+    public bool Succeeded => Outcome == GraveyardHoldChangeOutcome.Accepted;
+}
 
 public sealed record GraveyardRetentionReportStatus(
     DateTimeOffset? LastSentAtUtc,

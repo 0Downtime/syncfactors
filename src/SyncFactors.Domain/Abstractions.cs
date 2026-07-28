@@ -225,10 +225,16 @@ public interface IGraveyardRetentionStore
     Task UpsertObservedAsync(GraveyardRetentionRecord record, CancellationToken cancellationToken);
     Task ResolveAsync(string workerId, CancellationToken cancellationToken);
     Task<IReadOnlyList<GraveyardRetentionRecord>> ListActiveAsync(CancellationToken cancellationToken);
-    Task SetHoldAsync(string workerId, bool isOnHold, string? actingUserId, DateTimeOffset changedAtUtc, CancellationToken cancellationToken);
-    Task<GraveyardDeletionClaim?> TryClaimDeletionAsync(string workerId, long expectedVersion, string claimId, CancellationToken cancellationToken) =>
+    Task<GraveyardHoldChangeResult> SetHoldAsync(string workerId, bool isOnHold, string? actingUserId, DateTimeOffset changedAtUtc, CancellationToken cancellationToken);
+    Task<GraveyardDeletionClaim?> TryClaimDeletionAsync(
+        string workerId,
+        long expectedVersion,
+        string claimId,
+        DateTimeOffset now,
+        DateTimeOffset leaseExpiresAtUtc,
+        CancellationToken cancellationToken) =>
         throw new NotSupportedException("Durable graveyard deletion claims are not supported by this store.");
-    Task<GraveyardDeletionClaim?> GetDeletionClaimAsync(string workerId, string claimId, long claimVersion, CancellationToken cancellationToken) =>
+    Task<GraveyardDeletionClaim?> GetDeletionClaimAsync(string workerId, string claimId, long claimVersion, DateTimeOffset now, CancellationToken cancellationToken) =>
         throw new NotSupportedException("Durable graveyard deletion claims are not supported by this store.");
     Task<bool> ReleaseDeletionClaimAsync(string workerId, string claimId, long claimVersion, CancellationToken cancellationToken) =>
         throw new NotSupportedException("Durable graveyard deletion claims are not supported by this store.");

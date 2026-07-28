@@ -139,6 +139,21 @@ public sealed class AdminDeletionQueueModelTests
     }
 
     [Fact]
+    public async Task OnPostPlaceHoldAsync_ShowsConflictWhenDeletionLeaseIsActive()
+    {
+        var store = new CapturingRetentionStore(
+            [CreateRecord("10001", false)],
+            new GraveyardHoldChangeResult(GraveyardHoldChangeOutcome.ActiveDeletionLease));
+        var model = CreateModel(store);
+
+        var result = await model.OnPostPlaceHoldAsync("10001", CancellationToken.None);
+
+        Assert.IsType<RedirectToPageResult>(result);
+        Assert.Null(model.SuccessMessage);
+        Assert.Equal("Deletion hold for worker 10001 was not placed because a deletion lease is active.", model.ErrorMessage);
+    }
+
+    [Fact]
     public async Task OnPostRemoveHoldAsync_ClearsHold()
     {
         var store = new CapturingRetentionStore([CreateRecord("10001", true)]);
@@ -245,7 +260,9 @@ public sealed class AdminDeletionQueueModelTests
             HoldPlacedAtUtc: isOnHold ? DateTimeOffset.Parse("2026-04-05T00:00:00Z") : null,
             HoldPlacedBy: isOnHold ? "admin-1" : null);
 
-    private sealed class CapturingRetentionStore(IReadOnlyList<GraveyardRetentionRecord> records) : IGraveyardRetentionStore
+    private sealed class CapturingRetentionStore(
+        IReadOnlyList<GraveyardRetentionRecord> records,
+        GraveyardHoldChangeResult? holdResult = null) : IGraveyardRetentionStore
     {
         public IReadOnlyList<GraveyardRetentionRecord> Records => records;
 
@@ -268,12 +285,12 @@ public sealed class AdminDeletionQueueModelTests
         public Task<IReadOnlyList<GraveyardRetentionRecord>> ListActiveAsync(CancellationToken cancellationToken) =>
             Task.FromResult(records);
 
-        public Task SetHoldAsync(string workerId, bool isOnHold, string? actingUserId, DateTimeOffset changedAtUtc, CancellationToken cancellationToken)
+        public Task<GraveyardHoldChangeResult> SetHoldAsync(string workerId, bool isOnHold, string? actingUserId, DateTimeOffset changedAtUtc, CancellationToken cancellationToken)
         {
             LastWorkerId = workerId;
             LastIsOnHold = isOnHold;
             LastActingUserId = actingUserId;
-            return Task.CompletedTask;
+            return Task.FromResult(holdResult ?? new GraveyardHoldChangeResult(GraveyardHoldChangeOutcome.Accepted));
         }
 
         public Task<GraveyardRetentionReportStatus> GetReportStatusAsync(CancellationToken cancellationToken) =>

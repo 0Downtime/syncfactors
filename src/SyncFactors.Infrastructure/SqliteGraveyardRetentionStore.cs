@@ -57,7 +57,11 @@ public sealed class SqliteGraveyardRetentionStore(SqlitePathResolver pathResolve
               active = excluded.active,
               version = graveyard_retention.version + 1,
               deletion_claim_id = NULL,
-              deletion_claim_version = NULL;
+              deletion_claim_version = NULL,
+              deletion_lease_expires_at_utc = NULL
+            WHERE graveyard_retention.deletion_claim_id IS NULL
+               OR graveyard_retention.deletion_lease_expires_at_utc IS NULL
+               OR graveyard_retention.deletion_lease_expires_at_utc <= $now;
             """;
         command.Parameters.AddWithValue("$workerId", record.WorkerId);
         command.Parameters.AddWithValue("$samAccountName", (object?)record.SamAccountName ?? DBNull.Value);
@@ -66,6 +70,7 @@ public sealed class SqliteGraveyardRetentionStore(SqlitePathResolver pathResolve
         command.Parameters.AddWithValue("$status", record.Status);
         command.Parameters.AddWithValue("$endDateUtc", ToDbValue(record.EndDateUtc));
         command.Parameters.AddWithValue("$lastObservedAtUtc", record.LastObservedAtUtc.ToString("O"));
+        command.Parameters.AddWithValue("$now", DateTimeOffset.UtcNow.ToString("O"));
         command.Parameters.AddWithValue("$active", record.Active ? 1 : 0);
         command.Parameters.AddWithValue("$isOnHold", record.IsOnHold ? 1 : 0);
         command.Parameters.AddWithValue("$holdPlacedAtUtc", ToDbValue(record.HoldPlacedAtUtc));
@@ -90,10 +95,17 @@ public sealed class SqliteGraveyardRetentionStore(SqlitePathResolver pathResolve
             SET active = 0,
                 version = version + 1,
                 deletion_claim_id = NULL,
-                deletion_claim_version = NULL
-            WHERE worker_id = $workerId;
+                deletion_claim_version = NULL,
+                deletion_lease_expires_at_utc = NULL
+            WHERE worker_id = $workerId
+              AND (
+                deletion_claim_id IS NULL
+                OR deletion_lease_expires_at_utc IS NULL
+                OR deletion_lease_expires_at_utc <= $now
+              );
             """;
         command.Parameters.AddWithValue("$workerId", workerId);
+        command.Parameters.AddWithValue("$now", DateTimeOffset.UtcNow.ToString("O"));
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
@@ -138,12 +150,12 @@ public sealed class SqliteGraveyardRetentionStore(SqlitePathResolver pathResolve
         return records;
     }
 
-    public async Task SetHoldAsync(string workerId, bool isOnHold, string? actingUserId, DateTimeOffset changedAtUtc, CancellationToken cancellationToken)
+    public async Task<GraveyardHoldChangeResult> SetHoldAsync(string workerId, bool isOnHold, string? actingUserId, DateTimeOffset changedAtUtc, CancellationToken cancellationToken)
     {
         var databasePath = pathResolver.ResolveConfiguredPath() ?? pathResolver.Resolve();
         if (string.IsNullOrWhiteSpace(databasePath))
         {
-            return;
+            return new GraveyardHoldChangeResult(GraveyardHoldChangeOutcome.StateChanged);
         }
 
         await using var connection = OpenConnection(databasePath);
@@ -157,20 +169,54 @@ public sealed class SqliteGraveyardRetentionStore(SqlitePathResolver pathResolve
                 hold_placed_by = $holdPlacedBy,
                 version = version + 1,
                 deletion_claim_id = NULL,
-                deletion_claim_version = NULL
-            WHERE worker_id = $workerId;
+                deletion_claim_version = NULL,
+                deletion_lease_expires_at_utc = NULL
+            WHERE worker_id = $workerId
+              AND (
+                deletion_claim_id IS NULL
+                OR deletion_lease_expires_at_utc IS NULL
+                OR deletion_lease_expires_at_utc <= $changedAtUtc
+              );
             """;
         command.Parameters.AddWithValue("$workerId", workerId);
         command.Parameters.AddWithValue("$isOnHold", isOnHold ? 1 : 0);
         command.Parameters.AddWithValue("$holdPlacedAtUtc", isOnHold ? changedAtUtc.ToString("O") : DBNull.Value);
         command.Parameters.AddWithValue("$holdPlacedBy", isOnHold ? (object?)actingUserId ?? DBNull.Value : DBNull.Value);
-        await command.ExecuteNonQueryAsync(cancellationToken);
+        command.Parameters.AddWithValue("$changedAtUtc", changedAtUtc.ToString("O"));
+        if (await command.ExecuteNonQueryAsync(cancellationToken) == 1)
+        {
+            return new GraveyardHoldChangeResult(GraveyardHoldChangeOutcome.Accepted);
+        }
+
+        await using var stateCommand = connection.CreateCommand();
+        stateCommand.CommandText =
+            """
+            SELECT deletion_claim_id, deletion_lease_expires_at_utc
+            FROM graveyard_retention
+            WHERE worker_id = $workerId
+            LIMIT 1;
+            """;
+        stateCommand.Parameters.AddWithValue("$workerId", workerId);
+        await using var reader = await stateCommand.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return new GraveyardHoldChangeResult(GraveyardHoldChangeOutcome.NotFound);
+        }
+
+        var hasActiveLease = !await reader.IsDBNullAsync(0, cancellationToken) &&
+            !await reader.IsDBNullAsync(1, cancellationToken) &&
+            ParseDate(reader.GetString(1)) is { } leaseExpiresAtUtc &&
+            leaseExpiresAtUtc > changedAtUtc;
+        return new GraveyardHoldChangeResult(
+            hasActiveLease ? GraveyardHoldChangeOutcome.ActiveDeletionLease : GraveyardHoldChangeOutcome.StateChanged);
     }
 
     public async Task<GraveyardDeletionClaim?> TryClaimDeletionAsync(
         string workerId,
         long expectedVersion,
         string claimId,
+        DateTimeOffset now,
+        DateTimeOffset leaseExpiresAtUtc,
         CancellationToken cancellationToken)
     {
         var databasePath = pathResolver.ResolveConfiguredPath() ?? pathResolver.Resolve();
@@ -187,20 +233,27 @@ public sealed class SqliteGraveyardRetentionStore(SqlitePathResolver pathResolve
             UPDATE graveyard_retention
             SET version = version + 1,
                 deletion_claim_id = $claimId,
-                deletion_claim_version = version + 1
+                deletion_claim_version = version + 1,
+                deletion_lease_expires_at_utc = $leaseExpiresAtUtc
             WHERE worker_id = $workerId
               AND version = $expectedVersion
               AND active = 1
               AND is_on_hold = 0
-              AND deletion_claim_id IS NULL
-            RETURNING worker_id, deletion_claim_id, deletion_claim_version;
+              AND (
+                deletion_claim_id IS NULL
+                OR deletion_lease_expires_at_utc IS NULL
+                OR deletion_lease_expires_at_utc <= $now
+              )
+            RETURNING worker_id, deletion_claim_id, deletion_claim_version, deletion_lease_expires_at_utc;
             """;
         command.Parameters.AddWithValue("$workerId", workerId);
         command.Parameters.AddWithValue("$expectedVersion", expectedVersion);
         command.Parameters.AddWithValue("$claimId", claimId);
+        command.Parameters.AddWithValue("$now", now.ToString("O"));
+        command.Parameters.AddWithValue("$leaseExpiresAtUtc", leaseExpiresAtUtc.ToString("O"));
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         return await reader.ReadAsync(cancellationToken)
-            ? new GraveyardDeletionClaim(reader.GetString(0), reader.GetString(1), reader.GetInt64(2))
+            ? new GraveyardDeletionClaim(reader.GetString(0), reader.GetString(1), reader.GetInt64(2), ParseDate(reader.GetString(3)) ?? DateTimeOffset.MinValue)
             : null;
     }
 
@@ -208,6 +261,7 @@ public sealed class SqliteGraveyardRetentionStore(SqlitePathResolver pathResolve
         string workerId,
         string claimId,
         long claimVersion,
+        DateTimeOffset now,
         CancellationToken cancellationToken)
     {
         var databasePath = pathResolver.ResolveConfiguredPath() ?? pathResolver.Resolve();
@@ -221,7 +275,7 @@ public sealed class SqliteGraveyardRetentionStore(SqlitePathResolver pathResolve
         await using var command = connection.CreateCommand();
         command.CommandText =
             """
-            SELECT worker_id, deletion_claim_id, deletion_claim_version
+            SELECT worker_id, deletion_claim_id, deletion_claim_version, deletion_lease_expires_at_utc
             FROM graveyard_retention
             WHERE worker_id = $workerId
               AND active = 1
@@ -229,14 +283,16 @@ public sealed class SqliteGraveyardRetentionStore(SqlitePathResolver pathResolve
               AND version = $claimVersion
               AND deletion_claim_id = $claimId
               AND deletion_claim_version = $claimVersion
+              AND deletion_lease_expires_at_utc > $now
             LIMIT 1;
             """;
         command.Parameters.AddWithValue("$workerId", workerId);
         command.Parameters.AddWithValue("$claimId", claimId);
         command.Parameters.AddWithValue("$claimVersion", claimVersion);
+        command.Parameters.AddWithValue("$now", now.ToString("O"));
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         return await reader.ReadAsync(cancellationToken)
-            ? new GraveyardDeletionClaim(reader.GetString(0), reader.GetString(1), reader.GetInt64(2))
+            ? new GraveyardDeletionClaim(reader.GetString(0), reader.GetString(1), reader.GetInt64(2), ParseDate(reader.GetString(3)) ?? DateTimeOffset.MinValue)
             : null;
     }
 
@@ -336,7 +392,8 @@ public sealed class SqliteGraveyardRetentionStore(SqlitePathResolver pathResolve
             SET active = CASE WHEN $resolve = 1 THEN 0 ELSE active END,
                 version = version + 1,
                 deletion_claim_id = NULL,
-                deletion_claim_version = NULL
+                deletion_claim_version = NULL,
+                deletion_lease_expires_at_utc = NULL
             WHERE worker_id = $workerId
               AND active = 1
               AND is_on_hold = 0

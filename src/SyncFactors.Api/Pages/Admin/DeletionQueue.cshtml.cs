@@ -2,6 +2,7 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
+using SyncFactors.Contracts;
 using SyncFactors.Domain;
 
 namespace SyncFactors.Api.Pages.Admin;
@@ -64,14 +65,27 @@ public sealed class DeletionQueueModel(
             return RedirectToCurrentPage();
         }
 
-        await retentionStore.SetHoldAsync(
+        var result = await retentionStore.SetHoldAsync(
             workerId,
             isOnHold: true,
             actingUserId: GetActingUserId(),
             changedAtUtc: timeProvider.GetUtcNow(),
             cancellationToken);
-        SuccessMessage = $"Placed a deletion hold for worker {workerId}.";
-        ErrorMessage = null;
+        if (result.Succeeded)
+        {
+            SuccessMessage = $"Placed a deletion hold for worker {workerId}.";
+            ErrorMessage = null;
+        }
+        else
+        {
+            SuccessMessage = null;
+            ErrorMessage = result.Outcome switch
+            {
+                GraveyardHoldChangeOutcome.ActiveDeletionLease => $"Deletion hold for worker {workerId} was not placed because a deletion lease is active.",
+                GraveyardHoldChangeOutcome.NotFound => $"Worker {workerId} is not in the deletion queue.",
+                _ => $"Deletion hold for worker {workerId} was not placed because the queue state changed."
+            };
+        }
         return RedirectToCurrentPage();
     }
 
@@ -84,14 +98,27 @@ public sealed class DeletionQueueModel(
             return RedirectToCurrentPage();
         }
 
-        await retentionStore.SetHoldAsync(
+        var result = await retentionStore.SetHoldAsync(
             workerId,
             isOnHold: false,
             actingUserId: GetActingUserId(),
             changedAtUtc: timeProvider.GetUtcNow(),
             cancellationToken);
-        SuccessMessage = $"Removed the deletion hold for worker {workerId}.";
-        ErrorMessage = null;
+        if (result.Succeeded)
+        {
+            SuccessMessage = $"Removed the deletion hold for worker {workerId}.";
+            ErrorMessage = null;
+        }
+        else
+        {
+            SuccessMessage = null;
+            ErrorMessage = result.Outcome switch
+            {
+                GraveyardHoldChangeOutcome.ActiveDeletionLease => $"Deletion hold for worker {workerId} was not removed because a deletion lease is active.",
+                GraveyardHoldChangeOutcome.NotFound => $"Worker {workerId} is not in the deletion queue.",
+                _ => $"Deletion hold for worker {workerId} was not removed because the queue state changed."
+            };
+        }
         return RedirectToCurrentPage();
     }
 

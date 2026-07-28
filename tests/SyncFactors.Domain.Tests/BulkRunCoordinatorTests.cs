@@ -1479,14 +1479,14 @@ public sealed class BulkRunCoordinatorTests
             return Task.FromResult<IReadOnlyList<GraveyardRetentionRecord>>(Observed);
         }
 
-        public Task SetHoldAsync(string workerId, bool isOnHold, string? actingUserId, DateTimeOffset changedAtUtc, CancellationToken cancellationToken)
+        public Task<GraveyardHoldChangeResult> SetHoldAsync(string workerId, bool isOnHold, string? actingUserId, DateTimeOffset changedAtUtc, CancellationToken cancellationToken)
         {
             _ = workerId;
             _ = isOnHold;
             _ = actingUserId;
             _ = changedAtUtc;
             _ = cancellationToken;
-            return Task.CompletedTask;
+            return Task.FromResult(new GraveyardHoldChangeResult(GraveyardHoldChangeOutcome.Accepted));
         }
 
         public Task<GraveyardRetentionReportStatus> GetReportStatusAsync(CancellationToken cancellationToken)
