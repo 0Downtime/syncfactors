@@ -393,9 +393,30 @@ public sealed class GraveyardAutoDeleteCoordinator(
             throw new InvalidOperationException(realSyncSettings.LiveWriteDisabledMessage);
         }
 
+        var currentSnapshot = await deletionQueueService.GetSnapshotAsync(cancellationToken);
+        var currentItem = currentSnapshot.Pending.FirstOrDefault(candidate =>
+            string.Equals(candidate.WorkerId, item.WorkerId, StringComparison.OrdinalIgnoreCase));
+        if (currentItem is null || !currentItem.IsEligibleForDeletion)
+        {
+            const string reason = "Deletion was not executed because the worker is no longer eligible in the current graveyard queue state.";
+            return new WorkerRunResult(
+                WorkerId: item.WorkerId,
+                Bucket: "conflicts",
+                SamAccountName: item.SamAccountName,
+                Reason: reason,
+                ReviewCategory: "ExternalSystem",
+                ReviewCaseType: "DeletePreconditionFailed",
+                Action: null,
+                Applied: false,
+                Succeeded: false,
+                OperationSummary: null,
+                DiffRows: [],
+                Item: BuildEntryItem(item, "conflicts", action: null, applied: false, succeeded: false, reason));
+        }
+
         try
         {
-            var result = await directoryCommandGateway.ExecuteAsync(BuildDeleteCommand(item), cancellationToken);
+            var result = await directoryCommandGateway.ExecuteAsync(BuildDeleteCommand(currentItem), cancellationToken);
             applied = true;
             succeeded = result.Succeeded;
             reasonMessage = result.Message;

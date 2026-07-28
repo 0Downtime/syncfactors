@@ -306,8 +306,18 @@ public sealed class BulkRunCoordinator(
                             }
                         }
 
+                        try
+                        {
+                            await UpdateGraveyardRetentionAsync(plan, request.DryRun, commandResult, ct);
+                        }
+                        catch (Exception ex) when (applied && commandResult is { Succeeded: true })
+                        {
+                            bucket = "conflicts";
+                            succeeded = false;
+                            reason = $"Graveyard retention state is unknown because persistence failed after a confirmed AD write: {ex.Message}";
+                        }
+
                         var item = BuildEntryItem(runId, request.DryRun, syncScope, plan, bucket, action, applied, succeeded, reason, plannedCommand, commandResult, captureMetadata);
-                        await UpdateGraveyardRetentionAsync(plan, ct);
                         await channel.Writer.WriteAsync(
                             new WorkerRunResult(
                                 WorkerId: worker.WorkerId,
@@ -710,23 +720,36 @@ public sealed class BulkRunCoordinator(
         RunCaptureMetadata captureMetadata) =>
         RunEntrySnapshotBuilder.BuildPlanningFailure(runId, dryRun, syncScope, worker, reason, captureMetadata);
 
-    private async Task UpdateGraveyardRetentionAsync(PlannedWorkerAction plan, CancellationToken cancellationToken)
+    private async Task UpdateGraveyardRetentionAsync(
+        PlannedWorkerAction plan,
+        bool dryRun,
+        DirectoryCommandResult? commandResult,
+        CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(plan.Worker.WorkerId))
+        if (dryRun || commandResult is not { Succeeded: true } || string.IsNullOrWhiteSpace(plan.Worker.WorkerId))
         {
             return;
         }
 
-        if (string.Equals(plan.TargetOu, lifecycleSettings.GraveyardOu, StringComparison.OrdinalIgnoreCase) &&
-            !plan.TargetEnabled &&
-            !string.IsNullOrWhiteSpace(plan.DirectoryUser.SamAccountName))
+        var verifiedParentOu = commandResult.VerifiedParentOu;
+        var movedIntoGraveyard =
+            !string.Equals(plan.CurrentOu, lifecycleSettings.GraveyardOu, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(plan.TargetOu, lifecycleSettings.GraveyardOu, StringComparison.OrdinalIgnoreCase);
+        if (movedIntoGraveyard)
         {
+            if (commandResult.VerifiedEnabled != false ||
+                !string.Equals(verifiedParentOu, lifecycleSettings.GraveyardOu, StringComparison.OrdinalIgnoreCase) ||
+                string.IsNullOrWhiteSpace(plan.DirectoryUser.SamAccountName))
+            {
+                return;
+            }
+
             await graveyardRetentionStore.UpsertObservedAsync(
                 new GraveyardRetentionRecord(
                     WorkerId: plan.Worker.WorkerId,
                     SamAccountName: plan.DirectoryUser.SamAccountName ?? plan.Identity.SamAccountName,
                     DisplayName: plan.DirectoryUser.DisplayName ?? $"{plan.Worker.PreferredName} {plan.Worker.LastName}".Trim(),
-                    DistinguishedName: plan.DirectoryUser.DistinguishedName,
+                    DistinguishedName: commandResult.VerifiedDistinguishedName,
                     Status: ResolveSourceAttribute(plan.Worker.Attributes, lifecycleSettings.InactiveStatusField) ?? string.Empty,
                     EndDateUtc: ParseSourceDate(ResolveSourceAttribute(plan.Worker.Attributes, "endDate")),
                     LastObservedAtUtc: timeProvider.GetUtcNow(),
@@ -735,7 +758,15 @@ public sealed class BulkRunCoordinator(
             return;
         }
 
-        await graveyardRetentionStore.ResolveAsync(plan.Worker.WorkerId, cancellationToken);
+        var movedOutOfGraveyard =
+            string.Equals(plan.CurrentOu, lifecycleSettings.GraveyardOu, StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(plan.TargetOu, lifecycleSettings.GraveyardOu, StringComparison.OrdinalIgnoreCase);
+        if (movedOutOfGraveyard &&
+            commandResult.VerifiedEnabled == plan.TargetEnabled &&
+            string.Equals(verifiedParentOu, plan.TargetOu, StringComparison.OrdinalIgnoreCase))
+        {
+            await graveyardRetentionStore.ResolveAsync(plan.Worker.WorkerId, cancellationToken);
+        }
     }
 
     private static string? ResolveSourceAttribute(IReadOnlyDictionary<string, string?> attributes, string key)
