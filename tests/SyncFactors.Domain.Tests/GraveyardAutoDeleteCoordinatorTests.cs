@@ -57,6 +57,32 @@ public sealed class GraveyardAutoDeleteCoordinatorTests
     }
 
     [Fact]
+    public async Task TryExecuteAsync_RechecksEligibilityImmediatelyBeforeDelete()
+    {
+        var retentionStore = new SequencedGraveyardRetentionStore(
+            [CreateRecord("10001", isOnHold: false, endDateUtc: DateTimeOffset.Parse("2026-02-01T00:00:00Z"))],
+            []);
+        var commandGateway = new CapturingDirectoryCommandGateway();
+        var lifecycle = new CapturingRunLifecycleService();
+        var coordinator = CreateCoordinator(
+            retentionStore,
+            CreateDirectoryGateway("10001"),
+            commandGateway,
+            lifecycle,
+            autoDeleteEnabled: true,
+            now: DateTimeOffset.Parse("2026-04-11T12:00:00Z"));
+
+        var runId = await coordinator.TryExecuteAsync(CancellationToken.None);
+
+        Assert.NotNull(runId);
+        Assert.Empty(commandGateway.Commands);
+        var entry = Assert.Single(lifecycle.Entries);
+        Assert.Equal("conflicts", entry.Bucket);
+        Assert.Equal("DeletePreconditionFailed", entry.ReviewCaseType);
+        Assert.False(entry.Item.GetProperty("applied").GetBoolean());
+    }
+
+    [Fact]
     public async Task TryExecuteAsync_ManualReviewDeletions_RebucketsDeleteWithoutExecutingDirectoryMutation()
     {
         var retentionStore = new StubGraveyardRetentionStore(
@@ -226,7 +252,7 @@ public sealed class GraveyardAutoDeleteCoordinatorTests
     }
 
     private static GraveyardAutoDeleteCoordinator CreateCoordinator(
-        StubGraveyardRetentionStore retentionStore,
+        IGraveyardRetentionStore retentionStore,
         IDirectoryGateway directoryGateway,
         IDirectoryCommandGateway commandGateway,
         CapturingRunLifecycleService lifecycle,
@@ -311,6 +337,31 @@ public sealed class GraveyardAutoDeleteCoordinatorTests
 
         public Task SetHoldAsync(string workerId, bool isOnHold, string? actingUserId, DateTimeOffset changedAtUtc, CancellationToken cancellationToken) =>
             Task.CompletedTask;
+
+        public Task<GraveyardRetentionReportStatus> GetReportStatusAsync(CancellationToken cancellationToken) =>
+            Task.FromResult(new GraveyardRetentionReportStatus(null, null, null));
+
+        public Task RecordReportAttemptAsync(DateTimeOffset attemptedAt, string? error, DateTimeOffset? sentAtUtc, CancellationToken cancellationToken) =>
+            Task.CompletedTask;
+    }
+
+    private sealed class SequencedGraveyardRetentionStore(
+        IReadOnlyList<GraveyardRetentionRecord> initialRecords,
+        IReadOnlyList<GraveyardRetentionRecord> currentRecords) : IGraveyardRetentionStore
+    {
+        private int listCalls;
+
+        public Task UpsertObservedAsync(GraveyardRetentionRecord record, CancellationToken cancellationToken) => Task.CompletedTask;
+
+        public Task ResolveAsync(string workerId, CancellationToken cancellationToken) => Task.CompletedTask;
+
+        public Task<IReadOnlyList<GraveyardRetentionRecord>> ListActiveAsync(CancellationToken cancellationToken)
+        {
+            _ = cancellationToken;
+            return Task.FromResult(listCalls++ == 0 ? initialRecords : currentRecords);
+        }
+
+        public Task SetHoldAsync(string workerId, bool isOnHold, string? actingUserId, DateTimeOffset changedAtUtc, CancellationToken cancellationToken) => Task.CompletedTask;
 
         public Task<GraveyardRetentionReportStatus> GetReportStatusAsync(CancellationToken cancellationToken) =>
             Task.FromResult(new GraveyardRetentionReportStatus(null, null, null));

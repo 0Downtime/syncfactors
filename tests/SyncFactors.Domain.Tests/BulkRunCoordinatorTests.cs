@@ -417,7 +417,7 @@ public sealed class BulkRunCoordinatorTests
             retentionStore,
             new GraveyardWorkerPlanningService(),
             new StubDirectoryMutationCommandBuilder(),
-            new SuccessfulDirectoryCommandGateway(),
+            new VerifiedSuccessfulDirectoryCommandGateway(),
             new StubDirectoryGateway(),
             new CapturingRunLifecycleService(),
             new RealSyncSettings(),
@@ -446,6 +446,300 @@ public sealed class BulkRunCoordinatorTests
         Assert.Equal("10001", record.WorkerId);
         Assert.Equal("64308", record.Status);
         Assert.Equal(DateTimeOffset.FromUnixTimeMilliseconds(1777772800000), record.EndDateUtc);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_DryRun_DoesNotMutateGraveyardRetention()
+    {
+        CapturingRunLifecycleService.Entries.Clear();
+        CapturingRunLifecycleService.Reset();
+        var retentionStore = new StubGraveyardRetentionStore();
+        var coordinator = new BulkRunCoordinator(
+            new StubWorkerSource([CreateWorker("10001", "64308", "/Date(1777772800000)/")]),
+            new CapturingDeltaSyncService(),
+            new StubRunQueueStore(),
+            retentionStore,
+            new GraveyardWorkerPlanningService(),
+            new StubDirectoryMutationCommandBuilder(),
+            new StubDirectoryCommandGateway(),
+            new StubDirectoryGateway(),
+            new CapturingRunLifecycleService(),
+            new RealSyncSettings(),
+            new WorkerRunSettings(MaxCreatesPerRun: 10, MaxDeletionsPerRun: 5),
+            CreateLifecycleSettings(),
+            NullLogger<BulkRunCoordinator>.Instance,
+            TimeProvider.System);
+
+        await coordinator.ExecuteAsync(
+            new RunQueueRequest(
+                RequestId: "req-dry-run-retention",
+                Mode: "BulkSync",
+                DryRun: true,
+                RunTrigger: "AdHoc",
+                RequestedBy: "test",
+                Status: "Pending",
+                RequestedAt: DateTimeOffset.UtcNow,
+                StartedAt: null,
+                CompletedAt: null,
+                RunId: null,
+                ErrorMessage: null),
+            maxDegreeOfParallelism: 1,
+            CancellationToken.None);
+
+        Assert.Empty(retentionStore.Observed);
+        Assert.Empty(retentionStore.ResolvedWorkerIds);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_FailedMoveIntoGraveyard_DoesNotUpsertRetention()
+    {
+        CapturingRunLifecycleService.Entries.Clear();
+        CapturingRunLifecycleService.Reset();
+        var retentionStore = new StubGraveyardRetentionStore();
+        var coordinator = new BulkRunCoordinator(
+            new StubWorkerSource([CreateWorker("10001", "64308", "/Date(1777772800000)/")]),
+            new CapturingDeltaSyncService(),
+            new StubRunQueueStore(),
+            retentionStore,
+            new GraveyardWorkerPlanningService(),
+            new StubDirectoryMutationCommandBuilder(),
+            new FailingDirectoryCommandGateway(),
+            new StubDirectoryGateway(),
+            new CapturingRunLifecycleService(),
+            new RealSyncSettings(),
+            new WorkerRunSettings(MaxCreatesPerRun: 10, MaxDeletionsPerRun: 5),
+            CreateLifecycleSettings(),
+            NullLogger<BulkRunCoordinator>.Instance,
+            TimeProvider.System);
+
+        await coordinator.ExecuteAsync(
+            new RunQueueRequest(
+                RequestId: "req-failed-graveyard-move",
+                Mode: "BulkSync",
+                DryRun: false,
+                RunTrigger: "AdHoc",
+                RequestedBy: "test",
+                Status: "Pending",
+                RequestedAt: DateTimeOffset.UtcNow,
+                StartedAt: null,
+                CompletedAt: null,
+                RunId: null,
+                ErrorMessage: null),
+            maxDegreeOfParallelism: 1,
+            CancellationToken.None);
+
+        Assert.Empty(retentionStore.Observed);
+        Assert.Empty(retentionStore.ResolvedWorkerIds);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_UnverifiedMoveIntoGraveyard_DoesNotUpsertRetention()
+    {
+        CapturingRunLifecycleService.Entries.Clear();
+        CapturingRunLifecycleService.Reset();
+        var retentionStore = new StubGraveyardRetentionStore();
+        var coordinator = new BulkRunCoordinator(
+            new StubWorkerSource([CreateWorker("10001", "64308", "/Date(1777772800000)/")]),
+            new CapturingDeltaSyncService(),
+            new StubRunQueueStore(),
+            retentionStore,
+            new GraveyardWorkerPlanningService(),
+            new StubDirectoryMutationCommandBuilder(),
+            new SuccessfulDirectoryCommandGateway(),
+            new StubDirectoryGateway(),
+            new CapturingRunLifecycleService(),
+            new RealSyncSettings(),
+            new WorkerRunSettings(MaxCreatesPerRun: 10, MaxDeletionsPerRun: 5),
+            CreateLifecycleSettings(),
+            NullLogger<BulkRunCoordinator>.Instance,
+            TimeProvider.System);
+
+        await coordinator.ExecuteAsync(
+            new RunQueueRequest(
+                RequestId: "req-unverified-graveyard-move",
+                Mode: "BulkSync",
+                DryRun: false,
+                RunTrigger: "AdHoc",
+                RequestedBy: "test",
+                Status: "Pending",
+                RequestedAt: DateTimeOffset.UtcNow,
+                StartedAt: null,
+                CompletedAt: null,
+                RunId: null,
+                ErrorMessage: null),
+            maxDegreeOfParallelism: 1,
+            CancellationToken.None);
+
+        Assert.Empty(retentionStore.Observed);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_FailedMoveOutOfGraveyard_DoesNotResolveRetention()
+    {
+        CapturingRunLifecycleService.Entries.Clear();
+        CapturingRunLifecycleService.Reset();
+        var retentionStore = new StubGraveyardRetentionStore();
+        var coordinator = new BulkRunCoordinator(
+            new StubWorkerSource([CreateWorker("10001", "A")]),
+            new CapturingDeltaSyncService(),
+            new StubRunQueueStore(),
+            retentionStore,
+            new ActiveWorkerPlanningService(),
+            new StubDirectoryMutationCommandBuilder(),
+            new FailingDirectoryCommandGateway(),
+            new StubDirectoryGateway(),
+            new CapturingRunLifecycleService(),
+            new RealSyncSettings(),
+            new WorkerRunSettings(MaxCreatesPerRun: 10),
+            CreateLifecycleSettings(),
+            NullLogger<BulkRunCoordinator>.Instance,
+            TimeProvider.System);
+
+        await coordinator.ExecuteAsync(
+            new RunQueueRequest(
+                RequestId: "req-failed-graveyard-exit",
+                Mode: "BulkSync",
+                DryRun: false,
+                RunTrigger: "AdHoc",
+                RequestedBy: "test",
+                Status: "Pending",
+                RequestedAt: DateTimeOffset.UtcNow,
+                StartedAt: null,
+                CompletedAt: null,
+                RunId: null,
+                ErrorMessage: null),
+            maxDegreeOfParallelism: 1,
+            CancellationToken.None);
+
+        Assert.Empty(retentionStore.Observed);
+        Assert.Empty(retentionStore.ResolvedWorkerIds);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_ConfirmedMoveOutOfGraveyard_ResolvesRetention()
+    {
+        CapturingRunLifecycleService.Entries.Clear();
+        CapturingRunLifecycleService.Reset();
+        var retentionStore = new StubGraveyardRetentionStore();
+        var coordinator = new BulkRunCoordinator(
+            new StubWorkerSource([CreateWorker("10001", "A")]),
+            new CapturingDeltaSyncService(),
+            new StubRunQueueStore(),
+            retentionStore,
+            new ActiveWorkerPlanningService(),
+            new StubDirectoryMutationCommandBuilder(),
+            new VerifiedGraveyardExitDirectoryCommandGateway(),
+            new StubDirectoryGateway(),
+            new CapturingRunLifecycleService(),
+            new RealSyncSettings(),
+            new WorkerRunSettings(MaxCreatesPerRun: 10),
+            CreateLifecycleSettings(),
+            NullLogger<BulkRunCoordinator>.Instance,
+            TimeProvider.System);
+
+        await coordinator.ExecuteAsync(
+            new RunQueueRequest(
+                RequestId: "req-confirmed-graveyard-exit",
+                Mode: "BulkSync",
+                DryRun: false,
+                RunTrigger: "AdHoc",
+                RequestedBy: "test",
+                Status: "Pending",
+                RequestedAt: DateTimeOffset.UtcNow,
+                StartedAt: null,
+                CompletedAt: null,
+                RunId: null,
+                ErrorMessage: null),
+            maxDegreeOfParallelism: 1,
+            CancellationToken.None);
+
+        Assert.Equal(["10001"], retentionStore.ResolvedWorkerIds);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_ConfirmedNonTransitionWithinGraveyard_DoesNotUpsertRetention()
+    {
+        CapturingRunLifecycleService.Entries.Clear();
+        CapturingRunLifecycleService.Reset();
+        var retentionStore = new StubGraveyardRetentionStore();
+        var coordinator = new BulkRunCoordinator(
+            new StubWorkerSource([CreateWorker("10001", "64308", "/Date(1777772800000)/")]),
+            new CapturingDeltaSyncService(),
+            new StubRunQueueStore(),
+            retentionStore,
+            new GraveyardWorkerPlanningService(alreadyInGraveyard: true),
+            new StubDirectoryMutationCommandBuilder(),
+            new VerifiedSuccessfulDirectoryCommandGateway(),
+            new StubDirectoryGateway(),
+            new CapturingRunLifecycleService(),
+            new RealSyncSettings(),
+            new WorkerRunSettings(MaxCreatesPerRun: 10, MaxDeletionsPerRun: 5),
+            CreateLifecycleSettings(),
+            NullLogger<BulkRunCoordinator>.Instance,
+            TimeProvider.System);
+
+        await coordinator.ExecuteAsync(
+            new RunQueueRequest(
+                RequestId: "req-non-transition-graveyard",
+                Mode: "BulkSync",
+                DryRun: false,
+                RunTrigger: "AdHoc",
+                RequestedBy: "test",
+                Status: "Pending",
+                RequestedAt: DateTimeOffset.UtcNow,
+                StartedAt: null,
+                CompletedAt: null,
+                RunId: null,
+                ErrorMessage: null),
+            maxDegreeOfParallelism: 1,
+            CancellationToken.None);
+
+        Assert.Empty(retentionStore.Observed);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_ConfirmedGraveyardMove_WhenRetentionPersistenceFails_ReportsPartialConflict()
+    {
+        CapturingRunLifecycleService.Entries.Clear();
+        CapturingRunLifecycleService.Reset();
+        var coordinator = new BulkRunCoordinator(
+            new StubWorkerSource([CreateWorker("10001", "64308", "/Date(1777772800000)/")]),
+            new CapturingDeltaSyncService(),
+            new StubRunQueueStore(),
+            new ThrowingGraveyardRetentionStore(),
+            new GraveyardWorkerPlanningService(),
+            new StubDirectoryMutationCommandBuilder(),
+            new VerifiedSuccessfulDirectoryCommandGateway(),
+            new StubDirectoryGateway(),
+            new CapturingRunLifecycleService(),
+            new RealSyncSettings(),
+            new WorkerRunSettings(MaxCreatesPerRun: 10, MaxDeletionsPerRun: 5),
+            CreateLifecycleSettings(),
+            NullLogger<BulkRunCoordinator>.Instance,
+            TimeProvider.System);
+
+        await coordinator.ExecuteAsync(
+            new RunQueueRequest(
+                RequestId: "req-retention-persistence-failure",
+                Mode: "BulkSync",
+                DryRun: false,
+                RunTrigger: "AdHoc",
+                RequestedBy: "test",
+                Status: "Pending",
+                RequestedAt: DateTimeOffset.UtcNow,
+                StartedAt: null,
+                CompletedAt: null,
+                RunId: null,
+                ErrorMessage: null),
+            maxDegreeOfParallelism: 1,
+            CancellationToken.None);
+
+        var entry = Assert.Single(CapturingRunLifecycleService.Entries);
+        Assert.Equal("conflicts", entry.Bucket);
+        Assert.True(entry.Item.GetProperty("applied").GetBoolean());
+        Assert.False(entry.Item.GetProperty("succeeded").GetBoolean());
+        Assert.Contains("retention state is unknown", entry.Item.GetProperty("reason").GetString(), StringComparison.Ordinal);
+        Assert.True(entry.Item.GetProperty("liveResult").GetProperty("succeeded").GetBoolean());
     }
 
     [Fact]
@@ -915,7 +1209,7 @@ public sealed class BulkRunCoordinatorTests
         }
     }
 
-    private sealed class GraveyardWorkerPlanningService : IWorkerPlanningService
+    private sealed class GraveyardWorkerPlanningService(bool alreadyInGraveyard = false) : IWorkerPlanningService
     {
         public Task<PlannedWorkerAction> PlanAsync(WorkerSnapshot worker, string? logPath, CancellationToken cancellationToken)
         {
@@ -927,8 +1221,10 @@ public sealed class BulkRunCoordinatorTests
                     Worker: worker,
                     DirectoryUser: new DirectoryUserSnapshot(
                         SamAccountName: worker.WorkerId,
-                        DistinguishedName: $"CN={worker.WorkerId},OU=Employees,DC=example,DC=com",
-                        Enabled: true,
+                        DistinguishedName: alreadyInGraveyard
+                            ? $"CN={worker.WorkerId},OU=Graveyard,DC=example,DC=com"
+                            : $"CN={worker.WorkerId},OU=Employees,DC=example,DC=com",
+                        Enabled: alreadyInGraveyard ? false : true,
                         DisplayName: $"Worker {worker.WorkerId}",
                         Attributes: new Dictionary<string, string?>()),
                     Identity: new IdentityMatchResult("graveyardMoves", true, worker.WorkerId, null, null),
@@ -937,12 +1233,51 @@ public sealed class BulkRunCoordinatorTests
                     AttributeChanges: [],
                     MissingSourceAttributes: [],
                     Bucket: "graveyardMoves",
-                    CurrentOu: "OU=Employees,DC=example,DC=com",
+                    CurrentOu: alreadyInGraveyard
+                        ? "OU=Graveyard,DC=example,DC=com"
+                        : "OU=Employees,DC=example,DC=com",
                     TargetOu: "OU=Graveyard,DC=example,DC=com",
-                    CurrentEnabled: true,
+                    CurrentEnabled: alreadyInGraveyard ? false : true,
                     TargetEnabled: false,
+                    PrimaryAction: alreadyInGraveyard ? "UpdateUser" : "MoveUser",
+                    Operations: alreadyInGraveyard
+                        ? [new DirectoryOperation("UpdateUser")]
+                        : [new DirectoryOperation("MoveUser", "OU=Graveyard,DC=example,DC=com"), new DirectoryOperation("DisableUser")],
+                    ReviewCategory: null,
+                    ReviewCaseType: null,
+                    Reason: null,
+                    CanAutoApply: true));
+        }
+    }
+
+    private sealed class ActiveWorkerPlanningService : IWorkerPlanningService
+    {
+        public Task<PlannedWorkerAction> PlanAsync(WorkerSnapshot worker, string? logPath, CancellationToken cancellationToken)
+        {
+            _ = logPath;
+            _ = cancellationToken;
+
+            return Task.FromResult(
+                new PlannedWorkerAction(
+                    Worker: worker,
+                    DirectoryUser: new DirectoryUserSnapshot(
+                        SamAccountName: worker.WorkerId,
+                        DistinguishedName: $"CN={worker.WorkerId},OU=Graveyard,DC=example,DC=com",
+                        Enabled: false,
+                        DisplayName: $"Worker {worker.WorkerId}",
+                        Attributes: new Dictionary<string, string?>()),
+                    Identity: new IdentityMatchResult("enables", true, worker.WorkerId, null, null),
+                    ManagerDistinguishedName: null,
+                    ProposedEmailAddress: $"{worker.WorkerId}@example.com",
+                    AttributeChanges: [],
+                    MissingSourceAttributes: [],
+                    Bucket: "enables",
+                    CurrentOu: "OU=Graveyard,DC=example,DC=com",
+                    TargetOu: "OU=Employees,DC=example,DC=com",
+                    CurrentEnabled: false,
+                    TargetEnabled: true,
                     PrimaryAction: "MoveUser",
-                    Operations: [new DirectoryOperation("MoveUser", "OU=Graveyard,DC=example,DC=com"), new DirectoryOperation("DisableUser")],
+                    Operations: [new DirectoryOperation("MoveUser", "OU=Employees,DC=example,DC=com"), new DirectoryOperation("EnableUser")],
                     ReviewCategory: null,
                     ReviewCaseType: null,
                     Reason: null,
@@ -1079,6 +1414,25 @@ public sealed class BulkRunCoordinatorTests
         }
     }
 
+    private sealed class VerifiedGraveyardExitDirectoryCommandGateway : IDirectoryCommandGateway
+    {
+        public Task<DirectoryCommandResult> ExecuteAsync(DirectoryMutationCommand command, CancellationToken cancellationToken)
+        {
+            _ = cancellationToken;
+            return Task.FromResult(
+                new DirectoryCommandResult(
+                    Succeeded: true,
+                    Action: command.Action,
+                    SamAccountName: command.SamAccountName,
+                    DistinguishedName: "CN=10001,OU=Employees,DC=example,DC=com",
+                    Message: "Applied",
+                    RunId: null,
+                    VerifiedEnabled: true,
+                    VerifiedDistinguishedName: "CN=10001,OU=Employees,DC=example,DC=com",
+                    VerifiedParentOu: "OU=Employees,DC=example,DC=com"));
+        }
+    }
+
     private sealed class CapturingDirectoryCommandGateway : IDirectoryCommandGateway
     {
         public List<DirectoryMutationCommand> Commands { get; } = [];
@@ -1100,12 +1454,12 @@ public sealed class BulkRunCoordinatorTests
         }
     }
 
-    private sealed class StubGraveyardRetentionStore : IGraveyardRetentionStore
+    private class StubGraveyardRetentionStore : IGraveyardRetentionStore
     {
         public List<GraveyardRetentionRecord> Observed { get; } = [];
         public List<string> ResolvedWorkerIds { get; } = [];
 
-        public Task UpsertObservedAsync(GraveyardRetentionRecord record, CancellationToken cancellationToken)
+        public virtual Task UpsertObservedAsync(GraveyardRetentionRecord record, CancellationToken cancellationToken)
         {
             _ = cancellationToken;
             Observed.Add(record);
@@ -1148,6 +1502,16 @@ public sealed class BulkRunCoordinatorTests
             _ = sentAtUtc;
             _ = cancellationToken;
             return Task.CompletedTask;
+        }
+    }
+
+    private sealed class ThrowingGraveyardRetentionStore : StubGraveyardRetentionStore
+    {
+        public override Task UpsertObservedAsync(GraveyardRetentionRecord record, CancellationToken cancellationToken)
+        {
+            _ = record;
+            _ = cancellationToken;
+            throw new InvalidOperationException("Retention persistence failed.");
         }
     }
 
