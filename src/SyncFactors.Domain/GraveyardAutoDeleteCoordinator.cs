@@ -18,59 +18,20 @@ public sealed class GraveyardAutoDeleteCoordinator(
 {
     private static readonly TimeSpan DeletionLeaseDuration = TimeSpan.FromMinutes(5);
 
-    public async Task<GraveyardDeletionApprovalResult> ApproveDeleteAsync(
+    public Task<GraveyardDeletionApprovalResult> ApproveDeleteAsync(
         string workerId,
         string? requestedBy,
         CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(workerId))
         {
-            return new GraveyardDeletionApprovalResult(false, "Worker ID is required.", null);
+            return Task.FromResult(new GraveyardDeletionApprovalResult(false, "Worker ID is required.", null));
         }
 
-        var snapshot = await deletionQueueService.GetSnapshotAsync(cancellationToken);
-        var item = snapshot.Pending.FirstOrDefault(candidate =>
-            string.Equals(candidate.WorkerId, workerId, StringComparison.OrdinalIgnoreCase));
-        if (item is null)
-        {
-            var heldItem = snapshot.Held.FirstOrDefault(candidate =>
-                string.Equals(candidate.WorkerId, workerId, StringComparison.OrdinalIgnoreCase));
-            return heldItem is null
-                ? new GraveyardDeletionApprovalResult(false, $"Worker {workerId} is not in the deletion queue.", null)
-                : new GraveyardDeletionApprovalResult(false, $"Worker {workerId} is on hold. Remove the hold before approving deletion.", null);
-        }
-
-        if (!item.IsEligibleForDeletion)
-        {
-            return new GraveyardDeletionApprovalResult(false, $"Worker {workerId} is not due for deletion yet.", null);
-        }
-
-        if (!realSyncSettings.EffectiveWriteEnabled)
-        {
-            return new GraveyardDeletionApprovalResult(false, realSyncSettings.LiveWriteDisabledMessage, null);
-        }
-
-        RunQueueRequest queued;
-        try
-        {
-            queued = await runQueueStore.EnqueueAsync(
-                new StartRunRequest(
-                    DryRun: false,
-                    Mode: RunQueueProtocol.GraveyardDeleteApprovalMode,
-                    RunTrigger: RunQueueProtocol.AuthenticatedAdminDeletionQueueTrigger,
-                    RequestedBy: string.IsNullOrWhiteSpace(requestedBy) ? "Admin" : requestedBy,
-                    TargetWorkerId: item.WorkerId),
-                cancellationToken);
-        }
-        catch (RunQueueConflictException)
-        {
-            return new GraveyardDeletionApprovalResult(false, "A run is already pending or in progress; deletion approval remains unexecuted.", null);
-        }
-
-        return new GraveyardDeletionApprovalResult(
-            true,
-            $"Deletion approval for worker {item.WorkerId} was queued for serialized execution.",
-            queued.RequestId);
+        return Task.FromResult(new GraveyardDeletionApprovalResult(
+            false,
+            RunQueueProtocol.DeletionCapabilityDisabledMessage,
+            null));
     }
 
     public async Task<string> ExecuteApprovedDeleteAsync(RunQueueRequest request, CancellationToken cancellationToken)

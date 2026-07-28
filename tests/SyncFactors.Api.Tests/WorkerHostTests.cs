@@ -56,7 +56,7 @@ public sealed class WorkerHostTests
     }
 
     [Fact]
-    public async Task ExecuteAsync_InvokesAutoDeleteWhenNoRunIsClaimed()
+    public async Task ExecuteAsync_DoesNotInvokeAutomaticGraveyardDeletionWhenNoRunIsClaimed()
     {
         using var cancellation = new CancellationTokenSource();
         var autoDeleteCoordinator = new CapturingAutoDeleteCoordinator(cancellation);
@@ -72,19 +72,45 @@ public sealed class WorkerHostTests
             TimeProvider.System,
             new FixedWorkerExecutionSettings(1));
 
+        cancellation.CancelAfter(TimeSpan.FromMilliseconds(25));
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => worker.RunAsync(cancellation.Token));
 
-        Assert.Equal(1, autoDeleteCoordinator.Calls);
+        Assert.Equal(0, autoDeleteCoordinator.Calls);
     }
 
     [Fact]
-    public async Task ExecuteAsync_DispatchesDeleteAllUsersRequestToDeleteCoordinator()
+    public async Task ExecuteAsync_SweepsReservedDeletionModesBeforeClaimingOrResolvingWork()
+    {
+        using var cancellation = new CancellationTokenSource();
+        var queueStore = new CapturingRunQueueStore(null, cancellation, cancelOnReservedModeSweep: true);
+        var bulkRunCoordinator = new CapturingBulkRunCoordinator();
+        var worker = new TestWorker(
+            NullLogger<WorkerService>.Instance,
+            queueStore,
+            new CapturingScheduleCoordinator(),
+            new CapturingRetentionReportCoordinator(),
+            new CapturingAutoDeleteCoordinator(),
+            bulkRunCoordinator,
+            new NoopDeleteAllUsersCoordinator(),
+            new CapturingHeartbeatStore(),
+            TimeProvider.System,
+            new FixedWorkerExecutionSettings(1));
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => worker.RunAsync(cancellation.Token));
+
+        Assert.Equal(1, queueStore.ReservedModeSweepCalls);
+        Assert.Null(bulkRunCoordinator.RequestId);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_QuarantinesReservedDeleteAllUsersBeforeCoordinatorResolution()
     {
         using var cancellation = new CancellationTokenSource();
         var deleteCoordinator = new CapturingDeleteAllUsersCoordinator();
+        var queueStore = new CapturingRunQueueStore(CreateRequest("DeleteAllUsers"), cancellation);
         var worker = new TestWorker(
             NullLogger<WorkerService>.Instance,
-            new CapturingRunQueueStore(CreateRequest("DeleteAllUsers"), cancellation),
+            queueStore,
             new CapturingScheduleCoordinator(),
             new CapturingRetentionReportCoordinator(),
             new CapturingAutoDeleteCoordinator(),
@@ -96,11 +122,12 @@ public sealed class WorkerHostTests
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => worker.RunAsync(cancellation.Token));
 
-        Assert.Equal("request-1", deleteCoordinator.RequestId);
+        Assert.Null(deleteCoordinator.RequestId);
+        Assert.Equal(["request-1"], queueStore.QuarantinedRequests);
     }
 
     [Fact]
-    public async Task ExecuteAsync_DispatchesApprovedGraveyardDeletionThroughTheSerializedQueue()
+    public async Task ExecuteAsync_QuarantinesApprovedGraveyardDeletionThroughTheSerializedQueue()
     {
         using var cancellation = new CancellationTokenSource();
         var autoDeleteCoordinator = new CapturingAutoDeleteCoordinator();
@@ -123,11 +150,11 @@ public sealed class WorkerHostTests
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => worker.RunAsync(cancellation.Token));
 
-        Assert.Equal("request-1", autoDeleteCoordinator.ApprovedRequestId);
+        Assert.Null(autoDeleteCoordinator.ApprovedRequestId);
     }
 
     [Fact]
-    public async Task ExecuteAsync_RejectsGraveyardDeletionWithoutExactAdminApprovalProvenance()
+    public async Task ExecuteAsync_QuarantinesGraveyardDeletionWithoutExecutingItsProvenancePath()
     {
         using var cancellation = new CancellationTokenSource();
         var autoDeleteCoordinator = new CapturingAutoDeleteCoordinator();
@@ -153,9 +180,7 @@ public sealed class WorkerHostTests
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => worker.RunAsync(cancellation.Token));
 
         Assert.Null(autoDeleteCoordinator.ApprovedRequestId);
-        var failure = Assert.Single(queueStore.FailedRuns);
-        Assert.Equal("request-1", failure.RequestId);
-        Assert.Contains("provenance", failure.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(["request-1"], queueStore.QuarantinedRequests);
     }
 
     [Fact]
@@ -270,7 +295,7 @@ public sealed class WorkerHostTests
             IWorkerHeartbeatStore workerHeartbeatStore,
             TimeProvider timeProvider,
             IWorkerExecutionSettings executionSettings)
-            : base(logger, runQueueStore, syncScheduleCoordinator, graveyardRetentionReportCoordinator, graveyardAutoDeleteCoordinator, bulkRunCoordinator, deleteAllUsersCoordinator, workerHeartbeatStore, timeProvider, executionSettings)
+            : base(logger, runQueueStore, syncScheduleCoordinator, graveyardRetentionReportCoordinator, bulkRunCoordinator, workerHeartbeatStore, timeProvider, executionSettings)
         {
         }
 
@@ -291,12 +316,18 @@ public sealed class WorkerHostTests
         public Task<WorkerHeartbeat?> GetCurrentAsync(CancellationToken cancellationToken) => Task.FromResult<WorkerHeartbeat?>(null);
     }
 
-    private sealed class CapturingRunQueueStore(RunQueueRequest? request, CancellationTokenSource cancellation, bool cancelOnComplete = true) : IRunQueueStore
+    private sealed class CapturingRunQueueStore(
+        RunQueueRequest? request,
+        CancellationTokenSource cancellation,
+        bool cancelOnComplete = true,
+        bool cancelOnReservedModeSweep = false) : IRunQueueStore
     {
         public Task<RunQueueRequest> EnqueueAsync(StartRunRequest request, CancellationToken cancellationToken) => throw new NotSupportedException();
         public List<(string RequestId, string RunId)> CompletedRuns { get; } = [];
         public List<(string RequestId, string? RunId, string? ErrorMessage)> CanceledRuns { get; } = [];
         public List<(string RequestId, string? RunId, string ErrorMessage)> FailedRuns { get; } = [];
+        public List<string> QuarantinedRequests { get; } = [];
+        public int ReservedModeSweepCalls { get; private set; }
         private bool _claimed;
         public Task<RunQueueRequest?> ClaimNextPendingAsync(string workerName, CancellationToken cancellationToken)
         {
@@ -314,6 +345,22 @@ public sealed class WorkerHostTests
         public Task<bool> CancelPendingOrActiveAsync(string? requestedBy, CancellationToken cancellationToken) => Task.FromResult(false);
         public Task<bool> IsCancellationRequestedAsync(string requestId, CancellationToken cancellationToken) => Task.FromResult(false);
         public Task<int> RecoverOrphanedActiveRunsAsync(string? errorMessage, CancellationToken cancellationToken) => Task.FromResult(0);
+        public Task QuarantineReservedAsync(string requestId, CancellationToken cancellationToken)
+        {
+            QuarantinedRequests.Add(requestId);
+            cancellation.Cancel();
+            return Task.CompletedTask;
+        }
+        public Task<int> QuarantineReservedModesAsync(CancellationToken cancellationToken)
+        {
+            ReservedModeSweepCalls++;
+            if (cancelOnReservedModeSweep)
+            {
+                cancellation.Cancel();
+            }
+
+            return Task.FromResult(0);
+        }
         public Task CompleteAsync(string requestId, string runId, CancellationToken cancellationToken)
         {
             CompletedRuns.Add((requestId, runId));

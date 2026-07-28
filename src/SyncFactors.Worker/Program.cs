@@ -130,9 +130,6 @@ builder.Services.AddSingleton<IRunCaptureMetadataProvider, RunCaptureMetadataPro
 builder.Services.AddTransient<IWorkerPlanningService, WorkerPlanningService>();
 builder.Services.AddSingleton<IDirectoryMutationCommandBuilder, DirectoryMutationCommandBuilder>();
 builder.Services.AddTransient<IBulkRunCoordinator, BulkRunCoordinator>();
-builder.Services.AddTransient<IDeleteAllUsersCoordinator, DeleteAllUsersCoordinator>();
-builder.Services.AddTransient<GraveyardDeletionQueueService>();
-builder.Services.AddTransient<IGraveyardAutoDeleteCoordinator, GraveyardAutoDeleteCoordinator>();
 builder.Services.AddTransient<ISyncScheduleCoordinator, SyncScheduleCoordinator>();
 builder.Services.AddTransient<IGraveyardRetentionReportCoordinator, GraveyardRetentionReportCoordinator>();
 builder.Services.AddSingleton<IWorkerExecutionSettings, ConfigurationWorkerExecutionSettings>();

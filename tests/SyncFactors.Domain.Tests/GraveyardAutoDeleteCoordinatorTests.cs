@@ -214,7 +214,7 @@ public sealed class GraveyardAutoDeleteCoordinatorTests
     }
 
     [Fact]
-    public async Task ApproveDeleteAsync_QueuesEligibleUserForSerializedExecution_WhenAutoDeleteIsDisabled()
+    public async Task ApproveDeleteAsync_RejectsEligibleUserWithoutQueueingWhenCapabilityIsDisabled()
     {
         var retentionStore = new StubGraveyardRetentionStore(
             [
@@ -234,20 +234,13 @@ public sealed class GraveyardAutoDeleteCoordinatorTests
 
         var result = await coordinator.ApproveDeleteAsync("10001", "admin", CancellationToken.None);
 
-        Assert.True(result.Succeeded);
-        Assert.Equal(runQueueStore.Enqueued!.RequestId, result.RunId);
-        Assert.Equal("GraveyardDeleteApproval", runQueueStore.Enqueued.Mode);
-        Assert.Equal(RunQueueProtocol.AuthenticatedAdminDeletionQueueTrigger, runQueueStore.Enqueued.RunTrigger);
-        Assert.Equal("10001", runQueueStore.Enqueued.TargetWorkerId);
+        Assert.False(result.Succeeded);
+        Assert.Equal(RunQueueProtocol.DeletionCapabilityDisabledMessage, result.Message);
+        Assert.Null(result.RunId);
+        Assert.Null(runQueueStore.Enqueued);
         Assert.Empty(commandGateway.Commands);
-
-        var executedRunId = await coordinator.ExecuteApprovedDeleteAsync(runQueueStore.Enqueued, CancellationToken.None);
-
-        Assert.StartsWith("graveyard-delete-approval-", executedRunId, StringComparison.Ordinal);
-        Assert.Single(commandGateway.Commands);
-        Assert.Equal(["10001"], retentionStore.ResolvedWorkerIds);
-        Assert.Equal(1, lifecycle.CompletedCalls);
-        Assert.Contains(lifecycle.Entries, entry => entry.WorkerId == "10001" && entry.Bucket == "deletions");
+        Assert.Empty(retentionStore.ResolvedWorkerIds);
+        Assert.Empty(lifecycle.Entries);
     }
 
     [Fact]
@@ -288,7 +281,7 @@ public sealed class GraveyardAutoDeleteCoordinatorTests
     }
 
     [Fact]
-    public async Task ApproveDeleteAsync_RejectsDuplicateApprovalWhileTheFirstApprovalIsQueued()
+    public async Task ApproveDeleteAsync_RejectsEveryApprovalWhenDeletionCapabilityIsDisabled()
     {
         var retentionStore = new StubGraveyardRetentionStore(
             [CreateRecord("10001", isOnHold: false, endDateUtc: DateTimeOffset.Parse("2026-02-01T00:00:00Z"))]);
@@ -305,19 +298,19 @@ public sealed class GraveyardAutoDeleteCoordinatorTests
         var first = await coordinator.ApproveDeleteAsync("10001", "admin", CancellationToken.None);
         var duplicate = await coordinator.ApproveDeleteAsync("10001", "admin", CancellationToken.None);
 
-        Assert.True(first.Succeeded);
+        Assert.False(first.Succeeded);
         Assert.False(duplicate.Succeeded);
-        Assert.Contains("pending or in progress", duplicate.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(RunQueueProtocol.DeletionCapabilityDisabledMessage, first.Message);
+        Assert.Equal(RunQueueProtocol.DeletionCapabilityDisabledMessage, duplicate.Message);
         Assert.Empty(commandGateway.Commands);
     }
 
     [Theory]
-    [InlineData(false, false, "Real AD sync is disabled for this environment.")]
-    [InlineData(true, true, "Dry-run-only mode is enabled. Live AD writes are disabled for this environment.")]
+    [InlineData(false, false)]
+    [InlineData(true, true)]
     public async Task ApproveDeleteAsync_RejectsDirectoryMutation_WhenLiveWritesAreDisabled(
         bool enabled,
-        bool dryRunOnly,
-        string expectedMessage)
+        bool dryRunOnly)
     {
         var retentionStore = new StubGraveyardRetentionStore(
             [
@@ -337,7 +330,7 @@ public sealed class GraveyardAutoDeleteCoordinatorTests
         var result = await coordinator.ApproveDeleteAsync("10001", "admin", CancellationToken.None);
 
         Assert.False(result.Succeeded);
-        Assert.Equal(expectedMessage, result.Message);
+        Assert.Equal(RunQueueProtocol.DeletionCapabilityDisabledMessage, result.Message);
         Assert.Empty(commandGateway.Commands);
         Assert.Empty(retentionStore.ResolvedWorkerIds);
     }
@@ -391,7 +384,7 @@ public sealed class GraveyardAutoDeleteCoordinatorTests
         var result = await coordinator.ApproveDeleteAsync("10001", "admin", CancellationToken.None);
 
         Assert.False(result.Succeeded);
-        Assert.Contains("on hold", result.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(RunQueueProtocol.DeletionCapabilityDisabledMessage, result.Message);
         Assert.Empty(commandGateway.Commands);
         Assert.Empty(lifecycle.Entries);
     }
@@ -765,6 +758,7 @@ public sealed class GraveyardAutoDeleteCoordinatorTests
         }
 
         public Task<RunQueueRequest?> ClaimNextPendingAsync(string workerName, CancellationToken cancellationToken) => Task.FromResult<RunQueueRequest?>(null);
+        public Task<int> QuarantineReservedModesAsync(CancellationToken cancellationToken) => Task.FromResult(0);
         public Task<RunQueueRequest?> GetAsync(string requestId, CancellationToken cancellationToken) => Task.FromResult<RunQueueRequest?>(null);
         public Task<RunQueueRequest?> GetPendingOrActiveAsync(CancellationToken cancellationToken) => Task.FromResult<RunQueueRequest?>(Enqueued);
         public Task<bool> HasPendingOrActiveRunAsync(CancellationToken cancellationToken) => Task.FromResult(Enqueued is not null);

@@ -191,7 +191,6 @@ builder.Services.AddSingleton<IRunLifecycleService, RunLifecycleService>();
 builder.Services.AddTransient<RunEntriesQueryService>();
 builder.Services.AddTransient<ExceptionQueueQueryService>();
 builder.Services.AddTransient<GraveyardDeletionQueueService>();
-builder.Services.AddTransient<GraveyardAutoDeleteCoordinator>();
 builder.Services.AddSingleton<IRunQueueStore, SqliteRunQueueStore>();
 builder.Services.AddSingleton<RunQueueRecoveryService>();
 builder.Services.AddSingleton<ISyncScheduleStore, SqliteSyncScheduleStore>();
@@ -677,52 +676,12 @@ operatorApi.MapPost("/runs/full", async (
     return Results.Ok(result);
 });
 
-adminApi.MapPost("/runs/delete-all", async (
-    DeleteAllUsersRequest request,
-    ClaimsPrincipal user,
-    IRunQueueStore queueStore,
-    RealSyncSettings realSyncSettings,
-    ISecurityAuditService audit,
-    IWebHostEnvironment environment,
+adminApi.MapPost("/runs/delete-all", (
+    DeleteAllUsersRequest _,
     CancellationToken cancellationToken) =>
 {
-    if (!environment.IsDevelopment())
-    {
-        return Results.NotFound();
-    }
-
-    if (!realSyncSettings.EffectiveWriteEnabled)
-    {
-        return Results.BadRequest(new { error = realSyncSettings.LiveWriteDisabledMessage });
-    }
-
-    if (!string.Equals(request.ConfirmationText?.Trim(), SyncFactors.Api.Pages.SyncModel.DeleteAllUsersConfirmationPhrase, StringComparison.Ordinal))
-    {
-        return Results.BadRequest(new { error = $"Type {SyncFactors.Api.Pages.SyncModel.DeleteAllUsersConfirmationPhrase} to queue the delete-all AD reset run." });
-    }
-
-    RunQueueRequest queued;
-    try
-    {
-        queued = await queueStore.EnqueueAsync(
-            new StartRunRequest(
-                DryRun: false,
-                Mode: "DeleteAllUsers",
-                RunTrigger: "DeleteAllUsers",
-                RequestedBy: ResolveRequestedBy(user, "API")),
-            cancellationToken);
-    }
-    catch (RunQueueConflictException)
-    {
-        return Results.Conflict(new { error = "A run is already pending or in progress." });
-    }
-
-    if (!ApiAuditWriteHandler.TryWrite(() => audit.Write("DeleteAllUsersQueued", "Success", ("RequestedBy", ResolveRequestedBy(user, "API")))))
-    {
-        return AuditRecordingFailedAccepted($"/api/runs/{queued.RequestId}");
-    }
-
-    return Results.Accepted($"/api/runs/{queued.RequestId}", queued);
+    cancellationToken.ThrowIfCancellationRequested();
+    return Results.BadRequest(new { error = RunQueueProtocol.DeletionCapabilityDisabledMessage });
 });
 
 operatorApi.MapPost("/admin/runs/queue/recovery-probe", async Task<IResult> (

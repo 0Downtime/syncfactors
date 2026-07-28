@@ -1531,6 +1531,8 @@ public sealed class BulkRunCoordinatorTests
             return Task.FromResult<RunQueueRequest?>(null);
         }
 
+        public Task<int> QuarantineReservedModesAsync(CancellationToken cancellationToken) => Task.FromResult(0);
+
         public Task<RunQueueRequest?> GetAsync(string requestId, CancellationToken cancellationToken)
         {
             _ = requestId;

@@ -10,7 +10,6 @@ namespace SyncFactors.Api.Pages.Admin;
 [Authorize(Roles = "Admin,BreakGlassAdmin")]
 public sealed class DeletionQueueModel(
     GraveyardDeletionQueueService deletionQueueService,
-    GraveyardAutoDeleteCoordinator deleteCoordinator,
     IGraveyardRetentionStore retentionStore,
     TimeProvider timeProvider) : PageModel
 {
@@ -131,21 +130,8 @@ public sealed class DeletionQueueModel(
             return RedirectToCurrentPage();
         }
 
-        var result = await deleteCoordinator.ApproveDeleteAsync(workerId, GetActingUserId(), cancellationToken);
-        if (result.Succeeded)
-        {
-            SuccessMessage = string.IsNullOrWhiteSpace(result.RunId)
-                ? result.Message
-                : $"{result.Message} Run {result.RunId}.";
-            ErrorMessage = null;
-        }
-        else
-        {
-            ErrorMessage = string.IsNullOrWhiteSpace(result.RunId)
-                ? result.Message
-                : $"{result.Message} Run {result.RunId}.";
-            SuccessMessage = null;
-        }
+        ErrorMessage = RunQueueProtocol.DeletionCapabilityDisabledMessage;
+        SuccessMessage = null;
 
         return RedirectToCurrentPage();
     }
