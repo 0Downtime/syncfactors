@@ -350,7 +350,7 @@ if ([string]::IsNullOrWhiteSpace($LogDirectory)) {
     $LogDirectory = Join-Path $runtimeRoot 'logs'
 }
 if ([string]::IsNullOrWhiteSpace($SecurityAuditLogPath)) {
-    $SecurityAuditLogPath = Join-Path $runtimeRoot 'runtime\security-audit.jsonl'
+    $SecurityAuditLogPath = Join-Path $runtimeRoot 'runtime\security-audit.db'
 }
 if ([string]::IsNullOrWhiteSpace($ConfigPath)) {
     $ConfigPath = Resolve-DefaultConfigPath -Root $resolvedBundleRoot -Profile $RunProfile

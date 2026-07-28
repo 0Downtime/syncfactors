@@ -115,6 +115,27 @@ public sealed class MutationAuthorizationIntegrationTests
     }
 
     [Fact]
+    public async Task LegacyFullRunEndpoint_UsesTheDurableBulkSyncQueue()
+    {
+        await using var fixture = await AuthorizationFixture.CreateAsync();
+        using var client = await fixture.SignInAsync(SecurityRoles.Operator);
+
+        using var response = await client.PostAsJsonAsync("/api/runs/full", new
+        {
+            dryRun = true,
+            acknowledgeRealSync = false
+        });
+        var queued = await response.Content.ReadFromJsonAsync<RunQueueRequest>();
+
+        Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
+        Assert.NotNull(queued);
+        Assert.Equal(RunQueueProtocol.BulkSyncMode, queued!.Mode);
+        Assert.Equal(RunQueueProtocol.OperatorApiTrigger, queued.RunTrigger);
+        Assert.Equal("operator", queued.RequestedBy);
+        Assert.True(queued.DryRun);
+    }
+
+    [Fact]
     public async Task CookieAuthenticatedRazorMutation_RejectsRequestsWithoutAntiforgeryToken()
     {
         await using var fixture = await AuthorizationFixture.CreateAsync();

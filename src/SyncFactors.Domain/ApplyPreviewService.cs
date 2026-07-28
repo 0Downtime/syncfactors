@@ -6,6 +6,11 @@ namespace SyncFactors.Domain;
 
 public interface IApplyPreviewService
 {
+    bool CanApplyPreview => true;
+
+    string CapabilityUnavailableMessage =>
+        "The configured directory gateway cannot atomically apply a reviewed preview.";
+
     Task<DirectoryCommandResult> ApplyAsync(ApplyPreviewRequest request, CancellationToken cancellationToken);
 }
 
@@ -18,11 +23,21 @@ public sealed class ApplyPreviewService(
     ILogger<ApplyPreviewService> logger,
     IPreviewApplyFreshnessValidator freshnessValidator) : IApplyPreviewService
 {
+    public bool CanApplyPreview => directoryCommandGateway is IAtomicPreviewDirectoryCommandGateway;
+
+    public string CapabilityUnavailableMessage =>
+        "The configured directory gateway cannot atomically apply a reviewed preview. Preview apply is disabled.";
+
     public async Task<DirectoryCommandResult> ApplyAsync(ApplyPreviewRequest request, CancellationToken cancellationToken)
     {
         if (!realSyncSettings.EffectiveWriteEnabled)
         {
             throw new InvalidOperationException(realSyncSettings.LiveWriteDisabledMessage);
+        }
+
+        if (!CanApplyPreview)
+        {
+            throw new InvalidOperationException(CapabilityUnavailableMessage);
         }
 
         var startedAt = DateTimeOffset.UtcNow;
@@ -79,11 +94,7 @@ public sealed class ApplyPreviewService(
         try
         {
             await freshnessValidator.ValidateAsync(preview, cancellationToken);
-            if (directoryCommandGateway is not IAtomicPreviewDirectoryCommandGateway atomicPreviewGateway)
-            {
-                throw new InvalidOperationException(
-                    "The configured directory gateway cannot atomically apply a reviewed preview. Refresh preview after configuring an atomic preview mutation gateway.");
-            }
+            var atomicPreviewGateway = (IAtomicPreviewDirectoryCommandGateway)directoryCommandGateway;
 
             var result = await atomicPreviewGateway.ExecuteIfCurrentAsync(command, preview, cancellationToken);
             var completedAt = DateTimeOffset.UtcNow;

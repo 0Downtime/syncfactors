@@ -33,6 +33,7 @@ builder.Services.AddSingleton<SyncFactorsConfigurationValidator>();
 builder.Services.AddSingleton<IEmailAddressPolicy, ConfiguredEmailAddressPolicy>();
 builder.Services.AddSingleton<ScaffoldDataStore>();
 builder.Services.AddSingleton<ScaffoldWorkerSource>();
+builder.Services.AddSingleton(SuccessFactorsSourceSettings.FromRunProfile(builder.Configuration["SYNCFACTORS_RUN_PROFILE"]));
 builder.Services.AddSingleton(serviceProvider =>
 {
     var config = serviceProvider.GetRequiredService<SyncFactorsConfigurationLoader>().GetSyncConfig();
@@ -118,7 +119,10 @@ builder.Services.AddHttpClient<SuccessFactorsWorkerSource>()
 builder.Services.AddTransient<IWorkerSource>(serviceProvider => serviceProvider.GetRequiredService<SuccessFactorsWorkerSource>());
 builder.Services.AddDirectoryServiceRuntimeGateways(
     builder.Configuration["SYNCFACTORS_RUN_PROFILE"],
-    (serviceProvider, inner) => new AuditedDirectoryCommandGateway(inner, serviceProvider.GetRequiredService<ISecurityAuditService>()));
+    (serviceProvider, inner) => AuditedDirectoryCommandGateway.Decorate(
+        inner,
+        serviceProvider.GetRequiredService<ISecurityAuditService>(),
+        AuditedDirectoryCommandGateway.WorkerActor));
 builder.Services.AddTransient<IEmailSender, SmtpEmailSender>();
 builder.Services.AddSingleton<IAttributeMappingProvider, AttributeMappingProvider>();
 builder.Services.AddSingleton<IIdentityMatcher, IdentityMatcher>();
