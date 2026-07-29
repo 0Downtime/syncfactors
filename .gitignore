@@ -35,6 +35,7 @@ web/.vite/
 .codex/
 .agents/
 .playwright-cli/
+/.worktrees/
 .npm-cache/
 .dotnet-home/
 skills-lock.json
