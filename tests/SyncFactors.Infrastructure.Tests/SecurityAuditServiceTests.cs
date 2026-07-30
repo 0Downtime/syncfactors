@@ -89,17 +89,98 @@ public sealed class SecurityAuditServiceTests : IDisposable
         };
         File.WriteAllText(legacyPath, JsonSerializer.Serialize(legacyEntry) + Environment.NewLine);
         Environment.SetEnvironmentVariable("SYNCFACTORS_SECURITY_AUDIT_LOG_PATH", legacyPath);
+        Environment.SetEnvironmentVariable(SecurityAuditService.IntegrityKeyEnvironmentVariable, "test-integrity-key");
 
         var service = new SecurityAuditService(NullLogger<SecurityAuditService>.Instance);
         service.Write("CurrentRunQueued", "Success");
 
         var databasePath = SecurityAuditService.ResolveAuditPath();
         var rows = ReadAuditEntries(databasePath);
-        Assert.Equal(["LegacyRunQueued", "CurrentRunQueued"], rows.Select(row => row.EventType));
-        var integrity = SecurityAuditService.VerifyIntegrity(databasePath);
+        Assert.Equal(["LegacyAuditMigrationBoundary", "CurrentRunQueued"], rows.Select(row => row.EventType));
+        Assert.All(rows, row => Assert.Equal("HMACSHA256", row.Algorithm));
+        using var boundaryFields = JsonDocument.Parse(rows[0].FieldsJson);
+        Assert.Equal(1, boundaryFields.RootElement.GetProperty("SourceEntryCount").GetInt32());
+        Assert.Equal("LegacyJsonlSha256Chain", boundaryFields.RootElement.GetProperty("SourceProvenance").GetString());
+        var integrity = SecurityAuditService.VerifyIntegrity(databasePath, requireKeyedIntegrity: true);
         Assert.True(integrity.IsValid, integrity.Error);
         Assert.Equal(2, integrity.EntryCount);
         Assert.True(File.Exists(legacyPath));
+    }
+
+    [Fact]
+    public void ValidateStartup_UpgradesPlaintextAuditDatabaseWhenSqlCipherIsEnabled()
+    {
+        var auditPath = Path.Combine(_tempRoot, "state", "plaintext-security-audit.db");
+        Environment.SetEnvironmentVariable("SYNCFACTORS_SECURITY_AUDIT_LOG_PATH", auditPath);
+        Environment.SetEnvironmentVariable(SecurityAuditService.IntegrityKeyEnvironmentVariable, "test-integrity-key");
+        var service = new SecurityAuditService(NullLogger<SecurityAuditService>.Instance);
+        service.Write("RunQueued", "Success");
+        Assert.True(HasPlaintextSqliteHeader(auditPath));
+
+        Environment.SetEnvironmentVariable(SqlitePasswordEnvironmentVariable, "test-sqlcipher-upgrade-password");
+        SecurityAuditService.ValidateStartup(isProduction: true);
+
+        Assert.False(HasPlaintextSqliteHeader(auditPath));
+        var integrity = SecurityAuditService.VerifyIntegrity(auditPath, requireKeyedIntegrity: true);
+        Assert.True(integrity.IsValid, integrity.Error);
+        Assert.Equal(1, integrity.EntryCount);
+        Assert.NotEmpty(Directory.EnumerateFiles(Path.GetDirectoryName(auditPath)!, $"{Path.GetFileName(auditPath)}.plaintext-*.bak"));
+    }
+
+    [Fact]
+    public void ValidateStartup_RecoversInterruptedAuditSqlCipherMigrationBeforeOpeningTheDatabase()
+    {
+        var auditPath = Path.Combine(_tempRoot, "state", "interrupted-security-audit.db");
+        Environment.SetEnvironmentVariable("SYNCFACTORS_SECURITY_AUDIT_LOG_PATH", auditPath);
+        Environment.SetEnvironmentVariable(SecurityAuditService.IntegrityKeyEnvironmentVariable, "test-integrity-key");
+        var service = new SecurityAuditService(NullLogger<SecurityAuditService>.Instance);
+        service.Write("RunQueued", "Success");
+
+        var interruptedBackupPath = $"{auditPath}.plaintext-interrupted.bak";
+        File.Move(auditPath, interruptedBackupPath);
+        File.WriteAllText($"{auditPath}.encrypted-interrupted.tmp", "incomplete conversion output");
+        Environment.SetEnvironmentVariable(SqlitePasswordEnvironmentVariable, "test-sqlcipher-upgrade-password");
+
+        SecurityAuditService.ValidateStartup(isProduction: true);
+
+        Assert.False(HasPlaintextSqliteHeader(auditPath));
+        var integrity = SecurityAuditService.VerifyIntegrity(auditPath, requireKeyedIntegrity: true);
+        Assert.True(integrity.IsValid, integrity.Error);
+        Assert.Equal(1, integrity.EntryCount);
+    }
+
+    [Fact]
+    public void ValidateStartup_ConcurrentApiAndWorkerStartupSerializeAuditSqlCipherMigration()
+    {
+        var auditPath = Path.Combine(_tempRoot, "state", "concurrent-security-audit.db");
+        Environment.SetEnvironmentVariable("SYNCFACTORS_SECURITY_AUDIT_LOG_PATH", auditPath);
+        Environment.SetEnvironmentVariable(SecurityAuditService.IntegrityKeyEnvironmentVariable, "test-integrity-key");
+        new SecurityAuditService(NullLogger<SecurityAuditService>.Instance).Write("RunQueued", "Success");
+        Environment.SetEnvironmentVariable(SqlitePasswordEnvironmentVariable, "test-sqlcipher-upgrade-password");
+
+        Parallel.For(0, 8, _ => SecurityAuditService.ValidateStartup(isProduction: true));
+
+        Assert.False(HasPlaintextSqliteHeader(auditPath));
+        var integrity = SecurityAuditService.VerifyIntegrity(auditPath, requireKeyedIntegrity: true);
+        Assert.True(integrity.IsValid, integrity.Error);
+        Assert.Equal(1, integrity.EntryCount);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("incorrect-sqlcipher-password")]
+    public void ValidateStartup_ProductionFailsClosedWhenEncryptedAuditDatabaseCannotBeOpened(string? configuredPassword)
+    {
+        var auditPath = Path.Combine(_tempRoot, "state", "encrypted-security-audit.db");
+        Environment.SetEnvironmentVariable("SYNCFACTORS_SECURITY_AUDIT_LOG_PATH", auditPath);
+        Environment.SetEnvironmentVariable(SecurityAuditService.IntegrityKeyEnvironmentVariable, "test-integrity-key");
+        Environment.SetEnvironmentVariable(SqlitePasswordEnvironmentVariable, "correct-sqlcipher-password");
+        new SecurityAuditService(NullLogger<SecurityAuditService>.Instance).Write("RunQueued", "Success");
+        Environment.SetEnvironmentVariable(SqlitePasswordEnvironmentVariable, configuredPassword);
+
+        var exception = Assert.Throws<InvalidOperationException>(() => SecurityAuditService.ValidateStartup(isProduction: true));
+
+        Assert.Equal("Security audit integrity validation failed.", exception.Message);
     }
 
     [Fact]
@@ -117,6 +198,27 @@ public sealed class SecurityAuditServiceTests : IDisposable
 
         var rows = ReadAuditEntries(SecurityAuditService.ResolveAuditPath());
         Assert.Equal(["FirstSqliteEntry", "SecondSqliteEntry"], rows.Select(row => row.EventType));
+    }
+
+    [Fact]
+    public void ValidateStartup_RejectsTamperedLegacyJsonlWithoutPersistingMigrationBoundary()
+    {
+        var legacyPath = Path.Combine(_tempRoot, "state", "tampered-legacy.jsonl");
+        Directory.CreateDirectory(Path.GetDirectoryName(legacyPath)!);
+        File.WriteAllText(
+            legacyPath,
+            """
+            {"timestampUtc":"2026-07-28T12:00:00.0000000+00:00","eventType":"LegacyRunQueued","outcome":"Success","fields":{},"integrity":{"algorithm":"SHA256","previousHash":null,"entryHash":"tampered"}}
+            """ + Environment.NewLine);
+        Environment.SetEnvironmentVariable("SYNCFACTORS_SECURITY_AUDIT_LOG_PATH", legacyPath);
+        Environment.SetEnvironmentVariable(SecurityAuditService.IntegrityKeyEnvironmentVariable, "test-integrity-key");
+
+        var exception = Assert.Throws<InvalidOperationException>(() => SecurityAuditService.ValidateStartup(isProduction: true));
+
+        Assert.Equal("Security audit integrity validation failed.", exception.Message);
+        Assert.Empty(ReadAuditEntries(SecurityAuditService.ResolveAuditPath()));
+        Assert.Equal(0, ReadAuditMetadataCount(SecurityAuditService.ResolveAuditPath()));
+        Assert.True(File.Exists(legacyPath));
     }
 
     [Fact]
@@ -308,8 +410,7 @@ public sealed class SecurityAuditServiceTests : IDisposable
         using var connection = new SqliteConnection($"Data Source={databasePath};Mode=ReadOnly");
         connection.Open();
         using var command = connection.CreateCommand();
-        command.CommandText =
-            "SELECT event_type, algorithm, previous_hash, entry_hash FROM security_audit_entries ORDER BY sequence;";
+        command.CommandText = "SELECT event_type, algorithm, previous_hash, entry_hash, fields_json FROM security_audit_entries ORDER BY sequence;";
         using var reader = command.ExecuteReader();
         var rows = new List<AuditEntryRow>();
         while (reader.Read())
@@ -318,7 +419,8 @@ public sealed class SecurityAuditServiceTests : IDisposable
                 reader.GetString(0),
                 reader.GetString(1),
                 reader.IsDBNull(2) ? null : reader.GetString(2),
-                reader.GetString(3)));
+                reader.GetString(3),
+                reader.GetString(4)));
         }
 
         return rows;
@@ -333,5 +435,21 @@ public sealed class SecurityAuditServiceTests : IDisposable
         command.ExecuteNonQuery();
     }
 
-    private sealed record AuditEntryRow(string EventType, string Algorithm, string? PreviousHash, string EntryHash);
+    private static long ReadAuditMetadataCount(string databasePath)
+    {
+        using var connection = new SqliteConnection($"Data Source={databasePath};Mode=ReadOnly");
+        connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT COUNT(*) FROM security_audit_metadata;";
+        return (long)command.ExecuteScalar()!;
+    }
+
+    private static bool HasPlaintextSqliteHeader(string databasePath)
+    {
+        Span<byte> header = stackalloc byte[16];
+        using var file = File.OpenRead(databasePath);
+        return file.Read(header) == header.Length && header.SequenceEqual("SQLite format 3\0"u8);
+    }
+
+    private sealed record AuditEntryRow(string EventType, string Algorithm, string? PreviousHash, string EntryHash, string FieldsJson);
 }

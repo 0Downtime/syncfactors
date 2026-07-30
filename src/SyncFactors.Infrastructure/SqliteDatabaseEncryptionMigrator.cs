@@ -4,13 +4,72 @@ namespace SyncFactors.Infrastructure;
 
 internal static class SqliteDatabaseEncryptionMigrator
 {
+    public static void RecoverInterruptedConversionIfNeeded(string databasePath, string? password)
+    {
+        if (File.Exists(databasePath))
+        {
+            return;
+        }
+
+        var directoryPath = Path.GetDirectoryName(databasePath);
+        if (string.IsNullOrWhiteSpace(directoryPath) || !Directory.Exists(directoryPath))
+        {
+            return;
+        }
+
+        var databaseFileName = Path.GetFileName(databasePath);
+        var interruptedOutputPaths = Directory
+            .EnumerateFiles(directoryPath, $"{databaseFileName}.encrypted-*.tmp")
+            .ToArray();
+        if (interruptedOutputPaths.Length == 0)
+        {
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(password))
+        {
+            throw new InvalidOperationException(
+                "SQLCipher conversion recovery requires the configured SQLCipher password before opening the database.");
+        }
+
+        var backupPath = Directory
+            .EnumerateFiles(directoryPath, $"{databaseFileName}.plaintext-*.bak")
+            .OrderByDescending(File.GetLastWriteTimeUtc)
+            .FirstOrDefault();
+        if (backupPath is null)
+        {
+            throw new InvalidOperationException(
+                "SQLCipher conversion was interrupted and no plaintext backup is available for recovery.");
+        }
+
+        try
+        {
+            RestorePlaintextDatabase(backupPath, databasePath);
+            foreach (var interruptedOutputPath in interruptedOutputPaths)
+            {
+                File.Delete(interruptedOutputPath);
+            }
+        }
+        catch (Exception ex)
+        {
+            throw new InvalidOperationException(
+                "SQLCipher conversion recovery could not restore the plaintext database before startup.",
+                ex);
+        }
+    }
+
     public static async Task EnsureEncryptedAsync(
         string databasePath,
         string password,
         CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(password)
-            || !File.Exists(databasePath)
+        if (string.IsNullOrWhiteSpace(password))
+        {
+            return;
+        }
+
+        RecoverInterruptedConversionIfNeeded(databasePath, password);
+        if (!File.Exists(databasePath)
             || new FileInfo(databasePath).Length == 0)
         {
             return;
@@ -91,6 +150,8 @@ internal static class SqliteDatabaseEncryptionMigrator
         var encryptedPath = $"{databasePath}.encrypted-{Guid.NewGuid():N}.tmp";
         var backupSuffix = DateTimeOffset.UtcNow.ToString("yyyyMMddHHmmss");
         var backupPath = $"{databasePath}.plaintext-{backupSuffix}.bak";
+        var plaintextSourceMoved = false;
+        var encryptedOutputPromoted = false;
 
         try
         {
@@ -112,24 +173,47 @@ internal static class SqliteDatabaseEncryptionMigrator
             }
 
             File.Move(databasePath, backupPath);
+            plaintextSourceMoved = true;
             MoveIfExists($"{databasePath}-wal", $"{backupPath}-wal");
             MoveIfExists($"{databasePath}-shm", $"{backupPath}-shm");
             File.Move(encryptedPath, databasePath);
+            encryptedOutputPromoted = true;
 
             RuntimeFileSecurity.HardenFile(backupPath);
             RuntimeFileSecurity.HardenFile($"{backupPath}-wal");
             RuntimeFileSecurity.HardenFile($"{backupPath}-shm");
             RuntimeFileSecurity.HardenSqliteFiles(databasePath);
         }
-        catch
+        catch (Exception conversionException)
         {
+            if (plaintextSourceMoved && !encryptedOutputPromoted)
+            {
+                try
+                {
+                    RestorePlaintextDatabase(backupPath, databasePath);
+                }
+                catch (Exception recoveryException)
+                {
+                    throw new InvalidOperationException(
+                        "SQLCipher conversion failed and the plaintext database could not be restored.",
+                        recoveryException);
+                }
+            }
+
             if (File.Exists(encryptedPath))
             {
                 File.Delete(encryptedPath);
             }
 
-            throw;
+            throw new InvalidOperationException("SQLCipher conversion failed.", conversionException);
         }
+    }
+
+    private static void RestorePlaintextDatabase(string backupPath, string databasePath)
+    {
+        File.Move(backupPath, databasePath);
+        MoveIfExists($"{backupPath}-wal", $"{databasePath}-wal");
+        MoveIfExists($"{backupPath}-shm", $"{databasePath}-shm");
     }
 
     private static SqliteConnection Open(string databasePath, string password)

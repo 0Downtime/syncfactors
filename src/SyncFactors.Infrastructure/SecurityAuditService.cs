@@ -102,13 +102,17 @@ public sealed class SecurityAuditService(ILogger<SecurityAuditService> logger) :
 
         var databasePath = ResolveAuditPath();
         var legacyPath = ResolveLegacyAuditPath();
-        if (!File.Exists(databasePath) && !File.Exists(legacyPath))
-        {
-            return;
-        }
-
         try
         {
+            using var startupLock = AcquireStartupLock(databasePath);
+            SqliteDatabaseEncryptionMigrator.RecoverInterruptedConversionIfNeeded(
+                databasePath,
+                SqliteConnections.GetConfiguredPassword());
+            if (!File.Exists(databasePath) && !File.Exists(legacyPath))
+            {
+                return;
+            }
+
             EnsureDatabaseInitialized(databasePath);
             MigrateLegacyAuditIfNeeded(databasePath, legacyPath);
             if (!VerifyIntegrity(databasePath, requireKeyedIntegrity: isProduction).IsValid)
@@ -160,6 +164,16 @@ public sealed class SecurityAuditService(ILogger<SecurityAuditService> logger) :
     private static void EnsureDatabaseInitialized(string databasePath)
     {
         RuntimeFileSecurity.EnsureParentDirectory(databasePath);
+        var sqlitePassword = SqliteConnections.GetConfiguredPassword();
+        SqliteDatabaseEncryptionMigrator.RecoverInterruptedConversionIfNeeded(databasePath, sqlitePassword);
+        if (!string.IsNullOrWhiteSpace(sqlitePassword))
+        {
+            SqliteDatabaseEncryptionMigrator
+                .EnsureEncryptedAsync(databasePath, sqlitePassword, CancellationToken.None)
+                .GetAwaiter()
+                .GetResult();
+        }
+
         using var connection = SqliteConnections.Open(databasePath);
         connection.Open();
         ConfigureAuditDurability(connection);
@@ -183,6 +197,25 @@ public sealed class SecurityAuditService(ILogger<SecurityAuditService> logger) :
             """;
         command.ExecuteNonQuery();
         HardenAuditDatabaseFiles(databasePath);
+    }
+
+    private static FileStream AcquireStartupLock(string databasePath)
+    {
+        var lockPath = $"{databasePath}.startup.lock";
+        var deadline = DateTimeOffset.UtcNow.AddSeconds(30);
+        while (true)
+        {
+            try
+            {
+                var stream = new FileStream(lockPath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+                RuntimeFileSecurity.HardenFile(lockPath);
+                return stream;
+            }
+            catch (IOException) when (DateTimeOffset.UtcNow < deadline)
+            {
+                Thread.Sleep(TimeSpan.FromMilliseconds(50));
+            }
+        }
     }
 
     private static void AppendSqliteEntry(
@@ -251,17 +284,34 @@ public sealed class SecurityAuditService(ILogger<SecurityAuditService> logger) :
                 }
             }
 
-            foreach (var entry in legacyEntries)
+            if (legacyEntries.Count != 0)
             {
+                var timestampUtc = DateTimeOffset.UtcNow;
+                var canonicalFields = CanonicalizeFields(
+                    new Dictionary<string, object?>
+                    {
+                        ["SourceDigest"] = ComputeFileDigest(legacyPath),
+                        ["SourceEntryCount"] = legacyEntries.Count,
+                        ["SourceProvenance"] = "LegacyJsonlSha256Chain",
+                        ["SourceTerminalHash"] = legacyEntries[^1].EntryHash
+                    });
+                var algorithm = ResolveIntegrityAlgorithm();
+                var entryHash = ComputeEntryHash(
+                    timestampUtc,
+                    "LegacyAuditMigrationBoundary",
+                    "Imported",
+                    canonicalFields,
+                    previousHash: null,
+                    algorithm);
                 InsertEntry(
                     connection,
-                    entry.TimestampUtc,
-                    entry.EventType,
-                    entry.Outcome,
-                    entry.CanonicalFields,
-                    entry.Algorithm,
-                    entry.PreviousHash,
-                    entry.EntryHash);
+                    timestampUtc,
+                    "LegacyAuditMigrationBoundary",
+                    "Imported",
+                    canonicalFields,
+                    algorithm,
+                    previousHash: null,
+                    entryHash);
             }
 
             using var markerCommand = connection.CreateCommand();
@@ -604,6 +654,9 @@ public sealed class SecurityAuditService(ILogger<SecurityAuditService> logger) :
         var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(value));
         return Convert.ToHexString(bytes).ToLowerInvariant();
     }
+
+    private static string ComputeFileDigest(string path) =>
+        Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(path))).ToLowerInvariant();
 
     private static string ComputeHmacSha256(string value)
     {
