@@ -61,6 +61,24 @@ public class AuditedDirectoryCommandGateway : IDirectoryCommandGateway
         {
             result = await execute(cancellationToken);
         }
+        catch (DirectoryMutationOutcomeUnknownException)
+        {
+            try
+            {
+                WriteTerminalAudit(
+                    command,
+                    correlationId,
+                    "Unknown",
+                    null,
+                    ("ReconciliationState", "ReadbackReconciliationRequired"));
+            }
+            catch
+            {
+                throw CreateUnknownOutcomeException();
+            }
+
+            throw;
+        }
         catch
         {
             try
@@ -95,21 +113,27 @@ public class AuditedDirectoryCommandGateway : IDirectoryCommandGateway
         DirectoryMutationCommand command,
         string correlationId,
         string outcome,
-        string? distinguishedName)
+        string? distinguishedName,
+        params (string Key, object? Value)[] additionalFields)
     {
-        _audit.Write(
-            "DirectoryMutation",
-            outcome,
+        var fields = new List<(string Key, object? Value)>
+        {
             ("CorrelationId", correlationId),
             ("Actor", _actor),
             ("Action", command.Action),
             ("Target", command.SamAccountName),
             ("WorkerId", command.WorkerId),
             ("TargetOu", command.TargetOu),
-            ("DistinguishedName", distinguishedName));
+            ("DistinguishedName", distinguishedName)
+        };
+        fields.AddRange(additionalFields);
+        _audit.Write(
+            "DirectoryMutation",
+            outcome,
+            [.. fields]);
     }
 
-    private static InvalidOperationException CreateUnknownOutcomeException() =>
+    private static DirectoryMutationOutcomeUnknownException CreateUnknownOutcomeException() =>
         new("Directory mutation outcome is unknown because its audit evidence could not be recorded.");
 }
 

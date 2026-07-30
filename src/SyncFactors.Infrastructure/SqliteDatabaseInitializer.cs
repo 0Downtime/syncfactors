@@ -21,7 +21,9 @@ public sealed class SqliteDatabaseInitializer(SqlitePathResolver pathResolver)
             RuntimeFileSecurity.EnsureDirectory(directory);
         }
 
+        RuntimeFileSecurity.EnsureParentDirectory(databasePath);
         var sqlitePassword = SqliteConnections.GetConfiguredPassword();
+        SqliteDatabaseEncryptionMigrator.RecoverInterruptedConversionIfNeeded(databasePath, sqlitePassword);
         if (!string.IsNullOrWhiteSpace(sqlitePassword))
         {
             await SqliteDatabaseEncryptionMigrator.EnsureEncryptedAsync(databasePath, sqlitePassword, cancellationToken);

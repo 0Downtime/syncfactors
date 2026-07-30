@@ -113,6 +113,7 @@ public sealed class BulkRunCoordinator(
         var processedWorkers = 0;
         var createCount = 0;
         var disableCount = 0;
+        var readbackReconciliationRequired = 0;
         var reservedCreateEmailAddresses = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var reservedCreateEmailLock = new object();
 
@@ -297,6 +298,22 @@ public sealed class BulkRunCoordinator(
                                     bucket = "conflicts";
                                 }
                             }
+                            catch (DirectoryMutationOutcomeUnknownException ex)
+                            {
+                                Interlocked.Exchange(ref readbackReconciliationRequired, 1);
+                                applied = true;
+                                succeeded = false;
+                                bucket = "manualReview";
+                                reason = ex.Message;
+                                plan = plan with
+                                {
+                                    Bucket = bucket,
+                                    ReviewCategory = "DirectoryMutationOutcomeUnknown",
+                                    ReviewCaseType = "ReadbackReconciliationRequired",
+                                    Reason = reason,
+                                    CanAutoApply = false
+                                };
+                            }
                             catch (Exception ex)
                             {
                                 applied = true;
@@ -358,6 +375,12 @@ public sealed class BulkRunCoordinator(
             channel.Writer.Complete();
             await writerTask;
             populationTotals = await GetPopulationTotalsAsync();
+            if (Volatile.Read(ref readbackReconciliationRequired) != 0)
+            {
+                throw new DirectoryMutationOutcomeUnknownException(
+                    "One or more LDAP writes require readback reconciliation before this run can complete successfully.");
+            }
+
             await runLifecycleService.CompleteRunAsync(
                 runId,
                 mode: "BulkSync",

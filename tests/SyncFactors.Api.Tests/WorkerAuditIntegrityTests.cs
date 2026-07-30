@@ -213,7 +213,7 @@ public sealed class WorkerAuditIntegrityTests
         var innerGateway = new CountingDirectoryCommandGateway();
         var auditedGateway = new AuditedDirectoryCommandGateway(innerGateway, auditService);
 
-        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => auditedGateway.ExecuteAsync(CreateCommand(), CancellationToken.None));
+        var exception = await Assert.ThrowsAsync<DirectoryMutationOutcomeUnknownException>(() => auditedGateway.ExecuteAsync(CreateCommand(), CancellationToken.None));
 
         Assert.Equal("Directory mutation outcome is unknown because its audit evidence could not be recorded.", exception.Message);
         Assert.Equal(1, innerGateway.ExecuteCallCount);
@@ -237,6 +237,25 @@ public sealed class WorkerAuditIntegrityTests
         Assert.Equal("SyncFactors.Worker", auditEntries[1].Fields["Actor"]);
         Assert.Equal("jdoe", auditEntries[1].Fields["Target"]);
         Assert.Equal(auditEntries[0].Fields["CorrelationId"], auditEntries[1].Fields["CorrelationId"]);
+    }
+
+    [Fact]
+    public async Task AuditedDirectoryCommandGateway_RecordsCorrelatedUnknownOutcomeWhenWriteMayHaveCommitted()
+    {
+        var auditEntries = new List<(string EventType, string Outcome, Dictionary<string, object?> Fields)>();
+        var innerGateway = new UnknownOutcomeDirectoryCommandGateway();
+        var auditedGateway = new AuditedDirectoryCommandGateway(innerGateway, new CapturingSecurityAuditService(auditEntries));
+
+        await Assert.ThrowsAsync<DirectoryMutationOutcomeUnknownException>(() =>
+            auditedGateway.ExecuteAsync(CreateCommand(action: "UpdateUser"), CancellationToken.None));
+
+        Assert.Equal(1, innerGateway.ExecuteCallCount);
+        Assert.Equal(2, auditEntries.Count);
+        Assert.Equal("MutationIntent", auditEntries[0].EventType);
+        Assert.Equal("DirectoryMutation", auditEntries[1].EventType);
+        Assert.Equal("Unknown", auditEntries[1].Outcome);
+        Assert.Equal(auditEntries[0].Fields["CorrelationId"], auditEntries[1].Fields["CorrelationId"]);
+        Assert.Equal("ReadbackReconciliationRequired", auditEntries[1].Fields["ReconciliationState"]);
     }
 
     private sealed class CapturingSecurityAuditService : ISecurityAuditService
@@ -358,6 +377,19 @@ public sealed class WorkerAuditIntegrityTests
             _ = command;
             _ = cancellationToken;
             throw new InvalidOperationException("Directory command failed.");
+        }
+    }
+
+    private sealed class UnknownOutcomeDirectoryCommandGateway : IDirectoryCommandGateway
+    {
+        public int ExecuteCallCount { get; private set; }
+
+        public Task<DirectoryCommandResult> ExecuteAsync(DirectoryMutationCommand command, CancellationToken cancellationToken)
+        {
+            _ = command;
+            _ = cancellationToken;
+            ExecuteCallCount++;
+            throw new DirectoryMutationOutcomeUnknownException("The LDAP write may have committed before the connection ended.");
         }
     }
 }

@@ -85,6 +85,12 @@ public sealed class ActiveDirectoryCommandGateway(
             }
             catch (InvalidOperationException ex) when (ShouldRetryTransientCommandFailure(ex, commandContext, attempt))
             {
+                var writeMayHaveBeenAttempted = commandContext.StopPendingWrites();
+                if (writeMayHaveBeenAttempted)
+                {
+                    throw CreateUnknownOutcomeException(ex);
+                }
+
                 lease?.Invalidate();
                 connectionPool.InvalidateIdleConnections(config);
                 var retryDelay = GetTransientRetryDelay(attempt);
@@ -98,17 +104,38 @@ public sealed class ActiveDirectoryCommandGateway(
                     retryDelay.TotalMilliseconds);
                 await Task.Delay(retryDelay, cancellationToken);
             }
+            catch (InvalidOperationException ex) when (commandContext.WriteAttempted &&
+                                                       ExternalSystemExceptionFactory.IsRetryableActiveDirectoryTimeout(ex))
+            {
+                lease?.Invalidate();
+                throw CreateUnknownOutcomeException(ex);
+            }
             catch (LdapException ex)
             {
                 lease?.Invalidate();
+                if (commandContext.WriteAttempted)
+                {
+                    throw CreateUnknownOutcomeException(ex);
+                }
+
                 logger.LogError(ex, "AD command failed with LDAP exception. Action={Action} WorkerId={WorkerId} Server={Server}", command.Action, command.WorkerId, config.Server);
                 throw ExternalSystemExceptionFactory.CreateActiveDirectoryException($"command '{command.Action}'", config, ex, TryBuildOuterCatchFailureDetails(command, config));
+            }
+            catch (OperationCanceledException ex) when (commandContext.WriteAttempted)
+            {
+                lease?.Invalidate();
+                throw CreateUnknownOutcomeException(ex);
             }
             catch (DirectoryOperationException ex)
             {
                 lease?.Invalidate();
                 logger.LogError(ex, "AD command failed with directory operation exception. Action={Action} WorkerId={WorkerId} Server={Server}", command.Action, command.WorkerId, config.Server);
                 throw ExternalSystemExceptionFactory.CreateActiveDirectoryException($"command '{command.Action}'", config, ex, TryBuildOuterCatchFailureDetails(command, config));
+            }
+            catch (Exception ex) when (commandContext.WriteAttempted)
+            {
+                lease?.Invalidate();
+                throw CreateUnknownOutcomeException(ex);
             }
             catch
             {
@@ -895,7 +922,11 @@ public sealed class ActiveDirectoryCommandGateway(
     {
         var stopwatch = Stopwatch.StartNew();
         logger.LogInformation("Starting AD modify. Operation={Operation} Context={Context}", operation, FormatContext(context));
-        CurrentCommandContext.Value?.MarkWriteAttempted();
+        if (CurrentCommandContext.Value is { } commandContext && !commandContext.TryMarkWriteAttempted())
+        {
+            throw new OperationCanceledException("The LDAP command timed out before a pending write could be started.");
+        }
+
         connection.SendRequest(request);
         logger.LogInformation(
             "Completed AD modify. Operation={Operation} DurationMs={DurationMs} Context={Context}",
@@ -930,13 +961,37 @@ public sealed class ActiveDirectoryCommandGateway(
 
     private sealed class CommandExecutionContext
     {
+        private readonly object _gate = new();
+        private bool _acceptPendingWrites = true;
+
         public bool WriteAttempted { get; private set; }
 
-        public void MarkWriteAttempted()
+        public bool TryMarkWriteAttempted()
         {
-            WriteAttempted = true;
+            lock (_gate)
+            {
+                if (!_acceptPendingWrites)
+                {
+                    return false;
+                }
+
+                WriteAttempted = true;
+                return true;
+            }
+        }
+
+        public bool StopPendingWrites()
+        {
+            lock (_gate)
+            {
+                _acceptPendingWrites = false;
+                return WriteAttempted;
+            }
         }
     }
+
+    private static DirectoryMutationOutcomeUnknownException CreateUnknownOutcomeException(Exception innerException) =>
+        new("The LDAP write may have committed before the command result was known. Readback reconciliation is required before retrying or advancing sync state.", innerException);
 
     private static string FormatContext((string Key, object? Value)[] context)
     {

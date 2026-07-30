@@ -102,7 +102,7 @@ public sealed class ActiveDirectoryCommandGatewayTests
     public void ShouldRetryTransientCommandFailure_ReturnsFalse_AfterWriteAttempt()
     {
         var (method, context) = CreateTransientCommandRetryReflectionContext(typeof(LdapException));
-        context.GetType().GetMethod("MarkWriteAttempted")!.Invoke(context, []);
+        Assert.True(Assert.IsType<bool>(context.GetType().GetMethod("TryMarkWriteAttempted")!.Invoke(context, [])));
 
         var shouldRetry = Assert.IsType<bool>(method.Invoke(null, [new LdapException("The LDAP server is unavailable."), context, 0]));
 

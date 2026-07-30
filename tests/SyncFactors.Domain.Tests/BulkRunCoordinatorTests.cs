@@ -315,6 +315,42 @@ public sealed class BulkRunCoordinatorTests
     }
 
     [Fact]
+    public async Task ExecuteAsync_LiveRun_PersistsUnknownMutationForReadbackReconciliationAndDoesNotAdvanceCheckpoint()
+    {
+        CapturingRunLifecycleService.Entries.Clear();
+        CapturingRunLifecycleService.Reset();
+        var deltaSyncService = new CapturingDeltaSyncService();
+        var coordinator = new BulkRunCoordinator(
+            new StubWorkerSource([CreateWorker("10001")]),
+            deltaSyncService,
+            new StubRunQueueStore(),
+            new StubGraveyardRetentionStore(),
+            new StubWorkerPlanningService(includeChangedAttribute: true),
+            new StubDirectoryMutationCommandBuilder(),
+            new UnknownOutcomeDirectoryCommandGateway(),
+            new StubDirectoryGateway(),
+            new CapturingRunLifecycleService(),
+            new RealSyncSettings(),
+            new WorkerRunSettings(MaxCreatesPerRun: 10),
+            CreateLifecycleSettings(),
+            NullLogger<BulkRunCoordinator>.Instance,
+            TimeProvider.System);
+
+        await Assert.ThrowsAsync<DirectoryMutationOutcomeUnknownException>(() => coordinator.ExecuteAsync(
+            new RunQueueRequest("req-unknown", "BulkSync", false, "AdHoc", "test", "Pending", DateTimeOffset.UtcNow, null, null, null, null),
+            maxDegreeOfParallelism: 1,
+            CancellationToken.None));
+
+        var entry = Assert.Single(CapturingRunLifecycleService.Entries);
+        Assert.Equal("manualReview", entry.Bucket);
+        Assert.Equal("DirectoryMutationOutcomeUnknown", entry.ReviewCategory);
+        Assert.Equal("ReadbackReconciliationRequired", entry.ReviewCaseType);
+        Assert.Equal(0, deltaSyncService.RecordCalls);
+        Assert.Equal(0, CapturingRunLifecycleService.CompletedCalls);
+        Assert.Equal(1, CapturingRunLifecycleService.FailedCalls);
+    }
+
+    [Fact]
     public async Task ExecuteAsync_CreateGuardrailExceeded_FailsRunAndStopsProcessing()
     {
         CapturingRunLifecycleService.Entries.Clear();
@@ -1451,6 +1487,16 @@ public sealed class BulkRunCoordinatorTests
         {
             _ = cancellationToken;
             return Task.FromResult(new DirectoryCommandResult(false, command.Action, command.SamAccountName, null, "Failed", null));
+        }
+    }
+
+    private sealed class UnknownOutcomeDirectoryCommandGateway : IDirectoryCommandGateway
+    {
+        public Task<DirectoryCommandResult> ExecuteAsync(DirectoryMutationCommand command, CancellationToken cancellationToken)
+        {
+            _ = command;
+            _ = cancellationToken;
+            throw new DirectoryMutationOutcomeUnknownException("LDAP write outcome requires readback reconciliation.");
         }
     }
 
