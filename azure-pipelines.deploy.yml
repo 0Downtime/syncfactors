@@ -178,6 +178,7 @@ stages:
     displayName: Deploy to Windows Server
     dependsOn: Build
     condition: and(succeeded(), ne(variables['deployTargetMachines'], ''), ne(variables['Build.Reason'], 'PullRequest'))
+    lockBehavior: sequential
     jobs:
       - deployment: DeployWindowsServices
         displayName: Deploy SyncFactors Windows services
@@ -200,7 +201,7 @@ stages:
                     MachineNames: $(deployTargetMachines)
                     AdminUserName: $(deployAdminUserName)
                     AdminPassword: $(deployAdminPassword)
-                    TargetPath: $(remoteStagingPath)
+                    TargetPath: $(remoteStagingPath)\$(Build.BuildId)
                     CleanTargetBeforeCopy: true
                     CopyFilesInParallel: true
 
@@ -243,7 +244,7 @@ stages:
                           Write-Host "##vso[task.setvariable variable=$($mapping.Variable);issecret=true]$encoded"
                       }
                   env:
-                    SYNCFACTORS_INPUT_STAGING_PATH: $(remoteStagingPath)
+                    SYNCFACTORS_INPUT_STAGING_PATH: $(remoteStagingPath)\$(Build.BuildId)
                     SYNCFACTORS_INPUT_INSTALL_ROOT: $(installRoot)
                     SYNCFACTORS_INPUT_RUN_PROFILE: $(runProfile)
                     SYNCFACTORS_INPUT_AUTH_MODE: $(authMode)
@@ -449,6 +450,42 @@ stages:
                           }
                       }
 
+                      function Enter-SyncFactorsDeploymentLock {
+                          param([TimeSpan]$Timeout = [TimeSpan]::FromMinutes(30))
+
+                          $mutex = [Threading.Mutex]::new($false, 'Global\SyncFactors.WindowsDeployment')
+                          try {
+                              $acquired = $false
+                              try {
+                                  $acquired = $mutex.WaitOne($Timeout)
+                              }
+                              catch [Threading.AbandonedMutexException] {
+                                  $acquired = $true
+                              }
+
+                              if (-not $acquired) {
+                                  throw "Timed out waiting $([int]$Timeout.TotalMinutes) minutes for another SyncFactors deployment to finish."
+                              }
+
+                              return $mutex
+                          }
+                          catch {
+                              $mutex.Dispose()
+                              throw
+                          }
+                      }
+
+                      function Exit-SyncFactorsDeploymentLock {
+                          param([Parameter(Mandatory)][Threading.Mutex]$Mutex)
+
+                          try {
+                              $Mutex.ReleaseMutex()
+                          }
+                          finally {
+                              $Mutex.Dispose()
+                          }
+                      }
+
                       $stagingPath = Decode-TransportValue '$(syncFactorsStagingPathB64)'
                       $installRoot = Decode-TransportValue '$(syncFactorsInstallRootB64)'
                       $runProfile = Decode-TransportValue '$(syncFactorsRunProfileB64)'
@@ -494,6 +531,8 @@ stages:
                           throw 'allowLocalSystemServiceAccount cannot be true when serviceUserName is set.'
                       }
 
+                      $deploymentMutex = Enter-SyncFactorsDeploymentLock
+                      try {
                       $apiServiceExists = $null -ne (Get-Service -Name $apiServiceName -ErrorAction SilentlyContinue)
                       $workerServiceExists = $null -ne (Get-Service -Name $workerServiceName -ErrorAction SilentlyContinue)
                       if ($apiServiceExists -ne $workerServiceExists) {
@@ -598,6 +637,7 @@ stages:
                               -not $patchCommand.Parameters.ContainsKey('DryRunOnly') -or
                               -not $patchCommand.Parameters.ContainsKey('SecurityAuditIntegrityKey') -or
                               -not $patchCommand.Parameters.ContainsKey('DeploymentNonce') -or
+                              -not $patchCommand.Parameters.ContainsKey('DeploymentLockAlreadyHeld') -or
                               -not $patchCommand.Parameters.ContainsKey('AuthMode') -or
                               -not $patchCommand.Parameters.ContainsKey('ExpectedServiceIdentity') -or
                               -not (Select-String -Path $patchScript -Pattern 'Backup-SqliteState' -SimpleMatch -Quiet)) {
@@ -614,6 +654,7 @@ stages:
                           if (-not $patchCommand.Parameters.ContainsKey('DryRunOnly') -or
                               -not $patchCommand.Parameters.ContainsKey('SecurityAuditIntegrityKey') -or
                               -not $patchCommand.Parameters.ContainsKey('DeploymentNonce') -or
+                              -not $patchCommand.Parameters.ContainsKey('DeploymentLockAlreadyHeld') -or
                               -not $patchCommand.Parameters.ContainsKey('AuthMode') -or
                               -not $patchCommand.Parameters.ContainsKey('ExpectedServiceIdentity') -or
                               -not (Select-String -Path $patchScript -Pattern 'Backup-SqliteState' -SimpleMatch -Quiet)) {
@@ -629,7 +670,8 @@ stages:
                               '-DeploymentNonce', $deploymentNonce,
                               '-ApiUrls', $apiUrls,
                               '-WindowsCredentialPrefix', $windowsCredentialPrefix,
-                              '-HealthUrl', "https://localhost:$apiPort/readyz"
+                              '-HealthUrl', "https://localhost:$apiPort/readyz",
+                              '-DeploymentLockAlreadyHeld'
                           )
                           if ($dryRunOnly) {
                               $patchArgs += '-DryRunOnly'
@@ -718,6 +760,7 @@ stages:
                           '-ApiServiceName', $apiServiceName,
                           '-WorkerServiceName', $workerServiceName,
                           '-WindowsCredentialPrefix', $windowsCredentialPrefix,
+                          '-DeploymentLockAlreadyHeld',
                           '-Force'
                       )
                       if ($dryRunOnly) {
@@ -804,3 +847,7 @@ stages:
                           throw "Deployment verification failed with code $LASTEXITCODE."
                       }
                       Publish-DeploymentCommitMarker -MarkerPath $deploymentCommitMarkerPath -Nonce $deploymentNonce
+                      }
+                      finally {
+                          Exit-SyncFactorsDeploymentLock -Mutex $deploymentMutex
+                      }

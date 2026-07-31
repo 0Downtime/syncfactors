@@ -38,7 +38,9 @@ param(
     [string]$WindowsCredentialPrefix,
     [string]$DeploymentSecretsFile,
     [pscredential]$Credential,
-    [switch]$AllowLocalSystem
+    [switch]$AllowLocalSystem,
+    [Parameter(DontShow)]
+    [switch]$DeploymentLockAlreadyHeld
 )
 
 Set-StrictMode -Version Latest
@@ -53,6 +55,42 @@ function Test-IsWindowsAdministrator {
     $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
     $principal = [Security.Principal.WindowsPrincipal]::new($identity)
     return $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+}
+
+function Enter-SyncFactorsDeploymentLock {
+    param([TimeSpan]$Timeout = [TimeSpan]::FromMinutes(30))
+
+    $mutex = [Threading.Mutex]::new($false, 'Global\SyncFactors.WindowsDeployment')
+    try {
+        $acquired = $false
+        try {
+            $acquired = $mutex.WaitOne($Timeout)
+        }
+        catch [Threading.AbandonedMutexException] {
+            $acquired = $true
+        }
+
+        if (-not $acquired) {
+            throw "Timed out waiting $([int]$Timeout.TotalMinutes) minutes for another SyncFactors deployment to finish."
+        }
+
+        return $mutex
+    }
+    catch {
+        $mutex.Dispose()
+        throw
+    }
+}
+
+function Exit-SyncFactorsDeploymentLock {
+    param([Parameter(Mandatory)][Threading.Mutex]$Mutex)
+
+    try {
+        $Mutex.ReleaseMutex()
+    }
+    finally {
+        $Mutex.Dispose()
+    }
 }
 
 function Assert-ServiceIdentityConfiguration {
@@ -605,13 +643,13 @@ function Install-SyncFactorsService {
     }
 
     New-Service @newServiceParameters | Out-Null
+    Protect-ServiceRegistryKey -Name $Name
     Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Services\$Name" -Name Description -Value $Description
     if ($StartupType -eq 'Automatic' -and $DelayedAutoStart.IsPresent) {
         New-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Services\$Name" -Name DelayedAutoStart -PropertyType DWord -Value 1 -Force | Out-Null
     }
 
     Set-ServiceEnvironment -Name $Name -Environment $Environment
-    Protect-ServiceRegistryKey -Name $Name
     Set-ServiceRecoveryPolicy -Name $Name
 }
 
@@ -642,6 +680,11 @@ if ($AllowLocalSystem.IsPresent) {
     Write-Warning 'Installing SyncFactors services as LocalSystem by explicit override. Use a restricted runtime service account for production.'
 }
 
+$deploymentMutex = $null
+if (-not $DeploymentLockAlreadyHeld.IsPresent) {
+    $deploymentMutex = Enter-SyncFactorsDeploymentLock
+}
+try {
 $existingServiceEnvironments = @{}
 $existingServiceEnvironments[$ApiServiceName] = @(Get-ServiceEnvironmentEntries -ServiceName $ApiServiceName)
 $existingServiceEnvironments[$WorkerServiceName] = @(Get-ServiceEnvironmentEntries -ServiceName $WorkerServiceName)
@@ -1016,4 +1059,10 @@ if ($Service -in @('All', 'Worker')) {
     serviceIdentity = $serviceIdentity
     logDirectory = $LogDirectory
     eventLog = 'Application'
+}
+}
+finally {
+    if ($null -ne $deploymentMutex) {
+        Exit-SyncFactorsDeploymentLock -Mutex $deploymentMutex
+    }
 }

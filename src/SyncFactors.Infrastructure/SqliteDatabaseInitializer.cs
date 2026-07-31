@@ -566,19 +566,19 @@ public sealed class SqliteDatabaseInitializer(SqlitePathResolver pathResolver)
         }
 
         var columns = await GetTableColumnsAsync(connection, transaction, "worker_heartbeat", cancellationToken);
-        var missingColumns = new (string Name, string Definition)[]
+        var missingColumns = new (string Name, string CommandText)[]
         {
-            ("instance_id", "TEXT NULL"),
-            ("build_version", "TEXT NULL"),
-            ("build_commit_sha", "TEXT NULL"),
-            ("deployment_nonce_hash", "TEXT NULL")
+            ("instance_id", "ALTER TABLE worker_heartbeat ADD COLUMN instance_id TEXT NULL;"),
+            ("build_version", "ALTER TABLE worker_heartbeat ADD COLUMN build_version TEXT NULL;"),
+            ("build_commit_sha", "ALTER TABLE worker_heartbeat ADD COLUMN build_commit_sha TEXT NULL;"),
+            ("deployment_nonce_hash", "ALTER TABLE worker_heartbeat ADD COLUMN deployment_nonce_hash TEXT NULL;")
         };
 
         foreach (var column in missingColumns.Where(column => !columns.Contains(column.Name)))
         {
             await using var command = connection.CreateCommand();
             command.Transaction = (SqliteTransaction)transaction;
-            command.CommandText = $"ALTER TABLE worker_heartbeat ADD COLUMN {column.Name} {column.Definition};";
+            command.CommandText = column.CommandText;
             await command.ExecuteNonQueryAsync(cancellationToken);
         }
     }

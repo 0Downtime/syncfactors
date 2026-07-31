@@ -89,6 +89,16 @@ function Normalize-CertificateThumbprint {
     return $normalized
 }
 
+function Get-CertificateHashAlgorithm {
+    param([Parameter(Mandatory)][int]$ExpectedHexLength)
+
+    switch ($ExpectedHexLength) {
+        40 { return [Security.Cryptography.HashAlgorithmName]::SHA1 }
+        64 { return [Security.Cryptography.HashAlgorithmName]::SHA256 }
+        default { throw "Unsupported certificate thumbprint length '$ExpectedHexLength'." }
+    }
+}
+
 function Resolve-ReadinessCertificateThumbprint {
     param([string]$ExplicitThumbprint, [string]$ServiceName, [string]$Url)
 
@@ -128,11 +138,12 @@ function Invoke-PinnedHttpRequest {
     param([string]$Url, [hashtable]$Headers, [string]$CertificateThumbprint)
 
     $expectedThumbprint = Normalize-CertificateThumbprint $CertificateThumbprint
+    $hashAlgorithm = Get-CertificateHashAlgorithm -ExpectedHexLength $expectedThumbprint.Length
     $handler = [Net.Http.HttpClientHandler]::new()
     $handler.ServerCertificateCustomValidationCallback = {
         param($request, $certificate, $chain, $errors)
         if ($null -eq $certificate) { return $false }
-        $actual = ($certificate.GetCertHashString() -replace '[^0-9A-Fa-f]', '').ToUpperInvariant()
+        $actual = ($certificate.GetCertHashString($hashAlgorithm) -replace '[^0-9A-Fa-f]', '').ToUpperInvariant()
         return [Security.Cryptography.CryptographicOperations]::FixedTimeEquals(
             [Convert]::FromHexString($expectedThumbprint),
             [Convert]::FromHexString($actual))

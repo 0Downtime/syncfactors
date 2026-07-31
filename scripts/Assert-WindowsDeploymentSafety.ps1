@@ -123,6 +123,16 @@ Assert-FileMatch -Content $installer -Pattern 'Credential is required for the re
 Assert-FileMatch -Content $installer -Pattern 'DeploymentSecretsFile' -Message 'Fresh installation must accept an ACL-restricted DPAPI secret handoff instead of native secret arguments.'
 Assert-FileMatch -Content $installer -Pattern 'Protect-ServiceRegistryKey' -Message 'Service installation must protect registry environment secrets.'
 Assert-FileMatch -Content $installer -Pattern 'SyncFactors__Deployment__CommitMarkerPath=' -Message 'Service installation must configure the worker deployment commit marker.'
+Assert-FileMatch -Content $installer -Pattern 'Global\\SyncFactors\.WindowsDeployment' -Message 'Direct service installation must acquire the host-wide deployment mutex.'
+Assert-FileMatch -Content $installer -Pattern 'DeploymentLockAlreadyHeld' -Message 'Child service installation must support an explicitly inherited deployment lock.'
+$newServiceIndex = $installer.IndexOf('New-Service @newServiceParameters')
+$registryProtectionIndex = if ($newServiceIndex -ge 0) { $installer.IndexOf('Protect-ServiceRegistryKey -Name $Name', $newServiceIndex) } else { -1 }
+$serviceEnvironmentIndex = if ($newServiceIndex -ge 0) { $installer.IndexOf('Set-ServiceEnvironment -Name $Name', $newServiceIndex) } else { -1 }
+if ($newServiceIndex -lt 0 -or
+    $registryProtectionIndex -lt $newServiceIndex -or
+    $serviceEnvironmentIndex -lt $registryProtectionIndex) {
+    throw 'Service registry ACLs must be protected immediately after creation and before secret environment values are written.'
+}
 
 $patchScript = Get-Content -Path $patchPath -Raw
 Assert-FileMatch -Content $patchScript -Pattern 'Resolve-DryRunOnlyMode' -Message 'Patch deployment must resolve and preserve write-safety mode.'
@@ -144,6 +154,14 @@ Assert-FileMatch -Content $patchScript -Pattern 'Restore-DeploymentCommitMarker'
 Assert-FileMatch -Content $patchScript -Pattern 'Publish-DeploymentCommitMarker' -Message 'Patch deployment must publish the worker commit gate only after attestation.'
 Assert-FileMatch -Content $patchScript -Pattern 'requires an HTTPS HealthUrl' -Message 'Patch deployment must reject plaintext readiness URLs before mutation.'
 Assert-FileMatch -Content $patchScript -Pattern 'SkipHealthCheck is not permitted' -Message 'Production patch deployment must not bypass attested readiness.'
+Assert-FileMatch -Content $patchScript -Pattern 'Global\\SyncFactors\.WindowsDeployment' -Message 'Direct patch deployment must acquire the host-wide deployment mutex.'
+Assert-FileMatch -Content $patchScript -Pattern 'DeploymentLockAlreadyHeld' -Message 'Child patch deployment must support an explicitly inherited deployment lock.'
+Assert-FileMatch -Content $patchScript -Pattern '\[Guid\]::NewGuid\(\)\.ToString\(''N''\)' -Message 'Patch staging and backup paths must include a collision-resistant deployment identifier.'
+$patchLockIndex = $patchScript.IndexOf('$deploymentMutex = Enter-SyncFactorsDeploymentLock')
+$patchStateReadIndex = $patchScript.IndexOf('$installedSqlitePaths = @(')
+if ($patchLockIndex -lt 0 -or $patchStateReadIndex -lt 0 -or $patchLockIndex -gt $patchStateReadIndex) {
+    throw 'Patch deployment must acquire the host-wide mutex before reading mutable installed state.'
+}
 $verificationCallIndex = $patchScript.IndexOf('$verification = & $verificationScript')
 $markerPublishIndex = $patchScript.IndexOf('Publish-DeploymentCommitMarker -MarkerPath')
 if ($verificationCallIndex -lt 0 -or $markerPublishIndex -lt 0 -or $markerPublishIndex -lt $verificationCallIndex) {
@@ -167,6 +185,7 @@ Assert-FileMatch -Content $verification -Pattern 'X-SyncFactors-Expected-Api-Com
 Assert-FileMatch -Content $verification -Pattern 'attested=true' -Message 'Deployment verification must reject legacy un-attested HTTP 200 responses.'
 Assert-FileNotMatch -Content $verification -Pattern 'SkipCertificateCheck' -Message 'Readiness must never send the nonce with certificate validation disabled.'
 Assert-FileMatch -Content $verification -Pattern 'ServerCertificateCustomValidationCallback' -Message 'HTTPS readiness must pin the expected server certificate.'
+Assert-FileMatch -Content $verification -Pattern 'GetCertHashString\(\$hashAlgorithm\)' -Message 'Certificate pinning must select the hash algorithm that matches the configured pin length.'
 Assert-FileMatch -Content $verification -Pattern 'ready = -not \$SkipHttpHealthCheck' -Message 'Skipped HTTP attestation must never report ready=true.'
 Assert-FileMatch -Content $verification -Pattern 'requires an HTTPS HealthUrl' -Message 'Deployment verification must reject plaintext readiness URLs.'
 
@@ -221,6 +240,16 @@ Assert-FileMatch -Content $pipeline -Pattern 'Export-Clixml' -Message 'Cross-pro
 Assert-FileMatch -Content $pipeline -Pattern "'-DeploymentSecretsFile'" -Message 'Child PowerShell must consume the protected handoff file.'
 Assert-FileMatch -Content $pipeline -Pattern 'Remove-Item -Path \$deploymentSecretsFile' -Message 'The protected secret handoff must be deleted in finally.'
 Assert-FileMatch -Content $pipeline -Pattern 'issecret=true' -Message 'Encoded cross-WinRM values must remain masked Azure task variables.'
+Assert-FileMatch -Content $pipeline -Pattern '(?m)^\s+TargetPath:\s+\$\(remoteStagingPath\)\\\$\(Build\.BuildId\)\s*$' -Message 'Every pipeline copy must use an isolated remote staging directory.'
+Assert-FileMatch -Content $pipeline -Pattern '(?m)^\s+SYNCFACTORS_INPUT_STAGING_PATH:\s+\$\(remoteStagingPath\)\\\$\(Build\.BuildId\)\s*$' -Message 'The remote deployment script must receive the isolated staging directory.'
+Assert-FileMatch -Content $pipeline -Pattern '(?m)^\s+lockBehavior:\s+sequential\s*$' -Message 'Queued environment deployments must use sequential lock behavior.'
+Assert-FileMatch -Content $pipeline -Pattern 'Global\\SyncFactors\.WindowsDeployment' -Message 'Remote deployment must acquire the target host deployment mutex.'
+Assert-FileMatch -Content $pipeline -Pattern "'-DeploymentLockAlreadyHeld'" -Message 'Pipeline child deployment commands must inherit the host mutex instead of deadlocking on it.'
+$pipelineLockIndex = $pipeline.IndexOf('$deploymentMutex = Enter-SyncFactorsDeploymentLock')
+$pipelineStateReadIndex = $pipeline.IndexOf('$apiServiceExists =')
+if ($pipelineLockIndex -lt 0 -or $pipelineStateReadIndex -lt 0 -or $pipelineLockIndex -gt $pipelineStateReadIndex) {
+    throw 'Remote deployment must acquire the target host mutex before inspecting service installation state.'
+}
 $remoteInline = [regex]::Match($pipeline, '(?s)displayName:\s+Install prerequisites and services.*?InlineScript:\s*\|(?<script>.*)$').Groups['script'].Value
 if ([string]::IsNullOrWhiteSpace($remoteInline)) {
     throw 'Could not locate the remote deployment InlineScript.'

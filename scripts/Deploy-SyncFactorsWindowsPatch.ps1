@@ -36,7 +36,9 @@ param(
     [switch]$InstallOrUpdateServices,
     [string]$HealthUrl = 'https://localhost:5087/readyz',
     [switch]$SkipHealthCheck,
-    [switch]$NoRollbackOnFailure
+    [switch]$NoRollbackOnFailure,
+    [Parameter(DontShow)]
+    [switch]$DeploymentLockAlreadyHeld
 )
 
 Set-StrictMode -Version Latest
@@ -50,6 +52,42 @@ function Test-IsWindowsAdministrator {
     $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
     $principal = [Security.Principal.WindowsPrincipal]::new($identity)
     return $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+}
+
+function Enter-SyncFactorsDeploymentLock {
+    param([TimeSpan]$Timeout = [TimeSpan]::FromMinutes(30))
+
+    $mutex = [Threading.Mutex]::new($false, 'Global\SyncFactors.WindowsDeployment')
+    try {
+        $acquired = $false
+        try {
+            $acquired = $mutex.WaitOne($Timeout)
+        }
+        catch [Threading.AbandonedMutexException] {
+            $acquired = $true
+        }
+
+        if (-not $acquired) {
+            throw "Timed out waiting $([int]$Timeout.TotalMinutes) minutes for another SyncFactors deployment to finish."
+        }
+
+        return $mutex
+    }
+    catch {
+        $mutex.Dispose()
+        throw
+    }
+}
+
+function Exit-SyncFactorsDeploymentLock {
+    param([Parameter(Mandatory)][Threading.Mutex]$Mutex)
+
+    try {
+        $Mutex.ReleaseMutex()
+    }
+    finally {
+        $Mutex.Dispose()
+    }
 }
 
 function Assert-HttpsHealthUrl {
@@ -850,6 +888,11 @@ if (-not [string]::IsNullOrWhiteSpace($DeploymentSecretsFile)) {
 $resolvedBundleZip = Resolve-RequiredPath -Path $BundleZip -Label 'Bundle zip'
 $expectedReleaseCommit = Get-BundleReleaseCommit -BundlePath $resolvedBundleZip
 $InstallRoot = [System.IO.Path]::GetFullPath($InstallRoot)
+$deploymentMutex = $null
+if (-not $DeploymentLockAlreadyHeld.IsPresent) {
+    $deploymentMutex = Enter-SyncFactorsDeploymentLock
+}
+try {
 $installedSqlitePaths = @(
     @($ApiServiceName, $WorkerServiceName) |
         ForEach-Object { Get-ServiceEnvironmentValue -ServiceName $_ -Name 'SyncFactors__SqlitePath' } |
@@ -913,10 +956,10 @@ if ([string]::IsNullOrWhiteSpace($SecurityAuditLogPath)) {
 $SecurityAuditLogPath = [System.IO.Path]::GetFullPath($SecurityAuditLogPath)
 $stagingRoot = Join-Path $InstallRoot '_staging'
 $backupRoot = Join-Path $InstallRoot '_backups'
-$stamp = Get-Date -Format 'yyyyMMddHHmmss'
-$expandedRoot = Join-Path $stagingRoot $stamp
-$currentBackupRoot = Join-Path $backupRoot $stamp
-$currentSqliteBackupRoot = Join-Path $backupRoot ("{0}-sqlite" -f $stamp)
+$deploymentId = "{0}-{1}" -f (Get-Date -Format 'yyyyMMddHHmmss'), [Guid]::NewGuid().ToString('N')
+$expandedRoot = Join-Path $stagingRoot $deploymentId
+$currentBackupRoot = Join-Path $backupRoot $deploymentId
+$currentSqliteBackupRoot = Join-Path $backupRoot ("{0}-sqlite" -f $deploymentId)
 $sqliteSnapshot = $null
 $commitMarkerSnapshot = $null
 $services = @($ApiServiceName, $WorkerServiceName)
@@ -1056,6 +1099,7 @@ try {
             '-DeploymentCommitMarkerPath', $DeploymentCommitMarkerPath,
             '-SecurityAuditIntegrityKey', $auditIntegrity.Value,
             '-DeploymentNonce', $DeploymentNonce,
+            '-DeploymentLockAlreadyHeld',
             '-Force'
         )
         if ($null -ne $Credential) {
@@ -1226,4 +1270,10 @@ catch {
     }
 
     throw
+}
+}
+finally {
+    if ($null -ne $deploymentMutex) {
+        Exit-SyncFactorsDeploymentLock -Mutex $deploymentMutex
+    }
 }

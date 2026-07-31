@@ -544,6 +544,15 @@ Assert-True -Condition ($script:registryEnvironment['SyncFactors.Api'] -contains
 $verificationPath = Join-Path $root 'scripts/Test-SyncFactorsWindowsDeployment.ps1'
 Import-ScriptFunction -Path $verificationPath -Name 'New-ReadinessAttestationHeaders'
 Import-ScriptFunction -Path $verificationPath -Name 'Invoke-HttpHealthCheck'
+Import-ScriptFunction -Path $verificationPath -Name 'Get-CertificateHashAlgorithm'
+$sha1Algorithm = Get-CertificateHashAlgorithm -ExpectedHexLength 40
+$sha256Algorithm = Get-CertificateHashAlgorithm -ExpectedHexLength 64
+Assert-Equal -Expected 'SHA1' -Actual $sha1Algorithm.Name -Message 'A 40-character certificate thumbprint must use SHA-1.'
+Assert-Equal -Expected 'SHA256' -Actual $sha256Algorithm.Name -Message 'A 64-character certificate thumbprint must use SHA-256.'
+Assert-Throws `
+    -Action { Get-CertificateHashAlgorithm -ExpectedHexLength 48 } `
+    -MessagePattern '*Unsupported certificate thumbprint length*' `
+    -Message 'Unsupported certificate hash lengths must fail closed.'
 $attestationTime = [DateTimeOffset]::Parse('2026-07-31T12:00:00.0000000Z')
 $attestationHeaders = New-ReadinessAttestationHeaders `
     -Nonce 'deployment-nonce-that-is-at-least-thirty-two-characters' `
