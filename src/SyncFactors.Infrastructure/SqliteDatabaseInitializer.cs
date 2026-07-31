@@ -5,7 +5,7 @@ namespace SyncFactors.Infrastructure;
 
 public sealed class SqliteDatabaseInitializer(SqlitePathResolver pathResolver)
 {
-    private const int CurrentSchemaVersion = 15;
+    private const int CurrentSchemaVersion = 16;
 
     public async Task InitializeAsync(CancellationToken cancellationToken)
     {
@@ -141,6 +141,12 @@ public sealed class SqliteDatabaseInitializer(SqlitePathResolver pathResolver)
         {
             await ApplyVersion15Async(connection, transaction, cancellationToken);
             await InsertVersionAsync(connection, transaction, 15, cancellationToken);
+        }
+
+        if (!appliedVersions.Contains(16))
+        {
+            await ApplyVersion16Async(connection, transaction, cancellationToken);
+            await InsertVersionAsync(connection, transaction, 16, cancellationToken);
         }
 
         await transaction.CommitAsync(cancellationToken);
@@ -547,6 +553,34 @@ public sealed class SqliteDatabaseInitializer(SqlitePathResolver pathResolver)
             """;
         command.Parameters.AddWithValue("$completedAt", DateTimeOffset.UtcNow.ToString("O"));
         await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task ApplyVersion16Async(
+        SqliteConnection connection,
+        DbTransaction transaction,
+        CancellationToken cancellationToken)
+    {
+        if (!await TableExistsAsync(connection, transaction, "worker_heartbeat", cancellationToken))
+        {
+            return;
+        }
+
+        var columns = await GetTableColumnsAsync(connection, transaction, "worker_heartbeat", cancellationToken);
+        var missingColumns = new (string Name, string Definition)[]
+        {
+            ("instance_id", "TEXT NULL"),
+            ("build_version", "TEXT NULL"),
+            ("build_commit_sha", "TEXT NULL"),
+            ("deployment_nonce_hash", "TEXT NULL")
+        };
+
+        foreach (var column in missingColumns.Where(column => !columns.Contains(column.Name)))
+        {
+            await using var command = connection.CreateCommand();
+            command.Transaction = (SqliteTransaction)transaction;
+            command.CommandText = $"ALTER TABLE worker_heartbeat ADD COLUMN {column.Name} {column.Definition};";
+            await command.ExecuteNonQueryAsync(cancellationToken);
+        }
     }
 
     private static async Task ApplyVersion4Async(

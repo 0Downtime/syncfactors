@@ -2,6 +2,7 @@
 param(
     [string]$InstallRoot = 'C:\SyncFactors',
     [string]$RuntimeRoot,
+    [string]$BackupRoot,
     [string]$DeployAccount,
     [securestring]$DeployAccountPassword,
     [switch]$CreateLocalDeployAccount,
@@ -251,6 +252,44 @@ function Grant-PathAccess {
     Set-Acl -Path $Path -AclObject $acl
 }
 
+function Set-RestrictedDirectoryAccess {
+    param(
+        [Parameter(Mandatory)][string]$Path,
+        [string]$RuntimeIdentity,
+        [System.Security.AccessControl.FileSystemRights]$RuntimeRights =
+            [System.Security.AccessControl.FileSystemRights]'Modify, Synchronize'
+    )
+
+    $acl = Get-Acl -Path $Path
+    $acl.SetAccessRuleProtection($true, $false)
+    foreach ($existingRule in @($acl.Access)) {
+        [void]$acl.RemoveAccessRuleSpecific($existingRule)
+    }
+
+    $inheritance = [System.Security.AccessControl.InheritanceFlags]'ContainerInherit, ObjectInherit'
+    foreach ($principal in @(
+        @{ Sid = [System.Security.Principal.SecurityIdentifier]::new('S-1-5-18'); Rights = [System.Security.AccessControl.FileSystemRights]::FullControl },
+        @{ Sid = [System.Security.Principal.SecurityIdentifier]::new('S-1-5-32-544'); Rights = [System.Security.AccessControl.FileSystemRights]::FullControl })) {
+        $rule = [System.Security.AccessControl.FileSystemAccessRule]::new(
+            $principal.Sid,
+            $principal.Rights,
+            $inheritance,
+            [System.Security.AccessControl.PropagationFlags]::None,
+            [System.Security.AccessControl.AccessControlType]::Allow)
+        [void]$acl.AddAccessRule($rule)
+    }
+    if (-not [string]::IsNullOrWhiteSpace($RuntimeIdentity)) {
+        $runtimeRule = [System.Security.AccessControl.FileSystemAccessRule]::new(
+            (ConvertTo-AccountSid -Identity $RuntimeIdentity),
+            $RuntimeRights,
+            $inheritance,
+            [System.Security.AccessControl.PropagationFlags]::None,
+            [System.Security.AccessControl.AccessControlType]::Allow)
+        [void]$acl.AddAccessRule($runtimeRule)
+    }
+    Set-Acl -Path $Path -AclObject $acl
+}
+
 if (-not (Test-IsWindowsHost)) {
     throw 'SyncFactors service-account setup can only run on Windows.'
 }
@@ -266,9 +305,13 @@ if ([string]::IsNullOrWhiteSpace($DeployAccount) -and [string]::IsNullOrWhiteSpa
 if ([string]::IsNullOrWhiteSpace($RuntimeRoot)) {
     $RuntimeRoot = Join-Path $InstallRoot 'state'
 }
+if ([string]::IsNullOrWhiteSpace($BackupRoot)) {
+    $BackupRoot = Join-Path $InstallRoot '_backups'
+}
 
 $InstallRoot = [System.IO.Path]::GetFullPath($InstallRoot)
 $RuntimeRoot = [System.IO.Path]::GetFullPath($RuntimeRoot)
+$BackupRoot = [System.IO.Path]::GetFullPath($BackupRoot)
 $runtimeDbRoot = Join-Path $RuntimeRoot 'runtime'
 $runtimeLogRoot = Join-Path $RuntimeRoot 'logs'
 
@@ -314,6 +357,7 @@ New-Item -Path $InstallRoot -ItemType Directory -Force | Out-Null
 New-Item -Path $RuntimeRoot -ItemType Directory -Force | Out-Null
 New-Item -Path $runtimeDbRoot -ItemType Directory -Force | Out-Null
 New-Item -Path $runtimeLogRoot -ItemType Directory -Force | Out-Null
+New-Item -Path $BackupRoot -ItemType Directory -Force | Out-Null
 
 $deployGroups = @()
 if (-not [string]::IsNullOrWhiteSpace($resolvedDeployAccount)) {
@@ -341,13 +385,19 @@ if (-not [string]::IsNullOrWhiteSpace($resolvedRuntimeAccount)) {
         $runtimeRights += 'Log on as a service'
     }
 
-    if ($PSCmdlet.ShouldProcess($InstallRoot, "Grant Modify to $resolvedRuntimeAccount")) {
-        Grant-PathAccess -Path $InstallRoot -Identity $resolvedRuntimeAccount -Rights Modify
-        $runtimeRights += "Modify $InstallRoot"
+    if ($PSCmdlet.ShouldProcess($InstallRoot, "Grant ReadAndExecute to $resolvedRuntimeAccount")) {
+        Grant-PathAccess `
+            -Path $InstallRoot `
+            -Identity $resolvedRuntimeAccount `
+            -Rights ([System.Security.AccessControl.FileSystemRights]'ReadAndExecute, Synchronize')
+        $runtimeRights += "ReadAndExecute $InstallRoot"
     }
 
-    if ($PSCmdlet.ShouldProcess($RuntimeRoot, "Grant Modify to $resolvedRuntimeAccount")) {
-        Grant-PathAccess -Path $RuntimeRoot -Identity $resolvedRuntimeAccount -Rights Modify
+    if ($PSCmdlet.ShouldProcess($RuntimeRoot, "Protect runtime state for SYSTEM, Administrators, and $resolvedRuntimeAccount")) {
+        Set-RestrictedDirectoryAccess `
+            -Path $RuntimeRoot `
+            -RuntimeIdentity $resolvedRuntimeAccount `
+            -RuntimeRights ([System.Security.AccessControl.FileSystemRights]'Modify, Synchronize')
         $runtimeRights += "Modify $RuntimeRoot"
     }
 
@@ -358,6 +408,10 @@ if (-not [string]::IsNullOrWhiteSpace($resolvedRuntimeAccount)) {
             $runtimeRights += "Read $resolvedPfxPath"
         }
     }
+}
+
+if ($PSCmdlet.ShouldProcess($BackupRoot, 'Protect rollback backups for SYSTEM and Administrators')) {
+    Set-RestrictedDirectoryAccess -Path $BackupRoot
 }
 
 [pscustomobject]@{

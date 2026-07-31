@@ -18,6 +18,13 @@ variables:
   remoteStagingPath: C:\SyncFactors\_staging
   installRoot: C:\SyncFactors
   runProfile: real
+  authMode: ''
+  oidcAuthority: ''
+  oidcClientId: ''
+  oidcViewerGroups: ''
+  oidcOperatorGroups: ''
+  oidcAdminGroups: ''
+  bootstrapAdminUsername: ''
   dryRunOnly: true
   apiUrls: https://127.0.0.1:5087
   tlsCertificateThumbprint: ''
@@ -27,10 +34,12 @@ variables:
   apiServiceName: SyncFactors.Api
   workerServiceName: SyncFactors.Worker
   createLocalServiceAccount: false
+  allowLocalSystemServiceAccount: false
   windowsCredentialPrefix: SyncFactors
   serviceUserName: ''
   serviceUserPassword: ''
   sqlitePassword: ''
+  securityAuditIntegrityKey: ''
 
 stages:
   - stage: Build
@@ -56,7 +65,9 @@ stages:
             inputs:
               pwsh: true
               targetType: inline
-              script: ./scripts/Assert-WindowsDeploymentSafety.ps1
+              script: |
+                ./scripts/Assert-WindowsDeploymentSafety.ps1
+                ./tests/WindowsDeploymentBehavior.Tests.ps1
 
           - task: PowerShell@2
             displayName: Resolve release metadata
@@ -193,6 +204,71 @@ stages:
                     CleanTargetBeforeCopy: true
                     CopyFilesInParallel: true
 
+                - task: PowerShell@2
+                  displayName: Encode remote deployment inputs
+                  inputs:
+                    pwsh: true
+                    targetType: inline
+                    script: |
+                      $ErrorActionPreference = 'Stop'
+                      foreach ($mapping in @(
+                          @{ Environment = 'SYNCFACTORS_INPUT_STAGING_PATH'; Variable = 'syncFactorsStagingPathB64' },
+                          @{ Environment = 'SYNCFACTORS_INPUT_INSTALL_ROOT'; Variable = 'syncFactorsInstallRootB64' },
+                          @{ Environment = 'SYNCFACTORS_INPUT_RUN_PROFILE'; Variable = 'syncFactorsRunProfileB64' },
+                          @{ Environment = 'SYNCFACTORS_INPUT_AUTH_MODE'; Variable = 'syncFactorsAuthModeB64' },
+                          @{ Environment = 'SYNCFACTORS_INPUT_OIDC_AUTHORITY'; Variable = 'syncFactorsOidcAuthorityB64' },
+                          @{ Environment = 'SYNCFACTORS_INPUT_OIDC_CLIENT_ID'; Variable = 'syncFactorsOidcClientIdB64' },
+                          @{ Environment = 'SYNCFACTORS_INPUT_OIDC_VIEWER_GROUPS'; Variable = 'syncFactorsOidcViewerGroupsB64' },
+                          @{ Environment = 'SYNCFACTORS_INPUT_OIDC_OPERATOR_GROUPS'; Variable = 'syncFactorsOidcOperatorGroupsB64' },
+                          @{ Environment = 'SYNCFACTORS_INPUT_OIDC_ADMIN_GROUPS'; Variable = 'syncFactorsOidcAdminGroupsB64' },
+                          @{ Environment = 'SYNCFACTORS_INPUT_BOOTSTRAP_USERNAME'; Variable = 'syncFactorsBootstrapUsernameB64' },
+                          @{ Environment = 'SYNCFACTORS_INPUT_DRY_RUN_ONLY'; Variable = 'syncFactorsDryRunOnlyB64' },
+                          @{ Environment = 'SYNCFACTORS_INPUT_API_URLS'; Variable = 'syncFactorsApiUrlsB64' },
+                          @{ Environment = 'SYNCFACTORS_INPUT_API_PORT'; Variable = 'syncFactorsApiPortB64' },
+                          @{ Environment = 'SYNCFACTORS_INPUT_CONFIGURE_FIREWALL'; Variable = 'syncFactorsConfigureFirewallB64' },
+                          @{ Environment = 'SYNCFACTORS_INPUT_INSTALL_POWERSHELL'; Variable = 'syncFactorsInstallPowerShellB64' },
+                          @{ Environment = 'SYNCFACTORS_INPUT_API_SERVICE_NAME'; Variable = 'syncFactorsApiServiceNameB64' },
+                          @{ Environment = 'SYNCFACTORS_INPUT_WORKER_SERVICE_NAME'; Variable = 'syncFactorsWorkerServiceNameB64' },
+                          @{ Environment = 'SYNCFACTORS_INPUT_CREATE_LOCAL_ACCOUNT'; Variable = 'syncFactorsCreateLocalAccountB64' },
+                          @{ Environment = 'SYNCFACTORS_INPUT_ALLOW_LOCAL_SYSTEM'; Variable = 'syncFactorsAllowLocalSystemB64' },
+                          @{ Environment = 'SYNCFACTORS_INPUT_CREDENTIAL_PREFIX'; Variable = 'syncFactorsCredentialPrefixB64' },
+                          @{ Environment = 'SYNCFACTORS_INPUT_SERVICE_USERNAME'; Variable = 'syncFactorsServiceUsernameB64' },
+                          @{ Environment = 'SYNCFACTORS_INPUT_TLS_THUMBPRINT'; Variable = 'syncFactorsTlsThumbprintB64' },
+                          @{ Environment = 'SYNCFACTORS_INPUT_SERVICE_PASSWORD'; Variable = 'syncFactorsServicePasswordB64' },
+                          @{ Environment = 'SYNCFACTORS_INPUT_SQLITE_PASSWORD'; Variable = 'syncFactorsSqlitePasswordB64' },
+                          @{ Environment = 'SYNCFACTORS_INPUT_AUDIT_KEY'; Variable = 'syncFactorsAuditKeyB64' })) {
+                          $value = [Environment]::GetEnvironmentVariable($mapping.Environment)
+                          if ($null -eq $value) { $value = '' }
+                          $encoded = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes("v1:$value"))
+                          Write-Host "##vso[task.setvariable variable=$($mapping.Variable);issecret=true]$encoded"
+                      }
+                  env:
+                    SYNCFACTORS_INPUT_STAGING_PATH: $(remoteStagingPath)
+                    SYNCFACTORS_INPUT_INSTALL_ROOT: $(installRoot)
+                    SYNCFACTORS_INPUT_RUN_PROFILE: $(runProfile)
+                    SYNCFACTORS_INPUT_AUTH_MODE: $(authMode)
+                    SYNCFACTORS_INPUT_OIDC_AUTHORITY: $(oidcAuthority)
+                    SYNCFACTORS_INPUT_OIDC_CLIENT_ID: $(oidcClientId)
+                    SYNCFACTORS_INPUT_OIDC_VIEWER_GROUPS: $(oidcViewerGroups)
+                    SYNCFACTORS_INPUT_OIDC_OPERATOR_GROUPS: $(oidcOperatorGroups)
+                    SYNCFACTORS_INPUT_OIDC_ADMIN_GROUPS: $(oidcAdminGroups)
+                    SYNCFACTORS_INPUT_BOOTSTRAP_USERNAME: $(bootstrapAdminUsername)
+                    SYNCFACTORS_INPUT_DRY_RUN_ONLY: $(dryRunOnly)
+                    SYNCFACTORS_INPUT_API_URLS: $(apiUrls)
+                    SYNCFACTORS_INPUT_API_PORT: $(apiPort)
+                    SYNCFACTORS_INPUT_CONFIGURE_FIREWALL: $(configureFirewall)
+                    SYNCFACTORS_INPUT_INSTALL_POWERSHELL: $(installPowerShell)
+                    SYNCFACTORS_INPUT_API_SERVICE_NAME: $(apiServiceName)
+                    SYNCFACTORS_INPUT_WORKER_SERVICE_NAME: $(workerServiceName)
+                    SYNCFACTORS_INPUT_CREATE_LOCAL_ACCOUNT: $(createLocalServiceAccount)
+                    SYNCFACTORS_INPUT_ALLOW_LOCAL_SYSTEM: $(allowLocalSystemServiceAccount)
+                    SYNCFACTORS_INPUT_CREDENTIAL_PREFIX: $(windowsCredentialPrefix)
+                    SYNCFACTORS_INPUT_SERVICE_USERNAME: $(serviceUserName)
+                    SYNCFACTORS_INPUT_TLS_THUMBPRINT: $(tlsCertificateThumbprint)
+                    SYNCFACTORS_INPUT_SERVICE_PASSWORD: $(serviceUserPassword)
+                    SYNCFACTORS_INPUT_SQLITE_PASSWORD: $(sqlitePassword)
+                    SYNCFACTORS_INPUT_AUDIT_KEY: $(securityAuditIntegrityKey)
+
                 - task: PowerShellOnTargetMachines@3
                   displayName: Install prerequisites and services
                   inputs:
@@ -211,6 +287,19 @@ stages:
                               { $_ -in @('0', 'false', 'no', 'n') } { return $false }
                               default { throw "Value '$Value' is not a valid boolean." }
                           }
+                      }
+
+                      function Decode-TransportValue {
+                          param([string]$Base64Value)
+
+                          if ($Base64Value -notmatch '^[A-Za-z0-9+/]*={0,2}$') {
+                              throw 'A remote deployment input was not valid Base64.'
+                          }
+                          $decoded = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($Base64Value))
+                          if (-not $decoded.StartsWith('v1:', [System.StringComparison]::Ordinal)) {
+                              throw 'A remote deployment input did not contain the expected transport envelope.'
+                          }
+                          return $decoded.Substring(3)
                       }
 
                       function Resolve-PowerShellCore {
@@ -232,43 +321,255 @@ stages:
                           throw 'PowerShell 7 was not found after prerequisite installation.'
                       }
 
-                      function Set-ServiceDryRunOnlyEnvironment {
-                          param(
-                              [Parameter(Mandatory)][string]$ServiceName,
-                              [Parameter(Mandatory)][bool]$Value
-                          )
+                      function Get-EnvironmentValue {
+                          param([object[]]$Entries, [string]$Name)
 
-                          $serviceKey = "HKLM:\SYSTEM\CurrentControlSet\Services\$ServiceName"
-                          if (-not (Test-Path -Path $serviceKey)) {
-                              throw "Service registry key '$serviceKey' was not found."
+                          foreach ($entry in @($Entries)) {
+                              if ($null -ne $entry -and $entry.StartsWith("$Name=", [System.StringComparison]::OrdinalIgnoreCase)) {
+                                  return $entry.Substring($Name.Length + 1)
+                              }
                           }
-
-                          $environment = @(Get-ItemPropertyValue -Path $serviceKey -Name Environment -ErrorAction SilentlyContinue)
-                          $environment = @(
-                              $environment |
-                                  Where-Object {
-                                      $null -ne $_ -and
-                                      -not $_.StartsWith('SyncFactors__Runtime__DryRunOnly=', [System.StringComparison]::OrdinalIgnoreCase)
-                                  }
-                          )
-                          $environment += "SyncFactors__Runtime__DryRunOnly=$($Value.ToString().ToLowerInvariant())"
-                          New-ItemProperty -Path $serviceKey -Name Environment -PropertyType MultiString -Value $environment -Force | Out-Null
+                          return $null
                       }
 
-                      $stagingPath = '$(remoteStagingPath)'
-                      $installRoot = '$(installRoot)'
-                      $runProfile = '$(runProfile)'
-                      $dryRunOnly = Convert-ToBool '$(dryRunOnly)'
-                      $apiUrls = '$(apiUrls)'
-                      $apiPort = [int]'$(apiPort)'
-                      $configureFirewall = Convert-ToBool '$(configureFirewall)'
-                      $installPowerShell = Convert-ToBool '$(installPowerShell)'
-                      $apiServiceName = '$(apiServiceName)'
-                      $workerServiceName = '$(workerServiceName)'
-                      $createLocalServiceAccount = Convert-ToBool '$(createLocalServiceAccount)'
-                      $windowsCredentialPrefix = '$(windowsCredentialPrefix)'
-                      $serviceUserName = '$(serviceUserName)'
-                      $serviceUserPassword = '$(serviceUserPassword)'
+                      function Test-IndexedEnvironmentValue {
+                          param([object[]]$Entries, [string]$Prefix)
+
+                          foreach ($entry in @($Entries)) {
+                              if ($null -ne $entry -and $entry.StartsWith($Prefix, [System.StringComparison]::OrdinalIgnoreCase)) {
+                                  return $true
+                              }
+                          }
+                          return $false
+                      }
+
+                      function Get-BundleReleaseCommit {
+                          param([string]$BundlePath)
+
+                          Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction SilentlyContinue
+                          $archive = [System.IO.Compression.ZipFile]::OpenRead($BundlePath)
+                          try {
+                              $manifestEntries = @(
+                                  $archive.Entries |
+                                      Where-Object { $_.FullName.Replace('\', '/') -ceq 'release-manifest.json' })
+                              if ($manifestEntries.Count -ne 1) {
+                                  throw "Bundle must contain exactly one root release-manifest.json; found $($manifestEntries.Count)."
+                              }
+
+                              $reader = [System.IO.StreamReader]::new($manifestEntries[0].Open())
+                              try {
+                                  $manifest = $reader.ReadToEnd() | ConvertFrom-Json
+                              }
+                              finally {
+                                  $reader.Dispose()
+                              }
+
+                              $commitProperty = $manifest.PSObject.Properties['commitSha']
+                              $commitSha = if ($null -eq $commitProperty) { $null } else { [string]$commitProperty.Value }
+                              if ([string]::IsNullOrWhiteSpace($commitSha) -or
+                                  $commitSha -notmatch '^(?:[0-9a-fA-F]{40}|[0-9a-fA-F]{64})$') {
+                                  throw 'Bundle release-manifest.json must contain a full 40- or 64-character hexadecimal commitSha.'
+                              }
+                              return $commitSha
+                          }
+                          finally {
+                              $archive.Dispose()
+                          }
+                      }
+
+                      function New-DeploymentSecretsFile {
+                          param(
+                              [pscredential]$Credential,
+                              [string]$SqlitePassword,
+                              [string]$SecurityAuditIntegrityKey
+                          )
+
+                          if ($null -eq $Credential -and
+                              [string]::IsNullOrWhiteSpace($SqlitePassword) -and
+                              [string]::IsNullOrWhiteSpace($SecurityAuditIntegrityKey)) {
+                              return $null
+                          }
+
+                          $handoffRoot = Join-Path ([System.IO.Path]::GetTempPath()) 'SyncFactorsDeployment'
+                          New-Item -Path $handoffRoot -ItemType Directory -Force | Out-Null
+                          $handoffPath = Join-Path $handoffRoot ("{0}.clixml" -f [Guid]::NewGuid().ToString('N'))
+                          New-Item -Path $handoffPath -ItemType File -Force | Out-Null
+
+                          $acl = Get-Acl -Path $handoffPath
+                          $acl.SetAccessRuleProtection($true, $false)
+                          foreach ($existingRule in @($acl.Access)) {
+                              [void]$acl.RemoveAccessRuleSpecific($existingRule)
+                          }
+                          foreach ($sid in @(
+                              [System.Security.Principal.WindowsIdentity]::GetCurrent().User,
+                              [System.Security.Principal.SecurityIdentifier]::new('S-1-5-18'),
+                              [System.Security.Principal.SecurityIdentifier]::new('S-1-5-32-544'))) {
+                              $rule = [System.Security.AccessControl.FileSystemAccessRule]::new(
+                                  $sid,
+                                  [System.Security.AccessControl.FileSystemRights]::FullControl,
+                                  [System.Security.AccessControl.AccessControlType]::Allow)
+                              [void]$acl.AddAccessRule($rule)
+                          }
+                          Set-Acl -Path $handoffPath -AclObject $acl
+
+                          $handoff = [pscustomobject]@{
+                              Credential = $Credential
+                              SqlitePassword = if ([string]::IsNullOrWhiteSpace($SqlitePassword)) { $null } else { ConvertTo-SecureString $SqlitePassword -AsPlainText -Force }
+                              SecurityAuditIntegrityKey = if ([string]::IsNullOrWhiteSpace($SecurityAuditIntegrityKey)) { $null } else { ConvertTo-SecureString $SecurityAuditIntegrityKey -AsPlainText -Force }
+                          }
+                          $handoff | Export-Clixml -Path $handoffPath -Force
+                          return $handoffPath
+                      }
+
+                      function Publish-DeploymentCommitMarker {
+                          param([string]$MarkerPath, [string]$Nonce)
+
+                          $markerParent = Split-Path -Path $MarkerPath -Parent
+                          New-Item -Path $markerParent -ItemType Directory -Force | Out-Null
+                          $sha256 = [System.Security.Cryptography.SHA256]::Create()
+                          try {
+                              $digestBytes = $sha256.ComputeHash([Text.Encoding]::UTF8.GetBytes($Nonce.Trim()))
+                          }
+                          finally {
+                              $sha256.Dispose()
+                          }
+                          $digest = ([BitConverter]::ToString($digestBytes)).Replace('-', '').ToLowerInvariant()
+                          $temporaryPath = Join-Path $markerParent (".{0}.{1}.tmp" -f (Split-Path -Path $MarkerPath -Leaf), [Guid]::NewGuid().ToString('N'))
+                          try {
+                              [IO.File]::WriteAllText($temporaryPath, $digest, [Text.UTF8Encoding]::new($false))
+                              if (Test-Path -Path $MarkerPath -PathType Leaf) {
+                                  [IO.File]::Replace($temporaryPath, $MarkerPath, $null)
+                              }
+                              else {
+                                  [IO.File]::Move($temporaryPath, $MarkerPath)
+                              }
+                          }
+                          finally {
+                              Remove-Item -Path $temporaryPath -Force -ErrorAction SilentlyContinue
+                          }
+                      }
+
+                      $stagingPath = Decode-TransportValue '$(syncFactorsStagingPathB64)'
+                      $installRoot = Decode-TransportValue '$(syncFactorsInstallRootB64)'
+                      $runProfile = Decode-TransportValue '$(syncFactorsRunProfileB64)'
+                      $authMode = (Decode-TransportValue '$(syncFactorsAuthModeB64)').Trim().ToLowerInvariant()
+                      $oidcAuthority = (Decode-TransportValue '$(syncFactorsOidcAuthorityB64)').Trim()
+                      $oidcClientId = (Decode-TransportValue '$(syncFactorsOidcClientIdB64)').Trim()
+                      $oidcViewerGroups = (Decode-TransportValue '$(syncFactorsOidcViewerGroupsB64)').Trim()
+                      $oidcOperatorGroups = (Decode-TransportValue '$(syncFactorsOidcOperatorGroupsB64)').Trim()
+                      $oidcAdminGroups = (Decode-TransportValue '$(syncFactorsOidcAdminGroupsB64)').Trim()
+                      $bootstrapAdminUsername = (Decode-TransportValue '$(syncFactorsBootstrapUsernameB64)').Trim()
+                      $dryRunOnly = Convert-ToBool (Decode-TransportValue '$(syncFactorsDryRunOnlyB64)')
+                      $apiUrls = Decode-TransportValue '$(syncFactorsApiUrlsB64)'
+                      $apiPort = [int](Decode-TransportValue '$(syncFactorsApiPortB64)')
+                      $configureFirewall = Convert-ToBool (Decode-TransportValue '$(syncFactorsConfigureFirewallB64)')
+                      $installPowerShell = Convert-ToBool (Decode-TransportValue '$(syncFactorsInstallPowerShellB64)')
+                      $apiServiceName = Decode-TransportValue '$(syncFactorsApiServiceNameB64)'
+                      $workerServiceName = Decode-TransportValue '$(syncFactorsWorkerServiceNameB64)'
+                      $createLocalServiceAccount = Convert-ToBool (Decode-TransportValue '$(syncFactorsCreateLocalAccountB64)')
+                      $allowLocalSystemServiceAccount = Convert-ToBool (Decode-TransportValue '$(syncFactorsAllowLocalSystemB64)')
+                      $windowsCredentialPrefix = Decode-TransportValue '$(syncFactorsCredentialPrefixB64)'
+                      $serviceUserName = Decode-TransportValue '$(syncFactorsServiceUsernameB64)'
+                      $tlsCertificateThumbprint = Decode-TransportValue '$(syncFactorsTlsThumbprintB64)'
+                      $serviceUserPassword = Decode-TransportValue '$(syncFactorsServicePasswordB64)'
+                      $sqlitePassword = Decode-TransportValue '$(syncFactorsSqlitePasswordB64)'
+                      $securityAuditIntegrityKey = Decode-TransportValue '$(syncFactorsAuditKeyB64)'
+                      $deploymentNonceBytes = New-Object byte[] 48
+                      $deploymentNonceGenerator = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+                      try {
+                          $deploymentNonceGenerator.GetBytes($deploymentNonceBytes)
+                      }
+                      finally {
+                          $deploymentNonceGenerator.Dispose()
+                      }
+                      $deploymentNonce = [Convert]::ToBase64String($deploymentNonceBytes).TrimEnd('=').Replace('+', '-').Replace('/', '_')
+
+                      if ([string]::IsNullOrWhiteSpace($serviceUserName)) {
+                          if (-not $allowLocalSystemServiceAccount) {
+                              throw 'serviceUserName is required to validate the restricted runtime identity. LocalSystem is blocked by default.'
+                          }
+                      }
+
+                      if ($allowLocalSystemServiceAccount -and -not [string]::IsNullOrWhiteSpace($serviceUserName)) {
+                          throw 'allowLocalSystemServiceAccount cannot be true when serviceUserName is set.'
+                      }
+
+                      $apiServiceExists = $null -ne (Get-Service -Name $apiServiceName -ErrorAction SilentlyContinue)
+                      $workerServiceExists = $null -ne (Get-Service -Name $workerServiceName -ErrorAction SilentlyContinue)
+                      if ($apiServiceExists -ne $workerServiceExists) {
+                          throw 'The API and worker service installation state disagrees. Repair or remove the partial installation before deploying; no files were changed.'
+                      }
+                      $freshServiceInstall = -not $apiServiceExists -and -not $workerServiceExists
+                      if (($freshServiceInstall -or $createLocalServiceAccount) -and
+                          -not [string]::IsNullOrWhiteSpace($serviceUserName) -and
+                          [string]::IsNullOrWhiteSpace($serviceUserPassword)) {
+                          throw 'serviceUserPassword is required for a fresh service install or explicit local-account creation.'
+                      }
+                      $installedApiEnvironment = @()
+                      if (-not $freshServiceInstall) {
+                          $apiServiceKey = "HKLM:\SYSTEM\CurrentControlSet\Services\$apiServiceName"
+                          $installedApiEnvironment = @(Get-ItemPropertyValue -Path $apiServiceKey -Name Environment -ErrorAction SilentlyContinue)
+                      }
+                      $installedAuthMode = Get-EnvironmentValue -Entries $installedApiEnvironment -Name 'SYNCFACTORS__AUTH__MODE'
+                      $effectiveAuthMode = if (-not [string]::IsNullOrWhiteSpace($authMode)) { $authMode } else { $installedAuthMode }
+                      if ([string]::IsNullOrWhiteSpace($effectiveAuthMode)) {
+                          throw 'authMode must be explicitly set for a fresh deployment, or already exist in the API service environment before patch staging.'
+                      }
+                      $effectiveAuthMode = $effectiveAuthMode.Trim().ToLowerInvariant()
+                      if ($effectiveAuthMode -notin @('local-break-glass', 'oidc', 'hybrid')) {
+                          throw "Resolved authMode '$effectiveAuthMode' is invalid."
+                      }
+
+                      if ($effectiveAuthMode -in @('oidc', 'hybrid')) {
+                          $effectiveOidcAuthority = if (-not [string]::IsNullOrWhiteSpace($oidcAuthority)) {
+                              $oidcAuthority
+                          }
+                          else {
+                              Get-EnvironmentValue -Entries $installedApiEnvironment -Name 'SYNCFACTORS__AUTH__OIDC__AUTHORITY'
+                          }
+                          $effectiveOidcClientId = if (-not [string]::IsNullOrWhiteSpace($oidcClientId)) {
+                              $oidcClientId
+                          }
+                          else {
+                              Get-EnvironmentValue -Entries $installedApiEnvironment -Name 'SYNCFACTORS__AUTH__OIDC__CLIENTID'
+                          }
+                          $roleGroupsConfigured = if (-not [string]::IsNullOrWhiteSpace($authMode)) {
+                              -not [string]::IsNullOrWhiteSpace($oidcViewerGroups) -or
+                                  -not [string]::IsNullOrWhiteSpace($oidcOperatorGroups) -or
+                                  -not [string]::IsNullOrWhiteSpace($oidcAdminGroups)
+                          }
+                          else {
+                              -not [string]::IsNullOrWhiteSpace($oidcViewerGroups) -or
+                                  -not [string]::IsNullOrWhiteSpace($oidcOperatorGroups) -or
+                                  -not [string]::IsNullOrWhiteSpace($oidcAdminGroups) -or
+                                  (Test-IndexedEnvironmentValue -Entries $installedApiEnvironment -Prefix 'SYNCFACTORS__AUTH__OIDC__VIEWERGROUPS__') -or
+                                  (Test-IndexedEnvironmentValue -Entries $installedApiEnvironment -Prefix 'SYNCFACTORS__AUTH__OIDC__OPERATORGROUPS__') -or
+                                  (Test-IndexedEnvironmentValue -Entries $installedApiEnvironment -Prefix 'SYNCFACTORS__AUTH__OIDC__ADMINGROUPS__')
+                          }
+                          if ([string]::IsNullOrWhiteSpace($effectiveOidcAuthority) -or
+                              [string]::IsNullOrWhiteSpace($effectiveOidcClientId) -or
+                              -not $roleGroupsConfigured) {
+                              throw 'oidc/hybrid auth requires oidcAuthority, oidcClientId, and at least one role group variable.'
+                          }
+                      }
+
+                      if ($freshServiceInstall -and
+                          $effectiveAuthMode -in @('local-break-glass', 'hybrid') -and
+                          [string]::IsNullOrWhiteSpace($bootstrapAdminUsername)) {
+                          throw 'bootstrapAdminUsername is required for a fresh local-break-glass or hybrid deployment.'
+                      }
+
+                      $credential = $null
+                      if (($freshServiceInstall -or $createLocalServiceAccount) -and
+                          -not [string]::IsNullOrWhiteSpace($serviceUserName) -and
+                          -not [string]::IsNullOrWhiteSpace($serviceUserPassword)) {
+                          $credentialUserName = $serviceUserName
+                          if ($createLocalServiceAccount -and -not $credentialUserName.Contains('\') -and -not $credentialUserName.Contains('@')) {
+                              $credentialUserName = ".\$credentialUserName"
+                          }
+                          $securePassword = ConvertTo-SecureString $serviceUserPassword -AsPlainText -Force
+                          $credential = [pscredential]::new($credentialUserName, $securePassword)
+                      }
 
                       if (-not (Test-Path -Path $stagingPath -PathType Container)) {
                           throw "Deployment staging path '$stagingPath' was not found."
@@ -280,15 +581,44 @@ stages:
                       if (-not $bundle) {
                           throw "No SyncFactors bundle zip was found under '$stagingPath'."
                       }
+                      $bundleCommitSha = Get-BundleReleaseCommit -BundlePath $bundle.FullName
 
                       New-Item -Path $installRoot -ItemType Directory -Force | Out-Null
 
                       $existingPatchScript = Join-Path $installRoot 'scripts\Deploy-SyncFactorsWindowsPatch.ps1'
-                      $apiServiceExists = $null -ne (Get-Service -Name $apiServiceName -ErrorAction SilentlyContinue)
-                      $workerServiceExists = $null -ne (Get-Service -Name $workerServiceName -ErrorAction SilentlyContinue)
-                      if ((Test-Path -Path $existingPatchScript -PathType Leaf) -and $apiServiceExists -and $workerServiceExists) {
-                          Set-ServiceDryRunOnlyEnvironment -ServiceName $apiServiceName -Value $dryRunOnly
-                          Set-ServiceDryRunOnlyEnvironment -ServiceName $workerServiceName -Value $dryRunOnly
+                      if ($apiServiceExists -and $workerServiceExists) {
+                          $patchScript = $existingPatchScript
+                          $patchCommand = if (Test-Path -Path $existingPatchScript -PathType Leaf) {
+                              Get-Command $patchScript
+                          }
+                          else {
+                              $null
+                          }
+                          if ($null -eq $patchCommand -or
+                              -not $patchCommand.Parameters.ContainsKey('DryRunOnly') -or
+                              -not $patchCommand.Parameters.ContainsKey('SecurityAuditIntegrityKey') -or
+                              -not $patchCommand.Parameters.ContainsKey('DeploymentNonce') -or
+                              -not $patchCommand.Parameters.ContainsKey('AuthMode') -or
+                              -not $patchCommand.Parameters.ContainsKey('ExpectedServiceIdentity') -or
+                              -not (Select-String -Path $patchScript -Pattern 'Backup-SqliteState' -SimpleMatch -Quiet)) {
+                              $compatibilityRoot = Join-Path $stagingPath ("_current-patch-{0}" -f [System.Guid]::NewGuid().ToString('N'))
+                              Expand-Archive -Path $bundle.FullName -DestinationPath $compatibilityRoot -Force
+                              $patchScript = Join-Path $compatibilityRoot 'scripts\Deploy-SyncFactorsWindowsPatch.ps1'
+                              if (-not (Test-Path -Path $patchScript -PathType Leaf)) {
+                                  throw "Current bundle does not contain '$patchScript'."
+                              }
+
+                              $patchCommand = Get-Command $patchScript
+                          }
+
+                          if (-not $patchCommand.Parameters.ContainsKey('DryRunOnly') -or
+                              -not $patchCommand.Parameters.ContainsKey('SecurityAuditIntegrityKey') -or
+                              -not $patchCommand.Parameters.ContainsKey('DeploymentNonce') -or
+                              -not $patchCommand.Parameters.ContainsKey('AuthMode') -or
+                              -not $patchCommand.Parameters.ContainsKey('ExpectedServiceIdentity') -or
+                              -not (Select-String -Path $patchScript -Pattern 'Backup-SqliteState' -SimpleMatch -Quiet)) {
+                              throw 'The current bundle patch script does not support rollback-safe environment transitions and service-identity validation.'
+                          }
 
                           $patchArgs = @(
                               '-BundleZip', $bundle.FullName,
@@ -296,44 +626,58 @@ stages:
                               '-ApiServiceName', $apiServiceName,
                               '-WorkerServiceName', $workerServiceName,
                               '-RunProfile', $runProfile,
+                              '-DeploymentNonce', $deploymentNonce,
                               '-ApiUrls', $apiUrls,
                               '-WindowsCredentialPrefix', $windowsCredentialPrefix,
                               '-HealthUrl', "https://localhost:$apiPort/readyz"
                           )
-                          $patchCommand = Get-Command $existingPatchScript
-                          if ($patchCommand.Parameters.ContainsKey('DryRunOnly')) {
-                              if ($dryRunOnly) {
-                                  $patchArgs += '-DryRunOnly'
-                              }
-                              else {
-                                  $patchArgs += '-EnableLiveWrites'
-                              }
-                          }
-                          if (-not [string]::IsNullOrWhiteSpace('$(tlsCertificateThumbprint)')) {
-                              $patchArgs += @('-TlsCertificateThumbprint', '$(tlsCertificateThumbprint)')
-                          }
-                          if (-not [string]::IsNullOrWhiteSpace('$(sqlitePassword)')) {
-                              $patchArgs += @('-SqlitePassword', '$(sqlitePassword)')
-                          }
-
-                          & $existingPatchScript @patchArgs
-
-                          $pwsh = Resolve-PowerShellCore
-                          $verificationScript = Join-Path $installRoot 'scripts\Test-SyncFactorsWindowsDeployment.ps1'
-                          $verificationArgs = @(
-                              '-ApiServiceName', $apiServiceName,
-                              '-WorkerServiceName', $workerServiceName,
-                              '-HealthUrl', "https://localhost:$apiPort/readyz"
-                          )
                           if ($dryRunOnly) {
-                              $verificationArgs += '-DryRunOnly'
+                              $patchArgs += '-DryRunOnly'
                           }
                           else {
-                              $verificationArgs += '-EnableLiveWrites'
+                              $patchArgs += '-EnableLiveWrites'
                           }
-                          & $pwsh -NoProfile -ExecutionPolicy Bypass -File $verificationScript @verificationArgs
-                          if ($LASTEXITCODE -ne 0) {
-                              throw "Deployment verification failed with code $LASTEXITCODE."
+                          if (-not [string]::IsNullOrWhiteSpace($serviceUserName)) {
+                              $patchArgs += @('-ExpectedServiceIdentity', $serviceUserName)
+                          }
+                          elseif ($allowLocalSystemServiceAccount) {
+                              $patchArgs += '-AllowLocalSystem'
+                          }
+                          foreach ($authArgument in @(
+                              @{ Name = 'AuthMode'; Value = $authMode },
+                              @{ Name = 'OidcAuthority'; Value = $oidcAuthority },
+                              @{ Name = 'OidcClientId'; Value = $oidcClientId },
+                              @{ Name = 'OidcViewerGroups'; Value = $oidcViewerGroups },
+                              @{ Name = 'OidcOperatorGroups'; Value = $oidcOperatorGroups },
+                              @{ Name = 'OidcAdminGroups'; Value = $oidcAdminGroups },
+                              @{ Name = 'BootstrapAdminUsername'; Value = $bootstrapAdminUsername })) {
+                              $isRoleGroup = $authArgument.Name -in @('OidcViewerGroups', 'OidcOperatorGroups', 'OidcAdminGroups')
+                              if (-not [string]::IsNullOrWhiteSpace($authArgument.Value) -or
+                                  ($isRoleGroup -and -not [string]::IsNullOrWhiteSpace($authMode))) {
+                                  $patchArgs += @("-$($authArgument.Name)", $authArgument.Value)
+                              }
+                          }
+                          if (-not [string]::IsNullOrWhiteSpace($tlsCertificateThumbprint)) {
+                              $patchArgs += @('-TlsCertificateThumbprint', $tlsCertificateThumbprint)
+                          }
+
+                          $pwsh = Resolve-PowerShellCore
+                          $deploymentSecretsFile = New-DeploymentSecretsFile `
+                              -SqlitePassword $sqlitePassword `
+                              -SecurityAuditIntegrityKey $securityAuditIntegrityKey
+                          try {
+                              if (-not [string]::IsNullOrWhiteSpace($deploymentSecretsFile)) {
+                                  $patchArgs += @('-DeploymentSecretsFile', $deploymentSecretsFile)
+                              }
+                              & $pwsh -NoProfile -ExecutionPolicy Bypass -File $patchScript @patchArgs
+                              if ($LASTEXITCODE -ne 0) {
+                                  throw "Patch deployment failed with code $LASTEXITCODE."
+                              }
+                          }
+                          finally {
+                              if (-not [string]::IsNullOrWhiteSpace($deploymentSecretsFile)) {
+                                  Remove-Item -Path $deploymentSecretsFile -Force -ErrorAction SilentlyContinue
+                              }
                           }
                           return
                       }
@@ -369,6 +713,7 @@ stages:
                       $installArgs = @(
                           '-BundleRoot', $installRoot,
                           '-RunProfile', $runProfile,
+                          '-DeploymentNonce', $deploymentNonce,
                           '-ApiUrls', $apiUrls,
                           '-ApiServiceName', $apiServiceName,
                           '-WorkerServiceName', $workerServiceName,
@@ -381,32 +726,57 @@ stages:
                       else {
                           $installArgs += '-EnableLiveWrites'
                       }
-                      if (-not [string]::IsNullOrWhiteSpace($serviceUserName)) {
-                          if ([string]::IsNullOrWhiteSpace($serviceUserPassword)) {
-                              throw 'serviceUserPassword must be set when serviceUserName is set.'
+                      if ($null -eq $credential) {
+                          $installArgs += '-AllowLocalSystem'
+                      }
+                      if (-not [string]::IsNullOrWhiteSpace($tlsCertificateThumbprint)) {
+                          $installArgs += @('-TlsCertificateThumbprint', $tlsCertificateThumbprint)
+                      }
+                      foreach ($authArgument in @(
+                          @{ Name = 'AuthMode'; Value = $authMode },
+                          @{ Name = 'OidcAuthority'; Value = $oidcAuthority },
+                          @{ Name = 'OidcClientId'; Value = $oidcClientId },
+                          @{ Name = 'OidcViewerGroups'; Value = $oidcViewerGroups },
+                          @{ Name = 'OidcOperatorGroups'; Value = $oidcOperatorGroups },
+                          @{ Name = 'OidcAdminGroups'; Value = $oidcAdminGroups },
+                          @{ Name = 'BootstrapAdminUsername'; Value = $bootstrapAdminUsername })) {
+                          $isRoleGroup = $authArgument.Name -in @('OidcViewerGroups', 'OidcOperatorGroups', 'OidcAdminGroups')
+                          if (-not [string]::IsNullOrWhiteSpace($authArgument.Value) -or
+                              ($isRoleGroup -and -not [string]::IsNullOrWhiteSpace($authMode))) {
+                              $installArgs += @("-$($authArgument.Name)", $authArgument.Value)
                           }
+                      }
 
-                          $credentialUserName = $serviceUserName
-                          if ($createLocalServiceAccount -and -not $credentialUserName.Contains('\') -and -not $credentialUserName.Contains('@')) {
-                              $credentialUserName = ".\$credentialUserName"
+                      $deploymentSecretsFile = New-DeploymentSecretsFile `
+                          -Credential $credential `
+                          -SqlitePassword $sqlitePassword `
+                          -SecurityAuditIntegrityKey $securityAuditIntegrityKey
+                      try {
+                          if (-not [string]::IsNullOrWhiteSpace($deploymentSecretsFile)) {
+                              $installArgs += @('-DeploymentSecretsFile', $deploymentSecretsFile)
                           }
-
-                          $securePassword = ConvertTo-SecureString $serviceUserPassword -AsPlainText -Force
-                          $credential = [pscredential]::new($credentialUserName, $securePassword)
-                          $installArgs += @('-Credential', $credential)
+                          & $pwsh -NoProfile -ExecutionPolicy Bypass -File $installScript @installArgs
+                          if ($LASTEXITCODE -ne 0) {
+                              throw "Service installation failed with code $LASTEXITCODE."
+                          }
                       }
-                      if (-not [string]::IsNullOrWhiteSpace('$(tlsCertificateThumbprint)')) {
-                          $installArgs += @('-TlsCertificateThumbprint', '$(tlsCertificateThumbprint)')
-                      }
-                      if (-not [string]::IsNullOrWhiteSpace('$(sqlitePassword)')) {
-                          $installArgs += @('-SqlitePassword', '$(sqlitePassword)')
-                      }
-
-                      & $pwsh -NoProfile -ExecutionPolicy Bypass -File $installScript @installArgs
-                      if ($LASTEXITCODE -ne 0) {
-                          throw "Service installation failed with code $LASTEXITCODE."
+                      finally {
+                          if (-not [string]::IsNullOrWhiteSpace($deploymentSecretsFile)) {
+                              Remove-Item -Path $deploymentSecretsFile -Force -ErrorAction SilentlyContinue
+                          }
                       }
 
+                      $deploymentCommitMarkerPath = Get-EnvironmentValue `
+                          -Entries @(Get-ItemPropertyValue -Path "HKLM:\SYSTEM\CurrentControlSet\Services\$apiServiceName" -Name Environment -ErrorAction Stop) `
+                          -Name 'SyncFactors__Deployment__CommitMarkerPath'
+                      if ([string]::IsNullOrWhiteSpace($deploymentCommitMarkerPath)) {
+                          throw 'Fresh installation did not configure a deployment commit-marker path.'
+                      }
+                      if (Test-Path -Path $deploymentCommitMarkerPath -PathType Leaf) {
+                          Remove-Item -Path $deploymentCommitMarkerPath -Force
+                      }
+
+                      $workerStartedAfter = [DateTimeOffset]::UtcNow.ToString('O')
                       Start-Service -Name $apiServiceName
                       Start-Service -Name $workerServiceName
 
@@ -414,8 +784,15 @@ stages:
                       $verificationArgs = @(
                           '-ApiServiceName', $apiServiceName,
                           '-WorkerServiceName', $workerServiceName,
-                          '-HealthUrl', "https://localhost:$apiPort/readyz"
+                          '-HealthUrl', "https://localhost:$apiPort/readyz",
+                          '-DeploymentNonce', $deploymentNonce,
+                          '-WorkerStartedAfter', $workerStartedAfter
                       )
+                      $verificationArgs += @('-ExpectedWorkerCommit', $bundleCommitSha)
+                      $verificationArgs += @('-ExpectedApiCommit', $bundleCommitSha)
+                      if (-not [string]::IsNullOrWhiteSpace($tlsCertificateThumbprint)) {
+                          $verificationArgs += @('-TlsCertificateThumbprint', $tlsCertificateThumbprint)
+                      }
                       if ($dryRunOnly) {
                           $verificationArgs += '-DryRunOnly'
                       }
@@ -426,3 +803,4 @@ stages:
                       if ($LASTEXITCODE -ne 0) {
                           throw "Deployment verification failed with code $LASTEXITCODE."
                       }
+                      Publish-DeploymentCommitMarker -MarkerPath $deploymentCommitMarkerPath -Nonce $deploymentNonce

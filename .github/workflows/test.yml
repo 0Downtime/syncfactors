@@ -16,6 +16,20 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  windows-deployment-behavior:
+    name: Windows deployment behavior
+    runs-on: windows-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Exercise deployment safety behavior
+        shell: pwsh
+        run: ./tests/WindowsDeploymentBehavior.Tests.ps1
+
   select-runner:
     name: Select runner
     runs-on: ubuntu-latest
@@ -68,7 +82,9 @@ jobs:
 
       - name: Validate Windows deployment safety
         shell: pwsh
-        run: ./scripts/Assert-WindowsDeploymentSafety.ps1
+        run: |
+          ./scripts/Assert-WindowsDeploymentSafety.ps1
+          ./tests/WindowsDeploymentBehavior.Tests.ps1
 
       - name: Restore solution
         run: dotnet restore ./SyncFactors.Next.sln

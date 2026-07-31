@@ -51,7 +51,7 @@ public sealed class LocalAuthOptions
     public const int MinRememberMeSessionHours = 1;
     public const int MaxRememberMeSessionHours = 2160;
 
-    public string Mode { get; set; } = "local-break-glass";
+    public string Mode { get; set; } = string.Empty;
 
     public int AbsoluteSessionHours { get; set; } = 168;
 

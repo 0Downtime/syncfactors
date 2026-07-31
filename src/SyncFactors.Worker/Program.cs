@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using SyncFactors.Contracts;
 using SyncFactors.Domain;
 using SyncFactors.Infrastructure;
 using SyncFactors.Worker;
@@ -10,6 +11,22 @@ const string WindowsServiceName = "SyncFactors.Worker";
 
 var builder = Host.CreateApplicationBuilder(args);
 SecurityAuditService.ValidateStartup(builder.Environment.IsProduction());
+var workerBuildInfo = RuntimeBuildInfo.FromAssembly(typeof(Program).Assembly);
+var workerProcessIdentity = new WorkerProcessIdentity(
+    InstanceId: Guid.NewGuid().ToString("N"),
+    BuildVersion: workerBuildInfo.Version,
+    BuildCommitSha: workerBuildInfo.CommitSha,
+    DeploymentNonceHash: WorkerDeploymentAttestation.HashConfiguredNonce(
+        builder.Configuration["SyncFactors:Deployment:Nonce"]));
+var sqlitePathResolver = new SqlitePathResolver(builder.Configuration["SyncFactors:SqlitePath"]);
+var sqliteDatabasePath = sqlitePathResolver.ResolveConfiguredPath()
+    ?? throw new InvalidOperationException("SyncFactors SQLite path could not be resolved.");
+builder.Services.AddSingleton(workerProcessIdentity);
+builder.Services.AddSingleton(new WorkerDeploymentCommitGate(
+    workerProcessIdentity.DeploymentNonceHash,
+    WorkerDeploymentCommitGate.ResolveMarkerPath(
+        builder.Configuration[WorkerDeploymentCommitGate.ConfigurationKey],
+        sqliteDatabasePath)));
 ConfigureWindowsService(builder.Services, WindowsServiceName);
 LocalFileLogging.Configure(
     builder.Logging,
@@ -23,7 +40,7 @@ LocalFileLogging.Configure(
 ConfigureApplicationInsights(builder);
 builder.Services.AddSingleton<ISecurityAuditService, SecurityAuditService>();
 builder.Services.AddSingleton(new ScaffoldDataPathResolver(builder.Configuration["SyncFactors:ScaffoldDataPath"]));
-builder.Services.AddSingleton(new SqlitePathResolver(builder.Configuration["SyncFactors:SqlitePath"]));
+builder.Services.AddSingleton(sqlitePathResolver);
 builder.Services.AddSingleton(new SyncFactorsConfigPathResolver(
     builder.Configuration["SyncFactors:ConfigPath"],
     builder.Configuration["SyncFactors:MappingConfigPath"]));
@@ -142,7 +159,10 @@ builder.Services.AddHostedService<Worker>();
 var host = builder.Build();
 await host.Services.GetRequiredService<SqliteDatabaseInitializer>().InitializeAsync(CancellationToken.None);
 host.Services.GetRequiredService<SyncFactorsConfigurationValidator>().Validate();
-await host.Services.GetRequiredService<RunQueueRecoveryService>().RecoverIfNeededAsync("worker startup", CancellationToken.None);
+await host.Services.GetRequiredService<RunQueueRecoveryService>().RecoverIfNeededAsync(
+    "worker startup",
+    CancellationToken.None,
+    currentWorkerInstanceId: host.Services.GetRequiredService<WorkerProcessIdentity>().InstanceId);
 LogRuntimeVersion(host);
 LogConfiguredEndpoints(host);
 await host.RunAsync();
@@ -150,12 +170,14 @@ await host.RunAsync();
 static void LogRuntimeVersion(IHost host)
 {
     var buildInfo = RuntimeBuildInfo.FromAssembly(typeof(Program).Assembly);
+    var processIdentity = host.Services.GetRequiredService<WorkerProcessIdentity>();
     var logger = host.Services.GetRequiredService<ILoggerFactory>().CreateLogger("SyncFactors.Worker.Startup");
     logger.LogInformation(
-        "SyncFactors worker starting. Version={Version} CommitSha={CommitSha} Dirty={Dirty}",
+        "SyncFactors worker starting. Version={Version} CommitSha={CommitSha} Dirty={Dirty} InstanceId={InstanceId}",
         buildInfo.Version,
         buildInfo.CommitSha ?? "unknown",
-        buildInfo.Dirty);
+        buildInfo.Dirty,
+        processIdentity.InstanceId);
 }
 
 static void LogConfiguredEndpoints(IHost host)

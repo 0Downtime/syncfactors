@@ -17,7 +17,9 @@ public class Worker(
     IDeleteAllUsersCoordinator deleteAllUsersCoordinator,
     IWorkerHeartbeatStore workerHeartbeatStore,
     TimeProvider timeProvider,
-    IWorkerExecutionSettings executionSettings) : BackgroundService
+    IWorkerExecutionSettings executionSettings,
+    WorkerProcessIdentity processIdentity,
+    WorkerDeploymentCommitGate deploymentCommitGate) : BackgroundService
 {
     private static readonly TimeSpan HeartbeatInterval = TimeSpan.FromSeconds(15);
 
@@ -26,6 +28,27 @@ public class Worker(
         logger.LogInformation("SyncFactors worker started.");
         var startedAt = timeProvider.GetUtcNow();
         await WriteHeartbeatAsync(startedAt, "Starting", "Worker process started.", stoppingToken);
+
+        if (deploymentCommitGate.IsRequired)
+        {
+            const string waitingActivity = "Waiting for deployment verification to commit this worker.";
+            logger.LogInformation("Worker background processing is waiting for deployment verification.");
+            await WriteHeartbeatAsync(startedAt, "Starting", waitingActivity, stoppingToken);
+            using var heartbeatCts = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
+            var heartbeatTask = PumpHeartbeatsAsync(startedAt, "Starting", waitingActivity, heartbeatCts.Token);
+            try
+            {
+                await deploymentCommitGate.WaitForCommitAsync(stoppingToken);
+            }
+            finally
+            {
+                await heartbeatCts.CancelAsync();
+                await AwaitHeartbeatPumpAsync(heartbeatTask);
+            }
+
+            logger.LogInformation("Deployment verification committed; worker background processing is enabled.");
+        }
+
         await WriteHeartbeatAsync(startedAt, "Idle", "Waiting for scheduled work.", stoppingToken);
 
         using var timer = new PeriodicTimer(HeartbeatInterval);
@@ -115,7 +138,11 @@ public class Worker(
                 State: state,
                 Activity: activity,
                 StartedAt: startedAt,
-                LastSeenAt: timeProvider.GetUtcNow()),
+                LastSeenAt: timeProvider.GetUtcNow(),
+                InstanceId: processIdentity.InstanceId,
+                BuildVersion: processIdentity.BuildVersion,
+                BuildCommitSha: processIdentity.BuildCommitSha,
+                DeploymentNonceHash: processIdentity.DeploymentNonceHash),
             cancellationToken);
     }
 

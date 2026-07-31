@@ -27,7 +27,11 @@ if (!string.IsNullOrWhiteSpace(launcherProbeAction))
 
     var probeBuilder = WebApplication.CreateBuilder(args);
     SecurityAuditService.ValidateStartup(probeBuilder.Environment.IsProduction());
-    var authOptions = probeBuilder.Configuration.GetSection("SyncFactors:Auth").Get<LocalAuthOptions>() ?? new LocalAuthOptions();
+    var authOptions = ApiAuthConfiguration.Bind(
+        probeBuilder.Configuration,
+        probeBuilder.Environment.IsDevelopment(),
+        new SyncFactorsSecretResolver());
+    ApiAuthConfiguration.Validate(authOptions, probeBuilder.Environment.IsDevelopment());
     var sqlitePathResolver = new SqlitePathResolver(probeBuilder.Configuration["SyncFactors:SqlitePath"]);
     var databaseInitializer = new SqliteDatabaseInitializer(sqlitePathResolver);
     var userStore = new SqliteLocalUserStore(sqlitePathResolver);
@@ -51,10 +55,17 @@ LocalFileLogging.Configure(
     runRetainedFileCountLimitValue: builder.Configuration[LocalFileLogging.RunRetainedFileCountLimitEnvironmentVariable],
     retentionDaysValue: builder.Configuration[LocalFileLogging.RetentionDaysEnvironmentVariable]);
 ConfigureApplicationInsights(builder);
-var authSettings = builder.Configuration.GetSection("SyncFactors:Auth").Get<LocalAuthOptions>() ?? new LocalAuthOptions();
+var authSettings = ApiAuthConfiguration.Bind(
+    builder.Configuration,
+    builder.Environment.IsDevelopment(),
+    new SyncFactorsSecretResolver());
 var cspEnabled = builder.Configuration.GetValue<bool?>("SyncFactors:SecurityHeaders:EnableContentSecurityPolicy")
     ?? !builder.Environment.IsDevelopment();
 var oidcEnabled = IsOidcEnabled(authSettings);
+var forwardedHeadersSettings = builder.Configuration
+    .GetSection("SyncFactors:ForwardedHeaders")
+    .Get<ForwardedHeadersSettings>() ?? new ForwardedHeadersSettings();
+ForwardedHeadersConfiguration.Validate(forwardedHeadersSettings);
 var realtimeEnabled = builder.Configuration.GetValue<bool?>("SyncFactors:Realtime:Enabled") ?? true;
 var dashboardOptions = new DashboardOptions(
     builder.Configuration.GetValue<bool?>("SyncFactors:Dashboard:HealthProbes:Enabled") ?? true,
@@ -71,11 +82,21 @@ builder.Services.AddSingleton<AdminConfigurationSnapshotBuilder>();
 builder.Services.AddSingleton(dashboardOptions);
 builder.Services.AddSingleton<DashboardSettingsProvider>();
 builder.Services.Configure<LocalAuthOptions>(builder.Configuration.GetSection("SyncFactors:Auth"));
-builder.Services.Configure<ForwardedHeadersOptions>(options =>
+if (forwardedHeadersSettings.Enabled)
 {
-    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
-    options.KnownIPNetworks.Clear();
-    options.KnownProxies.Clear();
+    builder.Services.Configure<ForwardedHeadersOptions>(options =>
+        ForwardedHeadersConfiguration.Configure(options, forwardedHeadersSettings));
+}
+
+builder.Services.AddAntiforgery(options =>
+{
+    options.Cookie.Name = "SyncFactors.Antiforgery";
+    options.Cookie.HttpOnly = true;
+    options.Cookie.SameSite = SameSiteMode.Strict;
+    options.Cookie.SecurePolicy = builder.Environment.IsDevelopment()
+        ? CookieSecurePolicy.SameAsRequest
+        : CookieSecurePolicy.Always;
+    options.HeaderName = "X-SyncFactors-Antiforgery";
 });
 builder.Services.AddSingleton<SqliteDatabaseInitializer>();
 builder.Services.AddSingleton<SyncFactorsConfigurationLoader>();
@@ -338,14 +359,18 @@ builder.Services.AddRazorPages(options =>
 var app = builder.Build();
 
 SecurityAuditService.ValidateStartup(app.Environment.IsProduction());
+ApiAuthConfiguration.Validate(authSettings, app.Environment.IsDevelopment());
+app.Services.GetRequiredService<SyncFactorsConfigurationValidator>().Validate();
 await app.Services.GetRequiredService<SqliteDatabaseInitializer>().InitializeAsync(CancellationToken.None);
 await app.Services.GetRequiredService<ILocalAuthService>().EnsureBootstrapAdminAsync(CancellationToken.None);
-app.Services.GetRequiredService<SyncFactorsConfigurationValidator>().Validate();
-ValidateAuthConfiguration(app);
 LogRuntimeVersion(app.Logger, "api", typeof(Program).Assembly);
 LogConfiguredEndpoints(app);
 
-app.UseForwardedHeaders();
+if (forwardedHeadersSettings.Enabled)
+{
+    app.UseForwardedHeaders();
+}
+
 if (!app.Environment.IsDevelopment())
 {
     app.UseHsts();
@@ -370,6 +395,7 @@ app.Use(async (context, next) =>
 app.UseStaticFiles();
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseAntiforgery();
 
 var api = app.MapGroup("/api");
 var sessionApi = app.MapGroup("/api/session");
@@ -381,6 +407,16 @@ sessionApi.MapGet(string.Empty, async (HttpContext httpContext, ILocalAuthServic
 {
     var session = await LocalSessionManager.BuildSessionResponseAsync(httpContext, authService, cancellationToken);
     return Results.Ok(session);
+}).AllowAnonymous();
+
+sessionApi.MapGet("/antiforgery", (
+    HttpContext httpContext,
+    Microsoft.AspNetCore.Antiforgery.IAntiforgery antiforgery) =>
+{
+    httpContext.Response.Headers.CacheControl = "no-store";
+    httpContext.Response.Headers.Pragma = "no-cache";
+    var tokens = antiforgery.GetAndStoreTokens(httpContext);
+    return Results.Ok(new { requestToken = tokens.RequestToken });
 }).AllowAnonymous();
 
 sessionApi.MapPost("/login", async (
@@ -405,22 +441,24 @@ sessionApi.MapPost("/login", async (
     await authService.RecordSuccessfulLoginAsync(result.User.UserId, cancellationToken);
     var session = await LocalSessionManager.BuildSessionResponseAsync(httpContext, authService, cancellationToken);
     return Results.Ok(session);
-}).AllowAnonymous();
+}).AllowAnonymous().AddEndpointFilter<AntiforgeryEndpointFilter>();
 
 sessionApi.MapPost("/logout", async (HttpContext httpContext) =>
 {
     await LocalSessionManager.SignOutAsync(httpContext);
     return Results.Ok(LocalSessionManager.AnonymousSession);
-}).AllowAnonymous();
+}).AllowAnonymous().AddEndpointFilter<AntiforgeryEndpointFilter>();
 
 app.MapPublicHealthEndpoints(ViewerPolicy);
 
 var readApi = api.MapGroup(string.Empty)
     .RequireAuthorization(ViewerPolicy);
 var operatorApi = api.MapGroup(string.Empty)
-    .RequireAuthorization(OperatorPolicy);
+    .RequireAuthorization(OperatorPolicy)
+    .AddEndpointFilter<AntiforgeryEndpointFilter>();
 var adminApi = api.MapGroup(string.Empty)
-    .RequireAuthorization(AdminPolicy);
+    .RequireAuthorization(AdminPolicy)
+    .AddEndpointFilter<AntiforgeryEndpointFilter>();
 
 readApi.MapGet("/status", async (IRuntimeStatusStore store, CancellationToken cancellationToken) =>
 {
@@ -891,51 +929,6 @@ app.MapHub<DashboardHub>("/hubs/dashboard")
 app.MapRazorPages();
 
 await app.RunAsync();
-
-static void ValidateAuthConfiguration(WebApplication app)
-{
-    var authOptions = app.Services.GetRequiredService<Microsoft.Extensions.Options.IOptions<LocalAuthOptions>>().Value;
-    var oidcEnabled = IsOidcEnabled(authOptions);
-    var mode = authOptions.Mode ?? "local-break-glass";
-
-    if (string.Equals(mode, "oidc", StringComparison.OrdinalIgnoreCase) && !oidcEnabled)
-    {
-        throw new InvalidOperationException("SyncFactors:Auth mode 'oidc' requires OIDC authority and client ID.");
-    }
-
-    if (oidcEnabled && !OidcRoleResolver.HasConfiguredRoleGroups(authOptions))
-    {
-        throw new InvalidOperationException("SyncFactors:Auth:Oidc must configure at least one ViewerGroups, OperatorGroups, or AdminGroups value when OIDC is enabled.");
-    }
-
-    OidcConfigurationValidator.ValidateAuthority(
-        authOptions.Oidc,
-        oidcEnabled,
-        app.Environment.IsDevelopment());
-
-    if (authOptions.Oidc.AuthorizationRevalidationMinutes is
-        < OidcOptions.MinAuthorizationRevalidationMinutes or
-        > OidcOptions.MaxAuthorizationRevalidationMinutes)
-    {
-        throw new InvalidOperationException(
-            $"SyncFactors:Auth:Oidc:AuthorizationRevalidationMinutes must be between {OidcOptions.MinAuthorizationRevalidationMinutes} and {OidcOptions.MaxAuthorizationRevalidationMinutes}.");
-    }
-
-    if (authOptions.IdleTimeoutMinutes is < LocalAuthOptions.MinIdleTimeoutMinutes or > LocalAuthOptions.MaxIdleTimeoutMinutes)
-    {
-        throw new InvalidOperationException($"SyncFactors:Auth:IdleTimeoutMinutes must be between {LocalAuthOptions.MinIdleTimeoutMinutes} and {LocalAuthOptions.MaxIdleTimeoutMinutes}.");
-    }
-
-    if (authOptions.AbsoluteSessionHours is < LocalAuthOptions.MinAbsoluteSessionHours or > LocalAuthOptions.MaxAbsoluteSessionHours)
-    {
-        throw new InvalidOperationException($"SyncFactors:Auth:AbsoluteSessionHours must be between {LocalAuthOptions.MinAbsoluteSessionHours} and {LocalAuthOptions.MaxAbsoluteSessionHours}.");
-    }
-
-    if (authOptions.RememberMeSessionHours is < LocalAuthOptions.MinRememberMeSessionHours or > LocalAuthOptions.MaxRememberMeSessionHours)
-    {
-        throw new InvalidOperationException($"SyncFactors:Auth:RememberMeSessionHours must be between {LocalAuthOptions.MinRememberMeSessionHours} and {LocalAuthOptions.MaxRememberMeSessionHours}.");
-    }
-}
 
 static bool IsOidcEnabled(LocalAuthOptions options) =>
     (string.Equals(options.Mode, "oidc", StringComparison.OrdinalIgnoreCase) ||
