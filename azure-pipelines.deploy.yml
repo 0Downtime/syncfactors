@@ -18,6 +18,7 @@ variables:
   remoteStagingPath: C:\SyncFactors\_staging
   installRoot: C:\SyncFactors
   runProfile: real
+  dryRunOnly: true
   apiUrls: https://127.0.0.1:5087
   tlsCertificateThumbprint: ''
   apiPort: 5087
@@ -49,6 +50,13 @@ stages:
             inputs:
               packageType: sdk
               version: $(dotnetSdkVersion)
+
+          - task: PowerShell@2
+            displayName: Validate Windows deployment safety
+            inputs:
+              pwsh: true
+              targetType: inline
+              script: ./scripts/Assert-WindowsDeploymentSafety.ps1
 
           - task: PowerShell@2
             displayName: Resolve release metadata
@@ -197,7 +205,12 @@ stages:
 
                       function Convert-ToBool {
                           param([string]$Value)
-                          return $Value -match '^(1|true|yes|y)$'
+
+                          switch ($Value.Trim().ToLowerInvariant()) {
+                              { $_ -in @('1', 'true', 'yes', 'y') } { return $true }
+                              { $_ -in @('0', 'false', 'no', 'n') } { return $false }
+                              default { throw "Value '$Value' is not a valid boolean." }
+                          }
                       }
 
                       function Resolve-PowerShellCore {
@@ -219,9 +232,33 @@ stages:
                           throw 'PowerShell 7 was not found after prerequisite installation.'
                       }
 
+                      function Set-ServiceDryRunOnlyEnvironment {
+                          param(
+                              [Parameter(Mandatory)][string]$ServiceName,
+                              [Parameter(Mandatory)][bool]$Value
+                          )
+
+                          $serviceKey = "HKLM:\SYSTEM\CurrentControlSet\Services\$ServiceName"
+                          if (-not (Test-Path -Path $serviceKey)) {
+                              throw "Service registry key '$serviceKey' was not found."
+                          }
+
+                          $environment = @(Get-ItemPropertyValue -Path $serviceKey -Name Environment -ErrorAction SilentlyContinue)
+                          $environment = @(
+                              $environment |
+                                  Where-Object {
+                                      $null -ne $_ -and
+                                      -not $_.StartsWith('SyncFactors__Runtime__DryRunOnly=', [System.StringComparison]::OrdinalIgnoreCase)
+                                  }
+                          )
+                          $environment += "SyncFactors__Runtime__DryRunOnly=$($Value.ToString().ToLowerInvariant())"
+                          New-ItemProperty -Path $serviceKey -Name Environment -PropertyType MultiString -Value $environment -Force | Out-Null
+                      }
+
                       $stagingPath = '$(remoteStagingPath)'
                       $installRoot = '$(installRoot)'
                       $runProfile = '$(runProfile)'
+                      $dryRunOnly = Convert-ToBool '$(dryRunOnly)'
                       $apiUrls = '$(apiUrls)'
                       $apiPort = [int]'$(apiPort)'
                       $configureFirewall = Convert-ToBool '$(configureFirewall)'
@@ -250,6 +287,9 @@ stages:
                       $apiServiceExists = $null -ne (Get-Service -Name $apiServiceName -ErrorAction SilentlyContinue)
                       $workerServiceExists = $null -ne (Get-Service -Name $workerServiceName -ErrorAction SilentlyContinue)
                       if ((Test-Path -Path $existingPatchScript -PathType Leaf) -and $apiServiceExists -and $workerServiceExists) {
+                          Set-ServiceDryRunOnlyEnvironment -ServiceName $apiServiceName -Value $dryRunOnly
+                          Set-ServiceDryRunOnlyEnvironment -ServiceName $workerServiceName -Value $dryRunOnly
+
                           $patchArgs = @(
                               '-BundleZip', $bundle.FullName,
                               '-InstallRoot', $installRoot,
@@ -258,8 +298,17 @@ stages:
                               '-RunProfile', $runProfile,
                               '-ApiUrls', $apiUrls,
                               '-WindowsCredentialPrefix', $windowsCredentialPrefix,
-                              '-HealthUrl', "https://localhost:$apiPort/Login"
+                              '-HealthUrl', "https://localhost:$apiPort/readyz"
                           )
+                          $patchCommand = Get-Command $existingPatchScript
+                          if ($patchCommand.Parameters.ContainsKey('DryRunOnly')) {
+                              if ($dryRunOnly) {
+                                  $patchArgs += '-DryRunOnly'
+                              }
+                              else {
+                                  $patchArgs += '-EnableLiveWrites'
+                              }
+                          }
                           if (-not [string]::IsNullOrWhiteSpace('$(tlsCertificateThumbprint)')) {
                               $patchArgs += @('-TlsCertificateThumbprint', '$(tlsCertificateThumbprint)')
                           }
@@ -269,9 +318,23 @@ stages:
 
                           & $existingPatchScript @patchArgs
 
-                          Get-Service -Name $apiServiceName, $workerServiceName |
-                              Select-Object Name, Status, StartType |
-                              Format-Table -AutoSize
+                          $pwsh = Resolve-PowerShellCore
+                          $verificationScript = Join-Path $installRoot 'scripts\Test-SyncFactorsWindowsDeployment.ps1'
+                          $verificationArgs = @(
+                              '-ApiServiceName', $apiServiceName,
+                              '-WorkerServiceName', $workerServiceName,
+                              '-HealthUrl', "https://localhost:$apiPort/readyz"
+                          )
+                          if ($dryRunOnly) {
+                              $verificationArgs += '-DryRunOnly'
+                          }
+                          else {
+                              $verificationArgs += '-EnableLiveWrites'
+                          }
+                          & $pwsh -NoProfile -ExecutionPolicy Bypass -File $verificationScript @verificationArgs
+                          if ($LASTEXITCODE -ne 0) {
+                              throw "Deployment verification failed with code $LASTEXITCODE."
+                          }
                           return
                       }
 
@@ -312,6 +375,12 @@ stages:
                           '-WindowsCredentialPrefix', $windowsCredentialPrefix,
                           '-Force'
                       )
+                      if ($dryRunOnly) {
+                          $installArgs += '-DryRunOnly'
+                      }
+                      else {
+                          $installArgs += '-EnableLiveWrites'
+                      }
                       if (-not [string]::IsNullOrWhiteSpace($serviceUserName)) {
                           if ([string]::IsNullOrWhiteSpace($serviceUserPassword)) {
                               throw 'serviceUserPassword must be set when serviceUserName is set.'
@@ -340,6 +409,20 @@ stages:
 
                       Start-Service -Name $apiServiceName
                       Start-Service -Name $workerServiceName
-                      Get-Service -Name $apiServiceName, $workerServiceName |
-                          Select-Object Name, Status, StartType |
-                          Format-Table -AutoSize
+
+                      $verificationScript = Join-Path $installRoot 'scripts\Test-SyncFactorsWindowsDeployment.ps1'
+                      $verificationArgs = @(
+                          '-ApiServiceName', $apiServiceName,
+                          '-WorkerServiceName', $workerServiceName,
+                          '-HealthUrl', "https://localhost:$apiPort/readyz"
+                      )
+                      if ($dryRunOnly) {
+                          $verificationArgs += '-DryRunOnly'
+                      }
+                      else {
+                          $verificationArgs += '-EnableLiveWrites'
+                      }
+                      & $pwsh -NoProfile -ExecutionPolicy Bypass -File $verificationScript @verificationArgs
+                      if ($LASTEXITCODE -ne 0) {
+                          throw "Deployment verification failed with code $LASTEXITCODE."
+                      }

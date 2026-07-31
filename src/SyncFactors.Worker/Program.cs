@@ -56,7 +56,7 @@ builder.Services.AddSingleton(serviceProvider =>
 {
     var config = serviceProvider.GetRequiredService<SyncFactorsConfigurationLoader>().GetSyncConfig();
     var dryRunOnly = serviceProvider.GetRequiredService<IConfiguration>()
-        .GetValue<bool?>("SyncFactors:Runtime:DryRunOnly") ?? false;
+        .GetValue<bool?>("SyncFactors:Runtime:DryRunOnly") ?? !builder.Environment.IsDevelopment();
     return new SyncFactors.Contracts.RealSyncSettings(config.Sync.RealSyncEnabled, dryRunOnly);
 });
 builder.Services.AddSingleton(serviceProvider =>

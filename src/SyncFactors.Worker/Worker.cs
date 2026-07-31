@@ -79,7 +79,24 @@ public class Worker(
             }
             else
             {
-                await graveyardAutoDeleteCoordinator.TryExecuteAsync(stoppingToken);
+                try
+                {
+                    await graveyardAutoDeleteCoordinator.TryExecuteAsync(stoppingToken);
+                }
+                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    logger.LogError(ex, "Automatic graveyard deletion maintenance failed. The worker will remain available.");
+                    await TryWriteHeartbeatAsync(
+                        startedAt,
+                        "Idle",
+                        "Automatic graveyard deletion maintenance failed; waiting to retry.",
+                        CancellationToken.None);
+                }
+
                 await WriteHeartbeatAsync(startedAt, "Idle", "Waiting for scheduled work.", stoppingToken);
             }
         }

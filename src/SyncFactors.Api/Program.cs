@@ -85,7 +85,6 @@ builder.Services.AddSingleton<ISecurityAuditService, SecurityAuditService>();
 builder.Services.AddSingleton<ILocalUserStore, SqliteLocalUserStore>();
 builder.Services.AddSingleton<ILocalAuthService, LocalAuthService>();
 builder.Services.AddSingleton<IOidcAccountStore, SqliteOidcAccountStore>();
-builder.Services.AddSingleton<IOidcUserInfoClient, OidcUserInfoClient>();
 builder.Services.AddSingleton<OidcAuthorizationRevalidator>();
 builder.Services.AddSingleton(serviceProvider => new OidcCookiePrincipalValidator(
     serviceProvider.GetRequiredService<OidcAuthorizationRevalidator>(),
@@ -116,7 +115,7 @@ builder.Services.AddSingleton(serviceProvider =>
 {
     var config = serviceProvider.GetRequiredService<SyncFactorsConfigurationLoader>().GetSyncConfig();
     var dryRunOnly = serviceProvider.GetRequiredService<IConfiguration>()
-        .GetValue<bool?>("SyncFactors:Runtime:DryRunOnly") ?? false;
+        .GetValue<bool?>("SyncFactors:Runtime:DryRunOnly") ?? !builder.Environment.IsDevelopment();
     return new RealSyncSettings(config.Sync.RealSyncEnabled, dryRunOnly);
 });
 builder.Services.AddSingleton(serviceProvider =>
@@ -252,8 +251,8 @@ if (oidcEnabled)
         options.SignedOutCallbackPath = authSettings.Oidc.SignedOutCallbackPath;
         options.SignedOutRedirectUri = "/Login?LoggedOut=true";
         options.ResponseType = "code";
-        options.SaveTokens = true;
-        options.GetClaimsFromUserInfoEndpoint = true;
+        options.SaveTokens = false;
+        options.GetClaimsFromUserInfoEndpoint = false;
         options.MapInboundClaims = false;
         options.Scope.Clear();
         options.Scope.Add("openid");
@@ -266,14 +265,32 @@ if (oidcEnabled)
             {
                 if (context.Principal?.Identity is ClaimsIdentity identity)
                 {
-                    ApplyOidcIdentity(identity, authSettings);
-                    var accountStore = context.HttpContext.RequestServices.GetRequiredService<IOidcAccountStore>();
                     var timeProvider = context.HttpContext.RequestServices.GetRequiredService<TimeProvider>();
-                    var account = BuildOidcAccountRecord(identity, authSettings, timeProvider.GetUtcNow());
+                    var validatedAt = timeProvider.GetUtcNow();
+                    ApplyOidcIdentity(identity, authSettings, validatedAt);
+                    if (string.IsNullOrWhiteSpace(identity.FindFirst(ClaimTypes.NameIdentifier)?.Value) ||
+                        identity.FindAll(ClaimTypes.Role).Select(claim => claim.Value).Distinct(StringComparer.Ordinal).Count() != 1)
+                    {
+                        context.Fail("The validated OIDC token did not grant a configured SyncFactors role.");
+                        return;
+                    }
+
+                    var accountStore = context.HttpContext.RequestServices.GetRequiredService<IOidcAccountStore>();
+                    var account = BuildOidcAccountRecord(identity, authSettings, validatedAt);
                     await accountStore.UpsertAsync(
                         account,
                         context.HttpContext.RequestAborted);
-                    ReduceOidcCookieClaims(identity, account);
+                    ReduceOidcCookieClaims(identity, account, validatedAt);
+
+                    // Retain only the ID token for standards-compliant provider logout.
+                    // Access and refresh tokens are not used after role claims are validated.
+                    if (context.Properties is { } properties)
+                    {
+                        OidcLogoutTokenStore.RetainIdToken(
+                            properties,
+                            context.TokenEndpointResponse?.IdToken,
+                            context.ProtocolMessage.IdToken);
+                    }
                 }
             },
             OnRedirectToIdentityProviderForSignOut = context =>
@@ -891,6 +908,19 @@ static void ValidateAuthConfiguration(WebApplication app)
         throw new InvalidOperationException("SyncFactors:Auth:Oidc must configure at least one ViewerGroups, OperatorGroups, or AdminGroups value when OIDC is enabled.");
     }
 
+    OidcConfigurationValidator.ValidateAuthority(
+        authOptions.Oidc,
+        oidcEnabled,
+        app.Environment.IsDevelopment());
+
+    if (authOptions.Oidc.AuthorizationRevalidationMinutes is
+        < OidcOptions.MinAuthorizationRevalidationMinutes or
+        > OidcOptions.MaxAuthorizationRevalidationMinutes)
+    {
+        throw new InvalidOperationException(
+            $"SyncFactors:Auth:Oidc:AuthorizationRevalidationMinutes must be between {OidcOptions.MinAuthorizationRevalidationMinutes} and {OidcOptions.MaxAuthorizationRevalidationMinutes}.");
+    }
+
     if (authOptions.IdleTimeoutMinutes is < LocalAuthOptions.MinIdleTimeoutMinutes or > LocalAuthOptions.MaxIdleTimeoutMinutes)
     {
         throw new InvalidOperationException($"SyncFactors:Auth:IdleTimeoutMinutes must be between {LocalAuthOptions.MinIdleTimeoutMinutes} and {LocalAuthOptions.MaxIdleTimeoutMinutes}.");
@@ -1067,7 +1097,7 @@ static async Task ValidateCookiePrincipalAsync(Microsoft.AspNetCore.Authenticati
     }
 
     var validator = context.HttpContext.RequestServices.GetRequiredService<OidcCookiePrincipalValidator>();
-    if (!await validator.ValidateAsync(context.Principal!, context.Properties, context.HttpContext.RequestAborted))
+    if (!await validator.ValidateAsync(context.Principal!, context.HttpContext.RequestAborted))
     {
         context.RejectPrincipal();
         await context.HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
@@ -1104,10 +1134,14 @@ static async Task RefreshLocalPrincipalAsync(Microsoft.AspNetCore.Authentication
     ReplaceClaim(identity, ClaimTypes.Role, currentUser.Role);
 }
 
-static void ApplyOidcIdentity(ClaimsIdentity identity, LocalAuthOptions authSettings)
+static void ApplyOidcIdentity(
+    ClaimsIdentity identity,
+    LocalAuthOptions authSettings,
+    DateTimeOffset validatedAt)
 {
     ReplaceClaim(identity, SecurityClaimTypes.AuthSource, "oidc");
-    ReplaceClaim(identity, SecurityClaimTypes.SessionIssuedAt, DateTimeOffset.UtcNow.ToString("O"));
+    ReplaceClaim(identity, SecurityClaimTypes.SessionIssuedAt, validatedAt.ToString("O"));
+    ReplaceClaim(identity, SecurityClaimTypes.OidcAuthorizationValidatedAt, validatedAt.ToString("O"));
 
     var preferredUsername = identity.FindFirst(authSettings.Oidc.UsernameClaimType)?.Value
         ?? identity.FindFirst(authSettings.Oidc.DisplayNameClaimType)?.Value
@@ -1122,9 +1156,10 @@ static void ApplyOidcIdentity(ClaimsIdentity identity, LocalAuthOptions authSett
     }
 
     RemoveClaims(identity, ClaimTypes.Role);
-    foreach (var role in OidcRoleResolver.ResolveRoles(identity, authSettings))
+    var effectiveRole = OidcRoleResolver.ResolveEffectiveRole(identity, authSettings);
+    if (!string.IsNullOrWhiteSpace(effectiveRole))
     {
-        identity.AddClaim(new Claim(ClaimTypes.Role, role));
+        identity.AddClaim(new Claim(ClaimTypes.Role, effectiveRole));
     }
 }
 
@@ -1160,7 +1195,10 @@ static OidcAccountRecord BuildOidcAccountRecord(
         LastLoginAt: observedAt);
 }
 
-static void ReduceOidcCookieClaims(ClaimsIdentity identity, OidcAccountRecord account)
+static void ReduceOidcCookieClaims(
+    ClaimsIdentity identity,
+    OidcAccountRecord account,
+    DateTimeOffset validatedAt)
 {
     var roles = identity.FindAll(ClaimTypes.Role)
         .Select(claim => claim.Value)
@@ -1176,7 +1214,8 @@ static void ReduceOidcCookieClaims(ClaimsIdentity identity, OidcAccountRecord ac
     identity.AddClaim(new Claim(ClaimTypes.NameIdentifier, account.Subject));
     identity.AddClaim(new Claim(ClaimTypes.Name, account.Username));
     identity.AddClaim(new Claim(SecurityClaimTypes.AuthSource, "oidc"));
-    identity.AddClaim(new Claim(SecurityClaimTypes.SessionIssuedAt, DateTimeOffset.UtcNow.ToString("O")));
+    identity.AddClaim(new Claim(SecurityClaimTypes.SessionIssuedAt, validatedAt.ToString("O")));
+    identity.AddClaim(new Claim(SecurityClaimTypes.OidcAuthorizationValidatedAt, validatedAt.ToString("O")));
 
     foreach (var role in roles)
     {

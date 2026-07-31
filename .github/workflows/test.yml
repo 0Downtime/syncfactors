@@ -66,6 +66,10 @@ jobs:
         with:
           dotnet-version: 10.0.x
 
+      - name: Validate Windows deployment safety
+        shell: pwsh
+        run: ./scripts/Assert-WindowsDeploymentSafety.ps1
+
       - name: Restore solution
         run: dotnet restore ./SyncFactors.Next.sln
 

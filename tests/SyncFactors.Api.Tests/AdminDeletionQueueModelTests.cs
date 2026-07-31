@@ -172,12 +172,37 @@ public sealed class AdminDeletionQueueModelTests
         Assert.Equal("GraveyardDeleteApproval", lifecycle.CompletedMode);
     }
 
+    [Fact]
+    public async Task OnPostApproveDeleteAsync_RejectsRequest_WhenLiveWritesAreDisabled()
+    {
+        var store = new CapturingRetentionStore([CreateRecord("10001", false)]);
+        var commandGateway = new CapturingDirectoryCommandGateway();
+        var lifecycle = new CapturingRunLifecycleService();
+        var settings = new RealSyncSettings(Enabled: true, DryRunOnly: true);
+        var model = CreateModel(
+            store,
+            commandGateway: commandGateway,
+            lifecycle: lifecycle,
+            realSyncSettings: settings);
+
+        var result = await model.OnPostApproveDeleteAsync("10001", CancellationToken.None);
+
+        Assert.IsType<RedirectToPageResult>(result);
+        Assert.False(model.CanApproveDeletions);
+        Assert.Equal(settings.LiveWriteDisabledMessage, model.ErrorMessage);
+        Assert.Empty(commandGateway.Commands);
+        Assert.Empty(store.ResolvedWorkerIds);
+        Assert.Empty(lifecycle.Entries);
+        Assert.Null(lifecycle.CompletedMode);
+    }
+
     private static DeletionQueueModel CreateModel(
         CapturingRetentionStore store,
         string actingUserId = "admin-1",
         string username = "admin",
         CapturingDirectoryCommandGateway? commandGateway = null,
-        CapturingRunLifecycleService? lifecycle = null)
+        CapturingRunLifecycleService? lifecycle = null,
+        RealSyncSettings? realSyncSettings = null)
     {
         var workerIds = recordsFromStore(store)
             .Select(record => record.WorkerId)
@@ -198,6 +223,7 @@ public sealed class AdminDeletionQueueModelTests
             settings,
             lifecycleSettings,
             new FakeTimeProvider(now));
+        var resolvedRealSyncSettings = realSyncSettings ?? new RealSyncSettings();
         var deleteCoordinator = new GraveyardAutoDeleteCoordinator(
             service,
             store,
@@ -205,7 +231,7 @@ public sealed class AdminDeletionQueueModelTests
             lifecycle ?? new CapturingRunLifecycleService(),
             settings,
             new WorkerRunSettings(MaxCreatesPerRun: 10, MaxDisablesPerRun: 10, MaxDeletionsPerRun: 10),
-            new RealSyncSettings(),
+            resolvedRealSyncSettings,
             NullLogger<GraveyardAutoDeleteCoordinator>.Instance,
             new FakeTimeProvider(now));
 
@@ -213,6 +239,7 @@ public sealed class AdminDeletionQueueModelTests
             service,
             deleteCoordinator,
             store,
+            resolvedRealSyncSettings,
             new FakeTimeProvider(now))
         {
             PageContext = new PageContext

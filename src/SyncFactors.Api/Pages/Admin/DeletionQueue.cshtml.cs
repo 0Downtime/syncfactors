@@ -2,6 +2,7 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
+using SyncFactors.Contracts;
 using SyncFactors.Domain;
 
 namespace SyncFactors.Api.Pages.Admin;
@@ -11,6 +12,7 @@ public sealed class DeletionQueueModel(
     GraveyardDeletionQueueService deletionQueueService,
     GraveyardAutoDeleteCoordinator deleteCoordinator,
     IGraveyardRetentionStore retentionStore,
+    RealSyncSettings realSyncSettings,
     TimeProvider timeProvider) : PageModel
 {
     private const int PageSize = 25;
@@ -43,6 +45,10 @@ public sealed class DeletionQueueModel(
     public bool HasPreviousHeldPage => HeldPageNumber > 1;
 
     public bool HasNextHeldPage => HeldPageNumber < TotalHeldPages;
+
+    public bool CanApproveDeletions => realSyncSettings.EffectiveWriteEnabled;
+
+    public string LiveWriteDisabledMessage => realSyncSettings.LiveWriteDisabledMessage;
 
     [TempData]
     public string? ErrorMessage { get; set; }
@@ -97,6 +103,13 @@ public sealed class DeletionQueueModel(
 
     public async Task<IActionResult> OnPostApproveDeleteAsync(string workerId, CancellationToken cancellationToken)
     {
+        if (!CanApproveDeletions)
+        {
+            ErrorMessage = LiveWriteDisabledMessage;
+            SuccessMessage = null;
+            return RedirectToCurrentPage();
+        }
+
         if (string.IsNullOrWhiteSpace(workerId))
         {
             ErrorMessage = "Worker ID is required to approve deletion.";

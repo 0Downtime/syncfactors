@@ -95,6 +95,9 @@ public sealed class LocalBreakGlassOptions
 
 public sealed class OidcOptions
 {
+    public const int MinAuthorizationRevalidationMinutes = 5;
+    public const int MaxAuthorizationRevalidationMinutes = 1440;
+
     public string? Authority { get; set; }
 
     public string? ClientId { get; set; }
@@ -111,11 +114,19 @@ public sealed class OidcOptions
 
     public string UsernameClaimType { get; set; } = "preferred_username";
 
+    public int AuthorizationRevalidationMinutes { get; set; } = 60;
+
     public string[] ViewerGroups { get; set; } = [];
 
     public string[] OperatorGroups { get; set; } = [];
 
     public string[] AdminGroups { get; set; } = [];
+
+    public TimeSpan GetAuthorizationRevalidationInterval() =>
+        TimeSpan.FromMinutes(Math.Clamp(
+            AuthorizationRevalidationMinutes,
+            MinAuthorizationRevalidationMinutes,
+            MaxAuthorizationRevalidationMinutes));
 }
 
 public sealed record LocalAuthenticationResult(

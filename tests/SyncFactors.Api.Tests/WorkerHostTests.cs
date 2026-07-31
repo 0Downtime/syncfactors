@@ -78,6 +78,28 @@ public sealed class WorkerHostTests
     }
 
     [Fact]
+    public async Task ExecuteAsync_KeepsWorkerAvailable_WhenAutoDeleteMaintenanceFails()
+    {
+        using var cancellation = new CancellationTokenSource();
+        var autoDeleteCoordinator = new ThrowingAutoDeleteCoordinator(cancellation);
+        var worker = new TestWorker(
+            NullLogger<WorkerService>.Instance,
+            new CapturingRunQueueStore(null, cancellation),
+            new CapturingScheduleCoordinator(),
+            new CapturingRetentionReportCoordinator(),
+            autoDeleteCoordinator,
+            new CapturingBulkRunCoordinator(),
+            new NoopDeleteAllUsersCoordinator(),
+            new CapturingHeartbeatStore(),
+            TimeProvider.System,
+            new FixedWorkerExecutionSettings(1));
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => worker.RunAsync(cancellation.Token));
+
+        Assert.Equal(1, autoDeleteCoordinator.Calls);
+    }
+
+    [Fact]
     public async Task ExecuteAsync_DispatchesDeleteAllUsersRequestToDeleteCoordinator()
     {
         using var cancellation = new CancellationTokenSource();
@@ -293,6 +315,18 @@ public sealed class WorkerHostTests
             Calls++;
             cancellation?.Cancel();
             return Task.FromResult<string?>(null);
+        }
+    }
+
+    private sealed class ThrowingAutoDeleteCoordinator(CancellationTokenSource cancellation) : IGraveyardAutoDeleteCoordinator
+    {
+        public int Calls { get; private set; }
+
+        public Task<string?> TryExecuteAsync(CancellationToken cancellationToken)
+        {
+            Calls++;
+            cancellation.Cancel();
+            throw new InvalidOperationException("Simulated automatic graveyard deletion failure.");
         }
     }
 

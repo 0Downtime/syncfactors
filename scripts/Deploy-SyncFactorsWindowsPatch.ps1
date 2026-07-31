@@ -7,6 +7,8 @@ param(
     [string]$WorkerServiceName = 'SyncFactors.Worker',
     [ValidateSet('mock', 'real')]
     [string]$RunProfile = 'real',
+    [switch]$DryRunOnly,
+    [switch]$EnableLiveWrites,
     [string]$ApiUrls = 'https://0.0.0.0:5087',
     [string]$TlsCertificatePath,
     [string]$TlsCertificatePassword,
@@ -17,7 +19,7 @@ param(
     [string]$SecurityAuditLogPath,
     [pscredential]$Credential,
     [switch]$InstallOrUpdateServices,
-    [string]$HealthUrl = 'https://localhost:5087/Login',
+    [string]$HealthUrl = 'https://localhost:5087/readyz',
     [switch]$SkipHealthCheck,
     [switch]$NoRollbackOnFailure
 )
@@ -182,13 +184,125 @@ function Copy-ConfigSamples {
     }
 }
 
-function Invoke-HealthCheck {
-    param([string]$Url)
+function Get-ServiceEnvironment {
+    param([Parameter(Mandatory)][string]$ServiceName)
 
-    $response = Invoke-WebRequest -Uri $Url -SkipCertificateCheck -UseBasicParsing -TimeoutSec 30
-    if ($response.StatusCode -lt 200 -or $response.StatusCode -ge 500) {
-        throw "Health check '$Url' returned HTTP $($response.StatusCode)."
+    $serviceKey = "HKLM:\SYSTEM\CurrentControlSet\Services\$ServiceName"
+    if (-not (Test-Path -Path $serviceKey)) {
+        return $null
     }
+
+    $environment = Get-ItemPropertyValue -Path $serviceKey -Name Environment -ErrorAction SilentlyContinue
+    return [pscustomobject]@{
+        Exists = $null -ne $environment
+        Values = @($environment)
+    }
+}
+
+function Get-ServiceEnvironmentValue {
+    param(
+        [Parameter(Mandatory)][string]$ServiceName,
+        [Parameter(Mandatory)][string]$Name
+    )
+
+    $environment = Get-ServiceEnvironment -ServiceName $ServiceName
+    if ($null -eq $environment) {
+        return $null
+    }
+
+    foreach ($entry in @($environment.Values)) {
+        if ($null -ne $entry -and $entry.StartsWith("$Name=", [System.StringComparison]::OrdinalIgnoreCase)) {
+            return $entry.Substring($Name.Length + 1)
+        }
+    }
+
+    return $null
+}
+
+function Set-ServiceEnvironmentValue {
+    param(
+        [Parameter(Mandatory)][string]$ServiceName,
+        [Parameter(Mandatory)][string]$Name,
+        [Parameter(Mandatory)][string]$Value
+    )
+
+    $serviceKey = "HKLM:\SYSTEM\CurrentControlSet\Services\$ServiceName"
+    if (-not (Test-Path -Path $serviceKey)) {
+        throw "Service registry key '$serviceKey' was not found."
+    }
+
+    $environment = Get-ServiceEnvironment -ServiceName $ServiceName
+    $updated = @(
+        @($environment.Values) |
+            Where-Object { $null -ne $_ -and -not $_.StartsWith("$Name=", [System.StringComparison]::OrdinalIgnoreCase) }
+    )
+    $updated += "$Name=$Value"
+    New-ItemProperty -Path $serviceKey -Name Environment -PropertyType MultiString -Value $updated -Force | Out-Null
+}
+
+function Restore-ServiceEnvironment {
+    param(
+        [Parameter(Mandatory)][string]$ServiceName,
+        [Parameter(Mandatory)]$Snapshot
+    )
+
+    $serviceKey = "HKLM:\SYSTEM\CurrentControlSet\Services\$ServiceName"
+    if (-not (Test-Path -Path $serviceKey)) {
+        return
+    }
+
+    if ($Snapshot.Exists) {
+        New-ItemProperty -Path $serviceKey -Name Environment -PropertyType MultiString -Value @($Snapshot.Values) -Force | Out-Null
+    }
+    else {
+        Remove-ItemProperty -Path $serviceKey -Name Environment -ErrorAction SilentlyContinue
+    }
+}
+
+function Resolve-DryRunOnlyMode {
+    param(
+        [Parameter(Mandatory)][string[]]$ServiceNames,
+        [Parameter(Mandatory)][bool]$DryRunOnlyRequested,
+        [Parameter(Mandatory)][bool]$LiveWritesRequested
+    )
+
+    if ($DryRunOnlyRequested -and $LiveWritesRequested) {
+        throw 'DryRunOnly and EnableLiveWrites cannot be specified together.'
+    }
+
+    if ($DryRunOnlyRequested) {
+        return [pscustomobject]@{ Value = $true; Source = 'parameter' }
+    }
+
+    if ($LiveWritesRequested) {
+        return [pscustomobject]@{ Value = $false; Source = 'explicit-live-write-opt-in' }
+    }
+
+    $existingValues = @()
+    foreach ($serviceName in $ServiceNames) {
+        $existingValue = Get-ServiceEnvironmentValue -ServiceName $serviceName -Name 'SyncFactors__Runtime__DryRunOnly'
+        if ([string]::IsNullOrWhiteSpace($existingValue)) {
+            continue
+        }
+
+        $parsedValue = $false
+        if (-not [bool]::TryParse($existingValue, [ref]$parsedValue)) {
+            throw "Service '$serviceName' has invalid SyncFactors__Runtime__DryRunOnly value '$existingValue'. Re-run with -DryRunOnly or -EnableLiveWrites."
+        }
+
+        $existingValues += $parsedValue
+    }
+
+    $distinctValues = @($existingValues | Select-Object -Unique)
+    if ($distinctValues.Count -gt 1) {
+        throw 'The installed API and worker disagree on SyncFactors__Runtime__DryRunOnly. Re-run with -DryRunOnly or -EnableLiveWrites to select one mode for both services.'
+    }
+
+    if ($distinctValues.Count -eq 1) {
+        return [pscustomobject]@{ Value = [bool]$distinctValues[0]; Source = 'existing-service-environment' }
+    }
+
+    return [pscustomobject]@{ Value = $true; Source = 'production-safe-default' }
 }
 
 if (-not [System.OperatingSystem]::IsWindows()) {
@@ -207,6 +321,17 @@ $stamp = Get-Date -Format 'yyyyMMddHHmmss'
 $expandedRoot = Join-Path $stagingRoot $stamp
 $currentBackupRoot = Join-Path $backupRoot $stamp
 $services = @($ApiServiceName, $WorkerServiceName)
+$writeSafetyMode = Resolve-DryRunOnlyMode `
+    -ServiceNames $services `
+    -DryRunOnlyRequested $DryRunOnly.IsPresent `
+    -LiveWritesRequested $EnableLiveWrites.IsPresent
+$originalServiceEnvironments = @{}
+foreach ($service in $services) {
+    $environment = Get-ServiceEnvironment -ServiceName $service
+    if ($null -ne $environment) {
+        $originalServiceEnvironments[$service] = $environment
+    }
+}
 
 New-Item -Path $expandedRoot -ItemType Directory -Force | Out-Null
 New-Item -Path $currentBackupRoot -ItemType Directory -Force | Out-Null
@@ -279,6 +404,12 @@ try {
         if (-not [string]::IsNullOrWhiteSpace($SecurityAuditLogPath)) {
             $installArgs += @('-SecurityAuditLogPath', $SecurityAuditLogPath)
         }
+        if ($writeSafetyMode.Value) {
+            $installArgs += '-DryRunOnly'
+        }
+        else {
+            $installArgs += '-EnableLiveWrites'
+        }
 
         if ($PSCmdlet.ShouldProcess("$ApiServiceName,$WorkerServiceName", 'Install or update Windows services')) {
             & $installScript @installArgs | Out-Host
@@ -292,15 +423,39 @@ try {
         }
     }
 
+    $dryRunOnlyValue = $writeSafetyMode.Value.ToString().ToLowerInvariant()
+    foreach ($service in $services) {
+        if ($PSCmdlet.ShouldProcess($service, "Set SyncFactors__Runtime__DryRunOnly=$dryRunOnlyValue")) {
+            Set-ServiceEnvironmentValue `
+                -ServiceName $service `
+                -Name 'SyncFactors__Runtime__DryRunOnly' `
+                -Value $dryRunOnlyValue
+        }
+    }
+
     foreach ($service in $services) {
         if ($PSCmdlet.ShouldProcess($service, 'Start Windows service')) {
             Start-SyncFactorsService -Name $service | Out-Null
         }
     }
 
-    if (-not $SkipHealthCheck.IsPresent) {
-        Invoke-HealthCheck -Url $HealthUrl
+    $verificationScript = Join-Path $InstallRoot 'scripts\Test-SyncFactorsWindowsDeployment.ps1'
+    $verificationArgs = @(
+        '-ApiServiceName', $ApiServiceName,
+        '-WorkerServiceName', $WorkerServiceName,
+        '-HealthUrl', $HealthUrl
+    )
+    if ($writeSafetyMode.Value) {
+        $verificationArgs += '-DryRunOnly'
     }
+    else {
+        $verificationArgs += '-EnableLiveWrites'
+    }
+    if ($SkipHealthCheck.IsPresent) {
+        $verificationArgs += '-SkipHttpHealthCheck'
+    }
+
+    $verification = & $verificationScript @verificationArgs
 
     [pscustomobject]@{
         bundleZip = $resolvedBundleZip
@@ -309,7 +464,10 @@ try {
         backupRoot = $currentBackupRoot
         apiServiceName = $ApiServiceName
         workerServiceName = $WorkerServiceName
+        dryRunOnly = $writeSafetyMode.Value
+        writeSafetySource = $writeSafetyMode.Source
         healthUrl = if ($SkipHealthCheck.IsPresent) { $null } else { $HealthUrl }
+        verification = $verification
         rollbackAvailable = $true
     }
 }
@@ -324,6 +482,12 @@ catch {
         }
 
         Restore-Backup -Root $InstallRoot -BackupRoot $currentBackupRoot
+
+        foreach ($service in $services) {
+            if ($originalServiceEnvironments.ContainsKey($service)) {
+                Restore-ServiceEnvironment -ServiceName $service -Snapshot $originalServiceEnvironments[$service]
+            }
+        }
 
         foreach ($service in $services) {
             Start-SyncFactorsService -Name $service | Out-Null

@@ -5,6 +5,8 @@ param(
     [string]$Service = 'All',
     [ValidateSet('mock', 'real')]
     [string]$RunProfile = 'real',
+    [switch]$DryRunOnly,
+    [switch]$EnableLiveWrites,
     [ValidateSet('Automatic', 'Manual', 'Disabled')]
     [string]$StartupType = 'Automatic',
     [switch]$DelayedAutoStart = $true,
@@ -211,6 +213,55 @@ function Get-ServiceEnvironmentValue {
     return $null
 }
 
+function Resolve-DryRunOnlyMode {
+    param(
+        [Parameter(Mandatory)]
+        [string[]]$ServiceNames,
+        [Parameter(Mandatory)]
+        [bool]$DryRunOnlyRequested,
+        [Parameter(Mandatory)]
+        [bool]$LiveWritesRequested
+    )
+
+    if ($DryRunOnlyRequested -and $LiveWritesRequested) {
+        throw 'DryRunOnly and EnableLiveWrites cannot be specified together.'
+    }
+
+    if ($DryRunOnlyRequested) {
+        return [pscustomobject]@{ Value = $true; Source = 'parameter' }
+    }
+
+    if ($LiveWritesRequested) {
+        return [pscustomobject]@{ Value = $false; Source = 'explicit-live-write-opt-in' }
+    }
+
+    $existingValues = @()
+    foreach ($serviceName in $ServiceNames) {
+        $existingValue = Get-ServiceEnvironmentValue -ServiceNames @($serviceName) -Name 'SyncFactors__Runtime__DryRunOnly'
+        if ([string]::IsNullOrWhiteSpace($existingValue)) {
+            continue
+        }
+
+        $parsedValue = $false
+        if (-not [bool]::TryParse($existingValue, [ref]$parsedValue)) {
+            throw "Service '$serviceName' has invalid SyncFactors__Runtime__DryRunOnly value '$existingValue'. Re-run with -DryRunOnly or -EnableLiveWrites."
+        }
+
+        $existingValues += [pscustomobject]@{ ServiceName = $serviceName; Value = $parsedValue }
+    }
+
+    $distinctValues = @($existingValues | Select-Object -ExpandProperty Value -Unique)
+    if ($distinctValues.Count -gt 1) {
+        throw 'The installed API and worker disagree on SyncFactors__Runtime__DryRunOnly. Re-run with -DryRunOnly or -EnableLiveWrites to select one mode for both services.'
+    }
+
+    if ($distinctValues.Count -eq 1) {
+        return [pscustomobject]@{ Value = [bool]$distinctValues[0]; Source = 'existing-service-environment' }
+    }
+
+    return [pscustomobject]@{ Value = $true; Source = 'production-safe-default' }
+}
+
 function New-SqliteEncryptionPassword {
     $bytes = [System.Security.Cryptography.RandomNumberGenerator]::GetBytes(48)
     return [Convert]::ToBase64String($bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_')
@@ -301,6 +352,11 @@ if (-not (Test-IsWindowsAdministrator)) {
 $resolvedBundleRoot = Resolve-BundleRoot -Path $BundleRoot
 Initialize-LocalConfig -Root $resolvedBundleRoot
 
+$writeSafetyMode = Resolve-DryRunOnlyMode `
+    -ServiceNames @($ApiServiceName, $WorkerServiceName) `
+    -DryRunOnlyRequested $DryRunOnly.IsPresent `
+    -LiveWritesRequested $EnableLiveWrites.IsPresent
+
 $runtimeRoot = Join-Path $resolvedBundleRoot 'state'
 if ([string]::IsNullOrWhiteSpace($SqlitePath)) {
     $SqlitePath = Join-Path $runtimeRoot 'runtime\syncfactors.db'
@@ -371,6 +427,7 @@ else {
 $commonEnvironment = @(
     "DOTNET_ENVIRONMENT=Production",
     "SYNCFACTORS_RUN_PROFILE=$RunProfile",
+    "SyncFactors__Runtime__DryRunOnly=$($writeSafetyMode.Value.ToString().ToLowerInvariant())",
     "SyncFactors__ConfigPath=$ConfigPath",
     "SyncFactors__MappingConfigPath=$MappingConfigPath",
     "SyncFactors__SqlitePath=$SqlitePath",
@@ -443,6 +500,8 @@ if ($Service -in @('All', 'Worker')) {
 [pscustomobject]@{
     bundleRoot = $resolvedBundleRoot
     runProfile = $RunProfile
+    dryRunOnly = $writeSafetyMode.Value
+    writeSafetySource = $writeSafetyMode.Source
     apiServiceName = $ApiServiceName
     workerServiceName = $WorkerServiceName
     configPath = $ConfigPath
