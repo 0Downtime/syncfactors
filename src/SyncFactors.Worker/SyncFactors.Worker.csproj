@@ -10,6 +10,6 @@
     <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="10.0.11" />
     <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.11" />
     <PackageReference Include="Microsoft.Extensions.Logging.EventLog" Version="10.0.11" />
-    <PackageReference Include="OpenTelemetry.Api" Version="1.17.0" />
+    <PackageReference Include="OpenTelemetry.Api" Version="1.18.0" />
   </ItemGroup>
 </Project>
