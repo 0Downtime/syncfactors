@@ -1043,4 +1043,6 @@ intentionally not changed by this repository:
 - Block direct pushes to `main` except for the intended repository
   administrators and automation, and require the same rules for administrators.
 
-The Azure DevOps deployment pipeline is separate from GitHub Actions. `azure-pipelines.deploy.yml` builds and tests the same solution, creates the Windows bundle, and deploys only when deployment variables are configured.
+The Azure DevOps deployment pipeline is separate from GitHub Actions. `azure-pipelines.deploy.yml` builds and tests the same solution, enforces the SonarQube Community Build quality gate, creates the Windows bundle, and deploys only when deployment variables are configured.
+
+Before running that pipeline, install the SonarQube extension for Azure DevOps and create a SonarQube service connection named `SonarQube`. Store a project analysis token in that service connection; do not add the token to this repository or to pipeline YAML. The pipeline uses project key `0Downtime_sf-ad-sync`, imports .NET OpenCover and frontend LCOV reports, and publishes the quality gate before packaging. If your service connection uses a different name, override the `sonarQubeServiceConnection` pipeline variable. The pipeline remains main-only because SonarQube Community Build does not analyze pull requests or multiple branches.
