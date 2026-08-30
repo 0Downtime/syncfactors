@@ -54,24 +54,51 @@ public sealed class MutationAuthorizationIntegrationTests
     }
 
     [Fact]
-    public async Task SessionLogin_IssuesHttpOnlyCookie_ThatAuthorizesMutationsWithoutAntiforgeryHeader()
+    public async Task SessionLogin_RejectsRequestWithoutAntiforgeryToken()
+    {
+        await using var fixture = await AuthorizationFixture.CreateAsync();
+        using var client = fixture.CreateClient(handleCookies: true);
+
+        using var response = await client.PostAsJsonAsync("/api/session/login", new
+        {
+            username = "operator",
+            password = Password,
+            rememberMe = false,
+            returnUrl = (string?)null
+        });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task CookieAuthenticatedMutation_RejectsRequestWithoutAntiforgeryHeader()
+    {
+        await using var fixture = await AuthorizationFixture.CreateAsync();
+        using var client = await fixture.SignInAsync(SecurityRoles.Operator, attachAntiforgery: false);
+
+        using var response = await client.PostAsJsonAsync("/api/runs/cancel", new { });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task CookieAuthenticatedMutation_AcceptsTokenFromAntiforgeryEndpoint()
     {
         await using var fixture = await AuthorizationFixture.CreateAsync();
         using var client = await fixture.SignInAsync(SecurityRoles.Operator);
 
         using var response = await client.PostAsJsonAsync("/api/runs/cancel", new { });
 
+        Assert.NotEqual(HttpStatusCode.BadRequest, response.StatusCode);
         Assert.NotEqual(HttpStatusCode.Unauthorized, response.StatusCode);
         Assert.NotEqual(HttpStatusCode.Forbidden, response.StatusCode);
-        Assert.DoesNotContain(client.DefaultRequestHeaders, header =>
-            string.Equals(header.Key, "RequestVerificationToken", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
     public async Task CookieAuthenticatedRazorMutation_RejectsRequestsWithoutAntiforgeryToken()
     {
         await using var fixture = await AuthorizationFixture.CreateAsync();
-        using var client = await fixture.SignInAsync(SecurityRoles.Operator);
+        using var client = await fixture.SignInAsync(SecurityRoles.Operator, attachAntiforgery: false);
 
         using var response = await client.PostAsync(
             "/Sync?handler=StartRun",
@@ -182,13 +209,14 @@ public sealed class MutationAuthorizationIntegrationTests
             HandleCookies = handleCookies
         });
 
-        public async Task<HttpClient> SignInAsync(string role)
+        public async Task<HttpClient> SignInAsync(string role, bool attachAntiforgery = true)
         {
             var client = CreateClient(handleCookies: true);
             var username = string.Equals(role, SecurityRoles.BreakGlassAdmin, StringComparison.Ordinal)
                 ? "breakglass"
                 : role.ToLowerInvariant();
 
+            await AttachAntiforgeryTokenAsync(client);
             using var response = await client.PostAsJsonAsync("/api/session/login", new
             {
                 username,
@@ -202,7 +230,27 @@ public sealed class MutationAuthorizationIntegrationTests
                 value.StartsWith("SyncFactors.Auth=", StringComparison.Ordinal) &&
                 value.Contains("httponly", StringComparison.OrdinalIgnoreCase));
 
+            if (attachAntiforgery)
+            {
+                await AttachAntiforgeryTokenAsync(client);
+            }
+            else
+            {
+                client.DefaultRequestHeaders.Remove("X-SyncFactors-Antiforgery");
+            }
+
             return client;
+        }
+
+        private static async Task AttachAntiforgeryTokenAsync(HttpClient client)
+        {
+            using var response = await client.GetAsync("/api/session/antiforgery");
+            response.EnsureSuccessStatusCode();
+            Assert.Contains("no-store", response.Headers.CacheControl?.ToString(), StringComparison.OrdinalIgnoreCase);
+            var tokens = await response.Content.ReadFromJsonAsync<AntiforgeryResponse>();
+            Assert.False(string.IsNullOrWhiteSpace(tokens?.RequestToken));
+            client.DefaultRequestHeaders.Remove("X-SyncFactors-Antiforgery");
+            client.DefaultRequestHeaders.Add("X-SyncFactors-Antiforgery", tokens!.RequestToken);
         }
 
         public async ValueTask DisposeAsync()
@@ -245,4 +293,6 @@ public sealed class MutationAuthorizationIntegrationTests
             return Path.Combine([directory.FullName, .. segments]);
         }
     }
+
+    private sealed record AntiforgeryResponse(string RequestToken);
 }

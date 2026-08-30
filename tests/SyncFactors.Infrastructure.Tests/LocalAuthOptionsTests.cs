@@ -36,4 +36,12 @@ public sealed class LocalAuthOptionsTests
 
         Assert.Equal(TimeSpan.FromDays(30), options.GetRememberMeSessionLifetime());
     }
+
+    [Fact]
+    public void GetAuthorizationRevalidationInterval_DefaultsToOneHour()
+    {
+        var options = new OidcOptions();
+
+        Assert.Equal(TimeSpan.FromHours(1), options.GetAuthorizationRevalidationInterval());
+    }
 }

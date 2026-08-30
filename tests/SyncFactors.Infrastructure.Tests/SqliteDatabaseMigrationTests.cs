@@ -12,13 +12,13 @@ public sealed class SqliteDatabaseMigrationTests
 
         try
         {
-            await CreateSchemaVersionDatabaseAsync(databasePath, version: 16);
+            await CreateSchemaVersionDatabaseAsync(databasePath, version: 17);
 
             var exception = await Assert.ThrowsAsync<InvalidOperationException>(
                 () => new SqliteDatabaseInitializer(new SqlitePathResolver(databasePath)).InitializeAsync(CancellationToken.None));
 
             Assert.Contains("newer", exception.Message, StringComparison.OrdinalIgnoreCase);
-            Assert.Equal(new[] { 16 }, await GetAppliedVersionsAsync(databasePath));
+            Assert.Equal(new[] { 17 }, await GetAppliedVersionsAsync(databasePath));
             Assert.False(await TableExistsAsync(databasePath, "runs"));
         }
         finally
@@ -38,7 +38,7 @@ public sealed class SqliteDatabaseMigrationTests
 
             await new SqliteDatabaseInitializer(new SqlitePathResolver(databasePath)).InitializeAsync(CancellationToken.None);
 
-            Assert.Equal(Enumerable.Range(1, 15), await GetAppliedVersionsAsync(databasePath));
+            Assert.Equal(Enumerable.Range(1, 16), await GetAppliedVersionsAsync(databasePath));
             foreach (var table in new[] { "run_queue", "sync_schedule", "delta_sync_state", "local_users", "graveyard_retention", "dashboard_settings", "oidc_accounts", "maintenance_state" })
             {
                 Assert.True(await TableExistsAsync(databasePath, table));
@@ -52,6 +52,10 @@ public sealed class SqliteDatabaseMigrationTests
             Assert.Contains("lockout_end_at", await GetTableColumnsAsync(databasePath, "local_users"));
             Assert.Contains("is_on_hold", await GetTableColumnsAsync(databasePath, "graveyard_retention"));
             Assert.Contains("health_probe_interval_seconds", await GetTableColumnsAsync(databasePath, "dashboard_settings"));
+            Assert.Contains("instance_id", await GetTableColumnsAsync(databasePath, "worker_heartbeat"));
+            Assert.Contains("build_version", await GetTableColumnsAsync(databasePath, "worker_heartbeat"));
+            Assert.Contains("build_commit_sha", await GetTableColumnsAsync(databasePath, "worker_heartbeat"));
+            Assert.Contains("deployment_nonce_hash", await GetTableColumnsAsync(databasePath, "worker_heartbeat"));
         }
         finally
         {
@@ -75,6 +79,66 @@ public sealed class SqliteDatabaseMigrationTests
             Assert.Equal(new[] { 1 }, await GetAppliedVersionsAsync(databasePath));
             Assert.False(await TableExistsAsync(databasePath, "worker_heartbeat"));
             Assert.True(await TableExistsAsync(databasePath, "runtime_status"));
+        }
+        finally
+        {
+            DeleteDatabaseFiles(databasePath);
+        }
+    }
+
+    [Fact]
+    public async Task InitializeAsync_MigratesVersion15HeartbeatWithoutLosingExistingProcessState()
+    {
+        var databasePath = Path.Combine(Path.GetTempPath(), $"syncfactors-heartbeat-v15-{Guid.NewGuid():N}.db");
+
+        try
+        {
+            await using (var connection = new SqliteConnection($"Data Source={databasePath};Mode=ReadWriteCreate"))
+            {
+                await connection.OpenAsync();
+                await using var command = connection.CreateCommand();
+                command.CommandText =
+                    """
+                    CREATE TABLE schema_versions (version INTEGER NOT NULL PRIMARY KEY, applied_at TEXT NOT NULL);
+                    WITH RECURSIVE versions(version) AS (
+                      SELECT 1
+                      UNION ALL
+                      SELECT version + 1 FROM versions WHERE version < 15
+                    )
+                    INSERT INTO schema_versions (version, applied_at)
+                    SELECT version, '2026-01-01T00:00:00Z' FROM versions;
+
+                    CREATE TABLE worker_heartbeat (
+                      service TEXT NOT NULL,
+                      state TEXT NOT NULL,
+                      activity TEXT NULL,
+                      started_at TEXT NOT NULL,
+                      last_seen_at TEXT NOT NULL
+                    );
+                    INSERT INTO worker_heartbeat (service, state, activity, started_at, last_seen_at)
+                    VALUES (
+                      'SyncFactors.Worker',
+                      'Idle',
+                      'Legacy heartbeat.',
+                      '2026-04-17T11:55:00.0000000+00:00',
+                      '2026-04-17T11:59:50.0000000+00:00'
+                    );
+                    """;
+                await command.ExecuteNonQueryAsync();
+            }
+
+            var pathResolver = new SqlitePathResolver(databasePath);
+            await new SqliteDatabaseInitializer(pathResolver).InitializeAsync(CancellationToken.None);
+
+            Assert.Equal(Enumerable.Range(1, 16), await GetAppliedVersionsAsync(databasePath));
+            var heartbeat = await new SqliteWorkerHeartbeatStore(pathResolver).GetCurrentAsync(CancellationToken.None);
+            Assert.NotNull(heartbeat);
+            Assert.Equal("Idle", heartbeat!.State);
+            Assert.Equal("Legacy heartbeat.", heartbeat.Activity);
+            Assert.Null(heartbeat.InstanceId);
+            Assert.Null(heartbeat.BuildVersion);
+            Assert.Null(heartbeat.BuildCommitSha);
+            Assert.Null(heartbeat.DeploymentNonceHash);
         }
         finally
         {
@@ -111,7 +175,7 @@ public sealed class SqliteDatabaseMigrationTests
             await connection.OpenAsync();
             await using var command = connection.CreateCommand();
             command.CommandText = "SELECT COUNT(*) FROM schema_versions;";
-            Assert.Equal(15L, (long)(await command.ExecuteScalarAsync() ?? 0L));
+            Assert.Equal(16L, (long)(await command.ExecuteScalarAsync() ?? 0L));
         }
         finally
         {
