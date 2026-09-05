@@ -262,7 +262,8 @@ jobs:
 
         $releaseWorkflow | Should -Match 'actions/workflows/\$workflowFile'
         $releaseWorkflow | Should -Match '\$run\.workflow_id -ne \$workflowIds\[\$requiredCheck\.workflowFile\]'
-        $releaseWorkflow | Should -Match '\$job\.id -eq \[Int64\]\$jobId -and \$job\.name -eq \$requiredCheck\.jobName'
+        $releaseWorkflow | Should -Match '\$_.id -eq \[Int64\]\$jobId -and \$_.name -eq \$requiredCheck\.jobName'
+        $releaseWorkflow | Should -Not -Match 'Where-Object \{ \$job\.id -eq \[Int64\]\$jobId -and \$job\.name -eq \$requiredCheck\.jobName \}'
         $releaseWorkflow | Should -Match '(?s)\$matchingChecks\.Count -eq 0.*?\$incompleteChecks \+= "\$\(\$requiredCheck\.checkName\)=missing"'
         $releaseWorkflow | Should -Not -Match '\$latestByName'
     }

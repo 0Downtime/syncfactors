@@ -5,9 +5,11 @@ namespace SyncFactors.Domain;
 
 public static class RunEntrySnapshotBuilder
 {
+    private const string EmploymentStatusAttribute = "emplStatus";
+
     private static readonly string[] SourceSnapshotKeys =
     [
-        "emplStatus",
+        EmploymentStatusAttribute,
         "employmentStatus",
         "startDate",
         "endDate",
@@ -59,7 +61,7 @@ public static class RunEntrySnapshotBuilder
             samAccountName = plan.Identity.SamAccountName,
             targetOu = plan.TargetOu,
             currentDistinguishedName = plan.DirectoryUser.DistinguishedName,
-            emplStatus = GetAttribute(plan.Worker.Attributes, "emplStatus"),
+            emplStatus = GetAttribute(plan.Worker.Attributes, EmploymentStatusAttribute),
             endDate = GetAttribute(plan.Worker.Attributes, "endDate"),
             currentOu = plan.CurrentOu,
             managerId,
@@ -106,7 +108,7 @@ public static class RunEntrySnapshotBuilder
                 targetOu = plan.Worker.TargetOu,
                 isPrehire = plan.Worker.IsPrehire,
                 managerId,
-                employmentStatus = GetAttribute(plan.Worker.Attributes, "emplStatus"),
+                employmentStatus = GetAttribute(plan.Worker.Attributes, EmploymentStatusAttribute),
                 startDate = GetAttribute(plan.Worker.Attributes, "startDate"),
                 endDate = GetAttribute(plan.Worker.Attributes, "endDate"),
                 lastDateWorked = GetAttribute(plan.Worker.Attributes, "lastDateWorked"),
@@ -182,7 +184,7 @@ public static class RunEntrySnapshotBuilder
             workerId = worker.WorkerId,
             samAccountName = (string?)null,
             targetOu = worker.TargetOu,
-            emplStatus = GetAttribute(worker.Attributes, "emplStatus"),
+            emplStatus = GetAttribute(worker.Attributes, EmploymentStatusAttribute),
             endDate = GetAttribute(worker.Attributes, "endDate"),
             managerDistinguishedName = (string?)null,
             reviewCategory = "ExternalSystem",
@@ -221,7 +223,7 @@ public static class RunEntrySnapshotBuilder
                 targetOu = worker.TargetOu,
                 isPrehire = worker.IsPrehire,
                 managerId,
-                employmentStatus = GetAttribute(worker.Attributes, "emplStatus"),
+                employmentStatus = GetAttribute(worker.Attributes, EmploymentStatusAttribute),
                 startDate = GetAttribute(worker.Attributes, "startDate"),
                 endDate = GetAttribute(worker.Attributes, "endDate"),
                 lastDateWorked = GetAttribute(worker.Attributes, "lastDateWorked"),

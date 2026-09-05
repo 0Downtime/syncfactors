@@ -23,6 +23,8 @@ public sealed class ApplyPreviewService(
     ILogger<ApplyPreviewService> logger,
     IPreviewApplyFreshnessValidator freshnessValidator) : IApplyPreviewService
 {
+    private const string ApplyPreviewMode = "ApplyPreview";
+
     public bool CanApplyPreview => directoryCommandGateway is IAtomicPreviewDirectoryCommandGateway;
 
     public string CapabilityUnavailableMessage =>
@@ -42,7 +44,7 @@ public sealed class ApplyPreviewService(
 
         var startedAt = DateTimeOffset.UtcNow;
         var runId = $"apply-{request.WorkerId}-{startedAt:yyyyMMddHHmmss}";
-        using var logScope = RunLoggingScope.Begin(logger, runId, mode: "ApplyPreview");
+        using var logScope = RunLoggingScope.Begin(logger, runId, mode: ApplyPreviewMode);
 
         logger.LogInformation("Starting preview apply flow. WorkerId={WorkerId} PreviewRunId={PreviewRunId}", request.WorkerId, request.PreviewRunId);
         var preview = await runRepository.GetWorkerPreviewAsync(request.PreviewRunId, cancellationToken);
@@ -77,9 +79,9 @@ public sealed class ApplyPreviewService(
         await runtimeStatusStore.SaveAsync(
             new RuntimeStatus(
                 Status: "InProgress",
-                Stage: "ApplyPreview",
+                Stage: ApplyPreviewMode,
                 RunId: runId,
-                Mode: "ApplyPreview",
+                Mode: ApplyPreviewMode,
                 DryRun: false,
                 ProcessedWorkers: 0,
                 TotalWorkers: 1,
@@ -246,10 +248,10 @@ public sealed class ApplyPreviewService(
             new RunRecord(
                 RunId: runId,
                 Path: null,
-                ArtifactType: "ApplyPreview",
+                ArtifactType: ApplyPreviewMode,
                 ConfigPath: null,
                 MappingConfigPath: null,
-                Mode: "ApplyPreview",
+                Mode: ApplyPreviewMode,
                 DryRun: false,
                 Status: result.Succeeded ? "Succeeded" : "Failed",
                 StartedAt: startedAt,
@@ -292,7 +294,7 @@ public sealed class ApplyPreviewService(
                 Status: result.Succeeded ? "Idle" : "Failed",
                 Stage: "Completed",
                 RunId: runId,
-                Mode: "ApplyPreview",
+                Mode: ApplyPreviewMode,
                 DryRun: false,
                 ProcessedWorkers: result.Succeeded ? 1 : 0,
                 TotalWorkers: 1,
