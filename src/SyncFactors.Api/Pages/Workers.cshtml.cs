@@ -44,9 +44,13 @@ public sealed class Worker360Model(
 
     public FailureDiagnostics? ApplyDiagnostics => ActiveDirectoryFailureDiagnostics.Parse(ApplyResult?.Message);
 
-    public bool CanApplyPreview => _realSyncSettings.EffectiveWriteEnabled;
+    public bool CanApplyPreview =>
+        _realSyncSettings.EffectiveWriteEnabled && applyPreviewService.CanApplyPreview;
 
-    public string LiveWriteDisabledMessage => _realSyncSettings.LiveWriteDisabledMessage;
+    public string LiveWriteDisabledMessage =>
+        !_realSyncSettings.EffectiveWriteEnabled
+            ? _realSyncSettings.LiveWriteDisabledMessage
+            : applyPreviewService.CapabilityUnavailableMessage;
 
     public WorkerPreviewResult? PreviousPreview { get; private set; }
 

@@ -15,6 +15,45 @@ public sealed class ActiveDirectoryCommandGatewayTests
     }
 
     [Fact]
+    public async Task ExecuteAsync_RejectsForgedDeleteUserBeforeConfigurationOrConnectionDispatch()
+    {
+        var configurationLoader = new SyncFactorsConfigurationLoader(
+            new SyncFactorsConfigPathResolver(Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"), "missing-sync-config.json"), null));
+        var connectionAttempts = 0;
+        using var connectionPool = new ActiveDirectoryConnectionPool((_, _, _) =>
+        {
+            connectionAttempts++;
+            throw new InvalidOperationException("The connection factory must not be called for a disabled delete command.");
+        });
+        var gateway = new ActiveDirectoryCommandGateway(
+            configurationLoader,
+            connectionPool,
+            NullLogger<ActiveDirectoryCommandGateway>.Instance);
+        var deleteCommand = new DirectoryMutationCommand(
+            Action: "DeleteUser",
+            WorkerId: "10001",
+            ManagerId: null,
+            ManagerDistinguishedName: null,
+            SamAccountName: "user.10001",
+            CommonName: "User 10001",
+            UserPrincipalName: "user.10001@example.test",
+            Mail: "user.10001@example.test",
+            TargetOu: "OU=Graveyard,DC=example,DC=test",
+            DisplayName: "User 10001",
+            CurrentDistinguishedName: "CN=User 10001,OU=Graveyard,DC=example,DC=test",
+            EnableAccount: false,
+            Operations: [new SyncFactors.Contracts.DirectoryOperation("DeleteUser")],
+            Attributes: new Dictionary<string, string?>());
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            gateway.ExecuteAsync(deleteCommand, CancellationToken.None));
+
+        Assert.Contains("DeleteUser", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("unavailable", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(0, connectionAttempts);
+    }
+
+    [Fact]
     public void CreateReferralWarning_ExcludesSearchBaseAndExceptionDetails()
     {
         var method = typeof(ActiveDirectoryCommandGateway).GetMethod("CreateReferralWarning", BindingFlags.NonPublic | BindingFlags.Static);
@@ -63,7 +102,7 @@ public sealed class ActiveDirectoryCommandGatewayTests
     public void ShouldRetryTransientCommandFailure_ReturnsFalse_AfterWriteAttempt()
     {
         var (method, context) = CreateTransientCommandRetryReflectionContext(typeof(LdapException));
-        context.GetType().GetMethod("MarkWriteAttempted")!.Invoke(context, []);
+        Assert.True(Assert.IsType<bool>(context.GetType().GetMethod("TryMarkWriteAttempted")!.Invoke(context, [])));
 
         var shouldRetry = Assert.IsType<bool>(method.Invoke(null, [new LdapException("The LDAP server is unavailable."), context, 0]));
 

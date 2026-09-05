@@ -1197,35 +1197,22 @@ public sealed class AutomationRunner(AutomationOptions options, TextWriter outpu
         }
 
         var found = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        await foreach (var line in File.ReadLinesAsync(auditPath, cancellationToken))
+        IReadOnlyList<SecurityAuditEvent> auditEvents;
+        try
         {
-            if (string.IsNullOrWhiteSpace(line))
-            {
-                continue;
-            }
+            auditEvents = SecurityAuditService.ReadEventsSince(auditPath, scenarioStartedAt.AddSeconds(-5));
+        }
+        catch (InvalidOperationException)
+        {
+            return [$"Audit integrity validation failed for {auditPath}."];
+        }
 
-            JsonObject? entry;
-            try
+        foreach (var auditEvent in auditEvents)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (scenario.ExpectedAuditEvents.Contains(auditEvent.EventType, StringComparer.OrdinalIgnoreCase))
             {
-                entry = JsonNode.Parse(line)?.AsObject();
-            }
-            catch (JsonException)
-            {
-                continue;
-            }
-
-            var eventType = ReadString(entry, "eventType");
-            var timestampText = ReadString(entry, "timestampUtc");
-            if (string.IsNullOrWhiteSpace(eventType) ||
-                !DateTimeOffset.TryParse(timestampText, out var timestamp) ||
-                timestamp < scenarioStartedAt.AddSeconds(-5))
-            {
-                continue;
-            }
-
-            if (scenario.ExpectedAuditEvents.Contains(eventType, StringComparer.OrdinalIgnoreCase))
-            {
-                found.Add(eventType);
+                found.Add(auditEvent.EventType);
             }
         }
 
@@ -1699,7 +1686,7 @@ public static class AutomationFailureAnalyzer
 
         if (text.Contains("audit"))
         {
-            Add(checks, "audit event persistence", "state/runtime/security-audit.jsonl, API logs, and expectedAuditEvents in the scenario.");
+            Add(checks, "audit event persistence", "state/runtime/security-audit.db, API logs, and expectedAuditEvents in the scenario.");
         }
 
         if (checks.Count == 0)

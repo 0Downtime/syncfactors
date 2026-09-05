@@ -93,6 +93,7 @@ builder.Services.AddSingleton(serviceProvider => new OidcCookiePrincipalValidato
 builder.Services.AddSingleton<Microsoft.AspNetCore.Identity.IPasswordHasher<LocalUserRecord>, Microsoft.AspNetCore.Identity.PasswordHasher<LocalUserRecord>>();
 builder.Services.AddSingleton<ScaffoldDataStore>();
 builder.Services.AddSingleton<ScaffoldWorkerSource>();
+builder.Services.AddSingleton(SuccessFactorsSourceSettings.FromRunProfile(builder.Configuration["SYNCFACTORS_RUN_PROFILE"]));
 builder.Services.AddSingleton(serviceProvider =>
 {
     var config = serviceProvider.GetRequiredService<SyncFactorsConfigurationLoader>().GetSyncConfig();
@@ -116,7 +117,7 @@ builder.Services.AddSingleton(serviceProvider =>
 {
     var config = serviceProvider.GetRequiredService<SyncFactorsConfigurationLoader>().GetSyncConfig();
     var dryRunOnly = serviceProvider.GetRequiredService<IConfiguration>()
-        .GetValue<bool?>("SyncFactors:Runtime:DryRunOnly") ?? false;
+        .GetValue<bool?>("SyncFactors:Runtime:DryRunOnly") ?? true;
     return new RealSyncSettings(config.Sync.RealSyncEnabled, dryRunOnly);
 });
 builder.Services.AddSingleton(serviceProvider =>
@@ -149,7 +150,12 @@ builder.Services.AddSingleton(serviceProvider =>
         identityCorrelation?.SuccessorPersonIdExternalAttribute,
         identityCorrelation?.PreviousPersonIdExternalAttribute);
 });
-builder.Services.AddDirectoryServiceRuntimeGateways(builder.Configuration["SYNCFACTORS_RUN_PROFILE"]);
+builder.Services.AddDirectoryServiceRuntimeGateways(
+    builder.Configuration["SYNCFACTORS_RUN_PROFILE"],
+    (serviceProvider, inner) => AuditedDirectoryCommandGateway.Decorate(
+        inner,
+        serviceProvider.GetRequiredService<ISecurityAuditService>(),
+        AuditedDirectoryCommandGateway.ApiActor));
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<IWorkerPreviewLogWriter, FileWorkerPreviewLogWriter>();
 builder.Services.AddSingleton<IDeltaSyncStateStore, SqliteDeltaSyncStateStore>();
@@ -181,7 +187,6 @@ builder.Services.AddSingleton<IWorkerHeartbeatStore, SqliteWorkerHeartbeatStore>
 builder.Services.AddTransient<IWorkerPreviewPlanner, WorkerPreviewPlanner>();
 builder.Services.AddTransient<IPreviewApplyFreshnessValidator, PreviewApplyFreshnessValidator>();
 builder.Services.AddTransient<IApplyPreviewService, ApplyPreviewService>();
-builder.Services.AddTransient<IFullSyncRunService, FullSyncRunService>();
 builder.Services.AddSingleton<IDashboardSnapshotService, DashboardSnapshotService>();
 builder.Services.AddSingleton<IRuntimeStatusStore, SqliteRuntimeStatusStore>();
 builder.Services.AddSingleton<IRunRepository, SqliteRunRepository>();
@@ -191,7 +196,6 @@ builder.Services.AddSingleton<IRunLifecycleService, RunLifecycleService>();
 builder.Services.AddTransient<RunEntriesQueryService>();
 builder.Services.AddTransient<ExceptionQueueQueryService>();
 builder.Services.AddTransient<GraveyardDeletionQueueService>();
-builder.Services.AddTransient<GraveyardAutoDeleteCoordinator>();
 builder.Services.AddSingleton<IRunQueueStore, SqliteRunQueueStore>();
 builder.Services.AddSingleton<RunQueueRecoveryService>();
 builder.Services.AddSingleton<ISyncScheduleStore, SqliteSyncScheduleStore>();
@@ -470,6 +474,11 @@ readApi.MapGet("/runs/queue/{requestId}", async (string requestId, IRunQueueStor
 
 operatorApi.MapPost("/runs", async (StartRunRequest request, ClaimsPrincipal user, IRunQueueStore queueStore, RealSyncSettings realSyncSettings, ISecurityAuditService audit, CancellationToken cancellationToken) =>
 {
+    if (!string.Equals(request.Mode, RunQueueProtocol.BulkSyncMode, StringComparison.OrdinalIgnoreCase))
+    {
+        return Results.BadRequest(new { error = "The general run endpoint only accepts BulkSync mode." });
+    }
+
     if (!request.DryRun && !realSyncSettings.EffectiveWriteEnabled)
     {
         return Results.BadRequest(new { error = realSyncSettings.LiveWriteDisabledMessage });
@@ -480,7 +489,12 @@ operatorApi.MapPost("/runs", async (StartRunRequest request, ClaimsPrincipal use
     try
     {
         queued = await queueStore.EnqueueAsync(
-            request with { RequestedBy = requestedBy },
+            new StartRunRequest(
+                DryRun: request.DryRun,
+                Mode: RunQueueProtocol.BulkSyncMode,
+                RunTrigger: RunQueueProtocol.OperatorApiTrigger,
+                RequestedBy: requestedBy,
+                TargetWorkerId: null),
             cancellationToken);
     }
     catch (RunQueueConflictException)
@@ -623,6 +637,13 @@ operatorApi.MapPost("/preview/{workerId}/apply", async (
         return Results.BadRequest(new { error = realSyncSettings.LiveWriteDisabledMessage });
     }
 
+    if (!applyPreviewService.CanApplyPreview)
+    {
+        return Results.Json(
+            new { error = applyPreviewService.CapabilityUnavailableMessage },
+            statusCode: StatusCodes.Status503ServiceUnavailable);
+    }
+
     var result = await applyPreviewService.ApplyAsync(request, cancellationToken);
     var auditWritten = ApiAuditWriteHandler.TryWrite(() => audit.Write("PreviewApplied", result.Succeeded ? "Success" : "Failure", ("RequestedBy", ResolveRequestedBy(user, "API")), ("WorkerId", request.WorkerId), ("PreviewRunId", request.PreviewRunId)));
     if (!result.Succeeded)
@@ -642,7 +663,7 @@ operatorApi.MapPost("/runs/full", async (
     LaunchFullRunRequest request,
     ClaimsPrincipal user,
     RealSyncSettings realSyncSettings,
-    IFullSyncRunService fullSyncRunService,
+    IRunQueueStore queueStore,
     ISecurityAuditService audit,
     CancellationToken cancellationToken) =>
 {
@@ -651,55 +672,17 @@ operatorApi.MapPost("/runs/full", async (
         return Results.BadRequest(new { error = realSyncSettings.LiveWriteDisabledMessage });
     }
 
-    var result = await fullSyncRunService.LaunchAsync(request, cancellationToken);
-    var launched = string.Equals(result.Status, "Succeeded", StringComparison.OrdinalIgnoreCase);
-    var auditWritten = ApiAuditWriteHandler.TryWrite(() => audit.Write("FullRunLaunched", launched ? "Success" : "Failure", ("RequestedBy", ResolveRequestedBy(user, "API")), ("DryRun", request.DryRun), ("RunId", result.RunId)));
-    if (!launched)
-    {
-        return Results.BadRequest(result);
-    }
-
-    if (!auditWritten)
-    {
-        return AuditRecordingFailed();
-    }
-
-    return Results.Ok(result);
-});
-
-adminApi.MapPost("/runs/delete-all", async (
-    DeleteAllUsersRequest request,
-    ClaimsPrincipal user,
-    IRunQueueStore queueStore,
-    RealSyncSettings realSyncSettings,
-    ISecurityAuditService audit,
-    IWebHostEnvironment environment,
-    CancellationToken cancellationToken) =>
-{
-    if (!environment.IsDevelopment())
-    {
-        return Results.NotFound();
-    }
-
-    if (!realSyncSettings.EffectiveWriteEnabled)
-    {
-        return Results.BadRequest(new { error = realSyncSettings.LiveWriteDisabledMessage });
-    }
-
-    if (!string.Equals(request.ConfirmationText?.Trim(), SyncFactors.Api.Pages.SyncModel.DeleteAllUsersConfirmationPhrase, StringComparison.Ordinal))
-    {
-        return Results.BadRequest(new { error = $"Type {SyncFactors.Api.Pages.SyncModel.DeleteAllUsersConfirmationPhrase} to queue the delete-all AD reset run." });
-    }
-
+    var requestedBy = ResolveRequestedBy(user, "API");
     RunQueueRequest queued;
     try
     {
         queued = await queueStore.EnqueueAsync(
             new StartRunRequest(
-                DryRun: false,
-                Mode: "DeleteAllUsers",
-                RunTrigger: "DeleteAllUsers",
-                RequestedBy: ResolveRequestedBy(user, "API")),
+                DryRun: request.DryRun,
+                Mode: RunQueueProtocol.BulkSyncMode,
+                RunTrigger: RunQueueProtocol.OperatorApiTrigger,
+                RequestedBy: requestedBy,
+                TargetWorkerId: null),
             cancellationToken);
     }
     catch (RunQueueConflictException)
@@ -707,12 +690,26 @@ adminApi.MapPost("/runs/delete-all", async (
         return Results.Conflict(new { error = "A run is already pending or in progress." });
     }
 
-    if (!ApiAuditWriteHandler.TryWrite(() => audit.Write("DeleteAllUsersQueued", "Success", ("RequestedBy", ResolveRequestedBy(user, "API")))))
+    if (!ApiAuditWriteHandler.TryWrite(() => audit.Write(
+            "RunQueued",
+            "Success",
+            ("RequestedBy", requestedBy),
+            ("Mode", queued.Mode),
+            ("DryRun", queued.DryRun),
+            ("CompatibilityEndpoint", "/api/runs/full"))))
     {
         return AuditRecordingFailedAccepted($"/api/runs/{queued.RequestId}");
     }
 
     return Results.Accepted($"/api/runs/{queued.RequestId}", queued);
+});
+
+adminApi.MapPost("/runs/delete-all", (
+    DeleteAllUsersRequest _,
+    CancellationToken cancellationToken) =>
+{
+    cancellationToken.ThrowIfCancellationRequested();
+    return Results.BadRequest(new { error = RunQueueProtocol.DeletionCapabilityDisabledMessage });
 });
 
 operatorApi.MapPost("/admin/runs/queue/recovery-probe", async Task<IResult> (

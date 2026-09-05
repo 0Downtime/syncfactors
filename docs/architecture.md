@@ -61,7 +61,7 @@ Responsibilities:
 - Active Directory lookup and command gateways
 - Local auth and OIDC account persistence
 - Runtime path resolution, secure-store fallback, file logging, preview logs, and runtime file permission hardening
-- Security audit JSONL output with integrity chaining
+- Transactional SQLite security audit output with cross-process integrity chaining and validated legacy JSONL migration
 - SMTP alert delivery and dependency health probes
 
 ### SyncFactors.Contracts

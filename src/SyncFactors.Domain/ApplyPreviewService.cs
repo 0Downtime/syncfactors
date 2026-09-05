@@ -6,6 +6,11 @@ namespace SyncFactors.Domain;
 
 public interface IApplyPreviewService
 {
+    bool CanApplyPreview => true;
+
+    string CapabilityUnavailableMessage =>
+        "The configured directory gateway cannot atomically apply a reviewed preview.";
+
     Task<DirectoryCommandResult> ApplyAsync(ApplyPreviewRequest request, CancellationToken cancellationToken);
 }
 
@@ -18,6 +23,13 @@ public sealed class ApplyPreviewService(
     ILogger<ApplyPreviewService> logger,
     IPreviewApplyFreshnessValidator freshnessValidator) : IApplyPreviewService
 {
+    private const string ApplyPreviewMode = "ApplyPreview";
+
+    public bool CanApplyPreview => directoryCommandGateway is IAtomicPreviewDirectoryCommandGateway;
+
+    public string CapabilityUnavailableMessage =>
+        "The configured directory gateway cannot atomically apply a reviewed preview. Preview apply is disabled.";
+
     public async Task<DirectoryCommandResult> ApplyAsync(ApplyPreviewRequest request, CancellationToken cancellationToken)
     {
         if (!realSyncSettings.EffectiveWriteEnabled)
@@ -25,9 +37,14 @@ public sealed class ApplyPreviewService(
             throw new InvalidOperationException(realSyncSettings.LiveWriteDisabledMessage);
         }
 
+        if (!CanApplyPreview)
+        {
+            throw new InvalidOperationException(CapabilityUnavailableMessage);
+        }
+
         var startedAt = DateTimeOffset.UtcNow;
         var runId = $"apply-{request.WorkerId}-{startedAt:yyyyMMddHHmmss}";
-        using var logScope = RunLoggingScope.Begin(logger, runId, mode: "ApplyPreview");
+        using var logScope = RunLoggingScope.Begin(logger, runId, mode: ApplyPreviewMode);
 
         logger.LogInformation("Starting preview apply flow. WorkerId={WorkerId} PreviewRunId={PreviewRunId}", request.WorkerId, request.PreviewRunId);
         var preview = await runRepository.GetWorkerPreviewAsync(request.PreviewRunId, cancellationToken);
@@ -62,9 +79,9 @@ public sealed class ApplyPreviewService(
         await runtimeStatusStore.SaveAsync(
             new RuntimeStatus(
                 Status: "InProgress",
-                Stage: "ApplyPreview",
+                Stage: ApplyPreviewMode,
                 RunId: runId,
-                Mode: "ApplyPreview",
+                Mode: ApplyPreviewMode,
                 DryRun: false,
                 ProcessedWorkers: 0,
                 TotalWorkers: 1,
@@ -79,11 +96,7 @@ public sealed class ApplyPreviewService(
         try
         {
             await freshnessValidator.ValidateAsync(preview, cancellationToken);
-            if (directoryCommandGateway is not IAtomicPreviewDirectoryCommandGateway atomicPreviewGateway)
-            {
-                throw new InvalidOperationException(
-                    "The configured directory gateway cannot atomically apply a reviewed preview. Refresh preview after configuring an atomic preview mutation gateway.");
-            }
+            var atomicPreviewGateway = (IAtomicPreviewDirectoryCommandGateway)directoryCommandGateway;
 
             var result = await atomicPreviewGateway.ExecuteIfCurrentAsync(command, preview, cancellationToken);
             var completedAt = DateTimeOffset.UtcNow;
@@ -235,10 +248,10 @@ public sealed class ApplyPreviewService(
             new RunRecord(
                 RunId: runId,
                 Path: null,
-                ArtifactType: "ApplyPreview",
+                ArtifactType: ApplyPreviewMode,
                 ConfigPath: null,
                 MappingConfigPath: null,
-                Mode: "ApplyPreview",
+                Mode: ApplyPreviewMode,
                 DryRun: false,
                 Status: result.Succeeded ? "Succeeded" : "Failed",
                 StartedAt: startedAt,
@@ -281,7 +294,7 @@ public sealed class ApplyPreviewService(
                 Status: result.Succeeded ? "Idle" : "Failed",
                 Stage: "Completed",
                 RunId: runId,
-                Mode: "ApplyPreview",
+                Mode: ApplyPreviewMode,
                 DryRun: false,
                 ProcessedWorkers: result.Succeeded ? 1 : 0,
                 TotalWorkers: 1,

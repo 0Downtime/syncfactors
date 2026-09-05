@@ -37,6 +37,30 @@ public sealed class SqliteRunQueueStoreTests
         }
     }
 
+    [Theory]
+    [InlineData("DeleteAllUsers")]
+    [InlineData("GraveyardDeleteApproval")]
+    [InlineData("GraveyardAutoDelete")]
+    public async Task EnqueueAsync_RejectsReservedDeletionModesWithoutPersisting(string mode)
+    {
+        var databasePath = await CreateDatabaseAsync();
+
+        try
+        {
+            var store = new SqliteRunQueueStore(new SqlitePathResolver(databasePath));
+
+            await Assert.ThrowsAsync<ReservedDeletionModeRejectedException>(() => store.EnqueueAsync(
+                new StartRunRequest(DryRun: false, Mode: mode, RunTrigger: mode, RequestedBy: "test"),
+                CancellationToken.None));
+
+            Assert.Null(await store.GetPendingOrActiveAsync(CancellationToken.None));
+        }
+        finally
+        {
+            File.Delete(databasePath);
+        }
+    }
+
     [Fact]
     public async Task EnqueueAsync_ConcurrentRequestsAllowOnlyOnePendingRunAndUseGuidRequestIds()
     {
@@ -152,6 +176,75 @@ public sealed class SqliteRunQueueStoreTests
     }
 
     [Fact]
+    public async Task ClaimNextPendingAsync_LeavesReservedDeletionModesUnclaimedAndTerminalizersRefuseThem()
+    {
+        var databasePath = await CreateDatabaseAsync();
+
+        try
+        {
+            await ExecuteAsync(
+                databasePath,
+                """
+                INSERT INTO run_queue (
+                  request_id, mode, dry_run, run_trigger, requested_by, status, requested_at, started_at, completed_at, run_id, worker_name, error_message
+                )
+                VALUES ('req-reserved', 'deleteallusers', 0, 'DeleteAllUsers', 'test', 'Pending', '2026-04-06T12:00:00Z', NULL, NULL, NULL, NULL, NULL);
+                """);
+
+            var store = new SqliteRunQueueStore(new SqlitePathResolver(databasePath));
+
+            Assert.Null(await store.ClaimNextPendingAsync("worker-a", CancellationToken.None));
+
+            await ExecuteAsync(databasePath, "UPDATE run_queue SET status = 'InProgress' WHERE request_id = 'req-reserved';");
+            await store.QuarantineReservedAsync("req-reserved", CancellationToken.None);
+            await Assert.ThrowsAsync<ReservedDeletionModeRejectedException>(
+                () => store.FailAsync("req-reserved", null, "must not overwrite unknown outcome", CancellationToken.None));
+
+            var persisted = await store.GetAsync("req-reserved", CancellationToken.None);
+            Assert.Equal("Quarantined", persisted!.Status);
+            Assert.Equal(1L, await ExecuteScalarAsync<long>(databasePath, "SELECT COUNT(*) FROM directory_deletion_quarantine WHERE source_kind = 'RunQueueRequest' AND source_id = 'req-reserved';"));
+        }
+        finally
+        {
+            File.Delete(databasePath);
+        }
+    }
+
+    [Fact]
+    public async Task QuarantineReservedModesAsync_QuarantinesLegacyPendingDeletionRowsBeforeClaiming()
+    {
+        var databasePath = await CreateDatabaseAsync();
+
+        try
+        {
+            await ExecuteAsync(
+                databasePath,
+                """
+                INSERT INTO run_queue (
+                  request_id, mode, dry_run, run_trigger, requested_by, status, requested_at, started_at, completed_at, run_id, worker_name, error_message
+                )
+                VALUES ('req-legacy-delete', 'GraveyardDeleteApproval', 0, 'test', 'test', 'Pending', '2026-04-06T12:00:00Z', NULL, NULL, NULL, NULL, NULL);
+                """);
+
+            var store = new SqliteRunQueueStore(new SqlitePathResolver(databasePath));
+
+            Assert.Equal(1, await store.QuarantineReservedModesAsync(CancellationToken.None));
+
+            var persisted = await store.GetAsync("req-legacy-delete", CancellationToken.None);
+            Assert.Equal("Quarantined", persisted!.Status);
+            Assert.Equal(
+                1L,
+                await ExecuteScalarAsync<long>(
+                    databasePath,
+                    "SELECT COUNT(*) FROM directory_deletion_quarantine WHERE source_kind = 'RunQueueRequest' AND source_id = 'req-legacy-delete';"));
+        }
+        finally
+        {
+            File.Delete(databasePath);
+        }
+    }
+
+    [Fact]
     public async Task ClaimNextPendingAsync_ReturnsNull_WhenActiveRunExistsOrNoPendingRowsExist()
     {
         var databasePath = await CreateDatabaseAsync();
@@ -173,6 +266,36 @@ public sealed class SqliteRunQueueStoreTests
 
             await ExecuteAsync(databasePath, "UPDATE run_queue SET status = 'Completed', completed_at = '2026-04-06T12:03:00Z';");
             Assert.Null(await store.ClaimNextPendingAsync("worker-b", CancellationToken.None));
+        }
+        finally
+        {
+            File.Delete(databasePath);
+        }
+    }
+
+    [Fact]
+    public async Task FailAsync_DoesNotClobberATerminalRequestWhenAStaleWorkerReportsLate()
+    {
+        var databasePath = await CreateDatabaseAsync();
+
+        try
+        {
+            await ExecuteAsync(
+                databasePath,
+                """
+                INSERT INTO run_queue (
+                  request_id, mode, dry_run, run_trigger, requested_by, status, requested_at, started_at, completed_at, run_id, worker_name, error_message
+                )
+                VALUES ('req-completed', 'BulkSync', 0, 'AdHoc', 'test', 'Completed', '2026-04-06T12:00:00Z', '2026-04-06T12:01:00Z', '2026-04-06T12:02:00Z', 'run-1', 'worker-a', NULL);
+                """);
+            var store = new SqliteRunQueueStore(new SqlitePathResolver(databasePath));
+
+            await store.FailAsync("req-completed", "stale-run", "late worker failure", CancellationToken.None);
+
+            var persisted = await store.GetAsync("req-completed", CancellationToken.None);
+            Assert.Equal("Completed", persisted!.Status);
+            Assert.Equal("run-1", persisted.RunId);
+            Assert.Null(persisted.ErrorMessage);
         }
         finally
         {
@@ -522,6 +645,84 @@ public sealed class SqliteRunQueueStoreTests
     }
 
     [Fact]
+    public async Task RecoverOrphanedActiveRunsAsync_LeavesReservedRowsUntouchedWhileRecoveringOrdinaryRows()
+    {
+        var databasePath = await CreateDatabaseAsync();
+
+        try
+        {
+            await ExecuteAsync(
+                databasePath,
+                """
+                DROP INDEX idx_run_queue_one_non_terminal;
+                INSERT INTO run_queue (
+                  request_id, mode, dry_run, run_trigger, requested_by, status, requested_at, started_at, completed_at, run_id, worker_name, error_message
+                )
+                VALUES
+                  ('req-ordinary', 'BulkSync', 1, 'AdHoc', 'test', 'InProgress', '2026-04-06T12:00:00Z', '2026-04-06T12:01:00Z', NULL, NULL, 'SyncFactors.Worker', NULL),
+                  ('req-reserved', 'DeleteAllUsers', 0, 'AdHoc', 'test', 'CancelRequested', '2026-04-06T12:00:00Z', '2026-04-06T12:01:00Z', NULL, 'delete-all-run', 'SyncFactors.Worker', NULL);
+                """);
+
+            var store = new SqliteRunQueueStore(new SqlitePathResolver(databasePath));
+
+            Assert.Equal(1, await store.RecoverOrphanedActiveRunsAsync("Recovered on startup.", CancellationToken.None));
+
+            var ordinary = await store.GetAsync("req-ordinary", CancellationToken.None);
+            var reserved = await store.GetAsync("req-reserved", CancellationToken.None);
+            Assert.Equal("Failed", ordinary!.Status);
+            Assert.Equal("CancelRequested", reserved!.Status);
+            Assert.Null(reserved.CompletedAt);
+            Assert.Null(reserved.ErrorMessage);
+        }
+        finally
+        {
+            File.Delete(databasePath);
+        }
+    }
+
+    [Fact]
+    public async Task QuarantineReservedAsync_BlocksTheLinkedRunAndRuntimeStatus()
+    {
+        var databasePath = await CreateDatabaseAsync();
+
+        try
+        {
+            await ExecuteAsync(
+                databasePath,
+                """
+                INSERT INTO run_queue (
+                  request_id, mode, dry_run, run_trigger, requested_by, status, requested_at, started_at, completed_at, run_id, worker_name, error_message
+                ) VALUES (
+                  'req-reserved', 'GraveyardDeleteApproval', 0, 'AdminApproval', 'admin', 'InProgress',
+                  '2026-04-06T12:00:00Z', '2026-04-06T12:01:00Z', NULL, 'graveyard-run', 'SyncFactors.Worker', NULL
+                );
+                INSERT INTO runs (run_id, status, started_at)
+                VALUES ('graveyard-run', 'InProgress', '2026-04-06T12:01:00Z');
+                INSERT INTO runtime_status (
+                  state_path, run_id, status, stage, started_at, last_updated_at, completed_at,
+                  current_worker_id, last_action, processed_workers, total_workers, error_message, snapshot_json
+                ) VALUES (
+                  'current', 'graveyard-run', 'InProgress', 'GraveyardDeleteApproval', '2026-04-06T12:01:00Z',
+                  '2026-04-06T12:01:00Z', NULL, '10001', 'Deleting worker', 0, 1, NULL,
+                  '{"Status":"InProgress","Stage":"GraveyardDeleteApproval","RunId":"graveyard-run","Mode":"GraveyardDeleteApproval","DryRun":false,"ProcessedWorkers":0,"TotalWorkers":1,"CurrentWorkerId":"10001","LastAction":"Deleting worker","StartedAt":"2026-04-06T12:01:00+00:00","LastUpdatedAt":"2026-04-06T12:01:00+00:00","CompletedAt":null,"ErrorMessage":null}'
+                );
+                """);
+
+            var store = new SqliteRunQueueStore(new SqlitePathResolver(databasePath));
+            await store.QuarantineReservedAsync("req-reserved", CancellationToken.None);
+
+            Assert.Equal("Quarantined", await ExecuteScalarAsync<string>(databasePath, "SELECT status FROM run_queue WHERE request_id = 'req-reserved';"));
+            Assert.Equal("Blocked", await ExecuteScalarAsync<string>(databasePath, "SELECT status FROM runs WHERE run_id = 'graveyard-run';"));
+            Assert.Equal("Blocked", await ExecuteScalarAsync<string>(databasePath, "SELECT status FROM runtime_status WHERE state_path = 'current';"));
+            Assert.Equal("DeletionCapabilityDisabled", await ExecuteScalarAsync<string>(databasePath, "SELECT stage FROM runtime_status WHERE state_path = 'current';"));
+        }
+        finally
+        {
+            File.Delete(databasePath);
+        }
+    }
+
+    [Fact]
     public async Task InitializeAsync_RepairsLegacyDuplicateNonTerminalRequestsAndAddsExclusiveIndex()
     {
         var databasePath = await CreateDatabaseAsync();
@@ -581,5 +782,14 @@ public sealed class SqliteRunQueueStoreTests
         await using var command = connection.CreateCommand();
         command.CommandText = commandText;
         await command.ExecuteNonQueryAsync();
+    }
+
+    private static async Task<T> ExecuteScalarAsync<T>(string databasePath, string commandText)
+    {
+        await using var connection = new SqliteConnection($"Data Source={databasePath};Mode=ReadOnly");
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = commandText;
+        return (T)(await command.ExecuteScalarAsync())!;
     }
 }

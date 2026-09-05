@@ -139,6 +139,21 @@ public sealed class AdminDeletionQueueModelTests
     }
 
     [Fact]
+    public async Task OnPostPlaceHoldAsync_ShowsConflictWhenDeletionLeaseIsActive()
+    {
+        var store = new CapturingRetentionStore(
+            [CreateRecord("10001", false)],
+            new GraveyardHoldChangeResult(GraveyardHoldChangeOutcome.ActiveDeletionLease));
+        var model = CreateModel(store);
+
+        var result = await model.OnPostPlaceHoldAsync("10001", CancellationToken.None);
+
+        Assert.IsType<RedirectToPageResult>(result);
+        Assert.Null(model.SuccessMessage);
+        Assert.Equal("Deletion hold for worker 10001 was not placed because a deletion lease is active.", model.ErrorMessage);
+    }
+
+    [Fact]
     public async Task OnPostRemoveHoldAsync_ClearsHold()
     {
         var store = new CapturingRetentionStore([CreateRecord("10001", true)]);
@@ -153,31 +168,22 @@ public sealed class AdminDeletionQueueModelTests
     }
 
     [Fact]
-    public async Task OnPostApproveDeleteAsync_DeletesEligibleUser()
+    public async Task OnPostApproveDeleteAsync_RejectsEligibleUserWhenDeletionCapabilityIsDisabled()
     {
         var store = new CapturingRetentionStore([CreateRecord("10001", false)]);
-        var commandGateway = new CapturingDirectoryCommandGateway();
-        var lifecycle = new CapturingRunLifecycleService();
-        var model = CreateModel(store, commandGateway: commandGateway, lifecycle: lifecycle);
+        var model = CreateModel(store);
 
         var result = await model.OnPostApproveDeleteAsync("10001", CancellationToken.None);
 
         Assert.IsType<RedirectToPageResult>(result);
-        var command = Assert.Single(commandGateway.Commands);
-        Assert.Equal("DeleteUser", command.Action);
-        Assert.Equal("10001", command.WorkerId);
-        Assert.Equal(["10001"], store.ResolvedWorkerIds);
-        Assert.Contains("Deleted", model.SuccessMessage, StringComparison.OrdinalIgnoreCase);
-        Assert.Single(lifecycle.Entries);
-        Assert.Equal("GraveyardDeleteApproval", lifecycle.CompletedMode);
+        Assert.Null(model.SuccessMessage);
+        Assert.Equal(RunQueueProtocol.DeletionCapabilityDisabledMessage, model.ErrorMessage);
     }
 
     private static DeletionQueueModel CreateModel(
         CapturingRetentionStore store,
         string actingUserId = "admin-1",
-        string username = "admin",
-        CapturingDirectoryCommandGateway? commandGateway = null,
-        CapturingRunLifecycleService? lifecycle = null)
+        string username = "admin")
     {
         var workerIds = recordsFromStore(store)
             .Select(record => record.WorkerId)
@@ -198,20 +204,8 @@ public sealed class AdminDeletionQueueModelTests
             settings,
             lifecycleSettings,
             new FakeTimeProvider(now));
-        var deleteCoordinator = new GraveyardAutoDeleteCoordinator(
-            service,
-            store,
-            commandGateway ?? new CapturingDirectoryCommandGateway(),
-            lifecycle ?? new CapturingRunLifecycleService(),
-            settings,
-            new WorkerRunSettings(MaxCreatesPerRun: 10, MaxDisablesPerRun: 10, MaxDeletionsPerRun: 10),
-            new RealSyncSettings(),
-            NullLogger<GraveyardAutoDeleteCoordinator>.Instance,
-            new FakeTimeProvider(now));
-
         return new DeletionQueueModel(
             service,
-            deleteCoordinator,
             store,
             new FakeTimeProvider(now))
         {
@@ -247,7 +241,9 @@ public sealed class AdminDeletionQueueModelTests
             HoldPlacedAtUtc: isOnHold ? DateTimeOffset.Parse("2026-04-05T00:00:00Z") : null,
             HoldPlacedBy: isOnHold ? "admin-1" : null);
 
-    private sealed class CapturingRetentionStore(IReadOnlyList<GraveyardRetentionRecord> records) : IGraveyardRetentionStore
+    private sealed class CapturingRetentionStore(
+        IReadOnlyList<GraveyardRetentionRecord> records,
+        GraveyardHoldChangeResult? holdResult = null) : IGraveyardRetentionStore
     {
         public IReadOnlyList<GraveyardRetentionRecord> Records => records;
 
@@ -270,12 +266,12 @@ public sealed class AdminDeletionQueueModelTests
         public Task<IReadOnlyList<GraveyardRetentionRecord>> ListActiveAsync(CancellationToken cancellationToken) =>
             Task.FromResult(records);
 
-        public Task SetHoldAsync(string workerId, bool isOnHold, string? actingUserId, DateTimeOffset changedAtUtc, CancellationToken cancellationToken)
+        public Task<GraveyardHoldChangeResult> SetHoldAsync(string workerId, bool isOnHold, string? actingUserId, DateTimeOffset changedAtUtc, CancellationToken cancellationToken)
         {
             LastWorkerId = workerId;
             LastIsOnHold = isOnHold;
             LastActingUserId = actingUserId;
-            return Task.CompletedTask;
+            return Task.FromResult(holdResult ?? new GraveyardHoldChangeResult(GraveyardHoldChangeOutcome.Accepted));
         }
 
         public Task<GraveyardRetentionReportStatus> GetReportStatusAsync(CancellationToken cancellationToken) =>
@@ -326,6 +322,36 @@ public sealed class AdminDeletionQueueModelTests
             Commands.Add(command);
             return Task.FromResult(new DirectoryCommandResult(true, command.Action, command.SamAccountName, command.CurrentDistinguishedName, "Deleted", null));
         }
+    }
+
+    private sealed class CapturingRunQueueStore : IRunQueueStore
+    {
+        public Task<RunQueueRequest> EnqueueAsync(StartRunRequest request, CancellationToken cancellationToken) =>
+            Task.FromResult(new RunQueueRequest(
+                RequestId: "approval-request-1",
+                Mode: request.Mode,
+                DryRun: request.DryRun,
+                RunTrigger: request.RunTrigger,
+                RequestedBy: request.RequestedBy,
+                Status: "Pending",
+                RequestedAt: DateTimeOffset.UtcNow,
+                StartedAt: null,
+                CompletedAt: null,
+                RunId: null,
+                ErrorMessage: null,
+                TargetWorkerId: request.TargetWorkerId));
+
+        public Task<RunQueueRequest?> ClaimNextPendingAsync(string workerName, CancellationToken cancellationToken) => Task.FromResult<RunQueueRequest?>(null);
+        public Task<int> QuarantineReservedModesAsync(CancellationToken cancellationToken) => Task.FromResult(0);
+        public Task<RunQueueRequest?> GetAsync(string requestId, CancellationToken cancellationToken) => Task.FromResult<RunQueueRequest?>(null);
+        public Task<RunQueueRequest?> GetPendingOrActiveAsync(CancellationToken cancellationToken) => Task.FromResult<RunQueueRequest?>(null);
+        public Task<bool> HasPendingOrActiveRunAsync(CancellationToken cancellationToken) => Task.FromResult(false);
+        public Task<bool> CancelPendingOrActiveAsync(string? requestedBy, CancellationToken cancellationToken) => Task.FromResult(false);
+        public Task<bool> IsCancellationRequestedAsync(string requestId, CancellationToken cancellationToken) => Task.FromResult(false);
+        public Task CompleteAsync(string requestId, string runId, CancellationToken cancellationToken) => Task.CompletedTask;
+        public Task CancelAsync(string requestId, string? runId, string? errorMessage, CancellationToken cancellationToken) => Task.CompletedTask;
+        public Task FailAsync(string requestId, string? runId, string errorMessage, CancellationToken cancellationToken) => Task.CompletedTask;
+        public Task<int> RecoverOrphanedActiveRunsAsync(string? errorMessage, CancellationToken cancellationToken) => Task.FromResult(0);
     }
 
     private sealed class CapturingRunLifecycleService : IRunLifecycleService

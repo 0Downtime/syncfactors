@@ -12,9 +12,7 @@ public class Worker(
     IRunQueueStore runQueueStore,
     ISyncScheduleCoordinator syncScheduleCoordinator,
     IGraveyardRetentionReportCoordinator graveyardRetentionReportCoordinator,
-    IGraveyardAutoDeleteCoordinator graveyardAutoDeleteCoordinator,
     IBulkRunCoordinator bulkRunCoordinator,
-    IDeleteAllUsersCoordinator deleteAllUsersCoordinator,
     IWorkerHeartbeatStore workerHeartbeatStore,
     TimeProvider timeProvider,
     IWorkerExecutionSettings executionSettings) : BackgroundService
@@ -31,11 +29,28 @@ public class Worker(
         using var timer = new PeriodicTimer(HeartbeatInterval);
         do
         {
+            var quarantined = await runQueueStore.QuarantineReservedModesAsync(stoppingToken);
+            if (quarantined > 0)
+            {
+                await WriteHeartbeatAsync(
+                    startedAt,
+                    "Idle",
+                    $"Quarantined {quarantined} disabled deletion request(s).",
+                    stoppingToken);
+            }
+
             await syncScheduleCoordinator.TryEnqueueDueRunAsync(stoppingToken);
             await graveyardRetentionReportCoordinator.TrySendDueReportAsync(stoppingToken);
             var claimed = await runQueueStore.ClaimNextPendingAsync("SyncFactors.Worker", stoppingToken);
             if (claimed is not null)
             {
+                if (RunQueueProtocol.IsReservedDeletionMode(claimed.Mode))
+                {
+                    await runQueueStore.QuarantineReservedAsync(claimed.RequestId, stoppingToken);
+                    await WriteHeartbeatAsync(startedAt, "Idle", $"Quarantined disabled deletion request {claimed.RequestId}.", stoppingToken);
+                    continue;
+                }
+
                 var activity = $"Executing queued run {claimed.RequestId}.";
                 await WriteHeartbeatAsync(startedAt, "Running", activity, stoppingToken);
                 using var heartbeatCts = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
@@ -43,9 +58,7 @@ public class Worker(
                 try
                 {
                     var maxDegreeOfParallelism = Math.Max(1, executionSettings.GetMaxDegreeOfParallelism());
-                    var runId = string.Equals(claimed.Mode, "DeleteAllUsers", StringComparison.OrdinalIgnoreCase)
-                        ? await deleteAllUsersCoordinator.ExecuteAsync(claimed, stoppingToken)
-                        : await bulkRunCoordinator.ExecuteAsync(claimed, maxDegreeOfParallelism, stoppingToken);
+                    var runId = await bulkRunCoordinator.ExecuteAsync(claimed, maxDegreeOfParallelism, stoppingToken);
                     await runQueueStore.CompleteAsync(claimed.RequestId, runId, CancellationToken.None);
                     await TryWriteHeartbeatAsync(startedAt, "Idle", $"Completed queued run {claimed.RequestId}.", CancellationToken.None);
                 }
@@ -79,12 +92,12 @@ public class Worker(
             }
             else
             {
-                await graveyardAutoDeleteCoordinator.TryExecuteAsync(stoppingToken);
                 await WriteHeartbeatAsync(startedAt, "Idle", "Waiting for scheduled work.", stoppingToken);
             }
         }
         while (await timer.WaitForNextTickAsync(stoppingToken));
     }
+
 
     private Task WriteHeartbeatAsync(
         DateTimeOffset startedAt,

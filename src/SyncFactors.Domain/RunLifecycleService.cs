@@ -27,13 +27,17 @@ public sealed class RunLifecycleService(
     TimeProvider? timeProvider = null,
     ILogger<RunLifecycleService>? logger = null) : IRunLifecycleService
 {
+    private const string InProgressStatus = "InProgress";
+    private const string BulkRunArtifactType = "BulkRun";
+    private const string AdHocRunTrigger = "AdHoc";
+
     public async Task ExecutePlannedRunAsync(RunPlan plan, CancellationToken cancellationToken)
     {
         var startedAt = DateTimeOffset.UtcNow;
 
         await runtimeStatusStore.SaveAsync(
             new RuntimeStatus(
-                Status: "InProgress",
+                Status: InProgressStatus,
                 Stage: "Planning",
                 RunId: plan.RunId,
                 Mode: plan.Mode,
@@ -49,7 +53,7 @@ public sealed class RunLifecycleService(
             cancellationToken);
 
         await runRepository.SaveRunAsync(
-            ToRunRecord(plan, "InProgress", startedAt, completedAt: null, durationSeconds: null),
+            ToRunRecord(plan, InProgressStatus, startedAt, completedAt: null, durationSeconds: null),
             cancellationToken);
 
         await runRepository.ReplaceRunEntriesAsync(plan.RunId, plan.Entries, cancellationToken);
@@ -92,12 +96,12 @@ public sealed class RunLifecycleService(
             new RunRecord(
                 RunId: runId,
                 Path: null,
-                ArtifactType: "BulkRun",
+                ArtifactType: BulkRunArtifactType,
                 ConfigPath: null,
                 MappingConfigPath: null,
                 Mode: mode,
                 DryRun: dryRun,
-                Status: "InProgress",
+                Status: InProgressStatus,
                 StartedAt: startedAt,
                 CompletedAt: null,
                 DurationSeconds: null,
@@ -130,7 +134,7 @@ public sealed class RunLifecycleService(
 
         await runtimeStatusStore.SaveAsync(
             new RuntimeStatus(
-                Status: "InProgress",
+                Status: InProgressStatus,
                 Stage: "Starting",
                 RunId: runId,
                 Mode: mode,
@@ -160,12 +164,12 @@ public sealed class RunLifecycleService(
             new RunRecord(
                 RunId: runId,
                 Path: null,
-                ArtifactType: existing?.Run.ArtifactType ?? "BulkRun",
+                ArtifactType: existing?.Run.ArtifactType ?? BulkRunArtifactType,
                 ConfigPath: existing?.Run.ConfigPath,
                 MappingConfigPath: existing?.Run.MappingConfigPath,
                 Mode: mode,
                 DryRun: dryRun,
-                Status: "InProgress",
+                Status: InProgressStatus,
                 StartedAt: startedAt,
                 CompletedAt: null,
                 DurationSeconds: null,
@@ -181,13 +185,13 @@ public sealed class RunLifecycleService(
                 ManualReview: tally.ManualReview,
                 Unchanged: tally.Unchanged,
                 Report: existing?.Report ?? ParseJson("""{"kind":"bulkRun"}"""),
-                RunTrigger: existing?.Run.RunTrigger ?? "AdHoc",
+                RunTrigger: existing?.Run.RunTrigger ?? AdHocRunTrigger,
                 RequestedBy: existing?.Run.RequestedBy),
             cancellationToken);
 
         await runtimeStatusStore.SaveAsync(
             new RuntimeStatus(
-                Status: "InProgress",
+                Status: InProgressStatus,
                 Stage: mode,
                 RunId: runId,
                 Mode: mode,
@@ -211,7 +215,7 @@ public sealed class RunLifecycleService(
             new RunRecord(
                 RunId: runId,
                 Path: null,
-                ArtifactType: "BulkRun",
+                ArtifactType: BulkRunArtifactType,
                 ConfigPath: null,
                 MappingConfigPath: null,
                 Mode: mode,
@@ -232,7 +236,7 @@ public sealed class RunLifecycleService(
                 ManualReview: tally.ManualReview,
                 Unchanged: tally.Unchanged,
                 Report: report,
-                RunTrigger: existing?.Run.RunTrigger ?? "AdHoc",
+                RunTrigger: existing?.Run.RunTrigger ?? AdHocRunTrigger,
                 RequestedBy: existing?.Run.RequestedBy),
             cancellationToken);
 
@@ -264,7 +268,7 @@ public sealed class RunLifecycleService(
             new RunRecord(
                 RunId: runId,
                 Path: null,
-                ArtifactType: "BulkRun",
+                ArtifactType: BulkRunArtifactType,
                 ConfigPath: null,
                 MappingConfigPath: null,
                 Mode: mode,
@@ -285,7 +289,7 @@ public sealed class RunLifecycleService(
                 ManualReview: tally.ManualReview,
                 Unchanged: tally.Unchanged,
                 Report: report,
-                RunTrigger: existing?.Run.RunTrigger ?? "AdHoc",
+                RunTrigger: existing?.Run.RunTrigger ?? AdHocRunTrigger,
                 RequestedBy: existing?.Run.RequestedBy),
             cancellationToken);
 
@@ -318,7 +322,7 @@ public sealed class RunLifecycleService(
             new RunRecord(
                 RunId: runId,
                 Path: null,
-                ArtifactType: "BulkRun",
+                ArtifactType: BulkRunArtifactType,
                 ConfigPath: null,
                 MappingConfigPath: null,
                 Mode: mode,
@@ -339,7 +343,7 @@ public sealed class RunLifecycleService(
                 ManualReview: tally.ManualReview,
                 Unchanged: tally.Unchanged,
                 Report: report,
-                RunTrigger: existing?.Run.RunTrigger ?? "AdHoc",
+                RunTrigger: existing?.Run.RunTrigger ?? AdHocRunTrigger,
                 RequestedBy: existing?.Run.RequestedBy),
             cancellationToken);
 
@@ -454,7 +458,7 @@ public sealed class RunLifecycleService(
             ManualReview: plan.Tally.ManualReview,
             Unchanged: plan.Tally.Unchanged,
             Report: plan.Report,
-            RunTrigger: "AdHoc",
+            RunTrigger: AdHocRunTrigger,
             RequestedBy: null);
     }
 
