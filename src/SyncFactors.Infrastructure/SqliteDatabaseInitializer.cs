@@ -579,17 +579,17 @@ public sealed class SqliteDatabaseInitializer(SqlitePathResolver pathResolver)
             var retentionColumns = await GetTableColumnsAsync(connection, transaction, "graveyard_retention", cancellationToken);
             if (!retentionColumns.Contains("version"))
             {
-                await AddColumnAsync(connection, transaction, "graveyard_retention", "version INTEGER NOT NULL DEFAULT 0", cancellationToken);
+                await AddColumnAsync(connection, transaction, SchemaColumnMigration.GraveyardRetentionVersion, cancellationToken);
             }
 
             if (!retentionColumns.Contains("deletion_claim_id"))
             {
-                await AddColumnAsync(connection, transaction, "graveyard_retention", "deletion_claim_id TEXT NULL", cancellationToken);
+                await AddColumnAsync(connection, transaction, SchemaColumnMigration.GraveyardRetentionDeletionClaimId, cancellationToken);
             }
 
             if (!retentionColumns.Contains("deletion_claim_version"))
             {
-                await AddColumnAsync(connection, transaction, "graveyard_retention", "deletion_claim_version INTEGER NULL", cancellationToken);
+                await AddColumnAsync(connection, transaction, SchemaColumnMigration.GraveyardRetentionDeletionClaimVersion, cancellationToken);
             }
         }
 
@@ -598,7 +598,7 @@ public sealed class SqliteDatabaseInitializer(SqlitePathResolver pathResolver)
             var queueColumns = await GetTableColumnsAsync(connection, transaction, "run_queue", cancellationToken);
             if (!queueColumns.Contains("target_worker_id"))
             {
-                await AddColumnAsync(connection, transaction, "run_queue", "target_worker_id TEXT NULL", cancellationToken);
+                await AddColumnAsync(connection, transaction, SchemaColumnMigration.RunQueueTargetWorkerId, cancellationToken);
             }
         }
     }
@@ -616,7 +616,7 @@ public sealed class SqliteDatabaseInitializer(SqlitePathResolver pathResolver)
         var retentionColumns = await GetTableColumnsAsync(connection, transaction, "graveyard_retention", cancellationToken);
         if (!retentionColumns.Contains("deletion_lease_expires_at_utc"))
         {
-            await AddColumnAsync(connection, transaction, "graveyard_retention", "deletion_lease_expires_at_utc TEXT NULL", cancellationToken);
+            await AddColumnAsync(connection, transaction, SchemaColumnMigration.GraveyardRetentionDeletionLeaseExpiresAtUtc, cancellationToken);
         }
     }
 
@@ -664,21 +664,39 @@ public sealed class SqliteDatabaseInitializer(SqlitePathResolver pathResolver)
             var runtimeColumns = await GetTableColumnsAsync(connection, transaction, "runtime_status", cancellationToken);
             if (!runtimeColumns.Contains("mode"))
             {
-                await AddColumnAsync(connection, transaction, "runtime_status", "mode TEXT NULL", cancellationToken);
+                await AddColumnAsync(connection, transaction, SchemaColumnMigration.RuntimeStatusMode, cancellationToken);
             }
         }
+    }
+
+    private enum SchemaColumnMigration
+    {
+        GraveyardRetentionVersion,
+        GraveyardRetentionDeletionClaimId,
+        GraveyardRetentionDeletionClaimVersion,
+        RunQueueTargetWorkerId,
+        GraveyardRetentionDeletionLeaseExpiresAtUtc,
+        RuntimeStatusMode
     }
 
     private static async Task AddColumnAsync(
         SqliteConnection connection,
         DbTransaction transaction,
-        string table,
-        string columnDefinition,
+        SchemaColumnMigration migration,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
         command.Transaction = (SqliteTransaction)transaction;
-        command.CommandText = $"ALTER TABLE {table} ADD COLUMN {columnDefinition};";
+        command.CommandText = migration switch
+        {
+            SchemaColumnMigration.GraveyardRetentionVersion => "ALTER TABLE graveyard_retention ADD COLUMN version INTEGER NOT NULL DEFAULT 0;",
+            SchemaColumnMigration.GraveyardRetentionDeletionClaimId => "ALTER TABLE graveyard_retention ADD COLUMN deletion_claim_id TEXT NULL;",
+            SchemaColumnMigration.GraveyardRetentionDeletionClaimVersion => "ALTER TABLE graveyard_retention ADD COLUMN deletion_claim_version INTEGER NULL;",
+            SchemaColumnMigration.RunQueueTargetWorkerId => "ALTER TABLE run_queue ADD COLUMN target_worker_id TEXT NULL;",
+            SchemaColumnMigration.GraveyardRetentionDeletionLeaseExpiresAtUtc => "ALTER TABLE graveyard_retention ADD COLUMN deletion_lease_expires_at_utc TEXT NULL;",
+            SchemaColumnMigration.RuntimeStatusMode => "ALTER TABLE runtime_status ADD COLUMN mode TEXT NULL;",
+            _ => throw new ArgumentOutOfRangeException(nameof(migration), migration, "Unknown schema column migration.")
+        };
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
