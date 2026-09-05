@@ -37,6 +37,7 @@ public sealed class SecurityAuditService(ILogger<SecurityAuditService> logger) :
             logValues);
 
         var databasePath = ResolveAuditPath();
+        using var auditLock = AcquireStartupLock(databasePath);
         EnsureDatabaseInitialized(databasePath);
         MigrateLegacyAuditIfNeeded(databasePath, ResolveLegacyAuditPath());
         AppendSqliteEntry(databasePath, eventType, outcome, values);
@@ -201,6 +202,7 @@ public sealed class SecurityAuditService(ILogger<SecurityAuditService> logger) :
 
     private static FileStream AcquireStartupLock(string databasePath)
     {
+        RuntimeFileSecurity.EnsureParentDirectory(databasePath);
         var lockPath = $"{databasePath}.startup.lock";
         var deadline = DateTimeOffset.UtcNow.AddSeconds(30);
         while (true)
