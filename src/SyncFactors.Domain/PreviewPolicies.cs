@@ -28,6 +28,12 @@ public sealed class IdentityMatcher : IIdentityMatcher
 
 public sealed class AttributeDiffService : IAttributeDiffService
 {
+    private const string DisplayNameAttribute = "displayName";
+    private const string UnsetValue = "(unset)";
+    private const string SamAccountNameAttribute = "sAMAccountName";
+    private const string UserPrincipalNameAttribute = "UserPrincipalName";
+    private const string ProxyAddressesAttribute = "proxyAddresses";
+
     private readonly IAttributeMappingProvider _mappingProvider;
     private readonly ILogger<AttributeDiffService> _logger;
     private readonly IWorkerPreviewLogWriter _logWriter;
@@ -55,9 +61,9 @@ public sealed class AttributeDiffService : IAttributeDiffService
         var currentAttributes = directoryUser?.Attributes is null
             ? new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
             : new Dictionary<string, string?>(directoryUser.Attributes, StringComparer.OrdinalIgnoreCase);
-        if (!currentAttributes.ContainsKey("displayName") && !string.IsNullOrWhiteSpace(directoryUser?.DisplayName))
+        if (!currentAttributes.ContainsKey(DisplayNameAttribute) && !string.IsNullOrWhiteSpace(directoryUser?.DisplayName))
         {
-            currentAttributes["displayName"] = directoryUser.DisplayName;
+            currentAttributes[DisplayNameAttribute] = directoryUser.DisplayName;
         }
 
         var enabledMappings = _mappingProvider.GetEnabledMappings();
@@ -87,8 +93,8 @@ public sealed class AttributeDiffService : IAttributeDiffService
                 mapping.Target,
                 Transform(sourceValue, mapping.Transform));
             var currentValue = GetDirectoryValue(currentAttributes, mapping.Target);
-            var before = string.IsNullOrWhiteSpace(currentValue) ? "(unset)" : currentValue!;
-            var after = string.IsNullOrWhiteSpace(proposedValue) ? "(unset)" : proposedValue!;
+            var before = string.IsNullOrWhiteSpace(currentValue) ? UnsetValue : currentValue!;
+            var after = string.IsNullOrWhiteSpace(proposedValue) ? UnsetValue : proposedValue!;
             var changed = !string.Equals(before, after, StringComparison.Ordinal);
 
             _logger.LogDebug(
@@ -119,47 +125,47 @@ public sealed class AttributeDiffService : IAttributeDiffService
         }
 
         var proposedDisplayName = ActiveDirectoryAttributeConstraints.NormalizeValue(
-            "displayName",
+            DisplayNameAttribute,
             DirectoryIdentityFormatter.BuildDisplayName(worker.PreferredName, worker.LastName))!;
-        var normalizedSamAccountName = ActiveDirectoryAttributeConstraints.NormalizeValue("sAMAccountName", proposedSamAccountName)!;
+        var normalizedSamAccountName = ActiveDirectoryAttributeConstraints.NormalizeValue(SamAccountNameAttribute, proposedSamAccountName)!;
         var normalizedCommonName = ActiveDirectoryAttributeConstraints.NormalizeValue("cn", proposedSamAccountName)!;
         UpsertSystemAttributeChange(
             changes,
-            attribute: "sAMAccountName",
+            attribute: SamAccountNameAttribute,
             source: "workerId",
-            before: FormatValue(directoryUser?.SamAccountName ?? GetDirectoryValue(currentAttributes, "sAMAccountName")),
+            before: FormatValue(directoryUser?.SamAccountName ?? GetDirectoryValue(currentAttributes, SamAccountNameAttribute)),
             after: FormatValue(normalizedSamAccountName),
-            changed: !string.Equals(directoryUser?.SamAccountName ?? GetDirectoryValue(currentAttributes, "sAMAccountName"), normalizedSamAccountName, StringComparison.OrdinalIgnoreCase));
+            changed: !string.Equals(directoryUser?.SamAccountName ?? GetDirectoryValue(currentAttributes, SamAccountNameAttribute), normalizedSamAccountName, StringComparison.OrdinalIgnoreCase));
         UpsertSystemAttributeChange(
             changes,
             attribute: "cn",
-            source: "sAMAccountName",
+            source: SamAccountNameAttribute,
             before: FormatValue(GetDirectoryValue(currentAttributes, "cn")),
             after: FormatValue(normalizedCommonName),
             changed: !string.Equals(GetDirectoryValue(currentAttributes, "cn"), normalizedCommonName, StringComparison.Ordinal));
         UpsertSystemAttributeChange(
             changes,
-            attribute: "displayName",
+            attribute: DisplayNameAttribute,
             source: "preferredName,lastName",
-            before: FormatValue(GetDirectoryValue(currentAttributes, "displayName")),
+            before: FormatValue(GetDirectoryValue(currentAttributes, DisplayNameAttribute)),
             after: proposedDisplayName,
-            changed: !string.Equals(GetDirectoryValue(currentAttributes, "displayName"), proposedDisplayName, StringComparison.Ordinal));
+            changed: !string.Equals(GetDirectoryValue(currentAttributes, DisplayNameAttribute), proposedDisplayName, StringComparison.Ordinal));
         var isCreate = string.IsNullOrWhiteSpace(directoryUser?.SamAccountName);
         var isNameChange = HasNameChange(changes);
-        var currentUserPrincipalName = GetDirectoryValue(currentAttributes, "UserPrincipalName");
+        var currentUserPrincipalName = GetDirectoryValue(currentAttributes, UserPrincipalNameAttribute);
         var currentMail = GetDirectoryValue(currentAttributes, "mail");
         var proposedMail = ResolveProposedMailValue(isCreate, isNameChange, proposedEmailAddress, currentMail);
         UpsertSystemAttributeChange(
             changes,
-            attribute: "UserPrincipalName",
+            attribute: UserPrincipalNameAttribute,
             source: "resolved email local-part",
             before: FormatValue(currentUserPrincipalName),
             after: FormatValue(isCreate
-                ? ActiveDirectoryAttributeConstraints.NormalizeValue("UserPrincipalName", proposedEmailAddress)
+                ? ActiveDirectoryAttributeConstraints.NormalizeValue(UserPrincipalNameAttribute, proposedEmailAddress)
                 : currentUserPrincipalName),
             changed: isCreate && !string.Equals(
                 currentUserPrincipalName,
-                ActiveDirectoryAttributeConstraints.NormalizeValue("UserPrincipalName", proposedEmailAddress),
+                ActiveDirectoryAttributeConstraints.NormalizeValue(UserPrincipalNameAttribute, proposedEmailAddress),
                 StringComparison.Ordinal));
         UpsertSystemAttributeChange(
             changes,
@@ -170,12 +176,12 @@ public sealed class AttributeDiffService : IAttributeDiffService
             changed: !string.Equals(currentMail, proposedMail, StringComparison.Ordinal));
         UpsertSystemAttributeChange(
             changes,
-            attribute: "proxyAddresses",
+            attribute: ProxyAddressesAttribute,
             source: "resolved email local-part",
-            before: FormatValue(GetDirectoryValue(currentAttributes, "proxyAddresses")),
+            before: FormatValue(GetDirectoryValue(currentAttributes, ProxyAddressesAttribute)),
             after: FormatValue(BuildProxyAddressesValue(currentAttributes, proposedMail, isCreate || isNameChange)),
             changed: !string.Equals(
-                GetDirectoryValue(currentAttributes, "proxyAddresses"),
+                GetDirectoryValue(currentAttributes, ProxyAddressesAttribute),
                 BuildProxyAddressesValue(currentAttributes, proposedMail, isCreate || isNameChange),
                 StringComparison.Ordinal));
 
@@ -288,7 +294,7 @@ public sealed class AttributeDiffService : IAttributeDiffService
         changes.Insert(0, replacement);
     }
 
-    private static string FormatValue(string? value) => string.IsNullOrWhiteSpace(value) ? "(unset)" : value!;
+    private static string FormatValue(string? value) => string.IsNullOrWhiteSpace(value) ? UnsetValue : value!;
 
     private static bool HasNameChange(IEnumerable<AttributeChange> changes)
     {
@@ -298,7 +304,7 @@ public sealed class AttributeDiffService : IAttributeDiffService
              string.Equals(change.Attribute, "givenName", StringComparison.OrdinalIgnoreCase) ||
              string.Equals(change.Attribute, "Surname", StringComparison.OrdinalIgnoreCase) ||
              string.Equals(change.Attribute, "sn", StringComparison.OrdinalIgnoreCase) ||
-             string.Equals(change.Attribute, "displayName", StringComparison.OrdinalIgnoreCase)));
+             string.Equals(change.Attribute, DisplayNameAttribute, StringComparison.OrdinalIgnoreCase)));
     }
 
     private static string? ResolveProposedMailValue(
@@ -322,16 +328,16 @@ public sealed class AttributeDiffService : IAttributeDiffService
     {
         if (!shouldSetPrimary || string.IsNullOrWhiteSpace(proposedMail))
         {
-            return GetDirectoryValue(currentAttributes, "proxyAddresses");
+            return GetDirectoryValue(currentAttributes, ProxyAddressesAttribute);
         }
 
         var normalizedPrimary = ActiveDirectoryAttributeConstraints.NormalizeValue("mail", proposedMail);
         if (string.IsNullOrWhiteSpace(normalizedPrimary))
         {
-            return GetDirectoryValue(currentAttributes, "proxyAddresses");
+            return GetDirectoryValue(currentAttributes, ProxyAddressesAttribute);
         }
 
-        var currentProxyAddresses = ParseProxyAddresses(GetDirectoryValue(currentAttributes, "proxyAddresses"));
+        var currentProxyAddresses = ParseProxyAddresses(GetDirectoryValue(currentAttributes, ProxyAddressesAttribute));
         var currentMail = ActiveDirectoryAttributeConstraints.NormalizeValue("mail", GetDirectoryValue(currentAttributes, "mail"));
         var values = new List<string> { $"SMTP:{normalizedPrimary}" };
         var seenAddresses = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { normalizedPrimary };
@@ -359,7 +365,7 @@ public sealed class AttributeDiffService : IAttributeDiffService
 
     private static IReadOnlyList<string> ParseProxyAddresses(string? value)
     {
-        if (string.IsNullOrWhiteSpace(value) || string.Equals(value, "(unset)", StringComparison.Ordinal))
+        if (string.IsNullOrWhiteSpace(value) || string.Equals(value, UnsetValue, StringComparison.Ordinal))
         {
             return [];
         }
