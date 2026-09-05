@@ -48,10 +48,18 @@ permissions:
   pull-requests: write
 jobs:
   enable:
-    if: github.event.pull_request.base.ref == 'main' && github.actor == 'dependabot[bot]'
     runs-on: ubuntu-latest
     steps:
-      - run: gh pr merge --auto --merge "$PR_URL"
+      - id: candidate
+        env:
+          REPO: ${{ github.repository }}
+          EVENT_PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          pr_json="$(gh api "repos/${REPO}/pulls/${EVENT_PR_NUMBER}")"
+          eligible="$(jq -r --arg repo "$REPO" '(.base.ref == "main") and (.state == "open") and (.draft == false) and (.head.repo.fork == false) and (.head.repo.full_name == $repo) and (.user.login == "dependabot[bot]")' <<< "$pr_json")"
+          echo "eligible=$eligible" >> "$GITHUB_OUTPUT"
+      - if: steps.candidate.outputs.eligible == 'true'
+        run: gh pr merge --auto --merge --match-head-commit "$PR_HEAD_SHA" --repo "$REPO" "$PR_NUMBER"
 '@
             'test.yml' = @'
 name: Test
@@ -108,10 +116,18 @@ on:
     types: [opened, labeled]
 jobs:
   enable:
-    if: github.event.pull_request.base.ref == 'main' && contains(github.event.pull_request.labels.*.name, 'automerge:approved')
     runs-on: ubuntu-latest
     steps:
-      - run: gh pr merge --auto --merge "$PR_URL"
+      - id: candidate
+        env:
+          REPO: ${{ github.repository }}
+          EVENT_PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          pr_json="$(gh api "repos/${REPO}/pulls/${EVENT_PR_NUMBER}")"
+          eligible="$(jq -r --arg repo "$REPO" '(.base.ref == "main") and (.state == "open") and (.draft == false) and (.head.repo.fork == false) and (.head.repo.full_name == $repo) and ([.labels[]?.name] | index("automerge:approved") != null)' <<< "$pr_json")"
+          echo "eligible=$eligible" >> "$GITHUB_OUTPUT"
+      - if: steps.candidate.outputs.eligible == 'true'
+        run: gh pr merge --auto --merge --match-head-commit "$PR_HEAD_SHA" --repo "$REPO" "$PR_NUMBER"
 '@
             'test.yml' = "name: Test`non:`n  push:`n    branches: [main]"
             'security.yml' = "name: Security Scans`non:`n  push:`n    branches: [main]"
@@ -131,10 +147,18 @@ on:
     types: [opened]
 jobs:
   enable:
-    if: contains(github.event.pull_request.labels.*.name, 'automerge:approved')
     runs-on: ubuntu-latest
     steps:
-      - run: gh pr merge --auto --merge "$PR_URL"
+      - id: candidate
+        env:
+          REPO: ${{ github.repository }}
+          EVENT_PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          pr_json="$(gh api "repos/${REPO}/pulls/${EVENT_PR_NUMBER}")"
+          eligible="$(jq -r --arg repo "$REPO" '([.labels[]?.name] | index("automerge:approved") != null)' <<< "$pr_json")"
+          echo "eligible=$eligible" >> "$GITHUB_OUTPUT"
+      - if: steps.candidate.outputs.eligible == 'true'
+        run: gh pr merge --auto --merge --match-head-commit "$PR_HEAD_SHA" --repo "$REPO" "$PR_NUMBER"
 '@
             'test.yml' = "name: Test`non:`n  push:`n    branches: [main]"
             'security.yml' = "name: Security Scans`non:`n  push:`n    branches: [main]"
