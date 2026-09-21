@@ -24,7 +24,11 @@ public sealed class SqliteWorkerHeartbeatStoreTests
             State: "Idle",
             Activity: "Waiting for scheduled work.",
             StartedAt: DateTimeOffset.Parse("2026-03-27T12:00:00Z"),
-            LastSeenAt: DateTimeOffset.Parse("2026-03-27T12:00:15Z"));
+            LastSeenAt: DateTimeOffset.Parse("2026-03-27T12:00:15Z"),
+            InstanceId: "worker-instance-123",
+            BuildVersion: "1.2.3+sha.0123456789abcdef",
+            BuildCommitSha: "0123456789abcdef",
+            DeploymentNonceHash: new string('a', 64));
 
         await store.SaveAsync(heartbeat, CancellationToken.None);
         var current = await store.GetCurrentAsync(CancellationToken.None);
@@ -35,6 +39,10 @@ public sealed class SqliteWorkerHeartbeatStoreTests
         Assert.Equal("Waiting for scheduled work.", current.Activity);
         Assert.Equal(heartbeat.StartedAt, current.StartedAt);
         Assert.Equal(heartbeat.LastSeenAt, current.LastSeenAt);
+        Assert.Equal(heartbeat.InstanceId, current.InstanceId);
+        Assert.Equal(heartbeat.BuildVersion, current.BuildVersion);
+        Assert.Equal(heartbeat.BuildCommitSha, current.BuildCommitSha);
+        Assert.Equal(heartbeat.DeploymentNonceHash, current.DeploymentNonceHash);
     }
 
     [Fact]

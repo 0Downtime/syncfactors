@@ -49,6 +49,10 @@
             <h2>Pending Deletion</h2>
         </div>
     </div>
+    @if (!Model.CanApproveDeletions)
+    {
+        <p class="callout warn">@Model.LiveWriteDisabledMessage Deletion approvals are unavailable, but holds can still be managed.</p>
+    }
     <p class="muted">Showing page @Model.PendingPageNumber of @Model.TotalPendingPages · @Model.TotalPendingUsers total records · 25 per page.</p>
 
     @if (Model.PendingUsers.Count == 0)
@@ -91,7 +95,7 @@
                         </td>
                         <td>
                             <div class="admin-user-actions">
-                                @if (user.IsEligibleForDeletion)
+                                @if (user.IsEligibleForDeletion && Model.CanApproveDeletions)
                                 {
                                     <form method="post" asp-page-handler="ApproveDelete" asp-route-filter="@Model.Filter" asp-route-pendingPageNumber="@Model.PendingPageNumber" asp-route-heldPageNumber="@Model.HeldPageNumber">
                                         <input type="hidden" name="workerId" value="@user.WorkerId" />

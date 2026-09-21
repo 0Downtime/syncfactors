@@ -25,6 +25,11 @@ public sealed class GraveyardAutoDeleteCoordinator(
             return new GraveyardDeletionApprovalResult(false, "Worker ID is required.", null);
         }
 
+        if (!realSyncSettings.EffectiveWriteEnabled)
+        {
+            return new GraveyardDeletionApprovalResult(false, realSyncSettings.LiveWriteDisabledMessage, null);
+        }
+
         var snapshot = await deletionQueueService.GetSnapshotAsync(cancellationToken);
         var item = snapshot.Pending.FirstOrDefault(candidate =>
             string.Equals(candidate.WorkerId, workerId, StringComparison.OrdinalIgnoreCase));
@@ -162,6 +167,11 @@ public sealed class GraveyardAutoDeleteCoordinator(
     public async Task<string?> TryExecuteAsync(CancellationToken cancellationToken)
     {
         if (!settings.AutoDeleteEnabled)
+        {
+            return null;
+        }
+
+        if (!realSyncSettings.EffectiveWriteEnabled)
         {
             return null;
         }

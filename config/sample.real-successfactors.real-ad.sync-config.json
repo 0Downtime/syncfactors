@@ -147,7 +147,7 @@
       "allowLdapFallback": false,
       "allowCreateEnableWithoutPasswordProvisioning": false,
       "requireCertificateValidation": true,
-      "requireSigning": false,
+      "requireSigning": true,
       "trustedCertificateThumbprints": []
     },
     "defaultPassword": "",

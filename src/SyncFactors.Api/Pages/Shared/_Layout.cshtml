@@ -1,5 +1,6 @@
 @using System.Reflection
 @inject Microsoft.AspNetCore.Hosting.IWebHostEnvironment HostEnvironment
+@inject Microsoft.AspNetCore.Antiforgery.IAntiforgery Antiforgery
 @inject SyncFactors.Contracts.RealSyncSettings RealSyncSettings
 <!DOCTYPE html>
 <html lang="en">
@@ -13,6 +14,11 @@
     <link rel="icon" type="image/png" sizes="32x32" href="~/images/favicon-32.png" asp-append-version="true" />
     <link rel="apple-touch-icon" sizes="180x180" href="~/images/apple-touch-icon.png" asp-append-version="true" />
     <link rel="stylesheet" href="~/css/site.css" asp-append-version="true" />
+    @if (User.Identity?.IsAuthenticated == true)
+    {
+        var antiforgeryToken = Antiforgery.GetAndStoreTokens(Context).RequestToken;
+        <meta name="syncfactors-antiforgery-token" content="@antiforgeryToken" />
+    }
 </head>
 @{
     var currentPage = ViewContext.RouteData.Values["page"]?.ToString() ?? string.Empty;

@@ -1,3 +1,7 @@
+import { syncFactorsApiFetch } from "./api-client.js";
+
+globalThis.syncFactorsApiFetch = syncFactorsApiFetch;
+
 (function () {
     const storageKey = "syncfactors-next-theme";
     const root = document.documentElement;

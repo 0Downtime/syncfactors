@@ -14,9 +14,29 @@ public sealed class SyncFactorsConfigurationValidator(SyncFactorsConfigurationLo
             ?? "Production";
         var isDevelopment = string.Equals(environmentName, "Development", StringComparison.OrdinalIgnoreCase);
 
-        if (!Uri.TryCreate(sync.SuccessFactors.BaseUrl, UriKind.Absolute, out _))
+        if (!Uri.TryCreate(sync.SuccessFactors.BaseUrl, UriKind.Absolute, out var successFactorsBaseUri) ||
+            !IsHttpEndpoint(successFactorsBaseUri))
         {
-            throw new InvalidOperationException("SyncFactors successFactors.baseUrl must be an absolute URI.");
+            throw new InvalidOperationException("SyncFactors successFactors.baseUrl must be an absolute HTTP or HTTPS URI.");
+        }
+
+        if (!isDevelopment && !IsHttps(successFactorsBaseUri))
+        {
+            throw new InvalidOperationException("SyncFactors successFactors.baseUrl must use HTTPS outside Development.");
+        }
+
+        if (sync.SuccessFactors.Auth.OAuth is { } oauth)
+        {
+            if (!Uri.TryCreate(oauth.TokenUrl, UriKind.Absolute, out var tokenUri) ||
+                !IsHttpEndpoint(tokenUri))
+            {
+                throw new InvalidOperationException("SyncFactors successFactors.auth.oauth.tokenUrl must be an absolute HTTP or HTTPS URI.");
+            }
+
+            if (!isDevelopment && !IsHttps(tokenUri))
+            {
+                throw new InvalidOperationException("SyncFactors successFactors.auth.oauth.tokenUrl must use HTTPS outside Development.");
+            }
         }
 
         if (string.IsNullOrWhiteSpace(sync.Ad.Server))
@@ -212,6 +232,12 @@ public sealed class SyncFactorsConfigurationValidator(SyncFactorsConfigurationLo
 
         return false;
     }
+
+    private static bool IsHttps(Uri uri) =>
+        string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsHttpEndpoint(Uri uri) =>
+        IsHttps(uri) || string.Equals(uri.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase);
 
     private static void ValidateManagedOuNamingContexts(ActiveDirectoryConfig config)
     {

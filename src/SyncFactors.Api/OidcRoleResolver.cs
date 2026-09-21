@@ -36,6 +36,24 @@ internal static class OidcRoleResolver
         HasAny(authSettings.Oidc.OperatorGroups) ||
         HasAny(authSettings.Oidc.AdminGroups);
 
+    public static string? ResolveEffectiveRole(ClaimsIdentity identity, LocalAuthOptions authSettings)
+    {
+        var roles = ResolveRoles(identity, authSettings);
+        if (roles.Contains(SecurityRoles.Admin, StringComparer.OrdinalIgnoreCase))
+        {
+            return SecurityRoles.Admin;
+        }
+
+        if (roles.Contains(SecurityRoles.Operator, StringComparer.OrdinalIgnoreCase))
+        {
+            return SecurityRoles.Operator;
+        }
+
+        return roles.Contains(SecurityRoles.Viewer, StringComparer.OrdinalIgnoreCase)
+            ? SecurityRoles.Viewer
+            : null;
+    }
+
     public static string ResolveAccessLevel(IEnumerable<string> roles)
     {
         var roleSet = roles

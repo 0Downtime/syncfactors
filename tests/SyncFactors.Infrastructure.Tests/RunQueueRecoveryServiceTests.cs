@@ -192,6 +192,132 @@ public sealed class RunQueueRecoveryServiceTests
         Assert.Empty(runtimeStatusStore.SavedStatuses);
     }
 
+    [Theory]
+    [InlineData(null)]
+    [InlineData("previous-worker-instance")]
+    public async Task RecoverIfNeededAsync_RecoversFreshHeartbeatFromPreviousOrLegacyWorker(string? heartbeatInstanceId)
+    {
+        var now = DateTimeOffset.Parse("2026-04-09T14:00:00Z");
+        var queueStore = new StubRunQueueStore(
+            new RunQueueRequest(
+                RequestId: "req-restarted-worker",
+                Mode: "BulkSync",
+                DryRun: true,
+                RunTrigger: "Scheduled",
+                RequestedBy: "test",
+                Status: "InProgress",
+                RequestedAt: now.AddMinutes(-3),
+                StartedAt: now.AddMinutes(-2),
+                CompletedAt: null,
+                RunId: "run-restarted-worker",
+                ErrorMessage: null),
+            recoverResult: 1);
+        var runtimeStatusStore = new StubRuntimeStatusStore(
+            new RuntimeStatus(
+                Status: "InProgress",
+                Stage: "BulkSync",
+                RunId: "run-restarted-worker",
+                Mode: "BulkSync",
+                DryRun: true,
+                ProcessedWorkers: 2,
+                TotalWorkers: 10,
+                CurrentWorkerId: "10003",
+                LastAction: "Processing",
+                StartedAt: now.AddMinutes(-2),
+                LastUpdatedAt: now.AddSeconds(-20),
+                CompletedAt: null,
+                ErrorMessage: null));
+        var runRepository = new StubRunRepository(
+            CreateRunDetail("run-restarted-worker", "InProgress", now.AddMinutes(-2), dryRun: true));
+        var heartbeatStore = new StubWorkerHeartbeatStore(
+            new WorkerHeartbeat(
+                Service: "SyncFactors.Worker",
+                State: "Running",
+                Activity: "Executing queued run req-restarted-worker.",
+                StartedAt: now.AddMinutes(-2),
+                LastSeenAt: now.AddSeconds(-20),
+                InstanceId: heartbeatInstanceId));
+        var service = new RunQueueRecoveryService(
+            queueStore,
+            runtimeStatusStore,
+            runRepository,
+            heartbeatStore,
+            new FixedTimeProvider(now),
+            NullLogger<RunQueueRecoveryService>.Instance);
+
+        var recovered = await service.RecoverIfNeededAsync(
+            "worker startup",
+            CancellationToken.None,
+            currentWorkerInstanceId: "current-worker-instance");
+
+        Assert.Equal(1, recovered);
+        Assert.Equal(1, queueStore.RecoverCalls);
+        Assert.Equal("Failed", Assert.Single(runRepository.SavedRuns).Status);
+        Assert.Equal("Failed", Assert.Single(runtimeStatusStore.SavedStatuses).Status);
+    }
+
+    [Fact]
+    public async Task RecoverIfNeededAsync_SkipsFreshHeartbeatFromCurrentWorkerInstance()
+    {
+        var now = DateTimeOffset.Parse("2026-04-09T14:00:00Z");
+        var queueStore = new StubRunQueueStore(
+            new RunQueueRequest(
+                RequestId: "req-current-worker",
+                Mode: "BulkSync",
+                DryRun: true,
+                RunTrigger: "Scheduled",
+                RequestedBy: "test",
+                Status: "InProgress",
+                RequestedAt: now.AddMinutes(-3),
+                StartedAt: now.AddMinutes(-2),
+                CompletedAt: null,
+                RunId: "run-current-worker",
+                ErrorMessage: null),
+            recoverResult: 1);
+        var runtimeStatusStore = new StubRuntimeStatusStore(
+            new RuntimeStatus(
+                Status: "InProgress",
+                Stage: "BulkSync",
+                RunId: "run-current-worker",
+                Mode: "BulkSync",
+                DryRun: true,
+                ProcessedWorkers: 2,
+                TotalWorkers: 10,
+                CurrentWorkerId: "10003",
+                LastAction: "Processing",
+                StartedAt: now.AddMinutes(-2),
+                LastUpdatedAt: now.AddSeconds(-20),
+                CompletedAt: null,
+                ErrorMessage: null));
+        var runRepository = new StubRunRepository(
+            CreateRunDetail("run-current-worker", "InProgress", now.AddMinutes(-2), dryRun: true));
+        var heartbeatStore = new StubWorkerHeartbeatStore(
+            new WorkerHeartbeat(
+                Service: "SyncFactors.Worker",
+                State: "Running",
+                Activity: "Executing queued run req-current-worker.",
+                StartedAt: now.AddMinutes(-2),
+                LastSeenAt: now.AddSeconds(-20),
+                InstanceId: "current-worker-instance"));
+        var service = new RunQueueRecoveryService(
+            queueStore,
+            runtimeStatusStore,
+            runRepository,
+            heartbeatStore,
+            new FixedTimeProvider(now),
+            NullLogger<RunQueueRecoveryService>.Instance);
+
+        var recovered = await service.RecoverIfNeededAsync(
+            "worker startup",
+            CancellationToken.None,
+            currentWorkerInstanceId: "current-worker-instance");
+
+        Assert.Equal(0, recovered);
+        Assert.Equal(0, queueStore.RecoverCalls);
+        Assert.Empty(runRepository.SavedRuns);
+        Assert.Empty(runtimeStatusStore.SavedStatuses);
+    }
+
     [Fact]
     public async Task RecoverIfNeededAsync_CompletesQueue_WhenRuntimeAlreadyCompleted()
     {

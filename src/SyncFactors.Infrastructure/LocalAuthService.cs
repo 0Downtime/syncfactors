@@ -14,8 +14,7 @@ public sealed class LocalAuthService(
 
     public bool IsLocalAuthenticationEnabled =>
         string.Equals(options.Value.Mode, "local-break-glass", StringComparison.OrdinalIgnoreCase) ||
-        string.Equals(options.Value.Mode, "hybrid", StringComparison.OrdinalIgnoreCase) ||
-        options.Value.LocalBreakGlass.Enabled;
+        string.Equals(options.Value.Mode, "hybrid", StringComparison.OrdinalIgnoreCase);
 
     public async Task EnsureBootstrapAdminAsync(CancellationToken cancellationToken)
     {
@@ -31,16 +30,8 @@ public sealed class LocalAuthService(
         {
             if (!hasUsers)
             {
-                if (RequiresBootstrapAdmin(options.Value))
-                {
-                    throw new InvalidOperationException(
-                        "Local authentication requires SyncFactors:Auth:BootstrapAdmin:Username and SyncFactors:Auth:BootstrapAdmin:Password when no local users exist.");
-                }
-
-                securityAuditService.Write(
-                    "BootstrapAdminSkipped",
-                    "NoLocalUsers",
-                    ("Mode", options.Value.Mode));
+                throw new InvalidOperationException(
+                    "Local authentication requires SyncFactors:Auth:BootstrapAdmin:Username and SyncFactors:Auth:BootstrapAdmin:Password when no local users exist. The password may be supplied by environment or the service account's Windows Credential Manager.");
             }
 
             return;
@@ -72,25 +63,6 @@ public sealed class LocalAuthService(
             "Success",
             ("Username", user.Username),
             ("Role", user.Role));
-    }
-
-    private static bool RequiresBootstrapAdmin(LocalAuthOptions authOptions)
-    {
-        if (string.Equals(authOptions.Mode, "local-break-glass", StringComparison.OrdinalIgnoreCase))
-        {
-            return true;
-        }
-
-        var oidcConfigured =
-            !string.IsNullOrWhiteSpace(authOptions.Oidc.Authority) &&
-            !string.IsNullOrWhiteSpace(authOptions.Oidc.ClientId);
-
-        if (string.Equals(authOptions.Mode, "hybrid", StringComparison.OrdinalIgnoreCase) && oidcConfigured)
-        {
-            return false;
-        }
-
-        return authOptions.LocalBreakGlass.Enabled && !oidcConfigured;
     }
 
     public async Task<LocalAuthenticationResult> AuthenticateAsync(string username, string password, CancellationToken cancellationToken)

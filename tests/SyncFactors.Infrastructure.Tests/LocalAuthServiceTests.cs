@@ -59,7 +59,7 @@ public sealed class LocalAuthServiceTests
     }
 
     [Fact]
-    public async Task EnsureBootstrapAdminAsync_AllowsHybridOidcWithoutLocalBootstrapUser()
+    public async Task EnsureBootstrapAdminAsync_RequiresBreakGlassUserInHybridMode()
     {
         var databasePath = Path.Combine(Path.GetTempPath(), $"syncfactors-auth-hybrid-{Guid.NewGuid():N}.db");
 
@@ -73,8 +73,10 @@ public sealed class LocalAuthServiceTests
                 mode: "hybrid",
                 oidcConfigured: true);
 
-            await service.EnsureBootstrapAdminAsync(CancellationToken.None);
+            var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                service.EnsureBootstrapAdminAsync(CancellationToken.None));
 
+            Assert.Contains("BootstrapAdmin", exception.Message, StringComparison.Ordinal);
             Assert.False(await store.AnyUsersAsync(CancellationToken.None));
         }
         finally

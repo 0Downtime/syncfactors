@@ -26,7 +26,11 @@ public sealed class RunQueueRecoveryService(
 
     private static readonly TimeSpan FreshRunningHeartbeatAge = TimeSpan.FromMinutes(2);
 
-    public async Task<int> RecoverIfNeededAsync(string trigger, CancellationToken cancellationToken, bool ignoreFreshHeartbeat = false)
+    public async Task<int> RecoverIfNeededAsync(
+        string trigger,
+        CancellationToken cancellationToken,
+        bool ignoreFreshHeartbeat = false,
+        string? currentWorkerInstanceId = null)
     {
         var current = await runQueueStore.GetPendingOrActiveAsync(cancellationToken);
         var runtime = await runtimeStatusStore.GetCurrentAsync(cancellationToken);
@@ -53,8 +57,11 @@ public sealed class RunQueueRecoveryService(
         if (!ignoreFreshHeartbeat && heartbeat is not null)
         {
             var age = now - heartbeat.LastSeenAt;
+            var heartbeatBelongsToCurrentWorker = string.IsNullOrWhiteSpace(currentWorkerInstanceId) ||
+                string.Equals(heartbeat.InstanceId, currentWorkerInstanceId, StringComparison.Ordinal);
             if (age <= FreshRunningHeartbeatAge &&
-                string.Equals(heartbeat.State, WorkerHeartbeatRunningState, StringComparison.OrdinalIgnoreCase))
+                string.Equals(heartbeat.State, WorkerHeartbeatRunningState, StringComparison.OrdinalIgnoreCase) &&
+                heartbeatBelongsToCurrentWorker)
             {
                 logger.LogInformation(
                     "Skipping orphaned run recovery because a worker heartbeat is still active. RequestId={RequestId} Trigger={Trigger}",

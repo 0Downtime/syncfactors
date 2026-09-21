@@ -2,6 +2,7 @@
 param(
     [string]$InstallRoot = 'C:\SyncFactors',
     [string]$RuntimeRoot,
+    [string]$BackupRoot,
     [string]$PowerShellInstallScriptUrl = 'https://aka.ms/install-powershell.ps1',
     [version]$MinimumPowerShellVersion = '7.4.0',
     [switch]$InstallPowerShell,
@@ -257,18 +258,62 @@ function Grant-ServiceAccountAccess {
         [Parameter(Mandatory)]
         [string]$Path,
         [Parameter(Mandatory)]
-        [string]$Identity
+        [string]$Identity,
+        [Parameter(Mandatory)]
+        [System.Security.AccessControl.FileSystemRights]$Rights
     )
 
     $sid = ConvertTo-AccountSid -Identity $Identity
     $acl = Get-Acl -Path $Path
     $rule = [System.Security.AccessControl.FileSystemAccessRule]::new(
         $sid,
-        [System.Security.AccessControl.FileSystemRights]'Modify, Synchronize',
+        $Rights,
         [System.Security.AccessControl.InheritanceFlags]'ContainerInherit, ObjectInherit',
         [System.Security.AccessControl.PropagationFlags]::None,
         [System.Security.AccessControl.AccessControlType]::Allow)
     $acl.SetAccessRule($rule)
+    Set-Acl -Path $Path -AclObject $acl
+}
+
+function Set-RestrictedDirectoryAccess {
+    param(
+        [Parameter(Mandatory)][string]$Path,
+        [string]$RuntimeIdentity,
+        [System.Security.AccessControl.FileSystemRights]$RuntimeRights =
+            [System.Security.AccessControl.FileSystemRights]'Modify, Synchronize'
+    )
+
+    $acl = Get-Acl -Path $Path
+    $acl.SetAccessRuleProtection($true, $false)
+    foreach ($existingRule in @($acl.Access)) {
+        [void]$acl.RemoveAccessRuleSpecific($existingRule)
+    }
+
+    $inheritance = [System.Security.AccessControl.InheritanceFlags]'ContainerInherit, ObjectInherit'
+    $propagation = [System.Security.AccessControl.PropagationFlags]::None
+    foreach ($principal in @(
+        @{ Sid = [System.Security.Principal.SecurityIdentifier]::new('S-1-5-18'); Rights = [System.Security.AccessControl.FileSystemRights]::FullControl },
+        @{ Sid = [System.Security.Principal.SecurityIdentifier]::new('S-1-5-32-544'); Rights = [System.Security.AccessControl.FileSystemRights]::FullControl })) {
+        $rule = [System.Security.AccessControl.FileSystemAccessRule]::new(
+            $principal.Sid,
+            $principal.Rights,
+            $inheritance,
+            $propagation,
+            [System.Security.AccessControl.AccessControlType]::Allow)
+        [void]$acl.AddAccessRule($rule)
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($RuntimeIdentity)) {
+        $runtimeSid = ConvertTo-AccountSid -Identity $RuntimeIdentity
+        $runtimeRule = [System.Security.AccessControl.FileSystemAccessRule]::new(
+            $runtimeSid,
+            $RuntimeRights,
+            $inheritance,
+            $propagation,
+            [System.Security.AccessControl.AccessControlType]::Allow)
+        [void]$acl.AddAccessRule($runtimeRule)
+    }
+
     Set-Acl -Path $Path -AclObject $acl
 }
 
@@ -307,9 +352,13 @@ if (-not (Test-IsWindowsAdministrator)) {
 if ([string]::IsNullOrWhiteSpace($RuntimeRoot)) {
     $RuntimeRoot = Join-Path $InstallRoot 'state'
 }
+if ([string]::IsNullOrWhiteSpace($BackupRoot)) {
+    $BackupRoot = Join-Path $InstallRoot '_backups'
+}
 
 $InstallRoot = [System.IO.Path]::GetFullPath($InstallRoot)
 $RuntimeRoot = [System.IO.Path]::GetFullPath($RuntimeRoot)
+$BackupRoot = [System.IO.Path]::GetFullPath($BackupRoot)
 
 $effectiveServiceAccount = $ServiceAccount
 if ($CreateLocalServiceAccount.IsPresent) {
@@ -330,19 +379,31 @@ Initialize-Directory -Path $InstallRoot
 Initialize-Directory -Path $RuntimeRoot
 Initialize-Directory -Path (Join-Path $RuntimeRoot 'runtime')
 Initialize-Directory -Path (Join-Path $RuntimeRoot 'logs')
+Initialize-Directory -Path $BackupRoot
 
 if (-not [string]::IsNullOrWhiteSpace($effectiveServiceAccount)) {
     if ($PSCmdlet.ShouldProcess($effectiveServiceAccount, 'Grant Log on as a service')) {
         Grant-LogOnAsServiceRight -Identity $effectiveServiceAccount
     }
 
-    if ($PSCmdlet.ShouldProcess($InstallRoot, "Grant Modify access to $effectiveServiceAccount")) {
-        Grant-ServiceAccountAccess -Path $InstallRoot -Identity $effectiveServiceAccount
+    if ($PSCmdlet.ShouldProcess($InstallRoot, "Grant ReadAndExecute access to $effectiveServiceAccount")) {
+        Grant-ServiceAccountAccess `
+            -Path $InstallRoot `
+            -Identity $effectiveServiceAccount `
+            -Rights ([System.Security.AccessControl.FileSystemRights]'ReadAndExecute, Synchronize')
     }
 
-    if ($PSCmdlet.ShouldProcess($RuntimeRoot, "Grant Modify access to $effectiveServiceAccount")) {
-        Grant-ServiceAccountAccess -Path $RuntimeRoot -Identity $effectiveServiceAccount
-    }
+}
+
+if ($PSCmdlet.ShouldProcess($RuntimeRoot, 'Protect runtime state for SYSTEM, Administrators, and the runtime identity')) {
+    Set-RestrictedDirectoryAccess `
+        -Path $RuntimeRoot `
+        -RuntimeIdentity $effectiveServiceAccount `
+        -RuntimeRights ([System.Security.AccessControl.FileSystemRights]'Modify, Synchronize')
+}
+
+if ($PSCmdlet.ShouldProcess($BackupRoot, 'Protect rollback backups for SYSTEM and Administrators')) {
+    Set-RestrictedDirectoryAccess -Path $BackupRoot
 }
 
 $powerShellVersion = Get-PowerShellCoreVersion

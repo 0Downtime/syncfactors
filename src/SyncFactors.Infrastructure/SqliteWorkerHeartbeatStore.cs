@@ -25,7 +25,11 @@ public sealed class SqliteWorkerHeartbeatStore(SqlitePathResolver pathResolver) 
               state,
               activity,
               started_at,
-              last_seen_at
+              last_seen_at,
+              instance_id,
+              build_version,
+              build_commit_sha,
+              deployment_nonce_hash
             FROM worker_heartbeat
             ORDER BY last_seen_at DESC
             LIMIT 1;
@@ -42,7 +46,11 @@ public sealed class SqliteWorkerHeartbeatStore(SqlitePathResolver pathResolver) 
             State: reader.GetStringOrDefault("state") ?? "Unknown",
             Activity: reader.GetStringOrDefault("activity"),
             StartedAt: ParseDate(reader.GetStringOrDefault("started_at")) ?? DateTimeOffset.MinValue,
-            LastSeenAt: ParseDate(reader.GetStringOrDefault("last_seen_at")) ?? DateTimeOffset.MinValue);
+            LastSeenAt: ParseDate(reader.GetStringOrDefault("last_seen_at")) ?? DateTimeOffset.MinValue,
+            InstanceId: reader.GetStringOrDefault("instance_id"),
+            BuildVersion: reader.GetStringOrDefault("build_version"),
+            BuildCommitSha: reader.GetStringOrDefault("build_commit_sha"),
+            DeploymentNonceHash: reader.GetStringOrDefault("deployment_nonce_hash"));
     }
 
     public async Task SaveAsync(WorkerHeartbeat heartbeat, CancellationToken cancellationToken)
@@ -74,14 +82,22 @@ public sealed class SqliteWorkerHeartbeatStore(SqlitePathResolver pathResolver) 
                   state,
                   activity,
                   started_at,
-                  last_seen_at
+                  last_seen_at,
+                  instance_id,
+                  build_version,
+                  build_commit_sha,
+                  deployment_nonce_hash
                 )
                 VALUES (
                   $service,
                   $state,
                   $activity,
                   $startedAt,
-                  $lastSeenAt
+                  $lastSeenAt,
+                  $instanceId,
+                  $buildVersion,
+                  $buildCommitSha,
+                  $deploymentNonceHash
                 );
                 """;
             insertCommand.Parameters.AddWithValue("$service", heartbeat.Service);
@@ -89,6 +105,10 @@ public sealed class SqliteWorkerHeartbeatStore(SqlitePathResolver pathResolver) 
             insertCommand.Parameters.AddWithValue("$activity", (object?)heartbeat.Activity ?? DBNull.Value);
             insertCommand.Parameters.AddWithValue("$startedAt", heartbeat.StartedAt.ToString("O"));
             insertCommand.Parameters.AddWithValue("$lastSeenAt", heartbeat.LastSeenAt.ToString("O"));
+            insertCommand.Parameters.AddWithValue("$instanceId", (object?)heartbeat.InstanceId ?? DBNull.Value);
+            insertCommand.Parameters.AddWithValue("$buildVersion", (object?)heartbeat.BuildVersion ?? DBNull.Value);
+            insertCommand.Parameters.AddWithValue("$buildCommitSha", (object?)heartbeat.BuildCommitSha ?? DBNull.Value);
+            insertCommand.Parameters.AddWithValue("$deploymentNonceHash", (object?)heartbeat.DeploymentNonceHash ?? DBNull.Value);
             await insertCommand.ExecuteNonQueryAsync(cancellationToken);
         }
 

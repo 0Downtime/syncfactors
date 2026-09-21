@@ -58,14 +58,47 @@ public sealed class SyncFactorsConfigurationLoaderTests
         try
         {
             Environment.SetEnvironmentVariable(variableName, "from-env");
-            var resolver = new SyncFactorsSecretResolver();
+            var credentialRead = false;
+            var resolver = new SyncFactorsSecretResolver(_ =>
+            {
+                credentialRead = true;
+                return "from-credential-manager";
+            });
 
             Assert.Equal("from-env", resolver.GetSecretValue(variableName));
             Assert.Equal(variableName, resolver.ResolveSourceLabel(variableName, "config"));
+            Assert.False(credentialRead);
         }
         finally
         {
             Environment.SetEnvironmentVariable(variableName, originalValue);
+        }
+    }
+
+    [Theory]
+    [InlineData("SYNCFACTORS__AUTH__OIDC__CLIENTSECRET")]
+    [InlineData("SYNCFACTORS__AUTH__BOOTSTRAPADMIN__PASSWORD")]
+    public void SecretResolver_UsesCredentialManagerConventionForAuthSecrets(string variableName)
+    {
+        var originalPrefix = Environment.GetEnvironmentVariable(SyncFactorsSecretResolver.WindowsCredentialPrefixEnvironmentVariable);
+        try
+        {
+            Environment.SetEnvironmentVariable(SyncFactorsSecretResolver.WindowsCredentialPrefixEnvironmentVariable, null);
+            string? requestedTarget = null;
+            var resolver = new SyncFactorsSecretResolver(target =>
+            {
+                requestedTarget = target;
+                return "credential-value";
+            });
+
+            var value = resolver.GetSecretValue(variableName);
+
+            Assert.Equal("credential-value", value);
+            Assert.Equal($"SyncFactors/{variableName}", requestedTarget);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(SyncFactorsSecretResolver.WindowsCredentialPrefixEnvironmentVariable, originalPrefix);
         }
     }
 

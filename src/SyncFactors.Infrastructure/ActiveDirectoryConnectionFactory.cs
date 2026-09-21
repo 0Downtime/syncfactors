@@ -76,7 +76,8 @@ internal static class ActiveDirectoryConnectionFactory
         {
             if (OperatingSystem.IsWindows())
             {
-                connection.SessionOptions.VerifyServerCertificate += (_, certificate) => ValidateServerCertificate(certificate, config.Transport);
+                connection.SessionOptions.VerifyServerCertificate += (_, certificate) =>
+                    ValidateServerCertificate(certificate, config.Server, config.Transport);
             }
             else if (RequiresCustomCertificateValidation(config.Transport))
             {
@@ -168,7 +169,10 @@ internal static class ActiveDirectoryConnectionFactory
                (trimmed.Contains('=', StringComparison.Ordinal) && trimmed.Contains(',', StringComparison.Ordinal));
     }
 
-    private static bool ValidateServerCertificate(X509Certificate? certificate, ActiveDirectoryTransportConfig transport)
+    private static bool ValidateServerCertificate(
+        X509Certificate? certificate,
+        string server,
+        ActiveDirectoryTransportConfig transport)
     {
         if (certificate is null)
         {
@@ -181,6 +185,25 @@ internal static class ActiveDirectoryConnectionFactory
         }
 
         using var certificate2 = certificate as X509Certificate2 ?? new X509Certificate2(certificate);
+        return ValidateServerCertificateCore(certificate2, server, transport, HasValidCertificateChain);
+    }
+
+    private static bool ValidateServerCertificateCore(
+        X509Certificate2 certificate,
+        string server,
+        ActiveDirectoryTransportConfig transport,
+        Func<X509Certificate2, bool> validateChain)
+    {
+        if (!CertificateMatchesServerName(certificate, server))
+        {
+            return false;
+        }
+
+        if (!validateChain(certificate))
+        {
+            return false;
+        }
+
         var configuredThumbprints = transport.TrustedCertificateThumbprints
             .Select(NormalizeThumbprint)
             .Where(value => !string.IsNullOrWhiteSpace(value))
@@ -188,14 +211,39 @@ internal static class ActiveDirectoryConnectionFactory
 
         if (configuredThumbprints.Count > 0)
         {
-            var certThumbprint = NormalizeThumbprint(certificate2.Thumbprint);
+            var certThumbprint = NormalizeThumbprint(certificate.Thumbprint);
             return configuredThumbprints.Contains(certThumbprint);
         }
 
+        return true;
+    }
+
+    private static bool HasValidCertificateChain(X509Certificate2 certificate)
+    {
         using var chain = new X509Chain();
         chain.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
         chain.ChainPolicy.VerificationFlags = X509VerificationFlags.NoFlag;
-        return chain.Build(certificate2);
+        return chain.Build(certificate);
+    }
+
+    private static bool CertificateMatchesServerName(X509Certificate2 certificate, string server)
+    {
+        if (string.IsNullOrWhiteSpace(server))
+        {
+            return false;
+        }
+
+        try
+        {
+            return certificate.MatchesHostname(
+                server.Trim(),
+                allowWildcards: true,
+                allowCommonName: true);
+        }
+        catch (ArgumentException)
+        {
+            return false;
+        }
     }
 
     private static bool RequiresCustomCertificateValidation(ActiveDirectoryTransportConfig transport)
