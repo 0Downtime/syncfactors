@@ -276,4 +276,16 @@ jobs:
             $releaseWorkflow | Should -Not -Match '\$latestByName'
             $releaseWorkflow | Should -Not -Match '\$incompleteChecks \+= "\$\( \$requiredCheck\.checkName\)=untrusted-provenance"'
         }
+
+    It 'gates Azure DevOps packaging on SonarQube Community Build analysis' {
+        $pipeline = Get-Content -Path (Join-Path $PSScriptRoot '../azure-pipelines.deploy.yml') -Raw
+
+        $pipeline | Should -Match '(?m)^\s*sonarQubeServiceConnection:\s*SonarQube\s*$'
+        $pipeline | Should -Match '(?m)^\s*sonarProjectKey:\s*0Downtime_sf-ad-sync\s*$'
+        $pipeline | Should -Match '(?ms)SonarQubePrepare@8.*?scannerMode:\s*dotnet.*?projectKey:\s*\$\(sonarProjectKey\)'
+        $pipeline | Should -Match 'sonar\.cs\.opencover\.reportsPaths='
+        $pipeline | Should -Match 'sonar\.javascript\.lcov\.reportPaths='
+        $pipeline | Should -Match '(?ms)SonarQubeAnalyze@8.*?SonarQubePublish@8.*?Publish applications'
+        $pipeline | Should -Not -Match '(?i)SONAR_TOKEN|sonar\.token'
+    }
 }
