@@ -166,15 +166,18 @@ The bundle is self-contained, so the target Windows host does not need a separat
 To install the API and worker as Windows Services, run an elevated PowerShell session from the extracted bundle root:
 
 ```powershell
+$integrityKey = Read-Host 'SyncFactors security audit integrity key' -AsSecureString
+
 pwsh .\scripts\Install-SyncFactorsWindowsServices.ps1 `
   -RunProfile real `
-  -ApiUrls https://127.0.0.1:5087
+  -ApiUrls https://127.0.0.1:5087 `
+  -SecurityAuditIntegrityKey $integrityKey
 
 Start-Service SyncFactors.Api
 Start-Service SyncFactors.Worker
 ```
 
-The installer creates `SyncFactors.Api` and `SyncFactors.Worker`, registers matching Windows Event Log sources under the Application log, configures restart-on-failure recovery, and writes service environment values for the selected profile, config paths, SQLite path, security audit log path, SQLite encryption password, and local file logging. It also creates local config files from the bundled samples when they are missing. SQLite encryption is enabled by default for Windows Services; pass `-SqlitePassword` to provide a managed SQLCipher key, or let the installer generate one and store it in the service environment. To replace existing service definitions, rerun with `-Force`; the installer reuses the existing service password when present.
+The installer creates `SyncFactors.Api` and `SyncFactors.Worker`, registers matching Windows Event Log sources under the Application log, configures restart-on-failure recovery, and writes service environment values for the selected profile, config paths, SQLite path, security audit log path, security audit integrity key, SQLite encryption password, and local file logging. It also creates local config files from the bundled samples when they are missing. SQLite encryption is enabled by default for Windows Services; pass `-SqlitePassword` to provide a managed SQLCipher key, or let the installer generate one and store it in the service environment. The installer always begins in deployment-level dry-run-only mode. Pass `-EnableLiveWrites` only after the tracked real-production sample has been copied to local config, `sync.realSyncEnabled` has been deliberately enabled, the create/disable/delete thresholds have been reviewed, and the approval requirements remain enabled. To replace existing service definitions, rerun with `-Force`; the installer reuses the existing service password and security audit integrity key when present in the existing service environment.
 
 Uninstall the services from an elevated session:
 
@@ -263,6 +266,7 @@ Start-Process pwsh `
 Then install the services from the elevated deploy/admin session:
 
 ```powershell
+$integrityKey = Read-Host 'SyncFactors security audit integrity key' -AsSecureString
 
 .\scripts\Install-SyncFactorsWindowsServices.ps1 `
   -BundleRoot C:\SyncFactors `
@@ -270,6 +274,7 @@ Then install the services from the elevated deploy/admin session:
   -ApiUrls 'https://0.0.0.0:5087' `
   -TlsCertificateThumbprint $tlsThumbprint `
   -WindowsCredentialPrefix SyncFactors `
+  -SecurityAuditIntegrityKey $integrityKey `
   -Credential $credential `
   -Force
 ```
@@ -285,7 +290,7 @@ After the services exist, deploy each incremental QA or production bundle from a
 
 The patch script expands the bundle to `_staging`, backs up deployable files to `_backups\<timestamp>`, stops `SyncFactors.Api` and `SyncFactors.Worker`, replaces `app`, scripts, docs, and sample config files, restarts services, and health-checks the API. It does not overwrite `config\local.*` or `state`. If startup or the health check fails, it restores the backed-up deployable files and restarts the previous version unless `-NoRollbackOnFailure` is set.
 
-Use `-InstallOrUpdateServices -Credential $credential` only when the patch must create or replace the Windows service definitions. Existing service credentials cannot be recovered from Windows, so that mode requires the credential again.
+Use `-InstallOrUpdateServices -Credential $credential` only when the patch must create or replace the Windows service definitions. Existing service credentials cannot be recovered from Windows, so that mode requires the credential again. Omit `-SecurityAuditIntegrityKey` during a normal upgrade to read and preserve the existing service environment value; provide a new secure value only for an intentional key rotation coordinated with audit-chain retention requirements.
 
 ### Azure DevOps Windows Deployment
 
@@ -307,6 +312,10 @@ Configure these Azure DevOps variables before enabling deployment:
 | `windowsCredentialPrefix` | Windows Credential Manager target prefix used by the services. Defaults to `SyncFactors`. |
 | `serviceUserName` / `serviceUserPassword` | Runtime Windows service credential for `SyncFactors.Api` and `SyncFactors.Worker`. Mark the password secret. |
 | `sqlitePassword` | Optional override for the runtime SQLCipher password. If omitted, the service installer reuses the existing service value or generates one on first install. Mark it secret when set and keep the same value for API, worker, and automation. |
+| `securityAuditIntegrityKey` | Required on first Production service installation. Mark it secret in Azure DevOps; the pipeline passes it through a temporary process environment value rather than command-line arguments and clears the local value after the installer exits. Existing service environment values are preserved on upgrades. |
+| `enableLiveWrites` | Defaults to `false`, which installs both services with `SyncFactors__Runtime__DryRunOnly=true`. Set to `true` only after the local real profile, conservative limits, and approval policy have been reviewed and approved. |
+
+Repository-settings follow-up: keep the existing GitHub required status check `GitHub Workflow Security Policy` enabled. The Production bootstrap policy runs inside that existing job, so this change does not introduce a new required-check name or require an immediate branch-protection mutation. In Azure DevOps, create `securityAuditIntegrityKey` as a secret variable before the first Production install and leave `enableLiveWrites` set to `false` until the live-write approval gate is deliberately completed.
 
 The deployment uses two accounts: a deploy account for Azure DevOps WinRM/file-copy/install actions and a runtime account for the API and worker Windows Services. The runtime account is also the default Active Directory identity: keep `ad.username` and `ad.bindPassword` blank, and SyncFactors binds to AD as the Windows service identity on Windows. The deployment runs [`scripts/Install-SyncFactorsWindowsPrerequisites.ps1`](scripts/Install-SyncFactorsWindowsPrerequisites.ps1) on the server before service installation. That script creates the install/runtime/log directories, installs or verifies PowerShell 7, creates an optional local runtime account, grants `Log on as a service`, grants runtime-account access to the deployment paths, and can open the API firewall port. The app bundle is self-contained, so no separate .NET runtime installation is required on the server.
 
@@ -563,9 +572,11 @@ SF_AD_SYNC_AD_BIND_PASSWORD=
 SF_AD_SYNC_AD_DEFAULT_PASSWORD=
 ```
 
-### SQLite Encryption
+### SQLite Encryption And Security Audit Integrity
 
 SQLite encryption is enabled by default for Windows Service installs. `scripts/Install-SyncFactorsWindowsServices.ps1` sets `SYNCFACTORS_SQLITE_PASSWORD` in the API and worker service environments by using this order: an explicit `-SqlitePassword`, an existing installed service environment value, the current process `SYNCFACTORS_SQLITE_PASSWORD`, or a newly generated password for a fresh/plaintext database. The installer also sets `SYNCFACTORS_SECURITY_AUDIT_LOG_PATH` to an absolute path under `state\runtime` so service startup never depends on `C:\Windows\system32` as the working directory. Use `-DisableSqliteEncryption` only for disposable lab installs that intentionally keep a plaintext runtime database.
+
+Production startup also requires `SYNCFACTORS_SECURITY_AUDIT_INTEGRITY_KEY` so audit records can be chained and verified. The Windows service installer accepts this value only as `-SecurityAuditIntegrityKey <SecureString>`, then stores it in the API and worker service environments without printing the value or writing it to tracked configuration. Resolution order is explicit secure parameter, existing service environment, then the current process environment. This existing service environment lookup preserves the key across `-Force` reinstalls and patch upgrades. Treat rotation as a separate, reviewed operation because changing the key prevents new records from continuing the prior audit chain.
 
 For non-service launches, set `SYNCFACTORS_SQLITE_PASSWORD` to enable SQLCipher encryption for the runtime SQLite database. The same value must be present for the API, worker, and automation commands that open the runtime database. The app also recognizes `SyncFactors__SqlitePassword`, but `SYNCFACTORS_SQLITE_PASSWORD` is preferred because it is clearly secret material and should come from the OS secret store or service environment rather than tracked JSON.
 

@@ -33,6 +33,7 @@ builder.Services.AddSingleton<SyncFactorsConfigurationValidator>();
 builder.Services.AddSingleton<IEmailAddressPolicy, ConfiguredEmailAddressPolicy>();
 builder.Services.AddSingleton<ScaffoldDataStore>();
 builder.Services.AddSingleton<ScaffoldWorkerSource>();
+builder.Services.AddSingleton(SuccessFactorsSourceSettings.FromRunProfile(builder.Configuration["SYNCFACTORS_RUN_PROFILE"]));
 builder.Services.AddSingleton(serviceProvider =>
 {
     var config = serviceProvider.GetRequiredService<SyncFactorsConfigurationLoader>().GetSyncConfig();
@@ -56,7 +57,7 @@ builder.Services.AddSingleton(serviceProvider =>
 {
     var config = serviceProvider.GetRequiredService<SyncFactorsConfigurationLoader>().GetSyncConfig();
     var dryRunOnly = serviceProvider.GetRequiredService<IConfiguration>()
-        .GetValue<bool?>("SyncFactors:Runtime:DryRunOnly") ?? false;
+        .GetValue<bool?>("SyncFactors:Runtime:DryRunOnly") ?? true;
     return new SyncFactors.Contracts.RealSyncSettings(config.Sync.RealSyncEnabled, dryRunOnly);
 });
 builder.Services.AddSingleton(serviceProvider =>
@@ -118,7 +119,10 @@ builder.Services.AddHttpClient<SuccessFactorsWorkerSource>()
 builder.Services.AddTransient<IWorkerSource>(serviceProvider => serviceProvider.GetRequiredService<SuccessFactorsWorkerSource>());
 builder.Services.AddDirectoryServiceRuntimeGateways(
     builder.Configuration["SYNCFACTORS_RUN_PROFILE"],
-    (serviceProvider, inner) => new AuditedDirectoryCommandGateway(inner, serviceProvider.GetRequiredService<ISecurityAuditService>()));
+    (serviceProvider, inner) => AuditedDirectoryCommandGateway.Decorate(
+        inner,
+        serviceProvider.GetRequiredService<ISecurityAuditService>(),
+        AuditedDirectoryCommandGateway.WorkerActor));
 builder.Services.AddTransient<IEmailSender, SmtpEmailSender>();
 builder.Services.AddSingleton<IAttributeMappingProvider, AttributeMappingProvider>();
 builder.Services.AddSingleton<IIdentityMatcher, IdentityMatcher>();
@@ -130,9 +134,6 @@ builder.Services.AddSingleton<IRunCaptureMetadataProvider, RunCaptureMetadataPro
 builder.Services.AddTransient<IWorkerPlanningService, WorkerPlanningService>();
 builder.Services.AddSingleton<IDirectoryMutationCommandBuilder, DirectoryMutationCommandBuilder>();
 builder.Services.AddTransient<IBulkRunCoordinator, BulkRunCoordinator>();
-builder.Services.AddTransient<IDeleteAllUsersCoordinator, DeleteAllUsersCoordinator>();
-builder.Services.AddTransient<GraveyardDeletionQueueService>();
-builder.Services.AddTransient<IGraveyardAutoDeleteCoordinator, GraveyardAutoDeleteCoordinator>();
 builder.Services.AddTransient<ISyncScheduleCoordinator, SyncScheduleCoordinator>();
 builder.Services.AddTransient<IGraveyardRetentionReportCoordinator, GraveyardRetentionReportCoordinator>();
 builder.Services.AddSingleton<IWorkerExecutionSettings, ConfigurationWorkerExecutionSettings>();

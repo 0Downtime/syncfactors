@@ -18,6 +18,8 @@ param(
     [string]$SqlitePassword,
     [switch]$DisableSqliteEncryption,
     [string]$SecurityAuditLogPath,
+    [Security.SecureString]$SecurityAuditIntegrityKey,
+    [switch]$EnableLiveWrites,
     [string]$LogDirectory,
     [string]$TlsCertificatePath,
     [string]$TlsCertificatePassword,
@@ -211,6 +213,21 @@ function Get-ServiceEnvironmentValue {
     return $null
 }
 
+function ConvertFrom-SyncFactorsSecureString {
+    param(
+        [Parameter(Mandatory)]
+        [Security.SecureString]$Value
+    )
+
+    $pointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($Value)
+    try {
+        return [Runtime.InteropServices.Marshal]::PtrToStringBSTR($pointer)
+    }
+    finally {
+        [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($pointer)
+    }
+}
+
 function New-SqliteEncryptionPassword {
     $bytes = [System.Security.Cryptography.RandomNumberGenerator]::GetBytes(48)
     return [Convert]::ToBase64String($bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_')
@@ -299,6 +316,30 @@ if (-not (Test-IsWindowsAdministrator)) {
 }
 
 $resolvedBundleRoot = Resolve-BundleRoot -Path $BundleRoot
+
+$securityAuditIntegrityKeyPlainText = $null
+$securityAuditIntegrityKeySource = $null
+if ($null -ne $SecurityAuditIntegrityKey) {
+    $securityAuditIntegrityKeyPlainText = ConvertFrom-SyncFactorsSecureString -Value $SecurityAuditIntegrityKey
+    $securityAuditIntegrityKeySource = 'parameter'
+}
+if ([string]::IsNullOrWhiteSpace($securityAuditIntegrityKeyPlainText)) {
+    $securityAuditIntegrityKeyPlainText = Get-ServiceEnvironmentValue -ServiceNames @($ApiServiceName, $WorkerServiceName) -Name 'SYNCFACTORS_SECURITY_AUDIT_INTEGRITY_KEY'
+    if (-not [string]::IsNullOrWhiteSpace($securityAuditIntegrityKeyPlainText)) {
+        $securityAuditIntegrityKeySource = 'existing-service-environment'
+    }
+}
+if ([string]::IsNullOrWhiteSpace($securityAuditIntegrityKeyPlainText)) {
+    $securityAuditIntegrityKeyPlainText = $env:SYNCFACTORS_SECURITY_AUDIT_INTEGRITY_KEY
+    if (-not [string]::IsNullOrWhiteSpace($securityAuditIntegrityKeyPlainText)) {
+        $securityAuditIntegrityKeySource = 'environment'
+    }
+}
+if ([string]::IsNullOrWhiteSpace($securityAuditIntegrityKeyPlainText)) {
+    throw 'A security audit integrity key is required before Production services can be installed.'
+}
+
+$dryRunOnly = if ($EnableLiveWrites.IsPresent) { 'false' } else { 'true' }
 Initialize-LocalConfig -Root $resolvedBundleRoot
 
 $runtimeRoot = Join-Path $resolvedBundleRoot 'state'
@@ -309,7 +350,7 @@ if ([string]::IsNullOrWhiteSpace($LogDirectory)) {
     $LogDirectory = Join-Path $runtimeRoot 'logs'
 }
 if ([string]::IsNullOrWhiteSpace($SecurityAuditLogPath)) {
-    $SecurityAuditLogPath = Join-Path $runtimeRoot 'runtime\security-audit.jsonl'
+    $SecurityAuditLogPath = Join-Path $runtimeRoot 'runtime\security-audit.db'
 }
 if ([string]::IsNullOrWhiteSpace($ConfigPath)) {
     $ConfigPath = Resolve-DefaultConfigPath -Root $resolvedBundleRoot -Profile $RunProfile
@@ -375,6 +416,8 @@ $commonEnvironment = @(
     "SyncFactors__MappingConfigPath=$MappingConfigPath",
     "SyncFactors__SqlitePath=$SqlitePath",
     "SYNCFACTORS_SECURITY_AUDIT_LOG_PATH=$SecurityAuditLogPath",
+    "SYNCFACTORS_SECURITY_AUDIT_INTEGRITY_KEY=$securityAuditIntegrityKeyPlainText",
+    "SyncFactors__Runtime__DryRunOnly=$dryRunOnly",
     "SYNCFACTORS_LOCAL_FILE_LOGGING_ENABLED=true",
     "SYNCFACTORS_LOCAL_LOG_DIRECTORY=$LogDirectory",
     "SYNCFACTORS_LOCAL_LOG_RETENTION_DAYS=7",
@@ -451,6 +494,8 @@ if ($Service -in @('All', 'Worker')) {
     sqliteEncryption = if ([string]::IsNullOrWhiteSpace($SqlitePassword)) { 'disabled' } else { 'enabled' }
     sqlitePasswordSource = $sqlitePasswordSource
     securityAuditLogPath = $SecurityAuditLogPath
+    securityAuditIntegrityKeySource = $securityAuditIntegrityKeySource
+    dryRunOnly = [bool]::Parse($dryRunOnly)
     logDirectory = $LogDirectory
     eventLog = 'Application'
 }

@@ -100,8 +100,8 @@ public sealed class GraveyardDeletionQueueServiceTests
         public Task<IReadOnlyList<GraveyardRetentionRecord>> ListActiveAsync(CancellationToken cancellationToken) =>
             Task.FromResult(records);
 
-        public Task SetHoldAsync(string workerId, bool isOnHold, string? actingUserId, DateTimeOffset changedAtUtc, CancellationToken cancellationToken) =>
-            Task.CompletedTask;
+        public Task<GraveyardHoldChangeResult> SetHoldAsync(string workerId, bool isOnHold, string? actingUserId, DateTimeOffset changedAtUtc, CancellationToken cancellationToken) =>
+            Task.FromResult(new GraveyardHoldChangeResult(GraveyardHoldChangeOutcome.Accepted));
 
         public Task<GraveyardRetentionReportStatus> GetReportStatusAsync(CancellationToken cancellationToken) =>
             Task.FromResult(new GraveyardRetentionReportStatus(null, null, null));

@@ -1,3 +1,4 @@
+using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging;
 using SyncFactors.Domain;
 using System.Security.Cryptography;
@@ -13,10 +14,11 @@ public interface ISecurityAuditService
 
 public sealed class SecurityAuditService(ILogger<SecurityAuditService> logger) : ISecurityAuditService
 {
-    private static readonly object FileLock = new();
     public const string IntegrityKeyEnvironmentVariable = "SYNCFACTORS_SECURITY_AUDIT_INTEGRITY_KEY";
+    private const string AuditPathEnvironmentVariable = "SYNCFACTORS_SECURITY_AUDIT_LOG_PATH";
     private const string Sha256Algorithm = "SHA256";
     private const string HmacSha256Algorithm = "HMACSHA256";
+    private const string MigrationKey = "legacy-jsonl-migration-v1";
 
     public void Write(string eventType, string outcome, params (string Key, object? Value)[] fields)
     {
@@ -34,36 +36,11 @@ public sealed class SecurityAuditService(ILogger<SecurityAuditService> logger) :
             outcome,
             logValues);
 
-        AppendJsonLine(eventType, outcome, values);
-    }
-
-    private static void AppendJsonLine(string eventType, string outcome, IReadOnlyDictionary<string, object?> fields)
-    {
-        var path = ResolveAuditPath();
-        RuntimeFileSecurity.EnsureParentDirectory(path);
-        lock (FileLock)
-        {
-            var previousHash = ResolvePreviousHash(path);
-            var timestampUtc = DateTimeOffset.UtcNow;
-            var canonicalFields = CanonicalizeFields(fields);
-            var algorithm = ResolveIntegrityAlgorithm();
-            var entryHash = ComputeEntryHash(timestampUtc, eventType, outcome, canonicalFields, previousHash, algorithm);
-            var entry = new
-            {
-                timestampUtc,
-                eventType,
-                outcome,
-                fields,
-                integrity = new
-                {
-                    algorithm,
-                    previousHash,
-                    entryHash
-                }
-            };
-            File.AppendAllText(path, JsonSerializer.Serialize(entry) + Environment.NewLine);
-            RuntimeFileSecurity.HardenFile(path);
-        }
+        var databasePath = ResolveAuditPath();
+        using var auditLock = AcquireStartupLock(databasePath);
+        EnsureDatabaseInitialized(databasePath);
+        MigrateLegacyAuditIfNeeded(databasePath, ResolveLegacyAuditPath());
+        AppendSqliteEntry(databasePath, eventType, outcome, values);
     }
 
     public static SecurityAuditIntegrityResult VerifyIntegrity(string path, bool requireKeyedIntegrity = false)
@@ -73,50 +50,452 @@ public sealed class SecurityAuditService(ILogger<SecurityAuditService> logger) :
             return new SecurityAuditIntegrityResult(false, 0, "Audit log was not found.");
         }
 
+        return CanOpenAsSqliteDatabase(path)
+            ? VerifySqliteIntegrity(path, requireKeyedIntegrity)
+            : VerifyLegacyJsonlIntegrity(path, requireKeyedIntegrity);
+    }
+
+    public static IReadOnlyList<SecurityAuditEvent> ReadEventsSince(string path, DateTimeOffset sinceUtc)
+    {
+        var integrity = VerifyIntegrity(path);
+        if (!integrity.IsValid)
+        {
+            throw new InvalidOperationException("Security audit integrity validation failed.");
+        }
+
+        if (!CanOpenAsSqliteDatabase(path))
+        {
+            return ReadLegacyEntries(path)
+                .Where(entry => entry.TimestampUtc >= sinceUtc)
+                .Select(entry => new SecurityAuditEvent(entry.TimestampUtc, entry.EventType))
+                .ToArray();
+        }
+
+        using var connection = SqliteConnections.Open(path, SqliteOpenMode.ReadOnly);
+        connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT timestamp_utc, event_type
+            FROM security_audit_entries
+            WHERE timestamp_utc >= $sinceUtc
+            ORDER BY sequence;
+            """;
+        command.Parameters.AddWithValue("$sinceUtc", sinceUtc.ToString("O"));
+        using var reader = command.ExecuteReader();
+        var events = new List<SecurityAuditEvent>();
+        while (reader.Read())
+        {
+            events.Add(new SecurityAuditEvent(
+                DateTimeOffset.Parse(reader.GetString(0), System.Globalization.CultureInfo.InvariantCulture),
+                reader.GetString(1)));
+        }
+
+        return events;
+    }
+
+    public static void ValidateStartup(bool isProduction)
+    {
+        if (isProduction && string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(IntegrityKeyEnvironmentVariable)))
+        {
+            throw new InvalidOperationException("Security audit integrity validation failed.");
+        }
+
+        var databasePath = ResolveAuditPath();
+        var legacyPath = ResolveLegacyAuditPath();
+        try
+        {
+            using var startupLock = AcquireStartupLock(databasePath);
+            SqliteDatabaseEncryptionMigrator.RecoverInterruptedConversionIfNeeded(
+                databasePath,
+                SqliteConnections.GetConfiguredPassword());
+            if (!File.Exists(databasePath) && !File.Exists(legacyPath))
+            {
+                return;
+            }
+
+            EnsureDatabaseInitialized(databasePath);
+            MigrateLegacyAuditIfNeeded(databasePath, legacyPath);
+            if (!VerifyIntegrity(databasePath, requireKeyedIntegrity: isProduction).IsValid)
+            {
+                throw new InvalidOperationException("Security audit integrity validation failed.");
+            }
+        }
+        catch (Exception ex) when (ex is not InvalidOperationException ||
+                                   !string.Equals(ex.Message, "Security audit integrity validation failed.", StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("Security audit integrity validation failed.");
+        }
+    }
+
+    public static string ResolveAuditPath()
+    {
+        var configured = Environment.GetEnvironmentVariable(AuditPathEnvironmentVariable);
+        if (!string.IsNullOrWhiteSpace(configured))
+        {
+            var fullPath = Path.GetFullPath(configured);
+            return string.Equals(Path.GetExtension(fullPath), ".jsonl", StringComparison.OrdinalIgnoreCase)
+                ? Path.ChangeExtension(fullPath, ".db")
+                : fullPath;
+        }
+
+        return Path.Combine(ResolveRuntimeRoot(), "state", "runtime", "security-audit.db");
+    }
+
+    public static string ResolveLegacyAuditPath()
+    {
+        var configured = Environment.GetEnvironmentVariable(AuditPathEnvironmentVariable);
+        if (!string.IsNullOrWhiteSpace(configured))
+        {
+            var fullPath = Path.GetFullPath(configured);
+            return string.Equals(Path.GetExtension(fullPath), ".jsonl", StringComparison.OrdinalIgnoreCase)
+                ? fullPath
+                : Path.ChangeExtension(fullPath, ".jsonl");
+        }
+
+        return Path.Combine(ResolveRuntimeRoot(), "state", "runtime", "security-audit.jsonl");
+    }
+
+    private static string ResolveRuntimeRoot()
+    {
+        var repoRoot = Environment.GetEnvironmentVariable("REPO_ROOT");
+        return string.IsNullOrWhiteSpace(repoRoot) ? Environment.CurrentDirectory : repoRoot;
+    }
+
+    private static void EnsureDatabaseInitialized(string databasePath)
+    {
+        RuntimeFileSecurity.EnsureParentDirectory(databasePath);
+        var sqlitePassword = SqliteConnections.GetConfiguredPassword();
+        SqliteDatabaseEncryptionMigrator.RecoverInterruptedConversionIfNeeded(databasePath, sqlitePassword);
+        if (!string.IsNullOrWhiteSpace(sqlitePassword))
+        {
+            SqliteDatabaseEncryptionMigrator
+                .EnsureEncryptedAsync(databasePath, sqlitePassword, CancellationToken.None)
+                .GetAwaiter()
+                .GetResult();
+        }
+
+        using var connection = SqliteConnections.Open(databasePath);
+        connection.Open();
+        ConfigureAuditDurability(connection);
+        using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            CREATE TABLE IF NOT EXISTS security_audit_entries (
+                sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp_utc TEXT NOT NULL,
+                event_type TEXT NOT NULL,
+                outcome TEXT NOT NULL,
+                fields_json TEXT NOT NULL,
+                algorithm TEXT NOT NULL,
+                previous_hash TEXT NULL,
+                entry_hash TEXT NOT NULL UNIQUE
+            );
+            CREATE TABLE IF NOT EXISTS security_audit_metadata (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            );
+            """;
+        command.ExecuteNonQuery();
+        HardenAuditDatabaseFiles(databasePath);
+    }
+
+    private static FileStream AcquireStartupLock(string databasePath)
+    {
+        RuntimeFileSecurity.EnsureParentDirectory(databasePath);
+        var lockPath = $"{databasePath}.startup.lock";
+        var deadline = DateTimeOffset.UtcNow.AddSeconds(30);
+        while (true)
+        {
+            try
+            {
+                var stream = new FileStream(lockPath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+                RuntimeFileSecurity.HardenFile(lockPath);
+                return stream;
+            }
+            catch (IOException) when (DateTimeOffset.UtcNow < deadline)
+            {
+                Thread.Sleep(TimeSpan.FromMilliseconds(50));
+            }
+        }
+    }
+
+    private static void AppendSqliteEntry(
+        string databasePath,
+        string eventType,
+        string outcome,
+        IReadOnlyDictionary<string, object?> fields)
+    {
+        using var connection = SqliteConnections.Open(databasePath);
+        connection.Open();
+        ConfigureAuditDurability(connection);
+        ExecuteImmediateTransaction(connection, () =>
+        {
+            var integrity = VerifySqliteEntries(connection, requireKeyedIntegrity: false);
+            if (!integrity.IsValid)
+            {
+                throw new InvalidOperationException("Security audit integrity validation failed.");
+            }
+
+            var previousHash = ReadPreviousHash(connection);
+            var timestampUtc = DateTimeOffset.UtcNow;
+            var canonicalFields = CanonicalizeFields(fields);
+            var algorithm = ResolveIntegrityAlgorithm();
+            var entryHash = ComputeEntryHash(timestampUtc, eventType, outcome, canonicalFields, previousHash, algorithm);
+            InsertEntry(connection, timestampUtc, eventType, outcome, canonicalFields, algorithm, previousHash, entryHash);
+        });
+        HardenAuditDatabaseFiles(databasePath);
+    }
+
+    private static void MigrateLegacyAuditIfNeeded(string databasePath, string legacyPath)
+    {
+        using var connection = SqliteConnections.Open(databasePath);
+        connection.Open();
+        ConfigureAuditDurability(connection);
+        if (MigrationCompleted(connection))
+        {
+            return;
+        }
+
+        ExecuteImmediateTransaction(connection, () =>
+        {
+            if (MigrationCompleted(connection))
+            {
+                return;
+            }
+
+            IReadOnlyList<StoredAuditEntry> legacyEntries = [];
+            if (File.Exists(legacyPath))
+            {
+                var verification = VerifyLegacyJsonlIntegrity(legacyPath, requireKeyedIntegrity: false);
+                if (!verification.IsValid)
+                {
+                    throw new InvalidOperationException("Security audit integrity validation failed.");
+                }
+
+                legacyEntries = ReadLegacyEntries(legacyPath);
+            }
+
+            using (var countCommand = connection.CreateCommand())
+            {
+                countCommand.CommandText = "SELECT COUNT(*) FROM security_audit_entries;";
+                var existingCount = Convert.ToInt64(countCommand.ExecuteScalar());
+                if (existingCount != 0 && legacyEntries.Count != 0)
+                {
+                    throw new InvalidOperationException("Security audit integrity validation failed.");
+                }
+            }
+
+            if (legacyEntries.Count != 0)
+            {
+                var timestampUtc = DateTimeOffset.UtcNow;
+                var canonicalFields = CanonicalizeFields(
+                    new Dictionary<string, object?>
+                    {
+                        ["SourceDigest"] = ComputeFileDigest(legacyPath),
+                        ["SourceEntryCount"] = legacyEntries.Count,
+                        ["SourceProvenance"] = "LegacyJsonlSha256Chain",
+                        ["SourceTerminalHash"] = legacyEntries[^1].EntryHash
+                    });
+                var algorithm = ResolveIntegrityAlgorithm();
+                var entryHash = ComputeEntryHash(
+                    timestampUtc,
+                    "LegacyAuditMigrationBoundary",
+                    "Imported",
+                    canonicalFields,
+                    previousHash: null,
+                    algorithm);
+                InsertEntry(
+                    connection,
+                    timestampUtc,
+                    "LegacyAuditMigrationBoundary",
+                    "Imported",
+                    canonicalFields,
+                    algorithm,
+                    previousHash: null,
+                    entryHash);
+            }
+
+            using var markerCommand = connection.CreateCommand();
+            markerCommand.CommandText =
+                "INSERT INTO security_audit_metadata(key, value) VALUES ($key, $value);";
+            markerCommand.Parameters.AddWithValue("$key", MigrationKey);
+            markerCommand.Parameters.AddWithValue("$value", DateTimeOffset.UtcNow.ToString("O"));
+            markerCommand.ExecuteNonQuery();
+        });
+    }
+
+    private static bool MigrationCompleted(SqliteConnection connection)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT 1 FROM security_audit_metadata WHERE key = $key LIMIT 1;";
+        command.Parameters.AddWithValue("$key", MigrationKey);
+        return command.ExecuteScalar() is not null;
+    }
+
+    private static void ExecuteImmediateTransaction(SqliteConnection connection, Action action)
+    {
+        using var begin = connection.CreateCommand();
+        begin.CommandText = "BEGIN IMMEDIATE;";
+        begin.ExecuteNonQuery();
+        try
+        {
+            action();
+            using var commit = connection.CreateCommand();
+            commit.CommandText = "COMMIT;";
+            commit.ExecuteNonQuery();
+        }
+        catch
+        {
+            try
+            {
+                using var rollback = connection.CreateCommand();
+                rollback.CommandText = "ROLLBACK;";
+                rollback.ExecuteNonQuery();
+            }
+            catch (SqliteException)
+            {
+            }
+
+            throw;
+        }
+    }
+
+    private static string? ReadPreviousHash(SqliteConnection connection)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT entry_hash FROM security_audit_entries ORDER BY sequence DESC LIMIT 1;";
+        return command.ExecuteScalar() as string;
+    }
+
+    private static void InsertEntry(
+        SqliteConnection connection,
+        DateTimeOffset timestampUtc,
+        string eventType,
+        string outcome,
+        string canonicalFields,
+        string algorithm,
+        string? previousHash,
+        string entryHash)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            INSERT INTO security_audit_entries(
+                timestamp_utc, event_type, outcome, fields_json, algorithm, previous_hash, entry_hash)
+            VALUES ($timestampUtc, $eventType, $outcome, $fieldsJson, $algorithm, $previousHash, $entryHash);
+            """;
+        command.Parameters.AddWithValue("$timestampUtc", timestampUtc.ToString("O"));
+        command.Parameters.AddWithValue("$eventType", eventType);
+        command.Parameters.AddWithValue("$outcome", outcome);
+        command.Parameters.AddWithValue("$fieldsJson", canonicalFields);
+        command.Parameters.AddWithValue("$algorithm", algorithm);
+        command.Parameters.AddWithValue("$previousHash", (object?)previousHash ?? DBNull.Value);
+        command.Parameters.AddWithValue("$entryHash", entryHash);
+        command.ExecuteNonQuery();
+    }
+
+    private static SecurityAuditIntegrityResult VerifySqliteIntegrity(string path, bool requireKeyedIntegrity)
+    {
+        try
+        {
+            using var connection = SqliteConnections.Open(path, SqliteOpenMode.ReadOnly);
+            connection.Open();
+            using (var integrityCommand = connection.CreateCommand())
+            {
+                integrityCommand.CommandText = "PRAGMA integrity_check;";
+                if (!string.Equals(integrityCommand.ExecuteScalar() as string, "ok", StringComparison.OrdinalIgnoreCase))
+                {
+                    return IntegrityFailure(0, requireKeyedIntegrity, "Audit database integrity check failed.");
+                }
+            }
+
+            return VerifySqliteEntries(connection, requireKeyedIntegrity);
+        }
+        catch (Exception ex) when (ex is SqliteException or IOException or JsonException or InvalidOperationException or FormatException)
+        {
+            return new SecurityAuditIntegrityResult(false, 0, "Audit log integrity verification failed.");
+        }
+    }
+
+    private static SecurityAuditIntegrityResult VerifySqliteEntries(
+        SqliteConnection connection,
+        bool requireKeyedIntegrity)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT sequence, timestamp_utc, event_type, outcome, fields_json, algorithm, previous_hash, entry_hash
+            FROM security_audit_entries
+            ORDER BY sequence;
+            """;
+        using var reader = command.ExecuteReader();
+        string? expectedPreviousHash = null;
+        var entryCount = 0;
+        long expectedSequence = 1;
+        while (reader.Read())
+        {
+            entryCount++;
+            if (reader.GetInt64(0) != expectedSequence++)
+            {
+                return IntegrityFailure(entryCount, requireKeyedIntegrity, "Audit entry sequence is not contiguous.");
+            }
+
+            var timestampUtc = DateTimeOffset.Parse(reader.GetString(1), System.Globalization.CultureInfo.InvariantCulture);
+            var eventType = reader.GetString(2);
+            var outcome = reader.GetString(3);
+            var canonicalFields = CanonicalizeFields(JsonDocument.Parse(reader.GetString(4)).RootElement);
+            var algorithm = reader.GetString(5);
+            var previousHash = reader.IsDBNull(6) ? null : reader.GetString(6);
+            var entryHash = reader.GetString(7);
+            var failure = ValidateEntry(
+                entryCount,
+                requireKeyedIntegrity,
+                timestampUtc,
+                eventType,
+                outcome,
+                canonicalFields,
+                algorithm,
+                previousHash,
+                entryHash,
+                expectedPreviousHash);
+            if (failure is not null)
+            {
+                return failure;
+            }
+
+            expectedPreviousHash = entryHash;
+        }
+
+        return new SecurityAuditIntegrityResult(true, entryCount, null);
+    }
+
+    private static SecurityAuditIntegrityResult VerifyLegacyJsonlIntegrity(string path, bool requireKeyedIntegrity)
+    {
         try
         {
             string? expectedPreviousHash = null;
             var lineNumber = 0;
-            foreach (var line in File.ReadLines(path))
+            foreach (var entry in ReadLegacyEntries(path))
             {
-                if (string.IsNullOrWhiteSpace(line))
-                {
-                    continue;
-                }
-
                 lineNumber++;
-                using var document = JsonDocument.Parse(line);
-                var root = document.RootElement;
-                if (!root.TryGetProperty("integrity", out var integrity) ||
-                    !IsSupportedIntegrityAlgorithm(integrity.TryGetString("algorithm")))
+                var failure = ValidateEntry(
+                    lineNumber,
+                    requireKeyedIntegrity,
+                    entry.TimestampUtc,
+                    entry.EventType,
+                    entry.Outcome,
+                    entry.CanonicalFields,
+                    entry.Algorithm,
+                    entry.PreviousHash,
+                    entry.EntryHash,
+                    expectedPreviousHash);
+                if (failure is not null)
                 {
-                    return IntegrityFailure(lineNumber, requireKeyedIntegrity, "Audit entry is missing supported integrity metadata.");
+                    return failure;
                 }
 
-                var algorithm = integrity.GetRequiredString("algorithm");
-                if (requireKeyedIntegrity && !string.Equals(algorithm, HmacSha256Algorithm, StringComparison.Ordinal))
-                {
-                    return IntegrityFailure(lineNumber, requireKeyedIntegrity, "Audit entry is not keyed.");
-                }
-
-                var previousHash = integrity.TryGetString("previousHash");
-                if (!string.Equals(previousHash, expectedPreviousHash, StringComparison.Ordinal))
-                {
-                    return IntegrityFailure(lineNumber, requireKeyedIntegrity, "Audit entry previous hash does not match prior entry.");
-                }
-
-                var timestampUtc = root.GetProperty("timestampUtc").GetDateTimeOffset();
-                var eventType = root.GetRequiredString("eventType");
-                var outcome = root.GetRequiredString("outcome");
-                var canonicalFields = CanonicalizeFields(root.GetProperty("fields"));
-                var expectedEntryHash = ComputeEntryHash(timestampUtc, eventType, outcome, canonicalFields, previousHash, algorithm);
-                var actualEntryHash = integrity.TryGetString("entryHash");
-                if (!string.Equals(actualEntryHash, expectedEntryHash, StringComparison.Ordinal))
-                {
-                    return IntegrityFailure(lineNumber, requireKeyedIntegrity, "Audit entry hash does not match entry content.");
-                }
-
-                expectedPreviousHash = actualEntryHash;
+                expectedPreviousHash = entry.EntryHash;
             }
 
             return new SecurityAuditIntegrityResult(true, lineNumber, null);
@@ -127,62 +506,105 @@ public sealed class SecurityAuditService(ILogger<SecurityAuditService> logger) :
         }
     }
 
-    public static void ValidateStartup(bool isProduction)
+    private static IReadOnlyList<StoredAuditEntry> ReadLegacyEntries(string path)
     {
-        if (isProduction && string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(IntegrityKeyEnvironmentVariable)))
+        var entries = new List<StoredAuditEntry>();
+        foreach (var line in File.ReadLines(path))
         {
-            throw new InvalidOperationException("Security audit integrity validation failed.");
+            if (string.IsNullOrWhiteSpace(line))
+            {
+                continue;
+            }
+
+            using var document = JsonDocument.Parse(line);
+            var root = document.RootElement;
+            var integrity = root.GetProperty("integrity");
+            entries.Add(new StoredAuditEntry(
+                root.GetProperty("timestampUtc").GetDateTimeOffset(),
+                root.GetRequiredString("eventType"),
+                root.GetRequiredString("outcome"),
+                CanonicalizeFields(root.GetProperty("fields")),
+                integrity.GetRequiredString("algorithm"),
+                integrity.TryGetString("previousHash"),
+                integrity.GetRequiredString("entryHash")));
         }
 
-        var path = ResolveAuditPath();
-        if (File.Exists(path) && !VerifyIntegrity(path, requireKeyedIntegrity: isProduction).IsValid)
+        return entries;
+    }
+
+    private static SecurityAuditIntegrityResult? ValidateEntry(
+        int entryNumber,
+        bool requireKeyedIntegrity,
+        DateTimeOffset timestampUtc,
+        string eventType,
+        string outcome,
+        string canonicalFields,
+        string algorithm,
+        string? previousHash,
+        string entryHash,
+        string? expectedPreviousHash)
+    {
+        if (!IsSupportedIntegrityAlgorithm(algorithm))
         {
-            throw new InvalidOperationException("Security audit integrity validation failed.");
+            return IntegrityFailure(entryNumber, requireKeyedIntegrity, "Audit entry is missing supported integrity metadata.");
+        }
+
+        if (requireKeyedIntegrity && !string.Equals(algorithm, HmacSha256Algorithm, StringComparison.Ordinal))
+        {
+            return IntegrityFailure(entryNumber, requireKeyedIntegrity, "Audit entry is not keyed.");
+        }
+
+        if (!string.Equals(previousHash, expectedPreviousHash, StringComparison.Ordinal))
+        {
+            return IntegrityFailure(entryNumber, requireKeyedIntegrity, "Audit entry previous hash does not match prior entry.");
+        }
+
+        var expectedEntryHash = ComputeEntryHash(timestampUtc, eventType, outcome, canonicalFields, previousHash, algorithm);
+        return string.Equals(entryHash, expectedEntryHash, StringComparison.Ordinal)
+            ? null
+            : IntegrityFailure(entryNumber, requireKeyedIntegrity, "Audit entry hash does not match entry content.");
+    }
+
+    private static void ConfigureAuditDurability(SqliteConnection connection)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            PRAGMA busy_timeout = 30000;
+            PRAGMA synchronous = FULL;
+            """;
+        command.ExecuteNonQuery();
+    }
+
+    private static void HardenAuditDatabaseFiles(string databasePath)
+    {
+        RuntimeFileSecurity.HardenFile(databasePath);
+        if (File.Exists(databasePath + "-wal"))
+        {
+            RuntimeFileSecurity.HardenFile(databasePath + "-wal");
+        }
+
+        if (File.Exists(databasePath + "-shm"))
+        {
+            RuntimeFileSecurity.HardenFile(databasePath + "-shm");
         }
     }
 
-    public static string ResolveAuditPath()
+    private static bool CanOpenAsSqliteDatabase(string path)
     {
-        var configured = Environment.GetEnvironmentVariable("SYNCFACTORS_SECURITY_AUDIT_LOG_PATH");
-        if (!string.IsNullOrWhiteSpace(configured))
-        {
-            return Path.GetFullPath(configured);
-        }
-
-        var repoRoot = Environment.GetEnvironmentVariable("REPO_ROOT");
-        var root = string.IsNullOrWhiteSpace(repoRoot)
-            ? Environment.CurrentDirectory
-            : repoRoot;
-        return Path.Combine(root, "state", "runtime", "security-audit.jsonl");
-    }
-
-    private static string? ResolvePreviousHash(string path)
-    {
-        if (!File.Exists(path))
-        {
-            return null;
-        }
-
-        var lastLine = File.ReadLines(path)
-            .LastOrDefault(line => !string.IsNullOrWhiteSpace(line));
-        if (string.IsNullOrWhiteSpace(lastLine))
-        {
-            return null;
-        }
-
         try
         {
-            using var document = JsonDocument.Parse(lastLine);
-            if (document.RootElement.TryGetProperty("integrity", out var integrity))
-            {
-                return integrity.TryGetString("entryHash");
-            }
+            using var connection = SqliteConnections.Open(path, SqliteOpenMode.ReadOnly);
+            connection.Open();
+            using var command = connection.CreateCommand();
+            command.CommandText = "PRAGMA schema_version;";
+            _ = command.ExecuteScalar();
+            return true;
         }
-        catch (JsonException)
+        catch (SqliteException)
         {
+            return false;
         }
-
-        return ComputeSha256(lastLine);
     }
 
     private static string ResolveIntegrityAlgorithm()
@@ -196,8 +618,8 @@ public sealed class SecurityAuditService(ILogger<SecurityAuditService> logger) :
         return hasIntegrityKey ? HmacSha256Algorithm : Sha256Algorithm;
     }
 
-    private static SecurityAuditIntegrityResult IntegrityFailure(int lineNumber, bool requireKeyedIntegrity, string detailedError) =>
-        new(false, lineNumber, requireKeyedIntegrity ? "Audit log integrity verification failed." : detailedError);
+    private static SecurityAuditIntegrityResult IntegrityFailure(int entryNumber, bool requireKeyedIntegrity, string detailedError) =>
+        new(false, entryNumber, requireKeyedIntegrity ? "Audit log integrity verification failed." : detailedError);
 
     private static bool IsProductionEnvironment() =>
         string.Equals(
@@ -235,6 +657,9 @@ public sealed class SecurityAuditService(ILogger<SecurityAuditService> logger) :
         return Convert.ToHexString(bytes).ToLowerInvariant();
     }
 
+    private static string ComputeFileDigest(string path) =>
+        Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(path))).ToLowerInvariant();
+
     private static string ComputeHmacSha256(string value)
     {
         var key = Environment.GetEnvironmentVariable(IntegrityKeyEnvironmentVariable);
@@ -268,9 +693,22 @@ public sealed class SecurityAuditService(ILogger<SecurityAuditService> logger) :
             .Select(property => $"{JsonSerializer.Serialize(property.Name)}:{property.Value.GetRawText()}");
         return "{" + string.Join(",", parts) + "}";
     }
+
+    private sealed record StoredAuditEntry(
+        DateTimeOffset TimestampUtc,
+        string EventType,
+        string Outcome,
+        string CanonicalFields,
+        string Algorithm,
+        string? PreviousHash,
+        string EntryHash);
 }
 
 public sealed record SecurityAuditIntegrityResult(
     bool IsValid,
     int EntryCount,
     string? Error);
+
+public sealed record SecurityAuditEvent(
+    DateTimeOffset TimestampUtc,
+    string EventType);

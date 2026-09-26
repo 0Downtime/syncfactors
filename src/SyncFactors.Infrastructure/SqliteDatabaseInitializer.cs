@@ -5,7 +5,7 @@ namespace SyncFactors.Infrastructure;
 
 public sealed class SqliteDatabaseInitializer(SqlitePathResolver pathResolver)
 {
-    private const int CurrentSchemaVersion = 15;
+    private const int CurrentSchemaVersion = 18;
 
     public async Task InitializeAsync(CancellationToken cancellationToken)
     {
@@ -21,7 +21,9 @@ public sealed class SqliteDatabaseInitializer(SqlitePathResolver pathResolver)
             RuntimeFileSecurity.EnsureDirectory(directory);
         }
 
+        RuntimeFileSecurity.EnsureParentDirectory(databasePath);
         var sqlitePassword = SqliteConnections.GetConfiguredPassword();
+        SqliteDatabaseEncryptionMigrator.RecoverInterruptedConversionIfNeeded(databasePath, sqlitePassword);
         if (!string.IsNullOrWhiteSpace(sqlitePassword))
         {
             await SqliteDatabaseEncryptionMigrator.EnsureEncryptedAsync(databasePath, sqlitePassword, cancellationToken);
@@ -141,6 +143,24 @@ public sealed class SqliteDatabaseInitializer(SqlitePathResolver pathResolver)
         {
             await ApplyVersion15Async(connection, transaction, cancellationToken);
             await InsertVersionAsync(connection, transaction, 15, cancellationToken);
+        }
+
+        if (!appliedVersions.Contains(16))
+        {
+            await ApplyVersion16Async(connection, transaction, cancellationToken);
+            await InsertVersionAsync(connection, transaction, 16, cancellationToken);
+        }
+
+        if (!appliedVersions.Contains(17))
+        {
+            await ApplyVersion17Async(connection, transaction, cancellationToken);
+            await InsertVersionAsync(connection, transaction, 17, cancellationToken);
+        }
+
+        if (!appliedVersions.Contains(18))
+        {
+            await ApplyVersion18Async(connection, transaction, cancellationToken);
+            await InsertVersionAsync(connection, transaction, 18, cancellationToken);
         }
 
         await transaction.CommitAsync(cancellationToken);
@@ -549,6 +569,137 @@ public sealed class SqliteDatabaseInitializer(SqlitePathResolver pathResolver)
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
+    private static async Task ApplyVersion16Async(
+        SqliteConnection connection,
+        DbTransaction transaction,
+        CancellationToken cancellationToken)
+    {
+        if (await TableExistsAsync(connection, transaction, "graveyard_retention", cancellationToken))
+        {
+            var retentionColumns = await GetTableColumnsAsync(connection, transaction, "graveyard_retention", cancellationToken);
+            if (!retentionColumns.Contains("version"))
+            {
+                await AddColumnAsync(connection, transaction, SchemaColumnMigration.GraveyardRetentionVersion, cancellationToken);
+            }
+
+            if (!retentionColumns.Contains("deletion_claim_id"))
+            {
+                await AddColumnAsync(connection, transaction, SchemaColumnMigration.GraveyardRetentionDeletionClaimId, cancellationToken);
+            }
+
+            if (!retentionColumns.Contains("deletion_claim_version"))
+            {
+                await AddColumnAsync(connection, transaction, SchemaColumnMigration.GraveyardRetentionDeletionClaimVersion, cancellationToken);
+            }
+        }
+
+        if (await TableExistsAsync(connection, transaction, "run_queue", cancellationToken))
+        {
+            var queueColumns = await GetTableColumnsAsync(connection, transaction, "run_queue", cancellationToken);
+            if (!queueColumns.Contains("target_worker_id"))
+            {
+                await AddColumnAsync(connection, transaction, SchemaColumnMigration.RunQueueTargetWorkerId, cancellationToken);
+            }
+        }
+    }
+
+    private static async Task ApplyVersion17Async(
+        SqliteConnection connection,
+        DbTransaction transaction,
+        CancellationToken cancellationToken)
+    {
+        if (!await TableExistsAsync(connection, transaction, "graveyard_retention", cancellationToken))
+        {
+            return;
+        }
+
+        var retentionColumns = await GetTableColumnsAsync(connection, transaction, "graveyard_retention", cancellationToken);
+        if (!retentionColumns.Contains("deletion_lease_expires_at_utc"))
+        {
+            await AddColumnAsync(connection, transaction, SchemaColumnMigration.GraveyardRetentionDeletionLeaseExpiresAtUtc, cancellationToken);
+        }
+    }
+
+    private static async Task ApplyVersion18Async(
+        SqliteConnection connection,
+        DbTransaction transaction,
+        CancellationToken cancellationToken)
+    {
+        await using (var command = connection.CreateCommand())
+        {
+            command.Transaction = (SqliteTransaction)transaction;
+            command.CommandText =
+                """
+                CREATE TABLE IF NOT EXISTS directory_deletion_quarantine (
+                  source_kind TEXT NOT NULL,
+                  source_id TEXT NOT NULL,
+                  destructive_mode TEXT NOT NULL,
+                  original_status TEXT NOT NULL,
+                  classification TEXT NOT NULL,
+                  reason_code TEXT NOT NULL,
+                  reason_message TEXT NOT NULL,
+                  run_id TEXT NULL,
+                  dry_run INTEGER NOT NULL DEFAULT 0,
+                  captured_at TEXT NOT NULL,
+                  PRIMARY KEY (source_kind, source_id)
+                );
+
+                CREATE TRIGGER IF NOT EXISTS directory_deletion_quarantine_immutable_update
+                BEFORE UPDATE ON directory_deletion_quarantine
+                BEGIN
+                  SELECT RAISE(ABORT, 'directory deletion quarantine evidence is immutable');
+                END;
+
+                CREATE TRIGGER IF NOT EXISTS directory_deletion_quarantine_immutable_delete
+                BEFORE DELETE ON directory_deletion_quarantine
+                BEGIN
+                  SELECT RAISE(ABORT, 'directory deletion quarantine evidence is immutable');
+                END;
+                """;
+            await command.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        if (await TableExistsAsync(connection, transaction, "runtime_status", cancellationToken))
+        {
+            var runtimeColumns = await GetTableColumnsAsync(connection, transaction, "runtime_status", cancellationToken);
+            if (!runtimeColumns.Contains("mode"))
+            {
+                await AddColumnAsync(connection, transaction, SchemaColumnMigration.RuntimeStatusMode, cancellationToken);
+            }
+        }
+    }
+
+    private enum SchemaColumnMigration
+    {
+        GraveyardRetentionVersion,
+        GraveyardRetentionDeletionClaimId,
+        GraveyardRetentionDeletionClaimVersion,
+        RunQueueTargetWorkerId,
+        GraveyardRetentionDeletionLeaseExpiresAtUtc,
+        RuntimeStatusMode
+    }
+
+    private static async Task AddColumnAsync(
+        SqliteConnection connection,
+        DbTransaction transaction,
+        SchemaColumnMigration migration,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = (SqliteTransaction)transaction;
+        command.CommandText = migration switch
+        {
+            SchemaColumnMigration.GraveyardRetentionVersion => "ALTER TABLE graveyard_retention ADD COLUMN version INTEGER NOT NULL DEFAULT 0;",
+            SchemaColumnMigration.GraveyardRetentionDeletionClaimId => "ALTER TABLE graveyard_retention ADD COLUMN deletion_claim_id TEXT NULL;",
+            SchemaColumnMigration.GraveyardRetentionDeletionClaimVersion => "ALTER TABLE graveyard_retention ADD COLUMN deletion_claim_version INTEGER NULL;",
+            SchemaColumnMigration.RunQueueTargetWorkerId => "ALTER TABLE run_queue ADD COLUMN target_worker_id TEXT NULL;",
+            SchemaColumnMigration.GraveyardRetentionDeletionLeaseExpiresAtUtc => "ALTER TABLE graveyard_retention ADD COLUMN deletion_lease_expires_at_utc TEXT NULL;",
+            SchemaColumnMigration.RuntimeStatusMode => "ALTER TABLE runtime_status ADD COLUMN mode TEXT NULL;",
+            _ => throw new ArgumentOutOfRangeException(nameof(migration), migration, "Unknown schema column migration.")
+        };
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
     private static async Task ApplyVersion4Async(
         SqliteConnection connection,
         DbTransaction transaction,
@@ -747,6 +898,7 @@ public sealed class SqliteDatabaseInitializer(SqlitePathResolver pathResolver)
             "runs" => "PRAGMA table_info(runs);",
             "run_queue" => "PRAGMA table_info(run_queue);",
             "runtime_status" => "PRAGMA table_info(runtime_status);",
+            "directory_deletion_quarantine" => "PRAGMA table_info(directory_deletion_quarantine);",
             "schema_versions" => "PRAGMA table_info(schema_versions);",
             "sync_schedule" => "PRAGMA table_info(sync_schedule);",
             "worker_heartbeat" => "PRAGMA table_info(worker_heartbeat);",

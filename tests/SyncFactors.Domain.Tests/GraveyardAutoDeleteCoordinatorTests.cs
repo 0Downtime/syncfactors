@@ -57,6 +57,106 @@ public sealed class GraveyardAutoDeleteCoordinatorTests
     }
 
     [Fact]
+    public async Task TryExecuteAsync_RechecksEligibilityImmediatelyBeforeDelete()
+    {
+        var retentionStore = new SequencedGraveyardRetentionStore(
+            [CreateRecord("10001", isOnHold: false, endDateUtc: DateTimeOffset.Parse("2026-02-01T00:00:00Z"))],
+            []);
+        var commandGateway = new CapturingDirectoryCommandGateway();
+        var lifecycle = new CapturingRunLifecycleService();
+        var coordinator = CreateCoordinator(
+            retentionStore,
+            CreateDirectoryGateway("10001"),
+            commandGateway,
+            lifecycle,
+            autoDeleteEnabled: true,
+            now: DateTimeOffset.Parse("2026-04-11T12:00:00Z"));
+
+        var runId = await coordinator.TryExecuteAsync(CancellationToken.None);
+
+        Assert.NotNull(runId);
+        Assert.Empty(commandGateway.Commands);
+        var entry = Assert.Single(lifecycle.Entries);
+        Assert.Equal("conflicts", entry.Bucket);
+        Assert.Equal("DeletePreconditionFailed", entry.ReviewCaseType);
+        Assert.False(entry.Item.GetProperty("applied").GetBoolean());
+    }
+
+    [Fact]
+    public async Task TryExecuteAsync_DoesNotDeleteWhenHoldIsPlacedAfterTheInitialSnapshot()
+    {
+        var retentionStore = new StubGraveyardRetentionStore(
+            [CreateRecord("10001", isOnHold: false, endDateUtc: DateTimeOffset.Parse("2026-02-01T00:00:00Z"))],
+            placeHoldAfterClaim: true);
+        var commandGateway = new CapturingDirectoryCommandGateway();
+        var lifecycle = new CapturingRunLifecycleService();
+        var coordinator = CreateCoordinator(retentionStore, CreateDirectoryGateway("10001"), commandGateway, lifecycle, true, DateTimeOffset.Parse("2026-04-11T12:00:00Z"));
+
+        await coordinator.TryExecuteAsync(CancellationToken.None);
+
+        Assert.Empty(commandGateway.Commands);
+        var entry = Assert.Single(lifecycle.Entries);
+        Assert.Equal("conflicts", entry.Bucket);
+        Assert.Equal("DeletePreconditionFailed", entry.ReviewCaseType);
+    }
+
+    [Fact]
+    public async Task TryExecuteAsync_RejectsHoldBetweenFinalRevalidationAndDirectoryMutation_WhenDeletionLeaseIsActive()
+    {
+        var retentionStore = new BarrierControlledGraveyardRetentionStore(
+            CreateRecord("10001", isOnHold: false, endDateUtc: DateTimeOffset.Parse("2026-02-01T00:00:00Z")));
+        var commandGateway = new BarrierControlledDirectoryCommandGateway();
+        var coordinator = CreateCoordinator(
+            retentionStore,
+            CreateDirectoryGateway("10001"),
+            commandGateway,
+            new CapturingRunLifecycleService(),
+            autoDeleteEnabled: true,
+            now: DateTimeOffset.Parse("2026-04-11T12:00:00Z"));
+
+        var execution = coordinator.TryExecuteAsync(CancellationToken.None);
+        await commandGateway.WaitForMutationAttemptAsync();
+
+        var holdResult = await retentionStore.SetHoldAsync(
+            "10001",
+            isOnHold: true,
+            actingUserId: "admin-1",
+            changedAtUtc: DateTimeOffset.Parse("2026-04-11T12:00:00Z"),
+            CancellationToken.None);
+        commandGateway.ReleaseMutation();
+        await execution;
+
+        Assert.False(holdResult.Succeeded);
+        Assert.Equal(GraveyardHoldChangeOutcome.ActiveDeletionLease, holdResult.Outcome);
+        Assert.False(retentionStore.HoldWasAccepted);
+        Assert.Single(commandGateway.CompletedCommands);
+    }
+
+    [Fact]
+    public async Task TryExecuteAsync_ReleasesDeletionLeaseWhenDirectoryMutationFails()
+    {
+        var retentionStore = new StubGraveyardRetentionStore(
+            [CreateRecord("10001", isOnHold: false, endDateUtc: DateTimeOffset.Parse("2026-02-01T00:00:00Z"))]);
+        var lifecycle = new CapturingRunLifecycleService();
+        var coordinator = CreateCoordinator(
+            retentionStore,
+            CreateDirectoryGateway("10001"),
+            new FailingDirectoryCommandGateway(),
+            lifecycle,
+            autoDeleteEnabled: true,
+            now: DateTimeOffset.Parse("2026-04-11T12:00:00Z"));
+
+        await coordinator.TryExecuteAsync(CancellationToken.None);
+
+        Assert.Equal(0, retentionStore.ActiveClaimCount);
+        Assert.Empty(retentionStore.ResolvedWorkerIds);
+        var entry = Assert.Single(lifecycle.Entries);
+        Assert.Equal("conflicts", entry.Bucket);
+        Assert.True(entry.Item.GetProperty("applied").GetBoolean());
+        Assert.False(entry.Item.GetProperty("succeeded").GetBoolean());
+    }
+
+    [Fact]
     public async Task TryExecuteAsync_ManualReviewDeletions_RebucketsDeleteWithoutExecutingDirectoryMutation()
     {
         var retentionStore = new StubGraveyardRetentionStore(
@@ -114,7 +214,7 @@ public sealed class GraveyardAutoDeleteCoordinatorTests
     }
 
     [Fact]
-    public async Task ApproveDeleteAsync_DeletesEligibleUser_WhenAutoDeleteIsDisabled()
+    public async Task ApproveDeleteAsync_RejectsEligibleUserWithoutQueueingWhenCapabilityIsDisabled()
     {
         var retentionStore = new StubGraveyardRetentionStore(
             [
@@ -132,21 +232,119 @@ public sealed class GraveyardAutoDeleteCoordinatorTests
 
         var result = await coordinator.ApproveDeleteAsync("10001", "admin", CancellationToken.None);
 
-        Assert.True(result.Succeeded);
-        Assert.StartsWith("graveyard-delete-approval-", result.RunId, StringComparison.Ordinal);
-        Assert.Single(commandGateway.Commands);
-        Assert.Equal(["10001"], retentionStore.ResolvedWorkerIds);
-        Assert.Equal(1, lifecycle.CompletedCalls);
-        Assert.Contains(lifecycle.Entries, entry => entry.WorkerId == "10001" && entry.Bucket == "deletions");
+        Assert.False(result.Succeeded);
+        Assert.Equal(RunQueueProtocol.DeletionCapabilityDisabledMessage, result.Message);
+        Assert.Null(result.RunId);
+        Assert.Empty(commandGateway.Commands);
+        Assert.Empty(retentionStore.ResolvedWorkerIds);
+        Assert.Empty(lifecycle.Entries);
+    }
+
+    [Fact]
+    public async Task ExecuteApprovedDeleteAsync_RejectsForgedApprovalMetadataBeforeDeletionCoordination()
+    {
+        var retentionStore = new StubGraveyardRetentionStore(
+            [CreateRecord("10001", isOnHold: false, endDateUtc: DateTimeOffset.Parse("2026-02-01T00:00:00Z"))]);
+        var commandGateway = new CapturingDirectoryCommandGateway();
+        var lifecycle = new CapturingRunLifecycleService();
+        var coordinator = CreateCoordinator(
+            retentionStore,
+            CreateDirectoryGateway("10001"),
+            commandGateway,
+            lifecycle,
+            autoDeleteEnabled: false,
+            now: DateTimeOffset.Parse("2026-04-11T12:00:00Z"));
+        var forgedRequest = new RunQueueRequest(
+            RequestId: "forged-approval",
+            Mode: RunQueueProtocol.GraveyardDeleteApprovalMode,
+            DryRun: false,
+            RunTrigger: "AdminApproval",
+            RequestedBy: "admin",
+            Status: "InProgress",
+            RequestedAt: DateTimeOffset.Parse("2026-04-11T11:59:00Z"),
+            StartedAt: DateTimeOffset.Parse("2026-04-11T12:00:00Z"),
+            CompletedAt: null,
+            RunId: null,
+            ErrorMessage: null,
+            TargetWorkerId: "10001");
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            coordinator.ExecuteApprovedDeleteAsync(forgedRequest, CancellationToken.None));
+
+        Assert.Equal(RunQueueProtocol.DeletionCapabilityDisabledMessage, exception.Message);
+        Assert.Empty(commandGateway.Commands);
+        Assert.Empty(retentionStore.ResolvedWorkerIds);
+        Assert.Empty(lifecycle.Entries);
+    }
+
+    [Fact]
+    public async Task ExecuteApprovedDeleteAsync_RejectsValidLegacyApprovalWhenDeletionCapabilityIsDisabled()
+    {
+        var retentionStore = new StubGraveyardRetentionStore(
+            [CreateRecord("10001", isOnHold: false, endDateUtc: DateTimeOffset.Parse("2026-02-01T00:00:00Z"))]);
+        var commandGateway = new CapturingDirectoryCommandGateway();
+        var lifecycle = new CapturingRunLifecycleService();
+        var coordinator = CreateCoordinator(
+            retentionStore,
+            CreateDirectoryGateway("10001"),
+            commandGateway,
+            lifecycle,
+            autoDeleteEnabled: false,
+            now: DateTimeOffset.Parse("2026-04-11T12:00:00Z"),
+            realSyncSettings: new RealSyncSettings(Enabled: true, DryRunOnly: false));
+        var legacyApproval = new RunQueueRequest(
+            RequestId: "legacy-approval",
+            Mode: RunQueueProtocol.GraveyardDeleteApprovalMode,
+            DryRun: false,
+            RunTrigger: RunQueueProtocol.AuthenticatedAdminDeletionQueueTrigger,
+            RequestedBy: "admin",
+            Status: "InProgress",
+            RequestedAt: DateTimeOffset.Parse("2026-04-11T11:59:00Z"),
+            StartedAt: DateTimeOffset.Parse("2026-04-11T12:00:00Z"),
+            CompletedAt: null,
+            RunId: null,
+            ErrorMessage: null,
+            TargetWorkerId: "10001");
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            coordinator.ExecuteApprovedDeleteAsync(legacyApproval, CancellationToken.None));
+
+        Assert.Equal(RunQueueProtocol.DeletionCapabilityDisabledMessage, exception.Message);
+        Assert.Empty(commandGateway.Commands);
+        Assert.Empty(retentionStore.ResolvedWorkerIds);
+        Assert.Empty(lifecycle.Entries);
+    }
+
+    [Fact]
+    public async Task ApproveDeleteAsync_RejectsEveryApprovalWhenDeletionCapabilityIsDisabled()
+    {
+        var retentionStore = new StubGraveyardRetentionStore(
+            [CreateRecord("10001", isOnHold: false, endDateUtc: DateTimeOffset.Parse("2026-02-01T00:00:00Z"))]);
+        var commandGateway = new CapturingDirectoryCommandGateway();
+        var coordinator = CreateCoordinator(
+            retentionStore,
+            CreateDirectoryGateway("10001"),
+            commandGateway,
+            new CapturingRunLifecycleService(),
+            autoDeleteEnabled: false,
+            now: DateTimeOffset.Parse("2026-04-11T12:00:00Z"));
+
+        var first = await coordinator.ApproveDeleteAsync("10001", "admin", CancellationToken.None);
+        var duplicate = await coordinator.ApproveDeleteAsync("10001", "admin", CancellationToken.None);
+
+        Assert.False(first.Succeeded);
+        Assert.False(duplicate.Succeeded);
+        Assert.Equal(RunQueueProtocol.DeletionCapabilityDisabledMessage, first.Message);
+        Assert.Equal(RunQueueProtocol.DeletionCapabilityDisabledMessage, duplicate.Message);
+        Assert.Empty(commandGateway.Commands);
     }
 
     [Theory]
-    [InlineData(false, false, "Real AD sync is disabled for this environment.")]
-    [InlineData(true, true, "Dry-run-only mode is enabled. Live AD writes are disabled for this environment.")]
+    [InlineData(false, false)]
+    [InlineData(true, true)]
     public async Task ApproveDeleteAsync_RejectsDirectoryMutation_WhenLiveWritesAreDisabled(
         bool enabled,
-        bool dryRunOnly,
-        string expectedMessage)
+        bool dryRunOnly)
     {
         var retentionStore = new StubGraveyardRetentionStore(
             [
@@ -166,7 +364,7 @@ public sealed class GraveyardAutoDeleteCoordinatorTests
         var result = await coordinator.ApproveDeleteAsync("10001", "admin", CancellationToken.None);
 
         Assert.False(result.Succeeded);
-        Assert.Equal(expectedMessage, result.Message);
+        Assert.Equal(RunQueueProtocol.DeletionCapabilityDisabledMessage, result.Message);
         Assert.Empty(commandGateway.Commands);
         Assert.Empty(retentionStore.ResolvedWorkerIds);
     }
@@ -220,13 +418,13 @@ public sealed class GraveyardAutoDeleteCoordinatorTests
         var result = await coordinator.ApproveDeleteAsync("10001", "admin", CancellationToken.None);
 
         Assert.False(result.Succeeded);
-        Assert.Contains("on hold", result.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(RunQueueProtocol.DeletionCapabilityDisabledMessage, result.Message);
         Assert.Empty(commandGateway.Commands);
         Assert.Empty(lifecycle.Entries);
     }
 
     private static GraveyardAutoDeleteCoordinator CreateCoordinator(
-        StubGraveyardRetentionStore retentionStore,
+        IGraveyardRetentionStore retentionStore,
         IDirectoryGateway directoryGateway,
         IDirectoryCommandGateway commandGateway,
         CapturingRunLifecycleService lifecycle,
@@ -294,9 +492,132 @@ public sealed class GraveyardAutoDeleteCoordinatorTests
                     ["employeeID"] = workerId
                 })).ToArray());
 
-    private sealed class StubGraveyardRetentionStore(IReadOnlyList<GraveyardRetentionRecord> records) : IGraveyardRetentionStore
+    private sealed class BarrierControlledGraveyardRetentionStore(GraveyardRetentionRecord initialRecord) : IGraveyardRetentionStore
+    {
+        private GraveyardRetentionRecord _record = initialRecord;
+        private GraveyardDeletionClaim? _claim;
+
+        public bool HoldWasAccepted { get; private set; }
+
+        public Task UpsertObservedAsync(GraveyardRetentionRecord record, CancellationToken cancellationToken) => Task.CompletedTask;
+
+        public Task ResolveAsync(string workerId, CancellationToken cancellationToken) => Task.CompletedTask;
+
+        public Task<IReadOnlyList<GraveyardRetentionRecord>> ListActiveAsync(CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyList<GraveyardRetentionRecord>>([_record]);
+
+        public Task<GraveyardHoldChangeResult> SetHoldAsync(string workerId, bool isOnHold, string? actingUserId, DateTimeOffset changedAtUtc, CancellationToken cancellationToken)
+        {
+            if (_claim is { } claim && claim.LeaseExpiresAtUtc > changedAtUtc)
+            {
+                return Task.FromResult(new GraveyardHoldChangeResult(GraveyardHoldChangeOutcome.ActiveDeletionLease));
+            }
+
+            HoldWasAccepted = true;
+            _record = _record with
+            {
+                IsOnHold = isOnHold,
+                HoldPlacedAtUtc = isOnHold ? changedAtUtc : null,
+                HoldPlacedBy = isOnHold ? actingUserId : null,
+                Version = _record.Version + 1,
+                DeletionClaimId = null,
+                DeletionClaimVersion = null
+            };
+            _claim = null;
+            return Task.FromResult(new GraveyardHoldChangeResult(GraveyardHoldChangeOutcome.Accepted));
+        }
+
+        public Task<GraveyardDeletionClaim?> TryClaimDeletionAsync(string workerId, long expectedVersion, string claimId, DateTimeOffset now, DateTimeOffset leaseExpiresAtUtc, CancellationToken cancellationToken)
+        {
+            if (!string.Equals(workerId, _record.WorkerId, StringComparison.OrdinalIgnoreCase) ||
+                _record.Version != expectedVersion ||
+                _record.IsOnHold ||
+                _claim is { LeaseExpiresAtUtc: var currentLeaseExpiresAtUtc } && currentLeaseExpiresAtUtc > now)
+            {
+                return Task.FromResult<GraveyardDeletionClaim?>(null);
+            }
+
+            _claim = new GraveyardDeletionClaim(workerId, claimId, _record.Version + 1, leaseExpiresAtUtc);
+            _record = _record with
+            {
+                Version = _claim.Version,
+                DeletionClaimId = _claim.ClaimId,
+                DeletionClaimVersion = _claim.Version
+            };
+            return Task.FromResult<GraveyardDeletionClaim?>(_claim);
+        }
+
+        public Task<GraveyardDeletionClaim?> GetDeletionClaimAsync(string workerId, string claimId, long claimVersion, DateTimeOffset now, CancellationToken cancellationToken) =>
+            Task.FromResult(_claim is { } claim &&
+                            string.Equals(workerId, claim.WorkerId, StringComparison.OrdinalIgnoreCase) &&
+                            string.Equals(claimId, claim.ClaimId, StringComparison.Ordinal) &&
+                            claimVersion == claim.Version &&
+                            claim.LeaseExpiresAtUtc > now
+                ? claim
+                : null);
+
+        public Task<bool> ReleaseDeletionClaimAsync(string workerId, string claimId, long claimVersion, CancellationToken cancellationToken) =>
+            Task.FromResult(RemoveClaim(workerId, claimId, claimVersion));
+
+        public Task<bool> ResolveDeletionClaimAsync(string workerId, string claimId, long claimVersion, CancellationToken cancellationToken) =>
+            Task.FromResult(RemoveClaim(workerId, claimId, claimVersion));
+
+        public Task<GraveyardRetentionReportStatus> GetReportStatusAsync(CancellationToken cancellationToken) =>
+            Task.FromResult(new GraveyardRetentionReportStatus(null, null, null));
+
+        public Task RecordReportAttemptAsync(DateTimeOffset attemptedAt, string? error, DateTimeOffset? sentAtUtc, CancellationToken cancellationToken) =>
+            Task.CompletedTask;
+
+        private bool RemoveClaim(string workerId, string claimId, long claimVersion)
+        {
+            if (_claim is not { } claim ||
+                !string.Equals(workerId, claim.WorkerId, StringComparison.OrdinalIgnoreCase) ||
+                !string.Equals(claimId, claim.ClaimId, StringComparison.Ordinal) ||
+                claimVersion != claim.Version)
+            {
+                return false;
+            }
+
+            _claim = null;
+            _record = _record with
+            {
+                Version = _record.Version + 1,
+                DeletionClaimId = null,
+                DeletionClaimVersion = null
+            };
+            return true;
+        }
+    }
+
+    private sealed class BarrierControlledDirectoryCommandGateway : IDirectoryCommandGateway
+    {
+        private readonly TaskCompletionSource _mutationAttempted = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource _allowMutation = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public List<DirectoryMutationCommand> CompletedCommands { get; } = [];
+
+        public async Task<DirectoryCommandResult> ExecuteAsync(DirectoryMutationCommand command, CancellationToken cancellationToken)
+        {
+            _mutationAttempted.TrySetResult();
+            await _allowMutation.Task.WaitAsync(cancellationToken);
+            CompletedCommands.Add(command);
+            return new DirectoryCommandResult(true, command.Action, command.SamAccountName, command.CurrentDistinguishedName, "Deleted", null);
+        }
+
+        public Task WaitForMutationAttemptAsync() => _mutationAttempted.Task;
+
+        public void ReleaseMutation() => _allowMutation.TrySetResult();
+    }
+
+    private sealed class StubGraveyardRetentionStore(
+        IReadOnlyList<GraveyardRetentionRecord> records,
+        bool placeHoldAfterClaim = false) : IGraveyardRetentionStore
     {
         public List<string> ResolvedWorkerIds { get; } = [];
+        private readonly Dictionary<string, GraveyardDeletionClaim> _claims = new(StringComparer.OrdinalIgnoreCase);
+        private bool _holdPlacedAfterClaim;
+
+        public int ActiveClaimCount => _claims.Count;
 
         public Task UpsertObservedAsync(GraveyardRetentionRecord record, CancellationToken cancellationToken) => Task.CompletedTask;
 
@@ -307,10 +628,100 @@ public sealed class GraveyardAutoDeleteCoordinatorTests
         }
 
         public Task<IReadOnlyList<GraveyardRetentionRecord>> ListActiveAsync(CancellationToken cancellationToken) =>
-            Task.FromResult(records);
+            Task.FromResult<IReadOnlyList<GraveyardRetentionRecord>>(
+                records.Select(record =>
+                    _claims.TryGetValue(record.WorkerId, out var claim)
+                        ? record with
+                        {
+                            Version = claim.Version,
+                            IsOnHold = _holdPlacedAfterClaim,
+                            HoldPlacedAtUtc = _holdPlacedAfterClaim ? DateTimeOffset.Parse("2026-04-11T12:00:00Z") : null,
+                            HoldPlacedBy = _holdPlacedAfterClaim ? "admin-1" : null,
+                            DeletionClaimId = claim.ClaimId,
+                            DeletionClaimVersion = claim.Version
+                        }
+                        : record).ToArray());
 
-        public Task SetHoldAsync(string workerId, bool isOnHold, string? actingUserId, DateTimeOffset changedAtUtc, CancellationToken cancellationToken) =>
+        public Task<GraveyardHoldChangeResult> SetHoldAsync(string workerId, bool isOnHold, string? actingUserId, DateTimeOffset changedAtUtc, CancellationToken cancellationToken) =>
+            Task.FromResult(new GraveyardHoldChangeResult(GraveyardHoldChangeOutcome.Accepted));
+
+        public Task<GraveyardDeletionClaim?> TryClaimDeletionAsync(string workerId, long expectedVersion, string claimId, DateTimeOffset now, DateTimeOffset leaseExpiresAtUtc, CancellationToken cancellationToken)
+        {
+            var record = records.SingleOrDefault(candidate => string.Equals(candidate.WorkerId, workerId, StringComparison.OrdinalIgnoreCase));
+            if (record is null || record.Version != expectedVersion || record.IsOnHold || _claims.ContainsKey(workerId))
+            {
+                return Task.FromResult<GraveyardDeletionClaim?>(null);
+            }
+
+            var claim = new GraveyardDeletionClaim(workerId, claimId, expectedVersion + 1, leaseExpiresAtUtc);
+            _claims[workerId] = claim;
+            _holdPlacedAfterClaim = placeHoldAfterClaim;
+            return Task.FromResult<GraveyardDeletionClaim?>(claim);
+        }
+
+        public Task<GraveyardDeletionClaim?> GetDeletionClaimAsync(string workerId, string claimId, long claimVersion, DateTimeOffset now, CancellationToken cancellationToken) =>
+            Task.FromResult(_claims.TryGetValue(workerId, out var claim) && claim.ClaimId == claimId && claim.Version == claimVersion && claim.LeaseExpiresAtUtc > now ? claim : null);
+
+        public Task<bool> ReleaseDeletionClaimAsync(string workerId, string claimId, long claimVersion, CancellationToken cancellationToken) =>
+            Task.FromResult(RemoveClaim(workerId, claimId, claimVersion));
+
+        public Task<bool> ResolveDeletionClaimAsync(string workerId, string claimId, long claimVersion, CancellationToken cancellationToken)
+        {
+            if (!RemoveClaim(workerId, claimId, claimVersion))
+            {
+                return Task.FromResult(false);
+            }
+
+            ResolvedWorkerIds.Add(workerId);
+            return Task.FromResult(true);
+        }
+
+        private bool RemoveClaim(string workerId, string claimId, long claimVersion)
+        {
+            if (!_claims.TryGetValue(workerId, out var claim) || claim.ClaimId != claimId || claim.Version != claimVersion)
+            {
+                return false;
+            }
+
+            _claims.Remove(workerId);
+            return true;
+        }
+
+        public Task<GraveyardRetentionReportStatus> GetReportStatusAsync(CancellationToken cancellationToken) =>
+            Task.FromResult(new GraveyardRetentionReportStatus(null, null, null));
+
+        public Task RecordReportAttemptAsync(DateTimeOffset attemptedAt, string? error, DateTimeOffset? sentAtUtc, CancellationToken cancellationToken) =>
             Task.CompletedTask;
+    }
+
+    private sealed class SequencedGraveyardRetentionStore(
+        IReadOnlyList<GraveyardRetentionRecord> initialRecords,
+        IReadOnlyList<GraveyardRetentionRecord> currentRecords) : IGraveyardRetentionStore
+    {
+        private int listCalls;
+
+        public Task UpsertObservedAsync(GraveyardRetentionRecord record, CancellationToken cancellationToken) => Task.CompletedTask;
+
+        public Task ResolveAsync(string workerId, CancellationToken cancellationToken) => Task.CompletedTask;
+
+        public Task<IReadOnlyList<GraveyardRetentionRecord>> ListActiveAsync(CancellationToken cancellationToken)
+        {
+            _ = cancellationToken;
+            return Task.FromResult(listCalls++ == 0 ? initialRecords : currentRecords);
+        }
+
+        public Task<GraveyardHoldChangeResult> SetHoldAsync(string workerId, bool isOnHold, string? actingUserId, DateTimeOffset changedAtUtc, CancellationToken cancellationToken) =>
+            Task.FromResult(new GraveyardHoldChangeResult(GraveyardHoldChangeOutcome.Accepted));
+
+        public Task<GraveyardDeletionClaim?> TryClaimDeletionAsync(string workerId, long expectedVersion, string claimId, DateTimeOffset now, DateTimeOffset leaseExpiresAtUtc, CancellationToken cancellationToken) =>
+            Task.FromResult<GraveyardDeletionClaim?>(new GraveyardDeletionClaim(workerId, claimId, expectedVersion + 1, leaseExpiresAtUtc));
+
+        public Task<GraveyardDeletionClaim?> GetDeletionClaimAsync(string workerId, string claimId, long claimVersion, DateTimeOffset now, CancellationToken cancellationToken) =>
+            Task.FromResult<GraveyardDeletionClaim?>(new GraveyardDeletionClaim(workerId, claimId, claimVersion, now.AddMinutes(1)));
+
+        public Task<bool> ReleaseDeletionClaimAsync(string workerId, string claimId, long claimVersion, CancellationToken cancellationToken) => Task.FromResult(true);
+
+        public Task<bool> ResolveDeletionClaimAsync(string workerId, string claimId, long claimVersion, CancellationToken cancellationToken) => Task.FromResult(true);
 
         public Task<GraveyardRetentionReportStatus> GetReportStatusAsync(CancellationToken cancellationToken) =>
             Task.FromResult(new GraveyardRetentionReportStatus(null, null, null));
@@ -343,6 +754,12 @@ public sealed class GraveyardAutoDeleteCoordinatorTests
             Commands.Add(command);
             return Task.FromResult(new DirectoryCommandResult(true, command.Action, command.SamAccountName, command.CurrentDistinguishedName, "Deleted", null));
         }
+    }
+
+    private sealed class FailingDirectoryCommandGateway : IDirectoryCommandGateway
+    {
+        public Task<DirectoryCommandResult> ExecuteAsync(DirectoryMutationCommand command, CancellationToken cancellationToken) =>
+            Task.FromResult(new DirectoryCommandResult(false, command.Action, command.SamAccountName, command.CurrentDistinguishedName, "Directory deletion failed", null));
     }
 
     private sealed class CapturingRunLifecycleService : IRunLifecycleService
