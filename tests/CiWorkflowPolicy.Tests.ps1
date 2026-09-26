@@ -48,10 +48,18 @@ permissions:
   pull-requests: write
 jobs:
   enable:
-    if: github.event.pull_request.base.ref == 'main' && github.actor == 'dependabot[bot]'
     runs-on: ubuntu-latest
     steps:
-      - run: gh pr merge --auto --merge "$PR_URL"
+      - id: candidate
+        env:
+          REPO: ${{ github.repository }}
+          EVENT_PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          pr_json="$(gh api "repos/${REPO}/pulls/${EVENT_PR_NUMBER}")"
+          eligible="$(jq -r --arg repo "$REPO" '(.base.ref == "main") and (.state == "open") and (.draft == false) and (.head.repo.fork == false) and (.head.repo.full_name == $repo) and (.user.login == "dependabot[bot]")' <<< "$pr_json")"
+          echo "eligible=$eligible" >> "$GITHUB_OUTPUT"
+      - if: steps.candidate.outputs.eligible == 'true'
+        run: gh pr merge --auto --merge --match-head-commit "$PR_HEAD_SHA" --repo "$REPO" "$PR_NUMBER"
 '@
             'test.yml' = @'
 name: Test
@@ -108,10 +116,18 @@ on:
     types: [opened, labeled]
 jobs:
   enable:
-    if: github.event.pull_request.base.ref == 'main' && contains(github.event.pull_request.labels.*.name, 'automerge:approved')
     runs-on: ubuntu-latest
     steps:
-      - run: gh pr merge --auto --merge "$PR_URL"
+      - id: candidate
+        env:
+          REPO: ${{ github.repository }}
+          EVENT_PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          pr_json="$(gh api "repos/${REPO}/pulls/${EVENT_PR_NUMBER}")"
+          eligible="$(jq -r --arg repo "$REPO" '(.base.ref == "main") and (.state == "open") and (.draft == false) and (.head.repo.fork == false) and (.head.repo.full_name == $repo) and ([.labels[]?.name] | index("automerge:approved") != null)' <<< "$pr_json")"
+          echo "eligible=$eligible" >> "$GITHUB_OUTPUT"
+      - if: steps.candidate.outputs.eligible == 'true'
+        run: gh pr merge --auto --merge --match-head-commit "$PR_HEAD_SHA" --repo "$REPO" "$PR_NUMBER"
 '@
             'test.yml' = "name: Test`non:`n  push:`n    branches: [main]"
             'security.yml' = "name: Security Scans`non:`n  push:`n    branches: [main]"
@@ -131,10 +147,18 @@ on:
     types: [opened]
 jobs:
   enable:
-    if: contains(github.event.pull_request.labels.*.name, 'automerge:approved')
     runs-on: ubuntu-latest
     steps:
-      - run: gh pr merge --auto --merge "$PR_URL"
+      - id: candidate
+        env:
+          REPO: ${{ github.repository }}
+          EVENT_PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          pr_json="$(gh api "repos/${REPO}/pulls/${EVENT_PR_NUMBER}")"
+          eligible="$(jq -r --arg repo "$REPO" '([.labels[]?.name] | index("automerge:approved") != null)' <<< "$pr_json")"
+          echo "eligible=$eligible" >> "$GITHUB_OUTPUT"
+      - if: steps.candidate.outputs.eligible == 'true'
+        run: gh pr merge --auto --merge --match-head-commit "$PR_HEAD_SHA" --repo "$REPO" "$PR_NUMBER"
 '@
             'test.yml' = "name: Test`non:`n  push:`n    branches: [main]"
             'security.yml' = "name: Security Scans`non:`n  push:`n    branches: [main]"
@@ -245,8 +269,8 @@ jobs:
         $releaseWorkflow | Should -Match '(?ms)^  verify-required-ci-checks:.*?''dotnet''.*?''GitHub Workflow Security Policy''.*?''Semgrep Security SAST''.*?''Gitleaks Secret Scan''.*?''Trivy Repository Scan''.*?''Analyze \(csharp, none\)''.*?''Analyze \(javascript-typescript, none\)'''
         $releaseWorkflow | Should -Match '(?ms)^  prerelease:.*?^    needs: \[select-runner, verify-required-ci-checks\]'
         $releaseWorkflow | Should -Match '(?ms)^  stable-release:.*?^    needs: \[select-runner, verify-required-ci-checks\]'
-        $releaseWorkflow | Should -Match '\$check\.app\.slug -ne ''github-actions'''
-        $releaseWorkflow | Should -Match '\$check\.details_url -notmatch'
+        $releaseWorkflow | Should -Match '$check\.app\.slug -ne ''github-actions'''
+        $releaseWorkflow | Should -Match '$check\.details_url -notmatch'
     }
 
     It 'rejects same-name checks unless their workflow and job provenance matches the release policy' {
@@ -260,20 +284,20 @@ jobs:
         $releaseWorkflow | Should -Match "(?ms)checkName\s*=\s*'Analyze \(csharp, none\)'.*?workflowFile\s*=\s*'codeql\.yml'.*?jobName\s*=\s*'Analyze \(csharp, none\)'"
         $releaseWorkflow | Should -Match "(?ms)checkName\s*=\s*'Analyze \(javascript-typescript, none\)'.*?workflowFile\s*=\s*'codeql\.yml'.*?jobName\s*=\s*'Analyze \(javascript-typescript, none\)'"
 
-        $releaseWorkflow | Should -Match 'actions/workflows/\$workflowFile'
-        $releaseWorkflow | Should -Match '\$run\.workflow_id -ne \$workflowIds\[\$requiredCheck\.workflowFile\]'
-        $releaseWorkflow | Should -Match '\$job\.id -eq \[Int64\]\$jobId -and \$job\.name -eq \$requiredCheck\.jobName'
-        $releaseWorkflow | Should -Match '(?s)\$matchingChecks\.Count -eq 0.*?\$incompleteChecks \+= "\$\(\$requiredCheck\.checkName\)=missing"'
-        $releaseWorkflow | Should -Not -Match '\$latestByName'
+        $releaseWorkflow | Should -Match 'actions/workflows/$workflowFile'
+        $releaseWorkflow | Should -Match '$run\.workflow_id -ne $workflowIds\[$requiredCheck\.workflowFile\]'
+        $releaseWorkflow | Should -Match '$job\.id -eq \[Int64\]$jobId -and $job\.name -eq $requiredCheck\.jobName'
+        $releaseWorkflow | Should -Match '(?s)$matchingChecks\.Count -eq 0.*?$incompleteChecks \+= "$\($requiredCheck\.checkName\)=missing"'
+        $releaseWorkflow | Should -Not -Match '$latestByName'
     }
 
     It 'keeps untrusted same-name checks pending until the provenance deadline' {
             $releaseWorkflow = Get-Content -Path (Join-Path $PSScriptRoot '../.github/workflows/release.yml') -Raw
 
-            $releaseWorkflow | Should -Match '\$untrustedSameName = @\{\}'
-            $releaseWorkflow | Should -Match '(?s)if \(\$null -eq \$trustedCheck\) \{.*?\$incompleteChecks \+= "\$\(\$requiredCheck\.checkName\)=untrusted-provenance".*?\$untrustedSameName\[.*?\] = @\('
-            $releaseWorkflow | Should -Match '(?s)if \(\(Get-Date\) -ge \$deadline\) \{.*?\$failedChecks \+= "\$untrustedName=untrusted-provenance"'
-            $releaseWorkflow | Should -Not -Match '\$latestByName'
-            $releaseWorkflow | Should -Not -Match '\$incompleteChecks \+= "\$\( \$requiredCheck\.checkName\)=untrusted-provenance"'
+            $releaseWorkflow | Should -Match '$untrustedSameName = @\{\}'
+            $releaseWorkflow | Should -Match '(?s)if \($null -eq $trustedCheck\) \{.*?$incompleteChecks \+= "$\($requiredCheck\.checkName\)=untrusted-provenance".*?$untrustedSameName\[.*?\] = @\('
+            $releaseWorkflow | Should -Match '(?s)if \(\(Get-Date\) -ge $deadline\) \{.*?$failedChecks \+= "$untrustedName=untrusted-provenance"'
+            $releaseWorkflow | Should -Not -Match '$latestByName'
+            $releaseWorkflow | Should -Not -Match '$incompleteChecks \+= "$\( $requiredCheck\.checkName\)=untrusted-provenance"'
         }
 }
