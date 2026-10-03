@@ -92,10 +92,7 @@ public sealed class SyncModel(
         User.IsInRole(SecurityRoles.Admin) ||
         User.IsInRole(SecurityRoles.BreakGlassAdmin);
 
-    public bool CanQueueDeleteAllUsers =>
-        hostEnvironment.IsDevelopment() &&
-        realSyncSettings.EffectiveWriteEnabled &&
-        (User.IsInRole(SecurityRoles.Admin) || User.IsInRole(SecurityRoles.BreakGlassAdmin));
+    public bool CanQueueDeleteAllUsers => false;
 
     [TempData]
     public string? ErrorMessage { get; set; }
@@ -151,41 +148,8 @@ public sealed class SyncModel(
             return Forbid();
         }
 
-        if (!realSyncSettings.EffectiveWriteEnabled)
-        {
-            ErrorMessage = realSyncSettings.LiveWriteDisabledMessage;
-            SuccessMessage = null;
-            return RedirectToPage(new { PageNumber });
-        }
-
-        if (!string.Equals(DeleteAllUsersConfirmationText?.Trim(), DeleteAllUsersConfirmationPhrase, StringComparison.Ordinal))
-        {
-            ErrorMessage = $"Type {DeleteAllUsersConfirmationPhrase} to queue the delete-all AD reset run.";
-            SuccessMessage = null;
-            return RedirectToPage(new { PageNumber });
-        }
-
-        RunQueueRequest queued;
-        try
-        {
-            queued = await runQueueStore.EnqueueAsync(
-                new StartRunRequest(
-                    DryRun: false,
-                    Mode: DeleteAllUsersMode,
-                    RunTrigger: "DeleteAllUsers",
-                    RequestedBy: ResolveRequestedBy()),
-                cancellationToken);
-        }
-        catch (RunQueueConflictException)
-        {
-            ErrorMessage = "A run is already pending or in progress.";
-            SuccessMessage = null;
-            return RedirectToPage(new { PageNumber });
-        }
-
-        SuccessMessage = "Delete-all AD reset queued.";
-        ErrorMessage = null;
-        TryWriteAudit(() => audit?.Write("DeleteAllUsersQueued", "Success", ("RequestedBy", queued.RequestedBy)));
+        ErrorMessage = RunQueueProtocol.DeletionCapabilityDisabledMessage;
+        SuccessMessage = null;
         return RedirectToPage(new { PageNumber });
     }
 

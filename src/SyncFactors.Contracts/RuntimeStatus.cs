@@ -182,6 +182,23 @@ public sealed record RunTally(
     int ManualReview,
     int Unchanged);
 
+public static class RunQueueProtocol
+{
+    public const string BulkSyncMode = "BulkSync";
+    public const string OperatorApiTrigger = "AdHoc";
+    public const string GraveyardDeleteApprovalMode = "GraveyardDeleteApproval";
+    public const string AuthenticatedAdminDeletionQueueTrigger = "AuthenticatedAdminDeletionQueueApproval";
+    public const string DeleteAllUsersMode = "DeleteAllUsers";
+    public const string GraveyardAutoDeleteMode = "GraveyardAutoDelete";
+    public const string DeletionCapabilityDisabledMessage =
+        "Graveyard deletion is unavailable; records remain review-only until an atomic AD object-identity fence is approved.";
+
+    public static bool IsReservedDeletionMode(string? mode) =>
+        string.Equals(mode, DeleteAllUsersMode, StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(mode, GraveyardDeleteApprovalMode, StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(mode, GraveyardAutoDeleteMode, StringComparison.OrdinalIgnoreCase);
+}
+
 public sealed record RunQueueRequest(
     string RequestId,
     string Mode,
@@ -193,13 +210,15 @@ public sealed record RunQueueRequest(
     DateTimeOffset? StartedAt,
     DateTimeOffset? CompletedAt,
     string? RunId,
-    string? ErrorMessage);
+    string? ErrorMessage,
+    string? TargetWorkerId = null);
 
 public sealed record StartRunRequest(
     bool DryRun,
     string Mode = "BulkSync",
     string RunTrigger = "AdHoc",
-    string? RequestedBy = null);
+    string? RequestedBy = null,
+    string? TargetWorkerId = null);
 
 public sealed record RunQueueRecoveryProbeRequest(
     string? RequestId,
@@ -406,7 +425,29 @@ public sealed record GraveyardRetentionRecord(
     bool Active,
     bool IsOnHold = false,
     DateTimeOffset? HoldPlacedAtUtc = null,
-    string? HoldPlacedBy = null);
+    string? HoldPlacedBy = null,
+    long Version = 0,
+    string? DeletionClaimId = null,
+    long? DeletionClaimVersion = null);
+
+public sealed record GraveyardDeletionClaim(
+    string WorkerId,
+    string ClaimId,
+    long Version,
+    DateTimeOffset LeaseExpiresAtUtc = default);
+
+public enum GraveyardHoldChangeOutcome
+{
+    Accepted,
+    ActiveDeletionLease,
+    NotFound,
+    StateChanged
+}
+
+public sealed record GraveyardHoldChangeResult(GraveyardHoldChangeOutcome Outcome)
+{
+    public bool Succeeded => Outcome == GraveyardHoldChangeOutcome.Accepted;
+}
 
 public sealed record GraveyardRetentionReportStatus(
     DateTimeOffset? LastSentAtUtc,

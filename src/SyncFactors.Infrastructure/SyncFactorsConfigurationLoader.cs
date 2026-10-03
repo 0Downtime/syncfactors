@@ -117,7 +117,7 @@ public sealed class SyncFactorsConfigurationLoader
                 RunHistoryVacuumMinimumFreedMegabytes: TryGetInt32(document.GetRequiredObject("sync"), "runHistoryVacuumMinimumFreedMegabytes") ?? 128,
                 RunHistoryVacuumMinimumIntervalHours: TryGetInt32(document.GetRequiredObject("sync"), "runHistoryVacuumMinimumIntervalHours") ?? 24,
                 MaxDegreeOfParallelism: TryGetInt32(document.GetRequiredObject("sync"), "maxDegreeOfParallelism") ?? 2,
-                RealSyncEnabled: document.GetRequiredObject("sync").TryGetBoolean("realSyncEnabled") ?? true,
+                RealSyncEnabled: document.GetRequiredObject("sync").TryGetBoolean("realSyncEnabled") ?? false,
                 AutoDeleteFromGraveyard: document.GetRequiredObject("sync").TryGetBoolean("autoDeleteFromGraveyard") ?? false,
                 LeaveStatusValues: document.GetRequiredObject("sync").TryGetStringArray("leaveStatusValues") ?? []),
             Safety: new SafetyConfig(

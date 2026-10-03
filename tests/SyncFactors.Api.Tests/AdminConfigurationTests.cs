@@ -192,7 +192,7 @@ public sealed class AdminConfigurationSnapshotBuilderTests
     }
 
     [Fact]
-    public void Build_ShowsRealSyncToggle()
+    public void Build_ShowsFailClosedRealSyncToggle_WhenSettingIsOmitted()
     {
         using var fixture = AdminConfigurationTestFixture.Create();
 
@@ -201,7 +201,7 @@ public sealed class AdminConfigurationSnapshotBuilderTests
         var syncPolicyGroup = operationsSection.Groups.Single(group => group.Title == "Sync Policy");
 
         Assert.Equal(
-            "Enabled",
+            "Disabled",
             syncPolicyGroup.Entries.Single(entry => entry.Label == "Real sync enabled").DisplayValue);
     }
 }

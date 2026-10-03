@@ -150,12 +150,12 @@ public sealed class SyncModelTests
     [Theory]
     [InlineData("Admin")]
     [InlineData("BreakGlassAdmin")]
-    public void CanQueueDeleteAllUsers_IsTrueOnlyForDevelopmentAdmins(string role)
+    public void CanQueueDeleteAllUsers_IsAlwaysFalseBecauseTheDestructiveCapabilityIsDisabled(string role)
     {
         var model = CreateModel();
         AttachAuthenticatedUser(model, "admin@example.com", role);
 
-        Assert.True(model.CanQueueDeleteAllUsers);
+        Assert.False(model.CanQueueDeleteAllUsers);
     }
 
     [Fact]
@@ -180,7 +180,7 @@ public sealed class SyncModelTests
     }
 
     [Fact]
-    public async Task OnPostDeleteAllUsersAsync_QueuesDeleteAllUsersRunWhenPhraseMatches()
+    public async Task OnPostDeleteAllUsersAsync_RejectsTheDisabledCapabilityWithoutQueueing()
     {
         var queueStore = new CapturingRunQueueStore();
         var model = CreateModel(queueStore: queueStore);
@@ -190,16 +190,13 @@ public sealed class SyncModelTests
         var result = await model.OnPostDeleteAllUsersAsync(CancellationToken.None);
 
         Assert.IsType<RedirectToPageResult>(result);
-        Assert.NotNull(queueStore.LastRequest);
-        Assert.False(queueStore.LastRequest!.DryRun);
-        Assert.Equal("DeleteAllUsers", queueStore.LastRequest.Mode);
-        Assert.Equal("DeleteAllUsers", queueStore.LastRequest.RunTrigger);
-        Assert.Equal("Delete-all AD reset queued.", model.SuccessMessage);
-        Assert.Null(model.ErrorMessage);
+        Assert.Null(queueStore.LastRequest);
+        Assert.Null(model.SuccessMessage);
+        Assert.Equal("Graveyard deletion is unavailable; records remain review-only until an atomic AD object-identity fence is approved.", model.ErrorMessage);
     }
 
     [Fact]
-    public async Task OnPostDeleteAllUsersAsync_WritesEquivalentAuditEvent()
+    public async Task OnPostDeleteAllUsersAsync_DoesNotRecordAQueuedSuccessAuditEvent()
     {
         var audit = new CapturingSecurityAuditService();
         var model = CreateModel(audit: audit);
@@ -208,14 +205,11 @@ public sealed class SyncModelTests
 
         await model.OnPostDeleteAllUsersAsync(CancellationToken.None);
 
-        var entry = Assert.Single(audit.Entries);
-        Assert.Equal("DeleteAllUsersQueued", entry.EventType);
-        Assert.Equal("Success", entry.Outcome);
-        Assert.Equal("admin@example.com", entry.Fields["RequestedBy"]);
+        Assert.Empty(audit.Entries);
     }
 
     [Fact]
-    public async Task OnPostDeleteAllUsersAsync_PreservesQueuedOutcomeWhenAuditWriteFailsWithoutExposingDetails()
+    public async Task OnPostDeleteAllUsersAsync_RejectsBeforeAnAuditFailureCanMisrepresentQueueSuccess()
     {
         var queueStore = new CapturingRunQueueStore();
         var model = CreateModel(
@@ -227,10 +221,9 @@ public sealed class SyncModelTests
         var result = await model.OnPostDeleteAllUsersAsync(CancellationToken.None);
 
         Assert.IsType<RedirectToPageResult>(result);
-        Assert.NotNull(queueStore.LastRequest);
-        Assert.Equal("Delete-all AD reset queued.", model.SuccessMessage);
-        Assert.Equal("The action completed, but security audit recording failed.", model.ErrorMessage);
-        Assert.DoesNotContain("/secret/audit-path", model.ErrorMessage, StringComparison.Ordinal);
+        Assert.Null(queueStore.LastRequest);
+        Assert.Null(model.SuccessMessage);
+        Assert.Equal("Graveyard deletion is unavailable; records remain review-only until an atomic AD object-identity fence is approved.", model.ErrorMessage);
     }
 
     [Fact]
@@ -262,7 +255,7 @@ public sealed class SyncModelTests
     }
 
     [Fact]
-    public async Task OnPostDeleteAllUsersAsync_RejectsQueueWhenRealSyncIsDisabled()
+    public async Task OnPostDeleteAllUsersAsync_RejectsDisabledCapabilityBeforeCheckingLiveSyncConfiguration()
     {
         var queueStore = new CapturingRunQueueStore();
         var model = CreateModel(queueStore: queueStore, realSyncSettings: new RealSyncSettings(Enabled: false));
@@ -273,12 +266,12 @@ public sealed class SyncModelTests
 
         Assert.IsType<RedirectToPageResult>(result);
         Assert.Null(queueStore.LastRequest);
-        Assert.Equal("Real AD sync is disabled for this environment.", model.ErrorMessage);
+        Assert.Equal("Graveyard deletion is unavailable; records remain review-only until an atomic AD object-identity fence is approved.", model.ErrorMessage);
         Assert.Null(model.SuccessMessage);
     }
 
     [Fact]
-    public async Task OnPostDeleteAllUsersAsync_RejectsInvalidConfirmationPhrase()
+    public async Task OnPostDeleteAllUsersAsync_RejectsDisabledCapabilityBeforeCheckingConfirmationPhrase()
     {
         var queueStore = new CapturingRunQueueStore();
         var model = CreateModel(queueStore: queueStore);
@@ -289,7 +282,7 @@ public sealed class SyncModelTests
 
         Assert.IsType<RedirectToPageResult>(result);
         Assert.Null(queueStore.LastRequest);
-        Assert.Equal($"Type {SyncModel.DeleteAllUsersConfirmationPhrase} to queue the delete-all AD reset run.", model.ErrorMessage);
+        Assert.Equal("Graveyard deletion is unavailable; records remain review-only until an atomic AD object-identity fence is approved.", model.ErrorMessage);
         Assert.Null(model.SuccessMessage);
     }
 
@@ -597,6 +590,8 @@ public sealed class SyncModelTests
             _ = cancellationToken;
             return Task.FromResult<RunQueueRequest?>(null);
         }
+
+        public Task<int> QuarantineReservedModesAsync(CancellationToken cancellationToken) => Task.FromResult(0);
 
         public Task<RunQueueRequest?> GetAsync(string requestId, CancellationToken cancellationToken)
         {

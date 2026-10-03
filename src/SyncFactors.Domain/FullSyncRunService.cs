@@ -352,6 +352,21 @@ public sealed class FullSyncRunService(
                         bucket = "conflicts";
                     }
                 }
+                catch (DirectoryMutationOutcomeUnknownException ex)
+                {
+                    applied = true;
+                    succeeded = false;
+                    bucket = "manualReview";
+                    message = ex.Message;
+                    plan = plan with
+                    {
+                        Bucket = bucket,
+                        ReviewCategory = "DirectoryMutationOutcomeUnknown",
+                        ReviewCaseType = "ReadbackReconciliationRequired",
+                        Reason = message,
+                        CanAutoApply = false
+                    };
+                }
                 catch (Exception ex)
                 {
                     applied = true;
@@ -424,7 +439,13 @@ public sealed class FullSyncRunService(
                     message,
                     succeeded
                 },
-                Succeeded: succeeded || bucket is "manualReview" or "unchanged" or "guardrailFailures",
+                Succeeded: succeeded ||
+                           bucket is "unchanged" or "guardrailFailures" ||
+                           (bucket is "manualReview" &&
+                            !string.Equals(
+                                plan.ReviewCategory,
+                                "DirectoryMutationOutcomeUnknown",
+                                StringComparison.Ordinal)),
                 Message: message,
                 IncludedDisable: plan.Operations.Any(operation => string.Equals(operation.Kind, "DisableUser", StringComparison.OrdinalIgnoreCase)));
         }

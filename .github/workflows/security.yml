@@ -32,6 +32,10 @@ jobs:
         shell: pwsh
         run: ./scripts/Assert-CiWorkflowSecurity.ps1
 
+      - name: Enforce production bootstrap policy
+        shell: pwsh
+        run: Invoke-Pester -Path ./tests/ProductionBootstrapPolicy.Tests.ps1 -CI
+
   sonarcloud:
     name: SonarCloud Quality Gate
     runs-on: ubuntu-latest

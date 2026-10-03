@@ -10,6 +10,20 @@ namespace SyncFactors.Infrastructure.Tests;
 
 public sealed class SuccessFactorsWorkerSourcePreviewQueryTests
 {
+    [Theory]
+    [InlineData("mock", true)]
+    [InlineData("MOCK", true)]
+    [InlineData("real", false)]
+    [InlineData(null, false)]
+    public void ScaffoldFallbackPolicy_IsEnabledOnlyForTheExplicitMockProfile(
+        string? runProfile,
+        bool expected)
+    {
+        Assert.Equal(
+            expected,
+            SuccessFactorsSourceSettings.FromRunProfile(runProfile).AllowScaffoldFallback);
+    }
+
     [Fact]
     public async Task GetWorkerAsync_UsesPreviewQueryToResolveIdentity_AndMergesCanonicalSyncData()
     {
@@ -199,6 +213,52 @@ public sealed class SuccessFactorsWorkerSourcePreviewQueryTests
                 return decoded.Contains("emplStatus eq 'A'", StringComparison.Ordinal) &&
                        decoded.Contains("lastModifiedDateTime ge datetime'2026-04-01T00:00:00'", StringComparison.Ordinal);
             });
+        }
+        finally
+        {
+            Directory.Delete(tempRoot, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task GetWorkerAsync_DoesNotReturnScaffoldWorkerWhenSuccessFactorsHasNoMatch()
+    {
+        var tempRoot = Path.Combine(Path.GetTempPath(), "syncfactors-real-source-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempRoot);
+
+        try
+        {
+            var syncConfigPath = Path.Combine(tempRoot, "sync-config.json");
+            var scaffoldDataPath = Path.Combine(tempRoot, "scaffold-data.json");
+            await WriteSyncConfigAsync(syncConfigPath, includePreviewQuery: false);
+            await File.WriteAllTextAsync(
+                scaffoldDataPath,
+                """
+                {
+                  "workers": [
+                    {
+                      "workerId": "scaffold-only",
+                      "preferredName": "Synthetic",
+                      "lastName": "Worker",
+                      "department": "Test",
+                      "targetOu": "OU=LabUsers,DC=example,DC=com",
+                      "isPrehire": false,
+                      "attributes": {}
+                    }
+                  ],
+                  "directoryUsers": []
+                }
+                """);
+
+            var source = CreateSource(
+                syncConfigPath,
+                scaffoldDataPath,
+                new EmptySuccessFactorsMessageHandler(),
+                new StubDeltaSyncService());
+
+            var worker = await source.GetWorkerAsync("scaffold-only", CancellationToken.None);
+
+            Assert.Null(worker);
         }
         finally
         {
@@ -583,6 +643,16 @@ public sealed class SuccessFactorsWorkerSourcePreviewQueryTests
             return Task.FromResult(JsonResponse("""{ "d": { "results": [] } }"""));
         }
 
+    }
+
+    private sealed class EmptySuccessFactorsMessageHandler : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            _ = request;
+            _ = cancellationToken;
+            return Task.FromResult(JsonResponse("""{ "d": { "results": [] } }"""));
+        }
     }
 
     private static HttpResponseMessage JsonResponse(string json, HttpStatusCode statusCode = HttpStatusCode.OK)

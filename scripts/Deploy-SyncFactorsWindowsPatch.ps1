@@ -15,6 +15,8 @@ param(
     [string]$SqlitePassword,
     [switch]$DisableSqliteEncryption,
     [string]$SecurityAuditLogPath,
+    [Security.SecureString]$SecurityAuditIntegrityKey,
+    [switch]$EnableLiveWrites,
     [pscredential]$Credential,
     [switch]$InstallOrUpdateServices,
     [string]$HealthUrl = 'https://localhost:5087/Login',
@@ -278,6 +280,12 @@ try {
         }
         if (-not [string]::IsNullOrWhiteSpace($SecurityAuditLogPath)) {
             $installArgs += @('-SecurityAuditLogPath', $SecurityAuditLogPath)
+        }
+        if ($null -ne $SecurityAuditIntegrityKey) {
+            $installArgs += @('-SecurityAuditIntegrityKey', $SecurityAuditIntegrityKey)
+        }
+        if ($EnableLiveWrites.IsPresent) {
+            $installArgs += '-EnableLiveWrites'
         }
 
         if ($PSCmdlet.ShouldProcess("$ApiServiceName,$WorkerServiceName", 'Install or update Windows services')) {

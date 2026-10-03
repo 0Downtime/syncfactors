@@ -69,6 +69,29 @@ public sealed class FullSyncRunServiceTests
     }
 
     [Fact]
+    public async Task LaunchAsync_LiveRun_PersistsUnknownOutcomeForReadbackReconciliationAndFailsRun()
+    {
+        var service = CreateService(
+            workers: [CreateWorker("10001", managerId: "90001")],
+            directoryGateway: new StubDirectoryGateway(managerDistinguishedName: "CN=Manager,OU=LabUsers,DC=example,DC=com"),
+            directoryCommandGateway: new UnknownOutcomeDirectoryCommandGateway(),
+            runRepository: out var runRepository,
+            runtimeStatusStore: out var runtimeStatusStore);
+
+        var result = await service.LaunchAsync(
+            new LaunchFullRunRequest(DryRun: false, AcknowledgeRealSync: true),
+            CancellationToken.None);
+
+        Assert.Equal("Failed", result.Status);
+        Assert.Equal("Failed", runRepository.SavedRuns[^1].Status);
+        var entry = Assert.Single(runRepository.ReplacedEntries.Single().entries);
+        Assert.Equal("manualReview", entry.Bucket);
+        Assert.Equal("DirectoryMutationOutcomeUnknown", entry.ReviewCategory);
+        Assert.Equal("ReadbackReconciliationRequired", entry.ReviewCaseType);
+        Assert.Equal("Failed", runtimeStatusStore.SavedStatuses[^1].Status);
+    }
+
+    [Fact]
     public async Task LaunchAsync_DuplicateCreateEmails_RewritesProxyAddressesForReservedEmail()
     {
         var service = CreateService(
@@ -1010,6 +1033,16 @@ public sealed class FullSyncRunServiceTests
             _ = command;
             _ = cancellationToken;
             return Task.FromException<DirectoryCommandResult>(exception);
+        }
+    }
+
+    private sealed class UnknownOutcomeDirectoryCommandGateway : IDirectoryCommandGateway
+    {
+        public Task<DirectoryCommandResult> ExecuteAsync(DirectoryMutationCommand command, CancellationToken cancellationToken)
+        {
+            _ = command;
+            _ = cancellationToken;
+            throw new DirectoryMutationOutcomeUnknownException("LDAP write outcome requires readback reconciliation.");
         }
     }
 
