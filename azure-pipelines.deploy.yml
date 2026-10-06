@@ -9,6 +9,9 @@ pr: none
 
 variables:
   dotnetSdkVersion: 10.0.x
+  sonarQubeServiceConnection: SonarQube
+  sonarProjectKey: 0Downtime_sf-ad-sync
+  sonarProjectName: SyncFactors
   runtimeIdentifier: win-x64
   artifactName: syncfactors-windows
   deployTargetMachines: ''
@@ -68,6 +71,19 @@ stages:
               command: restore
               projects: SyncFactors.Next.sln
 
+          - task: SonarQubePrepare@8
+            displayName: Prepare SonarQube Community Build analysis
+            inputs:
+              SonarQube: $(sonarQubeServiceConnection)
+              scannerMode: dotnet
+              projectKey: $(sonarProjectKey)
+              projectName: $(sonarProjectName)
+              extraProperties: |
+                sonar.cs.opencover.reportsPaths=$(Agent.TempDirectory)/coverage/**/coverage.opencover.xml
+                sonar.javascript.lcov.reportPaths=$(Build.SourcesDirectory)/src/SyncFactors.Api/coverage/lcov.info
+                sonar.coverage.exclusions=src/SyncFactors.Api/Program.cs,src/SyncFactors.Worker/Program.cs,src/SyncFactors.Contracts/**,src/SyncFactors.Domain/Abstractions.cs,src/SyncFactors.Api/esbuild.config.mjs,src/SyncFactors.Api/vitest.config.mjs,src/SyncFactors.Api/frontend/*.entry.js,src/SyncFactors.Api/frontend/*.test.js,src/SyncFactors.Api/wwwroot/js/**,src/SyncFactors.MockSuccessFactors/wwwroot/js/**,src/SyncFactors.Automation/**,src/SyncFactors.Infrastructure/ActiveDirectory*.cs,src/SyncFactors.Infrastructure/PowerShellWorkerPreviewService.cs,src/SyncFactors.Infrastructure/SmtpEmailSender.cs,scripts/**,azure-pipelines.deploy.yml
+                sonar.cpd.exclusions=scripts/**,azure-pipelines.deploy.yml
+
           - task: DotNetCoreCLI@2
             displayName: Build solution
             inputs:
@@ -80,16 +96,38 @@ stages:
             inputs:
               command: test
               projects: SyncFactors.Next.sln
-              arguments: --configuration Release --no-build --logger "trx;LogFilePrefix=test-results" --results-directory "$(Agent.TempDirectory)\test-results"
+              arguments: --configuration Release --no-build --settings coverlet.runsettings --collect:"XPlat Code Coverage" --logger "trx;LogFilePrefix=test-results" --results-directory "$(Agent.TempDirectory)\coverage"
               publishTestResults: false
+
+          - task: Npm@1
+            displayName: Install frontend dependencies
+            inputs:
+              command: custom
+              workingDir: src/SyncFactors.Api
+              customCommand: ci --ignore-scripts
+
+          - task: Npm@1
+            displayName: Run frontend tests with coverage
+            inputs:
+              command: custom
+              workingDir: src/SyncFactors.Api
+              customCommand: run test:ui
 
           - task: PublishTestResults@2
             displayName: Publish test results
             condition: always()
             inputs:
               testResultsFormat: VSTest
-              testResultsFiles: '$(Agent.TempDirectory)\test-results\*.trx'
+              testResultsFiles: '$(Agent.TempDirectory)\coverage\*.trx'
               failTaskOnFailedTests: true
+
+          - task: SonarQubeAnalyze@8
+            displayName: Run SonarQube Community Build analysis
+
+          - task: SonarQubePublish@8
+            displayName: Publish SonarQube quality gate
+            inputs:
+              pollingTimeoutSec: '300'
 
           - task: PowerShell@2
             displayName: Publish applications
