@@ -8,6 +8,18 @@ public sealed class SyncFactorsSecretResolver : ISyncFactorsSecretResolver
     public const string WindowsCredentialPrefixEnvironmentVariable = "SYNCFACTORS_WINDOWS_CREDENTIAL_PREFIX";
     public const string DefaultWindowsCredentialPrefix = "SyncFactors";
 
+    private readonly Func<string, string?> _windowsCredentialReader;
+
+    public SyncFactorsSecretResolver()
+        : this(ReadWindowsCredential)
+    {
+    }
+
+    internal SyncFactorsSecretResolver(Func<string, string?> windowsCredentialReader)
+    {
+        _windowsCredentialReader = windowsCredentialReader;
+    }
+
     public string? GetSecretValue(string? variableName)
     {
         if (string.IsNullOrWhiteSpace(variableName))
@@ -21,10 +33,8 @@ public sealed class SyncFactorsSecretResolver : ISyncFactorsSecretResolver
             return environmentValue;
         }
 
-        return WindowsCredentialManager.TryRead(GetWindowsCredentialTargetName(variableName), out var credentialValue) &&
-            !string.IsNullOrWhiteSpace(credentialValue)
-                ? credentialValue
-                : null;
+        var credentialValue = _windowsCredentialReader(GetWindowsCredentialTargetName(variableName));
+        return !string.IsNullOrWhiteSpace(credentialValue) ? credentialValue : null;
     }
 
     public string ResolveSourceLabel(string? variableName, string fallbackSource)
@@ -40,7 +50,7 @@ public sealed class SyncFactorsSecretResolver : ISyncFactorsSecretResolver
         }
 
         var credentialTargetName = GetWindowsCredentialTargetName(variableName);
-        return WindowsCredentialManager.Exists(credentialTargetName)
+        return !string.IsNullOrWhiteSpace(_windowsCredentialReader(credentialTargetName))
             ? $"Windows Credential Manager ({credentialTargetName})"
             : fallbackSource;
     }
@@ -56,14 +66,14 @@ public sealed class SyncFactorsSecretResolver : ISyncFactorsSecretResolver
         return $"{prefix.Trim().TrimEnd('/', '\\')}/{variableName.Trim()}";
     }
 
+    private static string? ReadWindowsCredential(string targetName) =>
+        WindowsCredentialManager.TryRead(targetName, out var value) ? value : null;
+
     [ExcludeFromCodeCoverage(Justification = "Windows Credential Manager P/Invoke is exercised only on Windows hosts.")]
     private static class WindowsCredentialManager
     {
         private const uint CredentialTypeGeneric = 1;
         private const int ErrorNotFound = 1168;
-
-        public static bool Exists(string targetName) =>
-            TryRead(targetName, out _);
 
         public static bool TryRead(string targetName, out string? value)
         {

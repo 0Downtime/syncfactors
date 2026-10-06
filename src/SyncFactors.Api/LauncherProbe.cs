@@ -44,10 +44,9 @@ public static class LauncherProbe
 
         var localAuthEnabled =
             string.Equals(options.Mode, "local-break-glass", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(options.Mode, "hybrid", StringComparison.OrdinalIgnoreCase) ||
-            options.LocalBreakGlass.Enabled;
+            string.Equals(options.Mode, "hybrid", StringComparison.OrdinalIgnoreCase);
 
-        if (!localAuthEnabled || string.IsNullOrWhiteSpace(options.BootstrapAdmin.Username))
+        if (!localAuthEnabled)
         {
             return false;
         }

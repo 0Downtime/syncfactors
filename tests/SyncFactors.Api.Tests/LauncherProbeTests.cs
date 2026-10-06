@@ -100,7 +100,7 @@ public sealed class LauncherProbeTests
     }
 
     [Fact]
-    public async Task IsBootstrapRequiredAsync_ReturnsFalseWhenBootstrapUsernameIsMissing()
+    public async Task IsBootstrapRequiredAsync_ReturnsTrueWhenLocalModeNeedsBootstrapCredentials()
     {
         var options = new LocalAuthOptions
         {
@@ -113,7 +113,7 @@ public sealed class LauncherProbeTests
 
         var required = await LauncherProbe.IsBootstrapRequiredAsync(options, new StubLocalUserStore(hasUsers: false), CancellationToken.None);
 
-        Assert.False(required);
+        Assert.True(required);
     }
 
     private sealed class StubLocalUserStore(bool hasUsers) : ILocalUserStore

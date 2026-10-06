@@ -15,6 +15,7 @@ public sealed class SampleConfigSecretsTests
         Assert.Equal(string.Empty, document.RootElement.GetProperty("ad").GetProperty("username").GetString());
         Assert.Equal(string.Empty, document.RootElement.GetProperty("ad").GetProperty("bindPassword").GetString());
         Assert.Equal(string.Empty, document.RootElement.GetProperty("ad").GetProperty("defaultPassword").GetString());
+        Assert.True(document.RootElement.GetProperty("ad").GetProperty("transport").GetProperty("requireSigning").GetBoolean());
     }
 
     [Fact]

@@ -172,32 +172,34 @@ public sealed class GraveyardAutoDeleteCoordinatorTests
     }
 
     [Theory]
-    [InlineData(false, false, "Real AD sync is disabled for this environment.")]
-    [InlineData(true, true, "Dry-run-only mode is enabled. Live AD writes are disabled for this environment.")]
-    public async Task TryExecuteAsync_RejectsDirectoryMutation_WhenLiveWritesAreDisabled(
+    [InlineData(false, false)]
+    [InlineData(true, true)]
+    public async Task TryExecuteAsync_ReturnsNullWithoutStartingRun_WhenLiveWritesAreDisabled(
         bool enabled,
-        bool dryRunOnly,
-        string expectedMessage)
+        bool dryRunOnly)
     {
         var retentionStore = new StubGraveyardRetentionStore(
             [
                 CreateRecord("10001", isOnHold: false, endDateUtc: DateTimeOffset.Parse("2026-02-01T00:00:00Z"))
             ]);
         var commandGateway = new CapturingDirectoryCommandGateway();
+        var lifecycle = new CapturingRunLifecycleService();
         var coordinator = CreateCoordinator(
             retentionStore,
             CreateDirectoryGateway("10001"),
             commandGateway,
-            new CapturingRunLifecycleService(),
+            lifecycle,
             autoDeleteEnabled: true,
             now: DateTimeOffset.Parse("2026-04-11T12:00:00Z"),
             realSyncSettings: new RealSyncSettings(enabled, dryRunOnly));
 
-        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => coordinator.TryExecuteAsync(CancellationToken.None));
+        var runId = await coordinator.TryExecuteAsync(CancellationToken.None);
 
-        Assert.Equal(expectedMessage, exception.Message);
+        Assert.Null(runId);
         Assert.Empty(commandGateway.Commands);
         Assert.Empty(retentionStore.ResolvedWorkerIds);
+        Assert.Equal(0, lifecycle.StartedCalls);
+        Assert.Equal(0, lifecycle.FailedCalls);
     }
 
     [Fact]
@@ -347,6 +349,8 @@ public sealed class GraveyardAutoDeleteCoordinatorTests
 
     private sealed class CapturingRunLifecycleService : IRunLifecycleService
     {
+        public int StartedCalls { get; private set; }
+
         public int CompletedCalls { get; private set; }
 
         public int FailedCalls { get; private set; }
@@ -355,7 +359,11 @@ public sealed class GraveyardAutoDeleteCoordinatorTests
 
         public Task ExecutePlannedRunAsync(RunPlan plan, CancellationToken cancellationToken) => Task.CompletedTask;
 
-        public Task StartRunAsync(string runId, string mode, bool dryRun, string runTrigger, string? requestedBy, int totalWorkers, string? initialAction, CancellationToken cancellationToken) => Task.CompletedTask;
+        public Task StartRunAsync(string runId, string mode, bool dryRun, string runTrigger, string? requestedBy, int totalWorkers, string? initialAction, CancellationToken cancellationToken)
+        {
+            StartedCalls++;
+            return Task.CompletedTask;
+        }
 
         public Task RecordProgressAsync(string runId, string mode, bool dryRun, int processedWorkers, int totalWorkers, string? currentWorkerId, string? lastAction, RunTally tally, CancellationToken cancellationToken) => Task.CompletedTask;
 

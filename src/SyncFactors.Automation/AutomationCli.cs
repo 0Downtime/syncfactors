@@ -310,13 +310,30 @@ public static class AutomationIdempotencyPolicy
         string.Equals(scenario.ExpectedQueueStatus, "Completed", StringComparison.OrdinalIgnoreCase);
 }
 
-public sealed class AutomationRunner(AutomationOptions options, TextWriter output) : IAsyncDisposable
+public sealed class AutomationRunner : IAsyncDisposable
 {
-    private readonly HttpClient _apiClient = new(new HttpClientHandler
-    {
-        ServerCertificateCustomValidationCallback = ValidateCertificateForAutomationTarget
-    });
+    private readonly AutomationOptions options;
+    private readonly TextWriter output;
+    private readonly HttpClient _apiClient;
     private readonly HttpClient _mockClient = new();
+
+    public AutomationRunner(AutomationOptions options, TextWriter output)
+        : this(options, output, new HttpClientHandler
+        {
+            ServerCertificateCustomValidationCallback = ValidateCertificateForAutomationTarget
+        })
+    {
+    }
+
+    internal AutomationRunner(
+        AutomationOptions options,
+        TextWriter output,
+        HttpMessageHandler apiMessageHandler)
+    {
+        this.options = options;
+        this.output = output;
+        _apiClient = new HttpClient(apiMessageHandler);
+    }
 
     private static bool ValidateCertificateForAutomationTarget(
         HttpRequestMessage request,
@@ -356,8 +373,10 @@ public sealed class AutomationRunner(AutomationOptions options, TextWriter outpu
             Scenarios: scenarioReports);
     }
 
-    private async Task AuthenticateAsync(CancellationToken cancellationToken)
+    internal async Task AuthenticateAsync(CancellationToken cancellationToken)
     {
+        _apiClient.BaseAddress ??= options.ApiUrl;
+
         if (string.IsNullOrWhiteSpace(options.Username) || string.IsNullOrWhiteSpace(options.Password))
         {
             throw new InvalidOperationException("Automation username/password are required. Set SYNCFACTORS_AUTOMATION_USERNAME and SYNCFACTORS_AUTOMATION_PASSWORD or pass --username/--password.");
@@ -369,11 +388,13 @@ public sealed class AutomationRunner(AutomationOptions options, TextWriter outpu
         {
             try
             {
+                await RefreshAntiforgeryTokenAsync(cancellationToken);
                 var response = await _apiClient.PostAsJsonAsync(
                     "/api/session/login",
                     new { username = options.Username, password = options.Password, rememberMe = false, returnUrl = (string?)null },
                     cancellationToken);
                 await EnsureSuccessAsync(response, "API login", cancellationToken);
+                await RefreshAntiforgeryTokenAsync(cancellationToken);
                 return;
             }
             catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or InvalidOperationException)
@@ -384,6 +405,20 @@ public sealed class AutomationRunner(AutomationOptions options, TextWriter outpu
         }
 
         throw new TimeoutException($"Timed out waiting for SyncFactors API login at {options.ApiUrl}. Last failure: {lastFailure?.Message}");
+    }
+
+    private async Task RefreshAntiforgeryTokenAsync(CancellationToken cancellationToken)
+    {
+        using var response = await _apiClient.GetAsync("/api/session/antiforgery", cancellationToken);
+        await EnsureSuccessAsync(response, "antiforgery token request", cancellationToken);
+        var payload = await response.Content.ReadFromJsonAsync<AutomationAntiforgeryTokenResponse>(cancellationToken);
+        if (string.IsNullOrWhiteSpace(payload?.RequestToken))
+        {
+            throw new InvalidOperationException("SyncFactors API returned an empty antiforgery request token.");
+        }
+
+        _apiClient.DefaultRequestHeaders.Remove("X-SyncFactors-Antiforgery");
+        _apiClient.DefaultRequestHeaders.Add("X-SyncFactors-Antiforgery", payload.RequestToken);
     }
 
     private void ValidateLocalConfigurationSafety()
@@ -1455,6 +1490,8 @@ public sealed class AutomationRunner(AutomationOptions options, TextWriter outpu
         return ValueTask.CompletedTask;
     }
 }
+
+internal sealed record AutomationAntiforgeryTokenResponse(string RequestToken);
 
 public static class AutomationReportWriter
 {

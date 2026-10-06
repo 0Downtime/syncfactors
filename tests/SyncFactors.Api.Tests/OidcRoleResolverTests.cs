@@ -46,6 +46,25 @@ public sealed class OidcRoleResolverTests
     }
 
     [Fact]
+    public void ResolveEffectiveRole_ReturnsHighestPrivilege_WhenConfiguredGroupsOverlap()
+    {
+        var options = new LocalAuthOptions
+        {
+            Oidc =
+            {
+                ViewerGroups = ["viewer-group"],
+                OperatorGroups = ["operator-group"],
+                AdminGroups = ["admin-group"]
+            }
+        };
+        var identity = BuildIdentity("viewer-group", "operator-group", "admin-group");
+
+        var role = OidcRoleResolver.ResolveEffectiveRole(identity, options);
+
+        Assert.Equal(SecurityRoles.Admin, role);
+    }
+
+    [Fact]
     public void ResolveRoles_UsesConfiguredClaimType()
     {
         var options = new LocalAuthOptions
