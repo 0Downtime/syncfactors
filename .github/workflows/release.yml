@@ -117,7 +117,7 @@ jobs:
                       }
 
                       $jobsResponse = gh api "repos/$env:GITHUB_REPOSITORY_NAME/actions/runs/$runId/jobs?per_page=100" | ConvertFrom-Json -Depth 20
-                      $job = $jobsResponse.jobs | Where-Object { $job.id -eq [Int64]$jobId -and $job.name -eq $requiredCheck.jobName }
+                      $job = $jobsResponse.jobs | Where-Object { $_.id -eq [Int64]$jobId -and $_.name -eq $requiredCheck.jobName }
                       if ($null -eq $job) {
                           continue
                       }
