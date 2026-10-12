@@ -104,14 +104,14 @@ jobs:
 
       - name: Upload SBOM
         if: always() && hashFiles('artifacts/sbom/*') != ''
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: sbom
           path: artifacts/sbom/*
 
       - name: Upload .NET test results
         if: always() && hashFiles('artifacts/test-results/*.trx') != ''
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: dotnet-test-results
           path: artifacts/test-results/*.trx
