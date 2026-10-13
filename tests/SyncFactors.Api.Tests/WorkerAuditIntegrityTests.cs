@@ -58,6 +58,8 @@ public sealed class WorkerAuditIntegrityTests
 
     private sealed class WorkerStartupFixture : IAsyncDisposable
     {
+        private static readonly TimeSpan ProcessTimeout = TimeSpan.FromSeconds(30);
+
         private WorkerStartupFixture(string temporaryDirectory)
         {
             TemporaryDirectory = temporaryDirectory;
@@ -81,30 +83,74 @@ public sealed class WorkerAuditIntegrityTests
 
         public async Task<(int ExitCode, string Output)> StartAsync(string? integrityKey)
         {
+            var workerAssemblyPath = Path.Combine(
+                FindRepositoryRoot(),
+                "src",
+                "SyncFactors.Worker",
+                "bin",
+                BuildConfiguration,
+                "net10.0",
+                "SyncFactors.Worker.dll");
+            Assert.True(File.Exists(workerAssemblyPath), $"Worker assembly '{workerAssemblyPath}' was not built.");
+
             var startInfo = new ProcessStartInfo("dotnet")
             {
                 WorkingDirectory = TemporaryDirectory,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true
             };
-            startInfo.ArgumentList.Add("run");
-            startInfo.ArgumentList.Add("--project");
-            startInfo.ArgumentList.Add(Path.Combine(FindRepositoryRoot(), "src", "SyncFactors.Worker", "SyncFactors.Worker.csproj"));
-            startInfo.ArgumentList.Add("--no-build");
-            startInfo.ArgumentList.Add("--configuration");
-            startInfo.ArgumentList.Add(BuildConfiguration);
+            startInfo.ArgumentList.Add(workerAssemblyPath);
             startInfo.Environment["DOTNET_ENVIRONMENT"] = "Production";
             startInfo.Environment["SYNCFACTORS_SECURITY_AUDIT_LOG_PATH"] = AuditPath;
             startInfo.Environment["SyncFactors__SqlitePath"] = DatabasePath;
+            startInfo.Environment["SyncFactors__ConfigPath"] = Path.Combine(TemporaryDirectory, "missing-sync-config.json");
+            startInfo.Environment["SyncFactors__MappingConfigPath"] = Path.Combine(TemporaryDirectory, "missing-mapping-config.json");
             startInfo.Environment["SYNCFACTORS_RUN_PROFILE"] = "mock";
             startInfo.Environment[SecurityAuditService.IntegrityKeyEnvironmentVariable] = integrityKey;
+            RemoveInheritedProfilerEnvironment(startInfo);
 
             using var process = Process.Start(startInfo);
             Assert.NotNull(process);
             var standardOutput = process!.StandardOutput.ReadToEndAsync();
             var standardError = process.StandardError.ReadToEndAsync();
-            await process.WaitForExitAsync();
+            using var timeout = new CancellationTokenSource(ProcessTimeout);
+            try
+            {
+                await process.WaitForExitAsync(timeout.Token);
+            }
+            catch (OperationCanceledException) when (timeout.IsCancellationRequested)
+            {
+                if (!process.HasExited)
+                {
+                    process.Kill(entireProcessTree: true);
+                    await process.WaitForExitAsync();
+                }
+
+                var timedOutOutput = await standardOutput + await standardError;
+                throw new TimeoutException(
+                    $"Worker startup probe did not exit within {ProcessTimeout.TotalSeconds:0} seconds. Output: {timedOutOutput}");
+            }
+
             return (process.ExitCode, await standardOutput + await standardError);
+        }
+
+        private static void RemoveInheritedProfilerEnvironment(ProcessStartInfo startInfo)
+        {
+            foreach (var variableName in new[]
+                     {
+                         "CORECLR_ENABLE_PROFILING",
+                         "CORECLR_PROFILER",
+                         "CORECLR_PROFILER_PATH",
+                         "CORECLR_PROFILER_PATH_32",
+                         "CORECLR_PROFILER_PATH_64",
+                         "COR_ENABLE_PROFILING",
+                         "COR_PROFILER",
+                         "COR_PROFILER_PATH",
+                         "DOTNET_STARTUP_HOOKS"
+                     })
+            {
+                startInfo.Environment.Remove(variableName);
+            }
         }
 
         private static string FindRepositoryRoot()

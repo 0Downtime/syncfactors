@@ -4,6 +4,98 @@ namespace SyncFactors.Infrastructure.Tests;
 
 public sealed class SyncFactorsConfigurationValidatorTests
 {
+    [Theory]
+    [InlineData("http://example.test/odata/v2", "basic", null, "SyncFactors successFactors.baseUrl must use HTTPS outside Development.")]
+    [InlineData("https://example.test/odata/v2", "oauth", "http://login.example.test/oauth/token", "SyncFactors successFactors.auth.oauth.tokenUrl must use HTTPS outside Development.")]
+    [InlineData("https://example.test/odata/v2", "oauth", "/oauth/token", "SyncFactors successFactors.auth.oauth.tokenUrl must be an absolute HTTP or HTTPS URI.")]
+    public async Task Validate_RejectsInsecureSuccessFactorsEndpointsOutsideDevelopment(
+        string baseUrl,
+        string authMode,
+        string? oauthTokenUrl,
+        string expectedMessage)
+    {
+        var tempRoot = CreateTempRoot();
+        var configPath = await WriteConfigAsync(
+            tempRoot,
+            successFactorsUsernameLiteral: "",
+            successFactorsPasswordLiteral: "",
+            adBindPasswordLiteral: "",
+            successFactorsBaseUrl: baseUrl,
+            successFactorsAuthMode: authMode,
+            oauthTokenUrl: oauthTokenUrl);
+        var mappingConfigPath = await WriteMappingConfigAsync(tempRoot);
+
+        var originalDotnetEnvironment = Environment.GetEnvironmentVariable("DOTNET_ENVIRONMENT");
+        var originalSfUsername = Environment.GetEnvironmentVariable("SF_AD_SYNC_SF_USERNAME");
+        var originalSfPassword = Environment.GetEnvironmentVariable("SF_AD_SYNC_SF_PASSWORD");
+        var originalSfClientId = Environment.GetEnvironmentVariable("SF_AD_SYNC_SF_CLIENT_ID");
+        var originalSfClientSecret = Environment.GetEnvironmentVariable("SF_AD_SYNC_SF_CLIENT_SECRET");
+        var originalAdBindPassword = Environment.GetEnvironmentVariable("SF_AD_SYNC_AD_BIND_PASSWORD");
+
+        try
+        {
+            Environment.SetEnvironmentVariable("DOTNET_ENVIRONMENT", "Production");
+            Environment.SetEnvironmentVariable("SF_AD_SYNC_SF_USERNAME", "env-backed-user");
+            Environment.SetEnvironmentVariable("SF_AD_SYNC_SF_PASSWORD", "env-backed-password");
+            Environment.SetEnvironmentVariable("SF_AD_SYNC_SF_CLIENT_ID", "env-backed-client-id");
+            Environment.SetEnvironmentVariable("SF_AD_SYNC_SF_CLIENT_SECRET", "env-backed-client-secret");
+            Environment.SetEnvironmentVariable("SF_AD_SYNC_AD_BIND_PASSWORD", "env-backed-bind-password");
+
+            var loader = new SyncFactorsConfigurationLoader(new SyncFactorsConfigPathResolver(configPath, mappingConfigPath));
+            var validator = new SyncFactorsConfigurationValidator(loader);
+
+            var exception = Assert.Throws<InvalidOperationException>(() => validator.Validate());
+
+            Assert.Equal(expectedMessage, exception.Message);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("DOTNET_ENVIRONMENT", originalDotnetEnvironment);
+            Environment.SetEnvironmentVariable("SF_AD_SYNC_SF_USERNAME", originalSfUsername);
+            Environment.SetEnvironmentVariable("SF_AD_SYNC_SF_PASSWORD", originalSfPassword);
+            Environment.SetEnvironmentVariable("SF_AD_SYNC_SF_CLIENT_ID", originalSfClientId);
+            Environment.SetEnvironmentVariable("SF_AD_SYNC_SF_CLIENT_SECRET", originalSfClientSecret);
+            Environment.SetEnvironmentVariable("SF_AD_SYNC_AD_BIND_PASSWORD", originalAdBindPassword);
+            Directory.Delete(tempRoot, recursive: true);
+        }
+    }
+
+    [Theory]
+    [InlineData("http://localhost:8080/odata/v2", "basic", null)]
+    [InlineData("http://localhost:8080/odata/v2", "oauth", "http://localhost:8080/oauth/token")]
+    public async Task Validate_AllowsHttpSuccessFactorsEndpointsInDevelopment(
+        string baseUrl,
+        string authMode,
+        string? oauthTokenUrl)
+    {
+        var tempRoot = CreateTempRoot();
+        var configPath = await WriteConfigAsync(
+            tempRoot,
+            successFactorsUsernameLiteral: "dev-user",
+            successFactorsPasswordLiteral: "dev-password",
+            adBindPasswordLiteral: "dev-bind-password",
+            successFactorsBaseUrl: baseUrl,
+            successFactorsAuthMode: authMode,
+            oauthTokenUrl: oauthTokenUrl,
+            oauthClientIdLiteral: "dev-client-id",
+            oauthClientSecretLiteral: "dev-client-secret");
+        var mappingConfigPath = await WriteMappingConfigAsync(tempRoot);
+        var originalDotnetEnvironment = Environment.GetEnvironmentVariable("DOTNET_ENVIRONMENT");
+
+        try
+        {
+            Environment.SetEnvironmentVariable("DOTNET_ENVIRONMENT", "Development");
+            var loader = new SyncFactorsConfigurationLoader(new SyncFactorsConfigPathResolver(configPath, mappingConfigPath));
+
+            new SyncFactorsConfigurationValidator(loader).Validate();
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("DOTNET_ENVIRONMENT", originalDotnetEnvironment);
+            Directory.Delete(tempRoot, recursive: true);
+        }
+    }
+
     [Fact]
     public async Task Validate_AllowsEnvironmentBackedSecretsOutsideDevelopment_WhenJsonSecretFieldsAreBlank()
     {
@@ -406,31 +498,52 @@ public sealed class SyncFactorsConfigurationValidatorTests
         string adServer = "ldap.example.test",
         string transportMode = "ldaps",
         bool allowLdapFallback = false,
-        string? adExtraJson = null)
+        string? adExtraJson = null,
+        string successFactorsBaseUrl = "https://example.test/odata/v2",
+        string successFactorsAuthMode = "basic",
+        string? oauthTokenUrl = null,
+        string oauthClientIdLiteral = "",
+        string oauthClientSecretLiteral = "")
     {
         var configPath = Path.Combine(tempRoot, "sync-config.json");
         var renderedAdExtraJson = string.IsNullOrWhiteSpace(adExtraJson)
             ? string.Empty
             : $"{Environment.NewLine}{adExtraJson.Trim()}";
+        var renderedAuth = string.Equals(successFactorsAuthMode, "oauth", StringComparison.OrdinalIgnoreCase)
+            ? $$"""
+              {
+                "mode": "oauth",
+                "oauth": {
+                  "tokenUrl": "{{oauthTokenUrl ?? "https://login.example.test/oauth/token"}}",
+                  "clientId": "{{oauthClientIdLiteral}}",
+                  "clientSecret": "{{oauthClientSecretLiteral}}"
+                }
+              }
+              """
+            : $$"""
+              {
+                "mode": "basic",
+                "basic": {
+                  "username": "{{successFactorsUsernameLiteral}}",
+                  "password": "{{successFactorsPasswordLiteral}}"
+                }
+              }
+              """;
 
         await File.WriteAllTextAsync(configPath, $$"""
         {
           "secrets": {
             "successFactorsUsernameEnv": "SF_AD_SYNC_SF_USERNAME",
             "successFactorsPasswordEnv": "SF_AD_SYNC_SF_PASSWORD",
+            "successFactorsClientIdEnv": "SF_AD_SYNC_SF_CLIENT_ID",
+            "successFactorsClientSecretEnv": "SF_AD_SYNC_SF_CLIENT_SECRET",
             "adServerEnv": null,
             "adUsernameEnv": null,
             "adBindPasswordEnv": "SF_AD_SYNC_AD_BIND_PASSWORD"
           },
           "successFactors": {
-            "baseUrl": "https://example.test/odata/v2",
-            "auth": {
-              "mode": "basic",
-              "basic": {
-                "username": "{{successFactorsUsernameLiteral}}",
-                "password": "{{successFactorsPasswordLiteral}}"
-              }
-            },
+            "baseUrl": "{{successFactorsBaseUrl}}",
+            "auth": {{renderedAuth}},
             "query": {
               "entitySet": "PerPerson",
               "identityField": "personIdExternal",

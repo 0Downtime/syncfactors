@@ -166,15 +166,21 @@ The bundle is self-contained, so the target Windows host does not need a separat
 To install the API and worker as Windows Services, run an elevated PowerShell session from the extracted bundle root:
 
 ```powershell
+$credential = Get-Credential -Message 'Restricted SyncFactors runtime service account'
+
 pwsh .\scripts\Install-SyncFactorsWindowsServices.ps1 `
   -RunProfile real `
-  -ApiUrls https://127.0.0.1:5087
+  -AuthMode local-break-glass `
+  -BootstrapAdminUsername syncfactors-admin `
+  -DryRunOnly `
+  -ApiUrls https://127.0.0.1:5087 `
+  -Credential $credential
 
 Start-Service SyncFactors.Api
 Start-Service SyncFactors.Worker
 ```
 
-The installer creates `SyncFactors.Api` and `SyncFactors.Worker`, registers matching Windows Event Log sources under the Application log, configures restart-on-failure recovery, and writes service environment values for the selected profile, config paths, SQLite path, security audit log path, SQLite encryption password, and local file logging. It also creates local config files from the bundled samples when they are missing. SQLite encryption is enabled by default for Windows Services; pass `-SqlitePassword` to provide a managed SQLCipher key, or let the installer generate one and store it in the service environment. To replace existing service definitions, rerun with `-Force`; the installer reuses the existing service password when present.
+The installer creates `SyncFactors.Api` and `SyncFactors.Worker`, registers matching Windows Event Log sources under the Application log, configures restart-on-failure recovery, and writes service environment values for the selected profile, explicit authentication mode, config paths, SQLite path, security audit log path and integrity key, SQLite encryption password, local file logging, and deployment write-safety mode. A restricted `-Credential` is required; omitting it no longer silently creates LocalSystem services. `-AllowLocalSystem` is available only as a conspicuous exceptional opt-in and is not recommended for production. Fresh production installs require `-AuthMode`; OIDC/hybrid also require authority, client ID, and at least one role group, while a fresh local/hybrid database requires `-BootstrapAdminUsername` and the matching Credential Manager password before service startup. Fresh installs fail closed to dry-run-only mode, and `-DryRunOnly` records that mode explicitly on both services. To permit AD writes, an operator must instead pass the conspicuous `-EnableLiveWrites` opt-in. On `-Force` reinstalls, the existing shared mode and non-managed service environment values are preserved when no replacement is supplied; mismatched API and worker settings are rejected. The installer also creates local config files from the bundled samples when they are missing. SQLite encryption is enabled by default for Windows Services; pass `-SqlitePassword` to provide a managed SQLCipher key, or let the installer generate one and store it in the service environment. To replace existing service definitions, rerun with `-Force`; the installer reuses existing SQLite and audit-integrity keys when present.
 
 Uninstall the services from an elevated session:
 
@@ -192,6 +198,7 @@ For QA and production patching, bootstrap the server once, then deploy new relea
 - `C:\SyncFactors\state\runtime\syncfactors.db`
 - `C:\SyncFactors\state\logs`
 - Windows Credential Manager secrets
+- the shared `SYNCFACTORS_SECURITY_AUDIT_INTEGRITY_KEY` in both service registry environments
 - the installed service account and HTTPS certificate
 
 Fresh server setup uses four durable layers:
@@ -201,7 +208,9 @@ Fresh server setup uses four durable layers:
 3. Configure the HTTPS certificate and the app secrets under the Windows identity that runs the services.
 4. Install `SyncFactors.Api` and `SyncFactors.Worker`.
 
-Windows Credential Manager is still the preferred place for SuccessFactors, AD, OIDC, and break-glass secrets for a service deployment, but it is per Windows identity. Values saved while logged on as a deploy/admin account are not visible to `SyncFactors.Api` or `SyncFactors.Worker` when those services run as `sfsvc` or a domain runtime account. The service resolver checks process environment variables first, then `Windows Credential Manager` target names like `SyncFactors/SF_AD_SYNC_SF_USERNAME` in the service account profile. The service installer writes operational settings such as config paths, log paths, TLS thumbprint, SQLite path, and SQLite encryption password into the service registry environment; app credentials should stay in Windows Credential Manager unless there is an operational reason to place them directly in the service environment.
+Windows Credential Manager is still the preferred place for SuccessFactors, AD, OIDC, and break-glass secrets for a service deployment, but it is per Windows identity. Values saved while logged on as a deploy/admin account are not visible to `SyncFactors.Api` or `SyncFactors.Worker` when those services run as `sfsvc` or a domain runtime account. The service resolver checks process environment variables first, then `Windows Credential Manager` target names like `SyncFactors/SF_AD_SYNC_SF_USERNAME` in the service account profile. The service installer writes operational settings such as config paths, log paths, TLS thumbprint, SQLite path, SQLite encryption password, and the audit integrity key into both service registry environments. App credentials should stay in Windows Credential Manager unless there is an operational reason to place them directly in the service environment.
+
+The audit integrity key must remain stable for the lifetime of `security-audit.jsonl`. On a fresh install, supply `-SecurityAuditIntegrityKey` from an approved secret store or allow the installer to generate a strong key. The installer preserves a matching installed key across `-Force`, rejects API/worker key mismatches and accidental rotation, and refuses to generate a replacement when nonempty audit history already exists. Back up the generated value through an approved secret-management process before restoring audit state onto a rebuilt server; service-registry storage alone does not survive machine loss.
 
 First-time server setup still uses the prerequisite and service installers:
 
@@ -256,7 +265,7 @@ Start-Process pwsh `
     '-ExecutionPolicy', 'Bypass',
     '-NoExit',
     '-Command',
-    'Set-Location C:\SyncFactors; .\scripts\Set-SyncFactorsWindowsCredential.ps1 -VariableName SF_AD_SYNC_AD_SERVER; .\scripts\Set-SyncFactorsWindowsCredential.ps1 -VariableName SF_AD_SYNC_SF_USERNAME; .\scripts\Set-SyncFactorsWindowsCredential.ps1 -VariableName SF_AD_SYNC_SF_PASSWORD'
+    'Set-Location C:\SyncFactors; .\scripts\Set-SyncFactorsWindowsCredential.ps1 -VariableName SF_AD_SYNC_AD_SERVER; .\scripts\Set-SyncFactorsWindowsCredential.ps1 -VariableName SF_AD_SYNC_SF_USERNAME; .\scripts\Set-SyncFactorsWindowsCredential.ps1 -VariableName SF_AD_SYNC_SF_PASSWORD; .\scripts\Set-SyncFactorsWindowsCredential.ps1 -VariableName SYNCFACTORS__AUTH__BOOTSTRAPADMIN__PASSWORD'
   )
 ```
 
@@ -267,6 +276,9 @@ Then install the services from the elevated deploy/admin session:
 .\scripts\Install-SyncFactorsWindowsServices.ps1 `
   -BundleRoot C:\SyncFactors `
   -RunProfile real `
+  -AuthMode local-break-glass `
+  -BootstrapAdminUsername syncfactors-admin `
+  -DryRunOnly `
   -ApiUrls 'https://0.0.0.0:5087' `
   -TlsCertificateThumbprint $tlsThumbprint `
   -WindowsCredentialPrefix SyncFactors `
@@ -280,12 +292,16 @@ After the services exist, deploy each incremental QA or production bundle from a
 .\scripts\Deploy-SyncFactorsWindowsPatch.ps1 `
   -BundleZip C:\SyncFactors\_staging\syncfactors-<version>-win-x64.zip `
   -InstallRoot C:\SyncFactors `
-  -HealthUrl https://localhost:5087/Login
+  -ExpectedServiceIdentity $credential.UserName `
+  -DryRunOnly `
+  -HealthUrl https://localhost:5087/readyz
 ```
 
-The patch script expands the bundle to `_staging`, backs up deployable files to `_backups\<timestamp>`, stops `SyncFactors.Api` and `SyncFactors.Worker`, replaces `app`, scripts, docs, and sample config files, restarts services, and health-checks the API. It does not overwrite `config\local.*` or `state`. If startup or the health check fails, it restores the backed-up deployable files and restarts the previous version unless `-NoRollbackOnFailure` is set.
+The normal patch path preserves the installed service definitions and validates `-ExpectedServiceIdentity` when supplied. Before staging or install-root mutation, it requires exactly one root `release-manifest.json` in the zip with a full hexadecimal commit SHA. It expands the bundle to `_staging`, protects `state`, `_backups`, and both service-registry keys from broad inherited read access, backs up deployable files to `_backups\<timestamp>`, snapshots complete service environments, stops `SyncFactors.Api` and `SyncFactors.Worker`, then takes a consistent rollback snapshot of `syncfactors.db` plus any `-wal`, `-shm`, and `-journal` sidecars before new binaries can migrate the schema. It snapshots and removes the prior deployment commit marker, replaces the release files, and restarts both services. While the marker is absent, the worker emits attested heartbeats but suppresses scheduled/queued work and outbound retention email. Each deployment rotates a cryptographically random nonce in both service environments. `/readyz` must use HTTPS pinned to the configured API certificate and return `{"status":"ready","attested":true}` only after validating that nonce, a worker-start timestamp newer than the deployment boundary, and that exact full API/worker commit; plaintext HTTP, skipped certificate validation, and a legacy HTTP 200 are rejected. Only after that succeeds does deployment atomically publish SHA-256(nonce) to the commit marker, releasing worker work. The nonce and digest are never printed. If validation fails, rollback restores the old database/sidecars, files, service environments, and prior marker before restarting the previous version unless `-NoRollbackOnFailure` is set.
 
-Use `-InstallOrUpdateServices -Credential $credential` only when the patch must create or replace the Windows service definitions. Existing service credentials cannot be recovered from Windows, so that mode requires the credential again.
+Successful patches retain the pre-migration SQLite snapshot under `_backups\<timestamp>-sqlite` so a manually approved binary rollback has a schema-compatible database. Treat these snapshots as sensitive production state, apply the same restricted ACL/backup controls as the live database, and remove them under an approved retention policy after the rollback window closes.
+
+Use `-InstallOrUpdateServices -Credential $credential` only for an explicit service-definition migration or replacement. Existing service credentials cannot be recovered from Windows, so that mode requires the credential again. The Azure DevOps normal patch path intentionally does not use this switch; first installation uses the dedicated service installer.
 
 ### Azure DevOps Windows Deployment
 
@@ -300,24 +316,35 @@ Configure these Azure DevOps variables before enabling deployment:
 | `installRoot` | Target install directory. Defaults to `C:\SyncFactors`. |
 | `remoteStagingPath` | Temporary bundle copy path. Defaults to `C:\SyncFactors\_staging`. |
 | `runProfile` | Service profile passed to the installer. Defaults to `real`. |
+| `authMode` | Required on a fresh deployment: `local-break-glass`, `oidc`, or `hybrid`. When blank during an upgrade, the valid installed mode is preserved. |
+| `oidcAuthority` / `oidcClientId` | Required non-secret OIDC client settings for `oidc` and `hybrid`. |
+| `oidcViewerGroups` / `oidcOperatorGroups` / `oidcAdminGroups` | Comma-separated role groups. OIDC/hybrid require at least one total. Supplying `authMode` treats all three lists as authoritative, including empty lists, so removed privileged groups do not survive an upgrade. |
+| `bootstrapAdminUsername` | Required for a fresh local-break-glass or hybrid database. Store the matching password in the runtime identity's Credential Manager profile. |
+| `dryRunOnly` | Deployment write-safety mode applied to both services. Defaults to `true`. Set to `false` only for an intentionally approved live-write deployment. |
 | `apiUrls` | Kestrel bind URL for the API Windows Service. Defaults to `https://127.0.0.1:5087`. |
 | `tlsCertificateThumbprint` | Optional `LocalMachine\My` certificate thumbprint for the API HTTPS binding. If omitted and no PFX path/password is supplied, the installer tries to use a usable machine certificate matching `apiUrls`, `SYNCFACTORS_API_PUBLIC_HOST`, or the machine name. |
 | `configureFirewall` | Set to `true` to create or update an inbound Domain/Private firewall rule for `apiPort`. |
 | `createLocalServiceAccount` | Set to `true` to create `serviceUserName` as a local Windows runtime account before installing services. Leave `false` for a pre-created domain account. |
+| `allowLocalSystemServiceAccount` | Exceptional LocalSystem opt-in. Defaults to `false`; leave it false for production. It cannot be combined with `serviceUserName`. |
 | `windowsCredentialPrefix` | Windows Credential Manager target prefix used by the services. Defaults to `SyncFactors`. |
-| `serviceUserName` / `serviceUserPassword` | Runtime Windows service credential for `SyncFactors.Api` and `SyncFactors.Worker`. Mark the password secret. |
+| `serviceUserName` / `serviceUserPassword` | `serviceUserName` is required to validate the installed restricted identity on every normal patch unless the exceptional LocalSystem override is approved. `serviceUserPassword` is required only for a fresh install or explicit local-account creation and is not passed to the normal patch process. Mark the password secret. |
 | `sqlitePassword` | Optional override for the runtime SQLCipher password. If omitted, the service installer reuses the existing service value or generates one on first install. Mark it secret when set and keep the same value for API, worker, and automation. |
+| `securityAuditIntegrityKey` | Optional stable HMAC key for security audit history. Mark it secret. If omitted, the installer reuses the installed shared key or generates one only when no audit history exists. Set this secret when rebuilding a server that restores existing audit state. |
 
-The deployment uses two accounts: a deploy account for Azure DevOps WinRM/file-copy/install actions and a runtime account for the API and worker Windows Services. The runtime account is also the default Active Directory identity: keep `ad.username` and `ad.bindPassword` blank, and SyncFactors binds to AD as the Windows service identity on Windows. The deployment runs [`scripts/Install-SyncFactorsWindowsPrerequisites.ps1`](scripts/Install-SyncFactorsWindowsPrerequisites.ps1) on the server before service installation. That script creates the install/runtime/log directories, installs or verifies PowerShell 7, creates an optional local runtime account, grants `Log on as a service`, grants runtime-account access to the deployment paths, and can open the API firewall port. The app bundle is self-contained, so no separate .NET runtime installation is required on the server.
+The pipeline intentionally has no OIDC client-secret or bootstrap-password variables. Store those secrets as `SyncFactors/SYNCFACTORS__AUTH__OIDC__CLIENTSECRET` and `SyncFactors/SYNCFACTORS__AUTH__BOOTSTRAPADMIN__PASSWORD` under the runtime identity before deployment. Azure values are transported to the WinRM script as masked Base64 task variables so quotes/newlines cannot alter PowerShell source. Runtime credentials, SQLite passwords, and audit keys then cross the Windows PowerShell-to-PowerShell-7 process boundary only through a unique DPAPI-protected CLIXML file whose ACL is restricted to the deploy identity, SYSTEM, and Administrators; the file is deleted in `finally` and secrets are never placed in child-process arguments. The deployment uses two accounts: a deploy account for Azure DevOps WinRM/file-copy/install actions and a runtime account for the API and worker Windows Services. The runtime account is also the default Active Directory identity: keep `ad.username` and `ad.bindPassword` blank, and SyncFactors binds to AD as the Windows service identity on Windows. The deployment runs [`scripts/Install-SyncFactorsWindowsPrerequisites.ps1`](scripts/Install-SyncFactorsWindowsPrerequisites.ps1) on the server before service installation and on each patch to harden legacy ACLs. That script grants read/execute on the install tree, gives the runtime identity Modify only on protected `state`, and restricts `_backups` to SYSTEM/Administrators. The app bundle is self-contained, so no separate .NET runtime installation is required on the server.
 
 For a manual service-account setup, grant the account:
 
 | Permission | Reason |
 | --- | --- |
 | `Log on as a service` on the Windows server | Required by Windows Service Control Manager when the API and worker run under a named account. |
-| Modify on `C:\SyncFactors` and `C:\SyncFactors\state` | Allows the service to read the app/config files and write SQLite runtime state and local logs. |
+| Read and execute on `C:\SyncFactors` | Allows the service to load application binaries, scripts, and configuration without modifying deployed code or config. |
+| Modify on `C:\SyncFactors\state` | Allows the service to write only SQLite runtime state, audit history, and local logs. |
+| No runtime-account access to `C:\SyncFactors\_backups` | Rollback databases are operator-only production data; only SYSTEM and Administrators receive access. |
 | Read access to the HTTPS certificate private key or configured PFX path, when using a service-bound TLS certificate | Allows Kestrel to load the HTTPS certificate. |
 | The approved AD delegation for SyncFactors-managed OUs/groups | Allows the application to bind to AD as the service identity and apply approved changes with least privilege. |
+
+For a read-only production monitoring deployment, the AD identity is a separate hard control: grant only read/list access and do not delegate create, modify, delete, password reset, or group-membership writes on any OU or group. `-DryRunOnly` prevents writes in the application, but it is defense in depth rather than a replacement for directory ACLs. A configuration regression must still be denied by Active Directory authorization.
 
 To create and prepare a local account from an elevated PowerShell session:
 
@@ -350,7 +377,7 @@ $runtimePassword = Read-Host 'SyncFactors runtime password' -AsSecureString
   -CreateLocalRuntimeAccount
 ```
 
-That script keeps the runtime account out of local administrators. The deploy account is added only to the target server's local `Administrators` and `Remote Management Users` groups because Azure DevOps needs administrative rights to copy artifacts, install prerequisites, grant service rights, and create/update Windows Services.
+That script keeps the runtime account out of local administrators. It grants the runtime account read/execute on the install tree and Modify only on `state` (including runtime data and logs). The deploy account is added only to the target server's local `Administrators` and `Remote Management Users` groups because Azure DevOps needs administrative rights to copy artifacts, install prerequisites, grant service rights, and create/update Windows Services.
 
 For a pre-created domain account, omit `-CreateLocalServiceAccount` and pass the domain identity:
 
@@ -384,7 +411,11 @@ Set-ExecutionPolicy -Scope Process Bypass
 & .\scripts\Set-SyncFactorsWindowsCredential.ps1 -VariableName SF_AD_SYNC_AD_SERVER
 & .\scripts\Set-SyncFactorsWindowsCredential.ps1 -VariableName SF_AD_SYNC_SF_USERNAME
 & .\scripts\Set-SyncFactorsWindowsCredential.ps1 -VariableName SF_AD_SYNC_SF_PASSWORD
+& .\scripts\Set-SyncFactorsWindowsCredential.ps1 -VariableName SYNCFACTORS__AUTH__OIDC__CLIENTSECRET
+& .\scripts\Set-SyncFactorsWindowsCredential.ps1 -VariableName SYNCFACTORS__AUTH__BOOTSTRAPADMIN__PASSWORD
 ```
+
+The API resolves the OIDC client secret and bootstrap admin password before binding authentication options, using the same environment-first, Windows-Credential-Manager-second order as SuccessFactors and AD secrets. With the default prefix, the auth targets are `SyncFactors/SYNCFACTORS__AUTH__OIDC__CLIENTSECRET` and `SyncFactors/SYNCFACTORS__AUTH__BOOTSTRAPADMIN__PASSWORD`. Values are read under the API service identity and are never written to configuration diagnostics.
 
 To validate a sanitized SuccessFactors export or fixture-style worker document against the expected source contract:
 
@@ -569,7 +600,7 @@ SQLite encryption is enabled by default for Windows Service installs. `scripts/I
 
 For non-service launches, set `SYNCFACTORS_SQLITE_PASSWORD` to enable SQLCipher encryption for the runtime SQLite database. The same value must be present for the API, worker, and automation commands that open the runtime database. The app also recognizes `SyncFactors__SqlitePassword`, but `SYNCFACTORS_SQLITE_PASSWORD` is preferred because it is clearly secret material and should come from the OS secret store or service environment rather than tracked JSON.
 
-When the password is configured and the existing database is still plaintext, startup exports the plaintext database to an encrypted SQLCipher copy, replaces the active database file, and leaves an owner-only `*.plaintext-<timestamp>.bak` rollback copy beside it. Validate startup, then move or securely delete that plaintext backup according to your retention policy. If the password is changed later, the app will not silently rekey an encrypted database; keep the original key available until a deliberate rekey workflow is added. The service installer will stop rather than generate a replacement password when it finds an existing database that does not look plaintext and no current password was supplied or recoverable from the service environment.
+When the password is configured and the existing database is still plaintext, startup takes an exclusive per-database conversion lock, checkpoints it, exports an encrypted SQLCipher copy, replaces the active database, and verifies that the replacement opens with the configured key. Concurrent API and worker startup is serialized; the second process rechecks the database after acquiring the lock and does not repeat a completed conversion. The plaintext rollback file and sidecars exist only during conversion and are deleted after validation; if export, replacement, or validation fails, the original plaintext database and sidecars are restored before startup fails. If the password is changed later, the app will not silently rekey an encrypted database; keep the original key available until a deliberate rekey workflow is added. The service installer will stop rather than generate a replacement password when it finds an existing database that does not look plaintext and no current password was supplied or recoverable from the service environment.
 
 `.env.worktree.example` also carries the Entra/OIDC keys and optional auth session tuning values as commented placeholders until you intentionally enable SSO for that worktree.
 
@@ -627,11 +658,13 @@ SYNCFACTORS_API_PORT=5087
 
 Keep `SYNCFACTORS_API_BIND_HOST` on the listener address and `SYNCFACTORS_API_PUBLIC_HOST` on the exact host users browse to. The public host must match the HTTPS certificate and the Entra redirect URIs. The dev certificate from `Install-SyncFactorsHttpsCertificate.ps1` is localhost-only, so remote access requires a PFX whose SAN covers `<dns-name-or-lan-ip>`.
 
+Forwarded headers are disabled by default. When the API is intentionally placed behind a reverse proxy, enable them only with an explicit trust boundary, for example `SyncFactors__ForwardedHeaders__Enabled=true` plus `SyncFactors__ForwardedHeaders__KnownProxies__0=192.0.2.10` or `SyncFactors__ForwardedHeaders__KnownNetworks__0=198.51.100.0/24`. Startup rejects enabled forwarding with no trusted proxy/network and rejects malformed IP or CIDR values.
+
 By default, the import helpers skip secure-store variables that are missing or blank in `.env.worktree` so an existing Keychain or Credential Manager value is left alone. Use `--remove-empty-values` on macOS or `-RemoveEmptyValues` on Windows if explicitly blank entries in `.env.worktree` should delete the corresponding stored credentials.
 
 Set `SYNCFACTORS_RUN_PROFILE=mock` or `real` to switch the active SuccessFactors config. Leave `SYNCFACTORS_CONFIG_PATH` empty for profile-based resolution, or set it only when you want an explicit one-off override.
 
-For a production monitoring deployment that must not expose AD write actions, set:
+For a production monitoring deployment that must not expose AD write actions, install or patch with `-DryRunOnly`. The Windows installer and Azure deployment pipeline apply this value to both services and verify it before declaring the deployment ready. The equivalent raw environment value is:
 
 ```bash
 SyncFactors__Runtime__DryRunOnly=true
@@ -847,15 +880,19 @@ Queued bulk runs read worker concurrency from `sync.maxDegreeOfParallelism`. The
 
 ## Authentication Modes
 
-The API serves the same operator UI in all auth modes and protects it with cookie auth after sign-in.
+The API serves the same operator UI in all auth modes and protects it with cookie auth after sign-in. Production has no implicit authentication-mode fallback: set `SYNCFACTORS__AUTH__MODE` explicitly to `local-break-glass`, `oidc`, or `hybrid`. Startup fails before database initialization when the mode is blank, invalid, or incomplete, so a missing OIDC service environment cannot silently turn into local authentication. Development alone defaults a blank mode to local break-glass for local startup convenience.
 
 By default, the cookie session uses sliding expiration with an 8-hour idle timeout and a 7-day absolute lifetime. Override those with `SyncFactors:Auth:IdleTimeoutMinutes` and `SyncFactors:Auth:AbsoluteSessionHours` when your environment needs a different balance between convenience and forced re-authentication.
 
-- `local-break-glass`: the default appsettings mode. Local usernames and password hashes live in SQLite, and `/Admin/Users` manages those local accounts.
-- `oidc`: enterprise OIDC sign-in only. The login page redirects or offers SSO, and local user management is disabled.
-- `hybrid`: enterprise OIDC is the primary sign-in path, and local break-glass accounts remain available for emergency access.
+OIDC group or app-role authorization is derived only from claims in the provider's validated ID token; SyncFactors does not query UserInfo for group membership. The resulting role is cached in the protected cookie for at most 60 minutes by default, after which the cookie is rejected to force a fresh OIDC authentication and role evaluation. Set `SyncFactors:Auth:Oidc:AuthorizationRevalidationMinutes` to a value from 5 through 1440 to tune that revocation window. OIDC authorities must use an absolute HTTPS URL outside Development.
 
-On first startup, bootstrap admin credentials are only required when local break-glass auth is enabled and no local users exist yet. In `oidc` mode, the app skips that bootstrap requirement.
+- `local-break-glass`: local usernames and password hashes live in SQLite, and `/Admin/Users` manages those local accounts. Set `SYNCFACTORS__AUTH__LOCALBREAKGLASS__ENABLED=true`.
+- `oidc`: enterprise OIDC sign-in only. The login page redirects or offers SSO, and local user management is disabled.
+- `hybrid`: enterprise OIDC is the primary sign-in path, and local break-glass accounts remain available for emergency access. Set `SYNCFACTORS__AUTH__LOCALBREAKGLASS__ENABLED=true`.
+
+On first startup, bootstrap admin credentials are required in both `local-break-glass` and `hybrid` modes when no local users exist yet. The launcher probe reports bootstrap as required even when the credentials are not yet configured, allowing the launcher to prompt deterministically. In `oidc` mode, set `SYNCFACTORS__AUTH__LOCALBREAKGLASS__ENABLED=false`; the app skips local bootstrap entirely. OIDC and hybrid modes require authority, client ID, client secret, and at least one configured viewer/operator/admin group or app-role value.
+
+Local login, logout, and cookie-authenticated minimal API mutations require an antiforgery token in the `X-SyncFactors-Antiforgery` header. Browser pages receive a request token in the `syncfactors-antiforgery-token` meta element, and the bundled `syncFactorsApiFetch` helper adds it to unsafe requests. Non-browser API clients must first call `GET /api/session/antiforgery` with their cookie jar, then send the returned `requestToken` in that header; after login, fetch a fresh token before the next mutation because the token is bound to the authenticated identity. The OIDC callback is intentionally not treated as an application mutation.
 
 ## Running The Local Stack
 

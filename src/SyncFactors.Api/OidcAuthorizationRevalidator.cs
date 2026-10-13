@@ -1,104 +1,107 @@
-using System.Net.Http.Headers;
 using System.Security.Claims;
-using System.Text.Json;
 using Microsoft.AspNetCore.Authentication;
-using Microsoft.AspNetCore.Authentication.OpenIdConnect;
-using Microsoft.Extensions.Options;
 using SyncFactors.Infrastructure;
 
 namespace SyncFactors.Api;
 
-internal interface IOidcUserInfoClient
+internal static class OidcLogoutTokenStore
 {
-    Task<OidcUserInfo> GetUserInfoAsync(string accessToken, CancellationToken cancellationToken);
-}
-
-internal sealed record OidcUserInfo(string Subject, IReadOnlyList<Claim> Claims);
-
-internal sealed record OidcAuthorizationRevalidationResult(bool IsAuthorized, IReadOnlyList<string> Roles);
-
-internal sealed class OidcUserInfoClient(IOptionsMonitor<OpenIdConnectOptions> optionsMonitor) : IOidcUserInfoClient
-{
-    public async Task<OidcUserInfo> GetUserInfoAsync(string accessToken, CancellationToken cancellationToken)
-    {
-        var options = optionsMonitor.Get(OpenIdConnectDefaults.AuthenticationScheme);
-        var configuration = await options.ConfigurationManager!.GetConfigurationAsync(cancellationToken);
-        if (string.IsNullOrWhiteSpace(configuration.UserInfoEndpoint))
-        {
-            throw new InvalidOperationException("OIDC provider did not publish a UserInfo endpoint.");
-        }
-
-        using var request = new HttpRequestMessage(HttpMethod.Get, configuration.UserInfoEndpoint);
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
-        using var response = await options.Backchannel.SendAsync(request, cancellationToken);
-        response.EnsureSuccessStatusCode();
-
-        await using var responseStream = await response.Content.ReadAsStreamAsync(cancellationToken);
-        using var document = await JsonDocument.ParseAsync(responseStream, cancellationToken: cancellationToken);
-        var root = document.RootElement;
-        if (!root.TryGetProperty("sub", out var subjectProperty) || subjectProperty.ValueKind != JsonValueKind.String)
-        {
-            throw new InvalidOperationException("OIDC UserInfo response did not contain a subject.");
-        }
-
-        return new OidcUserInfo(subjectProperty.GetString()!, ReadClaims(root));
-    }
-
-    private static IReadOnlyList<Claim> ReadClaims(JsonElement root)
-    {
-        var claims = new List<Claim>();
-        foreach (var property in root.EnumerateObject())
-        {
-            if (property.Value.ValueKind == JsonValueKind.String)
-            {
-                claims.Add(new Claim(property.Name, property.Value.GetString()!));
-            }
-            else if (property.Value.ValueKind == JsonValueKind.Array)
-            {
-                foreach (var value in property.Value.EnumerateArray())
-                {
-                    if (value.ValueKind == JsonValueKind.String)
-                    {
-                        claims.Add(new Claim(property.Name, value.GetString()!));
-                    }
-                }
-            }
-        }
-
-        return claims;
-    }
-}
-
-internal sealed class OidcAuthorizationRevalidator(IOidcUserInfoClient userInfoClient)
-{
-    public async Task<OidcAuthorizationRevalidationResult> RevalidateAsync(
-        ClaimsPrincipal principal,
+    public static void RetainIdToken(
         AuthenticationProperties properties,
-        LocalAuthOptions authSettings,
-        CancellationToken cancellationToken)
+        string? tokenEndpointIdToken,
+        string? authorizationResponseIdToken)
+    {
+        var idToken = !string.IsNullOrWhiteSpace(tokenEndpointIdToken)
+            ? tokenEndpointIdToken
+            : authorizationResponseIdToken;
+
+        properties.StoreTokens(string.IsNullOrWhiteSpace(idToken)
+            ? []
+            :
+            [
+                new AuthenticationToken
+                {
+                    Name = "id_token",
+                    Value = idToken
+                }
+            ]);
+    }
+}
+
+internal static class OidcConfigurationValidator
+{
+    public static void ValidateAuthority(
+        OidcOptions options,
+        bool oidcEnabled,
+        bool isDevelopment)
+    {
+        if (!oidcEnabled || isDevelopment)
+        {
+            return;
+        }
+
+        if (!Uri.TryCreate(options.Authority, UriKind.Absolute, out var authority) ||
+            !string.Equals(authority.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException(
+                "SyncFactors:Auth:Oidc:Authority must be an absolute HTTPS URL outside Development.");
+        }
+    }
+}
+
+internal sealed record OidcAuthorizationRevalidationResult(
+    bool IsAuthorized,
+    IReadOnlyList<string> Roles);
+
+/// <summary>
+/// Validates the reduced OIDC authorization snapshot stored in the protected cookie.
+/// Role assignments originate only from claims in the validated ID token at sign-in.
+/// Once the bounded snapshot lifetime expires, the cookie is rejected so a fresh OIDC
+/// authentication must issue a new validated token and role snapshot.
+/// </summary>
+internal sealed class OidcAuthorizationRevalidator(TimeProvider timeProvider)
+{
+    private static readonly HashSet<string> AllowedOidcRoles =
+    [
+        SecurityRoles.Viewer,
+        SecurityRoles.Operator,
+        SecurityRoles.Admin
+    ];
+
+    public OidcAuthorizationRevalidationResult Revalidate(
+        ClaimsPrincipal principal,
+        LocalAuthOptions authSettings)
     {
         var subject = principal.FindFirstValue(ClaimTypes.NameIdentifier);
-        var accessToken = properties.GetTokenValue("access_token");
-        if (string.IsNullOrWhiteSpace(subject) || string.IsNullOrWhiteSpace(accessToken))
+        if (string.IsNullOrWhiteSpace(subject))
         {
-            return new OidcAuthorizationRevalidationResult(false, []);
+            return Unauthorized();
         }
 
-        try
+        var roles = principal.FindAll(ClaimTypes.Role)
+            .Select(claim => claim.Value)
+            .Where(AllowedOidcRoles.Contains)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        if (roles.Length != 1)
         {
-            var userInfo = await userInfoClient.GetUserInfoAsync(accessToken, cancellationToken);
-            if (!string.Equals(subject, userInfo.Subject, StringComparison.Ordinal))
-            {
-                return new OidcAuthorizationRevalidationResult(false, []);
-            }
+            return Unauthorized();
+        }
 
-            var roles = OidcRoleResolver.ResolveRoles(new ClaimsIdentity(userInfo.Claims), authSettings);
-            return new OidcAuthorizationRevalidationResult(roles.Count > 0, roles);
-        }
-        catch (Exception)
+        var validatedAtValue = principal.FindFirstValue(SecurityClaimTypes.OidcAuthorizationValidatedAt);
+        if (!DateTimeOffset.TryParse(validatedAtValue, out var validatedAt))
         {
-            return new OidcAuthorizationRevalidationResult(false, []);
+            return Unauthorized();
         }
+
+        var now = timeProvider.GetUtcNow();
+        if (validatedAt > now ||
+            now - validatedAt >= authSettings.Oidc.GetAuthorizationRevalidationInterval())
+        {
+            return Unauthorized();
+        }
+
+        return new OidcAuthorizationRevalidationResult(true, roles);
     }
 
     public static bool ShouldRevalidate(ClaimsPrincipal principal) =>
@@ -107,45 +110,26 @@ internal sealed class OidcAuthorizationRevalidator(IOidcUserInfoClient userInfoC
             "oidc",
             StringComparison.Ordinal);
 
-    public static void ApplyRoles(ClaimsIdentity identity, IReadOnlyList<string> roles)
-    {
-        foreach (var claim in identity.FindAll(ClaimTypes.Role).ToArray())
-        {
-            identity.RemoveClaim(claim);
-        }
-
-        foreach (var role in roles)
-        {
-            identity.AddClaim(new Claim(ClaimTypes.Role, role));
-        }
-    }
+    private static OidcAuthorizationRevalidationResult Unauthorized() =>
+        new(false, []);
 }
 
 internal sealed class OidcCookiePrincipalValidator(
     OidcAuthorizationRevalidator revalidator,
     LocalAuthOptions authSettings)
 {
-    public async Task<bool> ValidateAsync(
+    public Task<bool> ValidateAsync(
         ClaimsPrincipal principal,
-        AuthenticationProperties properties,
         CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+
         if (!OidcAuthorizationRevalidator.ShouldRevalidate(principal))
         {
-            return true;
+            return Task.FromResult(true);
         }
 
-        var result = await revalidator.RevalidateAsync(principal, properties, authSettings, cancellationToken);
-        if (!result.IsAuthorized)
-        {
-            return false;
-        }
-
-        foreach (var identity in principal.Identities.OfType<ClaimsIdentity>())
-        {
-            OidcAuthorizationRevalidator.ApplyRoles(identity, result.Roles);
-        }
-
-        return true;
+        var result = revalidator.Revalidate(principal, authSettings);
+        return Task.FromResult(result.IsAuthorized);
     }
 }

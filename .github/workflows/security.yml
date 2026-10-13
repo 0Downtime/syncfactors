@@ -35,6 +35,7 @@ jobs:
   sonarcloud:
     name: SonarCloud Quality Gate
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       contents: read
     if: github.actor != 'dependabot[bot]' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
@@ -101,8 +102,7 @@ jobs:
             --configuration Release \
             --no-build \
             --settings ./coverlet.runsettings \
-            --results-directory ./artifacts/coverage \
-            --collect:"XPlat Code Coverage"
+            --results-directory ./artifacts/coverage
 
       - name: End SonarCloud analysis
         shell: bash
