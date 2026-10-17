@@ -170,7 +170,7 @@
     "runHistoryVacuumMinimumFreedMegabytes": 128,
     "runHistoryVacuumMinimumIntervalHours": 24,
     "maxDegreeOfParallelism": 4,
-    "realSyncEnabled": true,
+    "realSyncEnabled": false,
     "autoDeleteFromGraveyard": false,
     "leaveStatusValues": [
       "U",
@@ -179,12 +179,12 @@
     ]
   },
   "safety": {
-    "maxCreatesPerRun": 12000,
-    "maxDisablesPerRun": 12000,
-    "maxDeletionsPerRun": 12000
+    "maxCreatesPerRun": 25,
+    "maxDisablesPerRun": 10,
+    "maxDeletionsPerRun": 5
   },
   "approval": {
-    "enabled": false,
+    "enabled": true,
     "requireFor": [
       "DisableUser",
       "DeleteUser",

@@ -225,6 +225,31 @@ public sealed class PreviewModelTests
     }
 
     [Fact]
+    public async Task PreviewApplyCapability_IsDisabledWhenAtomicGatewayIsUnavailable()
+    {
+        var preview = CreatePreview(workerId: "10001");
+        var applyService = new StubApplyPreviewService(canApplyPreview: false);
+        var model = new Worker360Model(
+            new CapturingWorkerPreviewPlanner(preview),
+            applyService,
+            new StubRunRepository(preview),
+            new RealSyncSettings(Enabled: true, DryRunOnly: false))
+        {
+            WorkerId = "10001",
+            PreviewRunId = preview.RunId!,
+            PreviewFingerprint = preview.Fingerprint,
+            AcknowledgeRealSync = true
+        };
+
+        var result = await model.OnPostApplyAsync(CancellationToken.None);
+
+        Assert.IsType<PageResult>(result);
+        Assert.False(model.CanApplyPreview);
+        Assert.Equal(applyService.CapabilityUnavailableMessage, model.ErrorMessage);
+        Assert.Null(model.ApplyResult);
+    }
+
+    [Fact]
     public async Task OnGetAsync_LoadsSavedPreviewWhenRunIdIsProvided()
     {
         var preview = CreatePreview(workerId: "10001");
@@ -516,8 +541,13 @@ public sealed class PreviewModelTests
         }
     }
 
-    private sealed class StubApplyPreviewService : IApplyPreviewService
+    private sealed class StubApplyPreviewService(bool canApplyPreview = true) : IApplyPreviewService
     {
+        public bool CanApplyPreview { get; } = canApplyPreview;
+
+        public string CapabilityUnavailableMessage =>
+            "The configured directory gateway cannot atomically apply a reviewed preview.";
+
         public Task<DirectoryCommandResult> ApplyAsync(ApplyPreviewRequest request, CancellationToken cancellationToken)
         {
             _ = request;

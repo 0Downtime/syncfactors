@@ -15,6 +15,7 @@ public interface IGraveyardRetentionReportCoordinator
 public interface IGraveyardAutoDeleteCoordinator
 {
     Task<string?> TryExecuteAsync(CancellationToken cancellationToken);
+    Task<string> ExecuteApprovedDeleteAsync(RunQueueRequest request, CancellationToken cancellationToken);
 }
 
 public interface IBulkRunCoordinator
