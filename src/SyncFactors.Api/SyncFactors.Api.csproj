@@ -49,10 +49,10 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.ApplicationInsights.AspNetCore" Version="3.1.2" />
-    <PackageReference Include="Microsoft.AspNetCore.Authentication.OpenIdConnect" Version="10.0.12" />
-    <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="10.0.12" />
-    <PackageReference Include="OpenTelemetry.Api" Version="1.19.1" />
+    <PackageReference Include="Microsoft.ApplicationInsights.AspNetCore" Version="3.2.0" />
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.OpenIdConnect" Version="10.0.13" />
+    <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="10.0.13" />
+    <PackageReference Include="OpenTelemetry.Api" Version="1.20.1" />
     <ProjectReference Include="..\SyncFactors.Contracts\SyncFactors.Contracts.csproj" />
     <ProjectReference Include="..\SyncFactors.Domain\SyncFactors.Domain.csproj" />
     <ProjectReference Include="..\SyncFactors.Infrastructure\SyncFactors.Infrastructure.csproj" />
