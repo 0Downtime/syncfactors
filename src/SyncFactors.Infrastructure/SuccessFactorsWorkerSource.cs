@@ -14,7 +14,8 @@ public sealed class SuccessFactorsWorkerSource(
     SyncFactorsConfigurationLoader configLoader,
     IDeltaSyncService deltaSyncService,
     ScaffoldWorkerSource fallbackSource,
-    ILogger<SuccessFactorsWorkerSource> logger) : IWorkerSource
+    ILogger<SuccessFactorsWorkerSource> logger,
+    SuccessFactorsSourceSettings? sourceSettings = null) : IWorkerSource
 {
     public const string SourceReviewCategoryAttribute = "_syncfactors.reviewCategory";
     public const string SourceReviewCaseTypeAttribute = "_syncfactors.reviewCaseType";
@@ -90,9 +91,14 @@ public sealed class SuccessFactorsWorkerSource(
             return previewWorker;
         }
 
-        logger.LogWarning("No worker was returned from SuccessFactors. Falling back to scaffold worker source.");
+        if (sourceSettings?.AllowScaffoldFallback == true)
+        {
+            logger.LogWarning("No worker was returned from SuccessFactors in the explicit mock profile. Falling back to scaffold worker source.");
+            return await fallbackSource.GetWorkerAsync(workerId, cancellationToken);
+        }
 
-        return await fallbackSource.GetWorkerAsync(workerId, cancellationToken);
+        logger.LogInformation("No worker was returned from SuccessFactors. Scaffold fallback is disabled for this source profile.");
+        return null;
     }
 
     private async Task<WorkerSnapshot?> TryResolveWorkerAsync(

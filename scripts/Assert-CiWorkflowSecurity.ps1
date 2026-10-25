@@ -90,9 +90,16 @@ if (Test-Path -Path $githubWorkflowRoot -PathType Container) {
         }
 
         if ($workflowFile.Name -match '^auto-merge\.ya?ml$' -and $content -match '\bgh\s+pr\s+merge\s+--auto\b') {
-            $hasTrustedBotGuard = $content -match "github\.actor\s*==\s*'dependabot\[bot\]'"
-            $hasReviewedOptInGuard = $content -match "contains\(\s*github\.event\.pull_request\.labels\.\*\.name\s*,\s*'automerge:approved'\s*\)"
-            if (-not ($hasTrustedBotGuard -or $hasReviewedOptInGuard)) {
+            $hasServerSidePullRequestLookup = $content -match 'gh\s+api[\s\S]*repos/\$\{REPO\}/pulls/\$\{EVENT_PR_NUMBER\}'
+            $hasTrustedBotGuard = $content -match '\.user\.login\s*==\s*"dependabot\[bot\]"'
+            $hasReviewedOptInGuard = $content -match '\.labels\[\]\?\.name\]\s*\|\s*index\("automerge:approved"\)'
+            $hasApiRepositoryBinding = $content -match '\.head\.repo\.full_name\s*==\s*\$repo'
+            $hasApiBaseAndStateBinding = $content -match '\.base\.ref\s*==\s*"main"' -and $content -match '\.state\s*==\s*"open"' -and $content -match '\.draft\s*==\s*false'
+            $hasApiHeadBinding = $content -match '\.head\.repo\.fork\s*==\s*false'
+            if ($content -match '(?m)^\s*if:\s+.*(?:github\.actor|github\.event\.pull_request\.(?:base|state|draft|head|labels))') {
+                Add-PolicyError $workflowFile.FullName 'auto-merge trust decisions must use server-side GitHub API data instead of forgeable event context values.'
+            }
+            if (-not ($hasServerSidePullRequestLookup -and ($hasTrustedBotGuard -or $hasReviewedOptInGuard) -and $hasApiRepositoryBinding -and $hasApiBaseAndStateBinding -and $hasApiHeadBinding)) {
                 Add-PolicyError $workflowFile.FullName 'automatic merge must be limited to a trusted bot or an explicit reviewed opt-in.'
             }
 
@@ -119,7 +126,7 @@ if (Test-Path -Path $githubWorkflowRoot -PathType Container) {
 
             $hasWorkflowLookup = $content -match 'actions/workflows/\$workflowFile'
             $hasWorkflowBinding = $content -match '\$run\.workflow_id\s+-ne\s+\$workflowIds\[\$requiredCheck\.workflowFile\]'
-            $hasJobBinding = $content -match '\$job\.id\s+-eq\s+\[Int64\]\$jobId\s+-and\s+\$job\.name\s+-eq\s+\$requiredCheck\.jobName'
+            $hasJobBinding = $content -match '\$_\.id\s+-eq\s+\[Int64\]\$jobId\s+-and\s+\$_\.name\s+-eq\s+\$requiredCheck\.jobName'
             $keepsUntrustedChecksPending = $content -match '(?s)if\s*\(\$null\s+-eq\s+\$trustedCheck\)\s*\{.*?\$incompleteChecks\s*\+=\s*"\$\(\$requiredCheck\.checkName\)=untrusted-provenance"'
             if (-not ($hasWorkflowLookup -and $hasWorkflowBinding -and $hasJobBinding -and $keepsUntrustedChecksPending)) {
                 Add-PolicyError $workflowFile.FullName 'required CI check acceptance must bind same-name checks to their expected workflow and job provenance.'

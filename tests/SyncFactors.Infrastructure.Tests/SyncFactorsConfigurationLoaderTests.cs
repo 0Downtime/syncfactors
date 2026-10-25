@@ -278,11 +278,11 @@ public sealed class SyncFactorsConfigurationLoaderTests
     }
 
     [Fact]
-    public async Task GetSyncConfig_DefaultsRealSyncEnabledToTrue_WhenOmitted()
+    public async Task GetSyncConfig_DefaultsRealSyncEnabledToFalse_WhenOmitted()
     {
         var config = await LoadConfigAsync(adJson: null);
 
-        Assert.True(config.Sync.RealSyncEnabled);
+        Assert.False(config.Sync.RealSyncEnabled);
     }
 
     [Fact]
